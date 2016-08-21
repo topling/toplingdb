@@ -434,6 +434,8 @@ DEFINE_bool(show_table_properties, false,
 
 DEFINE_string(db, "", "Use the db with the following name.");
 
+DEFINE_string(terarktempdir, "/tmp", "Use the localtempdir with the following name.");
+
 static bool ValidateCacheNumshardbits(const char* flagname, int32_t value) {
   if (value >= 20) {
     fprintf(stderr, "Invalid value for --%s: %d, must be < 20\n",
@@ -866,6 +868,7 @@ static enum RepFactory FLAGS_rep_factory;
 DEFINE_string(memtablerep, "skip_list", "");
 DEFINE_int64(hash_bucket_count, 1024 * 1024, "hash bucket count");
 DEFINE_bool(use_terarkzip_table, true, "if use terarkzip table");
+
 DEFINE_bool(use_plain_table, false, "if use plain table "
             "instead of block-based table format");
 DEFINE_bool(use_cuckoo_table, false, "if use cuckoo table format");
@@ -2620,7 +2623,7 @@ class Benchmark {
      if (FLAGS_use_terarkzip_table) {
         std::cout << "use_terarkzip_table" << std::endl;
         TerarkZipTableOptions opt;
-        opt.localTempDir = "/data/tmp";
+        opt.localTempDir = FLAGS_terarktempdir;
         TableFactory* factory = NewTerarkZipTableFactory(opt);
         options.table_factory.reset(factory);
      } else if (FLAGS_use_plain_table) {

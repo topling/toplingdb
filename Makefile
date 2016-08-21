@@ -489,7 +489,9 @@ endif  # PLATFORM_SHARED_EXT
 	analyze tools tools_lib
 
 
-all: $(LIBRARY) $(BENCHMARKS) tools tools_lib test_libs $(TESTS)
+#all: $(LIBRARY) $(BENCHMARKS) tools tools_lib test_libs $(TESTS)
+
+all: $(LIBRARY) $(SHARED)
 
 static_lib: $(LIBRARY)
 

@@ -10,14 +10,15 @@
 #include <map>
 #include <utility>
 
+#include <table/terark_zip_table.h>
+
 #include "table/meta_blocks.h"
-#include "table/cuckoo_table_builder.h"
 #include "util/file_reader_writer.h"
 #include "util/testharness.h"
 #include "util/testutil.h"
 
 namespace rocksdb {
-extern const uint64_t kCuckooTableMagicNumber;
+extern const uint64_t kTerarkZipTableMagicNumber;
 
 namespace {
 std::unordered_map<std::string, std::vector<uint64_t>> hash_map;
@@ -28,9 +29,9 @@ uint64_t GetSliceHash(const Slice& s, uint32_t index,
 }
 }  // namespace
 
-class CuckooBuilderTest : public testing::Test {
+class TerarkZipBuilderTest : public testing::Test {
  public:
-  CuckooBuilderTest() {
+  TerarkZipBuilderTest() {
     env_ = Env::Default();
     Options options;
     options.allow_mmap_reads = true;
@@ -58,7 +59,7 @@ class CuckooBuilderTest : public testing::Test {
     unique_ptr<RandomAccessFileReader> file_reader(
         new RandomAccessFileReader(std::move(read_file)));
     ASSERT_OK(ReadTableProperties(file_reader.get(), read_file_size,
-                                  kCuckooTableMagicNumber, ioptions,
+                                  kTerarkZipTableMagicNumber, ioptions,
                                   &props));
     // Check unused bucket.
     std::string unused_key = props->user_collected_properties[
@@ -146,13 +147,13 @@ class CuckooBuilderTest : public testing::Test {
   const double kHashTableRatio = 0.9;
 };
 
-TEST_F(CuckooBuilderTest, SuccessWithEmptyFile) {
+TEST_F(TerarkZipBuilderTest, SuccessWithEmptyFile) {
   unique_ptr<WritableFile> writable_file;
   fname = test::TmpDir() + "/EmptyFile";
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(file_writer.get(), kHashTableRatio, 4, 100,
+  TerarkZipTableBuilder builder(file_writer.get(), kHashTableRatio, 4, 100,
                              BytewiseComparator(), 1, false, false,
                              GetSliceHash, 0 /* column_family_id */,
                              kDefaultColumnFamilyName);
@@ -163,7 +164,7 @@ TEST_F(CuckooBuilderTest, SuccessWithEmptyFile) {
   CheckFileContents({}, {}, {}, "", 2, 2, false);
 }
 
-TEST_F(CuckooBuilderTest, WriteSuccessNoCollisionFullKey) {
+TEST_F(TerarkZipBuilderTest, WriteSuccessNoCollisionFullKey) {
   uint32_t num_hash_fun = 4;
   std::vector<std::string> user_keys = {"key01", "key02", "key03", "key04"};
   std::vector<std::string> values = {"v01", "v02", "v03", "v04"};
@@ -188,7 +189,7 @@ TEST_F(CuckooBuilderTest, WriteSuccessNoCollisionFullKey) {
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
+  TerarkZipTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
                              100, BytewiseComparator(), 1, false, false,
                              GetSliceHash, 0 /* column_family_id */,
                              kDefaultColumnFamilyName);
@@ -210,7 +211,7 @@ TEST_F(CuckooBuilderTest, WriteSuccessNoCollisionFullKey) {
       expected_unused_bucket, expected_table_size, 2, false);
 }
 
-TEST_F(CuckooBuilderTest, WriteSuccessWithCollisionFullKey) {
+TEST_F(TerarkZipBuilderTest, WriteSuccessWithCollisionFullKey) {
   uint32_t num_hash_fun = 4;
   std::vector<std::string> user_keys = {"key01", "key02", "key03", "key04"};
   std::vector<std::string> values = {"v01", "v02", "v03", "v04"};
@@ -236,7 +237,7 @@ TEST_F(CuckooBuilderTest, WriteSuccessWithCollisionFullKey) {
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
+  TerarkZipTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
                              100, BytewiseComparator(), 1, false, false,
                              GetSliceHash, 0 /* column_family_id */,
                              kDefaultColumnFamilyName);
@@ -258,7 +259,7 @@ TEST_F(CuckooBuilderTest, WriteSuccessWithCollisionFullKey) {
       expected_unused_bucket, expected_table_size, 4, false);
 }
 
-TEST_F(CuckooBuilderTest, WriteSuccessWithCollisionAndCuckooBlock) {
+TEST_F(TerarkZipBuilderTest, WriteSuccessWithCollisionAndCuckooBlock) {
   uint32_t num_hash_fun = 4;
   std::vector<std::string> user_keys = {"key01", "key02", "key03", "key04"};
   std::vector<std::string> values = {"v01", "v02", "v03", "v04"};
@@ -285,7 +286,7 @@ TEST_F(CuckooBuilderTest, WriteSuccessWithCollisionAndCuckooBlock) {
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(
+  TerarkZipTableBuilder builder(
       file_writer.get(), kHashTableRatio, num_hash_fun, 100,
       BytewiseComparator(), cuckoo_block_size, false, false, GetSliceHash,
       0 /* column_family_id */, kDefaultColumnFamilyName);
@@ -307,7 +308,7 @@ TEST_F(CuckooBuilderTest, WriteSuccessWithCollisionAndCuckooBlock) {
       expected_unused_bucket, expected_table_size, 3, false, cuckoo_block_size);
 }
 
-TEST_F(CuckooBuilderTest, WithCollisionPathFullKey) {
+TEST_F(TerarkZipBuilderTest, WithCollisionPathFullKey) {
   // Have two hash functions. Insert elements with overlapping hashes.
   // Finally insert an element with hash value somewhere in the middle
   // so that it displaces all the elements after that.
@@ -338,7 +339,7 @@ TEST_F(CuckooBuilderTest, WithCollisionPathFullKey) {
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
+  TerarkZipTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
                              100, BytewiseComparator(), 1, false, false,
                              GetSliceHash, 0 /* column_family_id */,
                              kDefaultColumnFamilyName);
@@ -360,7 +361,7 @@ TEST_F(CuckooBuilderTest, WithCollisionPathFullKey) {
       expected_unused_bucket, expected_table_size, 2, false);
 }
 
-TEST_F(CuckooBuilderTest, WithCollisionPathFullKeyAndCuckooBlock) {
+TEST_F(TerarkZipBuilderTest, WithCollisionPathFullKeyAndCuckooBlock) {
   uint32_t num_hash_fun = 2;
   std::vector<std::string> user_keys = {"key01", "key02", "key03",
     "key04", "key05"};
@@ -388,7 +389,7 @@ TEST_F(CuckooBuilderTest, WithCollisionPathFullKeyAndCuckooBlock) {
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
+  TerarkZipTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
                              100, BytewiseComparator(), 2, false, false,
                              GetSliceHash, 0 /* column_family_id */,
                              kDefaultColumnFamilyName);
@@ -410,7 +411,7 @@ TEST_F(CuckooBuilderTest, WithCollisionPathFullKeyAndCuckooBlock) {
       expected_unused_bucket, expected_table_size, 2, false, 2);
 }
 
-TEST_F(CuckooBuilderTest, WriteSuccessNoCollisionUserKey) {
+TEST_F(TerarkZipBuilderTest, WriteSuccessNoCollisionUserKey) {
   uint32_t num_hash_fun = 4;
   std::vector<std::string> user_keys = {"key01", "key02", "key03", "key04"};
   std::vector<std::string> values = {"v01", "v02", "v03", "v04"};
@@ -431,7 +432,7 @@ TEST_F(CuckooBuilderTest, WriteSuccessNoCollisionUserKey) {
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
+  TerarkZipTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
                              100, BytewiseComparator(), 1, false, false,
                              GetSliceHash, 0 /* column_family_id */,
                              kDefaultColumnFamilyName);
@@ -453,7 +454,7 @@ TEST_F(CuckooBuilderTest, WriteSuccessNoCollisionUserKey) {
       expected_unused_bucket, expected_table_size, 2, true);
 }
 
-TEST_F(CuckooBuilderTest, WriteSuccessWithCollisionUserKey) {
+TEST_F(TerarkZipBuilderTest, WriteSuccessWithCollisionUserKey) {
   uint32_t num_hash_fun = 4;
   std::vector<std::string> user_keys = {"key01", "key02", "key03", "key04"};
   std::vector<std::string> values = {"v01", "v02", "v03", "v04"};
@@ -475,7 +476,7 @@ TEST_F(CuckooBuilderTest, WriteSuccessWithCollisionUserKey) {
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
+  TerarkZipTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
                              100, BytewiseComparator(), 1, false, false,
                              GetSliceHash, 0 /* column_family_id */,
                              kDefaultColumnFamilyName);
@@ -497,7 +498,7 @@ TEST_F(CuckooBuilderTest, WriteSuccessWithCollisionUserKey) {
       expected_unused_bucket, expected_table_size, 4, true);
 }
 
-TEST_F(CuckooBuilderTest, WithCollisionPathUserKey) {
+TEST_F(TerarkZipBuilderTest, WithCollisionPathUserKey) {
   uint32_t num_hash_fun = 2;
   std::vector<std::string> user_keys = {"key01", "key02", "key03",
     "key04", "key05"};
@@ -521,7 +522,7 @@ TEST_F(CuckooBuilderTest, WithCollisionPathUserKey) {
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
+  TerarkZipTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
                              2, BytewiseComparator(), 1, false, false,
                              GetSliceHash, 0 /* column_family_id */,
                              kDefaultColumnFamilyName);
@@ -543,7 +544,7 @@ TEST_F(CuckooBuilderTest, WithCollisionPathUserKey) {
       expected_unused_bucket, expected_table_size, 2, true);
 }
 
-TEST_F(CuckooBuilderTest, FailWhenCollisionPathTooLong) {
+TEST_F(TerarkZipBuilderTest, FailWhenCollisionPathTooLong) {
   // Have two hash functions. Insert elements with overlapping hashes.
   // Finally try inserting an element with hash value somewhere in the middle
   // and it should fail because the no. of elements to displace is too high.
@@ -566,7 +567,7 @@ TEST_F(CuckooBuilderTest, FailWhenCollisionPathTooLong) {
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
+  TerarkZipTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
                              2, BytewiseComparator(), 1, false, false,
                              GetSliceHash, 0 /* column_family_id */,
                              kDefaultColumnFamilyName);
@@ -580,7 +581,7 @@ TEST_F(CuckooBuilderTest, FailWhenCollisionPathTooLong) {
   ASSERT_OK(file_writer->Close());
 }
 
-TEST_F(CuckooBuilderTest, FailWhenSameKeyInserted) {
+TEST_F(TerarkZipBuilderTest, FailWhenSameKeyInserted) {
   // Need to have a temporary variable here as VS compiler does not currently
   // support operator= with initializer_list as a parameter
   std::unordered_map<std::string, std::vector<uint64_t>> hm = {
@@ -594,7 +595,7 @@ TEST_F(CuckooBuilderTest, FailWhenSameKeyInserted) {
   ASSERT_OK(env_->NewWritableFile(fname, &writable_file, env_options_));
   unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(writable_file), EnvOptions()));
-  CuckooTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
+  TerarkZipTableBuilder builder(file_writer.get(), kHashTableRatio, num_hash_fun,
                              100, BytewiseComparator(), 1, false, false,
                              GetSliceHash, 0 /* column_family_id */,
                              kDefaultColumnFamilyName);
@@ -621,7 +622,7 @@ int main(int argc, char** argv) {
 #include <stdio.h>
 
 int main(int argc, char** argv) {
-  fprintf(stderr, "SKIPPED as Cuckoo table is not supported in ROCKSDB_LITE\n");
+  fprintf(stderr, "SKIPPED as TerarkZip table is not supported in ROCKSDB_LITE\n");
   return 0;
 }
 

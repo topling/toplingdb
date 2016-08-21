@@ -266,7 +266,7 @@ VALGRIND_VER := $(join $(VALGRIND_VER),valgrind)
 
 VALGRIND_OPTS = --error-exitcode=$(VALGRIND_ERROR) --leak-check=full
 
-BENCHTOOLOBJECTS = $(BENCH_LIB_SOURCES:.cc=.o) $(LIBOBJECTS) $(TESTUTIL)
+BENCHTOOLOBJECTS = $(BENCH_LIB_SOURCES:.cc=.o) -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTUTIL)
 
 EXPOBJECTS = $(EXP_LIB_SOURCES:.cc=.o) $(LIBOBJECTS) $(TESTUTIL)
 
@@ -991,7 +991,7 @@ plain_table_db_test: db/plain_table_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 comparator_db_test: db/comparator_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-table_reader_bench: table/table_reader_bench.o $(LIBOBJECTS) $(TESTHARNESS)
+table_reader_bench: table/table_reader_bench.o -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK) $(PROFILING_FLAGS)
 
 perf_context_test: db/perf_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1092,7 +1092,7 @@ full_filter_block_test: table/full_filter_block_test.o $(LIBOBJECTS) $(TESTHARNE
 log_test: db/log_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-table_test: table/table_test.o $(LIBOBJECTS) $(TESTHARNESS)
+table_test: table/table_test.o -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 block_test: table/block_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1156,6 +1156,15 @@ rocksdb_dump: tools/dump/rocksdb_dump.o $(LIBOBJECTS)
 	$(AM_LINK)
 
 rocksdb_undump: tools/dump/rocksdb_undump.o $(LIBOBJECTS)
+	$(AM_LINK)
+
+terarkzip_table_builder_test: table/terarkzip_table_builder_test.o -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+terarkzip_table_reader_test: table/terarkzip_table_reader_test.o -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+terarkzip_table_db_test: db/terarkzip_table_db_test.o -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 cuckoo_table_builder_test: table/cuckoo_table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)

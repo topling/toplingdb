@@ -1,3 +1,6 @@
+#you should run "make table_reader_bench" firstly
+
+
 echo 3 > /proc/sys/vm/drop_caches
 
 #terarkzip table

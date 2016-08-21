@@ -1,3 +1,5 @@
+#you should run "make db_bench" firstly
+
 num=100000
 readnum=10000
 valuesize=1024

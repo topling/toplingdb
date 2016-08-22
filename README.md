@@ -28,11 +28,11 @@ Design discussions are conducted in https://www.facebook.com/groups/rocksdb.dev/
 
 Evaluation of each table format: cuckoo table, plain table, block_based table, terark-zip table
 
-1. Performance scripts: db_bench (make db_bench)
+-Performance scripts: db_bench (make db_bench)
 
 running "test_db_bench.sh" according to different table format
 
-2. Other scripts
+-Other scripts
 
 (1) table_test (make table_test)
 

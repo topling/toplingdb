@@ -3,13 +3,13 @@
 num=100000
 readnum=10000
 valuesize=1024
-dbdir=/data/rocksdbdata
-terarktempdir=/data/tmp
+dbdir=data/rocksdbdata
+terarktempdir=data/tmp
 
 rm -rf $dbdir
 rm -rf $terarktempdir
 
-echo 3 > /proc/sys/vm/drop_caches
+#echo 3 > /proc/sys/vm/drop_caches
 
 #terarkzip table
 ./db_bench --benchmarks=fillrandom,readrandom --num=$num --value_size=$valuesize --db=$dbdir --terarktempdir=$terarktempdir --use_terarkzip_table=true --mmap_read=true --mmap_write=true

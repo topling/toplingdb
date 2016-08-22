@@ -77,6 +77,8 @@
 #endif
 
 namespace {
+using namespace GFLAGS;
+using namespace fLS;
 using GFLAGS::ParseCommandLineFlags;
 using GFLAGS::RegisterFlagValidator;
 using GFLAGS::SetUsageMessage;

@@ -6,6 +6,10 @@
 
 #-----------------------------------------------
 
+EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -I/usr/local/include
+#EXTRA_LDFLAGS += -L../terark-zip-rocksdb/lib -lterark-zip-rocksdb-d
+EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.a ../terark/lib/libterark-fsa_all-d.so
+
 CLEAN_FILES = # deliberately empty, so we can append below.
 CFLAGS += ${EXTRA_CFLAGS}
 CXXFLAGS += ${EXTRA_CXXFLAGS}
@@ -266,7 +270,7 @@ VALGRIND_VER := $(join $(VALGRIND_VER),valgrind)
 
 VALGRIND_OPTS = --error-exitcode=$(VALGRIND_ERROR) --leak-check=full
 
-BENCHTOOLOBJECTS = $(BENCH_LIB_SOURCES:.cc=.o) -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTUTIL)
+BENCHTOOLOBJECTS = $(BENCH_LIB_SOURCES:.cc=.o) $(LIBOBJECTS) $(TESTUTIL)
 
 EXPOBJECTS = $(EXP_LIB_SOURCES:.cc=.o) $(LIBOBJECTS) $(TESTUTIL)
 

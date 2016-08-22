@@ -25,3 +25,24 @@ rely on the details of any other header files in this package.  Those
 internal APIs may be changed without warning.
 
 Design discussions are conducted in https://www.facebook.com/groups/rocksdb.dev/
+
+Evaluation of each table format: cuckoo table, plain table, block_based table, terark-zip table
+
+1. Performance scripts: db_bench (make db_bench)
+
+running "test_db_bench.sh" according to different table format
+
+2. Other scripts
+
+(1) table_test (make table_test)
+
+(2) table_reader_bench (make table_reader_bench)
+
+running "test_table_reader_bench.sh" according to different table format
+
+(3) plain_table_db_test/cuckoo_table_db_test/terark_zip_table_db_test
+
+(4) terark_zip_table_builder_test/terark_zip_table_reader_test
+
+(5) cuckoo_table_builder_test/cuckoo_table_reader_test 
+ 

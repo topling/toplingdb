@@ -1163,6 +1163,12 @@ rocksdb_undump: tools/dump/rocksdb_undump.o $(LIBOBJECTS)
 terark_zip_table_db_test: db/terark_zip_table_db_test.o -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
+terark_zip_table_builder_test: table/terark_zip_table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+terark_zip_table_reader_test: table/terark_zip_table_reader_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
 cuckoo_table_builder_test: table/cuckoo_table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 

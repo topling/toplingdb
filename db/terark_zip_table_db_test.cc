@@ -201,32 +201,6 @@ static std::string Uint64Key(uint64_t i) {
 }
 }  // namespace.
 
-TEST_F(TerarkZipTableDBTest, Uint64Comparator) {
-  Options options = CurrentOptions();
-  options.comparator = test::Uint64Comparator();
-  Reopen(&options);
-
-  ASSERT_OK(Put(Uint64Key(1), "v1"));
-  ASSERT_OK(Put(Uint64Key(2), "v2"));
-  ASSERT_OK(Put(Uint64Key(3), "v3"));
-  dbfull()->TEST_FlushMemTable();
-
-  ASSERT_EQ("v1", Get(Uint64Key(1)));
-  ASSERT_EQ("v2", Get(Uint64Key(2)));
-  ASSERT_EQ("v3", Get(Uint64Key(3)));
-  ASSERT_EQ("NOT_FOUND", Get(Uint64Key(4)));
-
-  // Add more keys.
-  ASSERT_OK(Delete(Uint64Key(2)));  // Delete.
-  dbfull()->TEST_FlushMemTable();
-  ASSERT_OK(Put(Uint64Key(3), "v0"));  // Update.
-  ASSERT_OK(Put(Uint64Key(4), "v4"));
-  dbfull()->TEST_FlushMemTable();
-  ASSERT_EQ("v1", Get(Uint64Key(1)));
-  ASSERT_EQ("NOT_FOUND", Get(Uint64Key(2)));
-  ASSERT_EQ("v0", Get(Uint64Key(3)));
-  ASSERT_EQ("v4", Get(Uint64Key(4)));
-}
 
 TEST_F(TerarkZipTableDBTest, CompactionIntoMultipleFiles) {
   // Create a big L0 file and check it compacts into multiple files in L1.
@@ -283,6 +257,17 @@ TEST_F(TerarkZipTableDBTest, SameKeyInsertedInTwoDifferentFilesAndCompacted) {
 TEST_F(TerarkZipTableDBTest, AdaptiveTable) {
   Options options = CurrentOptions();
 
+  // Write some keys using terark_zip table.
+  TerarkZipTableOptions opt;
+  options.table_factory.reset(NewTerarkZipTableFactory(opt));
+  Reopen(&options);
+
+  ASSERT_OK(Put("key11", "v11"));
+  ASSERT_OK(Put("key12", "v12"));
+  ASSERT_OK(Put("key13", "v13"));
+  dbfull()->TEST_FlushMemTable();
+  
+
   // Write some keys using cuckoo table.
   options.table_factory.reset(NewCuckooTableFactory());
   Reopen(&options);
@@ -314,6 +299,10 @@ TEST_F(TerarkZipTableDBTest, AdaptiveTable) {
   ASSERT_EQ("v3", Get("key3"));
   ASSERT_EQ("v4", Get("key4"));
   ASSERT_EQ("v6", Get("key5"));
+
+  ASSERT_EQ("v11", Get("key11"));
+  ASSERT_EQ("v12", Get("key12"));
+  ASSERT_EQ("v13", Get("key13"));
 }
 }  // namespace rocksdb
 

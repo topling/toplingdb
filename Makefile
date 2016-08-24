@@ -41,7 +41,7 @@ quoted_perl_command = $(subst ','\'',$(perl_command))
 # `make install`
 
 # Set the default DEBUG_LEVEL to 1
-DEBUG_LEVEL?=1
+DEBUG_LEVEL?=2
 
 ifeq ($(MAKECMDGOALS),dbg)
 	DEBUG_LEVEL=2
@@ -997,7 +997,7 @@ plain_table_db_test: db/plain_table_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 comparator_db_test: db/comparator_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-table_reader_bench: table/table_reader_bench.o -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTHARNESS)
+table_reader_bench: table/table_reader_bench.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK) $(PROFILING_FLAGS)
 
 perf_context_test: db/perf_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1098,7 +1098,7 @@ full_filter_block_test: table/full_filter_block_test.o $(LIBOBJECTS) $(TESTHARNE
 log_test: db/log_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-table_test: table/table_test.o -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTHARNESS)
+table_test: table/table_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 block_test: table/block_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1164,13 +1164,7 @@ rocksdb_dump: tools/dump/rocksdb_dump.o $(LIBOBJECTS)
 rocksdb_undump: tools/dump/rocksdb_undump.o $(LIBOBJECTS)
 	$(AM_LINK)
 
-terark_zip_table_db_test: db/terark_zip_table_db_test.o -lterark-zip-rocksdb-g++-5.3-d $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
-
-terark_zip_table_builder_test: table/terark_zip_table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
-
-terark_zip_table_reader_test: table/terark_zip_table_reader_test.o $(LIBOBJECTS) $(TESTHARNESS)
+terark_zip_table_db_test: db/terark_zip_table_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 cuckoo_table_builder_test: table/cuckoo_table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)

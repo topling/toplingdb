@@ -170,6 +170,140 @@ TEST_F(TerarkZipTableDBTest, Flush) {
   ASSERT_EQ("NOT_FOUND", Get("key6"));
 }
 
+
+TEST_F(TerarkZipTableDBTest, Iteratorforward) {
+  Options options = CurrentOptions();
+  Reopen(&options);
+
+  ASSERT_OK(Put("1000000000foo002", "v_2"));
+  ASSERT_OK(Put("0000000000000bar", "random"));
+  ASSERT_OK(Put("1000000000foo001", "v1"));
+  ASSERT_OK(Put("3000000000000bar", "bar_v"));
+  ASSERT_OK(Put("1000000000foo003", "v__3"));
+  ASSERT_OK(Put("1000000000foo004", "v__4"));
+  ASSERT_OK(Put("1000000000foo005", "v__5"));
+  ASSERT_OK(Put("1000000000foo007", "v__7"));
+  ASSERT_OK(Put("1000000000foo008", "v__8"));
+  dbfull()->TEST_FlushMemTable();
+
+  ASSERT_EQ("v1", Get("1000000000foo001"));
+  ASSERT_EQ("v__3", Get("1000000000foo003"));
+
+  Iterator* iter = dbfull()->NewIterator(ReadOptions());
+  iter->Seek("1000000000foo000");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo001", iter->key().ToString());
+  ASSERT_EQ("v1", iter->value().ToString());
+
+  iter->Next();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo002", iter->key().ToString());
+  ASSERT_EQ("v_2", iter->value().ToString());
+
+  iter->Next();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo003", iter->key().ToString());
+  ASSERT_EQ("v__3", iter->value().ToString());
+
+  iter->Next();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo004", iter->key().ToString());
+  ASSERT_EQ("v__4", iter->value().ToString());
+
+  iter->Seek("3000000000000bar");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("3000000000000bar", iter->key().ToString());
+  ASSERT_EQ("bar_v", iter->value().ToString());
+
+  iter->Seek("1000000000foo000");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo001", iter->key().ToString());
+  ASSERT_EQ("v1", iter->value().ToString());
+
+  iter->Seek("1000000000foo005");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo005", iter->key().ToString());
+  ASSERT_EQ("v__5", iter->value().ToString());
+
+  iter->Seek("1000000000foo006");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo007", iter->key().ToString());
+  ASSERT_EQ("v__7", iter->value().ToString());
+
+  iter->Seek("1000000000foo008");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo008", iter->key().ToString());
+  ASSERT_EQ("v__8", iter->value().ToString());
+
+}
+
+TEST_F(TerarkZipTableDBTest, Iteratorback) {
+  Options options = CurrentOptions();
+  Reopen(&options);
+
+  ASSERT_OK(Put("1000000000foo002", "v_2"));
+  ASSERT_OK(Put("0000000000000bar", "random"));
+  ASSERT_OK(Put("1000000000foo001", "v1"));
+  ASSERT_OK(Put("3000000000000bar", "bar_v"));
+  ASSERT_OK(Put("1000000000foo003", "v__3"));
+  ASSERT_OK(Put("1000000000foo004", "v__4"));
+  ASSERT_OK(Put("1000000000foo005", "v__5"));
+  ASSERT_OK(Put("1000000000foo007", "v__7"));
+  ASSERT_OK(Put("1000000000foo008", "v__8"));
+  dbfull()->TEST_FlushMemTable();
+
+  ASSERT_EQ("v1", Get("1000000000foo001"));
+  ASSERT_EQ("v__3", Get("1000000000foo003"));
+
+  Iterator* iter = dbfull()->NewIterator(ReadOptions());
+  iter->Seek("1000000000foo008");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo008", iter->key().ToString());
+  ASSERT_EQ("v__8", iter->value().ToString());
+
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo007", iter->key().ToString());
+  ASSERT_EQ("v__7", iter->value().ToString());
+
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo005", iter->key().ToString());
+  ASSERT_EQ("v__5", iter->value().ToString());
+
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo004", iter->key().ToString());
+  ASSERT_EQ("v__4", iter->value().ToString());
+
+  iter->Seek("3000000000000bar");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("3000000000000bar", iter->key().ToString());
+  ASSERT_EQ("bar_v", iter->value().ToString());
+
+  iter->Seek("1000000000foo000");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo001", iter->key().ToString());
+  ASSERT_EQ("v1", iter->value().ToString());
+
+  iter->Seek("1000000000foo005");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo005", iter->key().ToString());
+  ASSERT_EQ("v__5", iter->value().ToString());
+
+  iter->Seek("1000000000foo006");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo007", iter->key().ToString());
+  ASSERT_EQ("v__7", iter->value().ToString());
+
+  iter->Seek("1000000000foo008");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo008", iter->key().ToString());
+  ASSERT_EQ("v__8", iter->value().ToString());
+}
+
+
+
 TEST_F(TerarkZipTableDBTest, FlushWithDuplicateKeys) {
   Options options = CurrentOptions();
   Reopen(&options);
@@ -193,7 +327,50 @@ static std::string Key(int i) {
   snprintf(buf, sizeof(buf), "key_______%06d", i);
   return std::string(buf);
 }
+
+static std::string RandomString(Random* rnd, int len) {
+  std::string r;
+  test::RandomString(rnd, len, &r);
+  return r;
+}
 }  // namespace.
+
+TEST_F(TerarkZipTableDBTest, CompactionTrigger) {
+  Options options = CurrentOptions();
+  options.write_buffer_size = 120 << 10;  // 100KB
+  options.num_levels = 3;
+  options.level0_file_num_compaction_trigger = 3;
+  Reopen(&options);
+
+  Random rnd(301);
+
+  for (int num = 0; num < options.level0_file_num_compaction_trigger - 1;
+      num++) {
+    std::vector<std::string> values;
+    // Write 120KB (10 values, each 12K)
+    for (int i = 0; i < 10; i++) {
+      values.push_back(RandomString(&rnd, 12000));
+      ASSERT_OK(Put(Key(i), values[i]));
+    }
+    ASSERT_OK(Put(Key(999), ""));
+    dbfull()->TEST_WaitForFlushMemTable();
+    ASSERT_EQ(NumTableFilesAtLevel(0), num + 1);
+  }
+
+  //generate one more file in level-0, and should trigger level-0 compaction
+  std::vector<std::string> values;
+  for (int i = 0; i < 12; i++) {
+    values.push_back(RandomString(&rnd, 10000));
+    ASSERT_OK(Put(Key(i), values[i]));
+  }
+  ASSERT_OK(Put(Key(999), ""));
+  dbfull()->TEST_WaitForCompact();
+
+  ASSERT_EQ(NumTableFilesAtLevel(0), 0);
+  ASSERT_EQ(NumTableFilesAtLevel(1), 1);
+
+}
+
 
 
 TEST_F(TerarkZipTableDBTest, CompactionIntoMultipleFiles) {

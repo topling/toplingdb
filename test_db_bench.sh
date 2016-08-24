@@ -6,8 +6,11 @@ valuesize=1024
 dbdir=data/rocksdbdata
 terarktempdir=data/tmp
 
-rm -rf $dbdir
-rm -rf $terarktempdir
+mkdir -p $dbdir
+mkdir -p $terarktempdir
+
+rm -rf $dbdir/*
+rm -rf $terarktempdir/*
 
 #echo 3 > /proc/sys/vm/drop_caches
 

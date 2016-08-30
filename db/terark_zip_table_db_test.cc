@@ -126,7 +126,7 @@ TEST_F(TerarkZipTableDBTest, Flush) {
   ASSERT_EQ(1U, ptc.size());
   ASSERT_EQ(3U, ptc.begin()->second->num_entries);
   ASSERT_EQ("1", FilesPerLevel());
-
+ 
   ASSERT_EQ("v1", Get("key1"));
   ASSERT_EQ("v2", Get("key2"));
   ASSERT_EQ("v3", Get("key3"));
@@ -137,7 +137,6 @@ TEST_F(TerarkZipTableDBTest, Flush) {
   ASSERT_OK(Put("key5", "v5"));
   ASSERT_OK(Put("key6", "v6"));
   dbfull()->TEST_FlushMemTable();
-
   reinterpret_cast<DB*>(dbfull())->GetPropertiesOfAllTables(&ptc);
   ASSERT_EQ(2U, ptc.size());
   auto row = ptc.begin();
@@ -150,7 +149,6 @@ TEST_F(TerarkZipTableDBTest, Flush) {
   ASSERT_EQ("v4", Get("key4"));
   ASSERT_EQ("v5", Get("key5"));
   ASSERT_EQ("v6", Get("key6"));
-
   ASSERT_OK(Delete("key6"));
   ASSERT_OK(Delete("key5"));
   ASSERT_OK(Delete("key4"));
@@ -188,7 +186,6 @@ TEST_F(TerarkZipTableDBTest, Iteratorforward) {
 
   ASSERT_EQ("v1", Get("1000000000foo001"));
   ASSERT_EQ("v__3", Get("1000000000foo003"));
-
   Iterator* iter = dbfull()->NewIterator(ReadOptions());
   iter->Seek("1000000000foo000");
   ASSERT_TRUE(iter->Valid());
@@ -234,7 +231,6 @@ TEST_F(TerarkZipTableDBTest, Iteratorforward) {
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ("1000000000foo008", iter->key().ToString());
   ASSERT_EQ("v__8", iter->value().ToString());
-
 }
 
 TEST_F(TerarkZipTableDBTest, Iteratorback) {

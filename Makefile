@@ -368,6 +368,7 @@ TESTS = \
 	cuckoo_table_builder_test \
 	cuckoo_table_reader_test \
 	cuckoo_table_db_test \
+	terark_zip_table_db_test \
 	flush_job_test \
 	wal_manager_test \
 	listener_test \
@@ -851,7 +852,7 @@ librocksdb_env_basic_test.a: util/env_basic_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ $^
 
 db_bench: tools/db_bench.o $(BENCHTOOLOBJECTS)
-	$(AM_LINK)
+	$(AM_LINK) 
 
 cache_bench: util/cache_bench.o $(LIBOBJECTS) $(TESTUTIL)
 	$(AM_LINK)

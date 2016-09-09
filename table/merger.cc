@@ -336,7 +336,6 @@ InternalIterator* NewMergingIterator(const Comparator* cmp,
 MergeIteratorBuilder::MergeIteratorBuilder(const Comparator* comparator,
                                            Arena* a)
     : first_iter(nullptr), use_merging_iter(false), arena(a) {
-
   auto mem = arena->AllocateAligned(sizeof(MergingIterator));
   merge_iter = new (mem) MergingIterator(comparator, nullptr, 0, true);
 }

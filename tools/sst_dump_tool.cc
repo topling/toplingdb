@@ -21,7 +21,6 @@
 #include "db/write_batch_internal.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
-#include "rocksdb/immutable_options.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/status.h"
@@ -35,8 +34,9 @@
 #include "table/meta_blocks.h"
 #include "table/plain_table_factory.h"
 #include "table/table_reader.h"
-#include "util/random.h"
+#include "util/cf_options.h"
 #include "util/compression.h"
+#include "util/random.h"
 
 #include "port/port.h"
 
@@ -185,16 +185,15 @@ int SstFileReader::ShowAllCompressionSizes(size_t block_size) {
 
   fprintf(stdout, "Block Size: %" ROCKSDB_PRIszt "\n", block_size);
 
-  std::pair<CompressionType,const char*> compressions[] = {
-    { CompressionType::kNoCompression, "kNoCompression" },
-    { CompressionType::kSnappyCompression, "kSnappyCompression" },
-    { CompressionType::kZlibCompression, "kZlibCompression" },
-    { CompressionType::kBZip2Compression, "kBZip2Compression" },
-    { CompressionType::kLZ4Compression, "kLZ4Compression" },
-    { CompressionType::kLZ4HCCompression, "kLZ4HCCompression" },
-    { CompressionType::kXpressCompression, "kXpressCompression" },
-    { CompressionType::kZSTDNotFinalCompression, "kZSTDNotFinalCompression" }
-  };
+  std::pair<CompressionType, const char*> compressions[] = {
+      {CompressionType::kNoCompression, "kNoCompression"},
+      {CompressionType::kSnappyCompression, "kSnappyCompression"},
+      {CompressionType::kZlibCompression, "kZlibCompression"},
+      {CompressionType::kBZip2Compression, "kBZip2Compression"},
+      {CompressionType::kLZ4Compression, "kLZ4Compression"},
+      {CompressionType::kLZ4HCCompression, "kLZ4HCCompression"},
+      {CompressionType::kXpressCompression, "kXpressCompression"},
+      {CompressionType::kZSTD, "kZSTD"}};
 
   for (auto& i : compressions) {
     if (CompressionTypeSupported(i.first)) {

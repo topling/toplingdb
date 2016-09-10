@@ -257,8 +257,8 @@ TEST_F(TerarkZipTableDBTest, Iteratorback) {
   ASSERT_EQ("1000000000foo008", iter->key().ToString());
   ASSERT_EQ("v__8", iter->value().ToString());
 
-//  iter->Prev();
-//  ASSERT_TRUE(iter->Valid());
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
 //  ASSERT_EQ("1000000000foo007", iter->key().ToString());
 //  ASSERT_EQ("v__7", iter->value().ToString());
 //

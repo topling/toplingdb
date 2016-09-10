@@ -315,6 +315,7 @@ TEST_F(CuckooTableDBTest, AdaptiveTable) {
   ASSERT_EQ("v4", Get("key4"));
   ASSERT_EQ("v6", Get("key5"));
 }
+
 }  // namespace rocksdb
 
 int main(int argc, char** argv) {

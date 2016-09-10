@@ -43,6 +43,7 @@ using rocksdb::CompactionFilterContext;
 using rocksdb::CompactionOptionsFIFO;
 using rocksdb::Comparator;
 using rocksdb::CompressionType;
+using rocksdb::WALRecoveryMode;
 using rocksdb::DB;
 using rocksdb::DBOptions;
 using rocksdb::Env;
@@ -1515,14 +1516,9 @@ void rocksdb_options_set_max_bytes_for_level_multiplier(
   opt->rep.max_bytes_for_level_multiplier = n;
 }
 
-void rocksdb_options_set_expanded_compaction_factor(
-    rocksdb_options_t* opt, int n) {
-  opt->rep.expanded_compaction_factor = n;
-}
-
-void rocksdb_options_set_max_grandparent_overlap_factor(
-    rocksdb_options_t* opt, int n) {
-  opt->rep.max_grandparent_overlap_factor = n;
+void rocksdb_options_set_max_compaction_bytes(rocksdb_options_t* opt,
+                                              uint64_t n) {
+  opt->rep.max_compaction_bytes = n;
 }
 
 void rocksdb_options_set_max_bytes_for_level_multiplier_additional(
@@ -1558,6 +1554,10 @@ void rocksdb_options_set_level0_stop_writes_trigger(
 
 void rocksdb_options_set_max_mem_compaction_level(rocksdb_options_t* opt,
                                                   int n) {}
+
+void rocksdb_options_set_wal_recovery_mode(rocksdb_options_t* opt,int mode) {
+  opt->rep.wal_recovery_mode = static_cast<WALRecoveryMode>(mode);
+}
 
 void rocksdb_options_set_compression(rocksdb_options_t* opt, int t) {
   opt->rep.compression = static_cast<CompressionType>(t);
@@ -1776,11 +1776,6 @@ void rocksdb_options_set_disable_auto_compactions(rocksdb_options_t* opt, int di
 void rocksdb_options_set_delete_obsolete_files_period_micros(
     rocksdb_options_t* opt, uint64_t v) {
   opt->rep.delete_obsolete_files_period_micros = v;
-}
-
-void rocksdb_options_set_source_compaction_factor(
-    rocksdb_options_t* opt, int n) {
-  opt->rep.expanded_compaction_factor = n;
 }
 
 void rocksdb_options_prepare_for_bulk_load(rocksdb_options_t* opt) {

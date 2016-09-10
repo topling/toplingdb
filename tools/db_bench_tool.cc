@@ -388,6 +388,10 @@ DEFINE_int32(index_block_restart_interval,
              "Number of keys between restart points "
              "for delta encoding of keys in index block.");
 
+DEFINE_int32(read_amp_bytes_per_bit,
+             rocksdb::BlockBasedTableOptions().read_amp_bytes_per_bit,
+             "Number of bytes per bit to be used in block read-amp bitmap");
+
 DEFINE_int64(compressed_cache_size, -1,
              "Number of bytes to use as a cache of compressed data.");
 
@@ -599,7 +603,7 @@ enum rocksdb::CompressionType StringToCompressionType(const char* ctype) {
   else if (!strcasecmp(ctype, "xpress"))
     return rocksdb::kXpressCompression;
   else if (!strcasecmp(ctype, "zstd"))
-    return rocksdb::kZSTDNotFinalCompression;
+    return rocksdb::kZSTD;
 
   fprintf(stdout, "Cannot parse compression type '%s'\n", ctype);
   return rocksdb::kSnappyCompression;  // default value
@@ -735,19 +739,14 @@ DEFINE_uint64(
     "If non-zero, db_bench will rate-limit the writes going into RocksDB. This "
     "is the global rate in bytes/second.");
 
-DEFINE_int32(max_grandparent_overlap_factor, 10, "Control maximum bytes of "
-             "overlaps in grandparent (i.e., level+2) before we stop building a"
-             " single file in a level->level+1 compaction.");
+DEFINE_uint64(max_compaction_bytes, rocksdb::Options().max_compaction_bytes,
+              "Max bytes allowed in one compaction");
 
 #ifndef ROCKSDB_LITE
 DEFINE_bool(readonly, false, "Run read only benchmarks.");
 #endif  // ROCKSDB_LITE
 
 DEFINE_bool(disable_auto_compactions, false, "Do not auto trigger compactions");
-
-DEFINE_int32(source_compaction_factor, 1, "Cap the size of data in level-K for"
-             " a compaction run that compacts Level-K with Level-(K+1) (for"
-             " K >= 1)");
 
 DEFINE_uint64(wal_ttl_seconds, 0, "Set the TTL for the WAL Files in seconds.");
 DEFINE_uint64(wal_size_limit_MB, 0, "Set the size limit for the WAL Files"
@@ -1287,6 +1286,7 @@ static std::unordered_map<OperationType, std::string, std::hash<unsigned char>>
   {kOthers, "op"}
 };
 
+class CombinedStats;
 class Stats {
  private:
   int id_;
@@ -1304,6 +1304,7 @@ class Stats {
   std::string message_;
   bool exclude_from_merge_;
   ReporterAgent* reporter_agent_;  // does not own
+  friend class CombinedStats;
 
  public:
   Stats() { Start(-1); }
@@ -1568,6 +1569,75 @@ class Stats {
   }
 };
 
+class CombinedStats {
+ public:
+  void AddStats(const Stats& stat) {
+    uint64_t total_ops = stat.done_;
+    uint64_t total_bytes_ = stat.bytes_;
+    double elapsed;
+
+    if (total_ops < 1) {
+      total_ops = 1;
+    }
+
+    elapsed = (stat.finish_ - stat.start_) * 1e-6;
+    throughput_ops_.emplace_back(total_ops / elapsed);
+
+    if (total_bytes_ > 0) {
+      double mbs = (total_bytes_ / 1048576.0);
+      throughput_mbs_.emplace_back(mbs / elapsed);
+    }
+  }
+
+  void Report(const std::string& bench_name) {
+    const char* name = bench_name.c_str();
+    int num_runs = static_cast<int>(throughput_ops_.size());
+
+    if (throughput_mbs_.size() == throughput_ops_.size()) {
+      fprintf(stdout,
+              "%s [AVG    %d runs] : %d ops/sec; %6.1f MB/sec\n"
+              "%s [MEDIAN %d runs] : %d ops/sec; %6.1f MB/sec\n",
+              name, num_runs, static_cast<int>(CalcAvg(throughput_ops_)),
+              CalcAvg(throughput_mbs_), name, num_runs,
+              static_cast<int>(CalcMedian(throughput_ops_)),
+              CalcMedian(throughput_mbs_));
+    } else {
+      fprintf(stdout,
+              "%s [AVG    %d runs] : %d ops/sec\n"
+              "%s [MEDIAN %d runs] : %d ops/sec\n",
+              name, num_runs, static_cast<int>(CalcAvg(throughput_ops_)), name,
+              num_runs, static_cast<int>(CalcMedian(throughput_ops_)));
+    }
+  }
+
+ private:
+  double CalcAvg(std::vector<double> data) {
+    double avg = 0;
+    for (double x : data) {
+      avg += x;
+    }
+    avg = avg / data.size();
+    return avg;
+  }
+
+  double CalcMedian(std::vector<double> data) {
+    assert(data.size() > 0);
+    std::sort(data.begin(), data.end());
+
+    size_t mid = data.size() / 2;
+    if (data.size() % 2 == 1) {
+      // Odd number of entries
+      return data[mid];
+    } else {
+      // Even number of entries
+      return (data[mid] + data[mid - 1]) / 2;
+    }
+  }
+
+  std::vector<double> throughput_ops_;
+  std::vector<double> throughput_mbs_;
+};
+
 class TimestampEmulator {
  private:
   std::atomic<uint64_t> timestamp_;
@@ -1709,7 +1779,7 @@ class Benchmark {
         ok = XPRESS_Compress(input.data(),
           input.size(), compressed);
         break;
-      case rocksdb::kZSTDNotFinalCompression:
+      case rocksdb::kZSTD:
         ok = ZSTD_Compress(Options().compression_opts, input.data(),
                            input.size(), compressed);
         break;
@@ -2074,6 +2144,36 @@ class Benchmark {
       bool fresh_db = false;
       int num_threads = FLAGS_threads;
 
+      int num_repeat = 1;
+      int num_warmup = 0;
+      if (!name.empty() && *name.rbegin() == ']') {
+        auto it = name.find('[');
+        if (it == std::string::npos) {
+          fprintf(stderr, "unknown benchmark arguments '%s'\n", name.c_str());
+          exit(1);
+        }
+        std::string args = name.substr(it + 1);
+        args.resize(args.size() - 1);
+        name.resize(it);
+
+        std::string bench_arg;
+        std::stringstream args_stream(args);
+        while (std::getline(args_stream, bench_arg, '-')) {
+          if (bench_arg.empty()) {
+            continue;
+          }
+          if (bench_arg[0] == 'X') {
+            // Repeat the benchmark n times
+            std::string num_str = bench_arg.substr(1);
+            num_repeat = std::stoi(num_str);
+          } else if (bench_arg[0] == 'W') {
+            // Warm up the benchmark for n times
+            std::string num_str = bench_arg.substr(1);
+            num_warmup = std::stoi(num_str);
+          }
+        }
+      }
+
       if (name == "fillseq") {
         fresh_db = true;
         method = &Benchmark::WriteSeq;
@@ -2235,7 +2335,26 @@ class Benchmark {
 
       if (method != nullptr) {
         fprintf(stdout, "DB path: [%s]\n", FLAGS_db.c_str());
-        RunBenchmark(num_threads, name, method);
+        if (num_warmup > 0) {
+          printf("Warming up benchmark by running %d times\n", num_warmup);
+        }
+
+        for (int i = 0; i < num_warmup; i++) {
+          RunBenchmark(num_threads, name, method);
+        }
+
+        if (num_repeat > 1) {
+          printf("Running benchmark for %d times\n", num_repeat);
+        }
+
+        CombinedStats combined_stats;
+        for (int i = 0; i < num_repeat; i++) {
+          Stats stats = RunBenchmark(num_threads, name, method);
+          combined_stats.AddStats(stats);
+        }
+        if (num_repeat > 1) {
+          combined_stats.Report(name);
+        }
       }
       if (post_process_method != nullptr) {
         (this->*post_process_method)();
@@ -2290,8 +2409,8 @@ class Benchmark {
     }
   }
 
-  void RunBenchmark(int n, Slice name,
-                    void (Benchmark::*method)(ThreadState*)) {
+  Stats RunBenchmark(int n, Slice name,
+                     void (Benchmark::*method)(ThreadState*)) {
     SharedState shared;
     shared.total = n;
     shared.num_initialized = 0;
@@ -2360,6 +2479,8 @@ class Benchmark {
       delete arg[i].thread;
     }
     delete[] arg;
+
+    return merge_stats;
   }
 
   void Crc32c(ThreadState* thread) {
@@ -2493,7 +2614,7 @@ class Benchmark {
           &decompress_size);
         ok = uncompressed != nullptr;
         break;
-      case rocksdb::kZSTDNotFinalCompression:
+      case rocksdb::kZSTD:
         uncompressed = ZSTD_Uncompress(compressed.data(), compressed.size(),
                                        &decompress_size);
         ok = uncompressed != nullptr;
@@ -2701,6 +2822,7 @@ class Benchmark {
       block_based_options.skip_table_builder_flush =
           FLAGS_skip_table_builder_flush;
       block_based_options.format_version = 2;
+      block_based_options.read_amp_bytes_per_bit = FLAGS_read_amp_bytes_per_bit;
       options.table_factory.reset(
           NewBlockBasedTableFactory(block_based_options));
     }
@@ -2753,10 +2875,8 @@ class Benchmark {
     options.rate_limit_delay_max_milliseconds =
       FLAGS_rate_limit_delay_max_milliseconds;
     options.table_cache_numshardbits = FLAGS_table_cache_numshardbits;
-    options.max_grandparent_overlap_factor =
-      FLAGS_max_grandparent_overlap_factor;
+    options.max_compaction_bytes = FLAGS_max_compaction_bytes;
     options.disable_auto_compactions = FLAGS_disable_auto_compactions;
-    options.source_compaction_factor = FLAGS_source_compaction_factor;
     options.optimize_filters_for_hits = FLAGS_optimize_filters_for_hits;
 
     // fill storage options

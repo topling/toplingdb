@@ -252,6 +252,42 @@ TEST_F(CuckooTableDBTest, CompactionIntoMultipleFiles) {
   }
 }
 
+TEST_F(CuckooTableDBTest, Iteratorseekfirstandlast) {
+  // Try with empty DB first.
+  ASSERT_TRUE(dbfull() != nullptr);
+  ASSERT_EQ("NOT_FOUND", Get("key2"));
+
+  // Add some values to db.
+  Options options = CurrentOptions();
+  Reopen(&options);
+
+  ASSERT_OK(Put("key1", "v1"));
+  ASSERT_OK(Put("key2", "v2"));
+  ASSERT_OK(Put("key3", "v3"));
+  ASSERT_OK(Put("key4", "v4"));
+  ASSERT_OK(Put("key5", "v5"));
+  ASSERT_OK(Put("key6", "v6"));
+  ASSERT_OK(Put("ley7", "v7"));
+  ASSERT_OK(Put("ley8", "v8"));
+  dbfull()->TEST_FlushMemTable();
+
+  ASSERT_EQ("v1", Get("key1"));
+  ASSERT_EQ("v3", Get("key3"));
+  ASSERT_EQ("v8", Get("ley8"));
+  
+  std::unique_ptr<Iterator> iter(dbfull()->NewIterator(ReadOptions()));
+  iter->SeekToFirst();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("key1", iter->key().ToString());
+  ASSERT_EQ("v1", iter->value().ToString());
+
+  iter->SeekToLast();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("ley8", iter->key().ToString());
+  ASSERT_EQ("v8", iter->value().ToString());
+
+}
+
 TEST_F(CuckooTableDBTest, Iteratorforward) {
   // Try with empty DB first.
   ASSERT_TRUE(dbfull() != nullptr);
@@ -325,7 +361,7 @@ TEST_F(CuckooTableDBTest, Iteratorprev) {
   ASSERT_EQ("v3", Get("key3"));
 
   std::unique_ptr<Iterator> iter(dbfull()->NewIterator(ReadOptions()));
-  iter->SeekToLast();
+  iter->Seek("ley8");
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ("ley8", iter->key().ToString());
   ASSERT_EQ("v8", iter->value().ToString());

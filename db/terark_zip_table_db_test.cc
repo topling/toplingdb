@@ -259,18 +259,18 @@ TEST_F(TerarkZipTableDBTest, Iteratorback) {
 
   iter->Prev();
   ASSERT_TRUE(iter->Valid());
-//  ASSERT_EQ("1000000000foo007", iter->key().ToString());
-//  ASSERT_EQ("v__7", iter->value().ToString());
-//
-//  iter->Prev();
-//  ASSERT_TRUE(iter->Valid());
-//  ASSERT_EQ("1000000000foo005", iter->key().ToString());
-//  ASSERT_EQ("v__5", iter->value().ToString());
-//
-//  iter->Prev();
-//  ASSERT_TRUE(iter->Valid());
-//  ASSERT_EQ("1000000000foo004", iter->key().ToString());
-//  ASSERT_EQ("v__4", iter->value().ToString());
+  ASSERT_EQ("1000000000foo007", iter->key().ToString());
+  ASSERT_EQ("v__7", iter->value().ToString());
+
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo005", iter->key().ToString());
+  ASSERT_EQ("v__5", iter->value().ToString());
+
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("1000000000foo004", iter->key().ToString());
+  ASSERT_EQ("v__4", iter->value().ToString());
 
   iter->Seek("3000000000000bar");
   ASSERT_TRUE(iter->Valid());
@@ -367,7 +367,7 @@ TEST_F(TerarkZipTableDBTest, CompactionTrigger) {
 }
 
 
-TEST_F(TerarkZipTableDBTest, CompactionIntoMultipleFiles) {
+TEST_F(TerarkZipTableDBTest, CompactRange) {
   // Create a big L0 file and check it compacts into multiple files in L1.
   Options options = CurrentOptions();
   options.write_buffer_size = 270 << 10;
@@ -383,7 +383,16 @@ TEST_F(TerarkZipTableDBTest, CompactionIntoMultipleFiles) {
   dbfull()->TEST_WaitForFlushMemTable();
   ASSERT_EQ("1", FilesPerLevel());
 
-  for (int idx = 0; idx < 28; ++idx) {
+  for (int idx = 28; idx < 40; ++idx) {
+    ASSERT_OK(Put(Key(idx), std::string(10000, 'a' + idx)));
+  }
+
+  dbfull()->TEST_CompactRange(0, nullptr, nullptr, nullptr,
+                              true /* disallow trivial move */);
+
+  ASSERT_EQ("0,1", FilesPerLevel());
+
+  for (int idx = 0; idx < 40; ++idx) {
     ASSERT_EQ(std::string(10000, 'a' + idx), Get(Key(idx)));
   }
 }

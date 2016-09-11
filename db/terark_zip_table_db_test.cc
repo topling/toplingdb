@@ -233,7 +233,7 @@ TEST_F(TerarkZipTableDBTest, Iteratorforward) {
   ASSERT_EQ("v__8", iter->value().ToString());
 }
 
-TEST_F(TerarkZipTableDBTest, Iteratorback) {
+TEST_F(TerarkZipTableDBTest, Iteratorprev) {
   Options options = CurrentOptions();
   Reopen(&options);
 

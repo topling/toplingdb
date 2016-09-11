@@ -616,7 +616,7 @@ TEST_P(PlainTableDBTest, Iterator) {
         ASSERT_TRUE(iter->Valid());
         ASSERT_EQ("1000000000foo003", iter->key().ToString());
         ASSERT_EQ("v__3", iter->value().ToString());
-
+	
         iter->Next();
         ASSERT_TRUE(iter->Valid());
         ASSERT_EQ("1000000000foo004", iter->key().ToString());

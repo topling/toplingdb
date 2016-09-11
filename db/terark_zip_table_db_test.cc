@@ -168,6 +168,35 @@ TEST_F(TerarkZipTableDBTest, Flush) {
   ASSERT_EQ("NOT_FOUND", Get("key6"));
 }
 
+TEST_F(TerarkZipTableDBTest, Iteratorseekfirstandlast) {
+  Options options = CurrentOptions();
+  Reopen(&options);
+
+  ASSERT_OK(Put("1000000000foo002", "v_2"));
+  ASSERT_OK(Put("0000000000000bar", "random"));
+  ASSERT_OK(Put("1000000000foo001", "v1"));
+  ASSERT_OK(Put("3000000000000bar", "bar_v"));
+  ASSERT_OK(Put("1000000000foo003", "v__3"));
+  ASSERT_OK(Put("1000000000foo004", "v__4"));
+  ASSERT_OK(Put("1000000000foo005", "v__5"));
+  ASSERT_OK(Put("1000000000foo007", "v__7"));
+  ASSERT_OK(Put("1000000000foo008", "v__8"));
+  dbfull()->TEST_FlushMemTable();
+
+  ASSERT_EQ("v1", Get("1000000000foo001"));
+  ASSERT_EQ("v__3", Get("1000000000foo003"));
+  std::unique_ptr<Iterator> iter(dbfull()->NewIterator(ReadOptions()));
+
+  iter->SeekToFirst();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("0000000000000bar", iter->key().ToString());
+  ASSERT_EQ("random", iter->value().ToString());
+  
+  iter->SeekToLast();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("3000000000000bar", iter->key().ToString());
+  ASSERT_EQ("bar_v", iter->value().ToString());
+}
 
 TEST_F(TerarkZipTableDBTest, Iteratorforward) {
   Options options = CurrentOptions();
@@ -187,6 +216,7 @@ TEST_F(TerarkZipTableDBTest, Iteratorforward) {
   ASSERT_EQ("v1", Get("1000000000foo001"));
   ASSERT_EQ("v__3", Get("1000000000foo003"));
   std::unique_ptr<Iterator> iter(dbfull()->NewIterator(ReadOptions()));
+
   iter->Seek("1000000000foo000");
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ("1000000000foo001", iter->key().ToString());

@@ -168,6 +168,7 @@ TEST_F(TerarkZipTableDBTest, Flush) {
   ASSERT_EQ("NOT_FOUND", Get("key6"));
 }
 
+/*
 TEST_F(TerarkZipTableDBTest, Iteratorseekfirstandlast) {
   Options options = CurrentOptions();
   Reopen(&options);
@@ -327,7 +328,7 @@ TEST_F(TerarkZipTableDBTest, Iteratorprev) {
   ASSERT_EQ("1000000000foo008", iter->key().ToString());
   ASSERT_EQ("v__8", iter->value().ToString());
 }
-
+*/
 
 TEST_F(TerarkZipTableDBTest, FlushWithDuplicateKeys) {
   Options options = CurrentOptions();
@@ -453,6 +454,73 @@ TEST_F(TerarkZipTableDBTest, SameKeyInsertedInTwoDifferentFilesAndCompacted) {
   for (int idx = 0; idx < 11; ++idx) {
     ASSERT_EQ(std::string(10000, 'a' + idx), Get(Key(idx)));
   }
+}
+
+TEST_F(TerarkZipTableDBTest, AdaptiveTable) {
+  Options options = CurrentOptions();
+  
+  // Write some keys using terarkzip table.
+  TerarkZipTableOptions opt;
+  options.table_factory.reset(NewTerarkZipTableFactory(opt));
+  Reopen(&options);
+
+  ASSERT_OK(Put("ley1", "l1"));
+  ASSERT_OK(Put("ley2", "l2"));
+  ASSERT_OK(Put("ley3", "l3"));
+  /*sstable key range <ley1, ley3>*/
+  dbfull()->TEST_FlushMemTable();
+  ASSERT_EQ("l1", Get("ley1"));
+  ASSERT_EQ("l2", Get("ley2"));
+  ASSERT_EQ("l3", Get("ley3"));
+  
+  // Write some keys using cuckoo table.
+  options.table_factory.reset(NewCuckooTableFactory());
+  Reopen(&options);
+
+  ASSERT_OK(Put("key1", "v1"));
+  ASSERT_OK(Put("key2", "v2"));
+  ASSERT_OK(Put("ley3", "m3"));  // update terarkzip's kv item
+  /*sstable key range <key1, ley3>*/
+  dbfull()->TEST_FlushMemTable();
+  ASSERT_EQ("v1", Get("key1"));
+  ASSERT_EQ("v2", Get("key2"));
+  ASSERT_EQ("m3", Get("ley3"));
+
+  // Write some keys using plain table.
+  options.create_if_missing = false;
+  options.table_factory.reset(NewPlainTableFactory());
+  Reopen(&options);
+  ASSERT_OK(Put("key4", "v4"));
+  ASSERT_OK(Put("key5", "v5"));
+  ASSERT_OK(Put("key1", "v11"));  // update cuckoo's kv item
+  /*sstable key range <key1, key5>*/
+  dbfull()->TEST_FlushMemTable();
+  ASSERT_EQ("v4", Get("key4"));
+  ASSERT_EQ("v5", Get("key5"));
+  ASSERT_EQ("v11", Get("key1"));
+
+  // Write some keys using block based table.
+  std::shared_ptr<TableFactory> block_based_factory(
+      NewBlockBasedTableFactory());
+  options.table_factory.reset(NewAdaptiveTableFactory(block_based_factory));
+  Reopen(&options);
+  ASSERT_OK(Put("key6", "v6"));
+  ASSERT_OK(Put("key7", "v7"));
+  ASSERT_OK(Put("key4", "v44")); // update plain's kv item
+  /*sstable key range <key4, key7>*/
+  dbfull()->TEST_FlushMemTable();
+  ASSERT_EQ("v6", Get("key6"));
+  ASSERT_EQ("v7", Get("key7"));
+  ASSERT_EQ("v44", Get("key4"));
+
+  // Total Test  
+  ASSERT_EQ("l1", Get("ley1"));
+  ASSERT_EQ("l2", Get("ley2"));
+  ASSERT_EQ("m3", Get("ley3"));
+  ASSERT_EQ("v11", Get("key1"));
+  ASSERT_EQ("v2", Get("key2"));
+  ASSERT_EQ("v44", Get("key4"));
+  ASSERT_EQ("v5", Get("key5"));
 }
 
 }  // namespace rocksdb

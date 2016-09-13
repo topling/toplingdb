@@ -456,7 +456,7 @@ TEST_F(TerarkZipTableDBTest, SameKeyInsertedInTwoDifferentFilesAndCompacted) {
   }
 }
 
-TEST_F(TerarkZipTableDBTest, AdaptiveTable) {
+TEST_F(TerarkZipTableDBTest, AdaptiveTable) { // there is some wrong with adaptive table factory
   Options options = CurrentOptions();
   
   // Write some keys using terarkzip table.
@@ -521,6 +521,7 @@ TEST_F(TerarkZipTableDBTest, AdaptiveTable) {
   ASSERT_EQ("v2", Get("key2"));
   ASSERT_EQ("v44", Get("key4"));
   ASSERT_EQ("v5", Get("key5"));
+
 }
 
 }  // namespace rocksdb

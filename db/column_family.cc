@@ -71,10 +71,7 @@ Status ColumnFamilyHandleImpl::GetDescriptor(ColumnFamilyDescriptor* desc) {
 #ifndef ROCKSDB_LITE
   // accessing mutable cf-options requires db mutex.
   InstrumentedMutexLock l(mutex_);
-  *desc = ColumnFamilyDescriptor(
-      cfd()->GetName(),
-      BuildColumnFamilyOptions(*cfd()->options(),
-                               *cfd()->GetLatestMutableCFOptions()));
+  *desc = ColumnFamilyDescriptor(cfd()->GetName(), cfd()->GetLatestCFOptions());
   return Status::OK();
 #else
   return Status::NotSupported();
@@ -350,7 +347,7 @@ ColumnFamilyData::ColumnFamilyData(
       options_(*db_options,
                SanitizeOptions(*db_options, &internal_comparator_, cf_options)),
       ioptions_(options_),
-      mutable_cf_options_(options_, ioptions_),
+      mutable_cf_options_(options_),
       write_buffer_manager_(write_buffer_manager),
       mem_(nullptr),
       imm_(options_.min_write_buffer_number_to_merge,
@@ -480,6 +477,10 @@ void ColumnFamilyData::SetDropped() {
 
   // remove from column_family_set
   column_family_set_->RemoveColumnFamily(this);
+}
+
+ColumnFamilyOptions ColumnFamilyData::GetLatestCFOptions() const {
+  return BuildColumnFamilyOptions(options_, mutable_cf_options_);
 }
 
 const double kSlowdownRatio = 1.2;

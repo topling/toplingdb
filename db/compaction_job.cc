@@ -297,7 +297,7 @@ CompactionJob::CompactionJob(
   assert(log_buffer_ != nullptr);
   const auto* cfd = compact_->compaction->column_family_data();
   ThreadStatusUtil::SetColumnFamily(cfd, cfd->ioptions()->env,
-                                    cfd->options()->enable_thread_tracking);
+                                    db_options_.enable_thread_tracking);
   ThreadStatusUtil::SetThreadOperation(ThreadStatus::OP_COMPACTION);
   ReportStartedCompaction(compaction);
 }
@@ -311,7 +311,7 @@ void CompactionJob::ReportStartedCompaction(
     Compaction* compaction) {
   const auto* cfd = compact_->compaction->column_family_data();
   ThreadStatusUtil::SetColumnFamily(cfd, cfd->ioptions()->env,
-                                    cfd->options()->enable_thread_tracking);
+                                    db_options_.enable_thread_tracking);
 
   ThreadStatusUtil::SetThreadOperationProperty(
       ThreadStatus::COMPACTION_JOB_ID,
@@ -1136,7 +1136,9 @@ Status CompactionJob::OpenCompactionOutputFile(
       *cfd->ioptions(), cfd->internal_comparator(),
       cfd->int_tbl_prop_collector_factories(), cfd->GetID(), cfd->GetName(),
       sub_compact->outfile.get(), sub_compact->compaction->output_compression(),
-      cfd->ioptions()->compression_opts, &sub_compact->compression_dict,
+      cfd->ioptions()->compression_opts,
+      sub_compact->compaction->output_level(),
+      &sub_compact->compression_dict,
       skip_filters));
   LogFlush(db_options_.info_log);
   return s;

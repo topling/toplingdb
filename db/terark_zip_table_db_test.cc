@@ -38,7 +38,9 @@ class TerarkZipTableDBTest : public testing::Test {
   Options CurrentOptions() {
     TerarkZipTableOptions opt;
     Options options;
-    options.table_factory.reset(NewTerarkZipTableFactory(opt));
+    std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
+    options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
+    // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
     options.allow_mmap_reads = true;
     options.create_if_missing = true;
     return options;
@@ -332,6 +334,7 @@ TEST_F(TerarkZipTableDBTest, Iteratorprev) {
 }
 */
 
+
 TEST_F(TerarkZipTableDBTest, FlushWithDuplicateKeys) {
   Options options = CurrentOptions();
   Reopen(&options);
@@ -456,13 +459,16 @@ TEST_F(TerarkZipTableDBTest, SameKeyInsertedInTwoDifferentFilesAndCompacted) {
     ASSERT_EQ(std::string(10000, 'a' + idx), Get(Key(idx)));
   }
 }
-/*
+
 TEST_F(TerarkZipTableDBTest, AdaptiveTable) { // there is some wrong with adaptive table factory
   Options options = CurrentOptions();
   
   // Write some keys using terarkzip table.
   TerarkZipTableOptions opt;
-  options.table_factory.reset(NewTerarkZipTableFactory(opt));
+  std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
+  options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
+  // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
+
   Reopen(&options);
 
   ASSERT_OK(Put("ley1", "l1"));
@@ -501,8 +507,8 @@ TEST_F(TerarkZipTableDBTest, AdaptiveTable) { // there is some wrong with adapti
   ASSERT_EQ("v11", Get("key1"));
 
   // Write some keys using block based table.
-  std::shared_ptr<TableFactory> block_based_factory(
-      NewBlockBasedTableFactory());
+  // std::shared_ptr<TableFactory> block_based_factory(
+  //    NewBlockBasedTableFactory());
   options.table_factory.reset(NewAdaptiveTableFactory(block_based_factory));
   Reopen(&options);
   ASSERT_OK(Put("key6", "v6"));
@@ -523,7 +529,6 @@ TEST_F(TerarkZipTableDBTest, AdaptiveTable) { // there is some wrong with adapti
   ASSERT_EQ("v44", Get("key4"));
   ASSERT_EQ("v5", Get("key5"));
 }
-*/
 
 }  // namespace rocksdb
 

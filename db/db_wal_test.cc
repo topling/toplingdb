@@ -291,7 +291,134 @@ TEST_F(DBWALTest, RecoveryWithEmptyLog) {
   } while (ChangeOptions());
 }
 
+#if !(defined NDEBUG) || !defined(OS_WIN)
+TEST_F(DBWALTest, PreallocateBlock) {
+  Options options = CurrentOptions();
+  options.write_buffer_size = 10 * 1000 * 1000;
+  options.max_total_wal_size = 0;
+
+  size_t expected_preallocation_size = static_cast<size_t>(
+      options.write_buffer_size + options.write_buffer_size / 10);
+
+  DestroyAndReopen(options);
+
+  std::atomic<int> called(0);
+  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+      "DBTestWalFile.GetPreallocationStatus", [&](void* arg) {
+        ASSERT_TRUE(arg != nullptr);
+        size_t preallocation_size = *(static_cast<size_t*>(arg));
+        ASSERT_EQ(expected_preallocation_size, preallocation_size);
+        called.fetch_add(1);
+      });
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+  Put("", "");
+  Flush();
+  Put("", "");
+  Close();
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+  ASSERT_EQ(2, called.load());
+
+  options.max_total_wal_size = 1000 * 1000;
+  expected_preallocation_size = static_cast<size_t>(options.max_total_wal_size);
+  Reopen(options);
+  called.store(0);
+  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+      "DBTestWalFile.GetPreallocationStatus", [&](void* arg) {
+        ASSERT_TRUE(arg != nullptr);
+        size_t preallocation_size = *(static_cast<size_t*>(arg));
+        ASSERT_EQ(expected_preallocation_size, preallocation_size);
+        called.fetch_add(1);
+      });
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+  Put("", "");
+  Flush();
+  Put("", "");
+  Close();
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+  ASSERT_EQ(2, called.load());
+
+  options.db_write_buffer_size = 800 * 1000;
+  expected_preallocation_size =
+      static_cast<size_t>(options.db_write_buffer_size);
+  Reopen(options);
+  called.store(0);
+  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+      "DBTestWalFile.GetPreallocationStatus", [&](void* arg) {
+        ASSERT_TRUE(arg != nullptr);
+        size_t preallocation_size = *(static_cast<size_t*>(arg));
+        ASSERT_EQ(expected_preallocation_size, preallocation_size);
+        called.fetch_add(1);
+      });
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+  Put("", "");
+  Flush();
+  Put("", "");
+  Close();
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+  ASSERT_EQ(2, called.load());
+
+  expected_preallocation_size = 700 * 1000;
+  std::shared_ptr<WriteBufferManager> write_buffer_manager =
+      std::make_shared<WriteBufferManager>(static_cast<uint64_t>(700 * 1000));
+  options.write_buffer_manager = write_buffer_manager;
+  Reopen(options);
+  called.store(0);
+  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+      "DBTestWalFile.GetPreallocationStatus", [&](void* arg) {
+        ASSERT_TRUE(arg != nullptr);
+        size_t preallocation_size = *(static_cast<size_t*>(arg));
+        ASSERT_EQ(expected_preallocation_size, preallocation_size);
+        called.fetch_add(1);
+      });
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+  Put("", "");
+  Flush();
+  Put("", "");
+  Close();
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+  ASSERT_EQ(2, called.load());
+}
+#endif  // !(defined NDEBUG) || !defined(OS_WIN)
+
 #ifndef ROCKSDB_LITE
+TEST_F(DBWALTest, GetSortedWalFiles) {
+  do {
+    CreateAndReopenWithCF({"pikachu"}, CurrentOptions());
+    VectorLogPtr log_files;
+    ASSERT_OK(dbfull()->GetSortedWalFiles(log_files));
+    ASSERT_EQ(0, log_files.size());
+
+    ASSERT_OK(Put(1, "foo", "v1"));
+    ASSERT_OK(dbfull()->GetSortedWalFiles(log_files));
+    ASSERT_EQ(1, log_files.size());
+  } while (ChangeOptions());
+}
+
+TEST_F(DBWALTest, RecoveryWithLogDataForSomeCFs) {
+  // Test for regression of WAL cleanup missing files that don't contain data
+  // for every column family.
+  do {
+    CreateAndReopenWithCF({"pikachu"}, CurrentOptions());
+    ASSERT_OK(Put(1, "foo", "v1"));
+    ASSERT_OK(Put(1, "foo", "v2"));
+    uint64_t earliest_log_nums[2];
+    for (int i = 0; i < 2; ++i) {
+      if (i > 0) {
+        ReopenWithColumnFamilies({"default", "pikachu"}, CurrentOptions());
+      }
+      VectorLogPtr log_files;
+      ASSERT_OK(dbfull()->GetSortedWalFiles(log_files));
+      if (log_files.size() > 0) {
+        earliest_log_nums[i] = log_files[0]->LogNumber();
+      } else {
+        earliest_log_nums[i] = port::kMaxUint64;
+      }
+    }
+    // Check at least the first WAL was cleaned up during the recovery.
+    ASSERT_LT(earliest_log_nums[0], earliest_log_nums[1]);
+  } while (ChangeOptions());
+}
+
 TEST_F(DBWALTest, RecoverWithLargeLog) {
   do {
     {

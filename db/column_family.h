@@ -201,9 +201,6 @@ class ColumnFamilyData {
   void SetLogNumber(uint64_t log_number) { log_number_ = log_number; }
   uint64_t GetLogNumber() const { return log_number_; }
 
-  // !!! To be deprecated! Please don't not use this function anymore!
-  const Options* options() const { return &options_; }
-
   // thread-safe
   const EnvOptions* soptions() const;
   const ImmutableCFOptions* ioptions() const { return &ioptions_; }
@@ -218,6 +215,12 @@ class ColumnFamilyData {
   const MutableCFOptions* GetLatestMutableCFOptions() const {
     return &mutable_cf_options_;
   }
+
+  // REQUIRES: DB mutex held
+  // Build ColumnFamiliesOptions with immutable options and latest mutable
+  // options.
+  ColumnFamilyOptions GetLatestCFOptions() const;
+
 #ifndef ROCKSDB_LITE
   // REQUIRES: DB mutex held
   Status SetOptions(

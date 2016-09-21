@@ -1722,7 +1722,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& log_numbers,
       // recovered and should be ignored on next reincarnation.
       // Since we already recovered max_log_number, we want all logs
       // with numbers `<= max_log_number` (includes this one) to be ignored
-      if (flushed) {
+      if (flushed || cfd->mem()->GetFirstSequenceNumber() == 0) {
         edit->SetLogNumber(max_log_number + 1);
       }
       // we must mark the next log number as used, even though it's
@@ -2263,7 +2263,8 @@ Status DBImpl::CompactFilesImpl(
   // takes running compactions into account (by skipping files that are already
   // being compacted). Since we just changed compaction score, we recalculate it
   // here.
-  version->storage_info()->ComputeCompactionScore(*c->mutable_cf_options());
+  version->storage_info()->ComputeCompactionScore(*cfd->ioptions(),
+                                                  *c->mutable_cf_options());
 
   compaction_job.Prepare();
 
@@ -3440,9 +3441,9 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     TEST_SYNC_POINT("DBImpl::BackgroundCompaction:TrivialMove");
     // Instrument for event update
     // TODO(yhchiang): add op details for showing trivial-move.
-    ThreadStatusUtil::SetColumnFamily(
-        c->column_family_data(), c->column_family_data()->ioptions()->env,
-        c->column_family_data()->options()->enable_thread_tracking);
+    ThreadStatusUtil::SetColumnFamily(c->column_family_data(),
+                                      c->column_family_data()->ioptions()->env,
+                                      db_options_.enable_thread_tracking);
     ThreadStatusUtil::SetThreadOperation(ThreadStatus::OP_COMPACTION);
 
     compaction_job_stats.num_input_files = c->num_input_files(0);
@@ -3679,6 +3680,25 @@ bool DBImpl::MCOverlap(ManualCompaction* m, ManualCompaction* m1) {
     return false;
   }
   return true;
+}
+
+size_t DBImpl::GetWalPreallocateBlockSize(uint64_t write_buffer_size) const {
+  size_t bsize = write_buffer_size / 10 + write_buffer_size;
+  // Some users might set very high write_buffer_size and rely on
+  // max_total_wal_size or other parameters to control the WAL size.
+  if (db_options_.max_total_wal_size > 0) {
+    bsize = std::min<size_t>(bsize, db_options_.max_total_wal_size);
+  }
+  if (db_options_.db_write_buffer_size > 0) {
+    bsize = std::min<size_t>(bsize, db_options_.db_write_buffer_size);
+  }
+  if (db_options_.write_buffer_manager &&
+      db_options_.write_buffer_manager->enabled()) {
+    bsize = std::min<size_t>(bsize,
+                             db_options_.write_buffer_manager->buffer_size());
+  }
+
+  return bsize;
 }
 
 namespace {
@@ -4037,9 +4057,8 @@ Status DBImpl::CreateColumnFamily(const ColumnFamilyOptions& cf_options,
       write_thread_.EnterUnbatched(&w, &mutex_);
       // LogAndApply will both write the creation in MANIFEST and create
       // ColumnFamilyData object
-      s = versions_->LogAndApply(
-          nullptr, MutableCFOptions(opt, ImmutableCFOptions(opt)), &edit,
-          &mutex_, directories_.GetDbDir(), false, &cf_options);
+      s = versions_->LogAndApply(nullptr, MutableCFOptions(opt), &edit, &mutex_,
+                                 directories_.GetDbDir(), false, &cf_options);
 
       if (s.ok()) {
         // If the column family was created successfully, we then persist
@@ -4995,8 +5014,7 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
         // Our final size should be less than write_buffer_size
         // (compression, etc) but err on the side of caution.
         lfile->SetPreallocationBlockSize(
-            mutable_cf_options.write_buffer_size / 10 +
-            mutable_cf_options.write_buffer_size);
+            GetWalPreallocateBlockSize(mutable_cf_options.write_buffer_size));
         unique_ptr<WritableFileWriter> file_writer(
             new WritableFileWriter(std::move(lfile), opt_env_opt));
         new_log = new log::Writer(std::move(file_writer), new_log_number,
@@ -5110,9 +5128,10 @@ Env* DBImpl::GetEnv() const {
   return env_;
 }
 
-const Options& DBImpl::GetOptions(ColumnFamilyHandle* column_family) const {
+Options DBImpl::GetOptions(ColumnFamilyHandle* column_family) const {
+  InstrumentedMutexLock l(&mutex_);
   auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
-  return *cfh->cfd()->options();
+  return Options(db_options_, cfh->cfd()->GetLatestCFOptions());
 }
 
 const DBOptions& DBImpl::GetDBOptions() const { return db_options_; }
@@ -5746,7 +5765,8 @@ Status DB::Open(const DBOptions& db_options, const std::string& dbname,
                         LogFileName(impl->db_options_.wal_dir, new_log_number),
                         &lfile, opt_env_options);
     if (s.ok()) {
-      lfile->SetPreallocationBlockSize((max_write_buffer_size / 10) + max_write_buffer_size);
+      lfile->SetPreallocationBlockSize(
+          impl->GetWalPreallocateBlockSize(max_write_buffer_size));
       impl->logfile_number_ = new_log_number;
       unique_ptr<WritableFileWriter> file_writer(
           new WritableFileWriter(std::move(lfile), opt_env_options));
@@ -5993,8 +6013,7 @@ Status DBImpl::WriteOptionsFile() {
       continue;
     }
     cf_names.push_back(cfd->GetName());
-    cf_opts.push_back(BuildColumnFamilyOptions(
-        *cfd->options(), *cfd->GetLatestMutableCFOptions()));
+    cf_opts.push_back(cfd->GetLatestCFOptions());
   }
 
   // Unlock during expensive operations.  New writes cannot get here

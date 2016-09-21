@@ -26,6 +26,65 @@
 
 namespace rocksdb {
 
+ColumnFamilyOptions BuildColumnFamilyOptions(
+    const ColumnFamilyOptions& options,
+    const MutableCFOptions& mutable_cf_options) {
+  ColumnFamilyOptions cf_opts(options);
+
+  // Memtable related options
+  cf_opts.write_buffer_size = mutable_cf_options.write_buffer_size;
+  cf_opts.max_write_buffer_number = mutable_cf_options.max_write_buffer_number;
+  cf_opts.arena_block_size = mutable_cf_options.arena_block_size;
+  cf_opts.memtable_prefix_bloom_size_ratio =
+      mutable_cf_options.memtable_prefix_bloom_size_ratio;
+  cf_opts.memtable_huge_page_size = mutable_cf_options.memtable_huge_page_size;
+  cf_opts.max_successive_merges = mutable_cf_options.max_successive_merges;
+  cf_opts.inplace_update_num_locks =
+      mutable_cf_options.inplace_update_num_locks;
+
+  // Compaction related options
+  cf_opts.disable_auto_compactions =
+      mutable_cf_options.disable_auto_compactions;
+  cf_opts.level0_file_num_compaction_trigger =
+      mutable_cf_options.level0_file_num_compaction_trigger;
+  cf_opts.level0_slowdown_writes_trigger =
+      mutable_cf_options.level0_slowdown_writes_trigger;
+  cf_opts.level0_stop_writes_trigger =
+      mutable_cf_options.level0_stop_writes_trigger;
+  cf_opts.max_compaction_bytes = mutable_cf_options.max_compaction_bytes;
+  cf_opts.target_file_size_base = mutable_cf_options.target_file_size_base;
+  cf_opts.target_file_size_multiplier =
+      mutable_cf_options.target_file_size_multiplier;
+  cf_opts.max_bytes_for_level_base =
+      mutable_cf_options.max_bytes_for_level_base;
+  cf_opts.max_bytes_for_level_multiplier =
+      mutable_cf_options.max_bytes_for_level_multiplier;
+
+  cf_opts.max_bytes_for_level_multiplier_additional.clear();
+  for (auto value :
+       mutable_cf_options.max_bytes_for_level_multiplier_additional) {
+    cf_opts.max_bytes_for_level_multiplier_additional.emplace_back(value);
+  }
+
+  cf_opts.verify_checksums_in_compaction =
+      mutable_cf_options.verify_checksums_in_compaction;
+
+  // Misc options
+  cf_opts.max_sequential_skip_in_iterations =
+      mutable_cf_options.max_sequential_skip_in_iterations;
+  cf_opts.paranoid_file_checks = mutable_cf_options.paranoid_file_checks;
+  cf_opts.report_bg_io_stats = mutable_cf_options.report_bg_io_stats;
+  cf_opts.compression = mutable_cf_options.compression;
+  cf_opts.min_partial_merge_operands =
+      mutable_cf_options.min_partial_merge_operands;
+
+  cf_opts.table_factory = options.table_factory;
+  // TODO(yhchiang): find some way to handle the following derived options
+  // * max_file_size
+
+  return cf_opts;
+}
+
 #ifndef ROCKSDB_LITE
 bool isSpecialChar(const char c) {
   if (c == '\\' || c == '#' || c == ':' || c == '\r' || c == '\n') {
@@ -142,6 +201,17 @@ std::string trim(const std::string& str) {
   return std::string();
 }
 
+bool SerializeIntVector(const std::vector<int>& vec, std::string* value) {
+  *value = "";
+  for (size_t i = 0; i < vec.size(); ++i) {
+    if (i > 0) {
+      *value += ":";
+    }
+    *value += ToString(vec[i]);
+  }
+  return true;
+}
+
 template <typename T>
 bool ParseEnum(const std::unordered_map<std::string, T>& type_map,
                const std::string& type, T* value) {
@@ -228,6 +298,22 @@ int ParseInt(const std::string& value) {
   }
 
   return num;
+}
+
+std::vector<int> ParseVectorInt(const std::string& value) {
+  std::vector<int> result;
+  size_t start = 0;
+  while (start < value.size()) {
+    size_t end = value.find(':', start);
+    if (end == std::string::npos) {
+      result.push_back(ParseInt(value.substr(start)));
+      break;
+    } else {
+      result.push_back(ParseInt(value.substr(start, end - start)));
+      start = end + 1;
+    }
+  }
+  return result;
 }
 
 double ParseDouble(const std::string& value) {
@@ -327,6 +413,9 @@ bool ParseOptionHelper(char* opt_address, const OptionType& opt_type,
     case OptionType::kInt:
       *reinterpret_cast<int*>(opt_address) = ParseInt(value);
       break;
+    case OptionType::kVectorInt:
+      *reinterpret_cast<std::vector<int>*>(opt_address) = ParseVectorInt(value);
+      break;
     case OptionType::kUInt:
       *reinterpret_cast<unsigned int*>(opt_address) = ParseUint32(value);
       break;
@@ -404,6 +493,9 @@ bool SerializeSingleOptionHelper(const char* opt_address,
     case OptionType::kInt:
       *value = ToString(*(reinterpret_cast<const int*>(opt_address)));
       break;
+    case OptionType::kVectorInt:
+      return SerializeIntVector(
+          *reinterpret_cast<const std::vector<int>*>(opt_address), value);
     case OptionType::kUInt:
       *value = ToString(*(reinterpret_cast<const unsigned int*>(opt_address)));
       break;
@@ -539,121 +631,6 @@ bool SerializeSingleOptionHelper(const char* opt_address,
   return true;
 }
 
-
-template<typename OptionsType>
-bool ParseMemtableOptions(const std::string& name, const std::string& value,
-                          OptionsType* new_options) {
-  if (name == "write_buffer_size") {
-    new_options->write_buffer_size = ParseSizeT(value);
-  } else if (name == "arena_block_size") {
-    new_options->arena_block_size = ParseSizeT(value);
-  } else if (name == "memtable_prefix_bloom_bits") {
-    // deprecated
-  } else if (name == "memtable_prefix_bloom_size_ratio") {
-    new_options->memtable_prefix_bloom_size_ratio = ParseDouble(value);
-  } else if (name == "memtable_prefix_bloom_probes") {
-    // Deprecated
-  } else if (name == "memtable_prefix_bloom_huge_page_tlb_size") {
-    // Deprecated
-  } else if (name == "memtable_huge_page_size") {
-    new_options->memtable_huge_page_size = ParseSizeT(value);
-  } else if (name == "max_successive_merges") {
-    new_options->max_successive_merges = ParseSizeT(value);
-  } else if (name == "filter_deletes") {
-    // Deprecated
-  } else if (name == "max_write_buffer_number") {
-    new_options->max_write_buffer_number = ParseInt(value);
-  } else if (name == "inplace_update_num_locks") {
-    new_options->inplace_update_num_locks = ParseSizeT(value);
-  } else {
-    return false;
-  }
-  return true;
-}
-
-template<typename OptionsType>
-bool ParseCompactionOptions(const std::string& name, const std::string& value,
-                            OptionsType* new_options) {
-  if (name == "disable_auto_compactions") {
-    new_options->disable_auto_compactions = ParseBoolean(name, value);
-  } else if (name == "soft_rate_limit") {
-    // Deprecated options but still leave it here to avoid older options
-    // strings can be consumed.
-  } else if (name == "soft_pending_compaction_bytes_limit") {
-    new_options->soft_pending_compaction_bytes_limit = ParseUint64(value);
-  } else if (name == "hard_pending_compaction_bytes_limit") {
-    new_options->hard_pending_compaction_bytes_limit = ParseUint64(value);
-  } else if (name == "hard_rate_limit") {
-    // Deprecated options but still leave it here to avoid older options
-    // strings can be consumed.
-  } else if (name == "level0_file_num_compaction_trigger") {
-    new_options->level0_file_num_compaction_trigger = ParseInt(value);
-  } else if (name == "level0_slowdown_writes_trigger") {
-    new_options->level0_slowdown_writes_trigger = ParseInt(value);
-  } else if (name == "level0_stop_writes_trigger") {
-    new_options->level0_stop_writes_trigger = ParseInt(value);
-  } else if (name == "max_grandparent_overlap_factor") {
-    // Deprecated
-  } else if (name == "max_compaction_bytes") {
-    new_options->max_compaction_bytes = ParseUint64(value);
-  } else if (name == "expanded_compaction_factor") {
-    // Deprecated
-  } else if (name == "source_compaction_factor") {
-    // Deprecated
-  } else if (name == "target_file_size_base") {
-    new_options->target_file_size_base = ParseInt(value);
-  } else if (name == "target_file_size_multiplier") {
-    new_options->target_file_size_multiplier = ParseInt(value);
-  } else if (name == "max_bytes_for_level_base") {
-    new_options->max_bytes_for_level_base = ParseUint64(value);
-  } else if (name == "max_bytes_for_level_multiplier") {
-    new_options->max_bytes_for_level_multiplier = ParseInt(value);
-  } else if (name == "max_bytes_for_level_multiplier_additional") {
-    new_options->max_bytes_for_level_multiplier_additional.clear();
-    size_t start = 0;
-    while (true) {
-      size_t end = value.find(':', start);
-      if (end == std::string::npos) {
-        new_options->max_bytes_for_level_multiplier_additional.push_back(
-            ParseInt(value.substr(start)));
-        break;
-      } else {
-        new_options->max_bytes_for_level_multiplier_additional.push_back(
-            ParseInt(value.substr(start, end - start)));
-        start = end + 1;
-      }
-    }
-  } else if (name == "verify_checksums_in_compaction") {
-    new_options->verify_checksums_in_compaction = ParseBoolean(name, value);
-  } else {
-    return false;
-  }
-  return true;
-}
-
-template<typename OptionsType>
-bool ParseMiscOptions(const std::string& name, const std::string& value,
-                      OptionsType* new_options) {
-  if (name == "max_sequential_skip_in_iterations") {
-    new_options->max_sequential_skip_in_iterations = ParseUint64(value);
-  } else if (name == "paranoid_file_checks") {
-    new_options->paranoid_file_checks = ParseBoolean(name, value);
-  } else if (name == "report_bg_io_stats") {
-    new_options->report_bg_io_stats = ParseBoolean(name, value);
-  } else if (name == "compression") {
-    bool is_ok = ParseEnum<CompressionType>(compression_type_string_map, value,
-                                            &new_options->compression);
-    if (!is_ok) {
-      return false;
-    }
-  } else if (name == "min_partial_merge_operands") {
-    new_options->min_partial_merge_operands = ParseUint32(value);
-  } else {
-    return false;
-  }
-  return true;
-}
-
 Status GetMutableOptionsFromStrings(
     const MutableCFOptions& base_options,
     const std::unordered_map<std::string, std::string>& options_map,
@@ -662,15 +639,22 @@ Status GetMutableOptionsFromStrings(
   *new_options = base_options;
   for (const auto& o : options_map) {
     try {
-      if (ParseMemtableOptions(o.first, o.second, new_options)) {
-      } else if (ParseCompactionOptions(o.first, o.second, new_options)) {
-      } else if (ParseMiscOptions(o.first, o.second, new_options)) {
-      } else {
-        return Status::InvalidArgument(
-            "unsupported dynamic option: " + o.first);
+      auto iter = cf_options_type_info.find(o.first);
+      if (iter == cf_options_type_info.end()) {
+        return Status::InvalidArgument("Unrecognized option: " + o.first);
+      }
+      const auto& opt_info = iter->second;
+      if (!opt_info.is_mutable) {
+        return Status::InvalidArgument("Option not changeable: " + o.first);
+      }
+      bool is_ok = ParseOptionHelper(
+          reinterpret_cast<char*>(new_options) + opt_info.mutable_offset,
+          opt_info.type, o.second);
+      if (!is_ok) {
+        return Status::InvalidArgument("Error parsing " + o.first);
       }
     } catch (std::exception& e) {
-      return Status::InvalidArgument("error parsing " + o.first + ":" +
+      return Status::InvalidArgument("Error parsing " + o.first + ":" +
                                      std::string(e.what()));
     }
   }
@@ -760,22 +744,7 @@ Status ParseColumnFamilyOption(const std::string& name,
   const std::string& value =
       input_strings_escaped ? UnescapeOptionString(org_value) : org_value;
   try {
-    if (name == "max_bytes_for_level_multiplier_additional") {
-      new_options->max_bytes_for_level_multiplier_additional.clear();
-      size_t start = 0;
-      while (true) {
-        size_t end = value.find(':', start);
-        if (end == std::string::npos) {
-          new_options->max_bytes_for_level_multiplier_additional.push_back(
-              ParseInt(value.substr(start)));
-          break;
-        } else {
-          new_options->max_bytes_for_level_multiplier_additional.push_back(
-              ParseInt(value.substr(start, end - start)));
-          start = end + 1;
-        }
-      }
-    } else if (name == "block_based_table_factory") {
+    if (name == "block_based_table_factory") {
       // Nested options
       BlockBasedTableOptions table_opt, base_table_options;
       auto block_based_table_factory = dynamic_cast<BlockBasedTableFactory*>(
@@ -1457,60 +1426,6 @@ Status GetTableFactoryFromMap(
   return Status::OK();
 }
 
-ColumnFamilyOptions BuildColumnFamilyOptions(
-    const Options& options, const MutableCFOptions& mutable_cf_options) {
-  ColumnFamilyOptions cf_opts(options);
-
-  // Memtable related options
-  cf_opts.write_buffer_size = mutable_cf_options.write_buffer_size;
-  cf_opts.max_write_buffer_number = mutable_cf_options.max_write_buffer_number;
-  cf_opts.arena_block_size = mutable_cf_options.arena_block_size;
-  cf_opts.memtable_prefix_bloom_size_ratio =
-      mutable_cf_options.memtable_prefix_bloom_size_ratio;
-  cf_opts.memtable_huge_page_size = mutable_cf_options.memtable_huge_page_size;
-  cf_opts.max_successive_merges = mutable_cf_options.max_successive_merges;
-  cf_opts.inplace_update_num_locks =
-      mutable_cf_options.inplace_update_num_locks;
-
-  // Compaction related options
-  cf_opts.disable_auto_compactions =
-      mutable_cf_options.disable_auto_compactions;
-  cf_opts.level0_file_num_compaction_trigger =
-      mutable_cf_options.level0_file_num_compaction_trigger;
-  cf_opts.level0_slowdown_writes_trigger =
-      mutable_cf_options.level0_slowdown_writes_trigger;
-  cf_opts.level0_stop_writes_trigger =
-      mutable_cf_options.level0_stop_writes_trigger;
-  cf_opts.max_compaction_bytes = mutable_cf_options.max_compaction_bytes;
-  cf_opts.target_file_size_base = mutable_cf_options.target_file_size_base;
-  cf_opts.target_file_size_multiplier =
-      mutable_cf_options.target_file_size_multiplier;
-  cf_opts.max_bytes_for_level_base =
-      mutable_cf_options.max_bytes_for_level_base;
-  cf_opts.max_bytes_for_level_multiplier =
-      mutable_cf_options.max_bytes_for_level_multiplier;
-
-  cf_opts.max_bytes_for_level_multiplier_additional.clear();
-  for (auto value :
-       mutable_cf_options.max_bytes_for_level_multiplier_additional) {
-    cf_opts.max_bytes_for_level_multiplier_additional.emplace_back(value);
-  }
-
-  cf_opts.verify_checksums_in_compaction =
-      mutable_cf_options.verify_checksums_in_compaction;
-
-  // Misc options
-  cf_opts.max_sequential_skip_in_iterations =
-      mutable_cf_options.max_sequential_skip_in_iterations;
-  cf_opts.paranoid_file_checks = mutable_cf_options.paranoid_file_checks;
-  cf_opts.report_bg_io_stats = mutable_cf_options.report_bg_io_stats;
-
-  cf_opts.table_factory = options.table_factory;
-  // TODO(yhchiang): find some way to handle the following derived options
-  // * max_file_size
-
-  return cf_opts;
-}
-
 #endif  // !ROCKSDB_LITE
+
 }  // namespace rocksdb

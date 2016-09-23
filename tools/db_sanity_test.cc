@@ -308,7 +308,7 @@ int main(int argc, char** argv) {
   if(rocksdb::useTerarkZipTable) {
     rocksdb::TerarkZipTableOptions opt;
     opt.localTempDir = std::string(argv[4]);
-    rocksdb::terarkZipFactory = rocksdb::NewTerarkZipTableFactory(opt);
+    rocksdb::terarkZipFactory = rocksdb::NewTerarkZipTableFactory(opt, NULL);
   }
 
   bool sanity_ok = rocksdb::RunSanityTests(command, path);

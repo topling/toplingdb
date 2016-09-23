@@ -6,7 +6,7 @@
 
 #-----------------------------------------------
 
-EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/include -I/usr/local/include
+EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -I/usr/local/include
 #EXTRA_LDFLAGS += -L../terark-zip-rocksdb/lib -lterark-zip-rocksdb-d
 EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.so ../terark-zip-rocksdb/lib/libterark-fsa_all-r.so
 EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.so
@@ -515,7 +515,7 @@ dbg: $(LIBRARY) $(BENCHMARKS) tools $(TESTS)
 
 # creates static library and programs
 release:
-	$(MAKE) clean
+	#$(MAKE) clean
 	DEBUG_LEVEL=0 $(MAKE) static_lib tools db_bench
 
 coverage:

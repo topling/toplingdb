@@ -165,8 +165,7 @@ class DBImpl : public DB {
   virtual const std::string& GetName() const override;
   virtual Env* GetEnv() const override;
   using DB::GetOptions;
-  virtual const Options& GetOptions(
-      ColumnFamilyHandle* column_family) const override;
+  virtual Options GetOptions(ColumnFamilyHandle* column_family) const override;
   using DB::GetDBOptions;
   virtual const DBOptions& GetDBOptions() const override;
   using DB::Flush;
@@ -717,7 +716,7 @@ class DBImpl : public DB {
   //       same time.
   InstrumentedMutex options_files_mutex_;
   // State below is protected by mutex_
-  InstrumentedMutex mutex_;
+  mutable InstrumentedMutex mutex_;
 
   std::atomic<bool> shutting_down_;
   // This condition variable is signaled on these conditions:
@@ -1068,6 +1067,8 @@ class DBImpl : public DB {
   bool ShouldntRunManualCompaction(ManualCompaction* m);
   bool HaveManualCompaction(ColumnFamilyData* cfd);
   bool MCOverlap(ManualCompaction* m, ManualCompaction* m1);
+
+  size_t GetWalPreallocateBlockSize(uint64_t write_buffer_size) const;
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

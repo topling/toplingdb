@@ -6,9 +6,10 @@
 
 #-----------------------------------------------
 
-EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -I/usr/local/include
+EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/include -I/usr/local/include
 #EXTRA_LDFLAGS += -L../terark-zip-rocksdb/lib -lterark-zip-rocksdb-d
-EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.a ../terark/lib/libterark-fsa_all-d.so
+EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.so ../terark-zip-rocksdb/lib/libterark-fsa_all-r.so
+EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.so
 
 CLEAN_FILES = # deliberately empty, so we can append below.
 CFLAGS += ${EXTRA_CFLAGS}
@@ -369,6 +370,7 @@ TESTS = \
 	cuckoo_table_builder_test \
 	cuckoo_table_reader_test \
 	cuckoo_table_db_test \
+	terark_zip_table_db_test \
 	flush_job_test \
 	wal_manager_test \
 	listener_test \
@@ -854,7 +856,7 @@ librocksdb_env_basic_test.a: util/env_basic_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ $^
 
 db_bench: tools/db_bench.o $(BENCHTOOLOBJECTS)
-	$(AM_LINK)
+	$(AM_LINK) 
 
 cache_bench: util/cache_bench.o $(LIBOBJECTS) $(TESTUTIL)
 	$(AM_LINK)

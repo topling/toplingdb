@@ -2747,7 +2747,11 @@ class Benchmark {
         std::cout << "use_terarkzip_table" << std::endl;
         TerarkZipTableOptions opt;
         opt.localTempDir = FLAGS_terarktempdir;
-        TableFactory* factory = NewTerarkZipTableFactory(opt);
+
+        std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
+        TableFactory* factory = NewTerarkZipTableFactory(opt, rocksdb::NewAdaptiveTableFactory(block_based_factory));
+
+        // TableFactory* factory = NewTerarkZipTableFactory(opt, nullptr);
         options.table_factory.reset(factory);
      } else if (FLAGS_use_plain_table) {
 	std::cout << "use_plain_table" << std::endl;

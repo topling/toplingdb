@@ -252,6 +252,147 @@ TEST_F(CuckooTableDBTest, CompactionIntoMultipleFiles) {
   }
 }
 
+TEST_F(CuckooTableDBTest, Iteratorseekfirstandlast) {
+  // Try with empty DB first.
+  ASSERT_TRUE(dbfull() != nullptr);
+  ASSERT_EQ("NOT_FOUND", Get("key2"));
+
+  // Add some values to db.
+  Options options = CurrentOptions();
+  Reopen(&options);
+
+  ASSERT_OK(Put("key1", "v1"));
+  ASSERT_OK(Put("key2", "v2"));
+  ASSERT_OK(Put("key3", "v3"));
+  ASSERT_OK(Put("key4", "v4"));
+  ASSERT_OK(Put("key5", "v5"));
+  ASSERT_OK(Put("key6", "v6"));
+  ASSERT_OK(Put("ley7", "v7"));
+  ASSERT_OK(Put("ley8", "v8"));
+  dbfull()->TEST_FlushMemTable();
+
+  ASSERT_EQ("v1", Get("key1"));
+  ASSERT_EQ("v3", Get("key3"));
+  ASSERT_EQ("v8", Get("ley8"));
+  
+  std::unique_ptr<Iterator> iter(dbfull()->NewIterator(ReadOptions()));
+  iter->SeekToFirst();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("key1", iter->key().ToString());
+  ASSERT_EQ("v1", iter->value().ToString());
+
+  iter->SeekToLast();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("ley8", iter->key().ToString());
+  ASSERT_EQ("v8", iter->value().ToString());
+
+}
+
+TEST_F(CuckooTableDBTest, Iteratorforward) {
+  // Try with empty DB first.
+  ASSERT_TRUE(dbfull() != nullptr);
+  ASSERT_EQ("NOT_FOUND", Get("key2"));
+
+  // Add some values to db.
+  Options options = CurrentOptions();
+  Reopen(&options);
+
+  ASSERT_OK(Put("key1", "v1"));
+  ASSERT_OK(Put("key2", "v2"));
+  ASSERT_OK(Put("key3", "v3"));
+  ASSERT_OK(Put("key4", "v4"));
+  ASSERT_OK(Put("key5", "v5"));
+  ASSERT_OK(Put("key6", "v6"));
+  ASSERT_OK(Put("ley7", "v7"));
+  ASSERT_OK(Put("ley8", "v8"));
+  dbfull()->TEST_FlushMemTable();
+
+  ASSERT_EQ("v1", Get("key1"));
+  ASSERT_EQ("v3", Get("key3"));
+  ASSERT_EQ("v8", Get("ley8"));
+  
+  std::unique_ptr<Iterator> iter(dbfull()->NewIterator(ReadOptions()));
+  iter->Seek("key3");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("key3", iter->key().ToString());
+  ASSERT_EQ("v3", iter->value().ToString());
+
+  iter->Next();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("key4", iter->key().ToString());
+  ASSERT_EQ("v4", iter->value().ToString());
+
+  iter->Next();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("key5", iter->key().ToString());
+  ASSERT_EQ("v5", iter->value().ToString());
+
+  iter->Next();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("key6", iter->key().ToString());
+  ASSERT_EQ("v6", iter->value().ToString());
+
+  iter->Seek("ley7");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("ley7", iter->key().ToString());
+  ASSERT_EQ("v7", iter->value().ToString());
+
+  iter->Next();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("ley8", iter->key().ToString());
+  ASSERT_EQ("v8", iter->value().ToString());
+}
+
+TEST_F(CuckooTableDBTest, Iteratorprev) {
+  Options options = CurrentOptions();
+  Reopen(&options);
+
+  ASSERT_OK(Put("key1", "v1"));
+  ASSERT_OK(Put("key2", "v2"));
+  ASSERT_OK(Put("key3", "v3"));
+  ASSERT_OK(Put("key4", "v4"));
+  ASSERT_OK(Put("key5", "v5"));
+  ASSERT_OK(Put("key6", "v6"));
+  ASSERT_OK(Put("ley7", "v7"));
+  ASSERT_OK(Put("ley8", "v8"));
+  dbfull()->TEST_FlushMemTable();
+
+  ASSERT_EQ("v1", Get("key1"));
+  ASSERT_EQ("v3", Get("key3"));
+
+  std::unique_ptr<Iterator> iter(dbfull()->NewIterator(ReadOptions()));
+  iter->Seek("ley8");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("ley8", iter->key().ToString());
+  ASSERT_EQ("v8", iter->value().ToString());
+
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("ley7", iter->key().ToString());
+  ASSERT_EQ("v7", iter->value().ToString());
+
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("key6", iter->key().ToString());
+  ASSERT_EQ("v6", iter->value().ToString());
+
+  iter->Seek("key4");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("key4", iter->key().ToString());
+  ASSERT_EQ("v4", iter->value().ToString());
+
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("key3", iter->key().ToString());
+  ASSERT_EQ("v3", iter->value().ToString());
+
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ("key2", iter->key().ToString());
+  ASSERT_EQ("v2", iter->value().ToString());
+}
+
+
 TEST_F(CuckooTableDBTest, SameKeyInsertedInTwoDifferentFilesAndCompacted) {
   // Insert same key twice so that they go to different SST files. Then wait for
   // compaction and check if the latest value is stored and old value removed.
@@ -315,6 +456,7 @@ TEST_F(CuckooTableDBTest, AdaptiveTable) {
   ASSERT_EQ("v4", Get("key4"));
   ASSERT_EQ("v6", Get("key5"));
 }
+
 }  // namespace rocksdb
 
 int main(int argc, char** argv) {

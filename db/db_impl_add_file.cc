@@ -209,8 +209,8 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
   for (; j < num_files; j++) {
     StopWatch sw(env_, nullptr, 0, &micro_list[j], false);
     db_fname_list[j] =
-        TableFileName(db_options_.db_paths, meta_list[j].fd.GetNumber(),
-                      meta_list[j].fd.GetPathId());
+        TableFileName(immutable_db_options_.db_paths,
+                      meta_list[j].fd.GetNumber(), meta_list[j].fd.GetPathId());
     if (move_file) {
       status = env_->LinkFile(file_info_list[j].file_path, db_fname_list[j]);
       if (status.IsNotSupported()) {
@@ -226,7 +226,7 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
       for (size_t i = 0; i < j; i++) {
         Status s = env_->DeleteFile(db_fname_list[i]);
         if (!s.ok()) {
-          Log(InfoLogLevel::WARN_LEVEL, db_options_.info_log,
+          Log(InfoLogLevel::WARN_LEVEL, immutable_db_options_.info_log,
               "AddFile() clean up for file %s failed : %s",
               db_fname_list[i].c_str(), s.ToString().c_str());
         }
@@ -237,11 +237,15 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
 
   {
     InstrumentedMutexLock l(&mutex_);
+    TEST_SYNC_POINT("DBImpl::AddFile:MutexLock");
+
     const MutableCFOptions mutable_cf_options =
         *cfd->GetLatestMutableCFOptions();
 
     WriteThread::Writer w;
     write_thread_.EnterUnbatched(&w, &mutex_);
+
+    num_running_addfile_++;
 
     if (!skip_snapshot_check && !snapshots_.empty()) {
       // Check that no snapshots are being held
@@ -333,14 +337,20 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
       ReleaseFileNumberFromPendingOutputs(
           pending_outputs_inserted_elem_list[i]);
     }
-  }
+
+    num_running_addfile_--;
+    if (num_running_addfile_ == 0) {
+      addfile_cv_.SignalAll();
+    }
+    TEST_SYNC_POINT("DBImpl::AddFile:MutexUnlock");
+  }  // mutex_ is unlocked here;
 
   if (!status.ok()) {
     // We failed to add the files to the database
     for (size_t i = 0; i < num_files; i++) {
       Status s = env_->DeleteFile(db_fname_list[i]);
       if (!s.ok()) {
-        Log(InfoLogLevel::WARN_LEVEL, db_options_.info_log,
+        Log(InfoLogLevel::WARN_LEVEL, immutable_db_options_.info_log,
             "AddFile() clean up for file %s failed : %s",
             db_fname_list[i].c_str(), s.ToString().c_str());
       }
@@ -350,7 +360,7 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
     for (size_t i = 0; i < num_files; i++) {
       Status s = env_->DeleteFile(file_info_list[i].file_path);
       if (!s.ok()) {
-        Log(InfoLogLevel::WARN_LEVEL, db_options_.info_log,
+        Log(InfoLogLevel::WARN_LEVEL, immutable_db_options_.info_log,
             "%s was added to DB successfully but failed to remove original "
             "file "
             "link : %s",
@@ -411,6 +421,13 @@ int DBImpl::PickLevelForIngestedFile(ColumnFamilyData* cfd,
   }
 
   return target_level;
+}
+
+void DBImpl::WaitForAddFile() {
+  mutex_.AssertHeld();
+  while (num_running_addfile_ > 0) {
+    addfile_cv_.Wait();
+  }
 }
 #endif  // ROCKSDB_LITE
 

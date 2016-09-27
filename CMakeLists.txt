@@ -193,12 +193,14 @@ set(SOURCES
         util/arena.cc
         util/bloom.cc
         util/build_version.cc
+        util/cf_options.cc
         util/clock_cache.cc
         util/coding.cc
         util/compaction_job_stats_impl.cc
         util/comparator.cc
         util/concurrent_arena.cc
         util/crc32c.cc
+        util/db_options.cc
         util/delete_scheduler.cc
         util/dynamic_bloom.cc
         util/env.cc
@@ -221,7 +223,6 @@ set(SOURCES
         util/log_buffer.cc
         util/memenv.cc
         util/murmurhash.cc
-        util/mutable_cf_options.cc
         util/options.cc
         util/options_helper.cc
         util/options_parser.cc
@@ -240,7 +241,7 @@ set(SOURCES
         util/testharness.cc
         util/testutil.cc
         util/thread_local.cc
-        util/threadpool.cc
+        util/threadpool_imp.cc
         util/thread_status_impl.cc
         util/thread_status_updater.cc
         util/thread_status_util.cc
@@ -370,6 +371,7 @@ set(TESTS
         db/db_flush_test.cc
         db/db_iterator_test.cc
         db/db_sst_test.cc
+        db/external_sst_file_test.cc
         db/db_universal_compaction_test.cc
         db/db_wal_test.cc
         db/dbformat_test.cc

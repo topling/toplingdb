@@ -129,6 +129,7 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
   Status status;
   auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
   ColumnFamilyData* cfd = cfh->cfd();
+  const Comparator* user_cmp = cfd->internal_comparator().user_comparator();
 
   auto num_files = file_info_list.size();
   if (num_files == 0) {
@@ -142,19 +143,17 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
       sorted_file_info_list[i] = &file_info_list[i];
     }
 
-    auto* vstorage = cfd->current()->storage_info();
-    std::sort(
-        sorted_file_info_list.begin(), sorted_file_info_list.end(),
-        [&vstorage, &file_info_list](const ExternalSstFileInfo* info1,
-                                     const ExternalSstFileInfo* info2) {
-          return vstorage->InternalComparator()->user_comparator()->Compare(
-                     info1->smallest_key, info2->smallest_key) < 0;
-        });
+    std::sort(sorted_file_info_list.begin(), sorted_file_info_list.end(),
+              [&user_cmp, &file_info_list](const ExternalSstFileInfo* info1,
+                                           const ExternalSstFileInfo* info2) {
+                return user_cmp->Compare(info1->smallest_key,
+                                         info2->smallest_key) < 0;
+              });
 
     for (size_t i = 0; i < num_files - 1; i++) {
-      if (sorted_file_info_list[i]->largest_key >=
-          sorted_file_info_list[i + 1]->smallest_key) {
-        return Status::NotSupported("Cannot add overlapping range among files");
+      if (user_cmp->Compare(sorted_file_info_list[i]->largest_key,
+                            sorted_file_info_list[i + 1]->smallest_key) >= 0) {
+        return Status::NotSupported("Files have overlapping ranges");
       }
     }
   }
@@ -210,8 +209,8 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
   for (; j < num_files; j++) {
     StopWatch sw(env_, nullptr, 0, &micro_list[j], false);
     db_fname_list[j] =
-        TableFileName(db_options_.db_paths, meta_list[j].fd.GetNumber(),
-                      meta_list[j].fd.GetPathId());
+        TableFileName(immutable_db_options_.db_paths,
+                      meta_list[j].fd.GetNumber(), meta_list[j].fd.GetPathId());
     if (move_file) {
       status = env_->LinkFile(file_info_list[j].file_path, db_fname_list[j]);
       if (status.IsNotSupported()) {
@@ -227,7 +226,7 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
       for (size_t i = 0; i < j; i++) {
         Status s = env_->DeleteFile(db_fname_list[i]);
         if (!s.ok()) {
-          Log(InfoLogLevel::WARN_LEVEL, db_options_.info_log,
+          Log(InfoLogLevel::WARN_LEVEL, immutable_db_options_.info_log,
               "AddFile() clean up for file %s failed : %s",
               db_fname_list[i].c_str(), s.ToString().c_str());
         }
@@ -238,11 +237,15 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
 
   {
     InstrumentedMutexLock l(&mutex_);
+    TEST_SYNC_POINT("DBImpl::AddFile:MutexLock");
+
     const MutableCFOptions mutable_cf_options =
         *cfd->GetLatestMutableCFOptions();
 
     WriteThread::Writer w;
     write_thread_.EnterUnbatched(&w, &mutex_);
+
+    num_running_addfile_++;
 
     if (!skip_snapshot_check && !snapshots_.empty()) {
       // Check that no snapshots are being held
@@ -268,9 +271,8 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
         if (status.ok() && iter->Valid()) {
           ParsedInternalKey seek_result;
           if (ParseInternalKey(iter->key(), &seek_result)) {
-            auto* vstorage = cfd->current()->storage_info();
-            if (vstorage->InternalComparator()->user_comparator()->Compare(
-                    seek_result.user_key, file_info_list[i].largest_key) <= 0) {
+            if (user_cmp->Compare(seek_result.user_key,
+                                  file_info_list[i].largest_key) <= 0) {
               status = Status::NotSupported("Cannot add overlapping range");
               break;
             }
@@ -305,27 +307,50 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
     if (status.ok()) {
       delete InstallSuperVersionAndScheduleWork(cfd, nullptr,
                                                 mutable_cf_options);
+
+      // Update internal stats for new ingested files
+      uint64_t total_keys = 0;
+      uint64_t total_l0_files = 0;
+      for (size_t i = 0; i < num_files; i++) {
+        InternalStats::CompactionStats stats(1);
+        stats.micros = micro_list[i];
+        stats.bytes_written = meta_list[i].fd.GetFileSize();
+        stats.num_output_files = 1;
+        cfd->internal_stats()->AddCompactionStats(target_level_list[i], stats);
+        cfd->internal_stats()->AddCFStats(
+            InternalStats::BYTES_INGESTED_ADD_FILE,
+            meta_list[i].fd.GetFileSize());
+        total_keys += file_info_list[i].num_entries;
+        if (target_level_list[i] == 0) {
+          total_l0_files += 1;
+        }
+      }
+      cfd->internal_stats()->AddCFStats(InternalStats::INGESTED_NUM_KEYS_TOTAL,
+                                        total_keys);
+      cfd->internal_stats()->AddCFStats(InternalStats::INGESTED_NUM_FILES_TOTAL,
+                                        num_files);
+      cfd->internal_stats()->AddCFStats(
+          InternalStats::INGESTED_LEVEL0_NUM_FILES_TOTAL, total_l0_files);
     }
+
     for (size_t i = 0; i < num_files; i++) {
-      // Update internal stats
-      InternalStats::CompactionStats stats(1);
-      stats.micros = micro_list[i];
-      stats.bytes_written = meta_list[i].fd.GetFileSize();
-      stats.num_output_files = 1;
-      cfd->internal_stats()->AddCompactionStats(target_level_list[i], stats);
-      cfd->internal_stats()->AddCFStats(InternalStats::BYTES_INGESTED_ADD_FILE,
-                                        meta_list[i].fd.GetFileSize());
       ReleaseFileNumberFromPendingOutputs(
           pending_outputs_inserted_elem_list[i]);
     }
-  }
+
+    num_running_addfile_--;
+    if (num_running_addfile_ == 0) {
+      addfile_cv_.SignalAll();
+    }
+    TEST_SYNC_POINT("DBImpl::AddFile:MutexUnlock");
+  }  // mutex_ is unlocked here;
 
   if (!status.ok()) {
     // We failed to add the files to the database
     for (size_t i = 0; i < num_files; i++) {
       Status s = env_->DeleteFile(db_fname_list[i]);
       if (!s.ok()) {
-        Log(InfoLogLevel::WARN_LEVEL, db_options_.info_log,
+        Log(InfoLogLevel::WARN_LEVEL, immutable_db_options_.info_log,
             "AddFile() clean up for file %s failed : %s",
             db_fname_list[i].c_str(), s.ToString().c_str());
       }
@@ -335,7 +360,7 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
     for (size_t i = 0; i < num_files; i++) {
       Status s = env_->DeleteFile(file_info_list[i].file_path);
       if (!s.ok()) {
-        Log(InfoLogLevel::WARN_LEVEL, db_options_.info_log,
+        Log(InfoLogLevel::WARN_LEVEL, immutable_db_options_.info_log,
             "%s was added to DB successfully but failed to remove original "
             "file "
             "link : %s",
@@ -396,6 +421,13 @@ int DBImpl::PickLevelForIngestedFile(ColumnFamilyData* cfd,
   }
 
   return target_level;
+}
+
+void DBImpl::WaitForAddFile() {
+  mutex_.AssertHeld();
+  while (num_running_addfile_ > 0) {
+    addfile_cv_.Wait();
+  }
 }
 #endif  // ROCKSDB_LITE
 

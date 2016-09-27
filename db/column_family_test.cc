@@ -1,7 +1,8 @@
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
-//  This source code is licensed under the BSD-style license found in the
-//  LICENSE file in the root directory of this source tree. An additional grant
-//  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is licensed under the BSD-style license found in
+//  the LICENSE file in the root directory of this source tree. An
+//  additional grant of patent rights can be found in the PATENTS file
+//  in the same directory.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -1146,7 +1147,8 @@ TEST_F(ColumnFamilyTest, DifferentCompactionStyles) {
   default_cf.num_levels = 3;
   default_cf.write_buffer_size = 64 << 10;  // 64KB
   default_cf.target_file_size_base = 30 << 10;
-  default_cf.source_compaction_factor = 100;
+  default_cf.max_compaction_bytes = static_cast<uint64_t>(1) << 60;
+
   BlockBasedTableOptions table_options;
   table_options.no_block_cache = true;
   default_cf.table_factory.reset(NewBlockBasedTableFactory(table_options));
@@ -1218,7 +1220,7 @@ TEST_F(ColumnFamilyTest, MultipleManualCompactions) {
   default_cf.num_levels = 3;
   default_cf.write_buffer_size = 64 << 10;  // 64KB
   default_cf.target_file_size_base = 30 << 10;
-  default_cf.source_compaction_factor = 100;
+  default_cf.max_compaction_bytes = default_cf.target_file_size_base * 1100;
   BlockBasedTableOptions table_options;
   table_options.no_block_cache = true;
   default_cf.table_factory.reset(NewBlockBasedTableFactory(table_options));
@@ -1317,7 +1319,7 @@ TEST_F(ColumnFamilyTest, AutomaticAndManualCompactions) {
   default_cf.num_levels = 3;
   default_cf.write_buffer_size = 64 << 10;  // 64KB
   default_cf.target_file_size_base = 30 << 10;
-  default_cf.source_compaction_factor = 100;
+  default_cf.max_compaction_bytes = default_cf.target_file_size_base * 1100;
   BlockBasedTableOptions table_options;
   table_options.no_block_cache = true;
   default_cf.table_factory.reset(NewBlockBasedTableFactory(table_options));
@@ -1410,7 +1412,7 @@ TEST_F(ColumnFamilyTest, ManualAndAutomaticCompactions) {
   default_cf.num_levels = 3;
   default_cf.write_buffer_size = 64 << 10;  // 64KB
   default_cf.target_file_size_base = 30 << 10;
-  default_cf.source_compaction_factor = 100;
+  default_cf.max_compaction_bytes = default_cf.target_file_size_base * 1100;
   BlockBasedTableOptions table_options;
   table_options.no_block_cache = true;
   default_cf.table_factory.reset(NewBlockBasedTableFactory(table_options));
@@ -1506,7 +1508,7 @@ TEST_F(ColumnFamilyTest, SameCFManualManualCompactions) {
   default_cf.num_levels = 3;
   default_cf.write_buffer_size = 64 << 10;  // 64KB
   default_cf.target_file_size_base = 30 << 10;
-  default_cf.source_compaction_factor = 100;
+  default_cf.max_compaction_bytes = default_cf.target_file_size_base * 1100;
   BlockBasedTableOptions table_options;
   table_options.no_block_cache = true;
   default_cf.table_factory.reset(NewBlockBasedTableFactory(table_options));
@@ -1605,7 +1607,7 @@ TEST_F(ColumnFamilyTest, SameCFManualAutomaticCompactions) {
   default_cf.num_levels = 3;
   default_cf.write_buffer_size = 64 << 10;  // 64KB
   default_cf.target_file_size_base = 30 << 10;
-  default_cf.source_compaction_factor = 100;
+  default_cf.max_compaction_bytes = default_cf.target_file_size_base * 1100;
   BlockBasedTableOptions table_options;
   table_options.no_block_cache = true;
   default_cf.table_factory.reset(NewBlockBasedTableFactory(table_options));
@@ -1695,7 +1697,7 @@ TEST_F(ColumnFamilyTest, SameCFManualAutomaticCompactionsLevel) {
   default_cf.num_levels = 3;
   default_cf.write_buffer_size = 64 << 10;  // 64KB
   default_cf.target_file_size_base = 30 << 10;
-  default_cf.source_compaction_factor = 100;
+  default_cf.max_compaction_bytes = default_cf.target_file_size_base * 1100;
   BlockBasedTableOptions table_options;
   table_options.no_block_cache = true;
   default_cf.table_factory.reset(NewBlockBasedTableFactory(table_options));
@@ -1792,7 +1794,7 @@ TEST_F(ColumnFamilyTest, SameCFManualAutomaticConflict) {
   default_cf.num_levels = 3;
   default_cf.write_buffer_size = 64 << 10;  // 64KB
   default_cf.target_file_size_base = 30 << 10;
-  default_cf.source_compaction_factor = 100;
+  default_cf.max_compaction_bytes = default_cf.target_file_size_base * 1100;
   BlockBasedTableOptions table_options;
   table_options.no_block_cache = true;
   default_cf.table_factory.reset(NewBlockBasedTableFactory(table_options));
@@ -1912,7 +1914,7 @@ TEST_F(ColumnFamilyTest, SameCFAutomaticManualCompactions) {
   default_cf.num_levels = 3;
   default_cf.write_buffer_size = 64 << 10;  // 64KB
   default_cf.target_file_size_base = 30 << 10;
-  default_cf.source_compaction_factor = 100;
+  default_cf.max_compaction_bytes = default_cf.target_file_size_base * 1100;
   BlockBasedTableOptions table_options;
   table_options.no_block_cache = true;
   default_cf.table_factory.reset(NewBlockBasedTableFactory(table_options));
@@ -2176,8 +2178,8 @@ TEST_F(ColumnFamilyTest, SanitizeOptions) {
             original.write_buffer_size =
                 l * 4 * 1024 * 1024 + i * 1024 * 1024 + j * 1024 + k;
 
-            ColumnFamilyOptions result =
-                SanitizeOptions(db_options, nullptr, original);
+            ColumnFamilyOptions result = SanitizeOptions(
+                ImmutableDBOptions(db_options), nullptr, original);
             ASSERT_TRUE(result.level0_stop_writes_trigger >=
                         result.level0_slowdown_writes_trigger);
             ASSERT_TRUE(result.level0_slowdown_writes_trigger >=
@@ -2438,9 +2440,7 @@ TEST_F(ColumnFamilyTest, WriteStallSingleColumnFamily) {
 
   VersionStorageInfo* vstorage = cfd->current()->storage_info();
 
-  MutableCFOptions mutable_cf_options(
-      Options(db_options_, column_family_options_),
-      ImmutableCFOptions(Options(db_options_, column_family_options_)));
+  MutableCFOptions mutable_cf_options(column_family_options_);
 
   mutable_cf_options.level0_slowdown_writes_trigger = 20;
   mutable_cf_options.level0_stop_writes_trigger = 10000;
@@ -2629,9 +2629,7 @@ TEST_F(ColumnFamilyTest, CompactionSpeedupSingleColumnFamily) {
 
   VersionStorageInfo* vstorage = cfd->current()->storage_info();
 
-  MutableCFOptions mutable_cf_options(
-      Options(db_options_, column_family_options_),
-      ImmutableCFOptions(Options(db_options_, column_family_options_)));
+  MutableCFOptions mutable_cf_options(column_family_options_);
 
   // Speed up threshold = min(4 * 2, 4 + (36 - 4)/4) = 8
   mutable_cf_options.level0_file_num_compaction_trigger = 4;
@@ -2700,9 +2698,7 @@ TEST_F(ColumnFamilyTest, WriteStallTwoColumnFamilies) {
       static_cast<ColumnFamilyHandleImpl*>(handles_[1])->cfd();
   VersionStorageInfo* vstorage1 = cfd1->current()->storage_info();
 
-  MutableCFOptions mutable_cf_options(
-      Options(db_options_, column_family_options_),
-      ImmutableCFOptions(Options(db_options_, column_family_options_)));
+  MutableCFOptions mutable_cf_options(column_family_options_);
   mutable_cf_options.level0_slowdown_writes_trigger = 20;
   mutable_cf_options.level0_stop_writes_trigger = 10000;
   mutable_cf_options.soft_pending_compaction_bytes_limit = 200;
@@ -2784,9 +2780,7 @@ TEST_F(ColumnFamilyTest, CompactionSpeedupTwoColumnFamilies) {
       static_cast<ColumnFamilyHandleImpl*>(handles_[1])->cfd();
   VersionStorageInfo* vstorage1 = cfd1->current()->storage_info();
 
-  MutableCFOptions mutable_cf_options(
-      Options(db_options_, column_family_options_),
-      ImmutableCFOptions(Options(db_options_, column_family_options_)));
+  MutableCFOptions mutable_cf_options(column_family_options_);
   // Speed up threshold = min(4 * 2, 4 + (36 - 4)/4) = 8
   mutable_cf_options.level0_file_num_compaction_trigger = 4;
   mutable_cf_options.level0_slowdown_writes_trigger = 36;
@@ -2849,6 +2843,11 @@ TEST_F(ColumnFamilyTest, FlushCloseWALFiles) {
   ASSERT_OK(Put(0, "fodor", "mirko"));
   ASSERT_OK(Put(1, "fodor", "mirko"));
 
+  rocksdb::SyncPoint::GetInstance()->LoadDependency({
+      {"DBImpl::BGWorkFlush:done", "FlushCloseWALFiles:0"},
+  });
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+
   // Block flush jobs from running
   test::SleepingBackgroundTask sleeping_task;
   env_->Schedule(&test::SleepingBackgroundTask::DoSleepTask, &sleeping_task,
@@ -2862,7 +2861,8 @@ TEST_F(ColumnFamilyTest, FlushCloseWALFiles) {
 
   sleeping_task.WakeUp();
   sleeping_task.WaitUntilDone();
-  WaitForFlush(1);
+  TEST_SYNC_POINT("FlushCloseWALFiles:0");
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
   ASSERT_EQ(1, env.num_open_wal_file_.load());
 
   Reopen();

@@ -377,6 +377,7 @@ Slice CompressBlock(const Slice& raw,
         return *compressed_output;
       }
       break;
+    case kZSTD:
     case kZSTDNotFinalCompression:
       if (ZSTD_Compress(compression_options, raw.data(), raw.size(),
                         compressed_output, compression_dict) &&
@@ -894,6 +895,10 @@ Status BlockBasedTableBuilder::Finish() {
                                          ? r->ioptions.merge_operator->Name()
                                          : "nullptr";
       r->props.compression_name = CompressionTypeToString(r->compression_type);
+      r->props.prefix_extractor_name =
+          r->ioptions.prefix_extractor != nullptr
+              ? r->ioptions.prefix_extractor->Name()
+              : "nullptr";
 
       std::string property_collectors_names = "[";
       property_collectors_names = "[";

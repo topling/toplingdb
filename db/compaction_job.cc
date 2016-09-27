@@ -99,6 +99,8 @@ struct CompactionJob::SubcompactionState {
     }
   }
 
+  uint64_t current_output_file_size;
+
   // State during the subcompaction
   uint64_t total_bytes;
   uint64_t num_input_records;
@@ -121,6 +123,7 @@ struct CompactionJob::SubcompactionState {
         end(_end),
         outfile(nullptr),
         builder(nullptr),
+        current_output_file_size(0),
         total_bytes(0),
         num_input_records(0),
         num_output_records(0),
@@ -142,6 +145,7 @@ struct CompactionJob::SubcompactionState {
     outputs = std::move(o.outputs);
     outfile = std::move(o.outfile);
     builder = std::move(o.builder);
+    current_output_file_size = std::move(o.current_output_file_size);
     total_bytes = std::move(o.total_bytes);
     num_input_records = std::move(o.num_input_records);
     num_output_records = std::move(o.num_output_records);
@@ -161,7 +165,7 @@ struct CompactionJob::SubcompactionState {
 
   // Returns true iff we should stop building the current output
   // before processing "internal_key".
-  bool ShouldStopBefore(const Slice& internal_key) {
+  bool ShouldStopBefore(const Slice& internal_key, uint64_t curr_file_size) {
     const InternalKeyComparator* icmp =
         &compaction->column_family_data()->internal_comparator();
     const std::vector<FileMetaData*>& grandparents = compaction->grandparents();
@@ -182,7 +186,8 @@ struct CompactionJob::SubcompactionState {
     }
     seen_key = true;
 
-    if (overlapped_bytes > compaction->max_grandparent_overlap_bytes()) {
+    if (overlapped_bytes + curr_file_size >
+        compaction->max_compaction_bytes()) {
       // Too much overlap for current output; start new output
       overlapped_bytes = 0;
       return true;
@@ -257,7 +262,7 @@ void CompactionJob::AggregateStatistics() {
 }
 
 CompactionJob::CompactionJob(
-    int job_id, Compaction* compaction, const DBOptions& db_options,
+    int job_id, Compaction* compaction, const ImmutableDBOptions& db_options,
     const EnvOptions& env_options, VersionSet* versions,
     std::atomic<bool>* shutting_down, LogBuffer* log_buffer,
     Directory* db_directory, Directory* output_directory, Statistics* stats,
@@ -292,7 +297,7 @@ CompactionJob::CompactionJob(
   assert(log_buffer_ != nullptr);
   const auto* cfd = compact_->compaction->column_family_data();
   ThreadStatusUtil::SetColumnFamily(cfd, cfd->ioptions()->env,
-                                    cfd->options()->enable_thread_tracking);
+                                    db_options_.enable_thread_tracking);
   ThreadStatusUtil::SetThreadOperation(ThreadStatus::OP_COMPACTION);
   ReportStartedCompaction(compaction);
 }
@@ -306,7 +311,7 @@ void CompactionJob::ReportStartedCompaction(
     Compaction* compaction) {
   const auto* cfd = compact_->compaction->column_family_data();
   ThreadStatusUtil::SetColumnFamily(cfd, cfd->ioptions()->env,
-                                    cfd->options()->enable_thread_tracking);
+                                    db_options_.enable_thread_tracking);
 
   ThreadStatusUtil::SetThreadOperationProperty(
       ThreadStatus::COMPACTION_JOB_ID,
@@ -534,7 +539,7 @@ Status CompactionJob::Run() {
     thread.join();
   }
 
-  if (output_directory_ && !db_options_.disableDataSync) {
+  if (output_directory_ && !db_options_.disable_data_sync) {
     output_directory_->Fsync();
   }
 
@@ -757,7 +762,9 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     if (end != nullptr &&
         cfd->user_comparator()->Compare(c_iter->user_key(), *end) >= 0) {
       break;
-    } else if (sub_compact->ShouldStopBefore(key) &&
+    } else if (sub_compact->compaction->output_level() != 0 &&
+               sub_compact->ShouldStopBefore(
+                   key, sub_compact->current_output_file_size) &&
                sub_compact->builder != nullptr) {
       status = FinishCompactionOutputFile(input->status(), sub_compact);
       if (!status.ok()) {
@@ -778,10 +785,12 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       if (!status.ok()) {
         break;
       }
+      sub_compact->builder->SetCompactionIterator(c_iter);
     }
     assert(sub_compact->builder != nullptr);
     assert(sub_compact->current_output() != nullptr);
     sub_compact->builder->Add(key, value);
+    sub_compact->current_output_file_size = sub_compact->builder->FileSize();
     sub_compact->current_output()->meta.UpdateBoundaries(
         key, c_iter->ikey().sequence);
     sub_compact->num_output_records++;
@@ -840,7 +849,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     // during subcompactions (i.e. if output size, estimated by input size, is
     // going to be 1.2MB and max_output_file_size = 1MB, prefer to have 0.6MB
     // and 0.6MB instead of 1MB and 0.2MB)
-    if (sub_compact->builder->FileSize() >=
+    if (sub_compact->current_output_file_size >=
         sub_compact->compaction->max_output_file_size()) {
       status = FinishCompactionOutputFile(input->status(), sub_compact);
       if (sub_compact->outputs.size() == 1) {
@@ -956,7 +965,7 @@ Status CompactionJob::FinishCompactionOutputFile(
   sub_compact->total_bytes += current_bytes;
 
   // Finish and check for file errors
-  if (s.ok() && !db_options_.disableDataSync) {
+  if (s.ok() && !db_options_.disable_data_sync) {
     StopWatch sw(env_, stats_, COMPACTION_OUTFILE_SYNC_MICROS);
     s = sub_compact->outfile->Sync(db_options_.use_fsync);
   }
@@ -1021,6 +1030,7 @@ Status CompactionJob::FinishCompactionOutputFile(
   }
 
   sub_compact->builder.reset();
+  sub_compact->current_output_file_size = 0;
   return s;
 }
 
@@ -1128,7 +1138,9 @@ Status CompactionJob::OpenCompactionOutputFile(
       *cfd->ioptions(), cfd->internal_comparator(),
       cfd->int_tbl_prop_collector_factories(), cfd->GetID(), cfd->GetName(),
       sub_compact->outfile.get(), sub_compact->compaction->output_compression(),
-      cfd->ioptions()->compression_opts, &sub_compact->compression_dict,
+      cfd->ioptions()->compression_opts,
+      sub_compact->compaction->output_level(),
+      &sub_compact->compression_dict,
       skip_filters));
   LogFlush(db_options_.info_log);
   return s;

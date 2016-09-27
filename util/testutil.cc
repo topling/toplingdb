@@ -310,19 +310,22 @@ void RandomInitCFOptions(ColumnFamilyOptions* cf_opt, Random* rnd) {
       static_cast<double>(rnd->Uniform(10000)) / 20000.0;
 
   // int options
-  cf_opt->expanded_compaction_factor = rnd->Uniform(100);
   cf_opt->level0_file_num_compaction_trigger = rnd->Uniform(100);
   cf_opt->level0_slowdown_writes_trigger = rnd->Uniform(100);
   cf_opt->level0_stop_writes_trigger = rnd->Uniform(100);
   cf_opt->max_bytes_for_level_multiplier = rnd->Uniform(100);
-  cf_opt->max_grandparent_overlap_factor = rnd->Uniform(100);
   cf_opt->max_mem_compaction_level = rnd->Uniform(100);
   cf_opt->max_write_buffer_number = rnd->Uniform(100);
   cf_opt->max_write_buffer_number_to_maintain = rnd->Uniform(100);
   cf_opt->min_write_buffer_number_to_merge = rnd->Uniform(100);
   cf_opt->num_levels = rnd->Uniform(100);
-  cf_opt->source_compaction_factor = rnd->Uniform(100);
   cf_opt->target_file_size_multiplier = rnd->Uniform(100);
+
+  // vector int options
+  cf_opt->max_bytes_for_level_multiplier_additional.resize(cf_opt->num_levels);
+  for (int i = 0; i < cf_opt->num_levels; i++) {
+    cf_opt->max_bytes_for_level_multiplier_additional[i] = rnd->Uniform(100);
+  }
 
   // size_t options
   cf_opt->arena_block_size = rnd->Uniform(10000);
@@ -340,6 +343,8 @@ void RandomInitCFOptions(ColumnFamilyOptions* cf_opt, Random* rnd) {
   static const uint64_t uint_max = static_cast<uint64_t>(UINT_MAX);
   cf_opt->max_sequential_skip_in_iterations = uint_max + rnd->Uniform(10000);
   cf_opt->target_file_size_base = uint_max + rnd->Uniform(10000);
+  cf_opt->max_compaction_bytes =
+      cf_opt->target_file_size_base * rnd->Uniform(100);
 
   // unsigned int options
   cf_opt->rate_limit_delay_max_milliseconds = rnd->Uniform(10000);
@@ -358,6 +363,31 @@ void RandomInitCFOptions(ColumnFamilyOptions* cf_opt, Random* rnd) {
   cf_opt->compression = RandomCompressionType(rnd);
   RandomCompressionTypeVector(cf_opt->num_levels,
                               &cf_opt->compression_per_level, rnd);
+}
+
+Status DestroyDir(Env* env, const std::string& dir) {
+  Status s;
+  if (env->FileExists(dir).IsNotFound()) {
+    return s;
+  }
+  std::vector<std::string> files_in_dir;
+  s = env->GetChildren(dir, &files_in_dir);
+  if (s.ok()) {
+    for (auto& file_in_dir : files_in_dir) {
+      if (file_in_dir == "." || file_in_dir == "..") {
+        continue;
+      }
+      s = env->DeleteFile(dir + "/" + file_in_dir);
+      if (!s.ok()) {
+        break;
+      }
+    }
+  }
+
+  if (s.ok()) {
+    s = env->DeleteDir(dir);
+  }
+  return s;
 }
 
 }  // namespace test

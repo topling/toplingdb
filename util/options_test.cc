@@ -56,6 +56,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
        "kLZ4Compression:"
        "kLZ4HCCompression:"
        "kXpressCompression:"
+       "kZSTD:"
        "kZSTDNotFinalCompression"},
       {"bottommost_compression", "kLZ4Compression"},
       {"compression_opts", "4:5:6:7"},
@@ -69,9 +70,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
       {"level_compaction_dynamic_level_bytes", "true"},
       {"max_bytes_for_level_multiplier", "15"},
       {"max_bytes_for_level_multiplier_additional", "16:17:18"},
-      {"expanded_compaction_factor", "19"},
-      {"source_compaction_factor", "20"},
-      {"max_grandparent_overlap_factor", "21"},
+      {"max_compaction_bytes", "21"},
       {"soft_rate_limit", "1.1"},
       {"hard_rate_limit", "2.1"},
       {"hard_pending_compaction_bytes_limit", "211"},
@@ -142,7 +141,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_cf_opt.min_write_buffer_number_to_merge, 3);
   ASSERT_EQ(new_cf_opt.max_write_buffer_number_to_maintain, 99);
   ASSERT_EQ(new_cf_opt.compression, kSnappyCompression);
-  ASSERT_EQ(new_cf_opt.compression_per_level.size(), 8U);
+  ASSERT_EQ(new_cf_opt.compression_per_level.size(), 9U);
   ASSERT_EQ(new_cf_opt.compression_per_level[0], kNoCompression);
   ASSERT_EQ(new_cf_opt.compression_per_level[1], kSnappyCompression);
   ASSERT_EQ(new_cf_opt.compression_per_level[2], kZlibCompression);
@@ -150,7 +149,8 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_cf_opt.compression_per_level[4], kLZ4Compression);
   ASSERT_EQ(new_cf_opt.compression_per_level[5], kLZ4HCCompression);
   ASSERT_EQ(new_cf_opt.compression_per_level[6], kXpressCompression);
-  ASSERT_EQ(new_cf_opt.compression_per_level[7], kZSTDNotFinalCompression);
+  ASSERT_EQ(new_cf_opt.compression_per_level[7], kZSTD);
+  ASSERT_EQ(new_cf_opt.compression_per_level[8], kZSTDNotFinalCompression);
   ASSERT_EQ(new_cf_opt.compression_opts.window_bits, 4);
   ASSERT_EQ(new_cf_opt.compression_opts.level, 5);
   ASSERT_EQ(new_cf_opt.compression_opts.strategy, 6);
@@ -169,10 +169,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_cf_opt.max_bytes_for_level_multiplier_additional[0], 16);
   ASSERT_EQ(new_cf_opt.max_bytes_for_level_multiplier_additional[1], 17);
   ASSERT_EQ(new_cf_opt.max_bytes_for_level_multiplier_additional[2], 18);
-  ASSERT_EQ(new_cf_opt.expanded_compaction_factor, 19);
-  ASSERT_EQ(new_cf_opt.source_compaction_factor, 20);
-  ASSERT_EQ(new_cf_opt.max_grandparent_overlap_factor, 21);
-  ASSERT_EQ(new_cf_opt.soft_rate_limit, 1.1);
+  ASSERT_EQ(new_cf_opt.max_compaction_bytes, 21);
   ASSERT_EQ(new_cf_opt.hard_pending_compaction_bytes_limit, 211);
   ASSERT_EQ(new_cf_opt.arena_block_size, 22U);
   ASSERT_EQ(new_cf_opt.disable_auto_compactions, true);

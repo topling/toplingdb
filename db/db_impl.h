@@ -40,6 +40,7 @@
 #include "rocksdb/write_buffer_manager.h"
 #include "table/scoped_arena_iterator.h"
 #include "util/autovector.h"
+#include "util/db_options.h"
 #include "util/event_logger.h"
 #include "util/hash.h"
 #include "util/instrumented_mutex.h"
@@ -165,10 +166,9 @@ class DBImpl : public DB {
   virtual const std::string& GetName() const override;
   virtual Env* GetEnv() const override;
   using DB::GetOptions;
-  virtual const Options& GetOptions(
-      ColumnFamilyHandle* column_family) const override;
+  virtual Options GetOptions(ColumnFamilyHandle* column_family) const override;
   using DB::GetDBOptions;
-  virtual const DBOptions& GetDBOptions() const override;
+  virtual DBOptions GetDBOptions() const override;
   using DB::Flush;
   virtual Status Flush(const FlushOptions& options,
                        ColumnFamilyHandle* column_family) override;
@@ -457,7 +457,7 @@ class DBImpl : public DB {
     ~RecoveredTransaction() { delete batch_; }
   };
 
-  bool allow_2pc() const { return db_options_.allow_2pc; }
+  bool allow_2pc() const { return immutable_db_options_.allow_2pc; }
 
   std::unordered_map<std::string, RecoveredTransaction*>
   recovered_transactions() {
@@ -508,7 +508,8 @@ class DBImpl : public DB {
   Env* const env_;
   const std::string dbname_;
   unique_ptr<VersionSet> versions_;
-  const DBOptions db_options_;
+  const ImmutableDBOptions immutable_db_options_;
+  MutableDBOptions mutable_db_options_;
   Statistics* stats_;
   std::unordered_map<std::string, RecoveredTransaction*>
       recovered_transactions_;
@@ -620,7 +621,7 @@ class DBImpl : public DB {
 
   // REQUIRES: log_numbers are sorted in ascending order
   Status RecoverLogFiles(const std::vector<uint64_t>& log_numbers,
-                         SequenceNumber* max_sequence, bool read_only);
+                         SequenceNumber* next_sequence, bool read_only);
 
   // The following two methods are used to flush a memtable to
   // storage. The first one is used at database RecoveryTime (when the
@@ -650,6 +651,10 @@ class DBImpl : public DB {
   int PickLevelForIngestedFile(ColumnFamilyData* cfd,
                                const ExternalSstFileInfo& file_info);
 
+  // Wait for current AddFile() calls to finish.
+  // REQUIRES: mutex_ held
+  void WaitForAddFile();
+
   Status CompactFilesImpl(
       const CompactionOptions& compact_options, ColumnFamilyData* cfd,
       Version* version, const std::vector<std::string>& input_file_names,
@@ -659,6 +664,10 @@ class DBImpl : public DB {
                                  const std::string& file_path,
                                  ExternalSstFileInfo* file_info);
 
+#else
+  // AddFile is not supported in ROCKSDB_LITE so this function
+  // will be no-op
+  void WaitForAddFile() {}
 #endif  // ROCKSDB_LITE
 
   ColumnFamilyData* GetColumnFamilyDataByName(const std::string& cf_name);
@@ -717,7 +726,7 @@ class DBImpl : public DB {
   //       same time.
   InstrumentedMutex options_files_mutex_;
   // State below is protected by mutex_
-  InstrumentedMutex mutex_;
+  mutable InstrumentedMutex mutex_;
 
   std::atomic<bool> shutting_down_;
   // This condition variable is signaled on these conditions:
@@ -973,6 +982,14 @@ class DBImpl : public DB {
   // REQUIRES: mutex held
   std::unordered_set<Compaction*> running_compactions_;
 
+  // Number of running AddFile() calls.
+  // REQUIRES: mutex held
+  int num_running_addfile_;
+
+  // A condition variable that will be signaled whenever
+  // num_running_addfile_ goes to 0.
+  InstrumentedCondVar addfile_cv_;
+
 #ifndef ROCKSDB_LITE
   WalManager wal_manager_;
 #endif  // ROCKSDB_LITE
@@ -1068,13 +1085,14 @@ class DBImpl : public DB {
   bool ShouldntRunManualCompaction(ManualCompaction* m);
   bool HaveManualCompaction(ColumnFamilyData* cfd);
   bool MCOverlap(ManualCompaction* m, ManualCompaction* m1);
+
+  size_t GetWalPreallocateBlockSize(uint64_t write_buffer_size) const;
 };
 
-// Sanitize db options.  The caller should delete result.info_log if
-// it is not equal to src.info_log.
 extern Options SanitizeOptions(const std::string& db,
                                const InternalKeyComparator* icmp,
                                const Options& src);
+
 extern DBOptions SanitizeOptions(const std::string& db, const DBOptions& src);
 
 // Fix user-supplied options to be reasonable

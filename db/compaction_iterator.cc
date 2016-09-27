@@ -50,6 +50,8 @@ CompactionIterator::CompactionIterator(
     ignore_snapshots_ = false;
   }
   input_->SetPinnedItersMgr(&pinned_iters_mgr_);
+  current_user_key_snapshot_ = 0;
+  current_user_key_sequence_ = 0;
 }
 
 CompactionIterator::~CompactionIterator() {
@@ -64,6 +66,15 @@ void CompactionIterator::ResetRecordCounts() {
 }
 
 void CompactionIterator::SeekToFirst() {
+  NextFromInput();
+  PrepareOutput();
+  assert(first_internal_key_.empty());
+  first_internal_key_ = key_.ToString();
+}
+
+void CompactionIterator::Rewind() {
+  ResetRecordCounts();
+  input_->Seek(first_internal_key_);
   NextFromInput();
   PrepareOutput();
 }

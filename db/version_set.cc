@@ -1014,7 +1014,7 @@ void Version::PrepareApply(
   UpdateAccumulatedStats(update_stats);
   storage_info_.UpdateNumNonEmptyLevels();
   storage_info_.CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
-  storage_info_.UpdateFilesByCompactionPri(mutable_cf_options);
+  storage_info_.UpdateFilesByCompactionPri(cfd_->ioptions()->compaction_pri);
   storage_info_.GenerateFileIndexer();
   storage_info_.GenerateLevelFilesBrief();
   storage_info_.GenerateLevel0NonOverlapping();
@@ -1240,6 +1240,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
 }
 
 void VersionStorageInfo::ComputeCompactionScore(
+    const ImmutableCFOptions& immutable_cf_options,
     const MutableCFOptions& mutable_cf_options) {
   for (int level = 0; level <= MaxInputLevel(); level++) {
     double score;
@@ -1275,8 +1276,9 @@ void VersionStorageInfo::ComputeCompactionScore(
       }
 
       if (compaction_style_ == kCompactionStyleFIFO) {
-        score = static_cast<double>(total_size) /
-                mutable_cf_options.compaction_options_fifo.max_table_files_size;
+        score =
+            static_cast<double>(total_size) /
+            immutable_cf_options.compaction_options_fifo.max_table_files_size;
       } else {
         score = static_cast<double>(num_sorted_runs) /
                 mutable_cf_options.level0_file_num_compaction_trigger;
@@ -1476,7 +1478,7 @@ void SortFileByOverlappingRatio(
 }  // namespace
 
 void VersionStorageInfo::UpdateFilesByCompactionPri(
-    const MutableCFOptions& mutable_cf_options) {
+    CompactionPri compaction_pri) {
   if (compaction_style_ == kCompactionStyleFIFO ||
       compaction_style_ == kCompactionStyleUniversal) {
     // don't need this
@@ -1500,7 +1502,7 @@ void VersionStorageInfo::UpdateFilesByCompactionPri(
     if (num > temp.size()) {
       num = temp.size();
     }
-    switch (mutable_cf_options.compaction_pri) {
+    switch (compaction_pri) {
       case kByCompensatedSize:
         std::partial_sort(temp.begin(), temp.begin() + num, temp.end(),
                           CompareCompensatedSizeDescending);
@@ -2091,7 +2093,8 @@ struct VersionSet::ManifestWriter {
       : done(false), cv(mu), cfd(_cfd), edit_list(e) {}
 };
 
-VersionSet::VersionSet(const std::string& dbname, const DBOptions* db_options,
+VersionSet::VersionSet(const std::string& dbname,
+                       const ImmutableDBOptions* db_options,
                        const EnvOptions& storage_options, Cache* table_cache,
                        WriteBufferManager* write_buffer_manager,
                        WriteController* write_controller)
@@ -2132,6 +2135,7 @@ void VersionSet::AppendVersion(ColumnFamilyData* column_family_data,
                                Version* v) {
   // compute new compaction score
   v->storage_info()->ComputeCompactionScore(
+      *column_family_data->ioptions(),
       *column_family_data->GetLatestMutableCFOptions());
 
   // Mark v finalized
@@ -2332,8 +2336,9 @@ Status VersionSet::LogAndApply(ColumnFamilyData* column_family_data,
     // If we just created a new descriptor file, install it by writing a
     // new CURRENT file that points to it.
     if (s.ok() && new_descriptor_log) {
-      s = SetCurrentFile(env_, dbname_, pending_manifest_file_number_,
-                         db_options_->disableDataSync ? nullptr : db_directory);
+      s = SetCurrentFile(
+          env_, dbname_, pending_manifest_file_number_,
+          db_options_->disable_data_sync ? nullptr : db_directory);
     }
 
     if (s.ok()) {
@@ -2844,12 +2849,13 @@ Status VersionSet::ReduceNumberOfLevels(const std::string& dbname,
         "Number of levels needs to be bigger than 1");
   }
 
+  ImmutableDBOptions db_options(*options);
   ColumnFamilyOptions cf_options(*options);
   std::shared_ptr<Cache> tc(NewLRUCache(options->max_open_files - 10,
                                         options->table_cache_numshardbits));
   WriteController wc(options->delayed_write_rate);
   WriteBufferManager wb(options->db_write_buffer_size);
-  VersionSet versions(dbname, options, env_options, tc.get(), &wb, &wc);
+  VersionSet versions(dbname, &db_options, env_options, tc.get(), &wb, &wc);
   Status status;
 
   std::vector<ColumnFamilyDescriptor> dummy;
@@ -2909,7 +2915,7 @@ Status VersionSet::ReduceNumberOfLevels(const std::string& dbname,
   vstorage->files_ = new_files_list;
   vstorage->num_levels_ = new_levels;
 
-  MutableCFOptions mutable_cf_options(*options, ImmutableCFOptions(*options));
+  MutableCFOptions mutable_cf_options(*options);
   VersionEdit ve;
   InstrumentedMutex dummy_mutex;
   InstrumentedMutexLock l(&dummy_mutex);

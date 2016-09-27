@@ -785,6 +785,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       if (!status.ok()) {
         break;
       }
+      sub_compact->builder->SetCompactionIterator(c_iter);
     }
     assert(sub_compact->builder != nullptr);
     assert(sub_compact->current_output() != nullptr);

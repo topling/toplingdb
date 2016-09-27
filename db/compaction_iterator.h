@@ -60,6 +60,8 @@ class CompactionIterator {
   // REQUIRED: Call only once.
   void SeekToFirst();
 
+  void Rewind();
+
   // Produces the next record in the compaction.
   //
   // REQUIRED: SeekToFirst() has been called.
@@ -108,6 +110,8 @@ class CompactionIterator {
   SequenceNumber earliest_snapshot_;
   SequenceNumber latest_snapshot_;
   bool ignore_snapshots_;
+
+  std::string first_internal_key_;
 
   // State
   //

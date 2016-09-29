@@ -66,17 +66,84 @@ void CompactionIterator::ResetRecordCounts() {
 }
 
 void CompactionIterator::SeekToFirst() {
+  assert(saved_internal_key_.empty());
+  if (input_->Valid()) {
+    saved_internal_key_ = input_->key().ToString();
+    ParsedInternalKey pikey;
+    ParseInternalKey(saved_internal_key_, &pikey);
+    fprintf(stderr
+        , "Thread-%012zd this = %p CompactionIterator::SeekToFirst(): k = %s\n"
+        , env_->GetThreadID(), this
+        , pikey.DebugString(true).c_str());
+  }
+  else {
+    fprintf(stderr, "CompactionIterator::SeekToFirst(): input_->Valid() is false\n");
+  }
   NextFromInput();
   PrepareOutput();
-  assert(first_internal_key_.empty());
-  first_internal_key_ = key_.ToString();
 }
 
-void CompactionIterator::Rewind() {
-  ResetRecordCounts();
-  input_->Seek(first_internal_key_);
-  NextFromInput();
-  PrepareOutput();
+bool CompactionIterator::Rewind(std::string* currKey) {
+  if (saved_internal_key_.empty()) {
+    fprintf(stderr, "CompactionIterator::Rewind(): first_internal_key_ is empty\n");
+    return false;
+  }
+  else {
+    currKey->resize(0);
+    if (input_->Valid()) {
+      *currKey = input_->key().ToString();
+    }
+    ParsedInternalKey pikey1, pikey2;
+    ParseInternalKey(saved_internal_key_, &pikey1);
+    ParseInternalKey(*currKey, &pikey2);
+    fprintf(stderr
+        , "Thread-%012zd this = %p CompactionIterator::Rewind(): pikey1 = %s\n"
+          "Thread-%012zd this = %p CompactionIterator::Rewind(): pikey2 = %s\n"
+        , env_->GetThreadID(), this, pikey1.DebugString(true).c_str()
+        , env_->GetThreadID(), this, pikey2.DebugString(true).c_str()
+        );
+    status_ = Status::OK();
+    has_current_user_key_ = false;
+    has_outputted_key_ = false;
+    clear_and_output_next_key_ = false;
+    iter_stats_ = CompactionIteratorStats();
+    input_->Seek(saved_internal_key_);
+    assert(input_->key() == saved_internal_key_);
+    saved_internal_key_ = *currKey;
+    if (pinned_iters_mgr_.PinningEnabled()) {
+      pinned_iters_mgr_.ReleasePinnedData();
+    }
+    NextFromInput();
+    PrepareOutput();
+    return true;
+  }
+}
+
+Slice CompactionIterator::GetCurrentInternalKey() const {
+  if (input_->Valid()) {
+    return input_->key();
+  }
+  return Slice("");
+}
+
+bool CompactionIterator::SeekInternalKey(const Slice& posKey) {
+  input_->Seek(posKey);
+  if (input_->Valid()) {
+    assert(input_->key() == posKey);
+    status_ = Status::OK();
+    has_current_user_key_ = false;
+    has_outputted_key_ = false;
+    clear_and_output_next_key_ = false;
+//  iter_stats_ = CompactionIteratorStats();
+    saved_internal_key_.assign(posKey.data(), posKey.size());
+    if (pinned_iters_mgr_.PinningEnabled()) {
+      pinned_iters_mgr_.ReleasePinnedData();
+    }
+    NextFromInput();
+    PrepareOutput();
+    return true;
+  }
+  return false;
 }
 
 void CompactionIterator::Next() {

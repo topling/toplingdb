@@ -60,12 +60,29 @@ class CompactionIterator {
   // REQUIRED: Call only once.
   void SeekToFirst();
 
-  void Rewind();
-
   // Produces the next record in the compaction.
   //
   // REQUIRED: SeekToFirst() has been called.
   void Next();
+
+  struct PositionInfo {
+    std::string saved_internal_key;
+    Status status;
+    IterKey current_key;
+    bool has_current_user_key = false;
+    bool at_next = false;  // If false, the iterator
+    bool has_outputted_key = false;
+    bool clear_and_output_next_key = false;
+    MergeOutputIterator merge_out_iter;
+    CompactionIteratorStats iter_stats;
+  };
+  Slice GetCurrentInternalKey() const;
+  const std::string& GetPositionInternalKey() const { return saved_internal_key_; }
+  void SetPositionInternalKey(const Slice& ikey) {
+    saved_internal_key_.assign(ikey.data(), ikey.size());
+  }
+  bool SeekInternalKey(const Slice& ikey);
+  bool Rewind(std::string* currKey);
 
   // Getters
   const Slice& key() const { return key_; }
@@ -111,7 +128,7 @@ class CompactionIterator {
   SequenceNumber latest_snapshot_;
   bool ignore_snapshots_;
 
-  std::string first_internal_key_;
+  std::string saved_internal_key_;
 
   // State
   //

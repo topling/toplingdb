@@ -756,6 +756,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     // returns true.
     const Slice& key = c_iter->key();
     const Slice& value = c_iter->value();
+    const std::string backupKey = key.ToString();
 
     // If an end key (exclusive) is specified, check if the current key is
     // >= than it and exit if it is because the iterator is out of its range
@@ -770,6 +771,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       if (!status.ok()) {
         break;
       }
+      assert(key == backupKey);
     }
 
     if (c_iter_stats.num_input_records % kRecordStatsEvery ==
@@ -844,6 +846,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       }
     }
 
+    c_iter->Next();
     // Close output file if it is big enough
     // TODO(aekmekji): determine if file should be closed earlier than this
     // during subcompactions (i.e. if output size, estimated by input size, is
@@ -858,7 +861,6 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
         sub_compact->compression_dict = std::move(compression_dict);
       }
     }
-    c_iter->Next();
   }
 
   sub_compact->num_input_records = c_iter_stats.num_input_records;

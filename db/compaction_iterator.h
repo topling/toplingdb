@@ -44,7 +44,7 @@ class CompactionIterator {
  public:
   CompactionIterator(InternalIterator* input, const Comparator* cmp,
                      MergeHelper* merge_helper, SequenceNumber last_sequence,
-                     std::vector<SequenceNumber>* snapshots,
+                     const std::vector<SequenceNumber>* snapshots,
                      SequenceNumber earliest_write_conflict_snapshot, Env* env,
                      bool expect_valid_internal_key,
                      const Compaction* compaction = nullptr,
@@ -65,24 +65,7 @@ class CompactionIterator {
   // REQUIRED: SeekToFirst() has been called.
   void Next();
 
-  struct PositionInfo {
-    std::string saved_internal_key;
-    Status status;
-    IterKey current_key;
-    bool has_current_user_key = false;
-    bool at_next = false;  // If false, the iterator
-    bool has_outputted_key = false;
-    bool clear_and_output_next_key = false;
-    MergeOutputIterator merge_out_iter;
-    CompactionIteratorStats iter_stats;
-  };
-  Slice GetCurrentInternalKey() const;
-  const std::string& GetPositionInternalKey() const { return saved_internal_key_; }
-  void SetPositionInternalKey(const Slice& ikey) {
-    saved_internal_key_.assign(ikey.data(), ikey.size());
-  }
-  bool SeekInternalKey(const Slice& ikey);
-  bool Rewind(std::string* currKey);
+  std::unique_ptr<InternalIterator> AdaptToInternalIterator();
 
   // Getters
   const Slice& key() const { return key_; }
@@ -127,8 +110,6 @@ class CompactionIterator {
   SequenceNumber earliest_snapshot_;
   SequenceNumber latest_snapshot_;
   bool ignore_snapshots_;
-
-  std::string saved_internal_key_;
 
   // State
   //

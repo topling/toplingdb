@@ -12,7 +12,7 @@ namespace rocksdb {
 
 CompactionIterator::CompactionIterator(
     InternalIterator* input, const Comparator* cmp, MergeHelper* merge_helper,
-    SequenceNumber last_sequence, std::vector<SequenceNumber>* snapshots,
+    SequenceNumber last_sequence, const std::vector<SequenceNumber>* snapshots,
     SequenceNumber earliest_write_conflict_snapshot, Env* env,
     bool expect_valid_internal_key, const Compaction* compaction,
     const CompactionFilter* compaction_filter, LogBuffer* log_buffer)
@@ -49,13 +49,12 @@ CompactionIterator::CompactionIterator(
   } else {
     ignore_snapshots_ = false;
   }
-  input_->SetPinnedItersMgr(&pinned_iters_mgr_);
   current_user_key_snapshot_ = 0;
   current_user_key_sequence_ = 0;
 }
 
 CompactionIterator::~CompactionIterator() {
-  // input_ Iteartor lifetime is longer than pinned_iters_mgr_ lifetime
+  // input_ Iterator lifetime is longer than pinned_iters_mgr_ lifetime
   input_->SetPinnedItersMgr(nullptr);
 }
 
@@ -66,84 +65,32 @@ void CompactionIterator::ResetRecordCounts() {
 }
 
 void CompactionIterator::SeekToFirst() {
-  assert(saved_internal_key_.empty());
-  if (input_->Valid()) {
-    saved_internal_key_ = input_->key().ToString();
-    ParsedInternalKey pikey;
-    ParseInternalKey(saved_internal_key_, &pikey);
-    fprintf(stderr
-        , "Thread-%012zd this = %p CompactionIterator::SeekToFirst(): k = %s\n"
-        , env_->GetThreadID(), this
-        , pikey.DebugString(true).c_str());
-  }
-  else {
-    fprintf(stderr, "CompactionIterator::SeekToFirst(): input_->Valid() is false\n");
-  }
+  input_->SetPinnedItersMgr(&pinned_iters_mgr_);
   NextFromInput();
   PrepareOutput();
 }
 
-bool CompactionIterator::Rewind(std::string* currKey) {
-  if (saved_internal_key_.empty()) {
-    fprintf(stderr, "CompactionIterator::Rewind(): first_internal_key_ is empty\n");
-    return false;
-  }
-  else {
-    currKey->resize(0);
-    if (input_->Valid()) {
-      *currKey = input_->key().ToString();
-    }
-    ParsedInternalKey pikey1, pikey2;
-    ParseInternalKey(saved_internal_key_, &pikey1);
-    ParseInternalKey(*currKey, &pikey2);
-    fprintf(stderr
-        , "Thread-%012zd this = %p CompactionIterator::Rewind(): pikey1 = %s\n"
-          "Thread-%012zd this = %p CompactionIterator::Rewind(): pikey2 = %s\n"
-        , env_->GetThreadID(), this, pikey1.DebugString(true).c_str()
-        , env_->GetThreadID(), this, pikey2.DebugString(true).c_str()
-        );
-    status_ = Status::OK();
-    has_current_user_key_ = false;
-    has_outputted_key_ = false;
-    clear_and_output_next_key_ = false;
-    iter_stats_ = CompactionIteratorStats();
-    input_->Seek(saved_internal_key_);
-    assert(input_->key() == saved_internal_key_);
-    saved_internal_key_ = *currKey;
-    if (pinned_iters_mgr_.PinningEnabled()) {
-      pinned_iters_mgr_.ReleasePinnedData();
-    }
-    NextFromInput();
-    PrepareOutput();
-    return true;
-  }
+namespace {
+class CompactionIteratorToInternalIterator : public InternalIterator {
+  CompactionIterator* c_iter_;
+public:
+  CompactionIteratorToInternalIterator(CompactionIterator* i) : c_iter_(i) {}
+  virtual bool Valid() const { return c_iter_->Valid(); }
+  virtual void SeekToFirst() { c_iter_->SeekToFirst(); }
+  virtual void SeekToLast() { abort(); } // do not support
+  virtual void Seek(const Slice& target) { abort(); } // do not support
+  virtual void Next() { c_iter_->Next(); }
+  virtual void Prev() { abort(); } // do not support
+  virtual Slice key() const { return c_iter_->key(); }
+  virtual Slice value() const { return c_iter_->value(); }
+  virtual Status status() const { return c_iter_->status(); }
+};
 }
 
-Slice CompactionIterator::GetCurrentInternalKey() const {
-  if (input_->Valid()) {
-    return input_->key();
-  }
-  return Slice("");
-}
-
-bool CompactionIterator::SeekInternalKey(const Slice& posKey) {
-  input_->Seek(posKey);
-  if (input_->Valid()) {
-    assert(input_->key() == posKey);
-    status_ = Status::OK();
-    has_current_user_key_ = false;
-    has_outputted_key_ = false;
-    clear_and_output_next_key_ = false;
-//  iter_stats_ = CompactionIteratorStats();
-    saved_internal_key_.assign(posKey.data(), posKey.size());
-    if (pinned_iters_mgr_.PinningEnabled()) {
-      pinned_iters_mgr_.ReleasePinnedData();
-    }
-    NextFromInput();
-    PrepareOutput();
-    return true;
-  }
-  return false;
+std::unique_ptr<InternalIterator>
+CompactionIterator::AdaptToInternalIterator() {
+  return std::unique_ptr<InternalIterator>(
+      new CompactionIteratorToInternalIterator(this));
 }
 
 void CompactionIterator::Next() {

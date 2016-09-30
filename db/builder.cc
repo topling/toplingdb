@@ -122,8 +122,20 @@ Status BuildTable(
                               &merge, kMaxSequenceNumber, &snapshots,
                               earliest_write_conflict_snapshot, env,
                               true /* internal key corruption is not ok */);
+
+    MergeHelper merge2(env, internal_comparator.user_comparator(),
+                      ioptions.merge_operator, nullptr, ioptions.info_log,
+                      mutable_cf_options.min_partial_merge_operands,
+                      true /* internal key corruption is not ok */,
+                      snapshots.empty() ? 0 : snapshots.back());
+    CompactionIterator c_iter2(iter, internal_comparator.user_comparator(),
+                              &merge2, kMaxSequenceNumber, &snapshots,
+                              earliest_write_conflict_snapshot, env,
+                              true /* internal key corruption is not ok */);
+    auto second_pass_iter = c_iter2.AdaptToInternalIterator();
+    builder->SetSecondPassIterator(second_pass_iter.get());
+
     c_iter.SeekToFirst();
-    builder->SetCompactionIterator(&c_iter);
     for (; c_iter.Valid(); c_iter.Next()) {
       const Slice& key = c_iter.key();
       const Slice& value = c_iter.value();
@@ -144,6 +156,9 @@ Status BuildTable(
     if (!s.ok() || empty) {
       builder->Abandon();
     } else {
+      iter->SeekToFirst();
+      assert(iter->Valid());
+      c_iter2.SeekToFirst();
       s = builder->Finish();
     }
 

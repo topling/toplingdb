@@ -89,7 +89,7 @@ class TableBuilder {
   // REQUIRES: Either Finish() or Abandon() has been called.
   virtual ~TableBuilder() {}
 
-  virtual void SetCompactionIterator(class CompactionIterator*) {}
+  virtual void SetSecondPassIterator(class InternalIterator*) {}
 
   // Add key,value to the table being constructed.
   // REQUIRES: key is after any previously added key according to comparator.

@@ -661,6 +661,9 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   std::unique_ptr<InternalIterator> input(
       versions_->MakeInputIterator(sub_compact->compaction));
 
+  std::unique_ptr<InternalIterator> input2(
+      versions_->MakeInputIterator(sub_compact->compaction));
+
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_PROCESS_KV);
 
@@ -713,13 +716,18 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
         sub_compact->compaction->CreateCompactionFilter();
     compaction_filter = compaction_filter_from_factory.get();
   }
-  MergeHelper merge(
+
+  auto makeMergeHelper = [&]() {
+    return std::unique_ptr<MergeHelper>(new MergeHelper(
       env_, cfd->user_comparator(), cfd->ioptions()->merge_operator,
       compaction_filter, db_options_.info_log.get(),
       mutable_cf_options->min_partial_merge_operands,
       false /* internal key corruption is expected */,
       existing_snapshots_.empty() ? 0 : existing_snapshots_.back(),
-      compact_->compaction->level(), db_options_.statistics.get());
+      compact_->compaction->level(), db_options_.statistics.get()));
+  };
+  auto merge1 = makeMergeHelper();
+  auto merge2 = makeMergeHelper();
 
   TEST_SYNC_POINT("CompactionJob::Run():Inprogress");
 
@@ -729,17 +737,28 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     IterKey start_iter;
     start_iter.SetInternalKey(*start, kMaxSequenceNumber, kValueTypeForSeek);
     input->Seek(start_iter.GetKey());
+    input2->Seek(start_iter.GetKey());
   } else {
     input->SeekToFirst();
+    input2->SeekToFirst();
   }
 
   Status status;
-  sub_compact->c_iter.reset(new CompactionIterator(
-      input.get(), cfd->user_comparator(), &merge, versions_->LastSequence(),
+  auto makeCompactionIterator =
+  [&](InternalIterator* input_iter, MergeHelper& merge) {
+    return std::unique_ptr<CompactionIterator>(new CompactionIterator(
+      input_iter, cfd->user_comparator(), &merge, versions_->LastSequence(),
       &existing_snapshots_, earliest_write_conflict_snapshot_, env_, false,
       sub_compact->compaction, compaction_filter));
+  };
+  sub_compact->c_iter = makeCompactionIterator(input.get(), *merge1);
   auto c_iter = sub_compact->c_iter.get();
+//  auto
+  std::unique_ptr<CompactionIterator>
+  c_iter2 = makeCompactionIterator(input2.get(), *merge2);
   c_iter->SeekToFirst();
+  c_iter2->SeekToFirst();
+  auto second_pass_iter = c_iter2->AdaptToInternalIterator();
   const auto& c_iter_stats = c_iter->iter_stats();
   auto sample_begin_offset_iter = sample_begin_offsets.cbegin();
   // data_begin_offset and compression_dict are only valid while generating
@@ -756,6 +775,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     // returns true.
     const Slice& key = c_iter->key();
     const Slice& value = c_iter->value();
+    const std::string backupKey = key.ToString();
 
     // If an end key (exclusive) is specified, check if the current key is
     // >= than it and exit if it is because the iterator is out of its range
@@ -770,6 +790,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       if (!status.ok()) {
         break;
       }
+      assert(key == backupKey);
     }
 
     if (c_iter_stats.num_input_records % kRecordStatsEvery ==
@@ -785,7 +806,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       if (!status.ok()) {
         break;
       }
-      sub_compact->builder->SetCompactionIterator(c_iter);
+      sub_compact->builder->SetSecondPassIterator(second_pass_iter.get());
     }
     assert(sub_compact->builder != nullptr);
     assert(sub_compact->current_output() != nullptr);

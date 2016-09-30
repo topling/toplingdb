@@ -12,7 +12,7 @@ namespace rocksdb {
 
 CompactionIterator::CompactionIterator(
     InternalIterator* input, const Comparator* cmp, MergeHelper* merge_helper,
-    SequenceNumber last_sequence, std::vector<SequenceNumber>* snapshots,
+    SequenceNumber last_sequence, const std::vector<SequenceNumber>* snapshots,
     SequenceNumber earliest_write_conflict_snapshot, Env* env,
     bool expect_valid_internal_key, const Compaction* compaction,
     const CompactionFilter* compaction_filter, LogBuffer* log_buffer)
@@ -49,13 +49,12 @@ CompactionIterator::CompactionIterator(
   } else {
     ignore_snapshots_ = false;
   }
-  input_->SetPinnedItersMgr(&pinned_iters_mgr_);
   current_user_key_snapshot_ = 0;
   current_user_key_sequence_ = 0;
 }
 
 CompactionIterator::~CompactionIterator() {
-  // input_ Iteartor lifetime is longer than pinned_iters_mgr_ lifetime
+  // input_ Iterator lifetime is longer than pinned_iters_mgr_ lifetime
   input_->SetPinnedItersMgr(nullptr);
 }
 
@@ -66,17 +65,32 @@ void CompactionIterator::ResetRecordCounts() {
 }
 
 void CompactionIterator::SeekToFirst() {
+  input_->SetPinnedItersMgr(&pinned_iters_mgr_);
   NextFromInput();
   PrepareOutput();
-  assert(first_internal_key_.empty());
-  first_internal_key_ = key_.ToString();
 }
 
-void CompactionIterator::Rewind() {
-  ResetRecordCounts();
-  input_->Seek(first_internal_key_);
-  NextFromInput();
-  PrepareOutput();
+namespace {
+class CompactionIteratorToInternalIterator : public InternalIterator {
+  CompactionIterator* c_iter_;
+public:
+  CompactionIteratorToInternalIterator(CompactionIterator* i) : c_iter_(i) {}
+  virtual bool Valid() const { return c_iter_->Valid(); }
+  virtual void SeekToFirst() { c_iter_->SeekToFirst(); }
+  virtual void SeekToLast() { abort(); } // do not support
+  virtual void Seek(const Slice& target) { abort(); } // do not support
+  virtual void Next() { c_iter_->Next(); }
+  virtual void Prev() { abort(); } // do not support
+  virtual Slice key() const { return c_iter_->key(); }
+  virtual Slice value() const { return c_iter_->value(); }
+  virtual Status status() const { return c_iter_->status(); }
+};
+}
+
+std::unique_ptr<InternalIterator>
+CompactionIterator::AdaptToInternalIterator() {
+  return std::unique_ptr<InternalIterator>(
+      new CompactionIteratorToInternalIterator(this));
 }
 
 void CompactionIterator::Next() {

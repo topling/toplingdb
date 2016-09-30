@@ -44,7 +44,7 @@ class CompactionIterator {
  public:
   CompactionIterator(InternalIterator* input, const Comparator* cmp,
                      MergeHelper* merge_helper, SequenceNumber last_sequence,
-                     std::vector<SequenceNumber>* snapshots,
+                     const std::vector<SequenceNumber>* snapshots,
                      SequenceNumber earliest_write_conflict_snapshot, Env* env,
                      bool expect_valid_internal_key,
                      const Compaction* compaction = nullptr,
@@ -60,12 +60,12 @@ class CompactionIterator {
   // REQUIRED: Call only once.
   void SeekToFirst();
 
-  void Rewind();
-
   // Produces the next record in the compaction.
   //
   // REQUIRED: SeekToFirst() has been called.
   void Next();
+
+  std::unique_ptr<InternalIterator> AdaptToInternalIterator();
 
   // Getters
   const Slice& key() const { return key_; }
@@ -110,8 +110,6 @@ class CompactionIterator {
   SequenceNumber earliest_snapshot_;
   SequenceNumber latest_snapshot_;
   bool ignore_snapshots_;
-
-  std::string first_internal_key_;
 
   // State
   //

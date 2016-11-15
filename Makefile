@@ -8,7 +8,7 @@
 
 EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -I/usr/local/include
 #EXTRA_LDFLAGS += -L../terark-zip-rocksdb/lib -lterark-zip-rocksdb-d
-EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.so ../terark-zip-rocksdb/lib/libterark-fsa_all-r.so
+EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.so ../terark-zip-rocksdb/lib/libterark-fsa_all-d.so
 EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.so
 
 CLEAN_FILES = # deliberately empty, so we can append below.

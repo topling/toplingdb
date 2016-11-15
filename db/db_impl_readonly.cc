@@ -8,8 +8,9 @@
 
 #include "db/compacted_db_impl.h"
 #include "db/db_impl.h"
-#include "db/merge_context.h"
 #include "db/db_iter.h"
+#include "db/merge_context.h"
+#include "db/range_del_aggregator.h"
 #include "util/perf_context_imp.h"
 
 namespace rocksdb {
@@ -37,11 +38,14 @@ Status DBImplReadOnly::Get(const ReadOptions& read_options,
   auto cfd = cfh->cfd();
   SuperVersion* super_version = cfd->GetSuperVersion();
   MergeContext merge_context;
+  RangeDelAggregator range_del_agg(cfd->internal_comparator(), {snapshot});
   LookupKey lkey(key, snapshot);
-  if (super_version->mem->Get(lkey, value, &s, &merge_context)) {
+  if (super_version->mem->Get(lkey, value, &s, &merge_context, &range_del_agg,
+                              read_options)) {
   } else {
     PERF_TIMER_GUARD(get_from_output_files_time);
-    super_version->current->Get(read_options, lkey, value, &s, &merge_context);
+    super_version->current->Get(read_options, lkey, value, &s, &merge_context,
+                                &range_del_agg);
   }
   return s;
 }
@@ -60,8 +64,9 @@ Iterator* DBImplReadOnly::NewIterator(const ReadOptions& read_options,
            : latest_snapshot),
       super_version->mutable_cf_options.max_sequential_skip_in_iterations,
       super_version->version_number);
-  auto internal_iter = NewInternalIterator(
-      read_options, cfd, super_version, db_iter->GetArena());
+  auto internal_iter =
+      NewInternalIterator(read_options, cfd, super_version, db_iter->GetArena(),
+                          db_iter->GetRangeDelAggregator());
   db_iter->SetIterUnderDBIter(internal_iter);
   return db_iter;
 }
@@ -88,8 +93,9 @@ Status DBImplReadOnly::NewIterators(
              : latest_snapshot),
         sv->mutable_cf_options.max_sequential_skip_in_iterations,
         sv->version_number);
-    auto* internal_iter = NewInternalIterator(
-        read_options, cfd, sv, db_iter->GetArena());
+    auto* internal_iter =
+        NewInternalIterator(read_options, cfd, sv, db_iter->GetArena(),
+                            db_iter->GetRangeDelAggregator());
     db_iter->SetIterUnderDBIter(internal_iter);
     iterators->push_back(db_iter);
   }

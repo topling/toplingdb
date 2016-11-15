@@ -700,13 +700,27 @@ void Java_org_rocksdb_Options_setMemTableFactory(
 
 /*
  * Class:     org_rocksdb_Options
+ * Method:    setOldRateLimiter
+ * Signature: (JJ)V
+ */
+void Java_org_rocksdb_Options_setOldRateLimiter(
+    JNIEnv* env, jobject jobj, jlong jhandle, jlong jrate_limiter_handle) {
+  reinterpret_cast<rocksdb::Options*>(jhandle)->rate_limiter.reset(
+      reinterpret_cast<rocksdb::RateLimiter*>(jrate_limiter_handle));
+}
+
+/*
+ * Class:     org_rocksdb_Options
  * Method:    setRateLimiter
  * Signature: (JJ)V
  */
 void Java_org_rocksdb_Options_setRateLimiter(
     JNIEnv* env, jobject jobj, jlong jhandle, jlong jrate_limiter_handle) {
-  reinterpret_cast<rocksdb::Options*>(jhandle)->rate_limiter.reset(
-      reinterpret_cast<rocksdb::RateLimiter*>(jrate_limiter_handle));
+  std::shared_ptr<rocksdb::RateLimiter> *pRateLimiter =
+      reinterpret_cast<std::shared_ptr<rocksdb::RateLimiter> *>(
+          jrate_limiter_handle);
+  reinterpret_cast<rocksdb::Options*>(jhandle)->
+      rate_limiter = *pRateLimiter;
 }
 
 /*
@@ -1508,10 +1522,11 @@ void Java_org_rocksdb_Options_setLevelCompactionDynamicLevelBytes(
 /*
  * Class:     org_rocksdb_Options
  * Method:    maxBytesForLevelMultiplier
- * Signature: (J)I
+ * Signature: (J)D
  */
-jint Java_org_rocksdb_Options_maxBytesForLevelMultiplier(
-    JNIEnv* env, jobject jobj, jlong jhandle) {
+jdouble Java_org_rocksdb_Options_maxBytesForLevelMultiplier(JNIEnv* env,
+                                                            jobject jobj,
+                                                            jlong jhandle) {
   return reinterpret_cast<rocksdb::Options*>(
       jhandle)->max_bytes_for_level_multiplier;
 }
@@ -1519,14 +1534,13 @@ jint Java_org_rocksdb_Options_maxBytesForLevelMultiplier(
 /*
  * Class:     org_rocksdb_Options
  * Method:    setMaxBytesForLevelMultiplier
- * Signature: (JI)V
+ * Signature: (JD)V
  */
 void Java_org_rocksdb_Options_setMaxBytesForLevelMultiplier(
     JNIEnv* env, jobject jobj, jlong jhandle,
-    jint jmax_bytes_for_level_multiplier) {
-  reinterpret_cast<rocksdb::Options*>(
-      jhandle)->max_bytes_for_level_multiplier =
-          static_cast<int>(jmax_bytes_for_level_multiplier);
+    jdouble jmax_bytes_for_level_multiplier) {
+  reinterpret_cast<rocksdb::Options*>(jhandle)->max_bytes_for_level_multiplier =
+      static_cast<double>(jmax_bytes_for_level_multiplier);
 }
 
 /*
@@ -2122,7 +2136,7 @@ jintArray Java_org_rocksdb_Options_maxBytesForLevelMultiplierAdditional(
 
   jint* additionals = new jint[size];
   for (size_t i = 0; i < size; i++) {
-    additionals[i] = reinterpret_cast<jint>(mbflma[i]);
+    additionals[i] = static_cast<jint>(mbflma[i]);
   }
 
   jsize jlen = static_cast<jsize>(size);
@@ -2148,7 +2162,7 @@ void Java_org_rocksdb_Options_setMaxBytesForLevelMultiplierAdditional(
   auto* opt = reinterpret_cast<rocksdb::Options*>(jhandle);
   opt->max_bytes_for_level_multiplier_additional.clear();
   for (jsize i = 0; i < len; i++) {
-    opt->max_bytes_for_level_multiplier_additional.push_back(reinterpret_cast<int32_t>(additionals[i]));
+    opt->max_bytes_for_level_multiplier_additional.push_back(static_cast<int32_t>(additionals[i]));
   }
 }
 
@@ -2809,9 +2823,9 @@ void Java_org_rocksdb_ColumnFamilyOptions_setLevelCompactionDynamicLevelBytes(
 /*
  * Class:     org_rocksdb_ColumnFamilyOptions
  * Method:    maxBytesForLevelMultiplier
- * Signature: (J)I
+ * Signature: (J)D
  */
-jint Java_org_rocksdb_ColumnFamilyOptions_maxBytesForLevelMultiplier(
+jdouble Java_org_rocksdb_ColumnFamilyOptions_maxBytesForLevelMultiplier(
     JNIEnv* env, jobject jobj, jlong jhandle) {
   return reinterpret_cast<rocksdb::ColumnFamilyOptions*>(
       jhandle)->max_bytes_for_level_multiplier;
@@ -2820,14 +2834,14 @@ jint Java_org_rocksdb_ColumnFamilyOptions_maxBytesForLevelMultiplier(
 /*
  * Class:     org_rocksdb_ColumnFamilyOptions
  * Method:    setMaxBytesForLevelMultiplier
- * Signature: (JI)V
+ * Signature: (JD)V
  */
 void Java_org_rocksdb_ColumnFamilyOptions_setMaxBytesForLevelMultiplier(
     JNIEnv* env, jobject jobj, jlong jhandle,
-    jint jmax_bytes_for_level_multiplier) {
-  reinterpret_cast<rocksdb::ColumnFamilyOptions*>(
-      jhandle)->max_bytes_for_level_multiplier =
-          static_cast<int>(jmax_bytes_for_level_multiplier);
+    jdouble jmax_bytes_for_level_multiplier) {
+  reinterpret_cast<rocksdb::ColumnFamilyOptions*>(jhandle)
+      ->max_bytes_for_level_multiplier =
+      static_cast<double>(jmax_bytes_for_level_multiplier);
 }
 
 /*
@@ -3384,7 +3398,7 @@ jintArray Java_org_rocksdb_ColumnFamilyOptions_maxBytesForLevelMultiplierAdditio
 
   jint* additionals = new jint[size];
   for (size_t i = 0; i < size; i++) {
-    additionals[i] = reinterpret_cast<jint>(mbflma[i]);
+    additionals[i] = static_cast<jint>(mbflma[i]);
   }
 
   jsize jlen = static_cast<jsize>(size);
@@ -3411,7 +3425,7 @@ void Java_org_rocksdb_ColumnFamilyOptions_setMaxBytesForLevelMultiplierAdditiona
   auto* cf_opt = reinterpret_cast<rocksdb::ColumnFamilyOptions*>(jhandle);
   cf_opt->max_bytes_for_level_multiplier_additional.clear();
   for (jsize i = 0; i < len; i++) {
-    cf_opt->max_bytes_for_level_multiplier_additional.push_back(reinterpret_cast<int32_t>(additionals[i]));
+    cf_opt->max_bytes_for_level_multiplier_additional.push_back(static_cast<int32_t>(additionals[i]));
   }
 }
 
@@ -3587,13 +3601,26 @@ jboolean Java_org_rocksdb_DBOptions_paranoidChecks(
 
 /*
  * Class:     org_rocksdb_DBOptions
+ * Method:    setOldRateLimiter
+ * Signature: (JJ)V
+ */
+void Java_org_rocksdb_DBOptions_setOldRateLimiter(
+    JNIEnv* env, jobject jobj, jlong jhandle, jlong jrate_limiter_handle) {
+  reinterpret_cast<rocksdb::DBOptions*>(jhandle)->rate_limiter.reset(
+      reinterpret_cast<rocksdb::RateLimiter*>(jrate_limiter_handle));
+}
+
+/*
+ * Class:     org_rocksdb_DBOptions
  * Method:    setRateLimiter
  * Signature: (JJ)V
  */
 void Java_org_rocksdb_DBOptions_setRateLimiter(
     JNIEnv* env, jobject jobj, jlong jhandle, jlong jrate_limiter_handle) {
-  reinterpret_cast<rocksdb::DBOptions*>(jhandle)->rate_limiter.reset(
-      reinterpret_cast<rocksdb::RateLimiter*>(jrate_limiter_handle));
+  std::shared_ptr<rocksdb::RateLimiter> *pRateLimiter =
+      reinterpret_cast<std::shared_ptr<rocksdb::RateLimiter> *>(
+          jrate_limiter_handle);
+  reinterpret_cast<rocksdb::DBOptions*>(jhandle)->rate_limiter = *pRateLimiter;
 }
 
 /*

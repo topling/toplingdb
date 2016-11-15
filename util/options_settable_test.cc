@@ -274,6 +274,7 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
                              "stats_dump_period_sec=70127;"
                              "allow_fallocate=true;"
                              "allow_mmap_reads=false;"
+                             "use_direct_reads=false;"
                              "max_log_file_size=4607;"
                              "random_access_max_buffer_size=1048576;"
                              "advise_random_on_open=true;"
@@ -287,7 +288,8 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
                              "info_log_level=DEBUG_LEVEL;"
                              "dump_malloc_stats=false;"
                              "allow_2pc=false;"
-                             "avoid_flush_during_recovery=false;",
+                             "avoid_flush_during_recovery=false;"
+                             "avoid_flush_during_shutdown=false;",
                              new_options));
 
   ASSERT_EQ(unset_bytes_base, NumUnsetBytes(new_options_ptr, sizeof(DBOptions),
@@ -310,6 +312,8 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
 // kColumnFamilyOptionsBlacklist, and maybe add customized verification
 // for it.
 TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
+  // options in the blacklist need to appear in the same order as in
+  // ColumnFamilyOptions.
   const OffsetGap kColumnFamilyOptionsBlacklist = {
       {offsetof(struct ColumnFamilyOptions, comparator), sizeof(Comparator*)},
       {offsetof(struct ColumnFamilyOptions, merge_operator),
@@ -334,6 +338,9 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
        sizeof(ColumnFamilyOptions::TablePropertiesCollectorFactories)},
       {offsetof(struct ColumnFamilyOptions, inplace_callback),
        sizeof(UpdateStatus(*)(char*, uint32_t*, Slice, std::string*))},
+      {offsetof(struct ColumnFamilyOptions,
+                memtable_insert_with_hint_prefix_extractor),
+       sizeof(std::shared_ptr<const SliceTransform>)},
   };
 
   char* options_ptr = new char[sizeof(ColumnFamilyOptions)];
@@ -417,7 +424,9 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
       "verify_checksums_in_compaction=false;"
       "merge_operator=aabcxehazrMergeOperator;"
       "memtable_prefix_bloom_size_ratio=0.4642;"
+      "memtable_insert_with_hint_prefix_extractor=rocksdb.CappedPrefix.13;"
       "paranoid_file_checks=true;"
+      "force_consistency_checks=true;"
       "inplace_update_num_locks=7429;"
       "optimize_filters_for_hits=false;"
       "level_compaction_dynamic_level_bytes=false;"

@@ -75,6 +75,7 @@ Status MergeHelper::TimedFullMerge(const MergeOperator* merge_operator,
 //       operands_ stores the list of merge operands encountered while merging.
 //       keys_[i] corresponds to operands_[i] for each i.
 Status MergeHelper::MergeUntil(InternalIterator* iter,
+                               RangeDelAggregator* range_del_agg,
                                const SequenceNumber stop_before,
                                const bool at_bottom) {
   // Get a copy of the internal key, before it's invalidated by iter->Next()
@@ -128,17 +129,8 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
 
     assert(IsValueType(ikey.type));
     if (ikey.type != kTypeMerge) {
-      if (ikey.type != kTypeValue && ikey.type != kTypeDeletion) {
-        // Merges operands can only be used with puts and deletions, single
-        // deletions are not supported.
-        assert(false);
-        // release build doesn't have asserts, so we return error status
-        return Status::InvalidArgument(
-            " Merges operands can only be used with puts and deletions, single "
-            "deletions are not supported.");
-      }
 
-      // hit a put/delete
+      // hit a put/delete/single delete
       //   => merge the put value or a nullptr with operands_
       //   => store result in operands_.back() (and update keys_.back())
       //   => change the entry type to kTypeValue for keys_.back()
@@ -180,6 +172,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
     } else {
       // hit a merge
       //   => if there is a compaction filter, apply it.
+      //   => check for range tombstones covering the operand
       //   => merge the operand into the front of the operands_ list
       //      if not filtered
       //   => then continue because we haven't yet seen a Put/Delete.
@@ -192,8 +185,10 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       // 1) it's included in one of the snapshots. in that case we *must* write
       // it out, no matter what compaction filter says
       // 2) it's not filtered by a compaction filter
-      if (ikey.sequence <= latest_snapshot_ ||
-          !FilterMerge(orig_ikey.user_key, value_slice)) {
+      if ((ikey.sequence <= latest_snapshot_ ||
+           !FilterMerge(orig_ikey.user_key, value_slice)) &&
+          (range_del_agg == nullptr ||
+           !range_del_agg->ShouldDelete(iter->key()))) {
         if (original_key_is_iter) {
           // this is just an optimization that saves us one memcpy
           keys_.push_front(std::move(original_key));

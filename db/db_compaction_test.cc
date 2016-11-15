@@ -294,7 +294,8 @@ TEST_F(DBCompactionTest, TestTableReaderForCompaction) {
       num_new_table_reader = 0;
       ASSERT_EQ(Key(k), Get(Key(k)));
       // lookup iterator from table cache and no need to create a new one.
-      ASSERT_EQ(num_table_cache_lookup, 1);
+      // a second table cache iterator is created for range tombstones
+      ASSERT_EQ(num_table_cache_lookup, 2);
       ASSERT_EQ(num_new_table_reader, 0);
     }
   }
@@ -305,7 +306,8 @@ TEST_F(DBCompactionTest, TestTableReaderForCompaction) {
   dbfull()->TEST_WaitForCompact();
   // Preloading iterator issues one table cache lookup and creates
   // a new table reader. One file is created for flush and one for compaction.
-  // Compaction inputs make no table cache look-up.
+  // Compaction inputs make no table cache look-up for data iterators or
+  // range tombstone iterators since they're already cached.
   ASSERT_EQ(num_table_cache_lookup, 2);
   // Create new iterator for:
   // (1) 1 for verifying flush results
@@ -316,7 +318,8 @@ TEST_F(DBCompactionTest, TestTableReaderForCompaction) {
   num_table_cache_lookup = 0;
   num_new_table_reader = 0;
   ASSERT_EQ(Key(1), Get(Key(1)));
-  ASSERT_EQ(num_table_cache_lookup, 1);
+  // a second table cache iterator is created for range tombstones
+  ASSERT_EQ(num_table_cache_lookup, 2);
   ASSERT_EQ(num_new_table_reader, 0);
 
   num_table_cache_lookup = 0;
@@ -334,7 +337,8 @@ TEST_F(DBCompactionTest, TestTableReaderForCompaction) {
   num_table_cache_lookup = 0;
   num_new_table_reader = 0;
   ASSERT_EQ(Key(1), Get(Key(1)));
-  ASSERT_EQ(num_table_cache_lookup, 1);
+  // a second table cache iterator is created for range tombstones
+  ASSERT_EQ(num_table_cache_lookup, 2);
   ASSERT_EQ(num_new_table_reader, 0);
 
   rocksdb::SyncPoint::GetInstance()->ClearAllCallBacks();
@@ -1258,7 +1262,8 @@ TEST_F(DBCompactionTest, ManualPartialFill) {
   uint64_t target_size = 4 * options.max_bytes_for_level_base;
   for (int32_t i = 1; i < options.num_levels; i++) {
     ASSERT_LE(SizeAtLevel(i), target_size);
-    target_size *= options.max_bytes_for_level_multiplier;
+    target_size = static_cast<uint64_t>(target_size *
+                                        options.max_bytes_for_level_multiplier);
   }
 
   TEST_SYNC_POINT("DBCompaction::PartialFill:2");
@@ -1335,7 +1340,8 @@ TEST_F(DBCompactionTest, DeleteFileRange) {
   uint64_t target_size = 4 * options.max_bytes_for_level_base;
   for (int32_t i = 1; i < options.num_levels; i++) {
     ASSERT_LE(SizeAtLevel(i), target_size);
-    target_size *= options.max_bytes_for_level_multiplier;
+    target_size = static_cast<uint64_t>(target_size *
+                                        options.max_bytes_for_level_multiplier);
   }
 
   size_t old_num_files = CountFiles();

@@ -1252,7 +1252,9 @@ TEST_F(DBTest, MinLevelToCompress2) {
   MinLevelHelper(this, options);
 }
 
-TEST_F(DBTest, RepeatedWritesToSameKey) {
+// This test may fail because of a legit case that multiple L0 files
+// are trivial moved to L1.
+TEST_F(DBTest, DISABLED_RepeatedWritesToSameKey) {
   do {
     Options options = CurrentOptions();
     options.env = env_;
@@ -2646,15 +2648,11 @@ class ModelDB : public DB {
   }
 
 #ifndef ROCKSDB_LITE
-  using DB::AddFile;
-  virtual Status AddFile(ColumnFamilyHandle* column_family,
-                         const std::vector<ExternalSstFileInfo>& file_info_list,
-                         bool move_file, bool skip_snapshot_check) override {
-    return Status::NotSupported("Not implemented.");
-  }
-  virtual Status AddFile(ColumnFamilyHandle* column_family,
-                         const std::vector<std::string>& file_path_list,
-                         bool move_file, bool skip_snapshot_check) override {
+  using DB::IngestExternalFile;
+  virtual Status IngestExternalFile(
+      ColumnFamilyHandle* column_family,
+      const std::vector<std::string>& external_files,
+      const IngestExternalFileOptions& options) override {
     return Status::NotSupported("Not implemented.");
   }
 
@@ -2742,6 +2740,12 @@ class ModelDB : public DB {
                               const Slice& property, uint64_t* value) override {
     return false;
   }
+  using DB::GetMapProperty;
+  virtual bool GetMapProperty(ColumnFamilyHandle* column_family,
+                              const Slice& property,
+                              std::map<std::string, double>* value) override {
+    return false;
+  }
   using DB::GetAggregatedIntProperty;
   virtual bool GetAggregatedIntProperty(const Slice& property,
                                         uint64_t* value) override {
@@ -2759,6 +2763,12 @@ class ModelDB : public DB {
   virtual Status CompactRange(const CompactRangeOptions& options,
                               ColumnFamilyHandle* column_family,
                               const Slice* start, const Slice* end) override {
+    return Status::NotSupported("Not supported operation.");
+  }
+
+  virtual Status SetDBOptions(
+      const std::unordered_map<std::string, std::string>& new_options)
+      override {
     return Status::NotSupported("Not supported operation.");
   }
 
@@ -2880,6 +2890,10 @@ class ModelDB : public DB {
     }
     virtual void Seek(const Slice& k) override {
       iter_ = map_->lower_bound(k.ToString());
+    }
+    virtual void SeekForPrev(const Slice& k) override {
+      iter_ = map_->upper_bound(k.ToString());
+      Prev();
     }
     virtual void Next() override { ++iter_; }
     virtual void Prev() override {
@@ -3638,14 +3652,24 @@ TEST_F(DBTest, GetThreadStatus) {
       env_->SetBackgroundThreads(kHighPriCounts[test], Env::HIGH);
       env_->SetBackgroundThreads(kLowPriCounts[test], Env::LOW);
       // Wait to ensure the all threads has been registered
-      env_->SleepForMicroseconds(100000);
-      s = env_->GetThreadList(&thread_list);
-      ASSERT_OK(s);
       unsigned int thread_type_counts[ThreadStatus::NUM_THREAD_TYPES];
-      memset(thread_type_counts, 0, sizeof(thread_type_counts));
-      for (auto thread : thread_list) {
-        ASSERT_LT(thread.thread_type, ThreadStatus::NUM_THREAD_TYPES);
-        thread_type_counts[thread.thread_type]++;
+      // Try up to 60 seconds.
+      for (int num_try = 0; num_try < 60000; num_try++) {
+        env_->SleepForMicroseconds(1000);
+        thread_list.clear();
+        s = env_->GetThreadList(&thread_list);
+        ASSERT_OK(s);
+        memset(thread_type_counts, 0, sizeof(thread_type_counts));
+        for (auto thread : thread_list) {
+          ASSERT_LT(thread.thread_type, ThreadStatus::NUM_THREAD_TYPES);
+          thread_type_counts[thread.thread_type]++;
+        }
+        if (thread_type_counts[ThreadStatus::HIGH_PRIORITY] ==
+                kHighPriCounts[test] &&
+            thread_type_counts[ThreadStatus::LOW_PRIORITY] ==
+                kLowPriCounts[test]) {
+          break;
+        }
       }
       // Verify the total number of threades
       ASSERT_EQ(thread_type_counts[ThreadStatus::HIGH_PRIORITY] +

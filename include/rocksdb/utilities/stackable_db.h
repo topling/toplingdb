@@ -3,6 +3,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #pragma once
+#include <map>
 #include <string>
 #include "rocksdb/db.h"
 
@@ -68,16 +69,12 @@ class StackableDB : public DB {
     return db_->MultiGet(options, column_family, keys, values);
   }
 
-  using DB::AddFile;
-  virtual Status AddFile(ColumnFamilyHandle* column_family,
-                         const std::vector<ExternalSstFileInfo>& file_info_list,
-                         bool move_file, bool skip_snapshot_check) override {
-    return db_->AddFile(column_family, file_info_list, move_file, skip_snapshot_check);
-  }
-  virtual Status AddFile(ColumnFamilyHandle* column_family,
-                         const std::vector<std::string>& file_path_list,
-                         bool move_file, bool skip_snapshot_check) override {
-    return db_->AddFile(column_family, file_path_list, move_file, skip_snapshot_check);
+  using DB::IngestExternalFile;
+  virtual Status IngestExternalFile(
+      ColumnFamilyHandle* column_family,
+      const std::vector<std::string>& external_files,
+      const IngestExternalFileOptions& options) override {
+    return db_->IngestExternalFile(column_family, external_files, options);
   }
 
   using DB::KeyMayExist;
@@ -137,10 +134,16 @@ class StackableDB : public DB {
     return db_->ReleaseSnapshot(snapshot);
   }
 
+  using DB::GetMapProperty;
   using DB::GetProperty;
   virtual bool GetProperty(ColumnFamilyHandle* column_family,
                            const Slice& property, std::string* value) override {
     return db_->GetProperty(column_family, property, value);
+  }
+  virtual bool GetMapProperty(ColumnFamilyHandle* column_family,
+                              const Slice& property,
+                              std::map<std::string, double>* value) override {
+    return db_->GetMapProperty(column_family, property, value);
   }
 
   using DB::GetIntProperty;
@@ -287,6 +290,12 @@ class StackableDB : public DB {
                             const std::unordered_map<std::string, std::string>&
                                 new_options) override {
     return db_->SetOptions(column_family_handle, new_options);
+  }
+
+  virtual Status SetDBOptions(
+      const std::unordered_map<std::string, std::string>& new_options)
+      override {
+    return db_->SetDBOptions(new_options);
   }
 
   using DB::GetPropertiesOfAllTables;

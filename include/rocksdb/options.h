@@ -527,7 +527,7 @@ struct ColumnFamilyOptions {
   // Default: 10.
   //
   // Dynamically changeable through SetOptions() API
-  int max_bytes_for_level_multiplier;
+  double max_bytes_for_level_multiplier;
 
   // Different max-size multipliers for different levels.
   // These are multiplied by max_bytes_for_level_multiplier to arrive
@@ -746,6 +746,30 @@ struct ColumnFamilyOptions {
   // Dynamically changeable through SetOptions() API
   size_t memtable_huge_page_size;
 
+  // If non-nullptr, memtable will use the specified function to extract
+  // prefixes for keys, and for each non-empty prefix maintain a hint to
+  // reduce CPU usage for inserting keys with the prefix. Keys with empty
+  // prefix will be insert without using a hint.
+  //
+  // Currently only the default skiplist based memtable implements the feature.
+  // All other memtable implementation will ignore the option. It incurs ~150
+  // additional bytes of memory overhead to store a hint for each prefix.
+  // If allow_concurrent_memtable_write is true, the option will also be
+  // ignored.
+  //
+  // The option is best suited for sequential inserts, or inserts that's
+  // almost sequential. One scenario could be inserting keys of the form
+  // (prefix + timestamp), and keys of the same prefix always comes in
+  // with time order, or in some cases a key with a smaller timestamp comes
+  // in later due to network latency.
+  //
+  // REQUIRES: If custom comparator is provided, it has to make sure keys
+  // with the same prefix appear in consecutive range.
+  //
+  // Default: nullptr (disable)
+  std::shared_ptr<const SliceTransform>
+      memtable_insert_with_hint_prefix_extractor;
+
   // Control locality of bloom filter probes to improve cache miss rate.
   // This option only applies to memtable prefix bloom and plaintable
   // prefix bloom. It essentially limits every bloom checking to one cache line.
@@ -795,6 +819,12 @@ struct ColumnFamilyOptions {
   // After writing every SST file, reopen it and read all the keys.
   // Default: false
   bool paranoid_file_checks;
+
+  // In debug mode, RocksDB run consistency checks on the LSM everytime the LSM
+  // change (Flush, Compaction, AddFile). These checks are disabled in release
+  // mode, use this option to enable them in release mode as well.
+  // Default: false
+  bool force_consistency_checks;
 
   // Measure IO stats in compactions and flushes, if true.
   // Default: false
@@ -1100,6 +1130,10 @@ struct DBOptions {
   // Default: false
   bool allow_mmap_writes;
 
+  // Use O_DIRECT for reading file
+  // Default: false
+  bool use_direct_reads;
+
   // If false, fallocate() calls are bypassed
   bool allow_fallocate;
 
@@ -1344,6 +1378,15 @@ struct DBOptions {
   //
   // DEFAULT: false
   bool avoid_flush_during_recovery;
+
+  // By default RocksDB will flush all memtables on DB close if there are
+  // unpersisted data (i.e. with WAL disabled) The flush can be skip to speedup
+  // DB close. Unpersisted data WILL BE LOST.
+  //
+  // DEFAULT: false
+  //
+  // Dynamically changeable through SetDBOptions() API.
+  bool avoid_flush_during_shutdown;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)
@@ -1507,6 +1550,12 @@ struct ReadOptions {
   // Default: 0
   size_t readahead_size;
 
+  // If true, keys deleted using the DeleteRange() API will be visible to
+  // readers until they are naturally deleted during compaction. This improves
+  // read performance in DBs with many range deletions.
+  // Default: false
+  bool ignore_range_deletions;
+
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
 };
@@ -1609,6 +1658,21 @@ struct CompactRangeOptions {
   // if there is a compaction filter
   BottommostLevelCompaction bottommost_level_compaction =
       BottommostLevelCompaction::kIfHaveCompactionFilter;
+};
+
+// IngestExternalFileOptions is used by IngestExternalFile()
+struct IngestExternalFileOptions {
+  // Can be set to true to move the files instead of copying them.
+  bool move_files = false;
+  // If set to false, an ingested file keys could appear in existing snapshots
+  // that where created before the file was ingested.
+  bool snapshot_consistency = true;
+  // If set to false, IngestExternalFile() will fail if the file key range
+  // overlaps with existing keys or tombstones in the DB.
+  bool allow_global_seqno = true;
+  // If set to false and the file key range overlaps with the memtable key range
+  // (memtable flush required), IngestExternalFile will fail.
+  bool allow_blocking_flush = true;
 };
 
 }  // namespace rocksdb

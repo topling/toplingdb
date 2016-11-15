@@ -50,13 +50,9 @@ enum ValueType : unsigned char {
   kMaxValue = 0x7F                        // Not used for storing records.
 };
 
-// kValueTypeForSeek defines the ValueType that should be passed when
-// constructing a ParsedInternalKey object for seeking to a particular
-// sequence number (since we sort sequence numbers in decreasing order
-// and the value type is embedded as the low 8 bits in the sequence
-// number in internal keys, we need to use the highest-numbered
-// ValueType, not the lowest).
-static const ValueType kValueTypeForSeek = kTypeSingleDeletion;
+// Defined in dbformat.cc
+extern const ValueType kValueTypeForSeek;
+extern const ValueType kValueTypeForSeekForPrev;
 
 // Checks whether a type is an inline value type
 // (i.e. a type used in memtable skiplist and sst file datablock).
@@ -74,6 +70,8 @@ inline bool IsExtendedValueType(ValueType t) {
 // can be packed together into 64-bits.
 static const SequenceNumber kMaxSequenceNumber =
     ((0x1ull << 56) - 1);
+
+static const SequenceNumber kDisableGlobalSequenceNumber = port::kMaxUint64;
 
 struct ParsedInternalKey {
   Slice user_key;
@@ -361,6 +359,15 @@ class IterKey {
     return Slice(key_, key_n);
   }
 
+  // Copy the key into IterKey own buf_
+  void OwnKey() {
+    assert(IsKeyPinned() == true);
+
+    Reserve(key_size_);
+    memcpy(buf_, key_, key_size_);
+    key_ = buf_;
+  }
+
   // Update the sequence number in the internal key.  Guarantees not to
   // invalidate slices to the key (and the user key).
   void UpdateInternalKey(uint64_t seq, ValueType t) {
@@ -509,24 +516,27 @@ struct RangeTombstone {
   explicit RangeTombstone(Slice sk, Slice ek, SequenceNumber sn)
       : start_key_(sk), end_key_(ek), seq_(sn) {}
 
-  explicit RangeTombstone(Slice internal_key, Slice value) {
-    ParsedInternalKey parsed_key;
-    if (ParseInternalKey(internal_key, &parsed_key)) {
-      start_key_ = parsed_key.user_key;
-      seq_ = parsed_key.sequence;
-      end_key_ = value;
-    }
+  explicit RangeTombstone(ParsedInternalKey parsed_key, Slice value) {
+    start_key_ = parsed_key.user_key;
+    seq_ = parsed_key.sequence;
+    end_key_ = value;
   }
 
-  // be careful to use Serialize(); InternalKey() allocates new memory
-  std::pair<InternalKey, Slice> Serialize() {
+  // be careful to use Serialize(), allocates new memory
+  std::pair<InternalKey, Slice> Serialize() const {
     auto key = InternalKey(start_key_, seq_, kTypeRangeDeletion);
     Slice value = end_key_;
     return std::make_pair(std::move(key), std::move(value));
   }
 
-  InternalKey SerializeKey() {
+  // be careful to use SerializeKey(), allocates new memory
+  InternalKey SerializeKey() const {
     return InternalKey(start_key_, seq_, kTypeRangeDeletion);
+  }
+
+  // be careful to use SerializeEndKey(), allocates new memory
+  InternalKey SerializeEndKey() const {
+    return InternalKey(end_key_, seq_, kTypeRangeDeletion);
   }
 };
 

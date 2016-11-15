@@ -78,11 +78,13 @@ ColumnFamilyOptions::ColumnFamilyOptions()
       inplace_callback(nullptr),
       memtable_prefix_bloom_size_ratio(0.0),
       memtable_huge_page_size(0),
+      memtable_insert_with_hint_prefix_extractor(nullptr),
       bloom_locality(0),
       max_successive_merges(0),
       min_partial_merge_operands(2),
       optimize_filters_for_hits(false),
       paranoid_file_checks(false),
+      force_consistency_checks(false),
       report_bg_io_stats(false) {
   assert(memtable_factory.get() != nullptr);
 }
@@ -144,11 +146,14 @@ ColumnFamilyOptions::ColumnFamilyOptions(const Options& options)
       memtable_prefix_bloom_size_ratio(
           options.memtable_prefix_bloom_size_ratio),
       memtable_huge_page_size(options.memtable_huge_page_size),
+      memtable_insert_with_hint_prefix_extractor(
+          options.memtable_insert_with_hint_prefix_extractor),
       bloom_locality(options.bloom_locality),
       max_successive_merges(options.max_successive_merges),
       min_partial_merge_operands(options.min_partial_merge_operands),
       optimize_filters_for_hits(options.optimize_filters_for_hits),
       paranoid_file_checks(options.paranoid_file_checks),
+      force_consistency_checks(options.force_consistency_checks),
       report_bg_io_stats(options.report_bg_io_stats) {
   assert(memtable_factory.get() != nullptr);
   if (max_bytes_for_level_multiplier_additional.size() <
@@ -196,6 +201,7 @@ DBOptions::DBOptions()
       allow_os_buffer(true),
       allow_mmap_reads(false),
       allow_mmap_writes(false),
+      use_direct_reads(false),
       allow_fallocate(true),
       is_fd_close_on_exec(true),
       skip_log_error_on_recovery(false),
@@ -225,7 +231,8 @@ DBOptions::DBOptions()
 #endif  // ROCKSDB_LITE
       fail_if_options_file_error(false),
       dump_malloc_stats(false),
-      avoid_flush_during_recovery(false) {
+      avoid_flush_during_recovery(false),
+      avoid_flush_during_shutdown(false) {
 }
 
 DBOptions::DBOptions(const Options& options)
@@ -265,6 +272,7 @@ DBOptions::DBOptions(const Options& options)
       allow_os_buffer(options.allow_os_buffer),
       allow_mmap_reads(options.allow_mmap_reads),
       allow_mmap_writes(options.allow_mmap_writes),
+      use_direct_reads(options.use_direct_reads),
       allow_fallocate(options.allow_fallocate),
       is_fd_close_on_exec(options.is_fd_close_on_exec),
       skip_log_error_on_recovery(options.skip_log_error_on_recovery),
@@ -297,7 +305,8 @@ DBOptions::DBOptions(const Options& options)
 #endif  // ROCKSDB_LITE
       fail_if_options_file_error(options.fail_if_options_file_error),
       dump_malloc_stats(options.dump_malloc_stats),
-      avoid_flush_during_recovery(options.avoid_flush_during_recovery) {
+      avoid_flush_during_recovery(options.avoid_flush_during_recovery),
+      avoid_flush_during_shutdown(options.avoid_flush_during_shutdown) {
 }
 
 static const char* const access_hints[] = {
@@ -331,6 +340,7 @@ void DBOptions::Dump(Logger* log) const {
     Header(log, "      Options.allow_mmap_reads: %d", allow_mmap_reads);
     Header(log, "      Options.allow_fallocate: %d", allow_fallocate);
     Header(log, "     Options.allow_mmap_writes: %d", allow_mmap_writes);
+    Header(log, "      Options.use_direct_reads: %d", use_direct_reads);
     Header(log, "         Options.create_missing_column_families: %d",
         create_missing_column_families);
     Header(log, "                             Options.db_log_dir: %s",
@@ -456,6 +466,10 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
                : CompressionTypeToString(bottommost_compression).c_str());
     Header(log, "      Options.prefix_extractor: %s",
         prefix_extractor == nullptr ? "nullptr" : prefix_extractor->Name());
+    Header(log, "  Options.memtable_insert_with_hint_prefix_extractor: %s",
+           memtable_insert_with_hint_prefix_extractor == nullptr
+               ? "nullptr"
+               : memtable_insert_with_hint_prefix_extractor->Name());
     Header(log, "            Options.num_levels: %d", num_levels);
     Header(log, "       Options.min_write_buffer_number_to_merge: %d",
         min_write_buffer_number_to_merge);
@@ -484,8 +498,8 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
         max_bytes_for_level_base);
     Header(log, "Options.level_compaction_dynamic_level_bytes: %d",
         level_compaction_dynamic_level_bytes);
-    Header(log, "         Options.max_bytes_for_level_multiplier: %d",
-        max_bytes_for_level_multiplier);
+    Header(log, "         Options.max_bytes_for_level_multiplier: %f",
+           max_bytes_for_level_multiplier);
     for (size_t i = 0; i < max_bytes_for_level_multiplier_additional.size();
          i++) {
       Header(log,
@@ -559,6 +573,8 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
         optimize_filters_for_hits);
     Header(log, "               Options.paranoid_file_checks: %d",
          paranoid_file_checks);
+    Header(log, "               Options.force_consistency_checks: %d",
+           force_consistency_checks);
     Header(log, "               Options.report_bg_io_stats: %d",
            report_bg_io_stats);
 }  // ColumnFamilyOptions::Dump
@@ -759,7 +775,8 @@ ReadOptions::ReadOptions()
       prefix_same_as_start(false),
       pin_data(false),
       background_purge_on_iterator_cleanup(false),
-      readahead_size(0) {
+      readahead_size(0),
+      ignore_range_deletions(false) {
   XFUNC_TEST("", "managed_options", managed_options, xf_manage_options,
              reinterpret_cast<ReadOptions*>(this));
 }
@@ -776,7 +793,8 @@ ReadOptions::ReadOptions(bool cksum, bool cache)
       prefix_same_as_start(false),
       pin_data(false),
       background_purge_on_iterator_cleanup(false),
-      readahead_size(0) {
+      readahead_size(0),
+      ignore_range_deletions(false) {
   XFUNC_TEST("", "managed_options", managed_options, xf_manage_options,
              reinterpret_cast<ReadOptions*>(this));
 }

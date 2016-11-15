@@ -13,6 +13,7 @@
 #include <functional>
 #include <limits>
 #include <list>
+#include <map>
 #include <queue>
 #include <set>
 #include <string>
@@ -123,6 +124,10 @@ class DBImpl : public DB {
   using DB::GetProperty;
   virtual bool GetProperty(ColumnFamilyHandle* column_family,
                            const Slice& property, std::string* value) override;
+  using DB::GetMapProperty;
+  virtual bool GetMapProperty(ColumnFamilyHandle* column_family,
+                              const Slice& property,
+                              std::map<std::string, double>* value) override;
   using DB::GetIntProperty;
   virtual bool GetIntProperty(ColumnFamilyHandle* column_family,
                               const Slice& property, uint64_t* value) override;
@@ -154,6 +159,9 @@ class DBImpl : public DB {
   using DB::SetOptions;
   Status SetOptions(
       ColumnFamilyHandle* column_family,
+      const std::unordered_map<std::string, std::string>& options_map) override;
+
+  virtual Status SetDBOptions(
       const std::unordered_map<std::string, std::string>& options_map) override;
 
   using DB::NumberLevels;
@@ -257,13 +265,11 @@ class DBImpl : public DB {
                                  bool cache_only, SequenceNumber* seq,
                                  bool* found_record_for_key);
 
-  using DB::AddFile;
-  virtual Status AddFile(ColumnFamilyHandle* column_family,
-                         const std::vector<ExternalSstFileInfo>& file_info_list,
-                         bool move_file, bool skip_snapshot_check) override;
-  virtual Status AddFile(ColumnFamilyHandle* column_family,
-                         const std::vector<std::string>& file_path_list,
-                         bool move_file, bool skip_snapshot_check) override;
+  using DB::IngestExternalFile;
+  virtual Status IngestExternalFile(
+      ColumnFamilyHandle* column_family,
+      const std::vector<std::string>& external_files,
+      const IngestExternalFileOptions& ingestion_options) override;
 
 #endif  // ROCKSDB_LITE
 
@@ -289,7 +295,8 @@ class DBImpl : public DB {
   // The keys of this iterator are internal keys (see format.h).
   // The returned iterator should be deleted when no longer needed.
   InternalIterator* NewInternalIterator(
-      Arena* arena, ColumnFamilyHandle* column_family = nullptr);
+      Arena* arena, RangeDelAggregator* range_del_agg,
+      ColumnFamilyHandle* column_family = nullptr);
 
 #ifndef NDEBUG
   // Extra methods (for testing) that are not in the public DB interface
@@ -360,6 +367,8 @@ class DBImpl : public DB {
   uint64_t TEST_FindMinLogContainingOutstandingPrep();
   uint64_t TEST_FindMinPrepLogReferencedByMemTable();
 
+  int TEST_BGCompactionsAllowed() const;
+
 #endif  // NDEBUG
 
   // Return maximum background compaction allowed to be scheduled based on
@@ -390,6 +399,10 @@ class DBImpl : public DB {
   ColumnFamilyHandle* DefaultColumnFamily() const override;
 
   const SnapshotList& snapshots() const { return snapshots_; }
+
+  const ImmutableDBOptions& immutable_db_options() const {
+    return immutable_db_options_;
+  }
 
   void CancelAllBackgroundWork(bool wait);
 
@@ -508,6 +521,7 @@ class DBImpl : public DB {
   Env* const env_;
   const std::string dbname_;
   unique_ptr<VersionSet> versions_;
+  const DBOptions initial_db_options_;
   const ImmutableDBOptions immutable_db_options_;
   MutableDBOptions mutable_db_options_;
   Statistics* stats_;
@@ -517,7 +531,8 @@ class DBImpl : public DB {
   InternalIterator* NewInternalIterator(const ReadOptions&,
                                         ColumnFamilyData* cfd,
                                         SuperVersion* super_version,
-                                        Arena* arena);
+                                        Arena* arena,
+                                        RangeDelAggregator* range_del_agg);
 
   // Except in DB::Open(), WriteOptionsFile can only be called when:
   // 1. WriteThread::Writer::EnterUnbatched() is used.
@@ -640,34 +655,28 @@ class DBImpl : public DB {
   Status SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context);
 
   // Force current memtable contents to be flushed.
-  Status FlushMemTable(ColumnFamilyData* cfd, const FlushOptions& options);
+  Status FlushMemTable(ColumnFamilyData* cfd, const FlushOptions& options,
+                       bool writes_stopped = false);
 
   // Wait for memtable flushed
   Status WaitForFlushMemTable(ColumnFamilyData* cfd);
 
 #ifndef ROCKSDB_LITE
-  // Finds the lowest level in the DB that the ingested file can be added to
-  // REQUIRES: mutex_ held
-  int PickLevelForIngestedFile(ColumnFamilyData* cfd,
-                               const ExternalSstFileInfo& file_info);
 
-  // Wait for current AddFile() calls to finish.
-  // REQUIRES: mutex_ held
-  void WaitForAddFile();
+  Status CompactFilesImpl(const CompactionOptions& compact_options,
+                          ColumnFamilyData* cfd, Version* version,
+                          const std::vector<std::string>& input_file_names,
+                          const int output_level, int output_path_id,
+                          JobContext* job_context, LogBuffer* log_buffer);
 
-  Status CompactFilesImpl(
-      const CompactionOptions& compact_options, ColumnFamilyData* cfd,
-      Version* version, const std::vector<std::string>& input_file_names,
-      const int output_level, int output_path_id, JobContext* job_context,
-      LogBuffer* log_buffer);
-  Status ReadExternalSstFileInfo(ColumnFamilyHandle* column_family,
-                                 const std::string& file_path,
-                                 ExternalSstFileInfo* file_info);
+  // Wait for current IngestExternalFile() calls to finish.
+  // REQUIRES: mutex_ held
+  void WaitForIngestFile();
 
 #else
-  // AddFile is not supported in ROCKSDB_LITE so this function
+  // IngestExternalFile is not supported in ROCKSDB_LITE so this function
   // will be no-op
-  void WaitForAddFile() {}
+  void WaitForIngestFile() {}
 #endif  // ROCKSDB_LITE
 
   ColumnFamilyData* GetColumnFamilyDataByName(const std::string& cf_name);
@@ -715,6 +724,14 @@ class DBImpl : public DB {
 
   const Snapshot* GetSnapshotImpl(bool is_write_conflict_boundary);
 
+  // Persist RocksDB options under the single write thread
+  // REQUIRES: mutex locked
+  Status PersistOptions();
+
+  void FlushColumnFamilies();
+
+  uint64_t GetMaxTotalWalSize() const;
+
   // table_cache_ provides its own synchronization
   std::shared_ptr<Cache> table_cache_;
 
@@ -737,6 +754,7 @@ class DBImpl : public DB {
   // * whenever bg_flush_scheduled_ or bg_purge_scheduled_ value decreases
   // (i.e. whenever a flush is done, even if it didn't make any progress)
   // * whenever there is an error in background purge, flush or compaction
+  // * whenever num_running_ingest_file_ goes to 0.
   InstrumentedCondVar bg_cv_;
   uint64_t logfile_number_;
   std::deque<uint64_t>
@@ -978,17 +996,9 @@ class DBImpl : public DB {
   // The options to access storage files
   const EnvOptions env_options_;
 
-  // A set of compactions that are running right now
+  // Number of running IngestExternalFile() calls.
   // REQUIRES: mutex held
-  std::unordered_set<Compaction*> running_compactions_;
-
-  // Number of running AddFile() calls.
-  // REQUIRES: mutex held
-  int num_running_addfile_;
-
-  // A condition variable that will be signaled whenever
-  // num_running_addfile_ goes to 0.
-  InstrumentedCondVar addfile_cv_;
+  int num_running_ingest_file_;
 
 #ifndef ROCKSDB_LITE
   WalManager wal_manager_;
@@ -1090,7 +1100,6 @@ class DBImpl : public DB {
 };
 
 extern Options SanitizeOptions(const std::string& db,
-                               const InternalKeyComparator* icmp,
                                const Options& src);
 
 extern DBOptions SanitizeOptions(const std::string& db, const DBOptions& src);

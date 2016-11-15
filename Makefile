@@ -8,8 +8,10 @@
 
 EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -I/usr/local/include
 #EXTRA_LDFLAGS += -L../terark-zip-rocksdb/lib -lterark-zip-rocksdb-d
-EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.so ../terark-zip-rocksdb/lib/libterark-fsa_all-d.so
-EXTRA_LDFLAGS += ../terark-zip-rocksdb/lib/libterark-zip-rocksdb-d.so
+EXTRA_LDFLAGS += ../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-g++-5.4-bmi2-1/lib/libterark-zip-rocksdb-r.so 
+EXTRA_LDFLAGS += ../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-g++-5.4-bmi2-1/lib/libterark-zbs-r.so
+EXTRA_LDFLAGS += ../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-g++-5.4-bmi2-1/lib/libterark-fsa-r.so
+EXTRA_LDFLAGS += ../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-g++-5.4-bmi2-1/lib/libterark-core-r.so
 
 CLEAN_FILES = # deliberately empty, so we can append below.
 CFLAGS += ${EXTRA_CFLAGS}
@@ -236,14 +238,7 @@ ifdef FORCE_GIT_SHA
 else
 	git_sha := $(shell git rev-parse HEAD 2>/dev/null)
 endif
-gen_build_version =							\
-  printf '%s\n'								\
-    '\#include "build_version.h"'					\
-    'const char* rocksdb_build_git_sha =				\
-      "rocksdb_build_git_sha:$(git_sha)";'			\
-    'const char* rocksdb_build_git_date =				\
-      "rocksdb_build_git_date:$(date)";'				\
-    'const char* rocksdb_build_compile_date = __DATE__;'
+gen_build_version = sed -e s/@@GIT_SHA@@/$(git_sha)/ -e s/@@GIT_DATE_TIME@@/$(date)/ util/build_version.cc.in
 
 # Record the version of the source that we are compiling.
 # We keep a record of the git revision in this file.  It is then built
@@ -288,6 +283,7 @@ TESTS = \
 	db_flush_test \
 	db_inplace_update_test \
 	db_iterator_test \
+	db_memtable_test \
 	db_options_test \
 	db_sst_test \
 	external_sst_file_test \
@@ -406,7 +402,9 @@ PARALLEL_TEST = \
 	fault_injection_test \
 	inlineskiplist_test \
 	manual_compaction_test \
-	table_test
+	persistent_cache_test \
+	table_test \
+	transaction_test
 
 SUBSET := $(TESTS)
 ifdef ROCKSDBTESTS_START
@@ -731,6 +729,9 @@ ubsan_crash_test:
 	COMPILE_WITH_UBSAN=1 $(MAKE) crash_test
 	$(MAKE) clean
 
+valgrind_test:
+	DISABLE_JEMALLOC=1 $(MAKE) valgrind_check
+
 valgrind_check: $(TESTS)
 	$(MAKE) DRIVER="$(VALGRIND_VER) $(VALGRIND_OPTS)" gen_parallel_tests
 	$(AM_V_GEN)if test "$(J)" != 1                                  \
@@ -965,6 +966,9 @@ db_inplace_update_test: db/db_inplace_update_test.o db/db_test_util.o $(LIBOBJEC
 	$(AM_LINK)
 
 db_iterator_test: db/db_iterator_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+db_memtable_test: db/db_memtable_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 db_options_test: db/db_options_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1332,6 +1336,11 @@ else
 	JAVA_INCLUDE = -I/System/Library/Frameworks/JavaVM.framework/Headers/
 endif
 endif
+ifeq ($(PLATFORM), OS_FREEBSD)
+	JAVA_INCLUDE += -I$(JAVA_HOME)/include/freebsd
+	ROCKSDBJNILIB = librocksdbjni-freebsd$(ARCH).so
+	ROCKSDB_JAR = rocksdbjni-$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-freebsd$(ARCH).jar
+endif
 ifeq ($(PLATFORM), OS_SOLARIS)
 	ROCKSDBJNILIB = librocksdbjni-solaris$(ARCH).so
 	ROCKSDB_JAR = rocksdbjni-$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-solaris$(ARCH).jar
@@ -1398,12 +1407,15 @@ rocksdbjavastaticrelease: rocksdbjavastatic
 	cd java/target;jar -uf $(ROCKSDB_JAR_ALL) librocksdbjni-*.so librocksdbjni-*.jnilib
 	cd java/target/classes;jar -uf ../$(ROCKSDB_JAR_ALL) org/rocksdb/*.class org/rocksdb/util/*.class
 
-rocksdbjavastaticpublish: rocksdbjavastaticrelease
+rocksdbjavastaticpublish: rocksdbjavastaticrelease rocksdbjavastaticpublishcentral
+
+rocksdbjavastaticpublishcentral:
 	mvn gpg:sign-and-deploy-file -Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/ -DrepositoryId=sonatype-nexus-staging -DpomFile=java/rocksjni.pom -Dfile=java/target/rocksdbjni-$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-javadoc.jar -Dclassifier=javadoc
 	mvn gpg:sign-and-deploy-file -Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/ -DrepositoryId=sonatype-nexus-staging -DpomFile=java/rocksjni.pom -Dfile=java/target/rocksdbjni-$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-sources.jar -Dclassifier=sources
 	mvn gpg:sign-and-deploy-file -Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/ -DrepositoryId=sonatype-nexus-staging -DpomFile=java/rocksjni.pom -Dfile=java/target/rocksdbjni-$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-linux64.jar -Dclassifier=linux64
 	mvn gpg:sign-and-deploy-file -Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/ -DrepositoryId=sonatype-nexus-staging -DpomFile=java/rocksjni.pom -Dfile=java/target/rocksdbjni-$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-linux32.jar -Dclassifier=linux32
 	mvn gpg:sign-and-deploy-file -Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/ -DrepositoryId=sonatype-nexus-staging -DpomFile=java/rocksjni.pom -Dfile=java/target/rocksdbjni-$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-osx.jar -Dclassifier=osx
+	mvn gpg:sign-and-deploy-file -Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/ -DrepositoryId=sonatype-nexus-staging -DpomFile=java/rocksjni.pom -Dfile=java/target/rocksdbjni-$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-win64.jar -Dclassifier=win64
 	mvn gpg:sign-and-deploy-file -Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/ -DrepositoryId=sonatype-nexus-staging -DpomFile=java/rocksjni.pom -Dfile=java/target/rocksdbjni-$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH).jar
 
 # A version of each $(LIBOBJECTS) compiled with -fPIC

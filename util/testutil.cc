@@ -253,6 +253,8 @@ void RandomInitDBOptions(DBOptions* db_opt, Random* rnd) {
   db_opt->use_adaptive_mutex = rnd->Uniform(2);
   db_opt->use_fsync = rnd->Uniform(2);
   db_opt->recycle_log_file_num = rnd->Uniform(2);
+  db_opt->avoid_flush_during_recovery = rnd->Uniform(2);
+  db_opt->avoid_flush_during_shutdown = rnd->Uniform(2);
 
   // int options
   db_opt->max_background_compactions = rnd->Uniform(100);
@@ -302,6 +304,7 @@ void RandomInitCFOptions(ColumnFamilyOptions* cf_opt, Random* rnd) {
   cf_opt->paranoid_file_checks = rnd->Uniform(2);
   cf_opt->purge_redundant_kvs_while_flush = rnd->Uniform(2);
   cf_opt->verify_checksums_in_compaction = rnd->Uniform(2);
+  cf_opt->force_consistency_checks = rnd->Uniform(2);
 
   // double options
   cf_opt->hard_rate_limit = static_cast<double>(rnd->Uniform(10000)) / 13;

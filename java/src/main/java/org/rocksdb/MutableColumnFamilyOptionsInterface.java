@@ -386,7 +386,7 @@ public interface MutableColumnFamilyOptionsInterface {
    * threshold. But it's not guaranteed.
    * Value 0 will be sanitized.
    *
-   * @param max bytes in a compaction
+   * @param maxCompactionBytes max bytes in a compaction
    * @return the reference to the current option.
    * @see #maxCompactionBytes()
    */
@@ -474,7 +474,7 @@ public interface MutableColumnFamilyOptionsInterface {
    * @param maxBytesForLevelBase maximum bytes for level base.
    *
    * @return the reference to the current option.
-   * @see #setMaxBytesForLevelMultiplier(int)
+   * @see #setMaxBytesForLevelMultiplier(double)
    */
   MutableColumnFamilyOptionsInterface setMaxBytesForLevelBase(
       long maxBytesForLevelBase);
@@ -505,8 +505,7 @@ public interface MutableColumnFamilyOptionsInterface {
    * @return the reference to the current option.
    * @see #setMaxBytesForLevelBase(long)
    */
-  MutableColumnFamilyOptionsInterface setMaxBytesForLevelMultiplier(
-      int multiplier);
+  MutableColumnFamilyOptionsInterface setMaxBytesForLevelMultiplier(double multiplier);
 
   /**
    * The ratio between the total size of level-(L+1) files and the total
@@ -517,7 +516,7 @@ public interface MutableColumnFamilyOptionsInterface {
    *     the total size of level-L files for all L.
    * @see #maxBytesForLevelBase()
    */
-  int maxBytesForLevelMultiplier();
+  double maxBytesForLevelMultiplier();
 
   /**
    * Different max-size multipliers for different levels.

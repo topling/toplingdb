@@ -7,6 +7,7 @@
 #ifndef ROCKSDB_LITE
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "rocksdb/comparator.h"
@@ -72,6 +73,10 @@ struct TransactionOptions {
   // Transaction::SetSnapshot().
   bool set_snapshot = false;
 
+  // Setting to true means that before acquiring locks, this transaction will
+  // check if doing so will cause a deadlock. If so, it will return with
+  // Status::Busy.  The user should retry their transaction.
+  bool deadlock_detect = false;
 
   // TODO(agiardullo): TransactionDB does not yet support comparators that allow
   // two non-equal keys to be equivalent.  Ie, cmp->Compare(a,b) should only
@@ -90,9 +95,16 @@ struct TransactionOptions {
   // last longer than this many milliseconds will fail to commit.  If not set,
   // a forgotten transaction that is never committed, rolled back, or deleted
   // will never relinquish any locks it holds.  This could prevent keys from
-  // being
-  // written by other writers.
+  // being written by other writers.
   int64_t expiration = -1;
+
+  // The number of traversals to make during deadlock detection.
+  int64_t deadlock_detect_depth = 50;
+};
+
+struct KeyLockInfo {
+  std::string key;
+  TransactionID id;
 };
 
 class TransactionDB : public StackableDB {
@@ -147,6 +159,12 @@ class TransactionDB : public StackableDB {
 
   virtual Transaction* GetTransactionByName(const TransactionName& name) = 0;
   virtual void GetAllPreparedTransactions(std::vector<Transaction*>* trans) = 0;
+
+  // Returns set of all locks held.
+  //
+  // The mapping is column family id -> KeyLockInfo
+  virtual std::unordered_multimap<uint32_t, KeyLockInfo>
+  GetLockStatusData() = 0;
 
  protected:
   // To Create an TransactionDB, call Open()

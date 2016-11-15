@@ -822,12 +822,10 @@ class DBTestBase : public testing::Test {
   std::vector<std::uint64_t> ListTableFiles(Env* env, const std::string& path);
 
   void VerifyDBFromMap(std::map<std::string, std::string> true_data,
-                       size_t* total_reads_res = nullptr);
+                       size_t* total_reads_res = nullptr,
+                       bool tailing_iter = false);
 
 #ifndef ROCKSDB_LITE
-  Status GenerateAndAddExternalFile(const Options options,
-                                    std::vector<int> keys, size_t file_id);
-
   uint64_t GetNumberOfSstFilesForColumnFamily(DB* db,
                                               std::string column_family_name);
 #endif  // ROCKSDB_LITE

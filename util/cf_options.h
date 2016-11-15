@@ -34,7 +34,7 @@ struct ImmutableCFOptions {
 
   const SliceTransform* prefix_extractor;
 
-  const Comparator* comparator;
+  const Comparator* user_comparator;
 
   MergeOperator* merge_operator;
 
@@ -60,8 +60,6 @@ struct ImmutableCFOptions {
   InfoLogLevel info_log_level;
 
   Env* env;
-
-  uint64_t delayed_write_rate;
 
   // Allow the OS to mmap file for reading sst tables. Default: false
   bool allow_mmap_reads;
@@ -108,6 +106,8 @@ struct ImmutableCFOptions {
 
   bool optimize_filters_for_hits;
 
+  bool force_consistency_checks;
+
   // A vector of EventListeners which call-back functions will be called
   // when specific RocksDB event happens.
   std::vector<std::shared_ptr<EventListener>> listeners;
@@ -115,6 +115,8 @@ struct ImmutableCFOptions {
   std::shared_ptr<Cache> row_cache;
 
   uint32_t max_subcompactions;
+
+  const SliceTransform* memtable_insert_with_hint_prefix_extractor;
 };
 
 struct MutableCFOptions {
@@ -218,7 +220,7 @@ struct MutableCFOptions {
   uint64_t target_file_size_base;
   int target_file_size_multiplier;
   uint64_t max_bytes_for_level_base;
-  int max_bytes_for_level_multiplier;
+  double max_bytes_for_level_multiplier;
   std::vector<int> max_bytes_for_level_multiplier_additional;
   bool verify_checksums_in_compaction;
 
@@ -234,6 +236,6 @@ struct MutableCFOptions {
   std::vector<uint64_t> max_file_size;
 };
 
-uint64_t MultiplyCheckOverflow(uint64_t op1, int op2);
+uint64_t MultiplyCheckOverflow(uint64_t op1, double op2);
 
 }  // namespace rocksdb

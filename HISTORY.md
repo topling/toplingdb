@@ -1,7 +1,21 @@
 # Rocksdb Change Log
 ## Unreleased
 ### Public API Change
+* Options::max_bytes_for_level_multiplier is now a double along with all getters and setters.
+* Support dynamically change `delayed_write_rate` and `max_total_wal_size` options via SetDBOptions().
+
+### New Features
+* Add avoid_flush_during_shutdown option, which speeds up DB shutdown by not flushing unpersisted data (i.e. with disableWAL = true). Unpersisted data will be lost. The options is dynamically changeable via SetDBOptions().
+* Add memtable_insert_with_hint_prefix_extractor option. The option is mean to reduce CPU usage for inserting keys into memtable, if keys can be group by prefix and insert for each prefix are sequential or almost sequential. See include/rocksdb/options.h for more details.
+
+## 4.13.0 (10/18/2016)
+### Public API Change
 * DB::GetOptions() reflect dynamic changed options (i.e. through DB::SetOptions()) and return copy of options instead of reference.
+* Added Statistics::getAndResetTickerCount().
+
+### New Features
+* Add DB::SetDBOptions() to dynamic change base_background_compactions and max_background_compactions.
+* Added Iterator::SeekForPrev(). This new API will seek to the last key that less than or equal to the target key.
 
 ## 4.12.0 (9/12/2016)
 ### Public API Change

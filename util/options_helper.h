@@ -69,6 +69,11 @@ Status GetMutableOptionsFromStrings(
     const std::unordered_map<std::string, std::string>& options_map,
     MutableCFOptions* new_options);
 
+Status GetMutableDBOptionsFromStrings(
+    const MutableDBOptions& base_options,
+    const std::unordered_map<std::string, std::string>& options_map,
+    MutableDBOptions* new_options);
+
 Status GetTableFactoryFromMap(
     const std::string& factory_name,
     const std::unordered_map<std::string, std::string>& opt_map,
@@ -178,6 +183,9 @@ static std::unordered_map<std::string, OptionTypeInfo> db_options_type_info = {
     {"allow_mmap_writes",
      {offsetof(struct DBOptions, allow_mmap_writes), OptionType::kBoolean,
       OptionVerificationType::kNormal, false, 0}},
+    {"use_direct_reads",
+     {offsetof(struct DBOptions, use_direct_reads), OptionType::kBoolean,
+      OptionVerificationType::kNormal, false, 0}},
     {"allow_2pc",
      {offsetof(struct DBOptions, allow_2pc), OptionType::kBoolean,
       OptionVerificationType::kNormal, false, 0}},
@@ -234,10 +242,12 @@ static std::unordered_map<std::string, OptionTypeInfo> db_options_type_info = {
       OptionVerificationType::kNormal, false, 0}},
     {"max_background_compactions",
      {offsetof(struct DBOptions, max_background_compactions), OptionType::kInt,
-      OptionVerificationType::kNormal, false, 0}},
+      OptionVerificationType::kNormal, true,
+      offsetof(struct MutableDBOptions, max_background_compactions)}},
     {"base_background_compactions",
      {offsetof(struct DBOptions, base_background_compactions), OptionType::kInt,
-      OptionVerificationType::kNormal, false, 0}},
+      OptionVerificationType::kNormal, true,
+      offsetof(struct MutableDBOptions, base_background_compactions)}},
     {"max_background_flushes",
      {offsetof(struct DBOptions, max_background_flushes), OptionType::kInt,
       OptionVerificationType::kNormal, false, 0}},
@@ -288,7 +298,8 @@ static std::unordered_map<std::string, OptionTypeInfo> db_options_type_info = {
       OptionVerificationType::kNormal, false, 0}},
     {"delayed_write_rate",
      {offsetof(struct DBOptions, delayed_write_rate), OptionType::kUInt64T,
-      OptionVerificationType::kNormal, false, 0}},
+      OptionVerificationType::kNormal, true,
+      offsetof(struct MutableDBOptions, delayed_write_rate)}},
     {"delete_obsolete_files_period_micros",
      {offsetof(struct DBOptions, delete_obsolete_files_period_micros),
       OptionType::kUInt64T, OptionVerificationType::kNormal, false, 0}},
@@ -297,7 +308,8 @@ static std::unordered_map<std::string, OptionTypeInfo> db_options_type_info = {
       OptionVerificationType::kNormal, false, 0}},
     {"max_total_wal_size",
      {offsetof(struct DBOptions, max_total_wal_size), OptionType::kUInt64T,
-      OptionVerificationType::kNormal, false, 0}},
+      OptionVerificationType::kNormal, true,
+      offsetof(struct MutableDBOptions, max_total_wal_size)}},
     {"wal_bytes_per_sync",
      {offsetof(struct DBOptions, wal_bytes_per_sync), OptionType::kUInt64T,
       OptionVerificationType::kNormal, false, 0}},
@@ -333,7 +345,11 @@ static std::unordered_map<std::string, OptionTypeInfo> db_options_type_info = {
       OptionVerificationType::kNormal, false, 0}},
     {"avoid_flush_during_recovery",
      {offsetof(struct DBOptions, avoid_flush_during_recovery),
-      OptionType::kBoolean, OptionVerificationType::kNormal, false, 0}}};
+      OptionType::kBoolean, OptionVerificationType::kNormal, false, 0}},
+    {"avoid_flush_during_shutdown",
+     {offsetof(struct DBOptions, avoid_flush_during_shutdown),
+      OptionType::kBoolean, OptionVerificationType::kNormal, true,
+      offsetof(struct MutableDBOptions, avoid_flush_during_shutdown)}}};
 
 static std::unordered_map<std::string, OptionTypeInfo> cf_options_type_info = {
     /* not yet supported
@@ -374,6 +390,9 @@ static std::unordered_map<std::string, OptionTypeInfo> cf_options_type_info = {
      {offsetof(struct ColumnFamilyOptions, paranoid_file_checks),
       OptionType::kBoolean, OptionVerificationType::kNormal, true,
       offsetof(struct MutableCFOptions, paranoid_file_checks)}},
+    {"force_consistency_checks",
+     {offsetof(struct ColumnFamilyOptions, force_consistency_checks),
+      OptionType::kBoolean, OptionVerificationType::kNormal, false, 0}},
     {"purge_redundant_kvs_while_flush",
      {offsetof(struct ColumnFamilyOptions, purge_redundant_kvs_while_flush),
       OptionType::kBoolean, OptionVerificationType::kNormal, false, 0}},
@@ -477,7 +496,7 @@ static std::unordered_map<std::string, OptionTypeInfo> cf_options_type_info = {
       offsetof(struct MutableCFOptions, max_bytes_for_level_base)}},
     {"max_bytes_for_level_multiplier",
      {offsetof(struct ColumnFamilyOptions, max_bytes_for_level_multiplier),
-      OptionType::kInt, OptionVerificationType::kNormal, true,
+      OptionType::kDouble, OptionVerificationType::kNormal, true,
       offsetof(struct MutableCFOptions, max_bytes_for_level_multiplier)}},
     {"max_bytes_for_level_multiplier_additional",
      {offsetof(struct ColumnFamilyOptions,
@@ -511,6 +530,11 @@ static std::unordered_map<std::string, OptionTypeInfo> cf_options_type_info = {
       OptionVerificationType::kByName, false, 0}},
     {"prefix_extractor",
      {offsetof(struct ColumnFamilyOptions, prefix_extractor),
+      OptionType::kSliceTransform, OptionVerificationType::kByNameAllowNull,
+      false, 0}},
+    {"memtable_insert_with_hint_prefix_extractor",
+     {offsetof(struct ColumnFamilyOptions,
+               memtable_insert_with_hint_prefix_extractor),
       OptionType::kSliceTransform, OptionVerificationType::kByNameAllowNull,
       false, 0}},
     {"memtable_factory",
@@ -683,7 +707,7 @@ static std::unordered_map<std::string, InfoLogLevel> info_log_level_string_map =
      {"FATAL_LEVEL", InfoLogLevel::FATAL_LEVEL},
      {"HEADER_LEVEL", InfoLogLevel::HEADER_LEVEL}};
 
+extern const std::string kNullptrString;
 #endif  // !ROCKSDB_LITE
 
 }  // namespace rocksdb
-

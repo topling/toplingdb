@@ -16,8 +16,9 @@
 #include <algorithm>
 
 #include "include/org_rocksdb_RocksDB.h"
-#include "rocksdb/db.h"
 #include "rocksdb/cache.h"
+#include "rocksdb/db.h"
+#include "rocksdb/options.h"
 #include "rocksdb/types.h"
 #include "rocksjni/portal.h"
 
@@ -1740,3 +1741,47 @@ void Java_org_rocksdb_RocksDB_setOptions(JNIEnv* env, jobject jdb,
   auto* cf_handle = reinterpret_cast<rocksdb::ColumnFamilyHandle*>(jcf_handle);
   db->SetOptions(cf_handle, options_map);
 }
+
+//////////////////////////////////////////////////////////////////////////////
+// rocksdb::DB::AddFile
+
+void add_file_helper(JNIEnv* env, const jobjectArray& jfile_path_list,
+                     int file_path_list_len,
+                     std::vector<std::string>* file_path_list) {
+  for (int i = 0; i < file_path_list_len; i++) {
+    jstring jfile_path =
+        static_cast<jstring>(env->GetObjectArrayElement(jfile_path_list, i));
+    const char* file_path = env->GetStringUTFChars(jfile_path, NULL);
+    file_path_list->push_back(std::string(file_path));
+    env->ReleaseStringUTFChars(jfile_path, file_path);
+    env->DeleteLocalRef(jfile_path);
+  }
+}
+
+/*
+ * Class:     org_rocksdb_RocksDB
+ * Method:    addFile
+ * Signature: (JJ[Ljava/lang/String;IZ)V
+ */
+void Java_org_rocksdb_RocksDB_addFile__JJ_3Ljava_lang_String_2IZ(
+    JNIEnv* env, jobject jdb, jlong jdb_handle, jlong jcf_handle,
+    jobjectArray jfile_path_list, jint jfile_path_list_len,
+    jboolean jmove_file) {
+  auto* db = reinterpret_cast<rocksdb::DB*>(jdb_handle);
+  std::vector<std::string> file_path_list;
+  add_file_helper(env, jfile_path_list, static_cast<int>(jfile_path_list_len),
+                  &file_path_list);
+  auto* column_family =
+      reinterpret_cast<rocksdb::ColumnFamilyHandle*>(jcf_handle);
+  rocksdb::IngestExternalFileOptions ifo;
+  ifo.move_files = static_cast<bool>(jmove_file);
+  ifo.snapshot_consistency = true;
+  ifo.allow_global_seqno = false;
+  ifo.allow_blocking_flush = false;
+  rocksdb::Status s =
+      db->IngestExternalFile(column_family, file_path_list, ifo);
+  if (!s.ok()) {
+    rocksdb::RocksDBExceptionJni::ThrowNew(env, s);
+  }
+}
+

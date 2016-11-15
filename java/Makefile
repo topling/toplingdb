@@ -14,6 +14,8 @@ NATIVE_JAVA_CLASSES = org.rocksdb.AbstractCompactionFilter\
 	org.rocksdb.DirectComparator\
 	org.rocksdb.DirectSlice\
 	org.rocksdb.Env\
+	org.rocksdb.EnvOptions\
+	org.rocksdb.ExternalSstFileInfo\
 	org.rocksdb.FlushOptions\
 	org.rocksdb.Filter\
 	org.rocksdb.GenericRateLimiterConfig\
@@ -23,6 +25,7 @@ NATIVE_JAVA_CLASSES = org.rocksdb.AbstractCompactionFilter\
 	org.rocksdb.MergeOperator\
 	org.rocksdb.Options\
 	org.rocksdb.PlainTableConfig\
+	org.rocksdb.RateLimiter\
 	org.rocksdb.ReadOptions\
 	org.rocksdb.RemoveEmptyValueCompactionFilter\
 	org.rocksdb.RestoreOptions\
@@ -32,6 +35,7 @@ NATIVE_JAVA_CLASSES = org.rocksdb.AbstractCompactionFilter\
 	org.rocksdb.RocksMemEnv\
 	org.rocksdb.SkipListMemTableConfig\
 	org.rocksdb.Slice\
+	org.rocksdb.SstFileWriter\
 	org.rocksdb.Statistics\
 	org.rocksdb.TransactionLogIterator\
 	org.rocksdb.TtlDB\
@@ -72,6 +76,8 @@ JAVA_TESTS = org.rocksdb.BackupableDBOptionsTest\
 	org.rocksdb.DBOptionsTest\
 	org.rocksdb.DirectComparatorTest\
 	org.rocksdb.DirectSliceTest\
+	org.rocksdb.EnvOptionsTest\
+	org.rocksdb.ExternalSstFileInfoTest\
 	org.rocksdb.util.EnvironmentTest\
 	org.rocksdb.FilterTest\
 	org.rocksdb.FlushTest\
@@ -95,6 +101,7 @@ JAVA_TESTS = org.rocksdb.BackupableDBOptionsTest\
 	org.rocksdb.util.SizeUnitTest\
 	org.rocksdb.SliceTest\
 	org.rocksdb.SnapshotTest\
+	org.rocksdb.SstFileWriterTest\
 	org.rocksdb.TransactionLogIteratorTest\
 	org.rocksdb.TtlDBTest\
 	org.rocksdb.StatisticsCollectorTest\
@@ -187,7 +194,7 @@ java_test: java resolve_test_deps
 test: java java_test run_test
 
 run_test:
-	java -ea -Xcheck:jni -Djava.library.path=target -cp "$(MAIN_CLASSES):$(TEST_CLASSES):$(JAVA_TESTCLASSPATH):target/*" org.rocksdb.test.RocksJunitRunner $(JAVA_TESTS)
+	java -ea -Djava.library.path=target -cp "$(MAIN_CLASSES):$(TEST_CLASSES):$(JAVA_TESTCLASSPATH):target/*" org.rocksdb.test.RocksJunitRunner $(JAVA_TESTS)
 
 db_bench: java
 	$(AM_V_GEN)mkdir -p $(BENCHMARK_MAIN_CLASSES)

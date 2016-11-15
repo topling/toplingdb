@@ -135,9 +135,9 @@ public class OptionsTest {
   @Test
   public void maxBytesForLevelMultiplier() {
     try (final Options opt = new Options()) {
-      final int intValue = rand.nextInt();
-      opt.setMaxBytesForLevelMultiplier(intValue);
-      assertThat(opt.maxBytesForLevelMultiplier()).isEqualTo(intValue);
+      final double doubleValue = rand.nextDouble();
+      opt.setMaxBytesForLevelMultiplier(doubleValue);
+      assertThat(opt.maxBytesForLevelMultiplier()).isEqualTo(doubleValue);
     }
   }
 
@@ -797,6 +797,19 @@ public class OptionsTest {
 
       anotherOptions.setRateLimiterConfig(
           new GenericRateLimiterConfig(1000));
+    }
+  }
+
+  @Test
+  public void rateLimiter() {
+    try (final Options options = new Options();
+         final Options anotherOptions = new Options()) {
+      final RateLimiter rateLimiter =
+          new RateLimiter(1000, 100 * 1000, 1);
+      options.setRateLimiter(rateLimiter);
+      // Test with parameter initialization
+      anotherOptions.setRateLimiter(
+          new RateLimiter(1000));
     }
   }
 

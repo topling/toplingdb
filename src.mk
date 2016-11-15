@@ -10,15 +10,16 @@ LIB_SOURCES =                                                   \
   db/compaction_job.cc                                          \
   db/compaction_picker.cc                                       \
   db/convenience.cc                                             \
+  db/range_del_aggregator.cc                                    \
   db/db_filesnapshot.cc                                         \
   db/dbformat.cc                                                \
   db/db_impl.cc                                                 \
   db/db_impl_debug.cc                                           \
   db/db_impl_readonly.cc                                        \
   db/db_impl_experimental.cc                                    \
-  db/db_impl_add_file.cc                                        \
   db/db_info_dumper.cc                                          \
   db/db_iter.cc                                                 \
+  db/external_sst_file_ingestion_job.cc                         \
   db/experimental.cc                                            \
   db/event_helpers.cc                                           \
   db/file_indexer.cc                                            \
@@ -331,6 +332,8 @@ JNI_NATIVE_SOURCES =                                          \
   java/rocksjni/comparator.cc                                 \
   java/rocksjni/comparatorjnicallback.cc                      \
   java/rocksjni/env.cc                                        \
+  java/rocksjni/env_options.cc                                \
+  java/rocksjni/external_sst_file_info.cc                     \
   java/rocksjni/filter.cc                                     \
   java/rocksjni/iterator.cc                                   \
   java/rocksjni/loggerjnicallback.cc                          \
@@ -344,6 +347,7 @@ JNI_NATIVE_SOURCES =                                          \
   java/rocksjni/rocksdb_exception_test.cc                     \
   java/rocksjni/slice.cc                                      \
   java/rocksjni/snapshot.cc                                   \
+  java/rocksjni/sst_file_writerjni.cc                         \
   java/rocksjni/statistics.cc                                 \
   java/rocksjni/table.cc                                      \
   java/rocksjni/transaction_log.cc                            \

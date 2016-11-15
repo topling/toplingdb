@@ -12,7 +12,6 @@ define("ENV_HTTPS_APP_VALUE", "HTTPS_APP_VALUE");
 define("ENV_HTTPS_TOKEN_VALUE", "HTTPS_TOKEN_VALUE");
 
 define("PRIMARY_TOKEN_FILE", '/home/krad/.sandcastle');
-define("SECONDARY_TOKEN_FILE", '$HOME/.sandcastle');
 define("CONT_RUN_ALIAS", "leveldb");
 
 //////////////////////////////////////////////////////////////////////
@@ -25,8 +24,7 @@ function postURL($diffID, $url) {
   $cmd = 'echo \'{"diff_id": "' . $diffID . '", '
          . '"name":"click here for sandcastle tests for D' . $diffID . '", '
          . '"link":"' . $url . '"}\' | '
-         . 'http_proxy=fwdproxy.any.facebook.com:8080 '
-         . 'https_proxy=fwdproxy.any.facebook.com:8080 arc call-conduit '
+         . 'arc call-conduit '
          . 'differential.updateunitresults';
   shell_exec($cmd);
 }
@@ -40,8 +38,7 @@ function buildUpdateTestStatusCmd($diffID, $test, $status) {
   $cmd = 'echo \'{"diff_id": "' . $diffID . '", '
          . '"name":"' . $test . '", '
          . '"result":"' . $status . '"}\' | '
-         . 'http_proxy=fwdproxy.any.facebook.com:8080 '
-         . 'https_proxy=fwdproxy.any.facebook.com:8080 arc call-conduit '
+         . 'arc call-conduit '
          . 'differential.updateunitresults';
   return $cmd;
 }
@@ -106,7 +103,7 @@ function getSteps($applyDiff, $diffID, $username, $test) {
     // Patch the code (keep your fingures crossed).
     $patch = array(
       "name" => "Patch " . $diffID,
-      "shell" => "HTTPS_PROXY=fwdproxy:8080 arc --arcrc-file ~/.arcrc "
+      "shell" => "arc --arcrc-file ~/.arcrc "
                   . "patch --nocommit --diff " . $diffID,
       "user" => "root"
     );
@@ -175,6 +172,8 @@ function getSteps($applyDiff, $diffID, $username, $test) {
 function getSandcastleConfig() {
   $sandcastle_config = array();
 
+  $cwd = getcwd();
+  $cwd_token_file = "{$cwd}/.sandcastle";
   // This is a case when we're executed from a continuous run. Fetch the values
   // from the environment.
   if (getenv(ENV_POST_RECEIVE_HOOK)) {
@@ -185,20 +184,20 @@ function getSandcastleConfig() {
     // configuration files.
     for ($i = 0; $i < 50; $i++) {
       if (file_exists(PRIMARY_TOKEN_FILE) ||
-          file_exists(SECONDARY_TOKEN_FILE)) {
+          file_exists($cwd_token_file)) {
         break;
       }
       // If we failed to fetch the tokens, sleep for 0.2 second and try again
       usleep(200000);
     }
     assert(file_exists(PRIMARY_TOKEN_FILE) ||
-           file_exists(SECONDARY_TOKEN_FILE));
+           file_exists($cwd_token_file));
 
     // Try the primary location first, followed by a secondary.
     if (file_exists(PRIMARY_TOKEN_FILE)) {
       $cmd = 'cat ' . PRIMARY_TOKEN_FILE;
     } else {
-      $cmd = 'cat ' . SECONDARY_TOKEN_FILE;
+      $cmd = 'cat ' . $cwd_token_file;
     }
 
     assert(strlen($cmd) > 0);
@@ -300,11 +299,21 @@ function getSandcastleConfig() {
   );
 
   // Submit to Sandcastle.
-  $url = 'https://interngraph.intern.facebook.com/sandcastle/generate?'
-          .'command=SandcastleUniversalCommand'
-          .'&vcs=rocksdb-git&revision=origin%2Fmaster&type=lego'
-          .'&user=' . $username . '&alias=rocksdb-precommit'
-          .'&command-args=' . urlencode(json_encode($command));
+  $url = 'https://interngraph.intern.facebook.com/sandcastle/create';
+
+  $job = array(
+    'command' => 'SandcastleUniversalCommand',
+    'args' => $command,
+    'capabilities' => array(
+      'vcs' => 'rocksdb-int-git',
+      'type' => 'lego',
+    ),
+    'hash' => 'origin/master',
+    'user' => $username,
+    'alias' => 'rocksdb-precommit',
+    'tags' => array('rocksdb'),
+    'description' => 'Rocksdb precommit job',
+  );
 
   // Fetch the configuration necessary to submit a successful HTTPS request.
   $sandcastle_config = getSandcastleConfig();
@@ -312,8 +321,9 @@ function getSandcastleConfig() {
   $app = $sandcastle_config[0];
   $token = $sandcastle_config[1];
 
-  $cmd = 'https_proxy= HTTPS_PROXY= curl -s -k -F app=' . $app . ' '
-          . '-F token=' . $token . ' "' . $url . '"';
+  $cmd = 'curl -s -k -F app=' . $app . ' '
+          . '-F token=' . $token . ' -F job=\'' . json_encode($job)
+          .'\' "' . $url . '"';
 
   $output = shell_exec($cmd);
   assert(strlen($output) > 0);

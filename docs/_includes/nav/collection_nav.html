@@ -16,7 +16,7 @@
         </div>
         <div class="navGroups">
           {% if include.type == "blog" %}
-            {% assign grouptitle = "Recent Posts" %}
+            {% assign grouptitle = "All Posts" %}
             {% assign groupitems = include.navdata %}
             {% include nav/collection_nav_group.html %}
           {% else %}
@@ -43,7 +43,7 @@
   }, false);
 
   var collectionNav = document.getElementById('collection_nav');
-  var collectionNavToggler = 
+  var collectionNavToggler =
     document.getElementById('collection_nav_toggler');
   collectionNavToggler.addEventListener('click', function(e) {
     collectionNav.classList.toggle('toggleNavActive');
@@ -62,4 +62,3 @@
     }
   }
 </script>
-

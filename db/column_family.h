@@ -137,7 +137,6 @@ extern Status CheckConcurrentWritesSupported(
     const ColumnFamilyOptions& cf_options);
 
 extern ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
-                                           const InternalKeyComparator* icmp,
                                            const ColumnFamilyOptions& src);
 // Wrap user defined table proproties collector factories `from cf_options`
 // into internal ones in int_tbl_prop_collector_factories. Add a system internal
@@ -252,6 +251,13 @@ class ColumnFamilyData {
   // REQUIRES: DB mutex held
   Compaction* PickCompaction(const MutableCFOptions& mutable_options,
                              LogBuffer* log_buffer);
+
+  // Check if the passed range overlap with any running compactions.
+  // REQUIRES: DB mutex held
+  bool RangeOverlapWithCompaction(const Slice& smallest_user_key,
+                                  const Slice& largest_user_key,
+                                  int level) const;
+
   // A flag to tell a manual compaction is to compact all levels together
   // instad of for specific level.
   static const int kCompactAllLevels;

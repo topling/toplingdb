@@ -7,6 +7,9 @@ package org.rocksdb;
 
 import java.util.*;
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
 import org.rocksdb.util.Environment;
 
 /**
@@ -19,6 +22,15 @@ public class RocksDB extends RocksObject {
   public static final byte[] DEFAULT_COLUMN_FAMILY = "default".getBytes();
   public static final int NOT_FOUND = -1;
 
+  private enum LibraryState {
+    NOT_LOADED,
+    LOADING,
+    LOADED
+  }
+
+  private static AtomicReference<LibraryState> libraryLoaded
+      = new AtomicReference<>(LibraryState.NOT_LOADED);
+
   static {
     RocksDB.loadLibrary();
   }
@@ -30,26 +42,42 @@ public class RocksDB extends RocksObject {
    * java.io.tmpdir, however, you can override this temporary location by
    * setting the environment variable ROCKSDB_SHAREDLIB_DIR.
    */
-  public static synchronized void loadLibrary() {
-    String tmpDir = System.getenv("ROCKSDB_SHAREDLIB_DIR");
-    // loading possibly necessary libraries.
-    for (CompressionType compressionType : CompressionType.values()) {
-      try {
-        if (compressionType.getLibraryName() != null) {
-          System.loadLibrary(compressionType.getLibraryName());
+  public static void loadLibrary() {
+    if (libraryLoaded.get() == LibraryState.LOADED) {
+      return;
+    }
+
+    if (libraryLoaded.compareAndSet(LibraryState.NOT_LOADED,
+        LibraryState.LOADING)) {
+      final String tmpDir = System.getenv("ROCKSDB_SHAREDLIB_DIR");
+      // loading possibly necessary libraries.
+      for (final CompressionType compressionType : CompressionType.values()) {
+        try {
+          if (compressionType.getLibraryName() != null) {
+            System.loadLibrary(compressionType.getLibraryName());
+          }
+        } catch (UnsatisfiedLinkError e) {
+          // since it may be optional, we ignore its loading failure here.
         }
-      } catch (UnsatisfiedLinkError e) {
-        // since it may be optional, we ignore its loading failure here.
       }
+      try {
+        NativeLibraryLoader.getInstance().loadLibrary(tmpDir);
+      } catch (IOException e) {
+        libraryLoaded.set(LibraryState.NOT_LOADED);
+        throw new RuntimeException("Unable to load the RocksDB shared library"
+            + e);
+      }
+
+      libraryLoaded.set(LibraryState.LOADED);
+      return;
     }
-    try
-    {
-      NativeLibraryLoader.getInstance().loadLibrary(tmpDir);
-    }
-    catch (IOException e)
-    {
-      throw new RuntimeException("Unable to load the RocksDB shared library"
-          + e);
+
+    while (libraryLoaded.get() == LibraryState.LOADING) {
+      try {
+        Thread.sleep(10);
+      } catch(final InterruptedException e) {
+        //ignore
+      }
     }
   }
 
@@ -60,35 +88,54 @@ public class RocksDB extends RocksObject {
    * @param paths a list of strings where each describes a directory
    *     of a library.
    */
-  public static synchronized void loadLibrary(final List<String> paths) {
-    for (CompressionType compressionType : CompressionType.values()) {
-      if (compressionType.equals(CompressionType.NO_COMPRESSION)) {
-        continue;
-      }
-      for (String path : paths) {
-        try {
-          System.load(path + "/" + Environment.getSharedLibraryFileName(
-              compressionType.getLibraryName()));
-          break;
-        } catch (UnsatisfiedLinkError e) {
-          // since they are optional, we ignore loading fails.
+  public static void loadLibrary(final List<String> paths) {
+    if (libraryLoaded.get() == LibraryState.LOADED) {
+      return;
+    }
+
+    if (libraryLoaded.compareAndSet(LibraryState.NOT_LOADED,
+        LibraryState.LOADING)) {
+      for (final CompressionType compressionType : CompressionType.values()) {
+        if (compressionType.equals(CompressionType.NO_COMPRESSION)) {
+          continue;
+        }
+        for (final String path : paths) {
+          try {
+            System.load(path + "/" + Environment.getSharedLibraryFileName(
+                compressionType.getLibraryName()));
+            break;
+          } catch (UnsatisfiedLinkError e) {
+            // since they are optional, we ignore loading fails.
+          }
         }
       }
-    }
-    boolean success = false;
-    UnsatisfiedLinkError err = null;
-    for (String path : paths) {
-      try {
-        System.load(path + "/" +
-            Environment.getJniLibraryFileName("rocksdbjni"));
-        success = true;
-        break;
-      } catch (UnsatisfiedLinkError e) {
-        err = e;
+      boolean success = false;
+      UnsatisfiedLinkError err = null;
+      for (final String path : paths) {
+        try {
+          System.load(path + "/" +
+              Environment.getJniLibraryFileName("rocksdbjni"));
+          success = true;
+          break;
+        } catch (UnsatisfiedLinkError e) {
+          err = e;
+        }
       }
+      if (!success) {
+        libraryLoaded.set(LibraryState.NOT_LOADED);
+        throw err;
+      }
+
+      libraryLoaded.set(LibraryState.LOADED);
+      return;
     }
-    if (!success) {
-      throw err;
+
+    while (libraryLoaded.get() == LibraryState.LOADING) {
+      try {
+        Thread.sleep(10);
+      } catch(final InterruptedException e) {
+        //ignore
+      }
     }
   }
 
@@ -824,7 +871,8 @@ public class RocksDB extends RocksObject {
     final byte[][] values = multiGet(nativeHandle_, keysArray, keyOffsets,
         keyLengths);
 
-    final Map<byte[], byte[]> keyValueMap = new HashMap<>();
+    final Map<byte[], byte[]> keyValueMap =
+        new HashMap<>(computeCapacityHint(values.length));
     for(int i = 0; i < values.length; i++) {
       if(values[i] == null) {
         continue;
@@ -834,6 +882,12 @@ public class RocksDB extends RocksObject {
     }
 
     return keyValueMap;
+  }
+
+  private static int computeCapacityHint(final int estimatedNumberOfItems) {
+    // Default load factor for HashMap is 0.75, so N * 1.5 will be at the load
+    // limit. We add +1 for a buffer.
+    return (int)Math.ceil(estimatedNumberOfItems * 1.5 + 1.0);
   }
 
   /**
@@ -880,7 +934,8 @@ public class RocksDB extends RocksObject {
     final byte[][] values = multiGet(nativeHandle_, keysArray, keyOffsets,
         keyLengths, cfHandles);
 
-    final Map<byte[], byte[]> keyValueMap = new HashMap<>();
+    final Map<byte[], byte[]> keyValueMap =
+        new HashMap<>(computeCapacityHint(values.length));
     for(int i = 0; i < values.length; i++) {
       if (values[i] == null) {
         continue;
@@ -915,7 +970,8 @@ public class RocksDB extends RocksObject {
     final byte[][] values = multiGet(nativeHandle_, opt.nativeHandle_,
         keysArray, keyOffsets, keyLengths);
 
-    final Map<byte[], byte[]> keyValueMap = new HashMap<>();
+    final Map<byte[], byte[]> keyValueMap =
+        new HashMap<>(computeCapacityHint(values.length));
     for(int i = 0; i < values.length; i++) {
       if(values[i] == null) {
         continue;
@@ -971,7 +1027,8 @@ public class RocksDB extends RocksObject {
     final byte[][] values = multiGet(nativeHandle_, opt.nativeHandle_,
         keysArray, keyOffsets, keyLengths, cfHandles);
 
-    final Map<byte[], byte[]> keyValueMap = new HashMap<>();
+    final Map<byte[], byte[]> keyValueMap
+        = new HashMap<>(computeCapacityHint(values.length));
     for(int i = 0; i < values.length; i++) {
       if(values[i] == null) {
         continue;
@@ -1944,11 +2001,116 @@ public class RocksDB extends RocksObject {
   }
 
   public void setOptions(final ColumnFamilyHandle columnFamilyHandle,
-      final MutableColumnFamilyOptions mutableColumnFamilyOptions)
-      throws RocksDBException {
+                         final MutableColumnFamilyOptions mutableColumnFamilyOptions)
+          throws RocksDBException {
     setOptions(nativeHandle_, columnFamilyHandle.nativeHandle_,
-        mutableColumnFamilyOptions.getKeys(),
-        mutableColumnFamilyOptions.getValues());
+            mutableColumnFamilyOptions.getKeys(),
+            mutableColumnFamilyOptions.getValues());
+  }
+
+  private long[] toNativeHandleList(final List<? extends RocksObject> objectList) {
+    final int len = objectList.size();
+    final long[] handleList = new long[len];
+    for (int i = 0; i < len; i++) {
+      handleList[i] = objectList.get(i).nativeHandle_;
+    }
+    return handleList;
+  }
+
+  public void addFileWithFilePath(final ColumnFamilyHandle columnFamilyHandle,
+      final List<String> filePathList) throws RocksDBException {
+    addFile(nativeHandle_, columnFamilyHandle.nativeHandle_,
+        filePathList.toArray(new String[filePathList.size()]), filePathList.size(), false);
+  }
+
+  public void addFileWithFilePath(final ColumnFamilyHandle columnFamilyHandle,
+      final List<String> filePathList, final boolean moveFile) throws RocksDBException {
+    addFile(nativeHandle_, columnFamilyHandle.nativeHandle_,
+        filePathList.toArray(new String[filePathList.size()]), filePathList.size(), moveFile);
+  }
+
+  public void addFileWithFilePath(final List<String> filePathList) throws RocksDBException {
+    addFile(nativeHandle_, getDefaultColumnFamily().nativeHandle_,
+        filePathList.toArray(new String[filePathList.size()]), filePathList.size(), false);
+  }
+
+  public void addFileWithFilePath(final List<String> filePathList, final boolean moveFile)
+      throws RocksDBException {
+    addFile(nativeHandle_, getDefaultColumnFamily().nativeHandle_,
+        filePathList.toArray(new String[filePathList.size()]), filePathList.size(), moveFile);
+  }
+
+  public void addFileWithFilePath(
+      final ColumnFamilyHandle columnFamilyHandle, final String filePath) throws RocksDBException {
+    addFile(nativeHandle_, columnFamilyHandle.nativeHandle_, new String[] {filePath}, 1, false);
+  }
+
+  public void addFileWithFilePath(final ColumnFamilyHandle columnFamilyHandle,
+      final String filePath, final boolean moveFile) throws RocksDBException {
+    addFile(nativeHandle_, columnFamilyHandle.nativeHandle_, new String[] {filePath}, 1, moveFile);
+  }
+
+  public void addFileWithFilePath(final String filePath) throws RocksDBException {
+    addFile(
+        nativeHandle_, getDefaultColumnFamily().nativeHandle_, new String[] {filePath}, 1, false);
+  }
+
+  public void addFileWithFilePath(final String filePath, final boolean moveFile)
+      throws RocksDBException {
+    addFile(nativeHandle_, getDefaultColumnFamily().nativeHandle_, new String[] {filePath}, 1,
+        moveFile);
+  }
+
+  public void addFileWithFileInfo(final ColumnFamilyHandle columnFamilyHandle,
+      final List<ExternalSstFileInfo> fileInfoList) throws RocksDBException {
+    final long[] fiHandleList = toNativeHandleList(fileInfoList);
+    addFile(
+        nativeHandle_, columnFamilyHandle.nativeHandle_, fiHandleList, fiHandleList.length, false);
+  }
+
+  public void addFileWithFileInfo(final ColumnFamilyHandle columnFamilyHandle,
+      final List<ExternalSstFileInfo> fileInfoList, final boolean moveFile)
+      throws RocksDBException {
+    final long[] fiHandleList = toNativeHandleList(fileInfoList);
+    addFile(nativeHandle_, columnFamilyHandle.nativeHandle_, fiHandleList, fiHandleList.length,
+        moveFile);
+  }
+
+  public void addFileWithFileInfo(final List<ExternalSstFileInfo> fileInfoList)
+      throws RocksDBException {
+    final long[] fiHandleList = toNativeHandleList(fileInfoList);
+    addFile(nativeHandle_, getDefaultColumnFamily().nativeHandle_, fiHandleList,
+        fiHandleList.length, false);
+  }
+
+  public void addFileWithFileInfo(final List<ExternalSstFileInfo> fileInfoList,
+      final boolean moveFile) throws RocksDBException {
+    final long[] fiHandleList = toNativeHandleList(fileInfoList);
+    addFile(nativeHandle_, getDefaultColumnFamily().nativeHandle_, fiHandleList,
+        fiHandleList.length, moveFile);
+  }
+
+  public void addFileWithFileInfo(final ColumnFamilyHandle columnFamilyHandle,
+      final ExternalSstFileInfo fileInfo) throws RocksDBException {
+    addFile(nativeHandle_, columnFamilyHandle.nativeHandle_, new long[] {fileInfo.nativeHandle_}, 1,
+        false);
+  }
+
+  public void addFileWithFileInfo(final ColumnFamilyHandle columnFamilyHandle,
+      final ExternalSstFileInfo fileInfo, final boolean moveFile) throws RocksDBException {
+    addFile(nativeHandle_, columnFamilyHandle.nativeHandle_, new long[] {fileInfo.nativeHandle_}, 1,
+        moveFile);
+  }
+
+  public void addFileWithFileInfo(final ExternalSstFileInfo fileInfo) throws RocksDBException {
+    addFile(nativeHandle_, getDefaultColumnFamily().nativeHandle_,
+        new long[] {fileInfo.nativeHandle_}, 1, false);
+  }
+
+  public void addFileWithFileInfo(final ExternalSstFileInfo fileInfo, final boolean moveFile)
+      throws RocksDBException {
+    addFile(nativeHandle_, getDefaultColumnFamily().nativeHandle_,
+        new long[] {fileInfo.nativeHandle_}, 1, moveFile);
   }
 
   /**
@@ -2142,6 +2304,9 @@ public class RocksDB extends RocksObject {
       throws RocksDBException;
   private native void setOptions(long handle, long cfHandle, String[] keys,
       String[] values) throws RocksDBException;
-
+  private native void addFile(long handle, long cfHandle, String[] filePathList,
+      int filePathListLen, boolean moveFile) throws RocksDBException;
+  private native void addFile(long handle, long cfHandle, long[] fiHandleList, int fiHandleListLen,
+      boolean moveFile) throws RocksDBException;
   protected DBOptionsInterface options_;
 }

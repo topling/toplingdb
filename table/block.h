@@ -13,7 +13,11 @@
 #include <string>
 #include <vector>
 #ifdef ROCKSDB_MALLOC_USABLE_SIZE
+#ifdef OS_FREEBSD
+#include <malloc_np.h>
+#else
 #include <malloc.h>
+#endif
 #endif
 
 #include "db/dbformat.h"
@@ -147,7 +151,8 @@ class BlockReadAmpBitmap {
 class Block {
  public:
   // Initialize the block with the specified contents.
-  explicit Block(BlockContents&& contents, size_t read_amp_bytes_per_bit = 0,
+  explicit Block(BlockContents&& contents, SequenceNumber _global_seqno,
+                 size_t read_amp_bytes_per_bit = 0,
                  Statistics* statistics = nullptr);
 
   ~Block() = default;
@@ -190,6 +195,8 @@ class Block {
   // Report an approximation of how much memory has been used.
   size_t ApproximateMemoryUsage() const;
 
+  SequenceNumber global_seqno() const { return global_seqno_; }
+
  private:
   BlockContents contents_;
   const char* data_;            // contents_.data.data()
@@ -197,6 +204,9 @@ class Block {
   uint32_t restart_offset_;     // Offset in data_ of restart array
   std::unique_ptr<BlockPrefixIndex> prefix_index_;
   std::unique_ptr<BlockReadAmpBitmap> read_amp_bitmap_;
+  // All keys in the block will have seqno = global_seqno_, regardless of
+  // the encoded value (kDisableGlobalSequenceNumber means disabled)
+  const SequenceNumber global_seqno_;
 
   // No copying allowed
   Block(const Block&);
@@ -215,20 +225,21 @@ class BlockIter : public InternalIterator {
         status_(Status::OK()),
         prefix_index_(nullptr),
         key_pinned_(false),
+        global_seqno_(kDisableGlobalSequenceNumber),
         read_amp_bitmap_(nullptr),
         last_bitmap_offset_(0) {}
 
   BlockIter(const Comparator* comparator, const char* data, uint32_t restarts,
             uint32_t num_restarts, BlockPrefixIndex* prefix_index,
-            BlockReadAmpBitmap* read_amp_bitmap)
+            SequenceNumber global_seqno, BlockReadAmpBitmap* read_amp_bitmap)
       : BlockIter() {
     Initialize(comparator, data, restarts, num_restarts, prefix_index,
-               read_amp_bitmap);
+               global_seqno, read_amp_bitmap);
   }
 
   void Initialize(const Comparator* comparator, const char* data,
                   uint32_t restarts, uint32_t num_restarts,
-                  BlockPrefixIndex* prefix_index,
+                  BlockPrefixIndex* prefix_index, SequenceNumber global_seqno,
                   BlockReadAmpBitmap* read_amp_bitmap) {
     assert(data_ == nullptr);           // Ensure it is called only once
     assert(num_restarts > 0);           // Ensure the param is valid
@@ -240,6 +251,7 @@ class BlockIter : public InternalIterator {
     current_ = restarts_;
     restart_index_ = num_restarts_;
     prefix_index_ = prefix_index;
+    global_seqno_ = global_seqno;
     read_amp_bitmap_ = read_amp_bitmap;
     last_bitmap_offset_ = current_ + 1;
   }
@@ -271,6 +283,8 @@ class BlockIter : public InternalIterator {
 
   virtual void Seek(const Slice& target) override;
 
+  virtual void SeekForPrev(const Slice& target) override;
+
   virtual void SeekToFirst() override;
 
   virtual void SeekToLast() override;
@@ -294,6 +308,10 @@ class BlockIter : public InternalIterator {
 
   size_t TEST_CurrentEntrySize() { return NextEntryOffset() - current_; }
 
+  uint32_t ValueOffset() const {
+    return static_cast<uint32_t>(value_.data() - data_);
+  }
+
  private:
   const Comparator* comparator_;
   const char* data_;       // underlying block contents
@@ -308,6 +326,7 @@ class BlockIter : public InternalIterator {
   Status status_;
   BlockPrefixIndex* prefix_index_;
   bool key_pinned_;
+  SequenceNumber global_seqno_;
 
   // read-amp bitmap
   BlockReadAmpBitmap* read_amp_bitmap_;
@@ -344,7 +363,7 @@ class BlockIter : public InternalIterator {
 
   // Return the offset in data_ just past the end of the current entry.
   inline uint32_t NextEntryOffset() const {
-    // NOTE: We don't support files bigger than 2GB
+    // NOTE: We don't support blocks bigger than 2GB
     return static_cast<uint32_t>((value_.data() + value_.size()) - data_);
   }
 

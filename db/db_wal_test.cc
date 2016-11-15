@@ -382,6 +382,42 @@ TEST_F(DBWALTest, PreallocateBlock) {
 #endif  // !(defined NDEBUG) || !defined(OS_WIN)
 
 #ifndef ROCKSDB_LITE
+TEST_F(DBWALTest, FullPurgePreservesRecycledLog) {
+  // For github issue #1303
+  for (int i = 0; i < 2; ++i) {
+    Options options = CurrentOptions();
+    options.create_if_missing = true;
+    options.recycle_log_file_num = 2;
+    if (i != 0) {
+      options.wal_dir = alternative_wal_dir_;
+    }
+
+    DestroyAndReopen(options);
+    ASSERT_OK(Put("foo", "v1"));
+    VectorLogPtr log_files;
+    ASSERT_OK(dbfull()->GetSortedWalFiles(log_files));
+    ASSERT_GT(log_files.size(), 0);
+    ASSERT_OK(Flush());
+
+    // Now the original WAL is in log_files[0] and should be marked for
+    // recycling.
+    // Verify full purge cannot remove this file.
+    JobContext job_context(0);
+    dbfull()->TEST_LockMutex();
+    dbfull()->FindObsoleteFiles(&job_context, true /* force */);
+    dbfull()->TEST_UnlockMutex();
+    dbfull()->PurgeObsoleteFiles(job_context);
+
+    if (i == 0) {
+      ASSERT_OK(
+          env_->FileExists(LogFileName(dbname_, log_files[0]->LogNumber())));
+    } else {
+      ASSERT_OK(env_->FileExists(
+          LogFileName(alternative_wal_dir_, log_files[0]->LogNumber())));
+    }
+  }
+}
+
 TEST_F(DBWALTest, GetSortedWalFiles) {
   do {
     CreateAndReopenWithCF({"pikachu"}, CurrentOptions());
@@ -609,8 +645,6 @@ TEST_F(DBWALTest, PartOfWritesWithWALDisabled) {
   Options options = CurrentOptions();
   options.env = fault_env.get();
   options.disable_auto_compactions = true;
-  // TODO(yiwu): fix for 2PC.
-  options.allow_2pc = false;
   WriteOptions wal_on, wal_off;
   wal_on.sync = true;
   wal_on.disableWAL = false;
@@ -970,6 +1004,32 @@ TEST_F(DBWALTest, AvoidFlushDuringRecovery) {
   ASSERT_EQ(2, TotalTableFiles());
 }
 
+TEST_F(DBWALTest, WalCleanupAfterAvoidFlushDuringRecovery) {
+  // Verifies WAL files that were present during recovery, but not flushed due
+  // to avoid_flush_during_recovery, will be considered for deletion at a later
+  // stage. We check at least one such file is deleted during Flush().
+  Options options = CurrentOptions();
+  options.disable_auto_compactions = true;
+  options.avoid_flush_during_recovery = true;
+  Reopen(options);
+
+  ASSERT_OK(Put("foo", "v1"));
+  Reopen(options);
+  for (int i = 0; i < 2; ++i) {
+    if (i > 0) {
+      // Flush() triggers deletion of obsolete tracked files
+      Flush();
+    }
+    VectorLogPtr log_files;
+    ASSERT_OK(dbfull()->GetSortedWalFiles(log_files));
+    if (i == 0) {
+      ASSERT_GT(log_files.size(), 0);
+    } else {
+      ASSERT_EQ(0, log_files.size());
+    }
+  }
+}
+
 TEST_F(DBWALTest, RecoverWithoutFlush) {
   Options options = CurrentOptions();
   options.avoid_flush_during_recovery = true;
@@ -1130,6 +1190,29 @@ TEST_F(DBWALTest, RecoverFromCorruptedWALWithoutFlush) {
 
 #endif  // ROCKSDB_LITE
 
+TEST_F(DBWALTest, WalTermTest) {
+  Options options = CurrentOptions();
+  options.env = env_;
+  CreateAndReopenWithCF({"pikachu"}, options);
+
+  ASSERT_OK(Put(1, "foo", "bar"));
+
+  WriteOptions wo;
+  wo.sync = true;
+  wo.disableWAL = false;
+
+  WriteBatch batch;
+  batch.Put("foo", "bar");
+  batch.MarkWalTerminationPoint();
+  batch.Put("foo2", "bar2");
+
+  ASSERT_OK(dbfull()->Write(wo, &batch));
+
+  // make sure we can re-open it.
+  ASSERT_OK(TryReopenWithColumnFamilies({"default", "pikachu"}, options));
+  ASSERT_EQ("bar", Get(1, "foo"));
+  ASSERT_EQ("NOT_FOUND", Get(1, "foo2"));
+}
 }  // namespace rocksdb
 
 int main(int argc, char** argv) {

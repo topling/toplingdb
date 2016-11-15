@@ -29,7 +29,6 @@ struct ImmutableDBOptions {
   InfoLogLevel info_log_level;
   int max_open_files;
   int max_file_opening_threads;
-  uint64_t max_total_wal_size;
   std::shared_ptr<Statistics> statistics;
   bool disable_data_sync;
   bool use_fsync;
@@ -37,8 +36,6 @@ struct ImmutableDBOptions {
   std::string db_log_dir;
   std::string wal_dir;
   uint64_t delete_obsolete_files_period_micros;
-  int base_background_compactions;
-  int max_background_compactions;
   uint32_t max_subcompactions;
   int max_background_flushes;
   size_t max_log_file_size;
@@ -53,6 +50,7 @@ struct ImmutableDBOptions {
   bool allow_os_buffer;
   bool allow_mmap_reads;
   bool allow_mmap_writes;
+  bool use_direct_reads;
   bool allow_fallocate;
   bool is_fd_close_on_exec;
   unsigned int stats_dump_period_sec;
@@ -69,7 +67,6 @@ struct ImmutableDBOptions {
   uint64_t wal_bytes_per_sync;
   std::vector<std::shared_ptr<EventListener>> listeners;
   bool enable_thread_tracking;
-  uint64_t delayed_write_rate;
   bool allow_concurrent_memtable_write;
   bool enable_write_thread_adaptive_yield;
   uint64_t write_thread_max_yield_usec;
@@ -87,10 +84,17 @@ struct ImmutableDBOptions {
 };
 
 struct MutableDBOptions {
+  MutableDBOptions();
   explicit MutableDBOptions(const MutableDBOptions& options) = default;
   explicit MutableDBOptions(const DBOptions& options);
 
   void Dump(Logger* log) const;
+
+  int base_background_compactions;
+  int max_background_compactions;
+  bool avoid_flush_during_shutdown;
+  uint64_t delayed_write_rate;
+  uint64_t max_total_wal_size;
 };
 
 }  // namespace rocksdb

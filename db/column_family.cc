@@ -139,10 +139,8 @@ Status CheckConcurrentWritesSupported(const ColumnFamilyOptions& cf_options) {
 }
 
 ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
-                                    const InternalKeyComparator* icmp,
                                     const ColumnFamilyOptions& src) {
   ColumnFamilyOptions result = src;
-  result.comparator = icmp;
   size_t clamp_max = std::conditional<
       sizeof(size_t) == 4, std::integral_constant<size_t, 0xffffffff>,
       std::integral_constant<uint64_t, 64ull << 30>>::type::value;
@@ -272,6 +270,11 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
     result.max_compaction_bytes = result.target_file_size_base * 25;
   }
 
+  // Insert into memtable with hint is incompatible with concurrent inserts.
+  if (db_options.allow_concurrent_memtable_write) {
+    result.memtable_insert_with_hint_prefix_extractor = nullptr;
+  }
+
   return result;
 }
 
@@ -349,8 +352,7 @@ ColumnFamilyData::ColumnFamilyData(
       refs_(0),
       dropped_(false),
       internal_comparator_(cf_options.comparator),
-      initial_cf_options_(
-          SanitizeOptions(db_options, &internal_comparator_, cf_options)),
+      initial_cf_options_(SanitizeOptions(db_options, cf_options)),
       ioptions_(db_options, initial_cf_options_),
       mutable_cf_options_(initial_cf_options_),
       write_buffer_manager_(write_buffer_manager),
@@ -492,11 +494,12 @@ const double kSlowdownRatio = 1.2;
 
 namespace {
 std::unique_ptr<WriteControllerToken> SetupDelay(
-    uint64_t max_write_rate, WriteController* write_controller,
+    WriteController* write_controller,
     uint64_t compaction_needed_bytes, uint64_t prev_compaction_neeed_bytes,
     bool auto_comapctions_disabled) {
   const uint64_t kMinWriteRate = 1024u;  // Minimum write rate 1KB/s.
 
+  uint64_t max_write_rate = write_controller->max_delayed_write_rate();
   uint64_t write_rate = write_controller->delayed_write_rate();
 
   if (auto_comapctions_disabled) {
@@ -545,14 +548,34 @@ int GetL0ThresholdSpeedupCompaction(int level0_file_num_compaction_trigger,
   // SanitizeOptions() ensures it.
   assert(level0_file_num_compaction_trigger <= level0_slowdown_writes_trigger);
 
+  if (level0_file_num_compaction_trigger < 0) {
+    return std::numeric_limits<int>::max();
+  }
+
+  const int twice_level0_trigger = level0_file_num_compaction_trigger * 2;
+
+  // overflow protection
+  if (twice_level0_trigger < 0) {
+    return std::numeric_limits<int>::max();
+  }
+
   // 1/4 of the way between L0 compaction trigger threshold and slowdown
   // condition.
+  const int one_fourth_trigger_slowdown =
+      level0_file_num_compaction_trigger +
+      ((level0_slowdown_writes_trigger - level0_file_num_compaction_trigger) /
+       4);
+
+  // overflow protection
+  if (one_fourth_trigger_slowdown < 0) {
+    return std::numeric_limits<int>::max();
+  }
+
+  assert(twice_level0_trigger >= 0);
+  assert(one_fourth_trigger_slowdown >= 0);
+
   // Or twice as compaction trigger, if it is smaller.
-  return std::min(level0_file_num_compaction_trigger * 2,
-                  level0_file_num_compaction_trigger +
-                      (level0_slowdown_writes_trigger -
-                       level0_file_num_compaction_trigger) /
-                          4);
+  return std::min(twice_level0_trigger, one_fourth_trigger_slowdown);
 }
 }  // namespace
 
@@ -599,8 +622,8 @@ void ColumnFamilyData::RecalculateWriteStallConditions(
                imm()->NumNotFlushed() >=
                    mutable_cf_options.max_write_buffer_number - 1) {
       write_controller_token_ =
-          SetupDelay(ioptions_.delayed_write_rate, write_controller,
-                     compaction_needed_bytes, prev_compaction_needed_bytes_,
+          SetupDelay(write_controller, compaction_needed_bytes,
+                     prev_compaction_needed_bytes_,
                      mutable_cf_options.disable_auto_compactions);
       internal_stats_->AddCFStats(InternalStats::MEMTABLE_SLOWDOWN, 1);
       Log(InfoLogLevel::WARN_LEVEL, ioptions_.info_log,
@@ -615,8 +638,8 @@ void ColumnFamilyData::RecalculateWriteStallConditions(
                vstorage->l0_delay_trigger_count() >=
                    mutable_cf_options.level0_slowdown_writes_trigger) {
       write_controller_token_ =
-          SetupDelay(ioptions_.delayed_write_rate, write_controller,
-                     compaction_needed_bytes, prev_compaction_needed_bytes_,
+          SetupDelay(write_controller, compaction_needed_bytes,
+                     prev_compaction_needed_bytes_,
                      mutable_cf_options.disable_auto_compactions);
       internal_stats_->AddCFStats(InternalStats::LEVEL0_SLOWDOWN_TOTAL, 1);
       if (compaction_picker_->IsLevel0CompactionInProgress()) {
@@ -633,8 +656,8 @@ void ColumnFamilyData::RecalculateWriteStallConditions(
                vstorage->estimated_compaction_needed_bytes() >=
                    mutable_cf_options.soft_pending_compaction_bytes_limit) {
       write_controller_token_ =
-          SetupDelay(ioptions_.delayed_write_rate, write_controller,
-                     compaction_needed_bytes, prev_compaction_needed_bytes_,
+          SetupDelay(write_controller, compaction_needed_bytes,
+                     prev_compaction_needed_bytes_,
                      mutable_cf_options.disable_auto_compactions);
       internal_stats_->AddCFStats(
           InternalStats::SOFT_PENDING_COMPACTION_BYTES_LIMIT, 1);
@@ -717,6 +740,13 @@ Compaction* ColumnFamilyData::PickCompaction(
     result->SetInputVersion(current_);
   }
   return result;
+}
+
+bool ColumnFamilyData::RangeOverlapWithCompaction(
+    const Slice& smallest_user_key, const Slice& largest_user_key,
+    int level) const {
+  return compaction_picker_->RangeOverlapWithCompaction(
+      smallest_user_key, largest_user_key, level);
 }
 
 const int ColumnFamilyData::kCompactAllLevels = -1;

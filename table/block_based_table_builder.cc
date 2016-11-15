@@ -74,7 +74,7 @@ class IndexBuilder {
     Slice index_block_contents;
     std::unordered_map<std::string, Slice> meta_blocks;
   };
-  explicit IndexBuilder(const Comparator* comparator)
+  explicit IndexBuilder(const InternalKeyComparator* comparator)
       : comparator_(comparator) {}
 
   virtual ~IndexBuilder() {}
@@ -107,7 +107,7 @@ class IndexBuilder {
   virtual size_t EstimatedSize() const = 0;
 
  protected:
-  const Comparator* comparator_;
+  const InternalKeyComparator* comparator_;
 };
 
 // This index builder builds space-efficient index block.
@@ -121,7 +121,7 @@ class IndexBuilder {
 //     substitute key that serves the same function.
 class ShortenedIndexBuilder : public IndexBuilder {
  public:
-  explicit ShortenedIndexBuilder(const Comparator* comparator,
+  explicit ShortenedIndexBuilder(const InternalKeyComparator* comparator,
                                  int index_block_restart_interval)
       : IndexBuilder(comparator),
         index_block_builder_(index_block_restart_interval) {}
@@ -180,7 +180,7 @@ class ShortenedIndexBuilder : public IndexBuilder {
 // data copy or small heap allocations for prefixes.
 class HashIndexBuilder : public IndexBuilder {
  public:
-  explicit HashIndexBuilder(const Comparator* comparator,
+  explicit HashIndexBuilder(const InternalKeyComparator* comparator,
                             const SliceTransform* hash_key_extractor,
                             int index_block_restart_interval)
       : IndexBuilder(comparator),
@@ -269,7 +269,8 @@ class HashIndexBuilder : public IndexBuilder {
 namespace {
 
 // Create a index builder based on its type.
-IndexBuilder* CreateIndexBuilder(IndexType type, const Comparator* comparator,
+IndexBuilder* CreateIndexBuilder(IndexType type,
+                                 const InternalKeyComparator* comparator,
                                  const SliceTransform* prefix_extractor,
                                  int index_block_restart_interval) {
   switch (type) {
@@ -623,6 +624,11 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
     // TODO(wanning&andrewkr) add num_tomestone to table properties
     r->range_del_block.Add(key, value);
     ++r->props.num_entries;
+    r->props.raw_key_size += key.size();
+    r->props.raw_value_size += value.size();
+    NotifyCollectTableCollectorsOnAdd(key, value, r->offset,
+                                      r->table_properties_collectors,
+                                      r->ioptions.info_log);
   } else {
     assert(false);
   }
@@ -801,7 +807,7 @@ Status BlockBasedTableBuilder::InsertBlockInCache(const Slice& block_contents,
 
     BlockContents results(std::move(ubuf), size, true, type);
 
-    Block* block = new Block(std::move(results));
+    Block* block = new Block(std::move(results), kDisableGlobalSequenceNumber);
 
     // make cache key by appending the file offset to the cache prefix id
     char* end = EncodeVarint64(
@@ -888,8 +894,8 @@ Status BlockBasedTableBuilder::Finish() {
           r->table_options.filter_policy->Name() : "";
       r->props.index_size =
           r->index_builder->EstimatedSize() + kBlockTrailerSize;
-      r->props.comparator_name = r->ioptions.comparator != nullptr
-                                     ? r->ioptions.comparator->Name()
+      r->props.comparator_name = r->ioptions.user_comparator != nullptr
+                                     ? r->ioptions.user_comparator->Name()
                                      : "nullptr";
       r->props.merge_operator_name = r->ioptions.merge_operator != nullptr
                                          ? r->ioptions.merge_operator->Name()

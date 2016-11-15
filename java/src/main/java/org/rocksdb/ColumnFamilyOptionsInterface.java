@@ -455,9 +455,8 @@ public interface ColumnFamilyOptionsInterface {
    * @param multiplier the ratio between the total size of level-(L+1)
    *     files and the total size of level-L files for all L.
    * @return the reference to the current option.
-   * @see #setMaxBytesForLevelBase(long)
    */
-  Object setMaxBytesForLevelMultiplier(int multiplier);
+  Object setMaxBytesForLevelMultiplier(double multiplier);
 
   /**
    * The ratio between the total size of level-(L+1) files and the total
@@ -466,9 +465,8 @@ public interface ColumnFamilyOptionsInterface {
    *
    * @return the ratio between the total size of level-(L+1) files and
    *     the total size of level-L files for all L.
-   * @see #maxBytesForLevelBase()
    */
-  int maxBytesForLevelMultiplier();
+  double maxBytesForLevelMultiplier();
 
   /**
    * Maximum size of each compaction (not guarantee)

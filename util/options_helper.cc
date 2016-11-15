@@ -26,6 +26,8 @@
 
 namespace rocksdb {
 
+const std::string kNullptrString = "nullptr";
+
 DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
                          const MutableDBOptions& mutable_db_options) {
   DBOptions options;
@@ -43,7 +45,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.max_open_files = immutable_db_options.max_open_files;
   options.max_file_opening_threads =
       immutable_db_options.max_file_opening_threads;
-  options.max_total_wal_size = immutable_db_options.max_total_wal_size;
+  options.max_total_wal_size = mutable_db_options.max_total_wal_size;
   options.statistics = immutable_db_options.statistics;
   options.disableDataSync = immutable_db_options.disable_data_sync;
   options.use_fsync = immutable_db_options.use_fsync;
@@ -53,9 +55,9 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.delete_obsolete_files_period_micros =
       immutable_db_options.delete_obsolete_files_period_micros;
   options.base_background_compactions =
-      immutable_db_options.base_background_compactions;
+      mutable_db_options.base_background_compactions;
   options.max_background_compactions =
-      immutable_db_options.max_background_compactions;
+      mutable_db_options.max_background_compactions;
   options.max_subcompactions = immutable_db_options.max_subcompactions;
   options.max_background_flushes = immutable_db_options.max_background_flushes;
   options.max_log_file_size = immutable_db_options.max_log_file_size;
@@ -72,6 +74,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.allow_os_buffer = immutable_db_options.allow_os_buffer;
   options.allow_mmap_reads = immutable_db_options.allow_mmap_reads;
   options.allow_mmap_writes = immutable_db_options.allow_mmap_writes;
+  options.use_direct_reads = immutable_db_options.use_direct_reads;
   options.allow_fallocate = immutable_db_options.allow_fallocate;
   options.is_fd_close_on_exec = immutable_db_options.is_fd_close_on_exec;
   options.stats_dump_period_sec = immutable_db_options.stats_dump_period_sec;
@@ -93,7 +96,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.wal_bytes_per_sync = immutable_db_options.wal_bytes_per_sync;
   options.listeners = immutable_db_options.listeners;
   options.enable_thread_tracking = immutable_db_options.enable_thread_tracking;
-  options.delayed_write_rate = immutable_db_options.delayed_write_rate;
+  options.delayed_write_rate = mutable_db_options.delayed_write_rate;
   options.allow_concurrent_memtable_write =
       immutable_db_options.allow_concurrent_memtable_write;
   options.enable_write_thread_adaptive_yield =
@@ -115,6 +118,8 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.dump_malloc_stats = immutable_db_options.dump_malloc_stats;
   options.avoid_flush_during_recovery =
       immutable_db_options.avoid_flush_during_recovery;
+  options.avoid_flush_during_shutdown =
+      mutable_db_options.avoid_flush_during_shutdown;
 
   return options;
 }
@@ -451,7 +456,7 @@ bool ParseSliceTransformHelper(
     const std::string& kFixedPrefixName, const std::string& kCappedPrefixName,
     const std::string& value,
     std::shared_ptr<const SliceTransform>* slice_transform) {
-  static const std::string kNullptrString = "nullptr";
+
   auto& pe_value = value;
   if (pe_value.size() > kFixedPrefixName.size() &&
       pe_value.compare(0, kFixedPrefixName.size(), kFixedPrefixName) == 0) {
@@ -577,7 +582,7 @@ bool ParseOptionHelper(char* opt_address, const OptionType& opt_type,
 bool SerializeSingleOptionHelper(const char* opt_address,
                                  const OptionType opt_type,
                                  std::string* value) {
-  static const std::string kNullptrString = "nullptr";
+
   assert(value);
   switch (opt_type) {
     case OptionType::kBoolean:
@@ -734,6 +739,36 @@ Status GetMutableOptionsFromStrings(
     try {
       auto iter = cf_options_type_info.find(o.first);
       if (iter == cf_options_type_info.end()) {
+        return Status::InvalidArgument("Unrecognized option: " + o.first);
+      }
+      const auto& opt_info = iter->second;
+      if (!opt_info.is_mutable) {
+        return Status::InvalidArgument("Option not changeable: " + o.first);
+      }
+      bool is_ok = ParseOptionHelper(
+          reinterpret_cast<char*>(new_options) + opt_info.mutable_offset,
+          opt_info.type, o.second);
+      if (!is_ok) {
+        return Status::InvalidArgument("Error parsing " + o.first);
+      }
+    } catch (std::exception& e) {
+      return Status::InvalidArgument("Error parsing " + o.first + ":" +
+                                     std::string(e.what()));
+    }
+  }
+  return Status::OK();
+}
+
+Status GetMutableDBOptionsFromStrings(
+    const MutableDBOptions& base_options,
+    const std::unordered_map<std::string, std::string>& options_map,
+    MutableDBOptions* new_options) {
+  assert(new_options);
+  *new_options = base_options;
+  for (const auto& o : options_map) {
+    try {
+      auto iter = db_options_type_info.find(o.first);
+      if (iter == db_options_type_info.end()) {
         return Status::InvalidArgument("Unrecognized option: " + o.first);
       }
       const auto& opt_info = iter->second;

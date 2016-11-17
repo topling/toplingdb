@@ -1555,28 +1555,20 @@ uint32_t UniversalCompactionPicker::GetPathId(
   }
   static thread_local std::mt19937_64 random;
   uint64_t sum = 0;
-  for (size_t i = 0; i < ioptions.db_paths.size(); ++i) {
+  size_t num = ioptions.db_paths.size();
+  for (size_t i = 0; i < num; ++i) {
     sum += ioptions.db_paths[i].target_size;
   }
-  static const int dim = 8;
-  int selected[dim];
-  size_t num = 0;
-  for (size_t k = 0; k < 10; ++k) {
-    for (size_t i = 0; i < ioptions.db_paths.size(); ++i) {
-      double prob = double(ioptions.db_paths[i].target_size) / sum;
-      if (random() < prob * random.max()) {
-        selected[num++] = i;
-        if (num >= dim)
-          break;
-      }
+  uint64_t sum2 = sum;
+  for (size_t i = 0; i < num-1; ++i) {
+    uint64_t target_size = ioptions.db_paths[i].target_size;
+    double prob = double(target_size) / sum2;
+    if (random() < prob * random.max()) {
+      return i;
     }
+    sum2 -= target_size;
   }
-  if (num) {
-    return selected[random() % num];
-  }
-  else {
-    return random() % ioptions.db_paths.size();
-  }
+  return num-1;
 
   // Two conditions need to be satisfied:
   // (1) the target path needs to be able to hold the file's size

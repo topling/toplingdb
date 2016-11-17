@@ -1550,6 +1550,22 @@ Compaction* UniversalCompactionPicker::PickCompaction(
 
 uint32_t UniversalCompactionPicker::GetPathId(
     const ImmutableCFOptions& ioptions, uint64_t file_size) {
+  if (ioptions.db_paths.size() == 1) {
+    return 0;
+  }
+  std::mt19937_64 random;
+  uint64_t sum = 0;
+  for (size_t i = 0; i < ioptions.db_paths.size(); ++i) {
+    sum += ioptions.db_paths[i].target_size;
+  }
+  for (size_t i = 0; i < ioptions.db_paths.size(); ++i) {
+    double prob = double(ioptions.db_paths[i].target_size) / sum;
+    if (random() < prob * random.max()) {
+      return i;
+    }
+  }
+  return 0;
+
   // Two conditions need to be satisfied:
   // (1) the target path needs to be able to hold the file's size
   // (2) Total size left in this and previous paths need to be not

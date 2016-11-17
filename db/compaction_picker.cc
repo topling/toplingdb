@@ -1553,15 +1553,17 @@ uint32_t UniversalCompactionPicker::GetPathId(
   if (ioptions.db_paths.size() == 1) {
     return 0;
   }
-  std::mt19937_64 random;
+  static thread_local std::mt19937_64 random;
   uint64_t sum = 0;
   for (size_t i = 0; i < ioptions.db_paths.size(); ++i) {
     sum += ioptions.db_paths[i].target_size;
   }
-  for (size_t i = 0; i < ioptions.db_paths.size(); ++i) {
-    double prob = double(ioptions.db_paths[i].target_size) / sum;
-    if (random() < prob * random.max()) {
-      return i;
+  for (size_t k = 0; k < 10; ++k) {
+    for (size_t i = 0; i < ioptions.db_paths.size(); ++i) {
+      double prob = double(ioptions.db_paths[i].target_size) / sum;
+      if (random() < prob * random.max()) {
+        return i;
+      }
     }
   }
   return random() % ioptions.db_paths.size();

@@ -1564,7 +1564,7 @@ uint32_t UniversalCompactionPicker::GetPathId(
       return i;
     }
   }
-  return 0;
+  return random() % ioptions.db_paths.size();
 
   // Two conditions need to be satisfied:
   // (1) the target path needs to be able to hold the file's size

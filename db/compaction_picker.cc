@@ -1558,15 +1558,25 @@ uint32_t UniversalCompactionPicker::GetPathId(
   for (size_t i = 0; i < ioptions.db_paths.size(); ++i) {
     sum += ioptions.db_paths[i].target_size;
   }
+  static const int dim = 8;
+  int selected[dim];
+  size_t num = 0;
   for (size_t k = 0; k < 10; ++k) {
     for (size_t i = 0; i < ioptions.db_paths.size(); ++i) {
       double prob = double(ioptions.db_paths[i].target_size) / sum;
       if (random() < prob * random.max()) {
-        return i;
+        selected[num++] = i;
+        if (num >= dim)
+          break;
       }
     }
   }
-  return random() % ioptions.db_paths.size();
+  if (num) {
+    return selected[random() % num];
+  }
+  else {
+    return random() % ioptions.db_paths.size();
+  }
 
   // Two conditions need to be satisfied:
   // (1) the target path needs to be able to hold the file's size

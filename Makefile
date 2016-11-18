@@ -8,15 +8,11 @@
 
 EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -I/usr/local/include
 #EXTRA_LDFLAGS += -L../terark-zip-rocksdb/lib -lterark-zip-rocksdb-d
-EXTRA_LDFLAGS += ../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-g++-5.4-bmi2-1/lib/libterark-zip-rocksdb-r.so 
-EXTRA_LDFLAGS += ../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-g++-5.4-bmi2-1/lib/libterark-zbs-r.so
-EXTRA_LDFLAGS += ../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-g++-5.4-bmi2-1/lib/libterark-fsa-r.so
-EXTRA_LDFLAGS += ../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-g++-5.4-bmi2-1/lib/libterark-core-r.so
+EXTRA_LDFLAGS += -L../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-g++-5.4-bmi2-1/lib
 
 CLEAN_FILES = # deliberately empty, so we can append below.
 CFLAGS += ${EXTRA_CFLAGS}
 CXXFLAGS += ${EXTRA_CXXFLAGS}
-LDFLAGS += $(EXTRA_LDFLAGS)
 MACHINE ?= $(shell uname -m)
 ARFLAGS = rs
 
@@ -48,6 +44,10 @@ DEBUG_LEVEL?=2
 
 ifeq ($(MAKECMDGOALS),dbg)
 	DEBUG_LEVEL=2
+	EXTRA_LDFLAGS += -lterark-zip-rocksdb-d
+	EXTRA_LDFLAGS += -lterark-zbs-d
+	EXTRA_LDFLAGS += -lterark-fsa-d
+	EXTRA_LDFLAGS += -lterark-core-d
 endif
 
 ifeq ($(MAKECMDGOALS),clean)
@@ -56,6 +56,10 @@ endif
 
 ifeq ($(MAKECMDGOALS),release)
 	DEBUG_LEVEL=0
+	EXTRA_LDFLAGS += -lterark-zip-rocksdb-r
+	EXTRA_LDFLAGS += -lterark-zbs-r
+	EXTRA_LDFLAGS += -lterark-fsa-r
+	EXTRA_LDFLAGS += -lterark-core-r
 endif
 
 ifeq ($(MAKECMDGOALS),shared_lib)
@@ -89,6 +93,8 @@ endif
 ifeq ($(MAKECMDGOALS),rocksdbjavastaticpublish)
 	DEBUG_LEVEL=0
 endif
+
+LDFLAGS += $(EXTRA_LDFLAGS)
 
 # compile with -O2 if debug level is not 2
 ifneq ($(DEBUG_LEVEL), 2)

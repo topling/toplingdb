@@ -1348,7 +1348,6 @@ Status DBImpl::Recover(
         }
       }
     }
-    SetTickerCount(stats_, SEQUENCE_NUMBER, versions_->LastSequence());
   }
 
   // Initial value
@@ -4644,7 +4643,6 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     if (write_thread_.CompleteParallelWorker(&w)) {
       // we're responsible for early exit
       auto last_sequence = w.parallel_group->last_sequence;
-      SetTickerCount(stats_, SEQUENCE_NUMBER, last_sequence);
       versions_->SetLastSequence(last_sequence);
       write_thread_.EarlyExitParallelGroup(&w);
     }
@@ -4956,7 +4954,6 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
       }
 
       if (!exit_completed_early && w.status.ok()) {
-        SetTickerCount(stats_, SEQUENCE_NUMBER, last_sequence);
         versions_->SetLastSequence(last_sequence);
         if (!need_log_sync) {
           write_thread_.ExitAsBatchGroupLeader(&w, last_writer, w.status);
@@ -5842,6 +5839,14 @@ Status DB::SingleDelete(const WriteOptions& opt,
                         ColumnFamilyHandle* column_family, const Slice& key) {
   WriteBatch batch;
   batch.SingleDelete(column_family, key);
+  return Write(opt, &batch);
+}
+
+Status DB::DeleteRange(const WriteOptions& opt,
+                       ColumnFamilyHandle* column_family,
+                       const Slice& begin_key, const Slice& end_key) {
+  WriteBatch batch;
+  batch.DeleteRange(column_family, begin_key, end_key);
   return Write(opt, &batch);
 }
 

@@ -289,7 +289,10 @@ uint64_t PlainTableBuilder::NumEntries() const {
 }
 
 uint64_t PlainTableBuilder::FileSize() const {
-  return offset_;
+  if (!closed_ && store_index_in_file_)
+    return offset_ + index_builder_->GetTotalSize() + 64*1024;
+  else
+    return offset_;
 }
 
 }  // namespace rocksdb

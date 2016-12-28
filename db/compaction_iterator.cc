@@ -12,7 +12,7 @@ namespace rocksdb {
 
 CompactionIterator::CompactionIterator(
     InternalIterator* input, const Comparator* cmp, MergeHelper* merge_helper,
-    SequenceNumber last_sequence, const std::vector<SequenceNumber>* snapshots,
+    SequenceNumber last_sequence, std::vector<SequenceNumber>* snapshots,
     SequenceNumber earliest_write_conflict_snapshot, Env* env,
     bool expect_valid_internal_key, RangeDelAggregator* range_del_agg,
     const Compaction* compaction, const CompactionFilter* compaction_filter,

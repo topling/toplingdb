@@ -123,7 +123,7 @@ endif
 #-----------------------------------------------
 include src.mk
 
-AM_DEFAULT_VERBOSITY = 0
+AM_DEFAULT_VERBOSITY = 1
 
 AM_V_GEN = $(am__v_GEN_$(V))
 am__v_GEN_ = $(am__v_GEN_$(AM_DEFAULT_VERBOSITY))

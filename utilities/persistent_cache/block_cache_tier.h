@@ -64,7 +64,9 @@ class BlockCacheTier : public PersistentCacheTier {
 
   bool IsCompressed() override { return opt_.is_compressed; }
 
-  std::string PrintStats() override;
+  std::string GetPrintableOptions() const override { return opt_.ToString(); }
+
+  PersistentCache::StatsType Stats() override;
 
   void TEST_Flush() override {
     while (insert_ops_.Size()) {
@@ -103,14 +105,14 @@ class BlockCacheTier : public PersistentCacheTier {
   // insert implementation
   Status InsertImpl(const Slice& key, const Slice& data);
   // Create a new cache file
-  void NewCacheFile();
+  Status NewCacheFile();
   // Get cache directory path
   std::string GetCachePath() const { return opt_.path + "/cache"; }
   // Cleanup folder
   Status CleanupCacheFolder(const std::string& folder);
 
   // Statistics
-  struct Stats {
+  struct Statistics {
     HistogramImpl bytes_pipelined_;
     HistogramImpl bytes_written_;
     HistogramImpl bytes_read_;
@@ -143,7 +145,7 @@ class BlockCacheTier : public PersistentCacheTier {
   ThreadedWriter writer_;                       // Writer threads
   BlockCacheTierMetadata metadata_;             // Cache meta data manager
   std::atomic<uint64_t> size_{0};               // Size of the cache
-  Stats stats_;                                 // Statistics
+  Statistics stats_;                                 // Statistics
 };
 
 }  // namespace rocksdb

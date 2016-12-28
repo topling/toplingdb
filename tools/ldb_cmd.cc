@@ -34,12 +34,13 @@
 
 #include <cstdlib>
 #include <ctime>
+#include <fstream>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <fstream>
 
 namespace rocksdb {
 
@@ -167,6 +168,10 @@ LDBCommand* LDBCommand::SelectCommand(const ParsedParams& parsed_params) {
   } else if (parsed_params.cmd == DeleteCommand::Name()) {
     return new DeleteCommand(parsed_params.cmd_params, parsed_params.option_map,
                              parsed_params.flags);
+  } else if (parsed_params.cmd == DeleteRangeCommand::Name()) {
+    return new DeleteRangeCommand(parsed_params.cmd_params,
+                                  parsed_params.option_map,
+                                  parsed_params.flags);
   } else if (parsed_params.cmd == ApproxSizeCommand::Name()) {
     return new ApproxSizeCommand(parsed_params.cmd_params,
                                  parsed_params.option_map, parsed_params.flags);
@@ -1183,8 +1188,8 @@ void InternalDumpCommand::DoCommand() {
   uint64_t s1=0,s2=0;
   // Setup internal key iterator
   Arena arena;
-  RangeDelAggregator range_del_agg(InternalKeyComparator(options_.comparator),
-                                   {} /* snapshots */);
+  auto icmp = InternalKeyComparator(options_.comparator);
+  RangeDelAggregator range_del_agg(icmp, {} /* snapshots */);
   ScopedArenaIterator iter(idb->NewInternalIterator(&arena, &range_del_agg));
   Status st = iter->status();
   if (!st.ok()) {
@@ -1854,6 +1859,14 @@ class InMemoryHandler : public WriteBatch::Handler {
     return Status::OK();
   }
 
+  virtual Status DeleteRangeCF(uint32_t cf, const Slice& begin_key,
+                               const Slice& end_key) override {
+    row_ << "DELETE_RANGE(" << cf << ") : ";
+    row_ << LDBCommand::StringToHex(begin_key.ToString()) << " ";
+    row_ << LDBCommand::StringToHex(end_key.ToString()) << " ";
+    return Status::OK();
+  }
+
   virtual Status MarkBeginPrepare() override {
     row_ << "BEGIN_PREARE ";
     return Status::OK();
@@ -2339,6 +2352,45 @@ void DeleteCommand::DoCommand() {
     return;
   }
   Status st = db_->Delete(WriteOptions(), GetCfHandle(), key_);
+  if (st.ok()) {
+    fprintf(stdout, "OK\n");
+  } else {
+    exec_state_ = LDBCommandExecuteResult::Failed(st.ToString());
+  }
+}
+
+DeleteRangeCommand::DeleteRangeCommand(
+    const std::vector<std::string>& params,
+    const std::map<std::string, std::string>& options,
+    const std::vector<std::string>& flags)
+    : LDBCommand(options, flags, false,
+                 BuildCmdLineOptions({ARG_HEX, ARG_KEY_HEX, ARG_VALUE_HEX})) {
+  if (params.size() != 2) {
+    exec_state_ = LDBCommandExecuteResult::Failed(
+        "begin and end keys must be specified for the delete command");
+  } else {
+    begin_key_ = params.at(0);
+    end_key_ = params.at(1);
+    if (is_key_hex_) {
+      begin_key_ = HexToString(begin_key_);
+      end_key_ = HexToString(end_key_);
+    }
+  }
+}
+
+void DeleteRangeCommand::Help(std::string& ret) {
+  ret.append("  ");
+  ret.append(DeleteRangeCommand::Name() + " <begin key> <end key>");
+  ret.append("\n");
+}
+
+void DeleteRangeCommand::DoCommand() {
+  if (!db_) {
+    assert(GetExecuteState().IsFailed());
+    return;
+  }
+  Status st =
+      db_->DeleteRange(WriteOptions(), GetCfHandle(), begin_key_, end_key_);
   if (st.ok()) {
     fprintf(stdout, "OK\n");
   } else {

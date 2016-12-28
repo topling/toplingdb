@@ -46,6 +46,11 @@ ColBufEncoder *ColBufEncoder::NewColBufEncoder(
   return nullptr;
 }
 
+#if __clang_major__ > 3 || (__clang_major__ == 3 && __clang_minor__ >= 9)
+__attribute__((__no_sanitize__("undefined")))
+#elif __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 9)
+__attribute__((__no_sanitize_undefined__))
+#endif
 size_t FixedLengthColBufEncoder::Append(const char *buf) {
   if (nullable_) {
     if (buf == nullptr) {

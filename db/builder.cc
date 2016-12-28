@@ -62,7 +62,7 @@ Status BuildTable(
     const std::string& dbname, Env* env, const ImmutableCFOptions& ioptions,
     const MutableCFOptions& mutable_cf_options, const EnvOptions& env_options,
     TableCache* table_cache, InternalIterator* iter,
-    ScopedArenaIterator&& range_del_iter, FileMetaData* meta,
+    std::unique_ptr<InternalIterator> range_del_iter, FileMetaData* meta,
     const InternalKeyComparator& internal_comparator,
     const std::vector<std::unique_ptr<IntTblPropCollectorFactory>>*
         int_tbl_prop_collector_factories,
@@ -82,7 +82,6 @@ Status BuildTable(
   Status s;
   meta->fd.file_size = 0;
   iter->SeekToFirst();
-  range_del_iter->SeekToFirst();
   std::unique_ptr<RangeDelAggregator> range_del_agg(
       new RangeDelAggregator(internal_comparator, snapshots));
   s = range_del_agg->AddTombstones(std::move(range_del_iter));
@@ -197,7 +196,8 @@ Status BuildTable(
     if (s.ok() && !empty) {
       // Verify that the table is usable
       std::unique_ptr<InternalIterator> it(table_cache->NewIterator(
-          ReadOptions(), env_options, internal_comparator, meta->fd, nullptr,
+          ReadOptions(), env_options, internal_comparator, meta->fd,
+          nullptr /* range_del_agg */, nullptr,
           (internal_stats == nullptr) ? nullptr
                                       : internal_stats->GetFileReadHist(0),
           false /* for_compaction */, nullptr /* arena */,

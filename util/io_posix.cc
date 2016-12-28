@@ -105,6 +105,11 @@ Status ReadAligned(int fd, Slice* data, const uint64_t offset,
       break;
     }
     bytes_read += status;
+    if (status % static_cast<ssize_t>(kSectorSize) != 0) {
+      // Bytes reads don't fill sectors. Should only happen at the end
+      // of the file.
+      break;
+    }
   }
 
   *data = Slice(scratch, bytes_read);
@@ -160,7 +165,7 @@ PosixSequentialFile::PosixSequentialFile(const std::string& fname, FILE* f,
     : filename_(fname),
       file_(f),
       fd_(fileno(f)),
-      use_os_buffer_(options.use_os_buffer) {}
+      use_direct_io_(options.use_direct_reads) {}
 
 PosixSequentialFile::~PosixSequentialFile() { fclose(file_); }
 
@@ -182,7 +187,7 @@ Status PosixSequentialFile::Read(size_t n, Slice* result, char* scratch) {
       s = IOError(filename_, errno);
     }
   }
-  if (!use_os_buffer_) {
+  if (use_direct_io_) {
     // we need to fadvise away the entire range of pages because
     // we do not want readahead pages to be cached.
     Fadvise(fd_, 0, 0, POSIX_FADV_DONTNEED);  // free OS pages
@@ -289,7 +294,7 @@ size_t PosixHelper::GetUniqueIdFromFile(int fd, char* id, size_t max_size) {
  */
 PosixRandomAccessFile::PosixRandomAccessFile(const std::string& fname, int fd,
                                              const EnvOptions& options)
-    : filename_(fname), fd_(fd), use_os_buffer_(options.use_os_buffer) {
+    : filename_(fname), fd_(fd), use_direct_io_(options.use_direct_reads) {
   assert(!options.use_mmap_reads || sizeof(void*) < 8);
 }
 
@@ -320,7 +325,8 @@ Status PosixRandomAccessFile::Read(uint64_t offset, size_t n, Slice* result,
     // An error: return a non-ok status
     s = IOError(filename_, errno);
   }
-  if (!use_os_buffer_) {
+
+  if (use_direct_io_) {
     // we need to fadvise away the entire range of pages because
     // we do not want readahead pages to be cached.
     Fadvise(fd_, 0, 0, POSIX_FADV_DONTNEED);  // free OS pages
@@ -392,7 +398,7 @@ PosixMmapReadableFile::PosixMmapReadableFile(const int fd,
     : fd_(fd), filename_(fname), mmapped_region_(base), length_(length) {
   fd_ = fd_ + 0;  // suppress the warning for used variables
   assert(options.use_mmap_reads);
-  assert(options.use_os_buffer);
+  assert(!options.use_direct_reads);
 }
 
 PosixMmapReadableFile::~PosixMmapReadableFile() {
@@ -528,6 +534,7 @@ PosixMmapFile::PosixMmapFile(const std::string& fname, int fd, size_t page_size,
 #endif
   assert((page_size & (page_size - 1)) == 0);
   assert(options.use_mmap_writes);
+  assert(!options.use_direct_writes);
 }
 
 PosixMmapFile::~PosixMmapFile() {
@@ -660,7 +667,10 @@ Status PosixMmapFile::Allocate(uint64_t offset, uint64_t len) {
  */
 PosixWritableFile::PosixWritableFile(const std::string& fname, int fd,
                                      const EnvOptions& options)
-    : filename_(fname), fd_(fd), filesize_(0) {
+    : filename_(fname),
+      direct_io_(options.use_direct_writes),
+      fd_(fd),
+      filesize_(0) {
 #ifdef ROCKSDB_FALLOCATE_PRESENT
   allow_fallocate_ = options.allow_fallocate;
   fallocate_with_keep_size_ = options.fallocate_with_keep_size;
@@ -675,6 +685,7 @@ PosixWritableFile::~PosixWritableFile() {
 }
 
 Status PosixWritableFile::Append(const Slice& data) {
+  assert(!direct_io_|| (IsSectorAligned(data.size()) && IsPageAligned(data.data())));
   const char* src = data.data();
   size_t left = data.size();
   while (left != 0) {
@@ -689,6 +700,28 @@ Status PosixWritableFile::Append(const Slice& data) {
     src += done;
   }
   filesize_ += data.size();
+  return Status::OK();
+}
+
+Status PosixWritableFile::PositionedAppend(const Slice& data, uint64_t offset) {
+  assert(direct_io_ && IsSectorAligned(offset) &&
+         IsSectorAligned(data.size()) && IsPageAligned(data.data()));
+  assert(offset <= std::numeric_limits<off_t>::max());
+  const char* src = data.data();
+  size_t left = data.size();
+  while (left != 0) {
+    ssize_t done = pwrite(fd_, src, left, static_cast<off_t>(offset));
+    if (done < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return IOError(filename_, errno);
+    }
+    left -= done;
+    offset += done;
+    src += done;
+  }
+  filesize_ = offset;
   return Status::OK();
 }
 
@@ -753,6 +786,9 @@ bool PosixWritableFile::IsSyncThreadSafe() const { return true; }
 uint64_t PosixWritableFile::GetFileSize() { return filesize_; }
 
 Status PosixWritableFile::InvalidateCache(size_t offset, size_t length) {
+  if (direct_io_) {
+    return Status::OK();
+  }
 #ifndef OS_LINUX
   return Status::OK();
 #else
@@ -799,29 +835,6 @@ size_t PosixWritableFile::GetUniqueId(char* id, size_t max_size) const {
   return PosixHelper::GetUniqueIdFromFile(fd_, id, max_size);
 }
 #endif
-
-/*
- * PosixDirectIOWritableFile
- */
-Status PosixDirectIOWritableFile::Append(const Slice& data) {
-  assert(IsSectorAligned(data.size()) && IsPageAligned(data.data()));
-  if (!IsSectorAligned(data.size()) || !IsPageAligned(data.data())) {
-    return Status::IOError("Unaligned buffer for direct IO");
-  }
-  return PosixWritableFile::Append(data);
-}
-
-Status PosixDirectIOWritableFile::PositionedAppend(const Slice& data,
-                                                   uint64_t offset) {
-  assert(IsSectorAligned(offset));
-  assert(IsSectorAligned(data.size()));
-  assert(IsPageAligned(data.data()));
-  if (!IsSectorAligned(offset) || !IsSectorAligned(data.size()) ||
-      !IsPageAligned(data.data())) {
-    return Status::IOError("offset or size is not aligned");
-  }
-  return PosixWritableFile::PositionedAppend(data, offset);
-}
 
 /*
  * PosixRandomRWFile

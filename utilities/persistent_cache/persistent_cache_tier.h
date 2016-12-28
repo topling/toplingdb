@@ -220,6 +220,8 @@ struct PersistentCacheConfig {
   PersistentCacheConfig MakePersistentCacheConfig(
       const std::string& path, const uint64_t size,
       const std::shared_ptr<Logger>& log);
+
+  std::string ToString() const;
 };
 
 // Persistent Cache Tier
@@ -231,7 +233,6 @@ struct PersistentCacheConfig {
 class PersistentCacheTier : public PersistentCache {
  public:
   typedef std::shared_ptr<PersistentCacheTier> Tier;
-  typedef std::map<std::string, double> TierStats;
 
   virtual ~PersistentCacheTier() {}
 
@@ -250,8 +251,7 @@ class PersistentCacheTier : public PersistentCache {
   // Print stats to string recursively
   virtual std::string PrintStats();
 
-  // Expose stats
-  virtual std::vector<TierStats> Stats();
+  virtual PersistentCache::StatsType Stats();
 
   // Insert to page cache
   virtual Status Insert(const Slice& page_key, const char* data,
@@ -263,6 +263,8 @@ class PersistentCacheTier : public PersistentCache {
 
   // Does it store compressed data ?
   virtual bool IsCompressed() = 0;
+
+  virtual std::string GetPrintableOptions() const = 0;
 
   // Return a reference to next tier
   virtual Tier& next_tier() { return next_tier_; }
@@ -296,12 +298,16 @@ class PersistentTieredCache : public PersistentCacheTier {
   Status Close() override;
   bool Erase(const Slice& key) override;
   std::string PrintStats() override;
-  std::vector<TierStats> Stats() override;
+  PersistentCache::StatsType Stats() override;
   Status Insert(const Slice& page_key, const char* data,
                 const size_t size) override;
   Status Lookup(const Slice& page_key, std::unique_ptr<char[]>* data,
                 size_t* size) override;
   bool IsCompressed() override;
+
+  std::string GetPrintableOptions() const override {
+    return "PersistentTieredCache";
+  }
 
   void AddTier(const Tier& tier);
 

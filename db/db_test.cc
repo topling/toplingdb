@@ -215,6 +215,50 @@ TEST_F(DBTest, WriteEmptyBatch) {
   ASSERT_EQ("bar", Get(1, "foo"));
 }
 
+TEST_F(DBTest, SkipDelay) {
+  Options options = CurrentOptions();
+  options.env = env_;
+  options.write_buffer_size = 100000;
+  CreateAndReopenWithCF({"pikachu"}, options);
+
+  for (bool sync : {true, false}) {
+    for (bool disableWAL : {true, false}) {
+      // Use a small number to ensure a large delay that is still effective
+      // when we do Put
+      // TODO(myabandeh): this is time dependent and could potentially make
+      // the test flaky
+      auto token = dbfull()->TEST_write_controler().GetDelayToken(1);
+      std::atomic<int> sleep_count(0);
+      rocksdb::SyncPoint::GetInstance()->SetCallBack(
+          "DBImpl::DelayWrite:Sleep",
+          [&](void* arg) { sleep_count.fetch_add(1); });
+      std::atomic<int> wait_count(0);
+      rocksdb::SyncPoint::GetInstance()->SetCallBack(
+          "DBImpl::DelayWrite:Wait",
+          [&](void* arg) { wait_count.fetch_add(1); });
+      rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+
+      WriteOptions wo;
+      wo.sync = sync;
+      wo.disableWAL = disableWAL;
+      wo.no_slowdown = true;
+      dbfull()->Put(wo, "foo", "bar");
+      // We need the 2nd write to trigger delay. This is because delay is
+      // estimated based on the last write size which is 0 for the first write.
+      ASSERT_NOK(dbfull()->Put(wo, "foo2", "bar2"));
+      ASSERT_GE(sleep_count.load(), 0);
+      ASSERT_GE(wait_count.load(), 0);
+      token.reset();
+
+      token = dbfull()->TEST_write_controler().GetDelayToken(1000000000);
+      wo.no_slowdown = false;
+      ASSERT_OK(dbfull()->Put(wo, "foo3", "bar3"));
+      ASSERT_GE(sleep_count.load(), 1);
+      token.reset();
+    }
+  }
+}
+
 #ifndef ROCKSDB_LITE
 TEST_F(DBTest, ReadOnlyDB) {
   ASSERT_OK(Put("foo", "v1"));
@@ -2469,11 +2513,13 @@ class MultiThreadedDBTest : public DBTest,
 TEST_P(MultiThreadedDBTest, MultiThreaded) {
   anon::OptionsOverride options_override;
   options_override.skip_policy = kSkipNoSnapshot;
+  Options options = CurrentOptions(options_override);
   std::vector<std::string> cfs;
   for (int i = 1; i < kColumnFamilies; ++i) {
     cfs.push_back(ToString(i));
   }
-  CreateAndReopenWithCF(cfs, CurrentOptions(options_override));
+  Reopen(options);
+  CreateAndReopenWithCF(cfs, options);
   // Initialize state
   MTState mt;
   mt.test = this;
@@ -3350,19 +3396,21 @@ TEST_F(DBTest, TableOptionsSanitizeTest) {
 TEST_F(DBTest, MmapAndBufferOptions) {
   Options options = CurrentOptions();
 
-  options.allow_os_buffer = false;
+  options.use_direct_reads = true;
   options.allow_mmap_reads = true;
   ASSERT_NOK(TryReopen(options));
 
   // All other combinations are acceptable
-  options.allow_os_buffer = true;
+  options.use_direct_reads = false;
   ASSERT_OK(TryReopen(options));
 
-  options.allow_os_buffer = false;
-  options.allow_mmap_reads = false;
-  ASSERT_OK(TryReopen(options));
+  if (IsDirectIOSupported()) {
+    options.use_direct_reads = true;
+    options.allow_mmap_reads = false;
+    ASSERT_OK(TryReopen(options));
+  }
 
-  options.allow_os_buffer = true;
+  options.use_direct_reads = false;
   ASSERT_OK(TryReopen(options));
 }
 #endif
@@ -3617,7 +3665,7 @@ TEST_F(DBTest, DynamicMemtableOptions) {
 }
 #endif  // ROCKSDB_LITE
 
-#if ROCKSDB_USING_THREAD_STATUS
+#ifdef ROCKSDB_USING_THREAD_STATUS
 namespace {
 void VerifyOperationCount(Env* env, ThreadStatus::OperationType op_type,
                           int expected_count) {
@@ -4892,7 +4940,7 @@ TEST_F(DBTest, MergeTestTime) {
   SetPerfLevel(kEnableTime);
   this->env_->addon_time_.store(0);
   this->env_->time_elapse_only_sleep_ = true;
-  this->env_->no_sleep_ = true;
+  this->env_->no_slowdown_ = true;
   Options options = CurrentOptions();
   options.statistics = rocksdb::CreateDBStatistics();
   options.merge_operator.reset(new DelayedMergeOperator(this));
@@ -4924,7 +4972,7 @@ TEST_F(DBTest, MergeTestTime) {
 
   ASSERT_EQ(1, count);
   ASSERT_EQ(2000000, TestGetTickerCount(options, MERGE_OPERATION_TOTAL_TIME));
-#if ROCKSDB_USING_THREAD_STATUS
+#ifdef ROCKSDB_USING_THREAD_STATUS
   ASSERT_GT(TestGetTickerCount(options, FLUSH_WRITE_BYTES), 0);
 #endif  // ROCKSDB_USING_THREAD_STATUS
   this->env_->time_elapse_only_sleep_ = false;
@@ -5332,12 +5380,12 @@ TEST_F(DBTest, FlushesInParallelWithCompactRange) {
 
 TEST_F(DBTest, DelayedWriteRate) {
   const int kEntriesPerMemTable = 100;
-  const int kTotalFlushes = 20;
+  const int kTotalFlushes = 12;
 
   Options options = CurrentOptions();
   env_->SetBackgroundThreads(1, Env::LOW);
   options.env = env_;
-  env_->no_sleep_ = true;
+  env_->no_slowdown_ = true;
   options.write_buffer_size = 100000000;
   options.max_write_buffer_number = 256;
   options.max_background_compactions = 1;
@@ -5382,8 +5430,8 @@ TEST_F(DBTest, DelayedWriteRate) {
     dbfull()->TEST_WaitForFlushMemTable();
     estimated_sleep_time += size_memtable * 1000000u / cur_rate;
     // Slow down twice. One for memtable switch and one for flush finishes.
-    cur_rate = static_cast<uint64_t>(static_cast<double>(cur_rate) /
-                                     kSlowdownRatio / kSlowdownRatio);
+    cur_rate = static_cast<uint64_t>(static_cast<double>(cur_rate) *
+                                     kIncSlowdownRatio * kIncSlowdownRatio);
   }
   // Estimate the total sleep time fall into the rough range.
   ASSERT_GT(env_->addon_time_.load(),
@@ -5391,7 +5439,7 @@ TEST_F(DBTest, DelayedWriteRate) {
   ASSERT_LT(env_->addon_time_.load(),
             static_cast<int64_t>(estimated_sleep_time * 2));
 
-  env_->no_sleep_ = false;
+  env_->no_slowdown_ = false;
   rocksdb::SyncPoint::GetInstance()->DisableProcessing();
   sleeping_task_low.WakeUp();
   sleeping_task_low.WaitUntilDone();

@@ -193,6 +193,10 @@ class SpecialSkipListFactory : public MemTableRepFactory {
   }
   virtual const char* Name() const override { return "SkipListFactory"; }
 
+  bool IsInsertConcurrentlySupported() const override {
+    return factory_.IsInsertConcurrentlySupported();
+  }
+
  private:
   SkipListFactory factory_;
   int num_entries_flush_;
@@ -428,10 +432,10 @@ class SpecialEnv : public EnvWrapper {
 
   virtual void SleepForMicroseconds(int micros) override {
     sleep_counter_.Increment();
-    if (no_sleep_ || time_elapse_only_sleep_) {
+    if (no_slowdown_ || time_elapse_only_sleep_) {
       addon_time_.fetch_add(micros);
     }
-    if (!no_sleep_) {
+    if (!no_slowdown_) {
       target()->SleepForMicroseconds(micros);
     }
   }
@@ -520,7 +524,7 @@ class SpecialEnv : public EnvWrapper {
 
   bool time_elapse_only_sleep_;
 
-  bool no_sleep_;
+  bool no_slowdown_;
 
   std::atomic<bool> is_wal_sync_thread_safe_{true};
 };
@@ -688,12 +692,20 @@ class DBTestBase : public testing::Test {
 
   Status TryReopen(const Options& options);
 
+  bool IsDirectIOSupported();
+
   Status Flush(int cf = 0);
 
   Status Put(const Slice& k, const Slice& v, WriteOptions wo = WriteOptions());
 
   Status Put(int cf, const Slice& k, const Slice& v,
              WriteOptions wo = WriteOptions());
+
+  Status Merge(const Slice& k, const Slice& v,
+               WriteOptions wo = WriteOptions());
+
+  Status Merge(int cf, const Slice& k, const Slice& v,
+               WriteOptions wo = WriteOptions());
 
   Status Delete(const std::string& k);
 
@@ -823,7 +835,11 @@ class DBTestBase : public testing::Test {
 
   void VerifyDBFromMap(std::map<std::string, std::string> true_data,
                        size_t* total_reads_res = nullptr,
-                       bool tailing_iter = false);
+                       bool tailing_iter = false,
+                       std::map<std::string, Status> status = {});
+
+  void VerifyDBInternal(
+      std::vector<std::pair<std::string, std::string>> true_data);
 
 #ifndef ROCKSDB_LITE
   uint64_t GetNumberOfSstFilesForColumnFamily(DB* db,

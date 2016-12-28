@@ -161,8 +161,7 @@ class MemTable {
   //        those allocated in arena.
   InternalIterator* NewIterator(const ReadOptions& read_options, Arena* arena);
 
-  InternalIterator* NewRangeTombstoneIterator(const ReadOptions& read_options,
-                                              Arena* arena);
+  InternalIterator* NewRangeTombstoneIterator(const ReadOptions& read_options);
 
   // Add an entry into memtable that maps key to value at the
   // specified sequence number and with the specified type.
@@ -353,6 +352,7 @@ class MemTable {
   MemTableAllocator allocator_;
   unique_ptr<MemTableRep> table_;
   unique_ptr<MemTableRep> range_del_table_;
+  bool is_range_del_table_empty_;
 
   // Total data size of all data inserted
   std::atomic<uint64_t> data_size_;

@@ -38,6 +38,32 @@ static void OnOpenForWrite(void* arg) {
 }
 #endif
 
+static void RemoveDirectory(const std::string& folder) {
+  std::vector<std::string> files;
+  Status status = Env::Default()->GetChildren(folder, &files);
+  if (!status.ok()) {
+    // we assume the directory does not exist
+    return;
+  }
+
+  // cleanup files with the patter :digi:.rc
+  for (auto file : files) {
+    if (file == "." || file == "..") {
+      continue;
+    }
+    status = Env::Default()->DeleteFile(folder + "/" + file);
+    assert(status.ok());
+  }
+
+  status = Env::Default()->DeleteDir(folder);
+  assert(status.ok());
+}
+
+static void OnDeleteDir(void* arg) {
+  char* dir = static_cast<char*>(arg);
+  RemoveDirectory(std::string(dir));
+}
+
 //
 // Simple logger that prints message on stdout
 //
@@ -114,6 +140,21 @@ PersistentCacheTierTest::PersistentCacheTierTest()
   rocksdb::SyncPoint::GetInstance()->SetCallBack("NewWritableFile:O_DIRECT",
                                                  OnOpenForWrite);
 #endif
+}
+
+// Block cache tests
+TEST_F(PersistentCacheTierTest, DISABLED_BlockCacheInsertWithFileCreateError) {
+  cache_ = NewBlockCache(Env::Default(), path_,
+                         /*size=*/std::numeric_limits<uint64_t>::max(),
+                         /*direct_writes=*/ false);
+  rocksdb::SyncPoint::GetInstance()->SetCallBack( 
+    "BlockCacheTier::NewCacheFile:DeleteDir", OnDeleteDir);
+
+  RunNegativeInsertTest(/*nthreads=*/ 1,
+                        /*max_keys*/
+                          static_cast<size_t>(10 * 1024 * kStressFactor));
+
+  rocksdb::SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
 #ifdef TRAVIS
@@ -244,6 +285,8 @@ TEST_F(PersistentCacheTierTest, FactoryTest) {
                                  /*size=*/1 * 1024 * 1024 * 1024, log, nvm_opt,
                                  &cache));
     ASSERT_TRUE(cache);
+    ASSERT_EQ(cache->Stats().size(), 1);
+    ASSERT_TRUE(cache->Stats()[0].size());
     cache.reset();
   }
 }

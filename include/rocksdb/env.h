@@ -19,6 +19,7 @@
 
 #include <stdint.h>
 #include <cstdarg>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <string>
@@ -59,9 +60,6 @@ struct EnvOptions {
 
   // construct from Options
   explicit EnvOptions(const DBOptions& options);
-
-  // If true, then allow caching of data in environment buffers
-  bool use_os_buffer = true;
 
    // If true, then use mmap to read data
   bool use_mmap_reads = false;
@@ -200,6 +198,10 @@ class Env {
   // Store in *result the names of the children of the specified directory.
   // The names are relative to "dir".
   // Original contents of *results are dropped.
+  // Returns OK if "dir" exists and "*result" contains its children.
+  //         NotFound if "dir" does not exist, the calling process does not have
+  //                  permission to access "dir", or if "dir" is invalid.
+  //         IOError if an IO Error was encountered
   virtual Status GetChildren(const std::string& dir,
                              std::vector<std::string>* result) = 0;
 
@@ -209,6 +211,10 @@ class Env {
   // result.
   // The name attributes are relative to "dir".
   // Original contents of *results are dropped.
+  // Returns OK if "dir" exists and "*result" contains its children.
+  //         NotFound if "dir" does not exist, the calling process does not have
+  //                  permission to access "dir", or if "dir" is invalid.
+  //         IOError if an IO Error was encountered
   virtual Status GetChildrenFileAttributes(const std::string& dir,
                                            std::vector<FileAttributes>* result);
 
@@ -364,8 +370,8 @@ class Env {
   // OptimizeForManifestWrite will create a new EnvOptions object that is a copy
   // of the EnvOptions in the parameters, but is optimized for writing manifest
   // files. Default implementation returns the copy of the same object.
-  virtual EnvOptions OptimizeForManifestWrite(const EnvOptions& env_options)
-      const;
+  virtual EnvOptions OptimizeForManifestWrite(
+      const EnvOptions& env_options) const;
 
   // Returns the status of all threads that belong to the current Env.
   virtual Status GetThreadList(std::vector<ThreadStatus>* thread_list) {
@@ -503,25 +509,44 @@ class WritableFile {
   }
   virtual ~WritableFile();
 
-  // Indicates if the class makes use of unbuffered I/O
-  // If false you must pass aligned buffer to Write()
-  virtual bool UseOSBuffer() const {
-    return true;
-  }
+  // Indicates if the class makes use of direct IO
+  // If true you must pass aligned buffer to Write()
+  virtual bool UseDirectIO() const { return false; }
 
   const size_t c_DefaultPageSize = 4 * 1024;
 
   // Use the returned alignment value to allocate
-  // aligned buffer for Write() when UseOSBuffer()
-  // returns false
+  // aligned buffer for Write() when UseDirectIO()
+  // returns true
   virtual size_t GetRequiredBufferAlignment() const {
     return c_DefaultPageSize;
   }
 
+  // Append data to the end of the file
+  // Note: A WriteabelFile object must support either Append or
+  // PositionedAppend, so the users cannot mix the two.
   virtual Status Append(const Slice& data) = 0;
 
-  // Positioned write for unbuffered access default forward
-  // to simple append as most of the tests are buffered by default
+  // PositionedAppend data to the specified offset. The new EOF after append
+  // must be larger than the previous EOF. This is to be used when writes are
+  // not backed by OS buffers and hence has to always start from the start of
+  // the sector. The implementation thus needs to also rewrite the last
+  // partial sector.
+  // Note: PositionAppend does not guarantee moving the file offset after the
+  // write. A WritableFile object must support either Append or
+  // PositionedAppend, so the users cannot mix the two.
+  //
+  // PositionedAppend() can only happen on the page/sector boundaries. For that
+  // reason, if the last write was an incomplete sector we still need to rewind
+  // back to the nearest sector/page and rewrite the portion of it with whatever
+  // we need to add. We need to keep where we stop writing.
+  //
+  // PositionedAppend() can only write whole sectors. For that reason we have to
+  // pad with zeros for the last write and trim the file when closing according
+  // to the position we keep in the previous step.
+  //
+  // PositionedAppend() requires aligned buffer to be passed in. The alignment
+  // required is queried via GetRequiredBufferAlignment()
   virtual Status PositionedAppend(const Slice& /* data */, uint64_t /* offset */) {
     return Status::NotSupported();
   }
@@ -552,10 +577,6 @@ class WritableFile {
   virtual bool IsSyncThreadSafe() const {
     return false;
   }
-
-  // Indicates the upper layers if the current WritableFile implementation
-  // uses direct IO.
-  virtual bool UseDirectIO() const { return false; }
 
   /*
    * Change the priority in rate limiter if rate limiting is enabled.
@@ -665,17 +686,14 @@ class RandomRWFile {
   RandomRWFile() {}
   virtual ~RandomRWFile() {}
 
-  // Indicates if the class makes use of unbuffered I/O
+  // Indicates if the class makes use of direct I/O
   // If false you must pass aligned buffer to Write()
-  virtual bool UseOSBuffer() const {
-    return true;
-  }
+  virtual bool UseDirectIO() const { return false; }
 
   const size_t c_DefaultPageSize = 4 * 1024;
 
-  // Use the returned alignment value to allocate
-  // aligned buffer for Write() when UseOSBuffer()
-  // returns false
+  // Use the returned alignment value to allocate aligned
+  // buffer for Write() when UseDirectIO() returns true
   virtual size_t GetRequiredBufferAlignment() const {
     return c_DefaultPageSize;
   }
@@ -692,7 +710,7 @@ class RandomRWFile {
   virtual void EnableReadAhead() {}
 
   // Write bytes in `data` at  offset `offset`, Returns Status::OK() on success.
-  // Pass aligned buffer when UseOSBuffer() returns false.
+  // Pass aligned buffer when UseDirectIO() returns true.
   virtual Status Write(uint64_t offset, const Slice& data) = 0;
 
   // Read up to `n` bytes starting from offset `offset` and store them in

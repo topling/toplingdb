@@ -747,24 +747,22 @@ struct ColumnFamilyOptions {
   size_t memtable_huge_page_size;
 
   // If non-nullptr, memtable will use the specified function to extract
-  // prefixes for keys, and for each non-empty prefix maintain a hint to
-  // reduce CPU usage for inserting keys with the prefix. Keys with empty
-  // prefix will be insert without using a hint.
+  // prefixes for keys, and for each prefix maintain a hint of insert location
+  // to reduce CPU usage for inserting keys with the prefix. Keys out of
+  // domain of the prefix extractor will be insert without using hints.
   //
   // Currently only the default skiplist based memtable implements the feature.
-  // All other memtable implementation will ignore the option. It incurs ~150
+  // All other memtable implementation will ignore the option. It incurs ~250
   // additional bytes of memory overhead to store a hint for each prefix.
-  // If allow_concurrent_memtable_write is true, the option will also be
-  // ignored.
+  // Also concurrent writes (when allow_concurrent_memtable_write is true) will
+  // ignore the option.
   //
-  // The option is best suited for sequential inserts, or inserts that's
-  // almost sequential. One scenario could be inserting keys of the form
-  // (prefix + timestamp), and keys of the same prefix always comes in
-  // with time order, or in some cases a key with a smaller timestamp comes
-  // in later due to network latency.
-  //
-  // REQUIRES: If custom comparator is provided, it has to make sure keys
-  // with the same prefix appear in consecutive range.
+  // The option is best suited for workloads where keys will likely to insert
+  // to a location close the the last inserted key with the same prefix.
+  // One example could be inserting keys of the form (prefix + timestamp),
+  // and keys of the same prefix always comes in with time order. Another
+  // example would be updating the same key over and over again, in which case
+  // the prefix can be the key itself.
   //
   // Default: nullptr (disable)
   std::shared_ptr<const SliceTransform>
@@ -1102,26 +1100,6 @@ struct DBOptions {
   // large amounts of data (such as xfs's allocsize option).
   size_t manifest_preallocation_size;
 
-  // Hint the OS that it should not buffer disk I/O. Enabling this
-  // parameter may improve performance but increases pressure on the
-  // system cache.
-  //
-  // The exact behavior of this parameter is platform dependent.
-  //
-  // On POSIX systems, after RocksDB reads data from disk it will
-  // mark the pages as "unneeded". The operating system may - or may not
-  // - evict these pages from memory, reducing pressure on the system
-  // cache. If the disk block is requested again this can result in
-  // additional disk I/O.
-  //
-  // On WINDOWS system, files will be opened in "unbuffered I/O" mode
-  // which means that data read from the disk will not be cached or
-  // bufferized. The hardware buffer of the devices may however still
-  // be used. Memory mapped files are not impacted by this parameter.
-  //
-  // Default: true
-  bool allow_os_buffer;
-
   // Allow the OS to mmap file for reading sst tables. Default: false
   bool allow_mmap_reads;
 
@@ -1130,9 +1108,21 @@ struct DBOptions {
   // Default: false
   bool allow_mmap_writes;
 
+  // Enable direct I/O mode for read/write
+  // they may or may not improve performance depending on the use case
+  //
+  // Files will be opened in "direct I/O" mode
+  // which means that data r/w from the disk will not be cached or
+  // bufferized. The hardware buffer of the devices may however still
+  // be used. Memory mapped files are not impacted by these parameters.
+
   // Use O_DIRECT for reading file
   // Default: false
   bool use_direct_reads;
+
+  // Use O_DIRECT for writing file
+  // Default: false
+  bool use_direct_writes;
 
   // If false, fallocate() calls are bypassed
   bool allow_fallocate;
@@ -1298,7 +1288,7 @@ struct DBOptions {
   // It is strongly recommended to set enable_write_thread_adaptive_yield
   // if you are going to use this feature.
   //
-  // Default: false
+  // Default: true
   bool allow_concurrent_memtable_write;
 
   // If true, threads synchronizing with the write batch group leader will
@@ -1306,7 +1296,7 @@ struct DBOptions {
   // This can substantially improve throughput for concurrent workloads,
   // regardless of whether allow_concurrent_memtable_write is enabled.
   //
-  // Default: false
+  // Default: true
   bool enable_write_thread_adaptive_yield;
 
   // The maximum number of microseconds that a write operation will use
@@ -1593,11 +1583,16 @@ struct WriteOptions {
   // Default: false
   bool ignore_missing_column_families;
 
+  // If true and we need to wait or sleep for the write request, fails
+  // immediately with Status::Incomplete().
+  bool no_slowdown;
+
   WriteOptions()
       : sync(false),
         disableWAL(false),
         timeout_hint_us(0),
-        ignore_missing_column_families(false) {}
+        ignore_missing_column_families(false),
+        no_slowdown(false) {}
 };
 
 // Options that control flush operations

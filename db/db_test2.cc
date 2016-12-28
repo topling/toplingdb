@@ -956,6 +956,7 @@ TEST_F(DBTest2, PresetCompressionDict) {
   const int kNumL0Files = 5;
 
   Options options;
+  options.allow_concurrent_memtable_write = false;
   options.arena_block_size = kBlockSizeBytes;
   options.compaction_style = kCompactionStyleUniversal;
   options.create_if_missing = true;
@@ -1469,6 +1470,10 @@ class MockPersistentCache : public PersistentCache {
 
   virtual ~MockPersistentCache() {}
 
+  PersistentCache::StatsType Stats() override {
+    return PersistentCache::StatsType();
+  }
+
   Status Insert(const Slice& page_key, const char* data,
                 const size_t size) override {
     MutexLock _(&lock_);
@@ -1499,6 +1504,10 @@ class MockPersistentCache : public PersistentCache {
   }
 
   bool IsCompressed() override { return is_compressed_; }
+
+  std::string GetPrintableOptions() const override {
+    return "MockPersistentCache";
+  }
 
   port::Mutex lock_;
   std::map<std::string, std::string> data_;

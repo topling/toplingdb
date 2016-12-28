@@ -96,7 +96,7 @@ LIB_SOURCES =                                                   \
   util/compaction_job_stats_impl.cc                             \
   util/concurrent_arena.cc                                      \
   util/crc32c.cc                                                \
-	util/db_options.cc                                            \
+  util/db_options.cc                                            \
   util/delete_scheduler.cc                                      \
   util/dynamic_bloom.cc                                         \
   util/env.cc                                                   \
@@ -126,7 +126,7 @@ LIB_SOURCES =                                                   \
   util/perf_level.cc                                            \
   util/random.cc                                                \
   util/rate_limiter.cc                                          \
-	util/sharded_cache.cc       																	\
+  util/sharded_cache.cc                                         \
   util/slice.cc                                                 \
   util/sst_file_manager_impl.cc                                 \
   util/statistics.cc                                            \
@@ -154,9 +154,9 @@ LIB_SOURCES =                                                   \
   utilities/document/json_document.cc                           \
   utilities/env_mirror.cc                                       \
   utilities/env_registry.cc                                     \
-  utilities/flashcache/flashcache.cc                            \
   utilities/geodb/geodb_impl.cc                                 \
   utilities/leveldb_options/leveldb_options.cc                  \
+  utilities/lua/rocks_lua_compaction_filter.cc                  \
   utilities/memory/memory_util.cc                               \
   utilities/merge_operators/put.cc                              \
   utilities/merge_operators/max.cc                              \
@@ -223,17 +223,20 @@ MAIN_SOURCES =                                                    \
   db/dbformat_test.cc                                                   \
   db/db_iter_test.cc                                                    \
   db/db_test.cc                                                         \
-  db/db_block_cache_test.cc						\
+  db/db_block_cache_test.cc                                             \
   db/db_io_failure_test.cc                                              \
   db/db_bloom_filter_test.cc                                            \
   db/db_compaction_filter_test.cc                                       \
   db/db_compaction_test.cc                                              \
   db/db_dynamic_level_test.cc                                           \
-  db/db_flush_test.cc							\
+  db/db_flush_test.cc                                                    \
   db/db_inplace_update_test.cc                                          \
-  db/db_iterator_test.cc						\
+  db/db_iterator_test.cc                                                \
   db/db_log_iter_test.cc                                                \
+  db/db_memtable_test.cc                                                \
+  db/db_merge_operator_test.cc                                          \
   db/db_options_test.cc                                                 \
+  db/db_range_del_test.cc                                               \
   db/db_sst_test.cc                                                     \
   db/external_sst_file_test.cc                                          \
   db/db_tailing_iter_test.cc                                            \
@@ -312,7 +315,8 @@ MAIN_SOURCES =                                                    \
   utilities/date_tiered/date_tiered_test.cc                             \
   utilities/write_batch_with_index/write_batch_with_index_test.cc       \
   utilities/column_aware_encoding_test.cc                               \
-	util/iostats_context_test.cc																					\
+  utilities/lua/rocks_lua_test.cc                                       \
+  util/iostats_context_test.cc                                          \
   util/log_write_bench.cc                                               \
   util/mock_env_test.cc                                                 \
   util/options_test.cc                                                  \

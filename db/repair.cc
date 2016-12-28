@@ -381,7 +381,7 @@ class Repairer {
       status = BuildTable(
           dbname_, env_, *cfd->ioptions(), *cfd->GetLatestMutableCFOptions(),
           env_options_, table_cache_, iter.get(),
-          ScopedArenaIterator(mem->NewRangeTombstoneIterator(ro, &arena)),
+          std::unique_ptr<InternalIterator>(mem->NewRangeTombstoneIterator(ro)),
           &meta, cfd->internal_comparator(),
           cfd->int_tbl_prop_collector_factories(), cfd->GetID(), cfd->GetName(),
           {}, kMaxSequenceNumber, kNoCompression, CompressionOptions(), false,
@@ -467,7 +467,8 @@ class Repairer {
     }
     if (status.ok()) {
       InternalIterator* iter = table_cache_->NewIterator(
-          ReadOptions(), env_options_, cfd->internal_comparator(), t->meta.fd);
+          ReadOptions(), env_options_, cfd->internal_comparator(), t->meta.fd,
+          nullptr /* range_del_agg */);
       bool empty = true;
       ParsedInternalKey parsed;
       t->min_sequence = 0;

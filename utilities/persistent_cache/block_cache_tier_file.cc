@@ -9,6 +9,7 @@
 #ifndef OS_WIN
 #include <unistd.h>
 #endif
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -216,7 +217,10 @@ bool RandomAccessCacheFile::Read(const LBA& lba, Slice* key, Slice* val,
   ReadLock _(&rwlock_);
 
   assert(lba.cache_id_ == cache_id_);
-  assert(file_);
+
+  if (!file_) {
+    return false;
+  }
 
   Slice result;
   Status s = file_->Read(lba.off_, lba.size_, &result, scratch);
@@ -259,11 +263,12 @@ WriteableCacheFile::~WriteableCacheFile() {
     // This file never flushed. We give priority to shutdown since this is a
     // cache
     // TODO(krad): Figure a way to flush the pending data
-    assert(file_);
-
-    assert(refs_ == 1);
-    --refs_;
+    if (file_) {
+      assert(refs_ == 1);
+      --refs_;
+    }
   }
+  assert(!refs_);
   ClearBuffers();
 }
 

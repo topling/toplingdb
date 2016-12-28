@@ -23,6 +23,7 @@
 #include "db/column_family.h"
 #include "db/compaction_job.h"
 #include "db/dbformat.h"
+#include "db/external_sst_file_ingestion_job.h"
 #include "db/flush_job.h"
 #include "db/flush_scheduler.h"
 #include "db/internal_stats.h"
@@ -556,6 +557,9 @@ class DBImpl : public DB {
   void NotifyOnMemTableSealed(ColumnFamilyData* cfd,
                               const MemTableInfo& mem_table_info);
 
+  void NotifyOnExternalFileIngested(
+      ColumnFamilyData* cfd, const ExternalSstFileIngestionJob& ingestion_job);
+
   void NewThreadStatusCfInfo(ColumnFamilyData* cfd) const;
 
   void EraseThreadStatusCfInfo(ColumnFamilyData* cfd) const;
@@ -648,7 +652,7 @@ class DBImpl : public DB {
 
   // num_bytes: for slowdown case, delay time is calculated based on
   //            `num_bytes` going through.
-  Status DelayWrite(uint64_t num_bytes);
+  Status DelayWrite(uint64_t num_bytes, const WriteOptions& write_options);
 
   Status ScheduleFlushes(WriteContext* context);
 
@@ -972,8 +976,9 @@ class DBImpl : public DB {
   // without any synchronization
   int disable_delete_obsolete_files_;
 
-  // next time when we should run DeleteObsoleteFiles with full scan
-  uint64_t delete_obsolete_files_next_run_;
+  // last time when DeleteObsoleteFiles with full scan was executed. Originaly
+  // initialized with startup time.
+  uint64_t delete_obsolete_files_last_run_;
 
   // last time stats were dumped to LOG
   std::atomic<uint64_t> last_stats_dump_time_microsec_;

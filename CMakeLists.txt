@@ -43,6 +43,11 @@ else()
     add_definitions(-DROCKSDB_JEMALLOC)
     include_directories(${JEMALLOC_INCLUDE_DIR})
   endif()
+  if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+    # FreeBSD has jemaloc as default malloc
+    add_definitions(-DROCKSDB_JEMALLOC)
+    set(WITH_JEMALLOC ON)
+  endif()
   option(WITH_SNAPPY "build with SNAPPY" OFF)
   if(WITH_SNAPPY)
     find_package(snappy REQUIRED)
@@ -395,9 +400,9 @@ set(SOURCES
         utilities/document/json_document_builder.cc
         utilities/env_mirror.cc
         utilities/env_registry.cc
-        utilities/flashcache/flashcache.cc
         utilities/geodb/geodb_impl.cc
         utilities/leveldb_options/leveldb_options.cc
+        utilities/lua/rocks_lua_compaction_filter.cc
         utilities/memory/memory_util.cc
         utilities/merge_operators/string_append/stringappend.cc
         utilities/merge_operators/string_append/stringappend2.cc
@@ -497,6 +502,7 @@ set(TESTS
         db/db_iter_test.cc
         db/db_log_iter_test.cc
         db/db_memtable_test.cc
+        db/db_merge_operator_test.cc
         db/db_options_test.cc
         db/db_properties_test.cc
         db/db_table_properties_test.cc
@@ -507,6 +513,7 @@ set(TESTS
         db/db_bloom_filter_test.cc
         db/db_flush_test.cc
         db/db_iterator_test.cc
+        db/db_range_del_test.cc
         db/db_sst_test.cc
         db/external_sst_file_test.cc
         db/db_universal_compaction_test.cc
@@ -596,6 +603,7 @@ set(TESTS
         utilities/ttl/ttl_test.cc
         utilities/write_batch_with_index/write_batch_with_index_test.cc
         utilities/column_aware_encoding_test.cc
+        utilities/lua/rocks_lua_test.cc
 )
 if(WITH_LIBRADOS)
   list(APPEND TESTS utilities/env_librados_test.cc)

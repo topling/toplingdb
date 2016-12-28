@@ -5,11 +5,58 @@
 //
 #ifndef ROCKSDB_LITE
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS
+#endif
+
 #include "utilities/persistent_cache/persistent_cache_tier.h"
 
+#include "inttypes.h"
+
 #include <string>
+#include <sstream>
 
 namespace rocksdb {
+
+std::string PersistentCacheConfig::ToString() const {
+  std::string ret;
+  ret.reserve(20000);
+  const int kBufferSize = 200;
+  char buffer[kBufferSize];
+
+  snprintf(buffer, kBufferSize, "    path: %s\n", path.c_str());
+  ret.append(buffer);
+  snprintf(buffer, kBufferSize, "    enable_direct_reads: %d\n",
+           enable_direct_reads);
+  ret.append(buffer);
+  snprintf(buffer, kBufferSize, "    enable_direct_writes: %d\n",
+           enable_direct_writes);
+  ret.append(buffer);
+  snprintf(buffer, kBufferSize, "    cache_size: %" PRIu64 "\n", cache_size);
+  ret.append(buffer);
+  snprintf(buffer, kBufferSize, "    cache_file_size: %" PRIu32 "\n",
+           cache_file_size);
+  ret.append(buffer);
+  snprintf(buffer, kBufferSize, "    writer_qdepth: %" PRIu32 "\n",
+           writer_qdepth);
+  ret.append(buffer);
+  snprintf(buffer, kBufferSize, "    pipeline_writes: %d\n", pipeline_writes);
+  ret.append(buffer);
+  snprintf(buffer, kBufferSize,
+           "    max_write_pipeline_backlog_size: %" PRIu64 "\n",
+           max_write_pipeline_backlog_size);
+  ret.append(buffer);
+  snprintf(buffer, kBufferSize, "    write_buffer_size: %" PRIu32 "\n",
+           write_buffer_size);
+  ret.append(buffer);
+  snprintf(buffer, kBufferSize, "    writer_dispatch_size: %" PRIu64 "\n",
+           writer_dispatch_size);
+  ret.append(buffer);
+  snprintf(buffer, kBufferSize, "    is_compressed: %d\n", is_compressed);
+  ret.append(buffer);
+
+  return ret;
+}
 
 //
 // PersistentCacheTier implementation
@@ -40,17 +87,21 @@ bool PersistentCacheTier::Erase(const Slice& key) {
 }
 
 std::string PersistentCacheTier::PrintStats() {
-  if (next_tier_) {
-    return next_tier_->PrintStats();
+  std::ostringstream os;
+  for (auto tier_stats : Stats()) {
+    os << "---- next tier -----" << std::endl;
+    for (auto stat : tier_stats) {
+      os << stat.first << ": " << stat.second << std::endl;
+    }
   }
-  return std::string();
+  return os.str();
 }
 
-std::vector<PersistentCacheTier::TierStats> PersistentCacheTier::Stats() {
+PersistentCache::StatsType PersistentCacheTier::Stats() {
   if (next_tier_) {
     return next_tier_->Stats();
   }
-  return std::vector<TierStats>{};
+  return PersistentCache::StatsType{};
 }
 
 //
@@ -77,7 +128,7 @@ bool PersistentTieredCache::Erase(const Slice& key) {
   return tiers_.front()->Erase(key);
 }
 
-std::vector<PersistentCacheTier::TierStats> PersistentTieredCache::Stats() {
+PersistentCache::StatsType PersistentTieredCache::Stats() {
   assert(!tiers_.empty());
   return tiers_.front()->Stats();
 }

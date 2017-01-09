@@ -8,6 +8,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/db_test_util.h"
+#include <table/terark_zip_table.h>
 #include "db/forward_iterator.h"
 
 namespace rocksdb {
@@ -215,6 +216,9 @@ Options DBTestBase::CurrentOptions(
   options.base_background_compactions = -1;
   options.wal_recovery_mode = WALRecoveryMode::kTolerateCorruptedTailRecords;
   options.compaction_pri = CompactionPri::kByCompensatedSize;
+  TerarkZipTableOptions opt;
+  std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
+  options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
 
   return CurrentOptions(options, options_override);
 }

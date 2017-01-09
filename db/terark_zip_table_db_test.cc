@@ -509,7 +509,7 @@ TEST_F(TerarkZipTableDBTest, AdaptiveTable) { // there is some wrong with adapti
   // Write some keys using block based table.
   // std::shared_ptr<TableFactory> block_based_factory(
   //    NewBlockBasedTableFactory());
-  options.table_factory.reset(NewAdaptiveTableFactory(block_based_factory));
+  options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
   Reopen(&options);
   ASSERT_OK(Put("key6", "v6"));
   ASSERT_OK(Put("key7", "v7"));
@@ -528,6 +528,36 @@ TEST_F(TerarkZipTableDBTest, AdaptiveTable) { // there is some wrong with adapti
   ASSERT_EQ("v2", Get("key2"));
   ASSERT_EQ("v44", Get("key4"));
   ASSERT_EQ("v5", Get("key5"));
+}
+
+TEST_F(TerarkZipTableDBTest, Correctness) {
+    Options options = CurrentOptions();
+
+    // Write some keys using terarkzip table.
+    TerarkZipTableOptions opt;
+    std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
+    options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
+    // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
+
+//    EXPECT_OK(DestroyDB(dbname_, Options()));
+//    db_ = nullptr;
+    Reopen(&options);
+
+    size_t count = 10000;
+    size_t len = 32;
+
+    Random rnd(301);
+
+    for (size_t i = 0; i < count; ++i) {
+        ASSERT_OK(Put(RandomString(&rnd, len), Key(i)));
+    }
+
+    Reopen(&options);
+
+    rnd.Reset(301);
+    for (size_t i = 0; i < count; ++i) {
+        ASSERT_EQ(Get(RandomString(&rnd, len)), Key(i));
+    }
 }
 
 }  // namespace rocksdb

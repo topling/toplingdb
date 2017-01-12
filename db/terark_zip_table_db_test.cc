@@ -64,6 +64,12 @@ class TerarkZipTableDBTest : public testing::Test {
     ASSERT_OK(DB::Open(opts, dbname_, &db_));
   }
 
+  void Destroy(Options* options) {
+    delete db_;
+    db_ = nullptr;
+    ASSERT_OK(DestroyDB(dbname_, *options));
+  }
+
   Status Put(const Slice& k, const Slice& v) {
     return db_->Put(WriteOptions(), k, v);
   }
@@ -539,8 +545,7 @@ TEST_F(TerarkZipTableDBTest, Correctness) {
     options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
     // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
 
-//    EXPECT_OK(DestroyDB(dbname_, Options()));
-//    db_ = nullptr;
+    Destroy(&options);
     Reopen(&options);
 
     size_t count = 10000;
@@ -558,6 +563,36 @@ TEST_F(TerarkZipTableDBTest, Correctness) {
     for (size_t i = 0; i < count; ++i) {
         ASSERT_EQ(Get(RandomString(&rnd, len)), Key(i));
     }
+}
+
+TEST_F(TerarkZipTableDBTest, EmptyTable) {
+  Options options = CurrentOptions();
+
+  // Write some keys using terarkzip table.
+  TerarkZipTableOptions opt;
+  std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
+  options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
+  // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
+
+  Destroy(&options);
+  Reopen(&options);
+
+  Random rnd(301);
+  size_t len = 32;
+
+  dbfull()->CompactRange(rocksdb::CompactRangeOptions(), nullptr, nullptr);
+  dbfull()->Flush(rocksdb::FlushOptions());
+
+  dbfull()->CompactRange(rocksdb::CompactRangeOptions(), nullptr, nullptr);
+  dbfull()->Flush(rocksdb::FlushOptions());
+  dbfull()->CompactRange(rocksdb::CompactRangeOptions(), nullptr, nullptr);
+  ASSERT_OK(Put(RandomString(&rnd, len), Key(0)));
+  ASSERT_OK(Delete(RandomString(&rnd, len)));
+  dbfull()->CompactRange(rocksdb::CompactRangeOptions(), nullptr, nullptr);
+  ASSERT_OK(Put(RandomString(&rnd, len), Key(0)));
+  ASSERT_OK(Delete(RandomString(&rnd, len)));
+  dbfull()->Flush(rocksdb::FlushOptions());
+  dbfull()->CompactRange(rocksdb::CompactRangeOptions(), nullptr, nullptr);
 }
 
 }  // namespace rocksdb

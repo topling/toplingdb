@@ -166,8 +166,6 @@ Status BuildTable(
     if (!s.ok() || empty) {
       builder->Abandon();
     } else {
-      iter->SeekToFirst();
-      assert(iter->Valid());
       c_iter2.SeekToFirst();
       s = builder->Finish();
     }

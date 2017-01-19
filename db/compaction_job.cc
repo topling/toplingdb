@@ -264,7 +264,7 @@ void CompactionJob::AggregateStatistics() {
 CompactionJob::CompactionJob(
     int job_id, Compaction* compaction, const ImmutableDBOptions& db_options,
     const EnvOptions& env_options, VersionSet* versions,
-    std::atomic<bool>* shutting_down, LogBuffer* log_buffer,
+    const std::atomic<bool>* shutting_down, LogBuffer* log_buffer,
     Directory* db_directory, Directory* output_directory, Statistics* stats,
     InstrumentedMutex* db_mutex, Status* db_bg_error,
     std::vector<SequenceNumber> existing_snapshots,
@@ -721,15 +721,16 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
         sub_compact->compaction->CreateCompactionFilter();
     compaction_filter = compaction_filter_from_factory.get();
   }
-
   auto makeMergeHelper = [&]() {
-    return std::unique_ptr<MergeHelper>(new MergeHelper(
+      MergeHelper* mh = new MergeHelper(
       env_, cfd->user_comparator(), cfd->ioptions()->merge_operator,
       compaction_filter, db_options_.info_log.get(),
       mutable_cf_options->min_partial_merge_operands,
       false /* internal key corruption is expected */,
       existing_snapshots_.empty() ? 0 : existing_snapshots_.back(),
-      compact_->compaction->level(), db_options_.statistics.get()));
+      compact_->compaction->level(), db_options_.statistics.get(),
+      shutting_down_);
+      return std::unique_ptr<MergeHelper>(mh);
   };
   auto merge1 = makeMergeHelper();
   auto merge2 = makeMergeHelper();
@@ -754,16 +755,15 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     return std::unique_ptr<CompactionIterator>(new CompactionIterator(
       input_iter, cfd->user_comparator(), &merge, versions_->LastSequence(),
       &existing_snapshots_, earliest_write_conflict_snapshot_, env_, false,
-      range_del_agg.get(), sub_compact->compaction, compaction_filter));
+      range_del_agg.get(), sub_compact->compaction, compaction_filter,
+      shutting_down_));
   };
   sub_compact->c_iter = makeCompactionIterator(input.get(), *merge1);
   auto c_iter = sub_compact->c_iter.get();
-//  auto
-  std::unique_ptr<CompactionIterator>
-  c_iter2 = makeCompactionIterator(input2.get(), *merge2);
   c_iter->SeekToFirst();
-  c_iter2->SeekToFirst();
+  auto c_iter2 = makeCompactionIterator(input2.get(), *merge2);
   auto second_pass_iter = c_iter2->AdaptToInternalIterator();
+  c_iter2->SeekToFirst();
   const auto& c_iter_stats = c_iter->iter_stats();
   auto sample_begin_offset_iter = sample_begin_offsets.cbegin();
   // data_begin_offset and compression_dict are only valid while generating
@@ -772,15 +772,11 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   std::string compression_dict;
   compression_dict.reserve(cfd->ioptions()->compression_opts.max_dict_bytes);
 
-  // TODO(noetzli): check whether we could check !shutting_down_->... only
-  // only occasionally (see diff D42687)
-  while (status.ok() && !shutting_down_->load(std::memory_order_acquire) &&
-         !cfd->IsDropped() && c_iter->Valid()) {
+  while (status.ok() && !cfd->IsDropped() && c_iter->Valid()) {
     // Invariant: c_iter.status() is guaranteed to be OK if c_iter->Valid()
     // returns true.
     const Slice& key = c_iter->key();
     const Slice& value = c_iter->value();
-    const std::string backupKey = key.ToString();
 
     // If an end key (exclusive) is specified, check if the current key is
     // >= than it and exit if it is because the iterator is out of its range
@@ -800,7 +796,6 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       if (!status.ok()) {
         break;
       }
-      assert(key == backupKey);
     }
 
     if (c_iter_stats.num_input_records % kRecordStatsEvery ==
@@ -925,26 +920,35 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   RecordDroppedKeys(c_iter_stats, &sub_compact->compaction_job_stats);
   RecordCompactionIOStats();
 
-  if (status.ok() &&
-      (shutting_down_->load(std::memory_order_acquire) || cfd->IsDropped())) {
+  if (status.ok() && (shutting_down_->load(std::memory_order_relaxed) ||
+                      cfd->IsDropped())) {
     status = Status::ShutdownInProgress(
         "Database shutdown or Column family drop during compaction");
   }
+  if (status.ok()) {
+    status = input->status();
+  }
+  if (status.ok()) {
+    status = c_iter->status();
+  }
+
   if (status.ok() && sub_compact->builder == nullptr &&
       sub_compact->outputs.size() == 0 &&
       range_del_agg->ShouldAddTombstones(bottommost_level_)) {
     // handle subcompaction containing only range deletions
     status = OpenCompactionOutputFile(sub_compact);
   }
-  if (status.ok() && sub_compact->builder != nullptr) {
+
+  // Call FinishCompactionOutputFile() even if status is not ok: it needs to
+  // close the output file.
+  if (sub_compact->builder != nullptr) {
     CompactionIterationStats range_del_out_stats;
-    status =
-        FinishCompactionOutputFile(input->status(), sub_compact,
-                                   range_del_agg.get(), &range_del_out_stats);
+    Status s = FinishCompactionOutputFile(
+        status, sub_compact, range_del_agg.get(), &range_del_out_stats);
+    if (status.ok()) {
+      status = s;
+    }
     RecordDroppedKeys(range_del_out_stats, &sub_compact->compaction_job_stats);
-  }
-  if (status.ok()) {
-    status = input->status();
   }
 
   if (measure_io_stats_) {

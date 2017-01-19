@@ -306,7 +306,7 @@ MOCKOBJECTS = $(MOCK_LIB_SOURCES:.cc=.o)
 
 GTEST = $(GTEST_DIR)/gtest/gtest-all.o
 TESTUTIL = ./util/testutil.o
-TESTHARNESS = ./util/testharness.o $(TESTUTIL) $(MOCKOBJECTS) $(GTEST)
+TESTHARNESS = $(LIBOBJECTS) ./util/testharness.o $(TESTUTIL) $(MOCKOBJECTS) $(GTEST)
 VALGRIND_ERROR = 2
 VALGRIND_VER := $(join $(VALGRIND_VER),valgrind)
 
@@ -440,6 +440,7 @@ TESTS = \
 	lua_test \
 	range_del_aggregator_test \
 	lru_cache_test \
+	terark_zip_table_reader_test \
 
 PARALLEL_TEST = \
 	backupable_db_test \
@@ -1338,6 +1339,9 @@ lua_test: utilities/lua/rocks_lua_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTH
 	$(AM_LINK)
 
 range_del_aggregator_test: db/range_del_aggregator_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+terark_zip_table_reader_test: table/terark_zip_table_reader_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 #-------------------------------------------------

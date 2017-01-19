@@ -223,8 +223,8 @@ class PosixEnv : public Env {
 #ifndef MAP_POPULATE
         int MAP_POPULATE = 0;
 #endif
-        int flags = MAP_SHARED | (options.use_mmap_populate ? MAP_POPULATE : 0);
-        void* base = mmap(nullptr, size, PROT_READ, flags, fd, 0);
+        int mmap_flags = MAP_SHARED | (options.use_mmap_populate ? MAP_POPULATE : 0);
+        void* base = mmap(nullptr, size, PROT_READ, mmap_flags, fd, 0);
         if (base != MAP_FAILED) {
           result->reset(new PosixMmapReadableFile(fd, fname, base,
                                                   size, options));

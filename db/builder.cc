@@ -126,20 +126,15 @@ Status BuildTable(
                       true /* internal key corruption is not ok */,
                       snapshots.empty() ? 0 : snapshots.back());
 
-    CompactionIterator c_iter(iter, internal_comparator.user_comparator(),
-					&merge, kMaxSequenceNumber, &snapshots,
-					earliest_write_conflict_snapshot, env,
-					true /* internal key corruption is not ok */, range_del_agg.get());
+    CompactionIterator c_iter(
+        iter, internal_comparator.user_comparator(), &merge, kMaxSequenceNumber,
+        &snapshots, earliest_write_conflict_snapshot, env,
+        true /* internal key corruption is not ok */, range_del_agg.get());
 
-    MergeHelper merge2(env, internal_comparator.user_comparator(),
-                      ioptions.merge_operator, nullptr, ioptions.info_log,
-                      mutable_cf_options.min_partial_merge_operands,
-                      true /* internal key corruption is not ok */,
-                      snapshots.empty() ? 0 : snapshots.back());
-    CompactionIterator c_iter2(iter, internal_comparator.user_comparator(),
-		    &merge2, kMaxSequenceNumber, &snapshots,
-		    earliest_write_conflict_snapshot, env,
-		    true /* internal key corruption is not ok */, range_del_agg.get());
+    CompactionIterator c_iter2(
+        iter, internal_comparator.user_comparator(), &merge, kMaxSequenceNumber,
+        &snapshots, earliest_write_conflict_snapshot, env,
+        true /* internal key corruption is not ok */, range_del_agg.get());
     auto second_pass_iter = c_iter2.AdaptToInternalIterator();
     builder->SetSecondPassIterator(second_pass_iter.get());
     c_iter.SeekToFirst();

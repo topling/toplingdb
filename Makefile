@@ -6,18 +6,20 @@
 
 #-----------------------------------------------
 BMI2 ?= 0
-COMPILER=$(shell ${CXX} terark-tools/detect-compiler.cpp -o a && ./a && rm -f a a.exe)
+
+COMPILER=$(shell t=`mktemp --suffix=.exe`; ${CXX} terark-tools/detect-compiler.cpp -o $$t && $$t && rm -f $$t)
 UNAME_MachineSystem=$(shell uname -m -s | sed 's:[ /]:-:g')
 TerocksDir=../terark-zip-rocksdb/pkg/terark-zip-rocksdb${TerocksTrial}-${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
 export LD_LIBRARY_PATH:=${TerocksDir}/lib:${LD_LIBRARY_PATH}
 
-EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -I/usr/local/include
+EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src
 BASH_EXISTS := $(shell which bash)
 SHELL := $(shell which bash)
 
 CLEAN_FILES = # deliberately empty, so we can append below.
 CFLAGS += ${EXTRA_CFLAGS}
 CXXFLAGS += ${EXTRA_CXXFLAGS}
+LDFLAGS += $(EXTRA_LDFLAGS)
 MACHINE ?= $(shell uname -m)
 ARFLAGS = rs
 
@@ -306,7 +308,7 @@ MOCKOBJECTS = $(MOCK_LIB_SOURCES:.cc=.o)
 
 GTEST = $(GTEST_DIR)/gtest/gtest-all.o
 TESTUTIL = ./util/testutil.o
-TESTHARNESS = $(LIBOBJECTS) ./util/testharness.o $(TESTUTIL) $(MOCKOBJECTS) $(GTEST)
+TESTHARNESS = ./util/testharness.o $(TESTUTIL) $(MOCKOBJECTS) $(GTEST)
 VALGRIND_ERROR = 2
 VALGRIND_VER := $(join $(VALGRIND_VER),valgrind)
 
@@ -415,7 +417,6 @@ TESTS = \
 	cuckoo_table_builder_test \
 	cuckoo_table_reader_test \
 	cuckoo_table_db_test \
-	terark_zip_table_db_test \
 	flush_job_test \
 	wal_manager_test \
 	listener_test \
@@ -428,7 +429,6 @@ TESTS = \
 	perf_context_test \
 	optimistic_transaction_test \
 	write_callback_test \
-	heap_test \
 	compact_on_deletion_collector_test \
 	compaction_job_stats_test \
 	option_change_migration_test \
@@ -440,6 +440,7 @@ TESTS = \
 	lua_test \
 	range_del_aggregator_test \
 	lru_cache_test \
+	terark_zip_table_db_test \
 	terark_zip_table_reader_test \
 
 PARALLEL_TEST = \
@@ -548,9 +549,7 @@ endif  # PLATFORM_SHARED_EXT
 	analyze tools tools_lib
 
 
-#all: $(LIBRARY) $(BENCHMARKS) tools tools_lib test_libs $(TESTS)
-
-all: $(LIBRARY) $(SHARED)
+all: $(LIBRARY) $(BENCHMARKS) tools tools_lib test_libs $(TESTS)
 
 static_lib: $(LIBRARY)
 
@@ -911,7 +910,7 @@ librocksdb_env_basic_test.a: util/env_basic_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ $^
 
 db_bench: tools/db_bench.o $(BENCHTOOLOBJECTS)
-	$(AM_LINK) 
+	$(AM_LINK)
 
 cache_bench: util/cache_bench.o $(LIBOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
@@ -922,7 +921,7 @@ persistent_cache_bench: utilities/persistent_cache/persistent_cache_bench.o $(LI
 memtablerep_bench: db/memtablerep_bench.o $(LIBOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
-db_stress: tools/db_stress.o $(TESTUTIL)
+db_stress: tools/db_stress.o $(LIBOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
 write_stress: tools/write_stress.o $(LIBOBJECTS) $(TESTUTIL)
@@ -988,10 +987,10 @@ crc32c_test: util/crc32c_test.o $(LIBOBJECTS) $(TESTHARNESS)
 slice_transform_test: util/slice_transform_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_test: db/db_test.o db/db_test_util.o $(TESTHARNESS)
+db_test: db/db_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_test2: db/db_test2.o db/db_test_util.o $(TESTHARNESS)
+db_test2: db/db_test2.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 db_block_cache_test: db/db_block_cache_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1003,49 +1002,49 @@ db_bloom_filter_test: db/db_bloom_filter_test.o db/db_test_util.o $(LIBOBJECTS) 
 db_log_iter_test: db/db_log_iter_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_compaction_filter_test: db/db_compaction_filter_test.o db/db_test_util.o $(TESTHARNESS)
+db_compaction_filter_test: db/db_compaction_filter_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_compaction_test: db/db_compaction_test.o db/db_test_util.o $(TESTHARNESS)
+db_compaction_test: db/db_compaction_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 db_dynamic_level_test: db/db_dynamic_level_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_flush_test: db/db_flush_test.o db/db_test_util.o $(TESTHARNESS)
+db_flush_test: db/db_flush_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 db_inplace_update_test: db/db_inplace_update_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_iterator_test: db/db_iterator_test.o db/db_test_util.o $(TESTHARNESS)
+db_iterator_test: db/db_iterator_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 db_memtable_test: db/db_memtable_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_merge_operator_test: db/db_merge_operator_test.o db/db_test_util.o $(TESTHARNESS)
+db_merge_operator_test: db/db_merge_operator_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 db_options_test: db/db_options_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_range_del_test: db/db_range_del_test.o db/db_test_util.o $(TESTHARNESS)
+db_range_del_test: db/db_range_del_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_sst_test: db/db_sst_test.o db/db_test_util.o $(TESTHARNESS)
+db_sst_test: db/db_sst_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-external_sst_file_test: db/external_sst_file_test.o db/db_test_util.o $(TESTHARNESS)
+external_sst_file_test: db/external_sst_file_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 db_tailing_iter_test: db/db_tailing_iter_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_iter_test: db/db_iter_test.o $(TESTHARNESS)
+db_iter_test: db/db_iter_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_universal_compaction_test: db/db_universal_compaction_test.o db/db_test_util.o $(TESTHARNESS)
+db_universal_compaction_test: db/db_universal_compaction_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 db_wal_test: db/db_wal_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1063,13 +1062,13 @@ db_table_properties_test: db/db_table_properties_test.o db/db_test_util.o $(LIBO
 log_write_bench: util/log_write_bench.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK) $(PROFILING_FLAGS)
 
-plain_table_db_test: db/plain_table_db_test.o $(TESTHARNESS)
+plain_table_db_test: db/plain_table_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-comparator_db_test: db/comparator_db_test.o $(TESTHARNESS)
+comparator_db_test: db/comparator_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-table_reader_bench: table/table_reader_bench.o $(TESTHARNESS)
+table_reader_bench: table/table_reader_bench.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK) $(PROFILING_FLAGS)
 
 perf_context_test: db/perf_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1119,16 +1118,16 @@ date_tiered_test: utilities/date_tiered/date_tiered_test.o $(LIBOBJECTS) $(TESTH
 write_batch_with_index_test: utilities/write_batch_with_index/write_batch_with_index_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-flush_job_test: db/flush_job_test.o $(TESTHARNESS)
+flush_job_test: db/flush_job_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-compaction_iterator_test: db/compaction_iterator_test.o $(TESTHARNESS)
+compaction_iterator_test: db/compaction_iterator_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-compaction_job_test: db/compaction_job_test.o $(TESTHARNESS)
+compaction_job_test: db/compaction_job_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-compaction_job_stats_test: db/compaction_job_stats_test.o $(TESTHARNESS)
+compaction_job_stats_test: db/compaction_job_stats_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 compact_on_deletion_collector_test: utilities/table_properties_collectors/compact_on_deletion_collector_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1215,10 +1214,10 @@ merge_helper_test: db/merge_helper_test.o $(LIBOBJECTS) $(TESTHARNESS)
 memory_test: utilities/memory/memory_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-merge_test: db/merge_test.o $(TESTHARNESS)
+merge_test: db/merge_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-merger_test: table/merger_test.o $(TESTHARNESS)
+merger_test: table/merger_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 util_merge_operators_test: utilities/util_merge_operators_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1233,22 +1232,19 @@ deletefile_test: db/deletefile_test.o $(LIBOBJECTS) $(TESTHARNESS)
 geodb_test: utilities/geodb/geodb_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-rocksdb_dump: tools/dump/rocksdb_dump.o
+rocksdb_dump: tools/dump/rocksdb_dump.o $(LIBOBJECTS)
 	$(AM_LINK)
 
-rocksdb_undump: tools/dump/rocksdb_undump.o
+rocksdb_undump: tools/dump/rocksdb_undump.o $(LIBOBJECTS)
 	$(AM_LINK)
 
-terark_zip_table_db_test: db/terark_zip_table_db_test.o $(TESTHARNESS)
+cuckoo_table_builder_test: table/cuckoo_table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-cuckoo_table_builder_test: table/cuckoo_table_builder_test.o $(TESTHARNESS)
+cuckoo_table_reader_test: table/cuckoo_table_reader_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-cuckoo_table_reader_test: table/cuckoo_table_reader_test.o $(TESTHARNESS)
-	$(AM_LINK)
-
-cuckoo_table_db_test: db/cuckoo_table_db_test.o $(TESTHARNESS)
+cuckoo_table_db_test: db/cuckoo_table_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 listener_test: db/listener_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1257,7 +1253,7 @@ listener_test: db/listener_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 thread_list_test: util/thread_list_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-compact_files_test: db/compact_files_test.o $(TESTHARNESS)
+compact_files_test: db/compact_files_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 options_test: util/options_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1275,7 +1271,7 @@ db_bench_tool_test: tools/db_bench_tool_test.o $(BENCHTOOLOBJECTS) $(TESTHARNESS
 event_logger_test: util/event_logger_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-sst_dump_test: tools/sst_dump_test.o $(TESTHARNESS)
+sst_dump_test: tools/sst_dump_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 column_aware_encoding_test: utilities/column_aware_encoding_test.o $(TESTHARNESS) $(EXPOBJECTS)
@@ -1287,7 +1283,7 @@ optimistic_transaction_test: utilities/transactions/optimistic_transaction_test.
 mock_env_test : util/mock_env_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-manual_compaction_test: db/manual_compaction_test.o $(TESTHARNESS)
+manual_compaction_test: db/manual_compaction_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 filelock_test: util/filelock_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1302,13 +1298,10 @@ memtable_list_test: db/memtable_list_test.o $(LIBOBJECTS) $(TESTHARNESS)
 write_callback_test: db/write_callback_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-heap_test: util/heap_test.o $(GTEST)
-	$(AM_LINK)
-
 transaction_test: utilities/transactions/transaction_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-sst_dump: tools/sst_dump.o
+sst_dump: tools/sst_dump.o $(LIBOBJECTS)
 	$(AM_LINK)
 
 column_aware_encoding_exp: utilities/column_aware_encoding_exp.o $(EXPOBJECTS)
@@ -1339,6 +1332,9 @@ lua_test: utilities/lua/rocks_lua_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTH
 	$(AM_LINK)
 
 range_del_aggregator_test: db/range_del_aggregator_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+terark_zip_table_db_test: db/terark_zip_table_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 terark_zip_table_reader_test: table/terark_zip_table_reader_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)

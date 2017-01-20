@@ -70,6 +70,7 @@ CompactionIterator::CompactionIterator(
   input_->SetPinnedItersMgr(&pinned_iters_mgr_);
   current_user_key_snapshot_ = 0;
   current_user_key_sequence_ = 0;
+  SeekToFirst_status_ = -1;
 }
 
 CompactionIterator::~CompactionIterator() {
@@ -86,8 +87,16 @@ void CompactionIterator::ResetRecordCounts() {
 }
 
 void CompactionIterator::SeekToFirst() {
-  NextFromInput();
-  PrepareOutput();
+  SeekToFirst_status_ = 0;
+}
+
+void CompactionIterator::DoSeekToFirstIfNeeded() const {
+  assert(0 == SeekToFirst_status_ || 1 == SeekToFirst_status_);
+  if (0 == SeekToFirst_status_) {
+    const_cast<CompactionIterator*>(this)->NextFromInput();
+    const_cast<CompactionIterator*>(this)->PrepareOutput();
+    SeekToFirst_status_ = 1;
+  }
 }
 
 namespace {

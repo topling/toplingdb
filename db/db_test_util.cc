@@ -221,9 +221,9 @@ Options DBTestBase::CurrentOptions(
   options.base_background_compactions = -1;
   options.wal_recovery_mode = WALRecoveryMode::kTolerateCorruptedTailRecords;
   options.compaction_pri = CompactionPri::kByCompensatedSize;
-  TerarkZipTableOptions opt;
-  std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
-  options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
+  static std::shared_ptr<TableFactory> terark_zip_table_factory(NewTerarkZipTableFactory(TerarkZipTableOptions(),
+      NewBlockBasedTableFactory(BlockBasedTableOptions())));
+  options.table_factory = terark_zip_table_factory;
 
   return CurrentOptions(options, options_override);
 }

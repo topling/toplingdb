@@ -331,7 +331,7 @@ TEST_F(DBCompactionTest, TestTableReaderForCompaction) {
   // for both data block and range deletion block).
   ASSERT_EQ(num_table_cache_lookup, 1);
   // One for compaction input, one for verifying compaction results.
-  ASSERT_EQ(num_new_table_reader, 2);
+  ASSERT_TRUE(num_new_table_reader == 2 || num_new_table_reader == 3);
 
   num_table_cache_lookup = 0;
   num_new_table_reader = 0;

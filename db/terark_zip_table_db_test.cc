@@ -537,32 +537,54 @@ TEST_F(TerarkZipTableDBTest, AdaptiveTable) { // there is some wrong with adapti
 }
 
 TEST_F(TerarkZipTableDBTest, Correctness) {
-    Options options = CurrentOptions();
+  Options options = CurrentOptions();
 
-    // Write some keys using terarkzip table.
-    TerarkZipTableOptions opt;
-    std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
-    options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
-    // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
+  // Write some keys using terarkzip table.
+  TerarkZipTableOptions opt;
+  std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
+  options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
+  // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
 
-    Destroy(&options);
-    Reopen(&options);
+  Destroy(&options);
+  Reopen(&options);
 
-    size_t count = 10000;
-    size_t len = 32;
+  size_t count = 10;
+  size_t len = 32;
 
-    Random rnd(301);
+  Random rnd(301);
+  for (size_t i = 0; i < count; ++i) {
+    ASSERT_OK(Put("0000" + RandomString(&rnd, len), Key(i)));
+    ASSERT_OK(Put("1111" + RandomString(&rnd, len), Key(i)));
+    ASSERT_OK(Put("2222" + RandomString(&rnd, len), Key(i)));
+    dbfull()->Flush(FlushOptions());
+  }
 
-    for (size_t i = 0; i < count; ++i) {
-        ASSERT_OK(Put(RandomString(&rnd, len), Key(i)));
-    }
+  std::unique_ptr<Iterator> iter(dbfull()->NewIterator(ReadOptions()));
+  iter->Seek("1111");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ(iter->key().ToString().substr(0, 4), std::string("1111"));
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ(iter->key().ToString().substr(0, 4), std::string("0000"));
+  iter->Seek("2222");
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ(iter->key().ToString().substr(0, 4), std::string("2222"));
+  iter->Next();
+  iter->Prev();
+  iter->Prev();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ(iter->key().ToString().substr(0, 4), std::string("1111"));
+  iter->Prev();
+  iter.reset(nullptr);
 
-    Reopen(&options);
+  Reopen(&options);
 
-    rnd.Reset(301);
-    for (size_t i = 0; i < count; ++i) {
-        ASSERT_EQ(Get(RandomString(&rnd, len)), Key(i));
-    }
+  rnd.Reset(301);
+  for (size_t i = 0; i < count; ++i) {
+    ASSERT_EQ(Get("0000" + RandomString(&rnd, len)), Key(i));
+    ASSERT_EQ(Get("1111" + RandomString(&rnd, len)), Key(i));
+    ASSERT_EQ(Get("2222" + RandomString(&rnd, len)), Key(i));
+  }
 }
 
 TEST_F(TerarkZipTableDBTest, EmptyTable) {

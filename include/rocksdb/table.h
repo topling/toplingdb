@@ -20,12 +20,6 @@
 #include <string>
 #include <unordered_map>
 
-#include "rocksdb/cache.h"
-#include "rocksdb/env.h"
-#include "rocksdb/iterator.h"
-#include "rocksdb/options.h"
-#include "rocksdb/status.h"
-
 namespace rocksdb {
 
 // -- Block-based Table
@@ -39,6 +33,12 @@ class TableReader;
 class WritableFileWriter;
 struct EnvOptions;
 struct Options;
+struct DBOptions;
+struct ColumnFamilyOptions;
+class Status;
+class Cache;
+class FilterPolicy;
+class TableFactory;
 
 using std::unique_ptr;
 

@@ -3,13 +3,13 @@ set -x
 export LC_ALL=C
 export LANG=C
 
-#CompilerList="g++-4.7 g++-4.8 g++-4.9 g++-5.3 g++-5.4 g++-6 g++-6.1 g++-6.2 g++-6.3 g++-6.4 clang++"
-CompilerList="g++-4.9 g++-5.3 g++-5.4 g++-6 g++-6.1 g++-6.2 g++-6.3 g++-6.4 clang++"
-CompilerList="g++-5.3 g++-6 g++-6.1 g++-6.2 g++-6.3 g++-6.4 clang++"
+CompilerList="g++-4.7 g++-4.8 g++-4.9 g++-5.3 g++-5.4 g++-6 g++-6.1 g++-6.2 g++-6.3 g++-6.4 clang++"
+#CompilerList="g++-5.3 g++-5.4 g++-6 g++-6.1 g++-6.2 g++-6.3 g++-6.4 clang++"
 #CompilerList="g++-6.2 g++-5.3 g++-5.4 clang++"
 #CompilerList="g++-6.1 g++-5.3 clang++"
 #CompilerList="g++-5.3 clang++"
 #CompilerList="g++-5.4"
+#CompilerList="g++-4.8 g++-4.9"
 #CompilerList="g++-4.8"
 for CXX in $CompilerList
 do

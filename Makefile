@@ -1313,7 +1313,8 @@ repair_test: db/repair_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 ldb_cmd_test: tools/ldb_cmd_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-ldb: tools/ldb.o $(LIBOBJECTS)
+ldb: TerocksLDFLAGS += -lrocksdb
+ldb: tools/ldb.o
 	$(AM_LINK)
 
 iostats_context_test: util/iostats_context_test.o $(LIBOBJECTS) $(TESTHARNESS)

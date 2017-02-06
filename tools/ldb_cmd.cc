@@ -31,6 +31,7 @@
 #include "util/stderr_logger.h"
 #include "util/string_util.h"
 #include "utilities/ttl/db_ttl_impl.h"
+#include <table/terark_zip_table.h>
 
 #include <cstdlib>
 #include <ctime>
@@ -403,6 +404,7 @@ std::vector<std::string> LDBCommand::BuildCmdLineOptions(
                                   ARG_WRITE_BUFFER_SIZE,
                                   ARG_FILE_SIZE,
                                   ARG_FIX_PREFIX_LEN,
+                                  "use_terocks",
                                   ARG_CF_NAME};
   ret.insert(ret.end(), options.begin(), options.end());
   return ret;
@@ -581,6 +583,20 @@ Options LDBCommand::PrepareOptionsForOpenDB() {
     }
   }
 
+  int use_terocks = 0;
+  if (ParseIntOption(option_map_, "use_terocks", use_terocks, exec_state_)) {
+    if (use_terocks >= 0) {
+      if (use_terocks) {
+        TerarkZipTableOptions tzo;
+        TerarkZipAutoConfigForOnlineDB(tzo, opt, opt);
+        opt.table_factory.reset(NewTerarkZipTableFactory(tzo, NULL));
+      }
+    }
+    else {
+      exec_state_ =
+          LDBCommandExecuteResult::Failed("use_terocks must be >= 0");
+    }
+  }
   return opt;
 }
 

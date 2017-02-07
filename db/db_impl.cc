@@ -319,9 +319,11 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname)
       log_dir_synced_(false),
       log_empty_(true),
       default_cf_handle_(nullptr),
+      default_cf_internal_stats_(nullptr),
       log_sync_cv_(&mutex_),
       total_log_size_(0),
       max_total_in_memory_state_(0),
+      single_column_family_mode_(false),
       is_snapshot_supported_(true),
       write_buffer_manager_(immutable_db_options_.write_buffer_manager.get()),
       write_thread_(immutable_db_options_.enable_write_thread_adaptive_yield

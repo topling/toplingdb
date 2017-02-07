@@ -51,6 +51,7 @@ ColumnFamilyOptions::ColumnFamilyOptions()
       level0_file_num_compaction_trigger(4),
       level0_slowdown_writes_trigger(20),
       level0_stop_writes_trigger(32),
+      max_mem_compaction_level(0),
       target_file_size_base(64 * 1048576),
       target_file_size_multiplier(1),
       max_bytes_for_level_base(256 * 1048576),
@@ -110,6 +111,7 @@ ColumnFamilyOptions::ColumnFamilyOptions(const Options& options)
           options.level0_file_num_compaction_trigger),
       level0_slowdown_writes_trigger(options.level0_slowdown_writes_trigger),
       level0_stop_writes_trigger(options.level0_stop_writes_trigger),
+      max_mem_compaction_level(0),
       target_file_size_base(options.target_file_size_base),
       target_file_size_multiplier(options.target_file_size_multiplier),
       max_bytes_for_level_base(options.max_bytes_for_level_base),
@@ -120,6 +122,7 @@ ColumnFamilyOptions::ColumnFamilyOptions(const Options& options)
           options.max_bytes_for_level_multiplier_additional),
       max_compaction_bytes(options.max_compaction_bytes),
       soft_rate_limit(options.soft_rate_limit),
+      hard_rate_limit(options.hard_rate_limit),
       soft_pending_compaction_bytes_limit(
           options.soft_pending_compaction_bytes_limit),
       hard_pending_compaction_bytes_limit(

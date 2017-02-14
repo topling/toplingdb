@@ -45,6 +45,19 @@
 
 namespace rocksdb {
 
+void
+__attribute__((weak))
+TerarkZipAutoConfigForOnlineDB(struct TerarkZipTableOptions&,
+                         struct DBOptions&,
+                         struct ColumnFamilyOptions&,
+                         size_t memBytesLimit = 0);
+
+class TableFactory*
+__attribute__((weak))
+NewTerarkZipTableFactory(const TerarkZipTableOptions&,
+             class TableFactory* fallback);
+
+
 const std::string LDBCommand::ARG_DB = "db";
 const std::string LDBCommand::ARG_PATH = "path";
 const std::string LDBCommand::ARG_HEX = "hex";
@@ -587,9 +600,16 @@ Options LDBCommand::PrepareOptionsForOpenDB() {
   if (ParseIntOption(option_map_, "use_terocks", use_terocks, exec_state_)) {
     if (use_terocks >= 0) {
       if (use_terocks) {
-        TerarkZipTableOptions tzo;
-        TerarkZipAutoConfigForOnlineDB(tzo, opt, opt);
-        opt.table_factory.reset(NewTerarkZipTableFactory(tzo, NULL));
+        if (TerarkZipAutoConfigForOnlineDB) {
+          TerarkZipTableOptions tzo;
+          TerarkZipAutoConfigForOnlineDB(tzo, opt, opt);
+          opt.table_factory.reset(NewTerarkZipTableFactory(tzo, NULL));
+        }
+        else {
+          exec_state_ =
+              LDBCommandExecuteResult::Failed(
+          "when use_terocks, must link with libterark-zip-rocksdb-r, or by LD_PRELOAD");
+        }
       }
     }
     else {

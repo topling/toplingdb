@@ -104,6 +104,9 @@
 
 namespace rocksdb {
 
+bool __attribute((weak)) TerarkZipCFOptionsFromEnv(ColumnFamilyOptions&);
+void __attribute((weak)) TerarkZipDBOptionsFromEnv(DBOptions&);
+
 const std::string kDefaultColumnFamilyName("default");
 
 void DumpRocksDBBuildVersion(Logger * log);
@@ -5937,7 +5940,18 @@ Status DB::Open(const DBOptions& db_options, const std::string& dbname,
   handles->clear();
 
   size_t max_write_buffer_size = 0;
-  for (auto cf : column_families) {
+  const char* terocks_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terocks_localTempDir) {
+    if (TerarkZipDBOptionsFromEnv) {
+      TerarkZipDBOptionsFromEnv(const_cast<DBOptions&>(db_options));
+    } else {
+      return Status::InvalidArgument(
+          "env TerarkZipTable_localTempDir is defined, "
+          "but dynamic libterark-zip-rocksdb is not loaded");
+    }
+  }
+  for (auto& cf : column_families) {
+    TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf.options));
     max_write_buffer_size =
         std::max(max_write_buffer_size, cf.options.write_buffer_size);
   }

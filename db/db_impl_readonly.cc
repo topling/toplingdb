@@ -15,6 +15,9 @@
 
 namespace rocksdb {
 
+bool __attribute((weak)) TerarkZipCFOptionsFromEnv(ColumnFamilyOptions&);
+void __attribute((weak)) TerarkZipDBOptionsFromEnv(DBOptions&);
+
 #ifndef ROCKSDB_LITE
 
 DBImplReadOnly::DBImplReadOnly(const DBOptions& db_options,
@@ -106,6 +109,19 @@ Status DBImplReadOnly::NewIterators(
 Status DB::OpenForReadOnly(const Options& options, const std::string& dbname,
                            DB** dbptr, bool error_if_log_file_exist) {
   *dbptr = nullptr;
+  const char* terocks_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terocks_localTempDir) {
+    if (TerarkZipDBOptionsFromEnv) {
+      const ColumnFamilyOptions& cf_options = options;
+      const           DBOptions& db_options = options;
+      TerarkZipDBOptionsFromEnv(const_cast<          DBOptions&>(db_options));
+      TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf_options));
+    } else {
+      return Status::InvalidArgument(
+          "env TerarkZipTable_localTempDir is defined, "
+          "but dynamic libterark-zip-rocksdb is not loaded");
+    }
+  }
 
   // Try to first open DB as fully compacted DB
   Status s;
@@ -139,13 +155,27 @@ Status DB::OpenForReadOnly(
   *dbptr = nullptr;
   handles->clear();
 
+  const char* terocks_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terocks_localTempDir) {
+    if (TerarkZipDBOptionsFromEnv) {
+      TerarkZipDBOptionsFromEnv(const_cast<DBOptions&>(db_options));
+    } else {
+      return Status::InvalidArgument(
+          "env TerarkZipTable_localTempDir is defined, "
+          "but dynamic libterark-zip-rocksdb is not loaded");
+    }
+  }
+  for (auto& cf : column_families) {
+    TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf.options));
+  }
+
   DBImplReadOnly* impl = new DBImplReadOnly(db_options, dbname);
   impl->mutex_.Lock();
   Status s = impl->Recover(column_families, true /* read only */,
                            error_if_log_file_exist);
   if (s.ok()) {
     // set column family handles
-    for (auto cf : column_families) {
+    for (auto& cf : column_families) {
       auto cfd =
           impl->versions_->GetColumnFamilySet()->GetColumnFamily(cf.name);
       if (cfd == nullptr) {

@@ -50,7 +50,7 @@ __attribute__((weak))
 TerarkZipAutoConfigForOnlineDB(struct TerarkZipTableOptions&,
                          struct DBOptions&,
                          struct ColumnFamilyOptions&,
-                         size_t memBytesLimit = 0);
+                         size_t memBytesLimit);
 
 class TableFactory*
 __attribute__((weak))

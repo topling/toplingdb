@@ -1079,10 +1079,10 @@ table_reader_bench: table/table_reader_bench.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK) $(PROFILING_FLAGS)
 
 perf_context_test: db/perf_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
+	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerocksLDFLAGS)
 
 prefix_test: db/prefix_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
+	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerocksLDFLAGS)
 
 backupable_db_test: utilities/backupable/backupable_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
@@ -1317,6 +1317,7 @@ column_aware_encoding_exp: utilities/column_aware_encoding_exp.o $(EXPOBJECTS)
 repair_test: db/repair_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
+ldb_cmd_test: TerocksLDFLAGS += -lrocksdb -lterark-zip-rocksdb-r
 ldb_cmd_test: tools/ldb_cmd_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
@@ -1325,7 +1326,7 @@ ldb: tools/ldb.o
 	$(AM_LINK)
 
 iostats_context_test: util/iostats_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
+	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerocksLDFLAGS)
 
 persistent_cache_test: utilities/persistent_cache/persistent_cache_test.o  db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)

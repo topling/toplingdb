@@ -22,8 +22,11 @@ do
 		make clean CXX=$CXX
 		make shared_lib CXX=$CXX
 		make static_lib CXX=$CXX -j32
+		make ldb CXX=$CXX
 		rm -f /opt/${COMPILER}/lib64/librocksdb*
+		rm -f /opt/${COMPILER}/bin/ldb
 		cp -a librocksdb.* /opt/${COMPILER}/lib64 || true
+		cp -a ldb /opt/${COMPILER}/bin || true
 		mv librocksdb.* ${LIBDIR}
 	else
 		echo Not found compiler: $CXX

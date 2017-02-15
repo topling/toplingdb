@@ -98,7 +98,7 @@ ifeq (${DEBUG_LEVEL}, 0)
 else
   DBG_OR_RLS=d
 endif
-ifeq("$(LINK_STATIC_TERARK)","")
+ifeq ("$(LINK_STATIC_TERARK)","")
   TerocksLDFLAGS += -L${TerocksDir}/lib \
                     -lterark-zip-rocksdb-${DBG_OR_RLS} \
                     -lterark-zbs-${DBG_OR_RLS} \
@@ -107,7 +107,7 @@ ifeq("$(LINK_STATIC_TERARK)","")
 else
   TerarkBuild = ../terark/build/${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
   override LINK_STATIC_TERARK = \
-    ${TerocksDir}/lib/libterark-zip-rocksdb${TerocksTrial}-${DBG_OR_RLS}.a \
+    ${TerocksDir}/lib_static/libterark-zip-rocksdb${TerocksTrial}-${DBG_OR_RLS}.a \
     ${TerarkBuild}/lib/libterark-zbs-${DBG_OR_RLS}.a \
     ${TerarkBuild}/lib/libterark-fsa-${DBG_OR_RLS}.a \
     ${TerarkBuild}/lib/libterark-core-${DBG_OR_RLS}.a

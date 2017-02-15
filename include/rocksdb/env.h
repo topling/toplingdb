@@ -68,9 +68,6 @@ struct EnvOptions {
    // If true, then use mmap to write data
   bool use_mmap_writes = true;
 
-  // If true, then use MAP_POPULATE
-  bool use_mmap_populate = false;
-
   // If true, then use O_DIRECT for reading data
   bool use_direct_reads = false;
 

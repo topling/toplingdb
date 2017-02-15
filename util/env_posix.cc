@@ -220,11 +220,7 @@ class PosixEnv : public Env {
       uint64_t size;
       s = GetFileSize(fname, &size);
       if (s.ok()) {
-#ifndef MAP_POPULATE
-        int MAP_POPULATE = 0;
-#endif
-        int mmap_flags = MAP_SHARED | (options.use_mmap_populate ? MAP_POPULATE : 0);
-        void* base = mmap(nullptr, size, PROT_READ, mmap_flags, fd, 0);
+        void* base = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
         if (base != MAP_FAILED) {
           result->reset(new PosixMmapReadableFile(fd, fname, base,
                                                   size, options));

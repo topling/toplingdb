@@ -93,17 +93,24 @@ ifeq ($(MAKECMDGOALS),rocksdbjavastaticpublish)
 	DEBUG_LEVEL=0
 endif
 
-TerocksLDFLAGS += -L${TerocksDir}/lib
 ifeq (${DEBUG_LEVEL}, 0)
-	TerocksLDFLAGS += -lterark-zip-rocksdb-r
-	TerocksLDFLAGS += -lterark-zbs-r
-	TerocksLDFLAGS += -lterark-fsa-r
-	TerocksLDFLAGS += -lterark-core-r
+  DBG_OR_RLS=r
 else
-	TerocksLDFLAGS += -lterark-zip-rocksdb-d
-	TerocksLDFLAGS += -lterark-zbs-d
-	TerocksLDFLAGS += -lterark-fsa-d
-	TerocksLDFLAGS += -lterark-core-d
+  DBG_OR_RLS=d
+endif
+ifeq("$(LINK_STATIC_TERARK)","")
+  TerocksLDFLAGS += -L${TerocksDir}/lib \
+                    -lterark-zip-rocksdb-${DBG_OR_RLS} \
+                    -lterark-zbs-${DBG_OR_RLS} \
+                    -lterark-fsa-${DBG_OR_RLS} \
+                    -lterark-core-${DBG_OR_RLS}
+else
+  TerarkBuild = ../terark/build/${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
+  override LINK_STATIC_TERARK = \
+    ${TerocksDir}/lib/libterark-zip-rocksdb${TerocksTrial}-${DBG_OR_RLS}.a \
+    ${TerarkBuild}/lib/libterark-zbs-${DBG_OR_RLS}.a \
+    ${TerarkBuild}/lib/libterark-fsa-${DBG_OR_RLS}.a \
+    ${TerarkBuild}/lib/libterark-core-${DBG_OR_RLS}.a
 endif
 
 # compile with -O2 if debug level is not 2
@@ -539,7 +546,7 @@ endif
 
 $(SHARED4):
 	$(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(LIB_SOURCES) $(TOOL_LIB_SOURCES) \
-		$(LDFLAGS) -o $@
+		$(LDFLAGS) $(LINK_STATIC_TERARK) -o $@
 
 endif  # PLATFORM_SHARED_EXT
 

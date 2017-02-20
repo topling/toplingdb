@@ -5951,7 +5951,9 @@ Status DB::Open(const DBOptions& db_options, const std::string& dbname,
     }
   }
   for (auto& cf : column_families) {
-    TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf.options));
+    if (terocks_localTempDir) {
+      TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf.options));
+    }
     max_write_buffer_size =
         std::max(max_write_buffer_size, cf.options.write_buffer_size);
   }

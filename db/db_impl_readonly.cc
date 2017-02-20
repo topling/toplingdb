@@ -164,9 +164,9 @@ Status DB::OpenForReadOnly(
           "env TerarkZipTable_localTempDir is defined, "
           "but dynamic libterark-zip-rocksdb is not loaded");
     }
-  }
-  for (auto& cf : column_families) {
-    TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf.options));
+    for (auto& cf : column_families) {
+      TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf.options));
+    }
   }
 
   DBImplReadOnly* impl = new DBImplReadOnly(db_options, dbname);

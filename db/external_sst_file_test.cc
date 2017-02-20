@@ -258,11 +258,11 @@ TEST_F(ExternalSSTFileTest, Basic) {
       ASSERT_EQ(Get(Key(k)), Key(k) + "_val");
     }
 
-    // This file has overlapping values with the exisitng data
+    // This file has overlapping values with the existing data
     s = DeprecatedAddFile({file3});
     ASSERT_FALSE(s.ok()) << s.ToString();
 
-    // This file has overlapping values with the exisitng data
+    // This file has overlapping values with the existing data
     s = DeprecatedAddFile({file4});
     ASSERT_FALSE(s.ok()) << s.ToString();
 
@@ -510,7 +510,7 @@ TEST_F(ExternalSSTFileTest, AddList) {
       ASSERT_EQ(user_props["xyz_Count"], "100");
     }
 
-    // This file list has overlapping values with the exisitng data
+    // This file list has overlapping values with the existing data
     s = DeprecatedAddFile(file_list3);
     ASSERT_FALSE(s.ok()) << s.ToString();
 
@@ -705,7 +705,7 @@ TEST_F(ExternalSSTFileTest, NoCopy) {
   ASSERT_TRUE(s.ok()) << s.ToString();
   ASSERT_OK(env_->FileExists(file2));
 
-  // This file have overlapping values with the exisitng data
+  // This file have overlapping values with the existing data
   s = DeprecatedAddFile({file2}, true /* move file */);
   ASSERT_FALSE(s.ok()) << s.ToString();
   ASSERT_OK(env_->FileExists(file3));
@@ -821,7 +821,7 @@ TEST_F(ExternalSSTFileTest, MultiThreaded) {
       ASSERT_TRUE(s.ok()) << s.ToString();
     };
     // Write num_files files in parallel
-    std::vector<std::thread> sst_writer_threads;
+    std::vector<port::Thread> sst_writer_threads;
     for (int i = 0; i < num_files; ++i) {
       sst_writer_threads.emplace_back(write_file_func);
     }
@@ -864,7 +864,7 @@ TEST_F(ExternalSSTFileTest, MultiThreaded) {
     };
 
     // Bulk load num_files files in parallel
-    std::vector<std::thread> add_file_threads;
+    std::vector<port::Thread> add_file_threads;
     DestroyAndReopen(options);
     for (int i = 0; i < num_files; ++i) {
       add_file_threads.emplace_back(load_file_func);
@@ -1108,13 +1108,13 @@ TEST_F(ExternalSSTFileTest, PickedLevelBug) {
   rocksdb::SyncPoint::GetInstance()->EnableProcessing();
 
   // While writing the MANIFEST start a thread that will ask for compaction
-  std::thread bg_compact([&]() {
+  rocksdb::port::Thread bg_compact([&]() {
     ASSERT_OK(db_->CompactRange(CompactRangeOptions(), nullptr, nullptr));
   });
   TEST_SYNC_POINT("ExternalSSTFileTest::PickedLevelBug:2");
 
   // Start a thread that will ingest a new file
-  std::thread bg_addfile([&]() {
+  rocksdb::port::Thread bg_addfile([&]() {
     file_keys = {1, 2, 3};
     ASSERT_OK(GenerateAndAddExternalFile(options, file_keys, 1));
   });
@@ -1169,7 +1169,7 @@ TEST_F(ExternalSSTFileTest, CompactDuringAddFileRandom) {
     ASSERT_OK(GenerateAndAddExternalFile(options, file_keys, range_id));
   };
 
-  std::vector<std::thread> threads;
+  std::vector<port::Thread> threads;
   while (range_id < 5000) {
     int range_start = range_id * 10;
     int range_end = range_start + 10;
@@ -1728,7 +1728,7 @@ TEST_F(ExternalSSTFileTest, CompactionDeadlock) {
   rocksdb::SyncPoint::GetInstance()->EnableProcessing();
 
   // Start ingesting and extrnal file in the background
-  std::thread bg_ingest_file([&]() {
+  rocksdb::port::Thread bg_ingest_file([&]() {
     running_threads += 1;
     ASSERT_OK(GenerateAndAddExternalFile(options, {5, 6}));
     running_threads -= 1;
@@ -1748,7 +1748,7 @@ TEST_F(ExternalSSTFileTest, CompactionDeadlock) {
 
   // This thread will try to insert into the memtable but since we have 4 L0
   // files this thread will be blocked and hold the writer thread
-  std::thread bg_block_put([&]() {
+  rocksdb::port::Thread bg_block_put([&]() {
     running_threads += 1;
     ASSERT_OK(Put(Key(10), "memtable"));
     running_threads -= 1;

@@ -449,6 +449,7 @@ TESTS = \
 	lru_cache_test \
 	terark_zip_table_db_test \
 	terark_zip_table_reader_test \
+	object_registry_test
 
 PARALLEL_TEST = \
 	backupable_db_test \
@@ -1113,7 +1114,7 @@ env_librados_test: utilities/env_librados_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 endif
 
-env_registry_test: utilities/env_registry_test.o $(LIBOBJECTS) $(TESTHARNESS)
+object_registry_test: utilities/object_registry_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 ttl_test: utilities/ttl/ttl_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1423,11 +1424,11 @@ ifeq ($(PLATFORM), OS_SOLARIS)
 endif
 
 libz.a:
-	-rm -rf zlib-1.2.8
-	curl -O -L http://zlib.net/zlib-1.2.8.tar.gz
-	tar xvzf zlib-1.2.8.tar.gz
-	cd zlib-1.2.8 && CFLAGS='-fPIC' ./configure --static && make
-	cp zlib-1.2.8/libz.a .
+	-rm -rf zlib-1.2.10
+	curl -O -L http://zlib.net/zlib-1.2.10.tar.gz
+	tar xvzf zlib-1.2.10.tar.gz
+	cd zlib-1.2.10 && CFLAGS='-fPIC' ./configure --static && make
+	cp zlib-1.2.10/libz.a .
 
 libbz2.a:
 	-rm -rf bzip2-1.0.6
@@ -1457,7 +1458,7 @@ java_static_libobjects = $(patsubst %,jls/%,$(LIBOBJECTS))
 CLEAN_FILES += jls
 
 JAVA_STATIC_FLAGS = -DZLIB -DBZIP2 -DSNAPPY -DLZ4
-JAVA_STATIC_INCLUDES = -I./zlib-1.2.8 -I./bzip2-1.0.6 -I./snappy-1.1.3 -I./lz4-r127/lib
+JAVA_STATIC_INCLUDES = -I./zlib-1.2.10 -I./bzip2-1.0.6 -I./snappy-1.1.3 -I./lz4-r127/lib
 
 $(java_static_libobjects): jls/%.o: %.cc libz.a libbz2.a libsnappy.a liblz4.a
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(JAVA_STATIC_FLAGS) $(JAVA_STATIC_INCLUDES) -fPIC -c $< -o $@ $(COVERAGEFLAGS)

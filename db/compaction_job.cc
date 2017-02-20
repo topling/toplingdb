@@ -45,7 +45,7 @@
 #include "rocksdb/table.h"
 #include "table/block.h"
 #include "table/block_based_table_factory.h"
-#include "table/merger.h"
+#include "table/merging_iterator.h"
 #include "table/table_builder.h"
 #include "util/coding.h"
 #include "util/file_reader_writer.h"
@@ -522,7 +522,7 @@ Status CompactionJob::Run() {
   const uint64_t start_micros = env_->NowMicros();
 
   // Launch a thread for each of subcompactions 1...num_threads-1
-  std::vector<std::thread> thread_pool;
+  std::vector<port::Thread> thread_pool;
   thread_pool.reserve(num_threads - 1);
   for (size_t i = 1; i < compact_->sub_compact_states.size(); i++) {
     thread_pool.emplace_back(&CompactionJob::ProcessKeyValueCompaction, this,

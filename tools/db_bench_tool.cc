@@ -49,7 +49,7 @@
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/slice_transform.h"
-#include "rocksdb/utilities/env_registry.h"
+#include "rocksdb/utilities/object_registry.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
 #include "rocksdb/utilities/options_util.h"
 #include "rocksdb/utilities/sim_cache.h"
@@ -465,6 +465,7 @@ DEFINE_bool(verify_checksum, false, "Verify checksum for every block read"
             " from storage");
 
 DEFINE_bool(statistics, false, "Database statistics");
+DEFINE_string(statistics_string, "", "Serialized statistics string");
 static class std::shared_ptr<rocksdb::Statistics> dbstats;
 
 DEFINE_int64(writes, -1, "Number of write operations to do. If negative, do"
@@ -609,7 +610,7 @@ DEFINE_bool(use_stderr_info_logger, false,
 
 DEFINE_bool(use_blob_db, false, "Whether to use BlobDB. ");
 
-enum rocksdb::CompressionType StringToCompressionType(const char* ctype) {
+static enum rocksdb::CompressionType StringToCompressionType(const char* ctype) {
   assert(ctype);
 
   if (!strcasecmp(ctype, "none"))
@@ -633,7 +634,7 @@ enum rocksdb::CompressionType StringToCompressionType(const char* ctype) {
   return rocksdb::kSnappyCompression;  // default value
 }
 
-std::string ColumnFamilyName(size_t i) {
+static std::string ColumnFamilyName(size_t i) {
   if (i == 0) {
     return rocksdb::kDefaultColumnFamilyName;
   } else {
@@ -877,7 +878,7 @@ enum RepFactory {
   kCuckoo
 };
 
-enum RepFactory StringToRepFactory(const char* ctype) {
+static enum RepFactory StringToRepFactory(const char* ctype) {
   assert(ctype);
 
   if (!strcasecmp(ctype, "skip_list"))
@@ -947,7 +948,6 @@ static const bool FLAGS_deletepercent_dummy __attribute__((unused)) =
 static const bool FLAGS_table_cache_numshardbits_dummy __attribute__((unused)) =
     RegisterFlagValidator(&FLAGS_table_cache_numshardbits,
                           &ValidateTableCacheNumshardbits);
-}  // namespace
 
 namespace rocksdb {
 
@@ -1220,7 +1220,7 @@ class ReporterAgent {
       abort();
     }
 
-    reporting_thread_ = std::thread([&]() { SleepAndReport(); });
+    reporting_thread_ = port::Thread([&]() { SleepAndReport(); });
   }
 
   ~ReporterAgent() {
@@ -1280,7 +1280,7 @@ class ReporterAgent {
   std::atomic<int64_t> total_ops_done_;
   int64_t last_report_;
   const uint64_t report_interval_secs_;
-  std::thread reporting_thread_;
+  rocksdb::port::Thread reporting_thread_;
   std::mutex mutex_;
   // will notify on stop
   std::condition_variable stop_cv_;
@@ -4899,6 +4899,24 @@ int db_bench_tool(int argc, char** argv) {
   ParseCommandLineFlags(&argc, &argv, true);
 
   FLAGS_compaction_style_e = (rocksdb::CompactionStyle) FLAGS_compaction_style;
+#ifndef ROCKSDB_LITE
+  if (FLAGS_statistics && !FLAGS_statistics_string.empty()) {
+    fprintf(stderr,
+            "Cannot provide both --statistics and --statistics_string.\n");
+    exit(1);
+  }
+  if (!FLAGS_statistics_string.empty()) {
+    std::unique_ptr<Statistics> custom_stats_guard;
+    dbstats.reset(NewCustomObject<Statistics>(FLAGS_statistics_string,
+                                              &custom_stats_guard));
+    custom_stats_guard.release();
+    if (dbstats == nullptr) {
+      fprintf(stderr, "No Statistics registered matching string: %s\n",
+              FLAGS_statistics_string.c_str());
+      exit(1);
+    }
+  }
+#endif  // ROCKSDB_LITE
   if (FLAGS_statistics) {
     dbstats = rocksdb::CreateDBStatistics();
   }
@@ -4924,7 +4942,7 @@ int db_bench_tool(int argc, char** argv) {
     fprintf(stderr, "Cannot provide both --hdfs and --env_uri.\n");
     exit(1);
   } else if (!FLAGS_env_uri.empty()) {
-    FLAGS_env = NewEnvFromUri(FLAGS_env_uri, &custom_env_guard);
+    FLAGS_env = NewCustomObject<Env>(FLAGS_env_uri, &custom_env_guard);
     if (FLAGS_env == nullptr) {
       fprintf(stderr, "No Env registered for URI: %s\n", FLAGS_env_uri.c_str());
       exit(1);

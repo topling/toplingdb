@@ -38,7 +38,7 @@
 #include "rocksdb/table.h"
 #include "table/block.h"
 #include "table/block_based_table_factory.h"
-#include "table/merger.h"
+#include "table/merging_iterator.h"
 #include "table/table_builder.h"
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
@@ -228,6 +228,12 @@ Status FlushJob::Run(FileMetaData* file_meta) {
   }
 
   return s;
+}
+
+void FlushJob::Cancel() {
+  db_mutex_->AssertHeld();
+  assert(base_ != nullptr);
+  base_->Unref();
 }
 
 Status FlushJob::WriteLevel0Table() {

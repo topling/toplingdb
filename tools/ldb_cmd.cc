@@ -31,7 +31,9 @@
 #include "util/stderr_logger.h"
 #include "util/string_util.h"
 #include "utilities/ttl/db_ttl_impl.h"
-#include <table/terark_zip_table.h>
+#ifndef _MSC_VER
+# include <table/terark_zip_table.h>
+#endif
 
 #include <cstdlib>
 #include <ctime>
@@ -598,6 +600,7 @@ Options LDBCommand::PrepareOptionsForOpenDB() {
     }
   }
 
+#ifndef _MSC_VER
   int use_terocks = 0;
   if (ParseIntOption(option_map_, "use_terocks", use_terocks, exec_state_)) {
     if (use_terocks >= 0) {
@@ -619,6 +622,7 @@ Options LDBCommand::PrepareOptionsForOpenDB() {
           LDBCommandExecuteResult::Failed("use_terocks must be >= 0");
     }
   }
+#endif
   return opt;
 }
 

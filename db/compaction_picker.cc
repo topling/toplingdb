@@ -1564,11 +1564,11 @@ uint32_t UniversalCompactionPicker::GetPathId(
     uint64_t target_size = ioptions.db_paths[i].target_size;
     double prob = double(target_size) / sum2;
     if (random() < prob * random.max()) {
-      return i;
+      return uint32_t(i);
     }
     sum2 -= target_size;
   }
-  return num-1;
+  return uint32_t(num-1);
 
   // Two conditions need to be satisfied:
   // (1) the target path needs to be able to hold the file's size

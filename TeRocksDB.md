@@ -1,9 +1,9 @@
 # TerarkZipTable
 
-## terocksdb
-We call &lt;&lt;rocksdb with TerarkZipTable&gt;&gt; as terocksdb, or terocks. With terocks, you can use terocks as official rocksdb(without terocks feature).
+## terarkdb
+We call &lt;&lt;rocksdb with TerarkZipTable&gt;&gt; as terarkdb. With terarkdb, you can use terarkdb as official rocksdb(without terarkdb feature).
 
-If your application is using rocksdb, you can seamlessly switch to `terocks` and use `TerarkZipTable`, even without recompilation.
+If your application is using rocksdb, you can seamlessly switch to `terarkdb` and use `TerarkZipTable`, even without recompilation.
 
 See [terark-zip-rocksdb](https://github.com/terark/terark-zip-rocksdb) for more detail.
 
@@ -16,14 +16,14 @@ To simplify `TerarkZipTable` usage, we provide the following way:
 ## Using TerarkZipTable by environment vars
 
 If environment var `TerarkZipTable_localTempDir` is defined(must not be empty),
-terocks(this modified `librocksdb`) will use `TerarkZipTable` as SSTable, and use `AdaptiveTableFactory` as fallback(mainly for reading existing original rocksdb SSTable).
+terarkdb(this modified `librocksdb`) will use `TerarkZipTable` as SSTable, and use `AdaptiveTableFactory` as fallback(mainly for reading existing original rocksdb SSTable).
 
 All env var names are [TerarkZipTableOptions](https://github.com/terark/terark-zip-rocksdb/blob/master/src/table/terark_zip_table.h#L17) field names prefixed with `TerarkZipTable_`.
 
-If an existing application using rocksdb, to switch to `terocks`, just override(overwrite the original librocksdb.so, or change `LD_LIBRARY_PATH` ...), and preload terark libs:
+If an existing application using rocksdb, to switch to `terarkdb`, just override(overwrite the original librocksdb.so, or change `LD_LIBRARY_PATH` ...), and preload terark libs:
 
 ```bash
-env LD_LIBRARY_PATH=/path/to/terocks/lib:$LD_LIBRARY_PATH \
+env LD_LIBRARY_PATH=/path/to/terarkdb/lib:$LD_LIBRARY_PATH \
     LD_PRELOAD=libterark-zip-rocksdb-trial-r.so:libterark-core-r.so:libterark-fsa-r.so:libterark-zbs-r.so \
     TerarkZipTable_localTempDir=/path/to/some/temp/dir \
     TerarkZipTable_indexNestLevel=2 \
@@ -41,7 +41,7 @@ If `TerarkZipTable_localTempDir` is not defined, `TerarkZipTable` will not be us
 If `TerarkZipTable_localTempDir` is defined, but libterark-xxx are not `LD_PRELOAD`'ed, db::Open(..) will return rocksdb::Status::InvalidArgument(...).
 
 
-Files in `/path/to/terocks/lib` may looks like this:
+Files in `/path/to/terarkdb/lib` may looks like this:
 ```
 $ ls -l pkg/terark-zip-rocksdb-trial-Linux-x86_64-g++-4.8-bmi2-1/lib
 total 60552

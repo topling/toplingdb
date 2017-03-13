@@ -112,8 +112,8 @@ Status DB::OpenForReadOnly(const Options& options, const std::string& dbname,
                            DB** dbptr, bool error_if_log_file_exist) {
   *dbptr = nullptr;
 #ifndef _MSC_VER
-  const char* terocks_localTempDir = getenv("TerarkZipTable_localTempDir");
-  if (terocks_localTempDir) {
+  const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terarkdb_localTempDir) {
     if (TerarkZipDBOptionsFromEnv) {
       const ColumnFamilyOptions& cf_options = options;
       const           DBOptions& db_options = options;
@@ -159,8 +159,8 @@ Status DB::OpenForReadOnly(
   handles->clear();
 
 #ifndef _MSC_VER
-  const char* terocks_localTempDir = getenv("TerarkZipTable_localTempDir");
-  if (terocks_localTempDir) {
+  const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terarkdb_localTempDir) {
     if (TerarkZipDBOptionsFromEnv) {
       TerarkZipDBOptionsFromEnv(const_cast<DBOptions&>(db_options));
     } else {

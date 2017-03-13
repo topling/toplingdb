@@ -421,7 +421,7 @@ std::vector<std::string> LDBCommand::BuildCmdLineOptions(
                                   ARG_WRITE_BUFFER_SIZE,
                                   ARG_FILE_SIZE,
                                   ARG_FIX_PREFIX_LEN,
-                                  "use_terocks",
+                                  "use_terarkdb",
                                   ARG_CF_NAME};
   ret.insert(ret.end(), options.begin(), options.end());
   return ret;
@@ -601,10 +601,10 @@ Options LDBCommand::PrepareOptionsForOpenDB() {
   }
 
 #ifndef _MSC_VER
-  int use_terocks = 0;
-  if (ParseIntOption(option_map_, "use_terocks", use_terocks, exec_state_)) {
-    if (use_terocks >= 0) {
-      if (use_terocks) {
+  int use_terarkdb = 0;
+  if (ParseIntOption(option_map_, "use_terarkdb", use_terarkdb, exec_state_)) {
+    if (use_terarkdb >= 0) {
+      if (use_terarkdb) {
         if (TerarkZipAutoConfigForOnlineDB) {
           TerarkZipTableOptions tzo;
           TerarkZipAutoConfigForOnlineDB(tzo, opt, opt);
@@ -613,13 +613,13 @@ Options LDBCommand::PrepareOptionsForOpenDB() {
         else {
           exec_state_ =
               LDBCommandExecuteResult::Failed(
-          "when use_terocks, must link with libterark-zip-rocksdb-r, or by LD_PRELOAD");
+          "when use_terarkdb, must link with libterark-zip-rocksdb-r, or by LD_PRELOAD");
         }
       }
     }
     else {
       exec_state_ =
-          LDBCommandExecuteResult::Failed("use_terocks must be >= 0");
+          LDBCommandExecuteResult::Failed("use_terarkdb must be >= 0");
     }
   }
 #endif

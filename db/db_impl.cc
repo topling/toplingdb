@@ -5996,8 +5996,8 @@ Status DB::Open(const DBOptions& db_options, const std::string& dbname,
 
   size_t max_write_buffer_size = 0;
 #ifndef _MSC_VER
-  const char* terocks_localTempDir = getenv("TerarkZipTable_localTempDir");
-  if (terocks_localTempDir) {
+  const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terarkdb_localTempDir) {
     if (TerarkZipDBOptionsFromEnv) {
       TerarkZipDBOptionsFromEnv(const_cast<DBOptions&>(db_options));
     } else {
@@ -6009,7 +6009,7 @@ Status DB::Open(const DBOptions& db_options, const std::string& dbname,
 #endif
   for (auto& cf : column_families) {
 #ifndef _MSC_VER
-    if (terocks_localTempDir) {
+    if (terarkdb_localTempDir) {
       TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf.options));
     }
 #endif

@@ -99,7 +99,6 @@ void CompactionIterator::DoSeekToFirstIfNeeded() const {
   }
 }
 
-namespace {
 class CompactionIteratorToInternalIterator : public InternalIterator {
   CompactionIterator* c_iter_;
 public:
@@ -115,7 +114,6 @@ public:
   virtual Slice value() const { return c_iter_->value(); }
   virtual Status status() const { return c_iter_->status(); }
 };
-}
 
 std::unique_ptr<InternalIterator>
 CompactionIterator::AdaptToInternalIterator() {

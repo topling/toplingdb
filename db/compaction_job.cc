@@ -667,8 +667,10 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   std::unique_ptr<InternalIterator> input(versions_->MakeInputIterator(
       sub_compact->compaction, range_del_agg.get()));
 
+  std::unique_ptr<RangeDelAggregator> range_del_agg2(
+      new RangeDelAggregator(cfd->internal_comparator(), existing_snapshots_));
   std::unique_ptr<InternalIterator> input2(versions_->MakeInputIterator(
-      sub_compact->compaction, range_del_agg.get()));
+      sub_compact->compaction, range_del_agg2.get()));
 
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_PROCESS_KV);
@@ -715,13 +717,18 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   }
 
   auto compaction_filter = cfd->ioptions()->compaction_filter;
+  auto compaction_filter2 = cfd->ioptions()->compaction_filter;
   std::unique_ptr<CompactionFilter> compaction_filter_from_factory = nullptr;
+  std::unique_ptr<CompactionFilter> compaction_filter_from_factory2 = nullptr;
   if (compaction_filter == nullptr) {
     compaction_filter_from_factory =
         sub_compact->compaction->CreateCompactionFilter();
     compaction_filter = compaction_filter_from_factory.get();
+    compaction_filter_from_factory2 =
+        sub_compact->compaction->CreateCompactionFilter();
+    compaction_filter2 = compaction_filter_from_factory2.get();
   }
-  MergeHelper merge1(
+  MergeHelper merge(
       env_, cfd->user_comparator(), cfd->ioptions()->merge_operator,
       compaction_filter, db_options_.info_log.get(),
       mutable_cf_options->min_partial_merge_operands,
@@ -731,7 +738,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       shutting_down_);
   MergeHelper merge2(
       env_, cfd->user_comparator(), cfd->ioptions()->merge_operator,
-      compaction_filter, db_options_.info_log.get(),
+      compaction_filter2, db_options_.info_log.get(),
       mutable_cf_options->min_partial_merge_operands,
       false /* internal key corruption is expected */,
       existing_snapshots_.empty() ? 0 : existing_snapshots_.back(),
@@ -753,17 +760,21 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   }
 
   Status status;
-  auto makeCompactionIterator = [&](InternalIterator* input_iter, MergeHelper& merge) {
+  auto makeCompactionIterator = [&](InternalIterator* input_iter,
+                                    MergeHelper& merge_x,
+                                    RangeDelAggregator* range_del_agg_x,
+                                    const CompactionFilter* compaction_filter_x
+                                    ) {
     return std::unique_ptr<CompactionIterator>(new CompactionIterator(
-      input_iter, cfd->user_comparator(), &merge, versions_->LastSequence(),
+      input_iter, cfd->user_comparator(), &merge_x, versions_->LastSequence(),
       &existing_snapshots_, earliest_write_conflict_snapshot_, env_, false,
-      range_del_agg.get(), sub_compact->compaction, compaction_filter,
+      range_del_agg_x, sub_compact->compaction, compaction_filter_x,
       shutting_down_));
   };
-  sub_compact->c_iter = makeCompactionIterator(input.get(), merge1);
+  sub_compact->c_iter = makeCompactionIterator(input.get(), merge, range_del_agg.get(), compaction_filter);
   auto c_iter = sub_compact->c_iter.get();
   c_iter->SeekToFirst();
-  auto c_iter2 = makeCompactionIterator(input2.get(), merge2);
+  auto c_iter2 = makeCompactionIterator(input2.get(), merge2, range_del_agg2.get(), compaction_filter2);
   auto second_pass_iter = c_iter2->AdaptToInternalIterator();
   c_iter2->SeekToFirst();
   const auto& c_iter_stats = c_iter->iter_stats();

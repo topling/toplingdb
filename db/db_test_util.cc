@@ -221,8 +221,12 @@ Options DBTestBase::CurrentOptions(
   options.base_background_compactions = -1;
   options.wal_recovery_mode = WALRecoveryMode::kTolerateCorruptedTailRecords;
   options.compaction_pri = CompactionPri::kByCompensatedSize;
-  static std::shared_ptr<TableFactory> terark_zip_table_factory(NewTerarkZipTableFactory(TerarkZipTableOptions(),
+  TerarkZipTableOptions tzto;
+  tzto.disableTwoPass = true;
+  tzto.localTempDir = R"(C:\osc\rocksdb_test\tempdir)";
+  static std::shared_ptr<TableFactory> terark_zip_table_factory(NewTerarkZipTableFactory(tzto,
       NewBlockBasedTableFactory(BlockBasedTableOptions())));
+  options.allow_mmap_reads = true;
   options.table_factory = terark_zip_table_factory;
 
   return CurrentOptions(options, options_override);
@@ -237,7 +241,7 @@ Options DBTestBase::CurrentOptions(
              reinterpret_cast<Options*>(&options),
              options_override.skip_policy);
   BlockBasedTableOptions table_options;
-  bool set_block_based_table_factory = true;
+  bool set_block_based_table_factory = !options.table_factory;
   switch (option_config_) {
 #ifndef ROCKSDB_LITE
     case kHashSkipList:

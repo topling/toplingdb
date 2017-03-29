@@ -667,8 +667,10 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   std::unique_ptr<InternalIterator> input(versions_->MakeInputIterator(
       sub_compact->compaction, range_del_agg.get()));
 
+  std::unique_ptr<RangeDelAggregator> range_del_agg2(
+    new RangeDelAggregator(cfd->internal_comparator(), existing_snapshots_));
   std::unique_ptr<InternalIterator> input2(versions_->MakeInputIterator(
-      sub_compact->compaction, range_del_agg.get()));
+      sub_compact->compaction, range_del_agg2.get()));
 
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_PROCESS_KV);

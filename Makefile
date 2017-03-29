@@ -1318,12 +1318,12 @@ column_aware_encoding_exp: utilities/column_aware_encoding_exp.o $(EXPOBJECTS)
 repair_test: db/repair_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-ldb_cmd_test: TerocksLDFLAGS += -lrocksdb -lterark-zip-rocksdb-r
+ldb_cmd_test: TerocksLDFLAGS += ${LIBNAME}.so -lterark-zip-rocksdb-r
 ldb_cmd_test: tools/ldb_cmd_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-ldb: TerocksLDFLAGS += -lrocksdb
-ldb: tools/ldb.o
+ldb: TerocksLDFLAGS += ${LIBNAME}.so
+ldb: tools/ldb.o ${LIBNAME}.so
 	$(AM_LINK)
 
 iostats_context_test: util/iostats_context_test.o $(LIBOBJECTS) $(TESTHARNESS)

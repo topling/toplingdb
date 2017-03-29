@@ -54,7 +54,7 @@ SstFileReader::SstFileReader(const std::string& file_path,
     output_hex_(output_hex),
     internal_comparator_(BytewiseComparator()) {
   fprintf(stdout, "Process %s\n", file_path.c_str());
-  init_result_ = GetTableqReader(file_name_);
+  init_result_ = GetTableReader(file_name_);
 }
 
 extern const uint64_t kBlockBasedTableMagicNumber;

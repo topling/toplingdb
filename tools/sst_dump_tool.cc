@@ -100,6 +100,9 @@ Status SstFileReader::GetTableReader(const std::string& file_path) {
     // For old sst format, ReadTableProperties might fail but file can be read
     if (ReadTableProperties(magic_number, file_.get(), file_size).ok()) {
       SetTableOptionsByMagicNumber(magic_number);
+      soptions_ = EnvOptions(options_);
+      options_.env->NewRandomAccessFile(file_path, &file, soptions_);
+      file_.reset(new RandomAccessFileReader(std::move(file)));
     } else {
       SetOldTableOptions();
     }

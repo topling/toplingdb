@@ -51,10 +51,10 @@ SstFileReader::SstFileReader(const std::string& file_path,
                              bool verify_checksum,
                              bool output_hex)
     :file_name_(file_path), read_num_(0), verify_checksum_(verify_checksum),
-    output_hex_(output_hex), ioptions_(options_),
+    output_hex_(output_hex),
     internal_comparator_(BytewiseComparator()) {
   fprintf(stdout, "Process %s\n", file_path.c_str());
-  init_result_ = GetTableReader(file_name_);
+  init_result_ = GetTableqReader(file_name_);
 }
 
 extern const uint64_t kBlockBasedTableMagicNumber;
@@ -106,24 +106,22 @@ Status SstFileReader::GetTableReader(const std::string& file_path) {
   }
 
   if (s.ok()) {
-    s = NewTableReader(ioptions_, soptions_, internal_comparator_, file_size,
-                       &table_reader_);
+    s = NewTableReader(file_size);
   }
   return s;
 }
 
-Status SstFileReader::NewTableReader(
-    const ImmutableCFOptions& ioptions, const EnvOptions& soptions,
-    const InternalKeyComparator& internal_comparator, uint64_t file_size,
-    unique_ptr<TableReader>* table_reader) {
+Status SstFileReader::NewTableReader(uint64_t file_size) {
   // We need to turn off pre-fetching of index and filter nodes for
   // BlockBasedTable
   shared_ptr<BlockBasedTableFactory> block_table_factory =
       dynamic_pointer_cast<BlockBasedTableFactory>(options_.table_factory);
 
+  ImmutableCFOptions ioptions(options_);
+
   if (block_table_factory) {
     return block_table_factory->NewTableReader(
-        TableReaderOptions(ioptions_, soptions_, internal_comparator_,
+        TableReaderOptions(ioptions, soptions_, internal_comparator_,
                            /*skip_filters=*/false),
         std::move(file_), file_size, &table_reader_, /*enable_prefetch=*/false);
   }
@@ -132,7 +130,7 @@ Status SstFileReader::NewTableReader(
 
   // For all other factory implementation
   return options_.table_factory->NewTableReader(
-      TableReaderOptions(ioptions_, soptions_, internal_comparator_),
+      TableReaderOptions(ioptions, soptions_, internal_comparator_),
       std::move(file_), file_size, &table_reader_);
 }
 
@@ -223,7 +221,7 @@ Status SstFileReader::ReadTableProperties(uint64_t table_magic_number,
                                           uint64_t file_size) {
   TableProperties* table_properties = nullptr;
   Status s = rocksdb::ReadTableProperties(file, file_size, table_magic_number,
-                                          ioptions_, &table_properties);
+      ImmutableCFOptions(options_), &table_properties);
   if (s.ok()) {
     table_properties_.reset(table_properties);
   } else {
@@ -269,7 +267,7 @@ Status SstFileReader::SetTableOptionsByMagicNumber(
     TerarkZipTableOptions tzto;
     TerarkZipAutoConfigForOnlineDB(tzto, options_, options_);
 
-    options_.table_factory.reset(NewTerarkZipTableFactory(tzto));
+    options_.table_factory.reset(NewTerarkZipTableFactory(tzto, nullptr));
 #else
     char error_msg_buffer[80];
     snprintf(error_msg_buffer, sizeof(error_msg_buffer) - 1,

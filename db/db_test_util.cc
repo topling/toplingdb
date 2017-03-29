@@ -223,7 +223,7 @@ Options DBTestBase::CurrentOptions(
   options.compaction_pri = CompactionPri::kByCompensatedSize;
   TerarkZipTableOptions tzto;
   tzto.disableSecondPassIter = true;
-  tzto.localTempDir = R"(C:\osc\rocksdb_test\tempdir)";
+  //tzto.localTempDir = R"(C:\osc\rocksdb_test\tempdir)";
   static std::shared_ptr<TableFactory> terark_zip_table_factory(NewTerarkZipTableFactory(tzto,
       NewBlockBasedTableFactory(BlockBasedTableOptions())));
   options.allow_mmap_reads = true;

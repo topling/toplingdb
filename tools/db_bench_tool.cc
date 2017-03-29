@@ -74,7 +74,6 @@
 #include <io.h>  // open/close
 #endif
 
-namespace {
 using namespace GFLAGS;
 using namespace fLS;
 using GFLAGS::ParseCommandLineFlags;

@@ -222,7 +222,7 @@ Options DBTestBase::CurrentOptions(
   options.wal_recovery_mode = WALRecoveryMode::kTolerateCorruptedTailRecords;
   options.compaction_pri = CompactionPri::kByCompensatedSize;
   TerarkZipTableOptions tzto;
-  tzto.disableTwoPass = true;
+  tzto.disableSecondPassIter = true;
   tzto.localTempDir = R"(C:\osc\rocksdb_test\tempdir)";
   static std::shared_ptr<TableFactory> terark_zip_table_factory(NewTerarkZipTableFactory(tzto,
       NewBlockBasedTableFactory(BlockBasedTableOptions())));

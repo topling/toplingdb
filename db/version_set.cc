@@ -2131,6 +2131,7 @@ VersionSet::VersionSet(const std::string& dbname,
       db_options_(db_options),
       next_file_number_(2),
       manifest_file_number_(0),  // Filled by Recover()
+      options_file_number_(0),
       pending_manifest_file_number_(0),
       last_sequence_(0),
       prev_log_number_(0),

@@ -46,7 +46,7 @@ class CompactionIterator {
     }
 
    protected:
-    CompactionProxy() = default;
+    CompactionProxy() = delete;
 
    private:
     const Compaction* compaction_;

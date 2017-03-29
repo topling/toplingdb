@@ -47,9 +47,7 @@ uint64_t TotalCompensatedFileSize(const std::vector<FileMetaData*>& files) {
 // and the index of the file in that level
 
 struct InputFileInfo {
-  InputFileInfo() : f(nullptr) {}
-
-  FileMetaData* f;
+  FileMetaData* f = nullptr;
   size_t level;
   size_t index;
 };

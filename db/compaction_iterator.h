@@ -46,7 +46,7 @@ class CompactionIterator {
     }
 
    protected:
-    CompactionProxy() = delete;
+    CompactionProxy() : compaction_(nullptr) {}
 
    private:
     const Compaction* compaction_;

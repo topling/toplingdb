@@ -37,6 +37,9 @@
 #include "util/cf_options.h"
 #include "util/compression.h"
 #include "util/random.h"
+#ifndef _MSC_VER
+# include <table/terark_zip_table.h>
+#endif
 
 #include "port/port.h"
 
@@ -262,11 +265,18 @@ Status SstFileReader::SetTableOptionsByMagicNumber(
     options_.table_factory.reset(NewPlainTableFactory(plain_table_options));
     fprintf(stdout, "Sst file format: plain table\n");
   } else {
+#ifndef _MSC_VER
+    TerarkZipTableOptions tzto;
+    TerarkZipAutoConfigForOnlineDB(tzto, options_, options_);
+
+    options_.table_factory.reset(NewTerarkZipTableFactory(tzto));
+#else
     char error_msg_buffer[80];
     snprintf(error_msg_buffer, sizeof(error_msg_buffer) - 1,
              "Unsupported table magic number --- %lx",
              (long)table_magic_number);
     return Status::InvalidArgument(error_msg_buffer);
+#endif
   }
 
   return Status::OK();

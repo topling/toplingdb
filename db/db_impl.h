@@ -465,6 +465,8 @@ class DBImpl : public DB {
     return num_running_compactions_;
   }
 
+  const WriteController& write_controller() { return write_controller_; }
+
   // hollow transactions shell used for recovery.
   // these will then be passed to TransactionDB so that
   // locks can be reacquired before writing can resume.
@@ -565,8 +567,10 @@ class DBImpl : public DB {
   void NotifyOnMemTableSealed(ColumnFamilyData* cfd,
                               const MemTableInfo& mem_table_info);
 
+#ifndef ROCKSDB_LITE
   void NotifyOnExternalFileIngested(
       ColumnFamilyData* cfd, const ExternalSstFileIngestionJob& ingestion_job);
+#endif  // !ROCKSDB_LITE
 
   void NewThreadStatusCfInfo(ColumnFamilyData* cfd) const;
 
@@ -998,8 +1002,7 @@ class DBImpl : public DB {
   // A flag indicating whether the current rocksdb database has any
   // data that is not yet persisted into either WAL or SST file.
   // Used when disableWAL is true.
-  bool has_unpersisted_data_;
-
+  std::atomic<bool> has_unpersisted_data_;
 
   // if an attempt was made to flush all column families that
   // the oldest log depends on but uncommited data in the oldest

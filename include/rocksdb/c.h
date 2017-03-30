@@ -502,9 +502,6 @@ rocksdb_block_based_options_set_cache_index_and_filter_blocks(
 extern ROCKSDB_LIBRARY_API void
 rocksdb_block_based_options_set_pin_l0_filter_and_index_blocks_in_cache(
     rocksdb_block_based_table_options_t*, unsigned char);
-extern ROCKSDB_LIBRARY_API void
-rocksdb_block_based_options_set_skip_table_builder_flush(
-    rocksdb_block_based_table_options_t* options, unsigned char);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_block_based_table_factory(
     rocksdb_options_t* opt, rocksdb_block_based_table_options_t* table_options);
 
@@ -700,13 +697,8 @@ extern ROCKSDB_LIBRARY_API void
 rocksdb_options_set_enable_write_thread_adaptive_yield(rocksdb_options_t*,
                                                        unsigned char);
 extern ROCKSDB_LIBRARY_API void
-rocksdb_options_set_verify_checksums_in_compaction(rocksdb_options_t*,
-                                                   unsigned char);
-extern ROCKSDB_LIBRARY_API void
 rocksdb_options_set_max_sequential_skip_in_iterations(rocksdb_options_t*,
                                                       uint64_t);
-extern ROCKSDB_LIBRARY_API void rocksdb_options_set_disable_data_sync(
-    rocksdb_options_t*, int);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_disable_auto_compactions(
     rocksdb_options_t*, int);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_optimize_filters_for_hits(
@@ -737,8 +729,6 @@ extern ROCKSDB_LIBRARY_API void rocksdb_options_set_memtable_huge_page_size(
 
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_max_successive_merges(
     rocksdb_options_t*, size_t);
-extern ROCKSDB_LIBRARY_API void rocksdb_options_set_min_partial_merge_operands(
-    rocksdb_options_t*, uint32_t);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_bloom_locality(
     rocksdb_options_t*, uint32_t);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_inplace_update_support(

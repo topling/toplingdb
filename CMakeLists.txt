@@ -314,7 +314,6 @@ set(SOURCES
         db/write_batch_base.cc
         db/write_controller.cc
         db/write_thread.cc
-        db/xfunc_test_points.cc
         memtable/hash_cuckoo_rep.cc
         memtable/hash_linklist_rep.cc
         memtable/hash_skiplist_rep.cc
@@ -337,10 +336,12 @@ set(SOURCES
         table/format.cc
         table/full_filter_block.cc
         table/get_context.cc
+        table/index_builder.cc
         table/iterator.cc
         table/merging_iterator.cc
         table/sst_file_writer.cc
         table/meta_blocks.cc
+        table/partitioned_filter_block.cc
         table/plain_table_builder.cc
         table/plain_table_factory.cc
         table/plain_table_index.cc
@@ -408,7 +409,6 @@ set(SOURCES
         util/thread_status_util.cc
         util/thread_status_util_debug.cc
         util/transaction_test_util.cc
-        util/xfunc.cc
         util/xxhash.cc
         utilities/backupable/backupable_db.cc
         utilities/blob_db/blob_db.cc
@@ -538,6 +538,7 @@ set(TESTS
         db/comparator_db_test.cc
         db/corruption_test.cc
         db/cuckoo_table_db_test.cc
+        db/db_basic_test.cc
         db/db_compaction_filter_test.cc
         db/db_compaction_test.cc
         db/db_dynamic_level_test.cc
@@ -558,6 +559,7 @@ set(TESTS
         db/db_iterator_test.cc
         db/db_range_del_test.cc
         db/db_sst_test.cc
+        db/external_sst_file_basic_test.cc
         db/external_sst_file_test.cc
         db/db_universal_compaction_test.cc
         db/db_wal_test.cc

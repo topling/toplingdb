@@ -46,6 +46,7 @@
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/options.h"
 #include "rocksdb/perf_context.h"
+#include "rocksdb/persistent_cache.h"
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/slice_transform.h"
@@ -69,6 +70,7 @@
 #include "util/xxhash.h"
 #include "utilities/blob_db/blob_db.h"
 #include "utilities/merge_operators.h"
+#include "utilities/persistent_cache/block_cache_tier.h"
 
 #ifdef OS_WIN
 #include <io.h>  // open/close
@@ -427,9 +429,6 @@ DEFINE_int32(random_access_max_buffer_size, 1024 * 1024,
 DEFINE_int32(writable_file_max_buffer_size, 1024 * 1024,
              "Maximum write buffer for Writable File");
 
-DEFINE_bool(skip_table_builder_flush, false, "Skip flushing block in "
-            "table builder ");
-
 DEFINE_int32(bloom_bits, -1, "Bloom filter bits per key. Negative means"
              " use default settings.");
 DEFINE_double(memtable_bloom_size_ratio, 0,
@@ -450,6 +449,20 @@ DEFINE_bool(show_table_properties, false,
 DEFINE_string(db, "", "Use the db with the following name.");
 
 DEFINE_string(terarktempdir, "/tmp", "Use the localtempdir with the following name.");
+
+// Read cache flags
+
+DEFINE_string(read_cache_path, "",
+              "If not empty string, a read cache will be used in this path");
+
+DEFINE_int64(read_cache_size, 4LL * 1024 * 1024 * 1024,
+             "Maximum size of the read cache");
+
+DEFINE_bool(read_cache_direct_write, true,
+            "Whether to use Direct IO for writing to the read cache");
+
+DEFINE_bool(read_cache_direct_read, true,
+            "Whether to use Direct IO for reading from read cache");
 
 static bool ValidateCacheNumshardbits(const char* flagname, int32_t value) {
   if (value >= 20) {
@@ -472,9 +485,6 @@ DEFINE_int64(writes, -1, "Number of write operations to do. If negative, do"
 
 DEFINE_bool(sync, false, "Sync all writes to disk");
 
-DEFINE_bool(disable_data_sync, false, "If true, do not wait until data is"
-            " synced to disk.");
-
 DEFINE_bool(use_fsync, false, "If true, issue fsync instead of fdatasync");
 
 DEFINE_bool(disable_wal, false, "If true, do not write WAL for write.");
@@ -483,12 +493,16 @@ DEFINE_string(wal_dir, "", "If not empty, use the given dir for WAL");
 
 DEFINE_int32(num_levels, 7, "The total number of levels");
 
-DEFINE_int64(target_file_size_base, 2 * 1048576, "Target file size at level-1");
+DEFINE_int64(target_file_size_base, rocksdb::Options().target_file_size_base,
+             "Target file size at level-1");
 
-DEFINE_int32(target_file_size_multiplier, 1,
+DEFINE_int32(target_file_size_multiplier,
+             rocksdb::Options().target_file_size_multiplier,
              "A multiplier to compute target level-N file size (N >= 2)");
 
-DEFINE_uint64(max_bytes_for_level_base,  10 * 1048576, "Max bytes for level-1");
+DEFINE_uint64(max_bytes_for_level_base,
+              rocksdb::Options().max_bytes_for_level_base,
+              "Max bytes for level-1");
 
 DEFINE_bool(level_compaction_dynamic_level_bytes, false,
             "Whether level size base is dynamic");
@@ -2793,7 +2807,6 @@ class Benchmark {
     options.compaction_readahead_size = FLAGS_compaction_readahead_size;
     options.random_access_max_buffer_size = FLAGS_random_access_max_buffer_size;
     options.writable_file_max_buffer_size = FLAGS_writable_file_max_buffer_size;
-    options.disableDataSync = FLAGS_disable_data_sync;
     options.use_fsync = FLAGS_use_fsync;
     options.num_levels = FLAGS_num_levels;
     options.target_file_size_base = FLAGS_target_file_size_base;
@@ -2922,10 +2935,47 @@ class Benchmark {
       block_based_options.index_block_restart_interval =
           FLAGS_index_block_restart_interval;
       block_based_options.filter_policy = filter_policy_;
-      block_based_options.skip_table_builder_flush =
-          FLAGS_skip_table_builder_flush;
       block_based_options.format_version = 2;
       block_based_options.read_amp_bytes_per_bit = FLAGS_read_amp_bytes_per_bit;
+      if (FLAGS_read_cache_path != "") {
+#ifndef ROCKSDB_LITE
+        Status rc_status;
+
+        // Read cache need to be provided with a the Logger, we will put all
+        // reac cache logs in the read cache path in a file named rc_LOG
+        rc_status = FLAGS_env->CreateDirIfMissing(FLAGS_read_cache_path);
+        std::shared_ptr<Logger> read_cache_logger;
+        if (rc_status.ok()) {
+          rc_status = FLAGS_env->NewLogger(FLAGS_read_cache_path + "/rc_LOG",
+                                           &read_cache_logger);
+        }
+
+        if (rc_status.ok()) {
+          PersistentCacheConfig rc_cfg(FLAGS_env, FLAGS_read_cache_path,
+                                       FLAGS_read_cache_size,
+                                       read_cache_logger);
+
+          rc_cfg.enable_direct_reads = FLAGS_read_cache_direct_read;
+          rc_cfg.enable_direct_writes = FLAGS_read_cache_direct_write;
+          rc_cfg.writer_qdepth = 4;
+          rc_cfg.writer_dispatch_size = 4 * 1024;
+
+          auto pcache = std::make_shared<BlockCacheTier>(rc_cfg);
+          block_based_options.persistent_cache = pcache;
+          rc_status = pcache->Open();
+        }
+
+        if (!rc_status.ok()) {
+          fprintf(stderr, "Error initializing read cache, %s\n",
+                  rc_status.ToString().c_str());
+          exit(1);
+        }
+#else
+        fprintf(stderr, "Read cache is not supported in LITE\n");
+        exit(1);
+
+#endif
+      }
       options.table_factory.reset(
           NewBlockBasedTableFactory(block_based_options));
     }

@@ -51,7 +51,7 @@ SstFileReader::SstFileReader(const std::string& file_path,
                              bool verify_checksum,
                              bool output_hex)
     :file_name_(file_path), read_num_(0), verify_checksum_(verify_checksum),
-    output_hex_(output_hex),
+    output_hex_(output_hex), ioptions_(options_),
     internal_comparator_(BytewiseComparator()) {
   fprintf(stdout, "Process %s\n", file_path.c_str());
   init_result_ = GetTableReader(file_name_);
@@ -120,11 +120,11 @@ Status SstFileReader::NewTableReader(uint64_t file_size) {
   shared_ptr<BlockBasedTableFactory> block_table_factory =
       dynamic_pointer_cast<BlockBasedTableFactory>(options_.table_factory);
 
-  ImmutableCFOptions ioptions(options_);
+  ioptions_ = ImmutableCFOptions(options_);
 
   if (block_table_factory) {
     return block_table_factory->NewTableReader(
-        TableReaderOptions(ioptions, soptions_, internal_comparator_,
+        TableReaderOptions(ioptions_, soptions_, internal_comparator_,
                            /*skip_filters=*/false),
         std::move(file_), file_size, &table_reader_, /*enable_prefetch=*/false);
   }
@@ -133,7 +133,7 @@ Status SstFileReader::NewTableReader(uint64_t file_size) {
 
   // For all other factory implementation
   return options_.table_factory->NewTableReader(
-      TableReaderOptions(ioptions, soptions_, internal_comparator_),
+      TableReaderOptions(ioptions_, soptions_, internal_comparator_),
       std::move(file_), file_size, &table_reader_);
 }
 

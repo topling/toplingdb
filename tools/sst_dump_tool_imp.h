@@ -66,6 +66,7 @@ class SstFileReader {
 
   InternalKeyComparator internal_comparator_;
   unique_ptr<TableProperties> table_properties_;
+  ImmutableCFOptions ioptions_;
 };
 
 }  // namespace rocksdb

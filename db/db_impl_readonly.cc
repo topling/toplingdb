@@ -25,8 +25,8 @@ void __attribute((weak)) TerarkZipDBOptionsFromEnv(DBOptions&);
 DBImplReadOnly::DBImplReadOnly(const DBOptions& db_options,
                                const std::string& dbname)
     : DBImpl(db_options, dbname) {
-  Log(INFO_LEVEL, immutable_db_options_.info_log,
-      "Opening the db in read only mode");
+  ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                 "Opening the db in read only mode");
   LogFlush(immutable_db_options_.info_log);
 }
 
@@ -36,7 +36,8 @@ DBImplReadOnly::~DBImplReadOnly() {
 // Implementations of the DB interface
 Status DBImplReadOnly::Get(const ReadOptions& read_options,
                            ColumnFamilyHandle* column_family, const Slice& key,
-                           std::string* value) {
+                           PinnableSlice* pinnable_val) {
+  assert(pinnable_val != nullptr);
   Status s;
   SequenceNumber snapshot = versions_->LastSequence();
   auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
@@ -45,12 +46,13 @@ Status DBImplReadOnly::Get(const ReadOptions& read_options,
   MergeContext merge_context;
   RangeDelAggregator range_del_agg(cfd->internal_comparator(), snapshot);
   LookupKey lkey(key, snapshot);
-  if (super_version->mem->Get(lkey, value, &s, &merge_context, &range_del_agg,
-                              read_options)) {
+  if (super_version->mem->Get(lkey, pinnable_val->GetSelf(), &s, &merge_context,
+                              &range_del_agg, read_options)) {
+    pinnable_val->PinSelf();
   } else {
     PERF_TIMER_GUARD(get_from_output_files_time);
-    super_version->current->Get(read_options, lkey, value, &s, &merge_context,
-                                &range_del_agg);
+    super_version->current->Get(read_options, lkey, pinnable_val, &s,
+                                &merge_context, &range_del_agg);
   }
   return s;
 }

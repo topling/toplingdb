@@ -927,7 +927,7 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
       version_number_(version_number) {}
 
 void Version::Get(const ReadOptions& read_options, const LookupKey& k,
-                  std::string* value, Status* status,
+                  PinnableSlice* value, Status* status,
                   MergeContext* merge_context,
                   RangeDelAggregator* range_del_agg, bool* value_found,
                   bool* key_exists, SequenceNumber* seq) {
@@ -1004,9 +1004,13 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     }
     // merge_operands are in saver and we hit the beginning of the key history
     // do a final merge of nullptr and operands;
-    *status = MergeHelper::TimedFullMerge(merge_operator_, user_key, nullptr,
-                                          merge_context->GetOperands(), value,
-                                          info_log_, db_statistics_, env_);
+    std::string* str_value = value != nullptr ? value->GetSelf() : nullptr;
+    *status = MergeHelper::TimedFullMerge(
+        merge_operator_, user_key, nullptr, merge_context->GetOperands(),
+        str_value, info_log_, db_statistics_, env_);
+    if (LIKELY(value != nullptr)) {
+      value->PinSelf();
+    }
   } else {
     if (key_exists != nullptr) {
       *key_exists = false;
@@ -1052,9 +1056,10 @@ bool Version::MaybeInitializeFileMetaData(FileMetaData* file_meta) {
   Status s = GetTableProperties(&tp, file_meta);
   file_meta->init_stats_from_file = true;
   if (!s.ok()) {
-    Log(InfoLogLevel::ERROR_LEVEL, vset_->db_options_->info_log,
-        "Unable to load table properties for file %" PRIu64 " --- %s\n",
-        file_meta->fd.GetNumber(), s.ToString().c_str());
+    ROCKS_LOG_ERROR(vset_->db_options_->info_log,
+                    "Unable to load table properties for file %" PRIu64
+                    " --- %s\n",
+                    file_meta->fd.GetNumber(), s.ToString().c_str());
     return false;
   }
   if (tp.get() == nullptr) return false;
@@ -2069,9 +2074,9 @@ void VersionStorageInfo::CalculateBaseBytes(const ImmutableCFOptions& ioptions,
         // base_bytes_min. We set it be base_bytes_min.
         base_level_size = base_bytes_min + 1U;
         base_level_ = first_non_empty_level;
-        Warn(ioptions.info_log,
-             "More existing levels in DB than needed. "
-             "max_bytes_for_level_multiplier may not be guaranteed.");
+        ROCKS_LOG_WARN(ioptions.info_log,
+                       "More existing levels in DB than needed. "
+                       "max_bytes_for_level_multiplier may not be guaranteed.");
       } else {
         // Find base level (where L0 data is compacted to).
         base_level_ = first_non_empty_level;
@@ -2378,8 +2383,8 @@ Status VersionSet::LogAndApply(ColumnFamilyData* column_family_data,
     // only one thread can be here at the same time
     if (new_descriptor_log) {
       // create manifest file
-      Log(InfoLogLevel::INFO_LEVEL, db_options_->info_log,
-          "Creating manifest %" PRIu64 "\n", pending_manifest_file_number_);
+      ROCKS_LOG_INFO(db_options_->info_log, "Creating manifest %" PRIu64 "\n",
+                     pending_manifest_file_number_);
       unique_ptr<WritableFile> descriptor_file;
       EnvOptions opt_env_opts = env_->OptimizeForManifestWrite(env_options_);
       s = NewWritableFile(
@@ -2422,8 +2427,8 @@ Status VersionSet::LogAndApply(ColumnFamilyData* column_family_data,
         s = SyncManifest(env_, db_options_, descriptor_log_->file());
       }
       if (!s.ok()) {
-        Log(InfoLogLevel::ERROR_LEVEL, db_options_->info_log,
-            "MANIFEST write: %s\n", s.ToString().c_str());
+        ROCKS_LOG_ERROR(db_options_->info_log, "MANIFEST write: %s\n",
+                        s.ToString().c_str());
       }
     }
 
@@ -2493,15 +2498,16 @@ Status VersionSet::LogAndApply(ColumnFamilyData* column_family_data,
     for (auto& e : batch_edits) {
       version_edits = version_edits + "\n" + e->DebugString(true);
     }
-    Log(InfoLogLevel::ERROR_LEVEL, db_options_->info_log,
+    ROCKS_LOG_ERROR(
+        db_options_->info_log,
         "[%s] Error in committing version edit to MANIFEST: %s",
         column_family_data ? column_family_data->GetName().c_str() : "<null>",
         version_edits.c_str());
     delete v;
     if (new_descriptor_log) {
-      Log(InfoLogLevel::INFO_LEVEL, db_options_->info_log,
-        "Deleting manifest %" PRIu64 " current manifest %" PRIu64 "\n",
-        manifest_file_number_, pending_manifest_file_number_);
+      ROCKS_LOG_INFO(db_options_->info_log, "Deleting manifest %" PRIu64
+                                            " current manifest %" PRIu64 "\n",
+                     manifest_file_number_, pending_manifest_file_number_);
       descriptor_log_.reset();
       env_->DeleteFile(
           DescriptorFileName(dbname_, pending_manifest_file_number_));
@@ -2591,9 +2597,8 @@ Status VersionSet::Recover(
     return Status::Corruption("CURRENT file corrupted");
   }
 
-  Log(InfoLogLevel::INFO_LEVEL, db_options_->info_log,
-      "Recovering from manifest file: %s\n",
-      manifest_filename.c_str());
+  ROCKS_LOG_INFO(db_options_->info_log, "Recovering from manifest file: %s\n",
+                 manifest_filename.c_str());
 
   manifest_filename = dbname_ + "/" + manifest_filename;
   unique_ptr<SequentialFileReader> manifest_file_reader;
@@ -2731,7 +2736,8 @@ Status VersionSet::Recover(
       if (cfd != nullptr) {
         if (edit.has_log_number_) {
           if (cfd->GetLogNumber() > edit.log_number_) {
-            Log(InfoLogLevel::WARN_LEVEL, db_options_->info_log,
+            ROCKS_LOG_WARN(
+                db_options_->info_log,
                 "MANIFEST corruption detected, but ignored - Log numbers in "
                 "records NOT monotonically increasing");
           } else {
@@ -2832,7 +2838,8 @@ Status VersionSet::Recover(
     last_sequence_ = last_sequence;
     prev_log_number_ = previous_log_number;
 
-    Log(InfoLogLevel::INFO_LEVEL, db_options_->info_log,
+    ROCKS_LOG_INFO(
+        db_options_->info_log,
         "Recovered from manifest file:%s succeeded,"
         "manifest_file_number is %lu, next_file_number is %lu, "
         "last_sequence is %lu, log_number is %lu,"
@@ -2847,9 +2854,9 @@ Status VersionSet::Recover(
       if (cfd->IsDropped()) {
         continue;
       }
-      Log(InfoLogLevel::INFO_LEVEL, db_options_->info_log,
-          "Column family [%s] (ID %u), log number is %" PRIu64 "\n",
-          cfd->GetName().c_str(), cfd->GetID(), cfd->GetLogNumber());
+      ROCKS_LOG_INFO(db_options_->info_log,
+                     "Column family [%s] (ID %u), log number is %" PRIu64 "\n",
+                     cfd->GetName().c_str(), cfd->GetID(), cfd->GetLogNumber());
     }
   }
 
@@ -3489,7 +3496,8 @@ bool VersionSet::VerifyCompactionFileConsistency(Compaction* c) {
   Version* version = c->column_family_data()->current();
   const VersionStorageInfo* vstorage = version->storage_info();
   if (c->input_version() != version) {
-    Log(InfoLogLevel::INFO_LEVEL, db_options_->info_log,
+    ROCKS_LOG_INFO(
+        db_options_->info_log,
         "[%s] compaction output being applied to a different base version from"
         " input version",
         c->column_family_data()->GetName().c_str());

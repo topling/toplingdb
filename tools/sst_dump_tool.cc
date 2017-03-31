@@ -51,8 +51,10 @@ SstFileReader::SstFileReader(const std::string& file_path,
                              bool verify_checksum,
                              bool output_hex)
     :file_name_(file_path), read_num_(0), verify_checksum_(verify_checksum),
-    output_hex_(output_hex), ioptions_(options_),
-    internal_comparator_(BytewiseComparator()) {
+    output_hex_(output_hex),
+    internal_comparator_(BytewiseComparator()),
+    ioptions_(options_)
+{
   fprintf(stdout, "Process %s\n", file_path.c_str());
   init_result_ = GetTableReader(file_name_);
 }

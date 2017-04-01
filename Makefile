@@ -1330,7 +1330,7 @@ column_aware_encoding_exp: utilities/column_aware_encoding_exp.o $(EXPOBJECTS)
 repair_test: db/repair_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-ldb_cmd_test: TerocksLDFLAGS += ${LIBNAME}.so -lterark-zip-rocksdb-r
+ldb_cmd_test: TerocksLDFLAGS += ${LIBNAME}.so
 ldb_cmd_test: tools/ldb_cmd_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 

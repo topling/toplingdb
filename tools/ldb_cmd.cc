@@ -32,7 +32,7 @@
 #include "util/string_util.h"
 #include "utilities/ttl/db_ttl_impl.h"
 #ifndef _MSC_VER
-# include <table/terark_zip_table.h>
+#include <table/terark_zip_weak_function.h>
 #endif
 
 #include <cstdlib>
@@ -46,21 +46,6 @@
 #include <string>
 
 namespace rocksdb {
-
-void
-__attribute__((weak))
-TerarkZipAutoConfigForOnlineDB(struct TerarkZipTableOptions&,
-                         struct DBOptions&,
-                         struct ColumnFamilyOptions&,
-                         size_t cpuNum,
-                         size_t memBytesLimit,
-                         size_t diskBytesLimit);
-
-class TableFactory*
-__attribute__((weak))
-NewTerarkZipTableFactory(const TerarkZipTableOptions&,
-             class TableFactory* fallback);
-
 
 const std::string LDBCommand::ARG_DB = "db";
 const std::string LDBCommand::ARG_PATH = "path";

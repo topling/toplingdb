@@ -13,7 +13,7 @@ int main() {
 
 #include <gflags/gflags.h>
 
-#include <table/terark_zip_table.h>
+#include <table/terark_zip_weak_function.h>
 
 #include "rocksdb/db.h"
 #include "rocksdb/slice_transform.h"
@@ -321,15 +321,17 @@ int main(int argc, char** argv) {
   } else if (FLAGS_table_factory == "block_based") {
     tf.reset(new rocksdb::BlockBasedTableFactory());
   } else if (FLAGS_table_factory == "terark_zip") {
-    options.allow_mmap_reads = FLAGS_mmap_read;
-    env_options.use_mmap_reads = FLAGS_mmap_read;
-    rocksdb::TerarkZipTableOptions opt;
-
-    std::shared_ptr<rocksdb::TableFactory> block_based_factory(rocksdb::NewBlockBasedTableFactory());
-    rocksdb::TableFactory* factory = rocksdb::NewTerarkZipTableFactory(opt, rocksdb::NewAdaptiveTableFactory(block_based_factory));
-
-    // rocksdb::TableFactory* factory = rocksdb::NewTerarkZipTableFactory(opt, nullptr);
-    tf.reset(factory);
+    if (rocksdb::NewTerarkZipTableFactory) {
+      options.allow_mmap_reads = FLAGS_mmap_read;
+      env_options.use_mmap_reads = FLAGS_mmap_read;
+      rocksdb::TerarkZipTableOptions opt;
+      std::shared_ptr<rocksdb::TableFactory> block_based_factory(rocksdb::NewBlockBasedTableFactory());
+      rocksdb::TableFactory* factory = rocksdb::NewTerarkZipTableFactory(opt, rocksdb::NewAdaptiveTableFactory(block_based_factory));
+      // rocksdb::TableFactory* factory = rocksdb::NewTerarkZipTableFactory(opt, nullptr);
+      tf.reset(factory);
+    } else {
+      fprintf(stderr, "ERROR: TableFactory arg is terark_zip, but libterark_zip_rocksdb.so is not loaded\n");
+    }
   } else {
     fprintf(stderr, "Invalid table type %s\n", FLAGS_table_factory.c_str());
   }

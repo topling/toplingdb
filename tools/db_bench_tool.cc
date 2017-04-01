@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <gflags/gflags.h>
-#include <table/terark_zip_table.h>
+#include <table/terark_zip_weak_function.h>
 #include <sys/types.h>
 #include <atomic>
 #include <condition_variable>
@@ -2856,13 +2856,17 @@ class Benchmark {
 
      if (FLAGS_use_terarkzip_table) {
         std::cout << "use_terarkzip_table" << std::endl;
-        TerarkZipTableOptions opt;
-        opt.localTempDir = FLAGS_terarktempdir;
-
-        std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
-        //TableFactory* factory = NewTerarkZipTableFactory(opt, rocksdb::NewAdaptiveTableFactory(block_based_factory));
-        TableFactory* factory = NewTerarkZipTableFactory(opt, nullptr);
-        options.table_factory.reset(factory);
+        if (NewTerarkZipTableFactory) {
+          TerarkZipTableOptions opt;
+          opt.localTempDir = FLAGS_terarktempdir;
+          std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
+          //TableFactory* factory = NewTerarkZipTableFactory(opt, rocksdb::NewAdaptiveTableFactory(block_based_factory));
+          TableFactory* factory = NewTerarkZipTableFactory(opt, nullptr);
+          options.table_factory.reset(factory);
+        } else {
+          fprintf(stderr, "ERROR: use_terarkzip_table, but libterark_zip_rocksdb.so is not loaded\n");
+          exit(1);
+        }
      } else if (FLAGS_use_plain_table) {
 	std::cout << "use_plain_table" << std::endl;
 #ifndef ROCKSDB_LITE

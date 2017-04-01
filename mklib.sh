@@ -22,7 +22,7 @@ do
 		make clean CXX=$CXX
 		make shared_lib CXX=$CXX
 		make static_lib CXX=$CXX -j32
-		make ldb CXX=$CXX
+		make ldb CXX=$CXX DEBUG_LEVEL=0
 		rm -f /opt/${COMPILER}/lib64/librocksdb*
 		rm -f /opt/${COMPILER}/bin/ldb
 		cp -a librocksdb.* /opt/${COMPILER}/lib64 || true

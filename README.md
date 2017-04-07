@@ -1,3 +1,6 @@
+## Note for TerarkDB
+To compile this fork of RocksDB, you need to clone [terark-zip-rocksdb](https://github.com/terark/terark-zip-rocksdb) and add `terark-zip-rocksdb/src` to include path, but `libterark-zip-rocksdb` is not need for compiling.
+
 ## RocksDB: A Persistent Key-Value Store for Flash and RAM Storage
 
 [![Build Status](https://travis-ci.org/facebook/rocksdb.svg?branch=master)](https://travis-ci.org/facebook/rocksdb)

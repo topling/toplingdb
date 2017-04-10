@@ -1,3 +1,9 @@
+
+if [ "$USER" != "root" ]; then
+	echo "### must use sudo ###"
+	exit 1
+fi
+
 set -e
 set -x
 export LC_ALL=C

@@ -438,7 +438,12 @@ Status ExternalSstFileIngestionJob::AssignLevelForIngestedFile(
       target_level = lvl;
     }
   }
-  file_to_ingest->picked_level = target_level;
+  if (kCompactionStyleUniversal == cfd_->ioptions()->compaction_style) {
+    *overlap_with_db = true;
+    file_to_ingest->picked_level = 0;
+  } else {
+    file_to_ingest->picked_level = target_level;
+  }
   return status;
 }
 

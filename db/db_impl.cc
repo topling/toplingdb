@@ -6616,6 +6616,12 @@ Status DBImpl::IngestExternalFile(
     }
 
     // Figure out if we need to flush the memtable first
+    if (kCompactionStyleUniversal == cfd->ioptions()->compaction_style) {
+      mutex_.Unlock();
+      status = FlushMemTable(cfd, FlushOptions(), true /* writes_stopped */);
+      mutex_.Lock();
+    }
+    else
     if (status.ok()) {
       bool need_flush = false;
       status = ingestion_job.NeedsFlush(&need_flush);

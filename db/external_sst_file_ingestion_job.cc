@@ -128,7 +128,8 @@ Status ExternalSstFileIngestionJob::Prepare(
   }
 
   if (kCompactionStyleUniversal == cfd_->ioptions()->compaction_style) {
-    ingestion_options_.allow_global_seqno = true;
+    const_cast<IngestExternalFileOptions&>
+    (ingestion_options_).allow_global_seqno = true;
   }
 
   return status;

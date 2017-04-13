@@ -12,7 +12,7 @@ UNAME_MachineSystem=$(shell uname -m -s | sed 's:[ /]:-:g')
 TerocksDir=../terark-zip-rocksdb/pkg/terark-zip-rocksdb${TerocksTrial}-${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
 export LD_LIBRARY_PATH:=${TerocksDir}/lib:${LD_LIBRARY_PATH}
 
-EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src
+EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -fPIC
 BASH_EXISTS := $(shell which bash)
 SHELL := $(shell which bash)
 
@@ -98,13 +98,16 @@ ifeq (${DEBUG_LEVEL}, 0)
 else
   DBG_OR_RLS=d
 endif
-ifeq ("$(LINK_STATIC_TERARK)","")
+
+ifeq ("$(LINK_SHARED_TERARK)","1")
   TerocksLDFLAGS += -L${TerocksDir}/lib \
                     -lterark-zip-rocksdb-${DBG_OR_RLS} \
                     -lterark-zbs-${DBG_OR_RLS} \
                     -lterark-fsa-${DBG_OR_RLS} \
                     -lterark-core-${DBG_OR_RLS}
-else
+endif
+
+ifeq ("$(LINK_STATIC_TERARK)","1")
   TerarkBuild = ../terark/build/${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
   override LINK_STATIC_TERARK = \
     ${TerocksDir}/lib_static/libterark-zip-rocksdb${TerocksTrial}-${DBG_OR_RLS}.a \

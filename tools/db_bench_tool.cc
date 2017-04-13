@@ -2855,7 +2855,8 @@ class Benchmark {
     }
 
      if (FLAGS_use_terarkzip_table) {
-        std::cout << "use_terarkzip_table" << std::endl;
+        std::cout << "use_terarkzip_table, set mmap_read = true" << std::endl;
+        options.allow_mmap_reads = FLAGS_mmap_read = true;
         if (NewTerarkZipTableFactory) {
           TerarkZipTableOptions opt;
           opt.localTempDir = FLAGS_terarktempdir;

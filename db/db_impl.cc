@@ -100,12 +100,11 @@
 #include "util/thread_status_updater.h"
 #include "util/thread_status_util.h"
 
-namespace rocksdb {
-
 #ifndef _MSC_VER
-bool __attribute((weak)) TerarkZipCFOptionsFromEnv(ColumnFamilyOptions&);
-void __attribute((weak)) TerarkZipDBOptionsFromEnv(DBOptions&);
+# include <table/terark_zip_weak_function.h>
 #endif
+
+namespace rocksdb {
 
 const std::string kDefaultColumnFamilyName("default");
 

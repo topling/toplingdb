@@ -13,12 +13,12 @@
 #include "db/range_del_aggregator.h"
 #include "util/perf_context_imp.h"
 
+#ifndef _MSC_VER
+# include <table/terark_zip_weak_function.h>
+#endif
+
 namespace rocksdb {
 
-#ifndef _MSC_VER
-bool __attribute((weak)) TerarkZipCFOptionsFromEnv(ColumnFamilyOptions&);
-void __attribute((weak)) TerarkZipDBOptionsFromEnv(DBOptions&);
-#endif
 
 #ifndef ROCKSDB_LITE
 

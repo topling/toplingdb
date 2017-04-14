@@ -13,7 +13,7 @@ function make_bin() {
 	local dbgLevel=$1
 	shift
 	ln -s ${LIBDIR}/librocksdb* .
-	make DEBUG_LEVEL=$dbgLevel CXX=$CXX ${binName}
+	make DEBUG_LEVEL=$dbgLevel CXX=$CXX $@
 	for binName in $@; do
 		rm -f /opt/${COMPILER}/bin/${binName}
 		cp -a ${binName} /opt/${COMPILER}/bin || true

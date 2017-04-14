@@ -48,7 +48,7 @@ do
 		UNAME_MachineSystem=`uname -m -s | sed 's:[ /]:-:g'`
 		LIBDIR=${UNAME_MachineSystem}-${COMPILER}
 		mkdir -p ${LIBDIR}
-		#make_lib 2 librocksdb_debug
+		make_lib 2 librocksdb_debug
 		make_lib 0 librocksdb
 		make_bin 0 ldb db_bench
 	else

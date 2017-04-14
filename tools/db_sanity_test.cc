@@ -20,7 +20,7 @@
 #include "port/port.h"
 #include "util/string_util.h"
 
-#include <table/terark_zip_table.h>
+#include <table/terark_zip_weak_function.h>
 
 namespace rocksdb {
 
@@ -306,6 +306,10 @@ int main(int argc, char** argv) {
     rocksdb::useTerarkZipTable = (std::string(argv[3]) == "useTerarkZipTable");
   }
   if(rocksdb::useTerarkZipTable) {
+    if (!rocksdb::NewTerarkZipTableFactory) {
+      fprintf(stderr, "ERROR: libterark-zip-rocksdb.so is not loaded\n");
+      exit(1);
+    }
     rocksdb::TerarkZipTableOptions opt;
     opt.localTempDir = std::string(argv[4]);
     rocksdb::terarkZipFactory = rocksdb::NewTerarkZipTableFactory(opt, NULL);

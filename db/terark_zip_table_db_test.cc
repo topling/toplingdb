@@ -5,7 +5,7 @@
 
 #ifndef ROCKSDB_LITE
 
-#include <table/terark_zip_table.h>
+#include <table/terark_zip_weak_function.h>
 
 #include "db/db_impl.h"
 #include "rocksdb/db.h"
@@ -24,6 +24,10 @@ class TerarkZipTableDBTest : public testing::Test {
 
  public:
   TerarkZipTableDBTest() : env_(Env::Default()) {
+    if (!NewTerarkZipTableFactory) {
+      fprintf(stderr, "ERROR: libterark-zip-rocksdb.so is not loaded\n");
+      exit(1);
+    }
     dbname_ = test::TmpDir() + "/terark_zip_table_db_test";
     EXPECT_OK(DestroyDB(dbname_, Options()));
     db_ = nullptr;

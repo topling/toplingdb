@@ -22,7 +22,7 @@ int main() {
 #include <map>
 
 #include "table/meta_blocks.h"
-#include <table/terark_zip_table.h>
+#include <table/terark_zip_weak_function.h>
 #include "table/get_context.h"
 #include "util/arena.h"
 #include "util/random.h"
@@ -51,6 +51,12 @@ class TerarkZipReaderTest : public testing::Test {
   using testing::Test::SetUp;
 
   TerarkZipReaderTest() {
+    if (!NewTerarkZipTableFactory) {
+      fprintf(stderr, "ERROR: libterark-zip-rocksdb.so is not loaded\n");
+      exit(1);
+    }
+    file_size = 0;
+    num_items = 0;
     options.allow_mmap_reads = true;
     env = options.env;
     env_options = EnvOptions(options);

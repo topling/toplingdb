@@ -9,6 +9,29 @@ set -x
 export LC_ALL=C
 export LANG=C
 
+function make_bin() {
+	local dbgLevel=$1
+	shift
+	ln -s ${LIBDIR}/librocksdb* .
+	make DEBUG_LEVEL=$dbgLevel CXX=$CXX $@
+	for binName in $@; do
+		rm -f /opt/${COMPILER}/bin/${binName}
+		cp -a ${binName} /opt/${COMPILER}/bin || true
+	done
+	rm librocksdb*
+}
+
+function make_lib() {
+	local dbgLevel=$1
+	local libName=$2
+	make DEBUG_LEVEL=$dbgLevel CXX=$CXX clean 
+	make DEBUG_LEVEL=$dbgLevel CXX=$CXX shared_lib -j32
+	make DEBUG_LEVEL=$dbgLevel CXX=$CXX static_lib -j32
+	rm -f /opt/${COMPILER}/lib64/${libName}.*
+	cp -a ${libName}.* /opt/${COMPILER}/lib64 || true
+	mv ${libName}.* ${LIBDIR}
+}
+
 CompilerList="g++-4.7 g++-4.8 g++-4.9 g++-5.3 g++-5.4 g++-6 g++-6.1 g++-6.2 g++-6.3 g++-6.4 clang++"
 #CompilerList="g++-5.3 g++-5.4 g++-6 g++-6.1 g++-6.2 g++-6.3 g++-6.4 clang++"
 #CompilerList="g++-6.2 g++-5.3 g++-5.4 clang++"
@@ -25,15 +48,9 @@ do
 		UNAME_MachineSystem=`uname -m -s | sed 's:[ /]:-:g'`
 		LIBDIR=${UNAME_MachineSystem}-${COMPILER}
 		mkdir -p ${LIBDIR}
-		make clean CXX=$CXX
-		make shared_lib CXX=$CXX
-		make static_lib CXX=$CXX -j32
-		make ldb CXX=$CXX DEBUG_LEVEL=0
-		rm -f /opt/${COMPILER}/lib64/librocksdb*
-		rm -f /opt/${COMPILER}/bin/ldb
-		cp -a librocksdb.* /opt/${COMPILER}/lib64 || true
-		cp -a ldb /opt/${COMPILER}/bin || true
-		mv librocksdb.* ${LIBDIR}
+		#make_lib 2 librocksdb_debug
+		make_lib 0 librocksdb
+		make_bin 0 ldb db_bench
 	else
 		echo Not found compiler: $CXX
 	fi

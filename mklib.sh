@@ -8,15 +8,19 @@ set -e
 set -x
 export LC_ALL=C
 export LANG=C
+UNAME_MachineSystem=`uname -m -s | sed 's:[ /]:-:g'`
 
 function make_bin() {
 	local dbgLevel=$1
 	shift
+	make DEBUG_LEVEL=$dbgLevel CXX=$CXX clean 
+	rm -f librocksdb*
 	ln -s ${LIBDIR}/librocksdb* .
 	make DEBUG_LEVEL=$dbgLevel CXX=$CXX $@
 	for binName in $@; do
 		rm -f /opt/${COMPILER}/bin/${binName}
 		cp -a ${binName} /opt/${COMPILER}/bin || true
+		cp -a ${binName} ${LIBDIR}
 	done
 	rm librocksdb*
 }
@@ -45,7 +49,6 @@ do
 	if which $CXX; then
 		tmpfile=`mktemp --suffix=.exe`
 		COMPILER=`${CXX} terark-tools/detect-compiler.cpp -o ${tmpfile} && ${tmpfile} && rm -f ${tmpfile}`
-		UNAME_MachineSystem=`uname -m -s | sed 's:[ /]:-:g'`
 		LIBDIR=${UNAME_MachineSystem}-${COMPILER}
 		mkdir -p ${LIBDIR}
 		make_lib 2 librocksdb_debug

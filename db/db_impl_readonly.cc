@@ -113,21 +113,6 @@ Status DBImplReadOnly::NewIterators(
 Status DB::OpenForReadOnly(const Options& options, const std::string& dbname,
                            DB** dbptr, bool error_if_log_file_exist) {
   *dbptr = nullptr;
-#ifndef _MSC_VER
-  const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
-  if (terarkdb_localTempDir) {
-    if (TerarkZipDBOptionsFromEnv) {
-      const ColumnFamilyOptions& cf_options = options;
-      const           DBOptions& db_options = options;
-      TerarkZipDBOptionsFromEnv(const_cast<          DBOptions&>(db_options));
-      TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf_options));
-    } else {
-      return Status::InvalidArgument(
-          "env TerarkZipTable_localTempDir is defined, "
-          "but dynamic libterark-zip-rocksdb is not loaded");
-    }
-  }
-#endif
   // Try to first open DB as fully compacted DB
   Status s;
   s = CompactedDBImpl::Open(options, dbname, dbptr);
@@ -163,15 +148,12 @@ Status DB::OpenForReadOnly(
 #ifndef _MSC_VER
   const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
   if (terarkdb_localTempDir) {
-    if (TerarkZipDBOptionsFromEnv) {
-      TerarkZipDBOptionsFromEnv(const_cast<DBOptions&>(db_options));
+    if (TerarkZipMultiCFOptionsFromEnv) {
+      TerarkZipMultiCFOptionsFromEnv(db_options, column_families);
     } else {
       return Status::InvalidArgument(
           "env TerarkZipTable_localTempDir is defined, "
           "but dynamic libterark-zip-rocksdb is not loaded");
-    }
-    for (auto& cf : column_families) {
-      TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf.options));
     }
   }
 #endif

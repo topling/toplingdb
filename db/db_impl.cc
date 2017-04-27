@@ -6010,8 +6010,8 @@ Status DB::Open(const DBOptions& db_options, const std::string& dbname,
 #ifndef _MSC_VER
   const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
   if (terarkdb_localTempDir) {
-    if (TerarkZipDBOptionsFromEnv) {
-      TerarkZipDBOptionsFromEnv(const_cast<DBOptions&>(db_options));
+    if (TerarkZipMultiCFOptionsFromEnv) {
+      TerarkZipMultiCFOptionsFromEnv(db_options, column_families);
     } else {
       return Status::InvalidArgument(
           "env TerarkZipTable_localTempDir is defined, "
@@ -6020,11 +6020,6 @@ Status DB::Open(const DBOptions& db_options, const std::string& dbname,
   }
 #endif
   for (auto& cf : column_families) {
-#ifndef _MSC_VER
-    if (terarkdb_localTempDir) {
-      TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf.options));
-    }
-#endif
     max_write_buffer_size =
         std::max(max_write_buffer_size, cf.options.write_buffer_size);
   }

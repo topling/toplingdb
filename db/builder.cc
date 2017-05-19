@@ -134,7 +134,6 @@ Status BuildTable(
         iter, internal_comparator.user_comparator(), &merge, kMaxSequenceNumber,
         &snapshots, earliest_write_conflict_snapshot, env,
         true /* internal key corruption is not ok */, range_del_agg.get());
-
     CompactionIterator c_iter2(
         iter, internal_comparator.user_comparator(), &merge2, kMaxSequenceNumber,
         &snapshots, earliest_write_conflict_snapshot, env,

@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "port/port.h"
-#include "util/logging.h"
 #include "util/stop_watch.h"
 #include "util/sync_point.h"
 #include "utilities/persistent_cache/block_cache_tier_file.h"
@@ -110,7 +109,7 @@ Status BlockCacheTier::CleanupCacheFolder(const std::string& folder) {
         return status;
       }
     } else {
-      ROCKS_LOG_DEBUG(opt_.log, "Skipping file %s", file.c_str());
+      Debug(opt_.log, "Skipping file %s", file.c_str());
     }
   }
   return Status::OK();
@@ -234,8 +233,8 @@ Status BlockCacheTier::InsertImpl(const Slice& key, const Slice& data) {
 
   while (!cache_file_->Append(key, data, &lba)) {
     if (!cache_file_->Eof()) {
-      ROCKS_LOG_DEBUG(opt_.log, "Error inserting to cache file %d",
-                      cache_file_->cacheid());
+      Debug(opt_.log, "Error inserting to cache file %d",
+            cache_file_->cacheid());
       stats_.write_latency_.Add(timer.ElapsedNanos() / 1000);
       return Status::TryAgain();
     }

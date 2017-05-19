@@ -14,6 +14,9 @@
 
 #include <fcntl.h>
 #include <inttypes.h>
+#ifndef OS_WIN
+#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <map>

@@ -22,8 +22,7 @@ class SstFileReader {
 
   Status ReadSequential(bool print_kv, uint64_t read_num, bool has_from,
                         const std::string& from_key, bool has_to,
-                        const std::string& to_key,
-                        bool use_from_as_prefix = false);
+                        const std::string& to_key);
 
   Status ReadTableProperties(
       std::shared_ptr<const TableProperties>* table_properties);
@@ -65,9 +64,9 @@ class SstFileReader {
   unique_ptr<TableReader> table_reader_;
   unique_ptr<RandomAccessFileReader> file_;
 
+  ImmutableCFOptions ioptions_;
   InternalKeyComparator internal_comparator_;
   unique_ptr<TableProperties> table_properties_;
-  ImmutableCFOptions ioptions_;
 };
 
 }  // namespace rocksdb

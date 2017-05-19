@@ -32,7 +32,7 @@
 #include "util/string_util.h"
 #include "utilities/ttl/db_ttl_impl.h"
 #ifndef _MSC_VER
-#include <table/terark_zip_weak_function.h>
+# include <table/terark_zip_weak_function.h>
 #endif
 
 #include <cstdlib>
@@ -584,7 +584,6 @@ Options LDBCommand::PrepareOptionsForOpenDB() {
           LDBCommandExecuteResult::Failed(ARG_FIX_PREFIX_LEN + " must be > 0.");
     }
   }
-
 #ifndef _MSC_VER
   int use_terarkdb = 0;
   if (ParseIntOption(option_map_, "use_terarkdb", use_terarkdb, exec_state_)) {

@@ -42,7 +42,6 @@ class SanityTest {
   Status Create() {
     Options options = GetOptions();
     options.create_if_missing = true;
-
     std::string dbname = path_ + Name();
     DestroyDB(dbname, options);
     DB* db = nullptr;
@@ -301,7 +300,6 @@ int main(int argc, char** argv) {
   if (path.back() != '/') {
     path += "/";
   }
-
   if(argc == 5) {
     rocksdb::useTerarkZipTable = (std::string(argv[3]) == "useTerarkZipTable");
   }

@@ -19,14 +19,13 @@
 
 namespace rocksdb {
 
-
 #ifndef ROCKSDB_LITE
 
 DBImplReadOnly::DBImplReadOnly(const DBOptions& db_options,
                                const std::string& dbname)
     : DBImpl(db_options, dbname) {
-  ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                 "Opening the db in read only mode");
+  Log(INFO_LEVEL, immutable_db_options_.info_log,
+      "Opening the db in read only mode");
   LogFlush(immutable_db_options_.info_log);
 }
 
@@ -36,8 +35,7 @@ DBImplReadOnly::~DBImplReadOnly() {
 // Implementations of the DB interface
 Status DBImplReadOnly::Get(const ReadOptions& read_options,
                            ColumnFamilyHandle* column_family, const Slice& key,
-                           PinnableSlice* pinnable_val) {
-  assert(pinnable_val != nullptr);
+                           std::string* value) {
   Status s;
   SequenceNumber snapshot = versions_->LastSequence();
   auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
@@ -46,13 +44,12 @@ Status DBImplReadOnly::Get(const ReadOptions& read_options,
   MergeContext merge_context;
   RangeDelAggregator range_del_agg(cfd->internal_comparator(), snapshot);
   LookupKey lkey(key, snapshot);
-  if (super_version->mem->Get(lkey, pinnable_val->GetSelf(), &s, &merge_context,
-                              &range_del_agg, read_options)) {
-    pinnable_val->PinSelf();
+  if (super_version->mem->Get(lkey, value, &s, &merge_context, &range_del_agg,
+                              read_options)) {
   } else {
     PERF_TIMER_GUARD(get_from_output_files_time);
-    super_version->current->Get(read_options, lkey, pinnable_val, &s,
-                                &merge_context, &range_del_agg);
+    super_version->current->Get(read_options, lkey, value, &s, &merge_context,
+                                &range_del_agg);
   }
   return s;
 }

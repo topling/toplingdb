@@ -40,8 +40,6 @@ class StopWatch {
     }
   }
 
-  uint64_t start_time() const { return start_time_; }
-
  private:
   Env* const env_;
   Statistics* statistics_;

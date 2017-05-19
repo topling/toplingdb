@@ -9,8 +9,8 @@ BMI2 ?= 0
 
 COMPILER=$(shell t=`mktemp --suffix=.exe`; ${CXX} terark-tools/detect-compiler.cpp -o $$t && $$t && rm -f $$t)
 UNAME_MachineSystem=$(shell uname -m -s | sed 's:[ /]:-:g')
-TerocksDir=../terark-zip-rocksdb/pkg/terark-zip-rocksdb${TerocksTrial}-${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
-export LD_LIBRARY_PATH:=${TerocksDir}/lib:${LD_LIBRARY_PATH}
+TerarkDir=../terark-zip-rocksdb/pkg/terark-zip-rocksdb-${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
+export LD_LIBRARY_PATH:=${TerarkDir}/lib:${LD_LIBRARY_PATH}
 
 EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -fPIC
 BASH_EXISTS := $(shell which bash)
@@ -47,7 +47,7 @@ quoted_perl_command = $(subst ','\'',$(perl_command))
 # `make install`
 
 # Set the default DEBUG_LEVEL to 1
-DEBUG_LEVEL?=2
+DEBUG_LEVEL?=1
 
 ifeq ($(MAKECMDGOALS),dbg)
 	DEBUG_LEVEL=2
@@ -100,7 +100,7 @@ else
 endif
 
 ifeq ("$(LINK_SHARED_TERARK)","1")
-  TerocksLDFLAGS += -L${TerocksDir}/lib \
+  TerarkLDFLAGS += -L${TerarkDir}/lib \
                     -lterark-zip-rocksdb-${DBG_OR_RLS} \
                     -lterark-zbs-${DBG_OR_RLS} \
                     -lterark-fsa-${DBG_OR_RLS} \
@@ -110,7 +110,7 @@ endif
 ifeq ("$(LINK_STATIC_TERARK)","1")
   TerarkBuild = ../terark/build/${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
   override LINK_STATIC_TERARK = \
-    ${TerocksDir}/lib_static/libterark-zip-rocksdb${TerocksTrial}-${DBG_OR_RLS}.a \
+    ${TerarkDir}/lib_static/libterark-zip-rocksdb-${DBG_OR_RLS}.a \
     ${TerarkBuild}/lib/libterark-zbs-${DBG_OR_RLS}.a \
     ${TerarkBuild}/lib/libterark-fsa-${DBG_OR_RLS}.a \
     ${TerarkBuild}/lib/libterark-core-${DBG_OR_RLS}.a
@@ -137,7 +137,7 @@ endif
 #-----------------------------------------------
 include src.mk
 
-AM_DEFAULT_VERBOSITY = 1
+AM_DEFAULT_VERBOSITY = 0
 
 AM_V_GEN = $(am__v_GEN_$(V))
 am__v_GEN_ = $(am__v_GEN_$(AM_DEFAULT_VERBOSITY))
@@ -168,7 +168,7 @@ LIB_SOURCES += utilities/env_librados.cc
 LDFLAGS += -lrados
 endif
 
-AM_LINK = $(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ ${TerocksLDFLAGS} $(LDFLAGS) $(COVERAGEFLAGS)
+AM_LINK = $(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ ${TerarkLDFLAGS} $(LDFLAGS) $(COVERAGEFLAGS)
 # detect what platform we're building on
 dummy := $(shell (export ROCKSDB_ROOT="$(CURDIR)"; export PORTABLE="$(PORTABLE)"; "$(CURDIR)/build_tools/build_detect_platform" "$(CURDIR)/make_config.mk"; echo $$?))
 ifneq ("${dummy}","0")
@@ -445,6 +445,7 @@ TESTS = \
 	compact_files_test \
 	optimistic_transaction_test \
 	write_callback_test \
+	heap_test \
 	compact_on_deletion_collector_test \
 	compaction_job_stats_test \
 	option_change_migration_test \
@@ -456,9 +457,9 @@ TESTS = \
 	range_del_aggregator_test \
 	lru_cache_test \
 	object_registry_test \
+	repair_test \
 	terark_zip_table_db_test \
 	terark_zip_table_reader_test \
-	repair_test \
 
 PARALLEL_TEST = \
 	backupable_db_test \
@@ -582,7 +583,7 @@ dbg: $(LIBRARY) $(BENCHMARKS) tools $(TESTS)
 
 # creates static library and programs
 release:
-	#$(MAKE) clean
+	$(MAKE) clean
 	DEBUG_LEVEL=0 $(MAKE) static_lib tools db_bench
 
 coverage:
@@ -1098,10 +1099,10 @@ table_reader_bench: table/table_reader_bench.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK) $(PROFILING_FLAGS)
 
 perf_context_test: db/perf_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerocksLDFLAGS)
+	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerarkLDFLAGS)
 
 prefix_test: db/prefix_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerocksLDFLAGS)
+	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerarkLDFLAGS)
 
 backupable_db_test: utilities/backupable/backupable_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
@@ -1324,6 +1325,9 @@ memtable_list_test: db/memtable_list_test.o $(LIBOBJECTS) $(TESTHARNESS)
 write_callback_test: db/write_callback_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
+heap_test: util/heap_test.o $(GTEST)
+	$(AM_LINK)
+
 transaction_test: utilities/transactions/transaction_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
@@ -1336,16 +1340,14 @@ column_aware_encoding_exp: utilities/column_aware_encoding_exp.o $(EXPOBJECTS)
 repair_test: db/repair_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-ldb_cmd_test: TerocksLDFLAGS += ${LIBNAME}.so
-ldb_cmd_test: tools/ldb_cmd_test.o $(LIBOBJECTS) $(TESTHARNESS)
+ldb_cmd_test: tools/ldb_cmd_test.o $(LIBOBJECTS) $(TESTHARNESS) ${LIBNAME}.so
 	$(AM_LINK)
 
-ldb: TerocksLDFLAGS += ${LIBNAME}.so
-ldb: tools/ldb.o ${LIBNAME}.so
+ldb: tools/ldb.o $(LIBOBJECTS) ${LIBNAME}.so
 	$(AM_LINK)
 
 iostats_context_test: util/iostats_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerocksLDFLAGS)
+	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerarkLDFLAGS)
 
 persistent_cache_test: utilities/persistent_cache/persistent_cache_test.o  db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)

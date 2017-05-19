@@ -168,7 +168,7 @@ void TableReaderBenchmark(Options& opts, EnvOptions& env_options,
           std::string key = MakeKey(r1, r2, through_db);
           uint64_t start_time = Now(env, measured_by_nanosecond);
           if (!through_db) {
-            PinnableSlice value;
+            std::string value;
             MergeContext merge_context;
             RangeDelAggregator range_del_agg(ikc, {} /* snapshots */);
             GetContext get_context(ioptions.user_comparator,
@@ -269,7 +269,7 @@ DEFINE_bool(through_db, false, "If enable, a DB instance will be created and "
 DEFINE_bool(mmap_read, true, "Whether use mmap read");
 DEFINE_string(table_factory, "block_based",
               "Table factory to use: `block_based` (default), `plain_table` or "
-              "`cuckoo_hash` or `terarkzip`.");
+              "`cuckoo_hash` or `terark_zip`.");
 DEFINE_string(time_unit, "microsecond",
               "The time unit used for measuring performance. User can specify "
               "`microsecond` (default) or `nanosecond`");
@@ -326,7 +326,8 @@ int main(int argc, char** argv) {
       env_options.use_mmap_reads = FLAGS_mmap_read;
       rocksdb::TerarkZipTableOptions opt;
       std::shared_ptr<rocksdb::TableFactory> block_based_factory(rocksdb::NewBlockBasedTableFactory());
-      rocksdb::TableFactory* factory = rocksdb::NewTerarkZipTableFactory(opt, rocksdb::NewAdaptiveTableFactory(block_based_factory));
+      rocksdb::TableFactory* factory = rocksdb::NewTerarkZipTableFactory(opt,
+          rocksdb::NewAdaptiveTableFactory(block_based_factory));
       // rocksdb::TableFactory* factory = rocksdb::NewTerarkZipTableFactory(opt, nullptr);
       tf.reset(factory);
     } else {

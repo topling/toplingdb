@@ -41,7 +41,8 @@ class ExternalSSTFileBasicTest : public DBTestBase {
       const Options options, std::vector<int> keys, int file_id,
       std::map<std::string, std::string>* true_data) {
     std::string file_path = sst_files_dir_ + ToString(file_id);
-    SstFileWriter sst_file_writer(EnvOptions(), options);
+    SstFileWriter sst_file_writer(EnvOptions(), options, options.comparator,
+                                  nullptr);
 
     Status s = sst_file_writer.Open(file_path);
     if (!s.ok()) {
@@ -77,7 +78,7 @@ class ExternalSSTFileBasicTest : public DBTestBase {
 TEST_F(ExternalSSTFileBasicTest, Basic) {
   Options options = CurrentOptions();
 
-  SstFileWriter sst_file_writer(EnvOptions(), options);
+  SstFileWriter sst_file_writer(EnvOptions(), options, options.comparator);
 
   // Current file size should be 0 after sst_file_writer init and before open a
   // file.
@@ -120,7 +121,7 @@ TEST_F(ExternalSSTFileBasicTest, NoCopy) {
   Options options = CurrentOptions();
   const ImmutableCFOptions ioptions(options);
 
-  SstFileWriter sst_file_writer(EnvOptions(), options);
+  SstFileWriter sst_file_writer(EnvOptions(), options, options.comparator);
 
   // file1.sst (0 => 99)
   std::string file1 = sst_files_dir_ + "file1.sst";
@@ -285,8 +286,8 @@ TEST_F(ExternalSSTFileBasicTest, FadviseTrigger) {
   std::unique_ptr<SstFileWriter> sst_file_writer;
 
   std::string sst_file_path = sst_files_dir_ + "file_fadvise_disable.sst";
-  sst_file_writer.reset(
-      new SstFileWriter(EnvOptions(), options, nullptr, false));
+  sst_file_writer.reset(new SstFileWriter(EnvOptions(), options,
+                                          options.comparator, nullptr, false));
   ASSERT_OK(sst_file_writer->Open(sst_file_path));
   for (int i = 0; i < kNumKeys; i++) {
     ASSERT_OK(sst_file_writer->Add(Key(i), Key(i)));
@@ -297,8 +298,8 @@ TEST_F(ExternalSSTFileBasicTest, FadviseTrigger) {
 
 
   sst_file_path = sst_files_dir_ + "file_fadvise_enable.sst";
-  sst_file_writer.reset(
-      new SstFileWriter(EnvOptions(), options, nullptr, true));
+  sst_file_writer.reset(new SstFileWriter(EnvOptions(), options,
+                                          options.comparator, nullptr, true));
   ASSERT_OK(sst_file_writer->Open(sst_file_path));
   for (int i = 0; i < kNumKeys; i++) {
     ASSERT_OK(sst_file_writer->Add(Key(i), Key(i)));

@@ -15,7 +15,6 @@
 #include <utility>
 #include <vector>
 
-#include "rocksdb/cache.h"
 #include "rocksdb/options.h"
 #include "rocksdb/persistent_cache.h"
 #include "rocksdb/statistics.h"

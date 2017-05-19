@@ -6,22 +6,21 @@
 
 #ifndef ROCKSDB_LITE
 
-#include "db/auto_roll_logger.h"
-#include <errno.h>
-#include <sys/stat.h>
-#include <algorithm>
-#include <cmath>
-#include <fstream>
-#include <iostream>
-#include <iterator>
 #include <string>
 #include <thread>
 #include <vector>
+#include <cmath>
+#include <iostream>
+#include <fstream>
+#include <iterator>
+#include <algorithm>
+#include "db/auto_roll_logger.h"
 #include "port/port.h"
-#include "rocksdb/db.h"
-#include "util/logging.h"
 #include "util/sync_point.h"
 #include "util/testharness.h"
+#include "rocksdb/db.h"
+#include <sys/stat.h>
+#include <errno.h>
 
 namespace rocksdb {
 
@@ -63,10 +62,10 @@ Env* AutoRollLoggerTest::env = Env::Default();
 // In this test we only want to Log some simple log message with
 // no format. LogMessage() provides such a simple interface and
 // avoids the [format-security] warning which occurs when you
-// call ROCKS_LOG_INFO(logger, log_message) directly.
+// call Log(logger, log_message) directly.
 namespace {
 void LogMessage(Logger* logger, const char* message) {
-  ROCKS_LOG_INFO(logger, "%s", message);
+  Log(logger, "%s", message);
 }
 
 void LogMessage(const InfoLogLevel log_level, Logger* logger,
@@ -333,12 +332,12 @@ TEST_F(AutoRollLoggerTest, InfoLogLevel) {
       logger.SetInfoLogLevel((InfoLogLevel)log_level);
 
       // again, messages with level smaller than log_level will not be logged.
-      ROCKS_LOG_HEADER(&logger, "%s", kSampleMessage.c_str());
-      ROCKS_LOG_DEBUG(&logger, "%s", kSampleMessage.c_str());
-      ROCKS_LOG_INFO(&logger, "%s", kSampleMessage.c_str());
-      ROCKS_LOG_WARN(&logger, "%s", kSampleMessage.c_str());
-      ROCKS_LOG_ERROR(&logger, "%s", kSampleMessage.c_str());
-      ROCKS_LOG_FATAL(&logger, "%s", kSampleMessage.c_str());
+      Log(InfoLogLevel::HEADER_LEVEL, &logger, "%s", kSampleMessage.c_str());
+      Debug(&logger, "%s", kSampleMessage.c_str());
+      Info(&logger, "%s", kSampleMessage.c_str());
+      Warn(&logger, "%s", kSampleMessage.c_str());
+      Error(&logger, "%s", kSampleMessage.c_str());
+      Fatal(&logger, "%s", kSampleMessage.c_str());
       log_lines += InfoLogLevel::HEADER_LEVEL - log_level + 1;
     }
   }
@@ -412,7 +411,8 @@ TEST_F(AutoRollLoggerTest, LogHeaderTest) {
     } else if (test_num == 1) {
       // HEADER_LEVEL should make this behave like calling Header()
       for (size_t i = 0; i < MAX_HEADERS; i++) {
-        ROCKS_LOG_HEADER(&logger, "%s %d", HEADER_STR.c_str(), i);
+        Log(InfoLogLevel::HEADER_LEVEL, &logger, "%s %d",
+            HEADER_STR.c_str(), i);
       }
     }
 

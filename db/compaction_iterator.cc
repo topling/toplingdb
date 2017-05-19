@@ -10,6 +10,22 @@
 
 namespace rocksdb {
 
+class CompactionIteratorToInternalIterator : public InternalIterator {
+  CompactionIterator* c_iter_;
+public:
+  CompactionIteratorToInternalIterator(CompactionIterator* i) : c_iter_(i) {}
+  virtual bool Valid() const { return c_iter_->Valid(); }
+  virtual void SeekToFirst() { c_iter_->SeekToFirst(); }
+  virtual void SeekToLast() { abort(); } // do not support
+  virtual void SeekForPrev(const rocksdb::Slice&) { abort(); } // do not support
+  virtual void Seek(const Slice& target) { abort(); } // do not support
+  virtual void Next() { c_iter_->Next(); }
+  virtual void Prev() { abort(); } // do not support
+  virtual Slice key() const { return c_iter_->key(); }
+  virtual Slice value() const { return c_iter_->value(); }
+  virtual Status status() const { return c_iter_->status(); }
+};
+
 CompactionIterator::CompactionIterator(
     InternalIterator* input, const Comparator* cmp, MergeHelper* merge_helper,
     SequenceNumber last_sequence, std::vector<SequenceNumber>* snapshots,
@@ -74,7 +90,7 @@ CompactionIterator::CompactionIterator(
 }
 
 CompactionIterator::~CompactionIterator() {
-  // input_ Iterator lifetime is longer than pinned_iters_mgr_ lifetime
+  // input_ Iteartor lifetime is longer than pinned_iters_mgr_ lifetime
   input_->SetPinnedItersMgr(nullptr);
 }
 
@@ -88,37 +104,6 @@ void CompactionIterator::ResetRecordCounts() {
 
 void CompactionIterator::SeekToFirst() {
   SeekToFirst_status_ = 0;
-}
-
-void CompactionIterator::DoSeekToFirstIfNeeded() const {
-  assert(0 == SeekToFirst_status_ || 1 == SeekToFirst_status_);
-  if (0 == SeekToFirst_status_) {
-    const_cast<CompactionIterator*>(this)->NextFromInput();
-    const_cast<CompactionIterator*>(this)->PrepareOutput();
-    SeekToFirst_status_ = 1;
-  }
-}
-
-class CompactionIteratorToInternalIterator : public InternalIterator {
-  CompactionIterator* c_iter_;
-public:
-  CompactionIteratorToInternalIterator(CompactionIterator* i) : c_iter_(i) {}
-  virtual bool Valid() const { return c_iter_->Valid(); }
-  virtual void SeekToFirst() { c_iter_->SeekToFirst(); }
-  virtual void SeekToLast() { abort(); } // do not support
-  virtual void SeekForPrev(const rocksdb::Slice&) { abort(); } // do not support
-  virtual void Seek(const Slice& target) { abort(); } // do not support
-  virtual void Next() { c_iter_->Next(); }
-  virtual void Prev() { abort(); } // do not support
-  virtual Slice key() const { return c_iter_->key(); }
-  virtual Slice value() const { return c_iter_->value(); }
-  virtual Status status() const { return c_iter_->status(); }
-};
-
-std::unique_ptr<InternalIterator>
-CompactionIterator::AdaptToInternalIterator() {
-  return std::unique_ptr<InternalIterator>(
-      new CompactionIteratorToInternalIterator(this));
 }
 
 void CompactionIterator::Next() {
@@ -164,6 +149,12 @@ void CompactionIterator::Next() {
   }
 
   PrepareOutput();
+}
+
+std::unique_ptr<InternalIterator>
+CompactionIterator::AdaptToInternalIterator() {
+  return std::unique_ptr<InternalIterator>(
+      new CompactionIteratorToInternalIterator(this));
 }
 
 void CompactionIterator::NextFromInput() {
@@ -557,6 +548,15 @@ inline SequenceNumber CompactionIterator::findEarliestVisibleSnapshot(
   }
   *prev_snapshot = prev;
   return kMaxSequenceNumber;
+}
+
+void CompactionIterator::DoSeekToFirstIfNeeded() const {
+  assert(0 == SeekToFirst_status_ || 1 == SeekToFirst_status_);
+  if (0 == SeekToFirst_status_) {
+    const_cast<CompactionIterator*>(this)->NextFromInput();
+    const_cast<CompactionIterator*>(this)->PrepareOutput();
+    SeekToFirst_status_ = 1;
+  }
 }
 
 }  // namespace rocksdb

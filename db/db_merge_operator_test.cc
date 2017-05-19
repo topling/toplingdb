@@ -44,7 +44,6 @@ TEST_F(DBMergeOperatorTest, MergeErrorOnRead) {
   Options options;
   options.create_if_missing = true;
   options.merge_operator.reset(new TestPutOperator());
-  options.env = env_;
   Reopen(options);
   ASSERT_OK(Merge("k1", "v1"));
   ASSERT_OK(Merge("k1", "corrupted"));
@@ -58,7 +57,6 @@ TEST_F(DBMergeOperatorTest, MergeErrorOnWrite) {
   options.create_if_missing = true;
   options.merge_operator.reset(new TestPutOperator());
   options.max_successive_merges = 3;
-  options.env = env_;
   Reopen(options);
   ASSERT_OK(Merge("k1", "v1"));
   ASSERT_OK(Merge("k1", "v2"));
@@ -73,7 +71,6 @@ TEST_F(DBMergeOperatorTest, MergeErrorOnIteration) {
   Options options;
   options.create_if_missing = true;
   options.merge_operator.reset(new TestPutOperator());
-  options.env = env_;
 
   DestroyAndReopen(options);
   ASSERT_OK(Merge("k1", "v1"));

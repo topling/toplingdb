@@ -760,18 +760,21 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   Status status;
   auto makeCompactionIterator = [&](InternalIterator* input_iter,
                                     MergeHelper& merge_x,
+                                    RangeDelAggregator *range_del_agg_x,
                                     const CompactionFilter* compaction_filter_x
                                     ) {
     return std::unique_ptr<CompactionIterator>(new CompactionIterator(
       input_iter, cfd->user_comparator(), &merge_x, versions_->LastSequence(),
       &existing_snapshots_, earliest_write_conflict_snapshot_, env_, false,
-      range_del_agg.get(), sub_compact->compaction, compaction_filter_x,
-      &hutting_down_));
+      range_del_agg_x, sub_compact->compaction, compaction_filter_x,
+      shutting_down_));
   };
-  sub_compact->c_iter = makeCompactionIterator(input.get(), merge, compaction_filter);
+  sub_compact->c_iter = makeCompactionIterator(input.get(), merge,
+      range_del_agg.get(), compaction_filter);
   auto c_iter = sub_compact->c_iter.get();
   c_iter->SeekToFirst();
-  auto c_iter2 = makeCompactionIterator(input2.get(), merge2, compaction_filter2);
+  auto c_iter2 = makeCompactionIterator(input2.get(), merge2,
+      range_del_agg.get(), compaction_filter2);
   auto second_pass_iter = c_iter2->AdaptToInternalIterator();
   c_iter2->SeekToFirst();
   if (c_iter->Valid() &&

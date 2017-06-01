@@ -175,16 +175,19 @@ TEST_F(TerarkZipReaderTest, BasicTest) {
   run_test(true , 3);
 }
 
-
 TEST_F(TerarkZipReaderTest, IterTest) {
 
-  auto run_test = [&](bool rev, bool multi, size_t prefix) {
+  auto run_test = [&](bool rev, size_t prefix
+    , std::initializer_list<const char*> data_list
+    , std::initializer_list<const char*> test_list
+    ) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
     Rdb_pk_comparator pk_c;
     Rdb_rev_comparator rev_c;
     tzto.disableSecondPassIter = true;
     options.allow_mmap_reads = true;
+    options.compaction_style = kCompactionStyleNone;
     tzto.keyPrefixLen = prefix;
     if (rev) {
       options.comparator = &rev_c;
@@ -199,78 +202,255 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     rocksdb::WriteOptions wo;
     rocksdb::FlushOptions fo;
 
+    struct comp_t
+    {
+      bool greater = 0;
+      bool operator()(const std::string& l, const std::string& r) const
+      {
+        if (greater)
+        {
+          return l > r;
+        }
+        else
+        {
+          return l < r;
+        }
+      }
+    } comp;
+    comp.greater = rev;
+    std::set<std::string, comp_t> key_set(comp);
     auto db = db_;
-
-    ASSERT_OK(db->Put(wo, "2000000000", "2000000000"));
-    if (multi) {
-      ASSERT_OK(db->Flush(fo));
+    int c = 0;
+    auto put = [&](std::string&& s)
+    {
+      ASSERT_OK(db->Put(wo, s, s));
+      key_set.emplace(std::move(s));
+    };
+    for (auto d : data_list)
+    {
+      put(d);
     }
-    ASSERT_OK(db->Put(wo, "4000000000", "4000000000"));
+
     ASSERT_OK(db->Flush(fo));
 
     auto i = db->NewIterator(ro);
-    if (rev) {
-      i->Seek("1000000000");
-      ASSERT_FALSE(i->Valid());
-      i->Seek("2000000000");
-      ASSERT_EQ(i->key(), "2000000000");
-      ASSERT_EQ(i->value(), "2000000000");
-      i->Seek("20000000000");
-      ASSERT_EQ(i->key(), "2000000000");
-      ASSERT_EQ(i->value(), "2000000000");
-      i->Seek("3000000000");
-      ASSERT_EQ(i->key(), "2000000000");
-      ASSERT_EQ(i->value(), "2000000000");
-      i->Seek("4000000000");
-      ASSERT_EQ(i->key(), "4000000000");
-      ASSERT_EQ(i->value(), "4000000000");
-      i->Seek("40000000000");
-      ASSERT_EQ(i->key(), "4000000000");
-      ASSERT_EQ(i->value(), "4000000000");
-      i->Seek("5000000000");
-      ASSERT_EQ(i->key(), "4000000000");
-      ASSERT_EQ(i->value(), "4000000000");
+
+    i->SeekToFirst();
+    for (auto it = key_set.begin(); it != key_set.end(); ++it, i->Next()) {
+      ASSERT_EQ(i->value().ToString(), *it);
     }
-    else {
-      i->Seek("1000000000");
-      ASSERT_EQ(i->key(), "2000000000");
-      ASSERT_EQ(i->value(), "2000000000");
-      i->Seek("2000000000");
-      ASSERT_EQ(i->key(), "2000000000");
-      ASSERT_EQ(i->value(), "2000000000");
-      i->Seek("20000000000");
-      ASSERT_EQ(i->key(), "4000000000");
-      ASSERT_EQ(i->value(), "4000000000");
-      i->Seek("3000000000");
-      ASSERT_EQ(i->key(), "4000000000");
-      ASSERT_EQ(i->value(), "4000000000");
-      i->Seek("4000000000");
-      ASSERT_EQ(i->key(), "4000000000");
-      ASSERT_EQ(i->value(), "4000000000");
-      i->Seek("40000000000");
-      ASSERT_FALSE(i->Valid());
-      i->Seek("5000000000");
-      ASSERT_FALSE(i->Valid());
+    ASSERT_FALSE(i->Valid());
+    i->SeekToLast();
+    for (auto it = key_set.rbegin(); it != key_set.rend(); ++it, i->Prev()) {
+      ASSERT_EQ(i->value().ToString(), *it);
     }
+    ASSERT_FALSE(i->Valid());
+
+    auto test = [&](const std::string& s)
+    {
+      auto lb = key_set.lower_bound(s);
+      i->Seek(s);
+      if (lb == key_set.end())
+      {
+        ASSERT_FALSE(i->Valid());
+      }
+      else
+      {
+        ASSERT_EQ(i->value().ToString(), *lb);
+      }
+      auto up = key_set.upper_bound(s);
+      i->SeekForPrev(s);
+      if (up == key_set.begin())
+      {
+        ASSERT_FALSE(i->Valid());
+      }
+      else
+      {
+        ASSERT_EQ(i->value().ToString(), *(--up));
+      }
+    };
+    for (auto t : test_list)
+    {
+      test(t);
+    }
+
     delete i;
   };
-  run_test(false, false, 0);
-  run_test(true , false, 0);
-  run_test(false, true , 0);
-  run_test(true , true , 0);
-  run_test(false, false, 1);
-  run_test(true , false, 1);
-  run_test(false, true , 1);
-  run_test(true , true , 1);
-  run_test(false, false, 8);
-  run_test(true , false, 8);
-  run_test(false, true , 8);
-  run_test(true , true , 8);
-  run_test(false, false, 9);
-  run_test(true , false, 9);
-  run_test(false, true , 9);
-  run_test(true , true , 9);
+
+  std::initializer_list<const char*> data_list, test_list;
+
+  data_list =
+  {
+    "0000AAAAXXXX",
+    "0000AAAAYYYY",
+    "0000AAAAZZZZ",
+  };
+  test_list =
+  {
+    "#",
+    "0",
+    "0000",
+    "00000",
+    "0000A",
+    "0A",
+    "0AAA",
+    "0AAAA",
+    "0000B",
+    "0000AB",
+    "0000AAAA",
+    "0000AAAAA",
+    "0000ABBB",
+    "0000ABBBB",
+    "0000AAAAX",
+    "0000AAAAXY",
+    "0000AAAAXXXX",
+    "0000AAAAXXXXX",
+    "1",
+    "1111",
+    "11111",
+  };
+  run_test(false, 0, data_list, test_list);
+  run_test(true , 0, data_list, test_list);
+  run_test(false, 1, data_list, test_list);
+  run_test(true , 1, data_list, test_list);
+  run_test(false, 2, data_list, test_list);
+  run_test(true , 2, data_list, test_list);
+  run_test(false, 3, data_list, test_list);
+  run_test(true , 3, data_list, test_list);
+  run_test(false, 4, data_list, test_list);
+  run_test(true , 4, data_list, test_list);
+
+  data_list =
+  {
+    "0000AAAAXXXX",
+    "1111BBBBYYYY",
+    "2222CCCCZZZZ",
+  };
+  test_list =
+  {
+    "#",
+    "0",
+    "0000",
+    "00000",
+    "0000A",
+    "0A",
+    "0AAA",
+    "0AAAA",
+    "0000B",
+    "0000AB",
+    "0000AAAA",
+    "0000AAAAA",
+    "0000ABBB",
+    "0000ABBBB",
+    "0000AAAAX",
+    "0000AAAAXY",
+    "0000AAAAXXXX",
+    "0000AAAAXXXXX",
+    "1",
+    "1111",
+    "11111",
+  };
+  run_test(false, 0, data_list, test_list);
+  run_test(true , 0, data_list, test_list);
+  run_test(false, 1, data_list, test_list);
+  run_test(true , 1, data_list, test_list);
+  run_test(false, 2, data_list, test_list);
+  run_test(true , 2, data_list, test_list);
+  run_test(false, 3, data_list, test_list);
+  run_test(true , 3, data_list, test_list);
+  run_test(false, 4, data_list, test_list);
+  run_test(true , 4, data_list, test_list);
+  run_test(false, 7, data_list, test_list);
+  run_test(true , 7, data_list, test_list);
+  run_test(false, 8, data_list, test_list);
+  run_test(true,  8, data_list, test_list);
+  run_test(false, 9, data_list, test_list);
+  run_test(true,  9, data_list, test_list);
+
+  data_list =
+  {
+    "####0000",
+    "####0001",
+    "####0002",
+    "####0009",
+    "0000AAAAXXXX",
+    "0000AAAAYYYY",
+    "0000AAAAZZZZ",
+    "1111AAAA",
+    "1111BBBB",
+    "1111CCCC",
+    "AAAA",
+    "BBBB",
+    "CCCC",
+  };
+  test_list =
+  {
+    "#",
+    "####",
+    "#####",
+    "####0",
+    "####000",
+    "####0000",
+    "####00000",
+    "####0001",
+    "####0003",
+    "####1000",
+    "####A",
+    "0",
+    "0000",
+    "00000",
+    "0000A",
+    "0A",
+    "0AAA",
+    "0AAAA",
+    "0000B",
+    "0000AB",
+    "0000AAAA",
+    "0000AAAAA",
+    "0000ABBB",
+    "0000ABBBB",
+    "0000AAAAX",
+    "0000AAAAXY",
+    "0000AAAAXXXX",
+    "0000AAAAXXXXX",
+    "1",
+    "1111",
+    "11111",
+    "1111A",
+    "1A",
+    "1AAA",
+    "1AAAA",
+    "1111AAAA",
+    "1111AAAAA",
+    "1111AB",
+    "1111ABBB",
+    "1111ABBBB",
+    "2",
+    "2222",
+    "22222",
+    "2222A",
+    "A",
+    "AAAA",
+    "AAAAA",
+    "AB",
+    "ABBB",
+    "ABBBB",
+    "D",
+    "DDDD",
+    "DDDDD",
+  };
+  run_test(false, 0, data_list, test_list);
+  run_test(true , 0, data_list, test_list);
+  run_test(false, 1, data_list, test_list);
+  run_test(true , 1, data_list, test_list);
+  run_test(false, 2, data_list, test_list);
+  run_test(true , 2, data_list, test_list);
+  run_test(false, 3, data_list, test_list);
+  run_test(true , 3, data_list, test_list);
+  run_test(false, 4, data_list, test_list);
+  run_test(true , 4, data_list, test_list);
 }
+
 
 }  // namespace rocksdb
 

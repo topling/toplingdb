@@ -177,10 +177,8 @@ TEST_F(TerarkZipReaderTest, BasicTest) {
 
 TEST_F(TerarkZipReaderTest, IterTest) {
 
-  auto run_test = [&](bool rev, size_t prefix
-    , std::initializer_list<const char*> data_list
-    , std::initializer_list<const char*> test_list
-    ) {
+  std::initializer_list<const char*> data_list, test_list;
+  auto run_test = [&](bool rev, size_t prefix) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
     Rdb_pk_comparator pk_c;
@@ -198,7 +196,7 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     options.table_factory.reset(NewTerarkZipTableFactory(tzto,
       NewBlockBasedTableFactory(BlockBasedTableOptions())));
     DestroyAndReopen(options);
-    rocksdb::ReadOptions ro;
+    rocksdb::ReadOptions ro1, ro2, ro3;
     rocksdb::WriteOptions wo;
     rocksdb::FlushOptions fo;
 
@@ -221,52 +219,85 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     std::set<std::string, comp_t> key_set(comp);
     auto db = db_;
     int c = 0;
-    auto put = [&](std::string&& s)
+    auto put = [&](std::string&& k, const std::string& s)
     {
-      ASSERT_OK(db->Put(wo, s, s));
-      key_set.emplace(std::move(s));
+      ASSERT_OK(db->Put(wo, k, k + s));
     };
     for (auto d : data_list)
     {
-      put(d);
+      key_set.emplace(d);
+      put(d, "-1");
+    }
+    auto s1 = db->GetSnapshot();
+    ro1.snapshot = s1;
+    for (auto d : data_list)
+    {
+      put(d, "-2");
+    }
+    auto s2 = db->GetSnapshot();
+    ro2.snapshot = s2;
+    for (auto d : data_list)
+    {
+      put(d, "-3");
     }
 
     ASSERT_OK(db->Flush(fo));
 
-    auto i = db->NewIterator(ro);
+    auto i1 = db->NewIterator(ro1);
+    auto i2 = db->NewIterator(ro2);
+    auto i3 = db->NewIterator(ro3);
 
-    i->SeekToFirst();
-    for (auto it = key_set.begin(); it != key_set.end(); ++it, i->Next()) {
-      ASSERT_EQ(i->value().ToString(), *it);
-    }
-    ASSERT_FALSE(i->Valid());
-    i->SeekToLast();
-    for (auto it = key_set.rbegin(); it != key_set.rend(); ++it, i->Prev()) {
-      ASSERT_EQ(i->value().ToString(), *it);
-    }
-    ASSERT_FALSE(i->Valid());
+    auto basic_test = [&](Iterator *i, std::string s)
+    {
+      i->SeekToFirst();
+      for (auto it = key_set.begin(); it != key_set.end(); ++it, i->Next()) {
+        ASSERT_EQ(i->value().ToString(), *it + s);
+      }
+      ASSERT_FALSE(i->Valid());
+      i->SeekToLast();
+      for (auto it = key_set.rbegin(); it != key_set.rend(); ++it, i->Prev()) {
+        ASSERT_EQ(i->value().ToString(), *it + s);
+      }
+      ASSERT_FALSE(i->Valid());
+    };
+    basic_test(i1, "-1");
+    basic_test(i2, "-2");
+    basic_test(i3, "-3");
 
     auto test = [&](const std::string& s)
     {
       auto lb = key_set.lower_bound(s);
-      i->Seek(s);
+      i1->Seek(s);
+      i2->Seek(s);
+      i3->Seek(s);
       if (lb == key_set.end())
       {
-        ASSERT_FALSE(i->Valid());
+        ASSERT_FALSE(i1->Valid());
+        ASSERT_FALSE(i2->Valid());
+        ASSERT_FALSE(i3->Valid());
       }
       else
       {
-        ASSERT_EQ(i->value().ToString(), *lb);
+        ASSERT_EQ(i1->value().ToString(), *lb + "-1");
+        ASSERT_EQ(i2->value().ToString(), *lb + "-2");
+        ASSERT_EQ(i3->value().ToString(), *lb + "-3");
       }
       auto up = key_set.upper_bound(s);
-      i->SeekForPrev(s);
+      i1->SeekForPrev(s);
+      i2->SeekForPrev(s);
+      i3->SeekForPrev(s);
       if (up == key_set.begin())
       {
-        ASSERT_FALSE(i->Valid());
+        ASSERT_FALSE(i1->Valid());
+        ASSERT_FALSE(i2->Valid());
+        ASSERT_FALSE(i3->Valid());
       }
       else
       {
-        ASSERT_EQ(i->value().ToString(), *(--up));
+        --up;
+        ASSERT_EQ(i1->value().ToString(), *up + "-1");
+        ASSERT_EQ(i2->value().ToString(), *up + "-2");
+        ASSERT_EQ(i3->value().ToString(), *up + "-3");
       }
     };
     for (auto t : test_list)
@@ -274,10 +305,26 @@ TEST_F(TerarkZipReaderTest, IterTest) {
       test(t);
     }
 
-    delete i;
+    db->ReleaseSnapshot(s1);
+    db->ReleaseSnapshot(s2);
+    delete i1;
+    delete i2;
+    delete i3;
   };
 
-  std::initializer_list<const char*> data_list, test_list;
+
+  data_list =
+  {
+    "0000AAAAXXXX",
+  };
+  test_list =
+  {
+  };
+  run_test(false, 0);
+  run_test(true , 0);
+  run_test(false, 4);
+  run_test(true , 4);
+
 
   data_list =
   {
@@ -309,16 +356,16 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     "1111",
     "11111",
   };
-  run_test(false, 0, data_list, test_list);
-  run_test(true , 0, data_list, test_list);
-  run_test(false, 1, data_list, test_list);
-  run_test(true , 1, data_list, test_list);
-  run_test(false, 2, data_list, test_list);
-  run_test(true , 2, data_list, test_list);
-  run_test(false, 3, data_list, test_list);
-  run_test(true , 3, data_list, test_list);
-  run_test(false, 4, data_list, test_list);
-  run_test(true , 4, data_list, test_list);
+  run_test(false, 0);
+  run_test(true , 0);
+  run_test(false, 1);
+  run_test(true , 1);
+  run_test(false, 2);
+  run_test(true , 2);
+  run_test(false, 3);
+  run_test(true , 3);
+  run_test(false, 4);
+  run_test(true , 4);
 
   data_list =
   {
@@ -350,22 +397,22 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     "1111",
     "11111",
   };
-  run_test(false, 0, data_list, test_list);
-  run_test(true , 0, data_list, test_list);
-  run_test(false, 1, data_list, test_list);
-  run_test(true , 1, data_list, test_list);
-  run_test(false, 2, data_list, test_list);
-  run_test(true , 2, data_list, test_list);
-  run_test(false, 3, data_list, test_list);
-  run_test(true , 3, data_list, test_list);
-  run_test(false, 4, data_list, test_list);
-  run_test(true , 4, data_list, test_list);
-  run_test(false, 7, data_list, test_list);
-  run_test(true , 7, data_list, test_list);
-  run_test(false, 8, data_list, test_list);
-  run_test(true,  8, data_list, test_list);
-  run_test(false, 9, data_list, test_list);
-  run_test(true,  9, data_list, test_list);
+  run_test(false, 0);
+  run_test(true , 0);
+  run_test(false, 1);
+  run_test(true , 1);
+  run_test(false, 2);
+  run_test(true , 2);
+  run_test(false, 3);
+  run_test(true , 3);
+  run_test(false, 4);
+  run_test(true , 4);
+  run_test(false, 7);
+  run_test(true , 7);
+  run_test(false, 8);
+  run_test(true,  8);
+  run_test(false, 9);
+  run_test(true,  9);
 
   data_list =
   {
@@ -439,18 +486,17 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     "DDDD",
     "DDDDD",
   };
-  run_test(false, 0, data_list, test_list);
-  run_test(true , 0, data_list, test_list);
-  run_test(false, 1, data_list, test_list);
-  run_test(true , 1, data_list, test_list);
-  run_test(false, 2, data_list, test_list);
-  run_test(true , 2, data_list, test_list);
-  run_test(false, 3, data_list, test_list);
-  run_test(true , 3, data_list, test_list);
-  run_test(false, 4, data_list, test_list);
-  run_test(true , 4, data_list, test_list);
+  run_test(false, 0);
+  run_test(true , 0);
+  run_test(false, 1);
+  run_test(true , 1);
+  run_test(false, 2);
+  run_test(true , 2);
+  run_test(false, 3);
+  run_test(true , 3);
+  run_test(false, 4);
+  run_test(true , 4);
 }
-
 
 }  // namespace rocksdb
 

@@ -908,6 +908,9 @@ struct ReadOptions {
   // Default: true
   bool fill_cache;
 
+  // read value data from this offset
+  uint32_t  value_data_offset;
+
   // If this option is set and memtable implementation allows, Seek
   // might only return keys with the same prefix as the seek-key
   //
@@ -1011,6 +1014,9 @@ struct ReadOptions {
   // read performance in DBs with many range deletions.
   // Default: false
   bool ignore_range_deletions;
+
+  // read at most such length of value data
+  uint32_t value_data_length;
 
   ReadOptions();
   ReadOptions(bool cksum, bool cache);

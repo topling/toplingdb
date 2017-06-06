@@ -10,6 +10,8 @@ BMI2 ?= 0
 COMPILER=$(shell t=`mktemp --suffix=.exe`; ${CXX} terark-tools/detect-compiler.cpp -o $$t && $$t && rm -f $$t)
 UNAME_MachineSystem=$(shell uname -m -s | sed 's:[ /]:-:g')
 TerarkDir=../terark-zip-rocksdb/pkg/terark-zip-rocksdb-${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
+BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
+BUILD_ROOT := build/${BUILD_NAME}
 export LD_LIBRARY_PATH:=${TerarkDir}/lib:${LD_LIBRARY_PATH}
 
 EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -fPIC
@@ -137,7 +139,7 @@ endif
 #-----------------------------------------------
 include src.mk
 
-AM_DEFAULT_VERBOSITY = 0
+AM_DEFAULT_VERBOSITY = 1
 
 AM_V_GEN = $(am__v_GEN_$(V))
 am__v_GEN_ = $(am__v_GEN_$(AM_DEFAULT_VERBOSITY))
@@ -504,12 +506,12 @@ BENCHMARKS = db_bench table_reader_bench cache_bench memtablerep_bench column_aw
 
 # if user didn't config LIBNAME, set the default
 ifeq ($(LIBNAME),)
-# we should only run rocksdb in production with DEBUG_LEVEL 0
-ifeq ($(DEBUG_LEVEL),0)
-        LIBNAME=librocksdb
-else
-        LIBNAME=librocksdb_debug
-endif
+  # we should only run rocksdb in production with DEBUG_LEVEL 0
+  ifeq ($(DEBUG_LEVEL),0)
+    LIBNAME=librocksdb
+  else
+    LIBNAME=librocksdb_debug
+  endif
 endif
 LIBRARY = ${LIBNAME}.a
 TOOLS_LIBRARY = ${LIBNAME}_tools.a
@@ -529,7 +531,7 @@ ifneq ($(PLATFORM_SHARED_EXT),)
     SHARED2 = $(SHARED1)
     SHARED3 = $(SHARED1)
     SHARED4 = $(SHARED1)
-    SHARED = $(SHARED1)
+    SHARED  = $(SHARED1)
   else
     SHARED_MAJOR = $(ROCKSDB_MAJOR)
     SHARED_MINOR = $(ROCKSDB_MINOR)
@@ -546,21 +548,36 @@ ifneq ($(PLATFORM_SHARED_EXT),)
       SHARED4 = $(SHARED1).$(SHARED_MAJOR).$(SHARED_MINOR).$(SHARED_PATCH)
     endif
     SHARED = $(SHARED1) $(SHARED2) $(SHARED3) $(SHARED4)
+    xdir:=${BUILD_ROOT}/shared_lib/dbg-${DEBUG_LEVEL}
 
 $(SHARED1): $(SHARED4)
-	ln -fs $(SHARED4) $(SHARED1)
+	ln -fs  $(SHARED4) $(SHARED1)
 $(SHARED2): $(SHARED4)
-	ln -fs $(SHARED4) $(SHARED2)
+	ln -fs  $(SHARED4) $(SHARED2)
 $(SHARED3): $(SHARED4)
-	ln -fs $(SHARED4) $(SHARED3)
+	ln -fs  $(SHARED4) $(SHARED3)
+
+${xdir}/$(SHARED1): ${xdir}/$(SHARED4)
+	cd  $(dir $@) ; ln -fs $(notdir $<) $(notdir $@)
+${xdir}/$(SHARED2): ${xdir}/$(SHARED4)
+	cd  $(dir $@) ; ln -fs $(notdir $<) $(notdir $@)
+${xdir}/$(SHARED3): ${xdir}/$(SHARED4)
+	cd  $(dir $@) ; ln -fs $(notdir $<) $(notdir $@)
 
   endif # PLATFORM_SHARED_VERSIONED
 
-$(SHARED4): $(addprefix build/rls/, $(subst .c, .o, $(LIB_SOURCES) $(TOOL_LIB_SOURCES)))
-	$(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS)  \
-		$(LDFLAGS) $(LINK_STATIC_TERARK) -o $@ $^
+$(SHARED4): ${xdir}/$(SHARED4) \
+			${xdir}/$(SHARED3) \
+			${xdir}/$(SHARED2) \
+			${xdir}/$(SHARED1)
+	ln -fs  $< $@
 
-build/shared_lib/rls/%.o: %.cc
+${xdir}/$(SHARED4): $(addprefix ${xdir}/, $(subst .cc,.o,$(strip $(LIB_SOURCES) $(TOOL_LIB_SOURCES))))
+	$(CXX) $^ $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) \
+		      $(PLATFORM_SHARED_CFLAGS) $(LDFLAGS) $(LINK_STATIC_TERARK) -o $@
+
+${xdir}/%.o: %.cc
+	@mkdir -p $(dir $@)
 	$(CXX) -c $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(LDFLAGS) -o $@ $<
 
 endif  # PLATFORM_SHARED_EXT
@@ -594,18 +611,18 @@ coverage:
 	$(MAKE) clean
 	COVERAGEFLAGS="-fprofile-arcs -ftest-coverage" LDFLAGS+="-lgcov" $(MAKE) J=1 all check
 	cd coverage && ./coverage_test.sh
-        # Delete intermediate files
+	# Delete intermediate files
 	find . -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
 
 ifneq (,$(filter check parallel_check,$(MAKECMDGOALS)),)
 # Use /dev/shm if it has the sticky bit set (otherwise, /tmp),
 # and create a randomly-named rocksdb.XXXX directory therein.
 # We'll use that directory in the "make check" rules.
-ifeq ($(TMPD),)
-TMPD := $(shell f=/dev/shm; test -k $$f || f=/tmp;			\
-  perl -le 'use File::Temp "tempdir";'					\
-    -e 'print tempdir("'$$f'/rocksdb.XXXX", CLEANUP => 0)')
-endif
+  ifeq ($(TMPD),)
+    TMPD := $(shell f=/dev/shm; test -k $$f || f=/tmp;			\
+      perl -le 'use File::Temp "tempdir";'					\
+            -e 'print tempdir("'$$f'/rocksdb.XXXX", CLEANUP => 0)')
+  endif
 endif
 
 # Run all tests in parallel, accumulating per-test logs in t/log-*.

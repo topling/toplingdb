@@ -15,7 +15,7 @@ void AdjustValueByOffsetLength(Slice* v, size_t offset, size_t length) {
     }
   }
   else {
-    v = Slice(); // empty
+    *v = Slice(); // empty
   }
 }
 

@@ -1331,7 +1331,7 @@ heap_test: util/heap_test.o $(GTEST)
 transaction_test: utilities/transactions/transaction_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-sst_dump: tools/sst_dump.o $(LIBOBJECTS)
+sst_dump: tools/sst_dump.o $(LIBOBJECTS) ${LIBNAME}.so
 	$(AM_LINK)
 
 column_aware_encoding_exp: utilities/column_aware_encoding_exp.o $(EXPOBJECTS)
@@ -1367,7 +1367,7 @@ range_del_aggregator_test: db/range_del_aggregator_test.o db/db_test_util.o $(LI
 terark_zip_table_db_test: db/terark_zip_table_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-terark_zip_table_reader_test: table/terark_zip_table_reader_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+terark_zip_table_reader_test: table/terark_zip_table_reader_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS) ${LIBNAME}.so
 	$(AM_LINK)
 
 #-------------------------------------------------

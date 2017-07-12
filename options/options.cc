@@ -614,7 +614,10 @@ ReadOptions::ReadOptions()
       background_purge_on_iterator_cleanup(false),
       readahead_size(0),
       ignore_range_deletions(false),
-      max_skippable_internal_keys(0) {}
+      max_skippable_internal_keys(0) {
+  value_data_offset = 0;
+  value_data_length = UINT32_MAX;
+}
 
 ReadOptions::ReadOptions(bool cksum, bool cache)
     : verify_checksums(cksum),
@@ -630,6 +633,9 @@ ReadOptions::ReadOptions(bool cksum, bool cache)
       background_purge_on_iterator_cleanup(false),
       readahead_size(0),
       ignore_range_deletions(false),
-      max_skippable_internal_keys(0) {}
+      max_skippable_internal_keys(0) {
+  value_data_offset = 0;
+  value_data_length = UINT32_MAX;
+}
 
 }  // namespace rocksdb

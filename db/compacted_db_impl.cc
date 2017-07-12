@@ -10,6 +10,9 @@
 #include "db/db_impl.h"
 #include "db/version_set.h"
 #include "table/get_context.h"
+#ifndef _MSC_VER
+# include <table/terark_zip_weak_function.h>
+#endif
 
 namespace rocksdb {
 
@@ -20,6 +23,9 @@ extern bool SaveValue(void* arg, const ParsedInternalKey& parsed_key,
 CompactedDBImpl::CompactedDBImpl(
   const DBOptions& options, const std::string& dbname)
   : DBImpl(options, dbname) {
+  cfd_ = NULL;
+  user_comparator_ = NULL;
+  version_ = NULL;
 }
 
 CompactedDBImpl::~CompactedDBImpl() {
@@ -145,7 +151,23 @@ Status CompactedDBImpl::Init(const Options& options) {
 Status CompactedDBImpl::Open(const Options& options,
                              const std::string& dbname, DB** dbptr) {
   *dbptr = nullptr;
-
+#ifndef _MSC_VER
+  const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terarkdb_localTempDir) {
+    if (TerarkZipIsBlackListCF) {
+      if (!TerarkZipIsBlackListCF(kDefaultColumnFamilyName)) {
+        const ColumnFamilyOptions& cf_options = options;
+        const DBOptions& db_options = options;
+        TerarkZipDBOptionsFromEnv(const_cast<          DBOptions&>(db_options));
+        TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf_options));
+      }
+    } else {
+      return Status::InvalidArgument(
+          "env TerarkZipTable_localTempDir is defined, "
+          "but dynamic libterark-zip-rocksdb is not loaded");
+    }
+  }
+#endif
   if (options.max_open_files != -1) {
     return Status::InvalidArgument("require max_open_files = -1");
   }

@@ -36,6 +36,9 @@
 #include "util/stderr_logger.h"
 #include "util/string_util.h"
 #include "utilities/ttl/db_ttl_impl.h"
+#ifndef _MSC_VER
+# include <table/terark_zip_weak_function.h>
+#endif
 
 #include <cstdlib>
 #include <ctime>
@@ -440,6 +443,7 @@ std::vector<std::string> LDBCommand::BuildCmdLineOptions(
                                   ARG_FILE_SIZE,
                                   ARG_FIX_PREFIX_LEN,
                                   ARG_TRY_LOAD_OPTIONS,
+                                  "use_terarkdb",
                                   ARG_CF_NAME};
   ret.insert(ret.end(), options.begin(), options.end());
   return ret;
@@ -617,7 +621,29 @@ Options LDBCommand::PrepareOptionsForOpenDB() {
           LDBCommandExecuteResult::Failed(ARG_FIX_PREFIX_LEN + " must be > 0.");
     }
   }
-
+#ifndef _MSC_VER
+  int use_terarkdb = 0;
+  if (ParseIntOption(option_map_, "use_terarkdb", use_terarkdb, exec_state_)) {
+    if (use_terarkdb >= 0) {
+      if (use_terarkdb) {
+        if (TerarkZipAutoConfigForOnlineDB) {
+          TerarkZipTableOptions tzo;
+          TerarkZipAutoConfigForOnlineDB(tzo, opt, opt);
+          opt.table_factory.reset(NewTerarkZipTableFactory(tzo, NULL));
+        }
+        else {
+          exec_state_ =
+              LDBCommandExecuteResult::Failed(
+          "when use_terarkdb, must link with libterark-zip-rocksdb-r, or by LD_PRELOAD");
+        }
+      }
+    }
+    else {
+      exec_state_ =
+          LDBCommandExecuteResult::Failed("use_terarkdb must be >= 0");
+    }
+  }
+#endif
   return opt;
 }
 

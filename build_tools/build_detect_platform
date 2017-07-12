@@ -220,6 +220,9 @@ EOF
         COMMON_FLAGS="$COMMON_FLAGS -DSNAPPY"
         PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lsnappy"
         JAVA_LDFLAGS="$JAVA_LDFLAGS -lsnappy"
+    else
+        echo snappy is required but can not detected 1>&2
+        exit 1
     fi
 
     # Test whether gflags library is installed
@@ -243,6 +246,9 @@ EOF
       if [ "$?" = 0 ]; then
           COMMON_FLAGS="$COMMON_FLAGS -DGFLAGS=google"
           PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lgflags"
+      else
+          echo gflags is required but can not detected 1>&2
+          exit 1
       fi
     fi
 

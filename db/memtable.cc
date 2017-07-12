@@ -19,6 +19,7 @@
 #include "db/merge_context.h"
 #include "db/merge_helper.h"
 #include "db/pinned_iterators_manager.h"
+#include "db/value_offset_length.h"
 #include "monitoring/perf_context_imp.h"
 #include "monitoring/statistics.h"
 #include "port/port.h"
@@ -253,6 +254,8 @@ class MemTableIterator : public InternalIterator {
     } else {
       iter_ = mem.table_->GetIterator(arena);
     }
+    value_data_offset = read_options.value_data_offset;
+    value_data_length = read_options.value_data_length;
   }
 
   ~MemTableIterator() {
@@ -343,7 +346,9 @@ class MemTableIterator : public InternalIterator {
   virtual Slice value() const override {
     assert(Valid());
     Slice key_slice = GetLengthPrefixedSlice(iter_->key());
-    return GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
+    Slice val_slice = GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
+    AdjustValueByOffsetLength(&val_slice, value_data_offset, value_data_length);
+    return val_slice;
   }
 
   virtual Status status() const override { return Status::OK(); }
@@ -366,6 +371,8 @@ class MemTableIterator : public InternalIterator {
   bool valid_;
   bool arena_mode_;
   bool value_pinned_;
+  uint32_t value_data_offset;
+  uint32_t value_data_length;
 
   // No copying allowed
   MemTableIterator(const MemTableIterator&);
@@ -534,6 +541,8 @@ struct Saver {
   Statistics* statistics;
   bool inplace_update_support;
   Env* env_;
+  uint32_t value_data_offset;
+  uint32_t value_data_length;
 };
 }  // namespace
 
@@ -573,6 +582,7 @@ static bool SaveValue(void* arg, const char* entry) {
           s->mem->GetLock(s->key->user_key())->ReadLock();
         }
         Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
+        AdjustValueByOffsetLength(&v, *s);
         *(s->status) = Status::OK();
         if (*(s->merge_in_progress)) {
           *(s->status) = MergeHelper::TimedFullMerge(
@@ -614,6 +624,7 @@ static bool SaveValue(void* arg, const char* entry) {
           return false;
         }
         Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
+        AdjustValueByOffsetLength(&v, *s);
         *(s->merge_in_progress) = true;
         merge_context->PushOperand(
             v, s->inplace_update_support == false /* operand_pinned */);
@@ -677,6 +688,8 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s,
     saver.inplace_update_support = moptions_.inplace_update_support;
     saver.statistics = moptions_.statistics;
     saver.env_ = env_;
+    saver.value_data_offset = read_opts.value_data_offset;
+    saver.value_data_length = read_opts.value_data_length;
     table_->Get(key, &saver, SaveValue);
 
     *seq = saver.seq;

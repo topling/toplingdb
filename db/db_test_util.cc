@@ -9,6 +9,7 @@
 
 #include "db/db_test_util.h"
 #include "db/forward_iterator.h"
+#include <table/terark_zip_weak_function.h>
 
 namespace rocksdb {
 
@@ -255,6 +256,14 @@ Options DBTestBase::CurrentOptions(
   options.wal_recovery_mode = WALRecoveryMode::kTolerateCorruptedTailRecords;
   options.compaction_pri = CompactionPri::kByCompensatedSize;
 
+  if (NewTerarkZipTableFactory) {
+    TerarkZipTableOptions tzto;
+    std::shared_ptr<TableFactory> terark_zip_table_factory(NewTerarkZipTableFactory(tzto,
+        NewBlockBasedTableFactory(BlockBasedTableOptions())));
+    options.allow_mmap_reads = true;
+    options.table_factory = terark_zip_table_factory;
+  }
+
   return CurrentOptions(options, options_override);
 }
 
@@ -264,7 +273,7 @@ Options DBTestBase::CurrentOptions(
   // this redundant copy is to minimize code change w/o having lint error.
   Options options = defaultOptions;
   BlockBasedTableOptions table_options;
-  bool set_block_based_table_factory = true;
+  bool set_block_based_table_factory = !options.table_factory;
 #if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) &&  \
   !defined(OS_AIX)
   rocksdb::SyncPoint::GetInstance()->ClearCallBack(

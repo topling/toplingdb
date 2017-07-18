@@ -41,6 +41,7 @@ function make_lib() {
 	rm -f ${LIBDIR}/${libName}.*
 	cp -a ${libName}.a ${xdir}/${libName}.*  /opt/${COMPILER}/lib64
 	cp -a ${libName}.a ${xdir}/${libName}.*  ${LIBDIR}
+	cp -a /usr/lib64/libzstd.so*             ${LIBDIR}
 }
 
 OLD_LD_LIBRARY_PATH=$LD_LIBRARY_PATH

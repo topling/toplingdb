@@ -286,6 +286,7 @@ Status SstFileReader::SetTableOptionsByMagicNumber(
     return Status::InvalidArgument(error_msg_buffer);
 #endif
   }
+
   return Status::OK();
 }
 

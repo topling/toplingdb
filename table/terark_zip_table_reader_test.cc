@@ -10,11 +10,14 @@
 #include <functional>
 
 #include "db/db_test_util.h"
-#include <table/terark_zip_weak_function.h>
+#include <table/terark_zip_table.h>
 #include "port/port.h"
 #include "port/stack_trace.h"
 #include "rocksdb/iostats_context.h"
 #include "rocksdb/perf_context.h"
+
+
+std::string localTempDir = "/tmp";
 
 namespace rocksdb {
 
@@ -96,16 +99,21 @@ std::string get_value(size_t i)
   return get_key(i) + (str + (i % (strlen(str) - 1)));
 }
 
+Rdb_pk_comparator pk_c;
+Rdb_rev_comparator rev_c;
+
 TEST_F(TerarkZipReaderTest, BasicTest) {
 
-  auto run_test = [&](bool rev, size_t prefix) {
+  auto run_test = [&](bool rev, size_t count, size_t prefix, size_t blockUnits, size_t minValue) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
-    Rdb_pk_comparator pk_c;
-    Rdb_rev_comparator rev_c;
     tzto.disableSecondPassIter = true;
-    options.allow_mmap_reads = true;
     tzto.keyPrefixLen = prefix;
+    tzto.offsetArrayBlockUnits = (uint16_t)blockUnits;
+    tzto.minDictZipValueSize = minValue;
+    tzto.entropyAlgo = TerarkZipTableOptions::kFSE;
+    tzto.localTempDir = localTempDir;
+    options.allow_mmap_reads = true;
     if (rev) {
       options.comparator = &rev_c;
     }
@@ -119,8 +127,6 @@ TEST_F(TerarkZipReaderTest, BasicTest) {
     rocksdb::WriteOptions wo;
     rocksdb::FlushOptions fo;
     std::string value;
-
-    const size_t count = 1000;
 
     auto db = db_;
 
@@ -165,33 +171,199 @@ TEST_F(TerarkZipReaderTest, BasicTest) {
     }
     delete it;
   };
-  run_test(false, 0);
-  run_test(true , 0);
-  run_test(false, 1);
-  run_test(true , 1);
-  run_test(false, 2);
-  run_test(true , 2);
-  run_test(false, 3);
-  run_test(true , 3);
-}
-
-TEST_F(TerarkZipReaderTest, IterTest) {
-
-  std::initializer_list<const char*> data_list, test_list;
-  auto run_test = [&](bool rev, size_t prefix) {
+  auto hard_test = [&](bool rev, size_t count, size_t prefix) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
-    Rdb_pk_comparator pk_c;
-    Rdb_rev_comparator rev_c;
     tzto.disableSecondPassIter = true;
-    options.allow_mmap_reads = true;
-    options.compaction_style = kCompactionStyleNone;
     tzto.keyPrefixLen = prefix;
+    tzto.localTempDir = localTempDir;
+    tzto.minDictZipValueSize = 0;
+    options.allow_mmap_reads = true;
     if (rev) {
       options.comparator = &rev_c;
     }
     else {
       options.comparator = &pk_c;
+    }
+    options.table_factory.reset(NewTerarkZipTableFactory(tzto,
+      NewBlockBasedTableFactory(BlockBasedTableOptions())));
+    DestroyAndReopen(options);
+    rocksdb::ReadOptions ro;
+    rocksdb::WriteOptions wo;
+    rocksdb::FlushOptions fo;
+    std::string value;
+
+    auto db = db_;
+    std::mt19937_64 mt;
+    std::uniform_int_distribution<size_t> uid(16, 64);
+    count = (count + 7) / 8;
+    for (size_t sst = 0; sst < 8; ++sst)
+    {
+      for (size_t i = sst, e = i + 8 * count; i < e; i += 8)
+      {
+        std::string value;
+        value.resize(uid(mt) * 8);
+        for (size_t l = 0; l < value.size(); l += 8)
+        {
+          *(uint64_t *)(&value.front() + l) = mt();
+        }
+        ASSERT_OK(db->Put(wo, get_key(i), value));
+      }
+      ASSERT_OK(db->Flush(fo));
+    }
+    ASSERT_OK(db->CompactRange(rocksdb::CompactRangeOptions(), nullptr, nullptr));
+  };
+  auto zero_test = [&](bool rev, size_t count, size_t prefix) {
+    Options options = CurrentOptions();
+    TerarkZipTableOptions tzto;
+    tzto.disableSecondPassIter = true;
+    tzto.keyPrefixLen = prefix;
+    tzto.entropyAlgo = TerarkZipTableOptions::kFSE;
+    tzto.localTempDir = localTempDir;
+    options.allow_mmap_reads = true;
+    if (rev) {
+      options.comparator = &rev_c;
+    }
+    else {
+      options.comparator = &pk_c;
+    }
+    options.table_factory.reset(NewTerarkZipTableFactory(tzto,
+      NewBlockBasedTableFactory(BlockBasedTableOptions())));
+    options.disable_auto_compactions = true;
+    DestroyAndReopen(options);
+    rocksdb::ReadOptions ro;
+    rocksdb::WriteOptions wo;
+    rocksdb::FlushOptions fo;
+    std::string value;
+
+    auto db = db_;
+
+    count = (count + 3) / 4;
+    for (size_t sst = 0; sst < 2; ++sst)
+    {
+      for (size_t i = sst * count, e = i + count; i < e; ++i)
+      {
+        ASSERT_OK(db->Put(wo, get_key(i), ""));
+      }
+      ASSERT_OK(db->Flush(fo));
+    }
+    ASSERT_OK(db->Put(wo, get_key(count * 2), ""));
+    ASSERT_OK(db->Flush(fo));
+    rocksdb::ColumnFamilyMetaData meta;
+    db->GetColumnFamilyMetaData(&meta);
+    ASSERT_EQ(meta.levels[0].files.size(), 3);
+    db->CompactFiles(CompactionOptions(), {
+      meta.levels[0].files[0].name,
+      meta.levels[0].files[1].name,
+      meta.levels[0].files[2].name,
+    }, 1);
+    ASSERT_OK(db->Delete(wo, get_key(count * 2)));
+    ASSERT_OK(db->Flush(fo));
+    db->GetColumnFamilyMetaData(&meta);
+    ASSERT_EQ(meta.levels[0].files.size(), 1);
+    ASSERT_EQ(meta.levels[1].files.size(), 1);
+    db->CompactFiles(CompactionOptions(), {
+      meta.levels[0].files[0].name,
+      meta.levels[1].files[0].name,
+    }, 2);
+
+    count *= 2;
+    for (size_t i = 0; i < count; ++i)
+    {
+      ASSERT_OK(db->Get(ro, get_key(i), &value));
+      ASSERT_EQ(value, "");
+    }
+    auto it = db->NewIterator(ro);
+    auto forward = [&](size_t i, int d, size_t e) {
+      for (it->SeekToFirst(); it->Valid(); it->Next())
+      {
+        ASSERT_EQ(it->key().ToString(), get_key(i));
+        ASSERT_EQ(it->value().ToString(), "");
+        i += d;
+      }
+      ASSERT_EQ(i, e);
+    };
+    auto backward = [&](size_t i, int d, size_t e) {
+      for (it->SeekToLast(); it->Valid(); it->Prev())
+      {
+        ASSERT_EQ(it->key().ToString(), get_key(i));
+        ASSERT_EQ(it->value().ToString(), "");
+        i += d;
+      }
+      ASSERT_EQ(i, e);
+    };
+    if (rev) {
+      forward(count - 1, -1, -1);
+      backward(0, 1, count);
+    }
+    else {
+      forward(0, 1, count);
+      backward(count - 1, -1, -1);
+    }
+    delete it;
+  };
+  run_test(false, 1000, 0,   0,    0);
+  run_test(true , 1000, 0,   0,    0);
+  run_test(false, 1000, 1,   0,    0);
+  run_test(true , 1000, 1,   0,    0);
+  run_test(false, 1000, 2,   0,    0);
+  run_test(true , 1000, 2,   0,    0);
+  run_test(false, 1000, 3,   0,    0);
+  run_test(true , 1000, 3,   0,    0);
+  run_test(false,  100, 0,  64,    0);
+  run_test(true ,  100, 0,  64,    0);
+  run_test(false,  100, 3,  64,    0);
+  run_test(true ,  100, 3,  64,    0);
+  run_test(false,  100, 0, 128,    0);
+  run_test(true ,  100, 0, 128,    0);
+  run_test(false,  100, 3, 128,    0);
+  run_test(true ,  100, 3, 128,    0);
+  run_test(false,  100, 4, 128,    0);
+  run_test(true ,  100, 4, 128,    0);
+  run_test(false,  100, 0,  64, 1024);
+  run_test(true ,  100, 0,  64, 1024);
+  run_test(false,  100, 3,  64, 1024);
+  run_test(true ,  100, 3,  64, 1024);
+  run_test(false,  100, 0, 128, 1024);
+  run_test(true ,  100, 0, 128, 1024);
+  run_test(false,  100, 3, 128, 1024);
+  run_test(true ,  100, 3, 128, 1024);
+  run_test(false,  100, 4, 128, 1024);
+  run_test(true ,  100, 4, 128, 1024);
+
+  hard_test(false, 1000, 0);
+  hard_test(true , 1000, 0);
+  hard_test(false, 1000, 1);
+  hard_test(true , 1000, 1);
+  hard_test(false, 1000, 2);
+  hard_test(true , 1000, 2);
+
+  zero_test(false, 1000, 0);
+  zero_test(true , 1000, 0);
+  zero_test(false, 1000, 1);
+  zero_test(true , 1000, 1);
+  zero_test(false, 1000, 2);
+  zero_test(true , 1000, 2);
+}
+
+TEST_F(TerarkZipReaderTest, IterTest) {
+
+  std::initializer_list<const char*> data_list, test_list;
+  auto run_test_full = [&](bool rev, size_t prefix, size_t blockUnits, size_t minValue) {
+    Options options = CurrentOptions();
+    TerarkZipTableOptions tzto;
+    tzto.disableSecondPassIter = true;
+    tzto.keyPrefixLen = prefix;
+    tzto.offsetArrayBlockUnits = (uint16_t)blockUnits;
+    tzto.minDictZipValueSize = minValue;
+    tzto.entropyAlgo = TerarkZipTableOptions::kFSE;
+    tzto.localTempDir = localTempDir;
+    options.allow_mmap_reads = true;
+    if (rev) {
+        options.comparator = &rev_c;
+    }
+    else {
+        options.comparator = &pk_c;
     }
     options.table_factory.reset(NewTerarkZipTableFactory(tzto,
       NewBlockBasedTableFactory(BlockBasedTableOptions())));
@@ -218,7 +390,6 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     comp.greater = rev;
     std::set<std::string, comp_t> key_set(comp);
     auto db = db_;
-    int c = 0;
     auto put = [&](std::string&& k, const std::string& s)
     {
       ASSERT_OK(db->Put(wo, k, k + s));
@@ -311,7 +482,9 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     delete i2;
     delete i3;
   };
-
+  auto run_test = [run_test_full](bool rev, size_t prefix) {
+      run_test_full(rev, prefix, 0, 1024);
+  };
 
   data_list =
   {
@@ -334,6 +507,7 @@ TEST_F(TerarkZipReaderTest, IterTest) {
   };
   test_list =
   {
+    "",
     "#",
     "0",
     "0000",
@@ -375,6 +549,7 @@ TEST_F(TerarkZipReaderTest, IterTest) {
   };
   test_list =
   {
+    "",
     "#",
     "0",
     "0000",
@@ -432,6 +607,7 @@ TEST_F(TerarkZipReaderTest, IterTest) {
   };
   test_list =
   {
+    "",
     "#",
     "####",
     "#####",
@@ -496,6 +672,61 @@ TEST_F(TerarkZipReaderTest, IterTest) {
   run_test(true , 3);
   run_test(false, 4);
   run_test(true , 4);
+
+  data_list =
+  {
+    "0000AAAAXXXX",
+    "1111BBBBYYYY",
+    "2222CCCCZZZZ",
+  };
+  test_list =
+  {
+    "",
+    "0",
+    "2222",
+  };
+  run_test_full(false, 0,  0,    0);
+  run_test_full(true , 0,  0,    0);
+  run_test_full(false, 0, 64,    0);
+  run_test_full(true , 0, 64,    0);
+  run_test_full(false, 0,  0, 1024);
+  run_test_full(true , 0,  0, 1024);
+  run_test_full(false, 0, 64, 1024);
+  run_test_full(true , 0, 64, 1024);
+  run_test_full(false, 4,  0,    0);
+  run_test_full(true , 4,  0,    0);
+  run_test_full(false, 4, 64,    0);
+  run_test_full(true , 4, 64,    0);
+  run_test_full(false, 4,  0, 1024);
+  run_test_full(true , 4,  0, 1024);
+  run_test_full(false, 4, 64, 1024);
+  run_test_full(true , 4, 64, 1024);
+  data_list =
+  {
+    "0000AAAAWWWW",
+    "0000AAAAXXX",
+    "0000AAAAYY",
+    "0000AAAAZ",
+    "1111BBBB",
+    "1111CCC",
+    "1111DD",
+    "1111E",
+    "2222",
+  };
+  test_list =
+  {
+    "",
+    "3",
+    "0000AAAAZZZZ",
+  };
+  run_test_full(false, 0,  0, 1024);
+  run_test_full(true , 0,  0, 1024);
+  run_test_full(false, 0, 64, 1024);
+  run_test_full(true , 0, 64, 1024);
+  run_test_full(false, 4,  0, 1024);
+  run_test_full(true , 4,  0, 1024);
+  run_test_full(false, 4, 64, 1024);
+  run_test_full(true , 4, 64, 1024);
 }
 
 }  // namespace rocksdb
@@ -503,5 +734,8 @@ TEST_F(TerarkZipReaderTest, IterTest) {
 int main(int argc, char** argv) {
   rocksdb::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  int ret = RUN_ALL_TESTS();
+  fprintf(stderr, "exit in 5 seconds\n");
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+  return ret;
 }

@@ -43,6 +43,7 @@ void LDBCommandRunner::PrintHelp(const char* exec_name) {
              " : DB supports ttl and value is internally timestamp-suffixed\n");
   ret.append("  --" + LDBCommand::ARG_BLOOM_BITS + "=<int,e.g.:14>\n");
   ret.append("  --" + LDBCommand::ARG_FIX_PREFIX_LEN + "=<int,e.g.:14>\n");
+  ret.append("  --use_terarkdb\n");
   ret.append("  --" + LDBCommand::ARG_COMPRESSION_TYPE +
              "=<no|snappy|zlib|bzip2|lz4|lz4hc|xpress|zstd>\n");
   ret.append("  --" + LDBCommand::ARG_COMPRESSION_MAX_DICT_BYTES +

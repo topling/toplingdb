@@ -62,7 +62,7 @@ void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name) {
   };
   int line_size = snprintf(
       buf + written_size, len - written_size,
-      "Level    %s   %s %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
+      "Level     %s     %s %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
       // Note that we skip COMPACTED_FILES and merge it with Files column
       hdr(LevelStatType::NUM_FILES), hdr(LevelStatType::SIZE_MB),
       hdr(LevelStatType::SCORE), hdr(LevelStatType::READ_GB),
@@ -117,7 +117,7 @@ void PrepareLevelStats(std::map<LevelStatType, double>* level_stats,
 void PrintLevelStats(char* buf, size_t len, const std::string& name,
                      const std::map<LevelStatType, double>& stat_value) {
   snprintf(buf, len,
-           "%4s %6d/%-3d %8.2f %5.1f " /*  Level, Files, Size(MB), Score */
+           "%4s %6d/%-4d %10.2f %5.1f "/*  Level, Files, Size(MB), Score */
            "%8.1f "                    /*  Read(GB) */
            "%7.1f "                    /*  Rn(GB) */
            "%8.1f "                    /*  Rnp1(GB) */
@@ -998,8 +998,8 @@ void InternalStats::DumpCFStats(std::string* value) {
       interval_flush_ingest + interval_add_file_inget + 1;
   CompactionStats interval_stats(compaction_stats_sum);
   interval_stats.Subtract(cf_stats_snapshot_.comp_stats);
-  double w_amp =
-      interval_stats.bytes_written / static_cast<double>(interval_ingest);
+  double w_amp = 1.0; // following value is garbage to log, use dummy 1.0
+//      interval_stats.bytes_written / static_cast<double>(interval_ingest);
   PrintLevelStats(buf, sizeof(buf), "Int", 0, 0, 0, 0, w_amp, interval_stats);
   value->append(buf);
 

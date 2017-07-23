@@ -46,7 +46,7 @@ struct TableFileCreationBriefInfo {
 struct TableFileCreationInfo : public TableFileCreationBriefInfo {
   TableFileCreationInfo() : file_size(uint64_t(-1)) {}
   explicit TableFileCreationInfo(TableProperties&& prop)
-      : table_properties(prop), file_size(uint64_t(-1)) {}
+      : file_size(uint64_t(-1)), table_properties(prop) {}
   // the size of the file.
   uint64_t file_size;
   // Detailed properties of the created file.
@@ -117,14 +117,7 @@ struct FlushJobInfo {
 
 struct CompactionJobInfo {
 private:
-  void init() {
-    thread_id = uint64_t(-1);
-    job_id = -1;
-    base_input_level = INT_MIN;
-    output_level = INT_MIN;
-    compaction_reason = CompactionReason::kUnknown;
-    compression = CompressionType::kDisableCompressionOption;
-  }
+  void init();
 public:
   CompactionJobInfo() {
     init();

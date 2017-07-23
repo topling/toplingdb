@@ -994,8 +994,8 @@ void InternalStats::DumpCFStats(std::string* value) {
       flush_ingest - cf_stats_snapshot_.ingest_bytes_flush;
   uint64_t interval_add_file_inget =
       add_file_ingest - cf_stats_snapshot_.ingest_bytes_addfile;
-  uint64_t interval_ingest =
-      interval_flush_ingest + interval_add_file_inget + 1;
+//  uint64_t interval_ingest =
+//      interval_flush_ingest + interval_add_file_inget + 1;
   CompactionStats interval_stats(compaction_stats_sum);
   interval_stats.Subtract(cf_stats_snapshot_.comp_stats);
   double w_amp = 1.0; // following value is garbage to log, use dummy 1.0

@@ -21,10 +21,6 @@ std::string localTempDir = "/tmp";
 
 namespace rocksdb {
 
-class TerarkZipReaderTest : public DBTestBase {
-public:
-  TerarkZipReaderTest() : DBTestBase("/terark_zip_reader_test") {}
-};
 
 class Rdb_pk_comparator : public Comparator {
 public:
@@ -102,9 +98,11 @@ std::string get_value(size_t i)
 Rdb_pk_comparator pk_c;
 Rdb_rev_comparator rev_c;
 
-TEST_F(TerarkZipReaderTest, BasicTest) {
+class TerarkZipReaderTest : public DBTestBase {
+public:
+  TerarkZipReaderTest() : DBTestBase("/terark_zip_reader_test") {}
 
-  auto run_test = [&](bool rev, size_t count, size_t prefix, size_t blockUnits, size_t minValue) {
+  void BasicTest(bool rev, size_t count, size_t prefix, size_t blockUnits, size_t minValue) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
     tzto.disableSecondPassIter = true;
@@ -170,14 +168,15 @@ TEST_F(TerarkZipReaderTest, BasicTest) {
       backward(count - 1, -1, -1);
     }
     delete it;
-  };
-  auto hard_test = [&](bool rev, size_t count, size_t prefix) {
+  }
+  void HardZipTest(bool rev, size_t count, size_t prefix) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
     tzto.disableSecondPassIter = true;
     tzto.keyPrefixLen = prefix;
     tzto.localTempDir = localTempDir;
     tzto.minDictZipValueSize = 0;
+    tzto.singleIndexMemLimit = 512;
     options.allow_mmap_reads = true;
     if (rev) {
       options.comparator = &rev_c;
@@ -194,7 +193,9 @@ TEST_F(TerarkZipReaderTest, BasicTest) {
     std::string value;
 
     auto db = db_;
+    auto seed = *(uint64_t*)"__Terark";
     std::mt19937_64 mt;
+    mt.seed(seed);
     std::uniform_int_distribution<size_t> uid(16, 64);
     count = (count + 7) / 8;
     for (size_t sst = 0; sst < 8; ++sst)
@@ -212,8 +213,23 @@ TEST_F(TerarkZipReaderTest, BasicTest) {
       ASSERT_OK(db->Flush(fo));
     }
     ASSERT_OK(db->CompactRange(rocksdb::CompactRangeOptions(), nullptr, nullptr));
-  };
-  auto zero_test = [&](bool rev, size_t count, size_t prefix) {
+    mt.seed(seed);
+    for (size_t sst = 0; sst < 8; ++sst)
+    {
+      for (size_t i = sst, e = i + 8 * count; i < e; i += 8)
+      {
+        std::string value, value_get;
+        value.resize(uid(mt) * 8);
+        for (size_t l = 0; l < value.size(); l += 8)
+        {
+          *(uint64_t *)(&value.front() + l) = mt();
+        }
+        ASSERT_OK(db->Get(ro, get_key(i), &value_get));
+        ASSERT_EQ(value, value_get);
+      }
+    }
+  }
+  void ZeroStoreTest(bool rev, size_t count, size_t prefix) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
     tzto.disableSecondPassIter = true;
@@ -253,9 +269,9 @@ TEST_F(TerarkZipReaderTest, BasicTest) {
     db->GetColumnFamilyMetaData(&meta);
     ASSERT_EQ(meta.levels[0].files.size(), 3);
     db->CompactFiles(CompactionOptions(), {
-      meta.levels[0].files[0].name,
-      meta.levels[0].files[1].name,
-      meta.levels[0].files[2].name,
+        meta.levels[0].files[0].name,
+        meta.levels[0].files[1].name,
+        meta.levels[0].files[2].name,
     }, 1);
     ASSERT_OK(db->Delete(wo, get_key(count * 2)));
     ASSERT_OK(db->Flush(fo));
@@ -263,8 +279,8 @@ TEST_F(TerarkZipReaderTest, BasicTest) {
     ASSERT_EQ(meta.levels[0].files.size(), 1);
     ASSERT_EQ(meta.levels[1].files.size(), 1);
     db->CompactFiles(CompactionOptions(), {
-      meta.levels[0].files[0].name,
-      meta.levels[1].files[0].name,
+        meta.levels[0].files[0].name,
+        meta.levels[1].files[0].name,
     }, 2);
 
     count *= 2;
@@ -301,69 +317,25 @@ TEST_F(TerarkZipReaderTest, BasicTest) {
       backward(count - 1, -1, -1);
     }
     delete it;
-  };
-  run_test(false, 1000, 0,   0,    0);
-  run_test(true , 1000, 0,   0,    0);
-  run_test(false, 1000, 1,   0,    0);
-  run_test(true , 1000, 1,   0,    0);
-  run_test(false, 1000, 2,   0,    0);
-  run_test(true , 1000, 2,   0,    0);
-  run_test(false, 1000, 3,   0,    0);
-  run_test(true , 1000, 3,   0,    0);
-  run_test(false,  100, 0,  64,    0);
-  run_test(true ,  100, 0,  64,    0);
-  run_test(false,  100, 3,  64,    0);
-  run_test(true ,  100, 3,  64,    0);
-  run_test(false,  100, 0, 128,    0);
-  run_test(true ,  100, 0, 128,    0);
-  run_test(false,  100, 3, 128,    0);
-  run_test(true ,  100, 3, 128,    0);
-  run_test(false,  100, 4, 128,    0);
-  run_test(true ,  100, 4, 128,    0);
-  run_test(false,  100, 0,  64, 1024);
-  run_test(true ,  100, 0,  64, 1024);
-  run_test(false,  100, 3,  64, 1024);
-  run_test(true ,  100, 3,  64, 1024);
-  run_test(false,  100, 0, 128, 1024);
-  run_test(true ,  100, 0, 128, 1024);
-  run_test(false,  100, 3, 128, 1024);
-  run_test(true ,  100, 3, 128, 1024);
-  run_test(false,  100, 4, 128, 1024);
-  run_test(true ,  100, 4, 128, 1024);
-
-  hard_test(false, 1000, 0);
-  hard_test(true , 1000, 0);
-  hard_test(false, 1000, 1);
-  hard_test(true , 1000, 1);
-  hard_test(false, 1000, 2);
-  hard_test(true , 1000, 2);
-
-  zero_test(false, 1000, 0);
-  zero_test(true , 1000, 0);
-  zero_test(false, 1000, 1);
-  zero_test(true , 1000, 1);
-  zero_test(false, 1000, 2);
-  zero_test(true , 1000, 2);
-}
-
-TEST_F(TerarkZipReaderTest, IterTest) {
-
-  std::initializer_list<const char*> data_list, test_list;
-  auto run_test_full = [&](bool rev, size_t prefix, size_t blockUnits, size_t minValue) {
+  }
+  void IterTest(std::initializer_list<const char*> data_list,
+    std::initializer_list<const char*> test_list,
+    bool rev, size_t prefix, size_t blockUnits, size_t minValue, size_t indexMem = 2ULL << 30) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
     tzto.disableSecondPassIter = true;
     tzto.keyPrefixLen = prefix;
     tzto.offsetArrayBlockUnits = (uint16_t)blockUnits;
     tzto.minDictZipValueSize = minValue;
+    tzto.singleIndexMemLimit = indexMem;
     tzto.entropyAlgo = TerarkZipTableOptions::kFSE;
     tzto.localTempDir = localTempDir;
     options.allow_mmap_reads = true;
     if (rev) {
-        options.comparator = &rev_c;
+      options.comparator = &rev_c;
     }
     else {
-        options.comparator = &pk_c;
+      options.comparator = &pk_c;
     }
     options.table_factory.reset(NewTerarkZipTableFactory(tzto,
       NewBlockBasedTableFactory(BlockBasedTableOptions())));
@@ -481,31 +453,75 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     delete i1;
     delete i2;
     delete i3;
-  };
-  auto run_test = [run_test_full](bool rev, size_t prefix) {
-      run_test_full(rev, prefix, 0, 1024);
-  };
+  }
+};
 
-  data_list =
+
+TEST_F(TerarkZipReaderTest, BasicTest                        ) { BasicTest(false, 1000, 0,   0,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestRev                     ) { BasicTest(true , 1000, 0,   0,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMulti                   ) { BasicTest(false, 1000, 1,   0,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiRev                ) { BasicTest(true , 1000, 1,   0,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiUint               ) { BasicTest(false, 1000, 2,   0,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiUintRev            ) { BasicTest(true , 1000, 2,   0,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiMany               ) { BasicTest(false, 1000, 3,   0,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiManyRev            ) { BasicTest(true , 1000, 3,   0,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestDictZipZO64             ) { BasicTest(false,  100, 0,  64,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestDictZipZO64Rev          ) { BasicTest(true ,  100, 0,  64,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiDictZipZO64        ) { BasicTest(false,  100, 3,  64,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiDictZipZO64Rev     ) { BasicTest(true ,  100, 3,  64,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestDictZipZO128            ) { BasicTest(false,  100, 0, 128,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestDictZipZO128Rev         ) { BasicTest(true ,  100, 0, 128,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiDictZipZO128       ) { BasicTest(false,  100, 3, 128,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiDictZipZO128Rev    ) { BasicTest(true ,  100, 3, 128,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiManyDictZipZO128   ) { BasicTest(false,  100, 4, 128,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiManyDictZipZO128Rev) { BasicTest(true ,  100, 4, 128,    0); }
+TEST_F(TerarkZipReaderTest, BasicTestZipOffset64             ) { BasicTest(false,  100, 0,  64, 1024); }
+TEST_F(TerarkZipReaderTest, BasicTestZipOffset64Rev          ) { BasicTest(true ,  100, 0,  64, 1024); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiZipOffset64        ) { BasicTest(false,  100, 3,  64, 1024); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiZipOffset64Rev     ) { BasicTest(true ,  100, 3,  64, 1024); }
+TEST_F(TerarkZipReaderTest, BasicTestZipOffset128            ) { BasicTest(false,  100, 0, 128, 1024); }
+TEST_F(TerarkZipReaderTest, BasicTestZipOffset128Rev         ) { BasicTest(true ,  100, 0, 128, 1024); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiZipOffset128       ) { BasicTest(false,  100, 3, 128, 1024); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiZipOffset128Rev    ) { BasicTest(true ,  100, 3, 128, 1024); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiManyZipOffset128   ) { BasicTest(false,  100, 4, 128, 1024); }
+TEST_F(TerarkZipReaderTest, BasicTestMultiManyZipOffset128Rev) { BasicTest(true ,  100, 4, 128, 1024); }
+
+
+TEST_F(TerarkZipReaderTest, HardZipTest            ) { HardZipTest(false, 1000, 0); }
+TEST_F(TerarkZipReaderTest, HardZipTestRev         ) { HardZipTest(true , 1000, 0); }
+TEST_F(TerarkZipReaderTest, HardZipTestMulti       ) { HardZipTest(false, 1000, 1); }
+TEST_F(TerarkZipReaderTest, HardZipTestMultiRev    ) { HardZipTest(true , 1000, 1); }
+TEST_F(TerarkZipReaderTest, HardZipTestMultiMany   ) { HardZipTest(false, 1000, 2); }
+TEST_F(TerarkZipReaderTest, HardZipTestMultiManyRev) { HardZipTest(true , 1000, 2); }
+
+TEST_F(TerarkZipReaderTest, ZeroStoreTest            ) { ZeroStoreTest(false, 1000, 0); }
+TEST_F(TerarkZipReaderTest, ZeroStoreTestRev         ) { ZeroStoreTest(true , 1000, 0); }
+TEST_F(TerarkZipReaderTest, ZeroStoreTestMulti       ) { ZeroStoreTest(false, 1000, 1); }
+TEST_F(TerarkZipReaderTest, ZeroStoreTestMultiRev    ) { ZeroStoreTest(true , 1000, 1); }
+TEST_F(TerarkZipReaderTest, ZeroStoreTestMultiMany   ) { ZeroStoreTest(false, 1000, 2); }
+TEST_F(TerarkZipReaderTest, ZeroStoreTestMultiManyRev) { ZeroStoreTest(true , 1000, 2); }
+
+
+TEST_F(TerarkZipReaderTest, SingleRecordTest) {
+  auto data_list =
   {
     "0000AAAAXXXX",
   };
-  test_list =
-  {
-  };
-  run_test(false, 0);
-  run_test(true , 0);
-  run_test(false, 4);
-  run_test(true , 4);
+  IterTest(data_list, {}, false, 0, 0, 1024);
+  IterTest(data_list, {}, true , 0, 0, 1024);
+  IterTest(data_list, {}, false, 4, 0, 1024);
+  IterTest(data_list, {}, true , 4, 0, 1024);
+}
 
 
-  data_list =
+TEST_F(TerarkZipReaderTest, UIntIteratorTest) {
+  auto data_list =
   {
     "0000AAAAXXXX",
     "0000AAAAYYYY",
     "0000AAAAZZZZ",
   };
-  test_list =
+  auto test_list =
   {
     "",
     "#",
@@ -530,24 +546,26 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     "1111",
     "11111",
   };
-  run_test(false, 0);
-  run_test(true , 0);
-  run_test(false, 1);
-  run_test(true , 1);
-  run_test(false, 2);
-  run_test(true , 2);
-  run_test(false, 3);
-  run_test(true , 3);
-  run_test(false, 4);
-  run_test(true , 4);
+  IterTest(data_list, test_list, false, 0, 0, 1024);
+  IterTest(data_list, test_list, true , 0, 0, 1024);
+  IterTest(data_list, test_list, false, 1, 0, 1024);
+  IterTest(data_list, test_list, true , 1, 0, 1024);
+  IterTest(data_list, test_list, false, 2, 0, 1024);
+  IterTest(data_list, test_list, true , 2, 0, 1024);
+  IterTest(data_list, test_list, false, 3, 0, 1024);
+  IterTest(data_list, test_list, true , 3, 0, 1024);
+  IterTest(data_list, test_list, false, 4, 0, 1024);
+  IterTest(data_list, test_list, true , 4, 0, 1024);
+}
 
-  data_list =
+TEST_F(TerarkZipReaderTest, PrefixTest) {
+  auto data_list =
   {
     "0000AAAAXXXX",
     "1111BBBBYYYY",
     "2222CCCCZZZZ",
   };
-  test_list =
+  auto test_list =
   {
     "",
     "#",
@@ -572,24 +590,26 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     "1111",
     "11111",
   };
-  run_test(false, 0);
-  run_test(true , 0);
-  run_test(false, 1);
-  run_test(true , 1);
-  run_test(false, 2);
-  run_test(true , 2);
-  run_test(false, 3);
-  run_test(true , 3);
-  run_test(false, 4);
-  run_test(true , 4);
-  run_test(false, 7);
-  run_test(true , 7);
-  run_test(false, 8);
-  run_test(true,  8);
-  run_test(false, 9);
-  run_test(true,  9);
+  IterTest(data_list, test_list, false, 0, 0, 1024);
+  IterTest(data_list, test_list, true , 0, 0, 1024);
+  IterTest(data_list, test_list, false, 1, 0, 1024);
+  IterTest(data_list, test_list, true , 1, 0, 1024);
+  IterTest(data_list, test_list, false, 2, 0, 1024);
+  IterTest(data_list, test_list, true , 2, 0, 1024);
+  IterTest(data_list, test_list, false, 3, 0, 1024);
+  IterTest(data_list, test_list, true , 3, 0, 1024);
+  IterTest(data_list, test_list, false, 4, 0, 1024);
+  IterTest(data_list, test_list, true , 4, 0, 1024);
+  IterTest(data_list, test_list, false, 7, 0, 1024);
+  IterTest(data_list, test_list, true , 7, 0, 1024);
+  IterTest(data_list, test_list, false, 8, 0, 1024);
+  IterTest(data_list, test_list, true , 8, 0, 1024);
+  IterTest(data_list, test_list, false, 9, 0, 1024);
+  IterTest(data_list, test_list, true , 9, 0, 1024);
+}
 
-  data_list =
+TEST_F(TerarkZipReaderTest, PrefixMoreTest) {
+  auto data_list =
   {
     "####0000",
     "####0001",
@@ -605,7 +625,7 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     "BBBB",
     "CCCC",
   };
-  test_list =
+  auto test_list =
   {
     "",
     "#",
@@ -662,46 +682,61 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     "DDDD",
     "DDDDD",
   };
-  run_test(false, 0);
-  run_test(true , 0);
-  run_test(false, 1);
-  run_test(true , 1);
-  run_test(false, 2);
-  run_test(true , 2);
-  run_test(false, 3);
-  run_test(true , 3);
-  run_test(false, 4);
-  run_test(true , 4);
+  IterTest(data_list, test_list, false, 0, 0, 1024);
+  IterTest(data_list, test_list, true , 0, 0, 1024);
+  IterTest(data_list, test_list, false, 1, 0, 1024);
+  IterTest(data_list, test_list, true , 1, 0, 1024);
+  IterTest(data_list, test_list, false, 2, 0, 1024);
+  IterTest(data_list, test_list, true , 2, 0, 1024);
+  IterTest(data_list, test_list, false, 3, 0, 1024);
+  IterTest(data_list, test_list, true , 3, 0, 1024);
+  IterTest(data_list, test_list, false, 4, 0, 1024);
+  IterTest(data_list, test_list, true , 4, 0, 1024);
+  IterTest(data_list, test_list, false, 0, 0, 1024, 1);
+  IterTest(data_list, test_list, true , 0, 0, 1024, 1);
+  IterTest(data_list, test_list, false, 1, 0, 1024, 1);
+  IterTest(data_list, test_list, true , 1, 0, 1024, 1);
+  IterTest(data_list, test_list, false, 2, 0, 1024, 1);
+  IterTest(data_list, test_list, true , 2, 0, 1024, 1);
+  IterTest(data_list, test_list, false, 3, 0, 1024, 1);
+  IterTest(data_list, test_list, true , 3, 0, 1024, 1);
+  IterTest(data_list, test_list, false, 4, 0, 1024, 1);
+  IterTest(data_list, test_list, true , 4, 0, 1024, 1);
+}
 
-  data_list =
+TEST_F(TerarkZipReaderTest, StoreBuildTest) {
+  auto data_list =
   {
     "0000AAAAXXXX",
     "1111BBBBYYYY",
     "2222CCCCZZZZ",
   };
-  test_list =
+  auto test_list =
   {
     "",
     "0",
     "2222",
   };
-  run_test_full(false, 0,  0,    0);
-  run_test_full(true , 0,  0,    0);
-  run_test_full(false, 0, 64,    0);
-  run_test_full(true , 0, 64,    0);
-  run_test_full(false, 0,  0, 1024);
-  run_test_full(true , 0,  0, 1024);
-  run_test_full(false, 0, 64, 1024);
-  run_test_full(true , 0, 64, 1024);
-  run_test_full(false, 4,  0,    0);
-  run_test_full(true , 4,  0,    0);
-  run_test_full(false, 4, 64,    0);
-  run_test_full(true , 4, 64,    0);
-  run_test_full(false, 4,  0, 1024);
-  run_test_full(true , 4,  0, 1024);
-  run_test_full(false, 4, 64, 1024);
-  run_test_full(true , 4, 64, 1024);
-  data_list =
+  IterTest(data_list, test_list, false, 0,  0,    0);
+  IterTest(data_list, test_list, true , 0,  0,    0);
+  IterTest(data_list, test_list, false, 0, 64,    0);
+  IterTest(data_list, test_list, true , 0, 64,    0);
+  IterTest(data_list, test_list, false, 0,  0, 1024);
+  IterTest(data_list, test_list, true , 0,  0, 1024);
+  IterTest(data_list, test_list, false, 0, 64, 1024);
+  IterTest(data_list, test_list, true , 0, 64, 1024);
+  IterTest(data_list, test_list, false, 4,  0,    0);
+  IterTest(data_list, test_list, true , 4,  0,    0);
+  IterTest(data_list, test_list, false, 4, 64,    0);
+  IterTest(data_list, test_list, true , 4, 64,    0);
+  IterTest(data_list, test_list, false, 4,  0, 1024);
+  IterTest(data_list, test_list, true , 4,  0, 1024);
+  IterTest(data_list, test_list, false, 4, 64, 1024);
+  IterTest(data_list, test_list, true , 4, 64, 1024);
+}
+
+TEST_F(TerarkZipReaderTest, IndexBuildTest) {
+  auto data_list =
   {
     "0000AAAAWWWW",
     "0000AAAAXXX",
@@ -713,20 +748,28 @@ TEST_F(TerarkZipReaderTest, IterTest) {
     "1111E",
     "2222",
   };
-  test_list =
+  auto test_list =
   {
     "",
     "3",
     "0000AAAAZZZZ",
   };
-  run_test_full(false, 0,  0, 1024);
-  run_test_full(true , 0,  0, 1024);
-  run_test_full(false, 0, 64, 1024);
-  run_test_full(true , 0, 64, 1024);
-  run_test_full(false, 4,  0, 1024);
-  run_test_full(true , 4,  0, 1024);
-  run_test_full(false, 4, 64, 1024);
-  run_test_full(true , 4, 64, 1024);
+  IterTest(data_list, test_list, false, 0,  0, 1024);
+  IterTest(data_list, test_list, true , 0,  0, 1024);
+  IterTest(data_list, test_list, false, 0, 64, 1024);
+  IterTest(data_list, test_list, true , 0, 64, 1024);
+  IterTest(data_list, test_list, false, 4,  0, 1024);
+  IterTest(data_list, test_list, true , 4,  0, 1024);
+  IterTest(data_list, test_list, false, 4, 64, 1024);
+  IterTest(data_list, test_list, true , 4, 64, 1024);
+  IterTest(data_list, test_list, false, 0,  0, 1024, 1);
+  IterTest(data_list, test_list, true , 0,  0, 1024, 1);
+  IterTest(data_list, test_list, false, 0, 64, 1024, 1);
+  IterTest(data_list, test_list, true , 0, 64, 1024, 1);
+  IterTest(data_list, test_list, false, 4,  0, 1024, 1);
+  IterTest(data_list, test_list, true , 4,  0, 1024, 1);
+  IterTest(data_list, test_list, false, 4, 64, 1024, 1);
+  IterTest(data_list, test_list, true , 4, 64, 1024, 1);
 }
 
 }  // namespace rocksdb

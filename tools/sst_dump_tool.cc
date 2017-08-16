@@ -112,7 +112,7 @@ Status SstFileReader::GetTableReader(const std::string& file_path) {
       SetTableOptionsByMagicNumber(magic_number);
       soptions_ = EnvOptions(options_);
       options_.env->NewRandomAccessFile(file_path, &file, soptions_);
-      file_.reset(new RandomAccessFileReader(std::move(file)));
+      file_.reset(new RandomAccessFileReader(std::move(file), file_path));
     } else {
       SetOldTableOptions();
     }

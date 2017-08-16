@@ -38,6 +38,15 @@
 
 namespace rocksdb {
 
+void CompactionJobInfo::init() {
+  thread_id = uint64_t(-1);
+  job_id = -1;
+  base_input_level = INT_MIN;
+  output_level = INT_MIN;
+  compaction_reason = CompactionReason::kUnknown;
+  compression = CompressionType::kDisableCompressionOption;
+}
+
 AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions() {
   assert(memtable_factory.get() != nullptr);
 }

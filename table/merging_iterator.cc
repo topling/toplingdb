@@ -59,6 +59,7 @@ class MergingIterator : public InternalIterator {
   }
 
   virtual void AddIterator(InternalIterator* iter) {
+    abort(); // should not be called
     assert(direction_ == kForward);
     children_.emplace_back(iter);
     if (pinned_iters_mgr_) {

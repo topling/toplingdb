@@ -13,6 +13,8 @@ int main() {
 
 #include <gflags/gflags.h>
 
+#include <table/terark_zip_weak_function.h>
+
 #include "db/db_impl.h"
 #include "db/dbformat.h"
 #include "monitoring/histogram.h"
@@ -266,8 +268,8 @@ DEFINE_bool(through_db, false, "If enable, a DB instance will be created and "
             "a table reader.");
 DEFINE_bool(mmap_read, true, "Whether use mmap read");
 DEFINE_string(table_factory, "block_based",
-              "Table factory to use: `block_based` (default), `plain_table` or "
-              "`cuckoo_hash`.");
+              "Table factory to use: `block_based` (default), `plain_table`, "
+              "`cuckoo_hash` or `terark_zip`.");
 DEFINE_string(time_unit, "microsecond",
               "The time unit used for measuring performance. User can specify "
               "`microsecond` (default) or `nanosecond`");
@@ -318,6 +320,18 @@ int main(int argc, char** argv) {
 #endif  // ROCKSDB_LITE
   } else if (FLAGS_table_factory == "block_based") {
     tf.reset(new rocksdb::BlockBasedTableFactory());
+  } else if (FLAGS_table_factory == "terark_zip") {
+    if (rocksdb::NewTerarkZipTableFactory) {
+      options.allow_mmap_reads = FLAGS_mmap_read;
+      env_options.use_mmap_reads = FLAGS_mmap_read;
+      rocksdb::TerarkZipTableOptions opt;
+      std::shared_ptr<rocksdb::TableFactory> block_based_factory(rocksdb::NewBlockBasedTableFactory());
+      rocksdb::TableFactory* factory = rocksdb::NewTerarkZipTableFactory(opt,
+          rocksdb::NewAdaptiveTableFactory(block_based_factory));
+      tf.reset(factory);
+    } else {
+      fprintf(stderr, "ERROR: TableFactory arg is terark_zip, but libterark_zip_rocksdb.so is not loaded\n");
+    }
   } else {
     fprintf(stderr, "Invalid table type %s\n", FLAGS_table_factory.c_str());
   }

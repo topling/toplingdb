@@ -10,9 +10,13 @@
 
 namespace rocksdb {
 
-#ifdef ROCKSDB_SUPPORT_THREAD_LOCAL
+#ifndef IOS_CROSS_COMPILE
+# ifdef _MSC_VER
+__declspec(thread) IOStatsContext iostats_context;
+# else
 __thread IOStatsContext iostats_context;
-#endif
+# endif
+#endif  // IOS_CROSS_COMPILE
 
 IOStatsContext* get_iostats_context() {
 #ifdef ROCKSDB_SUPPORT_THREAD_LOCAL

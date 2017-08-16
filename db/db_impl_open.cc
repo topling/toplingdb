@@ -21,6 +21,10 @@
 #include "util/sst_file_manager_impl.h"
 #include "util/sync_point.h"
 
+#ifndef _MSC_VER
+# include <table/terark_zip_weak_function.h>
+#endif
+
 namespace rocksdb {
 Options SanitizeOptions(const std::string& dbname,
                         const Options& src) {
@@ -943,7 +947,19 @@ Status DB::Open(const DBOptions& db_options, const std::string& dbname,
   handles->clear();
 
   size_t max_write_buffer_size = 0;
-  for (auto cf : column_families) {
+#ifndef _MSC_VER
+  const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terarkdb_localTempDir) {
+    if (TerarkZipMultiCFOptionsFromEnv) {
+      TerarkZipMultiCFOptionsFromEnv(db_options, column_families);
+    } else {
+      return Status::InvalidArgument(
+          "env TerarkZipTable_localTempDir is defined, "
+          "but dynamic libterark-zip-rocksdb is not loaded");
+    }
+  }
+#endif
+  for (auto& cf : column_families) {
     max_write_buffer_size =
         std::max(max_write_buffer_size, cf.options.write_buffer_size);
   }

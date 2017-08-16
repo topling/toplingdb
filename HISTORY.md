@@ -41,6 +41,9 @@
 ### Bug Fixes
 * Shouldn't ignore return value of fsync() in flush.
 
+### Bu Fixes
+* Shouldn't ignore return value of fsync() in flush.
+
 ## 5.5.0 (05/17/2017)
 ### New Features
 * FIFO compaction to support Intra L0 compaction too with CompactionOptionsFIFO.allow_compaction=true.

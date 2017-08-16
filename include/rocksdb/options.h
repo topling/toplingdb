@@ -1053,6 +1053,12 @@ struct ReadOptions {
   // Default: false
   bool ignore_range_deletions;
 
+  // read value data from this offset
+  uint32_t  value_data_offset;
+
+  // read at most such length of value data
+  uint32_t value_data_length;
+
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
 };

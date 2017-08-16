@@ -142,6 +142,7 @@ class WriteThread {
           made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),
+          sequence(-1),
           link_older(nullptr),
           link_newer(nullptr) {}
 

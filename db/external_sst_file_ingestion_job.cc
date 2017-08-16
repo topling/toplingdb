@@ -531,8 +531,10 @@ Status ExternalSstFileIngestionJob::AssignGlobalSeqnoForIngestedFile(
   }
 
   std::unique_ptr<RandomRWFile> rwfile;
+  EnvOptions env_options = env_options_;
+  env_options.use_mmap_reads = false;
   Status status = env_->NewRandomRWFile(file_to_ingest->internal_file_path,
-                                        &rwfile, env_options_);
+                                        &rwfile, env_options);
   if (!status.ok()) {
     return status;
   }

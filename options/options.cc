@@ -36,6 +36,15 @@
 
 namespace rocksdb {
 
+void CompactionJobInfo::init() {
+  thread_id = uint64_t(-1);
+  job_id = -1;
+  base_input_level = INT_MIN;
+  output_level = INT_MIN;
+  compaction_reason = CompactionReason::kUnknown;
+  compression = CompressionType::kDisableCompressionOption;
+}
+
 AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions() {
   assert(memtable_factory.get() != nullptr);
 }
@@ -615,7 +624,12 @@ ReadOptions::ReadOptions()
       prefix_same_as_start(false),
       pin_data(false),
       background_purge_on_iterator_cleanup(false),
-      ignore_range_deletions(false) {}
+      readahead_size(0),
+      ignore_range_deletions(false),
+      max_skippable_internal_keys(0) {
+  value_data_offset = 0;
+  value_data_length = UINT32_MAX;
+}
 
 ReadOptions::ReadOptions(bool cksum, bool cache)
     : snapshot(nullptr),
@@ -631,6 +645,11 @@ ReadOptions::ReadOptions(bool cksum, bool cache)
       prefix_same_as_start(false),
       pin_data(false),
       background_purge_on_iterator_cleanup(false),
-      ignore_range_deletions(false) {}
+      readahead_size(0),
+      ignore_range_deletions(false),
+      max_skippable_internal_keys(0) {
+  value_data_offset = 0;
+  value_data_length = UINT32_MAX;
+}
 
 }  // namespace rocksdb

@@ -6,6 +6,7 @@
 
 #-----------------------------------------------
 BMI2 ?= 0
+USE_RTTI = 1
 
 COMPILER=$(shell t=`mktemp --suffix=.exe`; ${CXX} terark-tools/detect-compiler.cpp -o $$t && $$t && rm -f $$t)
 UNAME_MachineSystem=$(shell uname -m -s | sed 's:[ /]:-:g')

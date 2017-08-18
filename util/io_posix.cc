@@ -384,6 +384,10 @@ Status PosixRandomAccessFile::InvalidateCache(size_t offset, size_t length) {
 #endif
 }
 
+int PosixMmapReadableFile::FileDescriptor() const {
+  return this->fd_;
+}
+
 /*
  * PosixMmapReadableFile
  *
@@ -432,6 +436,10 @@ Status PosixMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
   }
   return IOError(filename_, errno);
 #endif
+}
+
+int PosixMmapReadableFile::FileDescriptor() const {
+  return this->fd_;
 }
 
 /*

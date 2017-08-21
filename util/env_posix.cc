@@ -234,9 +234,9 @@ class PosixEnv : public Env {
                                                   size, options));
         } else {
           s = IOError(fname, errno);
+          close(fd);
         }
       }
-      close(fd);
     } else {
       if (options.use_direct_reads && !options.use_mmap_reads) {
 #ifdef OS_MACOSX

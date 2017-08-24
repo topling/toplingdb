@@ -151,7 +151,7 @@ class WinMmapReadableFile : private WinFileData, public RandomAccessFile {
 
   virtual size_t GetUniqueId(char* id, size_t max_size) const override;
 
-  virtual int FileDescriptor() const override { return (int)(size_t)this->hFile_; }
+  virtual intptr_t FileDescriptor() const override { return (int)(size_t)this->hFile_; }
 };
 
 // We preallocate and use memcpy to append new

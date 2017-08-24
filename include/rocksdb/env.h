@@ -522,7 +522,7 @@ class RandomAccessFile {
     return Status::NotSupported("InvalidateCache not supported.");
   }
 
-  virtual int FileDescriptor() const { abort(); return -1; }
+  virtual intptr_t FileDescriptor() const { abort(); return -1; }
 };
 
 // A file abstraction for sequential writing.  The implementation

@@ -526,7 +526,7 @@ class ReadaheadRandomAccessFile : public RandomAccessFile {
     return file_->use_direct_io();
   }
 
-  virtual int FileDescriptor() const override {
+  virtual intptr_t FileDescriptor() const override {
     return file_->FileDescriptor();
   }
  private:

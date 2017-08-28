@@ -10,14 +10,22 @@
 #include <functional>
 
 #include "db/db_test_util.h"
-#include <table/terark_zip_table.h>
+#if _MSC_VER
+# include "../../terark-zip-rocksdb/src/table/terark_zip_table.h"
+#else
+# include <table/terark_zip_weak_function.h>
+#endif
 #include "port/port.h"
 #include "port/stack_trace.h"
 #include "rocksdb/iostats_context.h"
 #include "rocksdb/perf_context.h"
 
 
+#if _MSC_VER
+std::string localTempDir = R"(C:\Users\ZZZ\AppData\Local\Temp)";
+#else
 std::string localTempDir = "/tmp";
+#endif
 
 namespace rocksdb {
 
@@ -112,6 +120,30 @@ class TerarkZipReaderTest : public DBTestBase {
 public:
   TerarkZipReaderTest() : DBTestBase("/terark_zip_reader_test") {}
 
+  void CheckApproximateOffset(bool rev, Iterator* it) {
+#if _MSC_VER
+    size_t offset = 0;
+    size_t i = 0;
+    std::string MAX_KEY = "\255\255\255\255\255\255\255\255\255\255";
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      Range r;
+      if (rev) {
+        r.start = Slice(MAX_KEY);
+        r.limit = it->key();
+      }
+      else {
+        r.start = Slice();
+        r.limit = it->key();
+      }
+      size_t size;
+      db_->GetApproximateSizes(&r, 1, &size, true);
+      ASSERT_GE(size, offset);
+      offset = size;
+      ++i;
+    }
+#endif
+  }
+
   void BasicTest(bool rev, size_t count, size_t prefix, size_t blockUnits, size_t minValue) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
@@ -185,6 +217,7 @@ public:
       forward(0, 1, count / 2);
       backward(count / 2 - 1, -1, -1);
     }
+    CheckApproximateOffset(rev, it);
     delete it;
   }
   void HardZipTest(bool rev, size_t count, size_t prefix) {
@@ -208,7 +241,7 @@ public:
     rocksdb::ReadOptions ro;
     rocksdb::WriteOptions wo;
     rocksdb::FlushOptions fo;
-    std::string value;
+    std::string value, value_get;
 
     auto db = db_;
     auto seed = *(uint64_t*)"__Terark";
@@ -220,7 +253,6 @@ public:
     {
       for (size_t i = sst, e = i + 8 * count; i < e; i += 8)
       {
-        std::string value;
         value.resize(uid(mt) * 8);
         for (size_t l = 0; l < value.size(); l += 8)
         {
@@ -236,7 +268,6 @@ public:
     {
       for (size_t i = sst, e = i + 8 * count; i < e; i += 8)
       {
-        std::string value, value_get;
         value.resize(uid(mt) * 8);
         for (size_t l = 0; l < value.size(); l += 8)
         {
@@ -246,6 +277,9 @@ public:
         ASSERT_EQ(value, value_get);
       }
     }
+    auto it = db->NewIterator(ro);
+    CheckApproximateOffset(rev, it);
+    delete it;
   }
   enum BlobStoreType {
     PlainBlobStore,
@@ -369,6 +403,7 @@ public:
       forward(0, 1, count);
       backward(count - 1, -1, -1);
     }
+    CheckApproximateOffset(rev, it);
     delete it;
   }
   void ZeroLengthBlobStoreTest(bool rev, size_t count, size_t prefix) {
@@ -458,6 +493,7 @@ public:
           forward(0, 1, count);
           backward(count - 1, -1, -1);
       }
+      CheckApproximateOffset(rev, it);
       delete it;
   }
   void IterTest(std::initializer_list<const char*> data_list,
@@ -617,13 +653,17 @@ public:
       test(t);
     }
 
-    db->ReleaseSnapshot(s1);
-    db->ReleaseSnapshot(s2);
-    db->ReleaseSnapshot(s3);
+    CheckApproximateOffset(rev, i1);
+    CheckApproximateOffset(rev, i2);
+    CheckApproximateOffset(rev, i3);
+    CheckApproximateOffset(rev, i4);
     delete i1;
     delete i2;
     delete i3;
     delete i4;
+    db->ReleaseSnapshot(s1);
+    db->ReleaseSnapshot(s2);
+    db->ReleaseSnapshot(s3);
   }
 };
 

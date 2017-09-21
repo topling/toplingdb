@@ -23,7 +23,13 @@ public:
   virtual void Prev() { abort(); } // do not support
   virtual Slice key() const { return c_iter_->key(); }
   virtual Slice value() const { return c_iter_->value(); }
-  virtual Status status() const { return c_iter_->status(); }
+  virtual Status status() const {
+    auto ci = c_iter_;
+    if (ci->IsShuttingDown()) {
+      return Status::ShutdownInProgress();
+    }
+    return ci->status();
+  }
 };
 
 CompactionIterator::CompactionIterator(

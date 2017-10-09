@@ -761,6 +761,9 @@ class VersionSet {
 
   static uint64_t GetTotalSstFilesSize(Version* dummy_versions);
 
+  Env* get_env();
+  unique_ptr<log::Writer>& get_descriptor_log();
+  const ImmutableDBOptions* get_db_options();
  private:
   struct ManifestWriter;
 

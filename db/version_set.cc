@@ -3648,4 +3648,14 @@ uint64_t VersionSet::GetTotalSstFilesSize(Version* dummy_versions) {
   return total_files_size;
 }
 
+Env* VersionSet::get_env() {
+  return env_;
+}
+unique_ptr<log::Writer>& VersionSet::get_descriptor_log() {
+  return descriptor_log_;
+}
+const ImmutableDBOptions* VersionSet::get_db_options() {
+  return db_options_;
+}
+
 }  // namespace rocksdb

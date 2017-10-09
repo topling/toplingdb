@@ -587,4 +587,59 @@ std::string VersionEdit::DebugJSON(int edit_num, bool hex_key) const {
   return jw.Get();
 }
 
+bool VersionEdit::is_has_comparator() {
+  return has_comparator_;
+}
+bool VersionEdit::is_has_log_number() {
+  return has_log_number_;
+}
+bool VersionEdit::is_has_prev_log_number() {
+  return has_prev_log_number_;
+}
+bool VersionEdit::is_has_next_file_number() {
+  return has_next_file_number_;
+}
+bool VersionEdit::is_has_last_sequence() {
+  return has_last_sequence_;
+}
+bool VersionEdit::is_has_max_column_family() {
+  return has_max_column_family_;
+}
+bool VersionEdit::is_column_family_drop() {
+  return is_column_family_drop_;
+}
+bool VersionEdit::is_column_family_add() {
+  return is_column_family_add_;
+}
+std::string VersionEdit::get_comparator() {
+  return comparator_;
+}
+uint64_t VersionEdit::get_log_number() {
+  return log_number_;
+}
+uint64_t VersionEdit::get_prev_log_number() {
+  return prev_log_number_;
+}
+uint64_t VersionEdit::get_next_file_number() {
+  return next_file_number_;
+}
+SequenceNumber VersionEdit::get_last_sequence() {
+  return last_sequence_;
+}
+uint32_t VersionEdit::get_max_column_family() {
+  return max_column_family_;
+}
+std::string VersionEdit::get_column_family_name() {
+  return column_family_name_;
+}
+uint32_t VersionEdit::get_column_family() {
+  return column_family_;
+}
+VersionEdit::DeletedFileSet VersionEdit::get_deleted_files() {
+  return deleted_files_;
+}
+std::vector<std::pair<int, FileMetaData>> VersionEdit::get_new_files() {
+  return new_files_;
+}
+
 }  // namespace rocksdb

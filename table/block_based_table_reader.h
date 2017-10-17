@@ -181,6 +181,11 @@ class BlockBasedTable : public TableReader {
     // that was allocated in block cache.
     virtual size_t ApproximateMemoryUsage() const = 0;
 
+    virtual void CacheDependencies(bool /* unused */) {}
+
+    // Prefetch all the blocks referenced by this index to the buffer
+    void PrefetchBlocks(FilePrefetchBuffer* buf);
+
    protected:
     const InternalKeyComparator* icomparator_;
 
@@ -208,6 +213,7 @@ class BlockBasedTable : public TableReader {
   explicit BlockBasedTable(Rep* rep) : rep_(rep) {}
 
  private:
+  friend class MockedBlockBasedTable;
   // input_iter: if it is not null, update this one and return it as Iterator
   static InternalIterator* NewDataBlockIterator(Rep* rep, const ReadOptions& ro,
                                                 const Slice& index_value,
@@ -227,7 +233,8 @@ class BlockBasedTable : public TableReader {
   // @param block_entry value is set to the uncompressed block if found. If
   //    in uncompressed block cache, also sets cache_handle to reference that
   //    block.
-  static Status MaybeLoadDataBlockToCache(Rep* rep, const ReadOptions& ro,
+  static Status MaybeLoadDataBlockToCache(FilePrefetchBuffer* prefetch_buffer,
+                                          Rep* rep, const ReadOptions& ro,
                                           const BlockHandle& handle,
                                           Slice compression_dict,
                                           CachableEntry<Block>* block_entry,
@@ -236,10 +243,11 @@ class BlockBasedTable : public TableReader {
   // For the following two functions:
   // if `no_io == true`, we will not try to read filter/index from sst file
   // were they not present in cache yet.
-  CachableEntry<FilterBlockReader> GetFilter(bool no_io = false) const;
+  CachableEntry<FilterBlockReader> GetFilter(
+      FilePrefetchBuffer* prefetch_buffer = nullptr, bool no_io = false) const;
   virtual CachableEntry<FilterBlockReader> GetFilter(
-      const BlockHandle& filter_blk_handle, const bool is_a_filter_partition,
-      bool no_io) const;
+      FilePrefetchBuffer* prefetch_buffer, const BlockHandle& filter_blk_handle,
+      const bool is_a_filter_partition, bool no_io) const;
 
   // Get the iterator from the index reader.
   // If input_iter is not set, return new Iterator
@@ -345,11 +353,11 @@ class BlockBasedTable : public TableReader {
 // Maitaning state of a two-level iteration on a partitioned index structure
 class BlockBasedTable::BlockEntryIteratorState : public TwoLevelIteratorState {
  public:
-  BlockEntryIteratorState(BlockBasedTable* table,
-                          const ReadOptions& read_options,
-                          const InternalKeyComparator* icomparator,
-                          bool skip_filters, bool is_index = false,
-                          Cleanable* block_cache_cleaner = nullptr);
+  BlockEntryIteratorState(
+      BlockBasedTable* table, const ReadOptions& read_options,
+      const InternalKeyComparator* icomparator, bool skip_filters,
+      bool is_index = false,
+      std::unordered_map<uint64_t, CachableEntry<Block>>* block_map = nullptr);
   InternalIterator* NewSecondaryIterator(const Slice& index_value) override;
   bool PrefixMayMatch(const Slice& internal_key) override;
   bool KeyReachedUpperBound(const Slice& internal_key) override;
@@ -362,8 +370,7 @@ class BlockBasedTable::BlockEntryIteratorState : public TwoLevelIteratorState {
   bool skip_filters_;
   // true if the 2nd level iterator is on indexes instead of on user data.
   bool is_index_;
-  Cleanable* block_cache_cleaner_;
-  std::set<uint64_t> cleaner_set;
+  std::unordered_map<uint64_t, CachableEntry<Block>>* block_map_;
   port::RWMutex cleaner_mu;
 };
 

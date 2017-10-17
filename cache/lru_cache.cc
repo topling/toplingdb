@@ -502,7 +502,12 @@ uint32_t LRUCache::GetHash(Handle* handle) const {
   return reinterpret_cast<const LRUHandle*>(handle)->hash;
 }
 
-void LRUCache::DisownData() { shards_ = nullptr; }
+void LRUCache::DisownData() {
+// Do not drop data if compile with ASAN to suppress leak warning.
+#ifndef __SANITIZE_ADDRESS__
+  shards_ = nullptr;
+#endif  // !__SANITIZE_ADDRESS__
+}
 
 size_t LRUCache::TEST_GetLRUSize() {
   size_t lru_size_of_all_shards = 0;

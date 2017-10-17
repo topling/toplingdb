@@ -992,6 +992,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options,
     size_t size = pinnable_val->size();
     RecordTick(stats_, BYTES_READ, size);
     MeasureTime(stats_, BYTES_PER_READ, size);
+    PERF_COUNTER_ADD(get_read_bytes, size);
   }
   return s;
 }
@@ -1119,6 +1120,7 @@ std::vector<Status> DBImpl::MultiGet(
   RecordTick(stats_, NUMBER_MULTIGET_KEYS_READ, num_keys);
   RecordTick(stats_, NUMBER_MULTIGET_BYTES_READ, bytes_read);
   MeasureTime(stats_, BYTES_PER_MULTIGET, bytes_read);
+  PERF_COUNTER_ADD(multiget_read_bytes, bytes_read);
   PERF_TIMER_STOP(get_post_process_time);
 
   return stat_list;
@@ -1324,6 +1326,11 @@ Status DBImpl::DropColumnFamilyImpl(ColumnFamilyHandle* column_family) {
                                  &edit, &mutex_);
       write_thread_.ExitUnbatched(&w);
     }
+    if (s.ok()) {
+      auto* mutable_cf_options = cfd->GetLatestMutableCFOptions();
+      max_total_in_memory_state_ -= mutable_cf_options->write_buffer_size *
+                                    mutable_cf_options->max_write_buffer_number;
+    }
 
     if (!cf_support_snapshot) {
       // Dropped Column Family doesn't support snapshot. Need to recalculate
@@ -1345,9 +1352,6 @@ Status DBImpl::DropColumnFamilyImpl(ColumnFamilyHandle* column_family) {
     // later inside db_mutex.
     EraseThreadStatusCfInfo(cfd);
     assert(cfd->IsDropped());
-    auto* mutable_cf_options = cfd->GetLatestMutableCFOptions();
-    max_total_in_memory_state_ -= mutable_cf_options->write_buffer_size *
-                                  mutable_cf_options->max_write_buffer_number;
     ROCKS_LOG_INFO(immutable_db_options_.info_log,
                    "Dropped column family with id %u\n", cfd->GetID());
   } else {
@@ -2770,7 +2774,7 @@ Status DBImpl::VerifyChecksum() {
         const auto& fd = vstorage->LevelFilesBrief(i).files[j].fd;
         std::string fname = TableFileName(immutable_db_options_.db_paths,
                                           fd.GetNumber(), fd.GetPathId());
-        s = rocksdb::VerifySstFileChecksum(options, env_options, fname); 
+        s = rocksdb::VerifySstFileChecksum(options, env_options, fname);
       }
     }
     if (!s.ok()) {

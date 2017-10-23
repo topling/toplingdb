@@ -418,6 +418,10 @@ Status PosixRandomAccessFile::InvalidateCache(size_t offset, size_t length) {
 #endif
 }
 
+intptr_t PosixRandomAccessFile::FileDescriptor() const {
+  return this->fd_;
+}
+
 /*
  * PosixMmapReadableFile
  *
@@ -440,6 +444,7 @@ PosixMmapReadableFile::~PosixMmapReadableFile() {
     fprintf(stdout, "failed to munmap %p length %" ROCKSDB_PRIszt " \n",
             mmapped_region_, length_);
   }
+  close(fd_);
 }
 
 Status PosixMmapReadableFile::Read(uint64_t offset, size_t n, Slice* result,
@@ -470,6 +475,10 @@ Status PosixMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
                      " len" + ToString(length),
                  filename_, errno);
 #endif
+}
+
+intptr_t PosixMmapReadableFile::FileDescriptor() const {
+  return this->fd_;
 }
 
 /*

@@ -10,14 +10,22 @@
 #include <functional>
 
 #include "db/db_test_util.h"
-#include <table/terark_zip_table.h>
+#if _MSC_VER
+# include "../../terark-zip-rocksdb/src/table/terark_zip_table.h"
+#else
+# include <table/terark_zip_weak_function.h>
+#endif
 #include "port/port.h"
 #include "port/stack_trace.h"
 #include "rocksdb/iostats_context.h"
 #include "rocksdb/perf_context.h"
 
 
+#if _MSC_VER
+std::string localTempDir = R"(C:\Users\ZZZ\AppData\Local\Temp)";
+#else
 std::string localTempDir = "/tmp";
+#endif
 
 namespace rocksdb {
 
@@ -94,6 +102,16 @@ std::string get_value(size_t i)
   char const *str = "0123456789QWERTYUIOPASDFGHJKLZXCVBNM";
   return get_key(i) + (str + (i % (strlen(str) - 1)));
 }
+std::string get_value(size_t i, size_t len)
+{
+  char const *str = "0123456789QWERTYUIOPASDFGHJKLZXCVBNM";
+  std::string value = get_key(i);
+  size_t size = (strlen(str) - 1);
+  while (len-- > 0) {
+    value += str[i++ % size];
+  }
+  return value;
+}
 
 Rdb_pk_comparator pk_c;
 Rdb_rev_comparator rev_c;
@@ -101,6 +119,30 @@ Rdb_rev_comparator rev_c;
 class TerarkZipReaderTest : public DBTestBase {
 public:
   TerarkZipReaderTest() : DBTestBase("/terark_zip_reader_test") {}
+
+  void CheckApproximateOffset(bool rev, Iterator* it) {
+#if _MSC_VER
+    size_t offset = 0;
+    size_t i = 0;
+    std::string MAX_KEY = "\255\255\255\255\255\255\255\255\255\255";
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      Range r;
+      if (rev) {
+        r.start = Slice(MAX_KEY);
+        r.limit = it->key();
+      }
+      else {
+        r.start = Slice();
+        r.limit = it->key();
+      }
+      size_t size;
+      db_->GetApproximateSizes(&r, 1, &size, true);
+      ASSERT_GE(size, offset);
+      offset = size;
+      ++i;
+    }
+#endif
+  }
 
   void BasicTest(bool rev, size_t count, size_t prefix, size_t blockUnits, size_t minValue) {
     Options options = CurrentOptions();
@@ -175,6 +217,7 @@ public:
       forward(0, 1, count / 2);
       backward(count / 2 - 1, -1, -1);
     }
+    CheckApproximateOffset(rev, it);
     delete it;
   }
   void HardZipTest(bool rev, size_t count, size_t prefix) {
@@ -198,7 +241,7 @@ public:
     rocksdb::ReadOptions ro;
     rocksdb::WriteOptions wo;
     rocksdb::FlushOptions fo;
-    std::string value;
+    std::string value, value_get;
 
     auto db = db_;
     auto seed = *(uint64_t*)"__Terark";
@@ -210,7 +253,6 @@ public:
     {
       for (size_t i = sst, e = i + 8 * count; i < e; i += 8)
       {
-        std::string value;
         value.resize(uid(mt) * 8);
         for (size_t l = 0; l < value.size(); l += 8)
         {
@@ -226,7 +268,6 @@ public:
     {
       for (size_t i = sst, e = i + 8 * count; i < e; i += 8)
       {
-        std::string value, value_get;
         value.resize(uid(mt) * 8);
         for (size_t l = 0; l < value.size(); l += 8)
         {
@@ -236,15 +277,36 @@ public:
         ASSERT_EQ(value, value_get);
       }
     }
+    auto it = db->NewIterator(ro);
+    CheckApproximateOffset(rev, it);
+    delete it;
   }
-  void ZeroStoreTest(bool rev, size_t count, size_t prefix) {
+  enum BlobStoreType {
+    PlainBlobStore,
+    MixedLenBlobStore,
+    ZipOffsetBlobStore,
+  };
+  void NonCompressedBlobStoreTest(bool rev, BlobStoreType type, size_t count, size_t prefix) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
     tzto.disableSecondPassIter = true;
     tzto.keyPrefixLen = prefix;
     tzto.entropyAlgo = TerarkZipTableOptions::kFSE;
     tzto.localTempDir = localTempDir;
+    tzto.minDictZipValueSize = 4096;
     options.allow_mmap_reads = true;
+    switch (type) {
+    case PlainBlobStore:
+    case MixedLenBlobStore:
+      tzto.offsetArrayBlockUnits = 0;
+      break;
+    case ZipOffsetBlobStore:
+      tzto.offsetArrayBlockUnits = 64;
+      break;
+    default:
+      assert(0); // WTF ?
+      return;
+    }
     if (rev) {
       options.comparator = &rev_c;
     }
@@ -259,6 +321,23 @@ public:
     rocksdb::WriteOptions wo;
     rocksdb::FlushOptions fo;
     std::string value;
+    auto get_value_by_type = [type](size_t i)->std::string {
+      switch (type) {
+      case PlainBlobStore:
+      case ZipOffsetBlobStore:
+        return get_value(i);
+      case MixedLenBlobStore:
+        if (i % 64 != 0) {
+          return get_value(i, 10);
+        }
+        else {
+          return get_value(i);
+        }
+      default:
+        assert(0); // WTF ?
+        return "";
+      }
+    };
 
     auto db = db_;
 
@@ -267,11 +346,11 @@ public:
     {
       for (size_t i = sst * count, e = i + count; i < e; ++i)
       {
-        ASSERT_OK(db->Put(wo, get_key(i), ""));
+        ASSERT_OK(db->Put(wo, get_key(i), get_value_by_type(i)));
       }
       ASSERT_OK(db->Flush(fo));
     }
-    ASSERT_OK(db->Put(wo, get_key(count * 2), ""));
+    ASSERT_OK(db->Put(wo, get_key(count * 2), get_value_by_type(count * 2)));
     ASSERT_OK(db->Flush(fo));
     rocksdb::ColumnFamilyMetaData meta;
     db->GetColumnFamilyMetaData(&meta);
@@ -295,14 +374,14 @@ public:
     for (size_t i = 0; i < count; ++i)
     {
       ASSERT_OK(db->Get(ro, get_key(i), &value));
-      ASSERT_EQ(value, "");
+      ASSERT_EQ(value, get_value_by_type(i));
     }
     auto it = db->NewIterator(ro);
     auto forward = [&](size_t i, int d, size_t e) {
       for (it->SeekToFirst(); it->Valid(); it->Next())
       {
         ASSERT_EQ(it->key().ToString(), get_key(i));
-        ASSERT_EQ(it->value().ToString(), "");
+        ASSERT_EQ(it->value().ToString(), get_value_by_type(i));
         i += d;
       }
       ASSERT_EQ(i, e);
@@ -311,7 +390,7 @@ public:
       for (it->SeekToLast(); it->Valid(); it->Prev())
       {
         ASSERT_EQ(it->key().ToString(), get_key(i));
-        ASSERT_EQ(it->value().ToString(), "");
+        ASSERT_EQ(it->value().ToString(), get_value_by_type(i));
         i += d;
       }
       ASSERT_EQ(i, e);
@@ -324,7 +403,98 @@ public:
       forward(0, 1, count);
       backward(count - 1, -1, -1);
     }
+    CheckApproximateOffset(rev, it);
     delete it;
+  }
+  void ZeroLengthBlobStoreTest(bool rev, size_t count, size_t prefix) {
+      Options options = CurrentOptions();
+      TerarkZipTableOptions tzto;
+      tzto.disableSecondPassIter = true;
+      tzto.keyPrefixLen = prefix;
+      tzto.entropyAlgo = TerarkZipTableOptions::kFSE;
+      tzto.localTempDir = localTempDir;
+      options.allow_mmap_reads = true;
+      if (rev) {
+          options.comparator = &rev_c;
+      }
+      else {
+          options.comparator = &pk_c;
+      }
+      options.table_factory.reset(NewTerarkZipTableFactory(tzto,
+          NewBlockBasedTableFactory(BlockBasedTableOptions())));
+      options.disable_auto_compactions = true;
+      DestroyAndReopen(options);
+      rocksdb::ReadOptions ro;
+      rocksdb::WriteOptions wo;
+      rocksdb::FlushOptions fo;
+      std::string value;
+
+      auto db = db_;
+
+      count = (count + 3) / 4;
+      for (size_t sst = 0; sst < 2; ++sst)
+      {
+          for (size_t i = sst * count, e = i + count; i < e; ++i)
+          {
+              ASSERT_OK(db->Put(wo, get_key(i), ""));
+          }
+          ASSERT_OK(db->Flush(fo));
+      }
+      ASSERT_OK(db->Put(wo, get_key(count * 2), ""));
+      ASSERT_OK(db->Flush(fo));
+      rocksdb::ColumnFamilyMetaData meta;
+      db->GetColumnFamilyMetaData(&meta);
+      ASSERT_EQ(meta.levels[0].files.size(), 3);
+      db->CompactFiles(CompactionOptions(), {
+          meta.levels[0].files[0].name,
+          meta.levels[0].files[1].name,
+          meta.levels[0].files[2].name,
+      }, 1);
+      ASSERT_OK(db->Delete(wo, get_key(count * 2)));
+      ASSERT_OK(db->Flush(fo));
+      db->GetColumnFamilyMetaData(&meta);
+      ASSERT_EQ(meta.levels[0].files.size(), 1);
+      ASSERT_EQ(meta.levels[1].files.size(), 1);
+      db->CompactFiles(CompactionOptions(), {
+          meta.levels[0].files[0].name,
+          meta.levels[1].files[0].name,
+      }, 2);
+
+      count *= 2;
+      for (size_t i = 0; i < count; ++i)
+      {
+          ASSERT_OK(db->Get(ro, get_key(i), &value));
+          ASSERT_EQ(value, "");
+      }
+      auto it = db->NewIterator(ro);
+      auto forward = [&](size_t i, int d, size_t e) {
+          for (it->SeekToFirst(); it->Valid(); it->Next())
+          {
+              ASSERT_EQ(it->key().ToString(), get_key(i));
+              ASSERT_EQ(it->value().ToString(), "");
+              i += d;
+          }
+          ASSERT_EQ(i, e);
+      };
+      auto backward = [&](size_t i, int d, size_t e) {
+          for (it->SeekToLast(); it->Valid(); it->Prev())
+          {
+              ASSERT_EQ(it->key().ToString(), get_key(i));
+              ASSERT_EQ(it->value().ToString(), "");
+              i += d;
+          }
+          ASSERT_EQ(i, e);
+      };
+      if (rev) {
+          forward(count - 1, -1, -1);
+          backward(0, 1, count);
+      }
+      else {
+          forward(0, 1, count);
+          backward(count - 1, -1, -1);
+      }
+      CheckApproximateOffset(rev, it);
+      delete it;
   }
   void IterTest(std::initializer_list<const char*> data_list,
                 std::initializer_list<const char*> test_list,
@@ -483,13 +653,17 @@ public:
       test(t);
     }
 
-    db->ReleaseSnapshot(s1);
-    db->ReleaseSnapshot(s2);
-    db->ReleaseSnapshot(s3);
+    CheckApproximateOffset(rev, i1);
+    CheckApproximateOffset(rev, i2);
+    CheckApproximateOffset(rev, i3);
+    CheckApproximateOffset(rev, i4);
     delete i1;
     delete i2;
     delete i3;
     delete i4;
+    db->ReleaseSnapshot(s1);
+    db->ReleaseSnapshot(s2);
+    db->ReleaseSnapshot(s3);
   }
 };
 
@@ -530,13 +704,33 @@ TEST_F(TerarkZipReaderTest, HardZipTestMultiRev    ) { HardZipTest(true , 1000, 
 TEST_F(TerarkZipReaderTest, HardZipTestMultiMany   ) { HardZipTest(false,  333, 2); }
 TEST_F(TerarkZipReaderTest, HardZipTestMultiManyRev) { HardZipTest(true ,  333, 2); }
 
-TEST_F(TerarkZipReaderTest, ZeroStoreTest            ) { ZeroStoreTest(false, 1000, 0); }
-TEST_F(TerarkZipReaderTest, ZeroStoreTestRev         ) { ZeroStoreTest(true , 1000, 0); }
-TEST_F(TerarkZipReaderTest, ZeroStoreTestMulti       ) { ZeroStoreTest(false, 1000, 1); }
-TEST_F(TerarkZipReaderTest, ZeroStoreTestMultiRev    ) { ZeroStoreTest(true , 1000, 1); }
-TEST_F(TerarkZipReaderTest, ZeroStoreTestMultiMany   ) { ZeroStoreTest(false,  333, 2); }
-TEST_F(TerarkZipReaderTest, ZeroStoreTestMultiManyRev) { ZeroStoreTest(true ,  333, 2); }
+TEST_F(TerarkZipReaderTest, ZeroLengthBlobStoreTest            ) { ZeroLengthBlobStoreTest(false, 1000, 0); }
+TEST_F(TerarkZipReaderTest, ZeroLengthBlobStoreTestRev         ) { ZeroLengthBlobStoreTest(true , 1000, 0); }
+TEST_F(TerarkZipReaderTest, ZeroLengthBlobStoreTestMulti       ) { ZeroLengthBlobStoreTest(false, 1000, 1); }
+TEST_F(TerarkZipReaderTest, ZeroLengthBlobStoreTestMultiRev    ) { ZeroLengthBlobStoreTest(true , 1000, 1); }
+TEST_F(TerarkZipReaderTest, ZeroLengthBlobStoreTestMultiMany   ) { ZeroLengthBlobStoreTest(false,  333, 2); }
+TEST_F(TerarkZipReaderTest, ZeroLengthBlobStoreTestMultiManyRev) { ZeroLengthBlobStoreTest(true ,  333, 2); }
 
+TEST_F(TerarkZipReaderTest, PlainBlobStoreTest            ) { NonCompressedBlobStoreTest(false, PlainBlobStore, 1000, 0); }
+TEST_F(TerarkZipReaderTest, PlainBlobStoreTestRev         ) { NonCompressedBlobStoreTest(true , PlainBlobStore, 1000, 0); }
+TEST_F(TerarkZipReaderTest, PlainBlobStoreTestMulti       ) { NonCompressedBlobStoreTest(false, PlainBlobStore, 1000, 1); }
+TEST_F(TerarkZipReaderTest, PlainBlobStoreTestMultiRev    ) { NonCompressedBlobStoreTest(true , PlainBlobStore, 1000, 1); }
+TEST_F(TerarkZipReaderTest, PlainBlobStoreTestMultiMany   ) { NonCompressedBlobStoreTest(false, PlainBlobStore,  333, 2); }
+TEST_F(TerarkZipReaderTest, PlainBlobStoreTestMultiManyRev) { NonCompressedBlobStoreTest(true , PlainBlobStore,  333, 2); }
+
+TEST_F(TerarkZipReaderTest, MixedBlobStoreTest            ) { NonCompressedBlobStoreTest(false, MixedLenBlobStore, 1000, 0); }
+TEST_F(TerarkZipReaderTest, MixedBlobStoreTestRev         ) { NonCompressedBlobStoreTest(true , MixedLenBlobStore, 1000, 0); }
+TEST_F(TerarkZipReaderTest, MixedBlobStoreTestMulti       ) { NonCompressedBlobStoreTest(false, MixedLenBlobStore, 1000, 1); }
+TEST_F(TerarkZipReaderTest, MixedBlobStoreTestMultiRev    ) { NonCompressedBlobStoreTest(true , MixedLenBlobStore, 1000, 1); }
+TEST_F(TerarkZipReaderTest, MixedBlobStoreTestMultiMany   ) { NonCompressedBlobStoreTest(false, MixedLenBlobStore,  333, 2); }
+TEST_F(TerarkZipReaderTest, MixedBlobStoreTestMultiManyRev) { NonCompressedBlobStoreTest(true , MixedLenBlobStore,  333, 2); }
+
+TEST_F(TerarkZipReaderTest, ZipOffsetBlobStoreTest            ) { NonCompressedBlobStoreTest(false, ZipOffsetBlobStore, 1000, 0); }
+TEST_F(TerarkZipReaderTest, ZipOffsetBlobStoreTestRev         ) { NonCompressedBlobStoreTest(true , ZipOffsetBlobStore, 1000, 0); }
+TEST_F(TerarkZipReaderTest, ZipOffsetBlobStoreTestMulti       ) { NonCompressedBlobStoreTest(false, ZipOffsetBlobStore, 1000, 1); }
+TEST_F(TerarkZipReaderTest, ZipOffsetBlobStoreTestMultiRev    ) { NonCompressedBlobStoreTest(true , ZipOffsetBlobStore, 1000, 1); }
+TEST_F(TerarkZipReaderTest, ZipOffsetBlobStoreTestMultiMany   ) { NonCompressedBlobStoreTest(false, ZipOffsetBlobStore,  333, 2); }
+TEST_F(TerarkZipReaderTest, ZipOffsetBlobStoreTestMultiManyRev) { NonCompressedBlobStoreTest(true , ZipOffsetBlobStore,  333, 2); }
 
 TEST_F(TerarkZipReaderTest, SingleRecordTest) {
   auto data_list =

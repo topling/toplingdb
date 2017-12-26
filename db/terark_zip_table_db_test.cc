@@ -11,6 +11,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
 #include "table/meta_blocks.h"
+#include "util/string_util.h"
 #include "util/testharness.h"
 #include "util/testutil.h"
 

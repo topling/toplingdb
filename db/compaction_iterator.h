@@ -105,6 +105,7 @@ class CompactionIterator {
   bool Valid() const { DoSeekToFirstIfNeeded(); return valid_; }
   const Slice& user_key() const { DoSeekToFirstIfNeeded(); return current_user_key_; }
   const CompactionIterationStats& iter_stats() const { DoSeekToFirstIfNeeded(); return iter_stats_; }
+  void SetFilterSampleInterval(size_t filter_sample_interval);
 
  private:
   // Processes the input stream to find the next output
@@ -194,6 +195,8 @@ class CompactionIterator {
   std::vector<size_t> level_ptrs_;
   CompactionIterationStats iter_stats_;
  public:
+  size_t filter_sample_interval_ = 64;
+  size_t filter_hit_count_ = 0;
   bool IsShuttingDown() {
     // This is a best-effort facility, so memory_order_relaxed is sufficient.
     return shutting_down_ && shutting_down_->load(std::memory_order_relaxed);

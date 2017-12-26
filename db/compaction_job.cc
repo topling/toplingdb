@@ -790,6 +790,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   c_iter->SeekToFirst();
   auto c_iter2 = makeCompactionIterator(input2.get(), merge2,
       range_del_agg2.get(), nullptr);
+  c_iter2->SetFilterSampleInterval(0);
   auto second_pass_iter = c_iter2->AdaptToInternalIterator();
   c_iter2->SeekToFirst();
   if (c_iter->Valid() &&
@@ -1233,7 +1234,7 @@ Status CompactionJob::InstallCompactionResults(
   {
     Compaction::InputLevelSummaryBuffer inputs_summary;
     ROCKS_LOG_INFO(
-        db_options_.info_log, "[%s] [JOB %d] Compacted %s => %" PRIu64 " bytes",
+        db_options_.info_log, "[%s] [JOB %d] Compacted  %s => %" PRIu64 " bytes",
         compaction->column_family_data()->GetName().c_str(), job_id_,
         compaction->InputLevelSummary(&inputs_summary), compact_->total_bytes);
   }

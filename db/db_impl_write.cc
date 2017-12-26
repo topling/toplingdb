@@ -937,6 +937,7 @@ Status DBImpl::DelayWrite(uint64_t num_bytes,
   {
     StopWatch sw(env_, stats_, WRITE_STALL, &time_delayed);
     uint64_t delay = write_controller_.GetDelay(env_, num_bytes);
+    delay = std::min<uint64_t>(delay, 1000000); // pls don't death sleep
     if (delay > 0) {
       if (write_options.no_slowdown) {
         return Status::Incomplete();

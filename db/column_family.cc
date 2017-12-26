@@ -248,7 +248,7 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
   }
 
   if (result.level0_file_num_compaction_trigger <=
-      result.compaction_options_universal.min_merge_width) {
+      (int)result.compaction_options_universal.min_merge_width) {
     ROCKS_LOG_WARN(db_options.info_log.get(),
          "compaction_options_universal.min_merge_width = %u, "
          " must < level0_file_num_compaction_trigger = %d",

@@ -949,7 +949,8 @@ enum RepFactory {
   kPrefixHash,
   kVectorRep,
   kHashLinkedList,
-  kCuckoo
+  kCuckoo,
+  kThreadedRBTree
 };
 
 static enum RepFactory StringToRepFactory(const char* ctype) {
@@ -965,6 +966,8 @@ static enum RepFactory StringToRepFactory(const char* ctype) {
     return kHashLinkedList;
   else if (!strcasecmp(ctype, "cuckoo"))
     return kCuckoo;
+  else if (!strcasecmp(ctype, "trbtree"))
+    return kThreadedRBTree;
 
   fprintf(stdout, "Cannot parse memreptable %s\n", ctype);
   return kSkipList;
@@ -1973,6 +1976,9 @@ class Benchmark {
         break;
       case kCuckoo:
         fprintf(stdout, "Memtablerep: cuckoo\n");
+        break;
+      case kThreadedRBTree:
+        fprintf(stdout, "Memtablerep: threaded_rbtree\n");
         break;
     }
     fprintf(stdout, "Perf Level: %d\n", FLAGS_perf_level);
@@ -2989,6 +2995,9 @@ void VerifyDBFromDB(std::string& truth_db_name) {
       case kCuckoo:
         options.memtable_factory.reset(NewHashCuckooRepFactory(
             options.write_buffer_size, FLAGS_key_size + FLAGS_value_size));
+        break;
+      case kThreadedRBTree:
+        options.memtable_factory.reset(NewThreadedRBTreeRepFactory(600000));
         break;
 #else
       default:

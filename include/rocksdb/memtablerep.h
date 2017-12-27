@@ -349,5 +349,8 @@ extern MemTableRepFactory* NewHashLinkListRepFactory(
 extern MemTableRepFactory* NewHashCuckooRepFactory(
     size_t write_buffer_size, size_t average_data_size = 64,
     unsigned int hash_function_count = 4);
+
+extern MemTableRepFactory *NewThreadedRBTreeRepFactory(size_t reserve_size = 32768);
+
 #endif  // ROCKSDB_LITE
 }  // namespace rocksdb

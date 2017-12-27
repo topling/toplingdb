@@ -25,7 +25,7 @@ namespace {
 
         struct trb_container_t
         {
-            typedef threaded_rb_tree_node_t<uint32_t> node_type;
+            typedef threaded_rbtree_node_t<uint32_t> node_type;
 
             struct element_t
             {
@@ -104,7 +104,7 @@ namespace {
             typedef char const *storage_type;
             typedef trb_comparator_t key_compare;
 
-            typedef threaded_rb_tree_node_t<uint32_t> node_type;
+            typedef threaded_rbtree_node_t<uint32_t> node_type;
             typedef std::false_type unique_type;
             typedef trb_container_t container_type;
 
@@ -141,7 +141,7 @@ namespace {
         };
 
     public:
-        typedef threaded_rb_tree_impl<trb_config_t> key_set_t;
+        typedef threaded_rbtree_impl<trb_config_t> key_set_t;
         key_set_t key_set_;
         mutable port::RWMutex lock_;
         std::atomic_bool immutable_;

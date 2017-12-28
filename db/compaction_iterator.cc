@@ -61,6 +61,7 @@ public:
 
 void CompactionIteratorToInternalIterator::Seek(const Slice& target) {
   c_iter_->merge_out_iter_ = MergeOutputIterator(c_iter_->merge_helper_);
+  c_iter_->current_key_committed_ = false;
   c_iter_->current_user_key_snapshot_ = 0;
   c_iter_->current_user_key_sequence_ = 0;
   c_iter_->valid_ = false;

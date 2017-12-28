@@ -430,6 +430,7 @@ namespace {
 
         virtual ~TRBTreeMemTableRepFactory(){}
 
+        using MemTableRepFactory::CreateMemTableRep;
         virtual MemTableRep *CreateMemTableRep(
                 const MemTableRep::KeyComparator &compare, Allocator *allocator,
                 const SliceTransform *transform, Logger *logger) override

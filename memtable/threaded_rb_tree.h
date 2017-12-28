@@ -2561,7 +2561,7 @@ public:
         );
     }
 
-    key_type const &key(size_type i) const
+    key_type const &key_at(size_type i) const
     {
         return config_t::get_key(config_t::get_value(root_.container, i));
     }
@@ -2656,12 +2656,12 @@ public:
         return std::min<size_type>(root_.container.max_size(), size_type(node_type::nil_sentinel));
     }
 
-    container_type &container()
+    container_type &get_container()
     {
         return root_.container;
     }
 
-    container_type const &container() const
+    container_type const &get_container() const
     {
         return root_.container;
     }

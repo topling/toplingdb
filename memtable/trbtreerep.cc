@@ -202,7 +202,7 @@ namespace {
                 {
                     return;
                 }
-                key = key_set_.key(i);
+                key = key_set_.key_at(i);
             }
             while(callback_func(callback_args, key))
             {
@@ -212,7 +212,7 @@ namespace {
                 {
                     return;
                 }
-                key = key_set_.key(i);
+                key = key_set_.key_at(i);
             }
         }
 
@@ -249,7 +249,7 @@ namespace {
             virtual const char *key() const override
             {
                 ReadLock l(&lock_);
-                return tree_->key(where_);
+                return tree_->key_at(where_);
             }
 
             // Advances to the next position.
@@ -343,7 +343,7 @@ namespace {
             // REQUIRES: Valid()
             virtual const char *key() const override
             {
-                return tree_->key(where_);
+                return tree_->key_at(where_);
             }
 
             // Advances to the next position.

@@ -586,7 +586,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   }
 
   uint64_t estimated_total_size = 0;
-  for (unsigned int i = start_index; i < first_index_after; i++) {
+  for (size_t i = start_index; i < first_index_after; i++) {
     estimated_total_size += sorted_runs[i].size;
   }
   uint32_t path_id = GetPathId(ioptions_, estimated_total_size);

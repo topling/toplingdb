@@ -45,7 +45,7 @@ public:
   virtual void SeekToFirst() { c_iter_->SeekToFirst(); }
   virtual void SeekToLast() { abort(); } // do not support
   virtual void SeekForPrev(const rocksdb::Slice&) { abort(); } // do not support
-  virtual void Seek(const Slice& target) { abort(); } // do not support
+  virtual void Seek(const Slice& target);
   virtual void Next() { c_iter_->Next(); }
   virtual void Prev() { abort(); } // do not support
   virtual Slice key() const { return c_iter_->key(); }
@@ -58,6 +58,27 @@ public:
     return ci->status();
   }
 };
+
+void CompactionIteratorToInternalIterator::Seek(const Slice& target) {
+  c_iter_->merge_out_iter_ = MergeOutputIterator(c_iter_->merge_helper_);
+  c_iter_->current_user_key_snapshot_ = 0;
+  c_iter_->current_user_key_sequence_ = 0;
+  c_iter_->valid_ = false;
+  c_iter_->has_current_user_key_ = false;
+  c_iter_->at_next_ = false;
+  c_iter_->has_outputted_key_ = false;
+  c_iter_->clear_and_output_next_key_ = false;
+
+  IterKey key_for_seek;
+  key_for_seek.SetInternalKey(ExtractUserKey(target), kMaxSequenceNumber,
+                              kValueTypeForSeek);
+  c_iter_->input_->Seek(key_for_seek.GetKey());
+  c_iter_->SeekToFirst();
+  while (c_iter_->Valid() &&
+         c_iter_->cmp_->Compare(c_iter_->key(), target) < 0) {
+    c_iter_->Next();
+  }
+}
 
 CompactionIterator::CompactionIterator(
     InternalIterator* input, const Comparator* cmp, MergeHelper* merge_helper,
@@ -138,7 +159,6 @@ CompactionIterator::CompactionIterator(
   input_->SetPinnedItersMgr(&pinned_iters_mgr_);
   current_user_key_snapshot_ = 0;
   current_user_key_sequence_ = 0;
-  SeekToFirst_status_ = -1;
 }
 
 CompactionIterator::~CompactionIterator() {

@@ -72,7 +72,7 @@ void CompactionIteratorToInternalIterator::Seek(const Slice& target) {
   IterKey key_for_seek;
   key_for_seek.SetInternalKey(ExtractUserKey(target), kMaxSequenceNumber,
                               kValueTypeForSeek);
-  c_iter_->input_->Seek(key_for_seek.GetKey());
+  c_iter_->input_->Seek(key_for_seek.GetInternalKey());
   c_iter_->SeekToFirst();
   while (c_iter_->Valid() &&
          c_iter_->cmp_->Compare(c_iter_->key(), target) < 0) {
@@ -181,18 +181,9 @@ CompactionIterator::AdaptToInternalIterator() {
       new CompactionIteratorToInternalIterator(this));
 }
 
-void CompactionIterator::DoSeekToFirstIfNeeded() const {
-  assert(0 == SeekToFirst_status_ || 1 == SeekToFirst_status_);
-  if (0 == SeekToFirst_status_) {
-    const_cast<CompactionIterator*>(this)->NextFromInput();
-    const_cast<CompactionIterator*>(this)->PrepareOutput();
-    SeekToFirst_status_ = 1;
-  }
-}
-
-
 void CompactionIterator::SeekToFirst() {
-  SeekToFirst_status_ = 0;
+  NextFromInput();
+  PrepareOutput();
 }
 
 void CompactionIterator::Next() {

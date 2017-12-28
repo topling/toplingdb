@@ -2179,21 +2179,21 @@ public:
     }
 
     //range
-    template<class iterator_t> threaded_rbtree_impl(iterator_t begin,
-                                                    iterator_t end,
+    template<class iterator_t> threaded_rbtree_impl(iterator_t iter_begin,
+                                                    iterator_t iter_end,
                                                     key_compare const &comp = key_compare(),
                                                     container_type const &container = container_type()
     ) : root_(comp, container)
     {
-        insert(begin, end);
+        insert(iter_begin, iter_end);
     }
 
     //range
     template<class iterator_t>
-    threaded_rbtree_impl(iterator_t begin, iterator_t end, container_type const &container)
+    threaded_rbtree_impl(iterator_t iter_begin, iterator_t iter_end, container_type const &container)
         : root_(key_compare(), container)
     {
-        insert(begin, end);
+        insert(iter_begin, iter_end);
     }
 
     //copy
@@ -2311,11 +2311,11 @@ public:
     }
 
     //range
-    template<class iterator_t> void insert(iterator_t begin, iterator_t end)
+    template<class iterator_t> void insert(iterator_t iter_begin, iterator_t iter_end)
     {
-        for(; begin != end; ++begin)
+        for(; iter_begin != iter_end; ++iter_begin)
         {
-            emplace(*begin);
+            emplace(*iter_begin);
         }
     }
 

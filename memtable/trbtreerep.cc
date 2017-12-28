@@ -149,7 +149,7 @@ namespace {
         const SliceTransform *transform_;
 
     public:
-        explicit TRBTreeRep(size_type reserve_size, const MemTableRep::KeyComparator &compare, MemTableAllocator *allocator,
+        explicit TRBTreeRep(size_type reserve_size, const MemTableRep::KeyComparator &compare, Allocator *allocator,
                             const SliceTransform *transform) : MemTableRep(allocator),
                                                                key_set_({compare}, {&memory_size_, reserve_size}),
                                                                immutable_{false},
@@ -219,7 +219,6 @@ namespace {
         virtual ~TRBTreeRep() override
         {
             key_set_.clear();
-            allocator_->DoneAllocating();
         }
 
         class Iterator : public MemTableRep::Iterator
@@ -432,7 +431,7 @@ namespace {
         virtual ~TRBTreeMemTableRepFactory(){}
 
         virtual MemTableRep *CreateMemTableRep(
-                const MemTableRep::KeyComparator &compare, MemTableAllocator *allocator,
+                const MemTableRep::KeyComparator &compare, Allocator *allocator,
                 const SliceTransform *transform, Logger *logger) override
         {
           return new TRBTreeRep(reserve_size, compare, allocator, transform);

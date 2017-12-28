@@ -69,6 +69,7 @@ LIB_SOURCES =                                                   \
   memtable/skiplistrep.cc                                       \
   memtable/vectorrep.cc                                         \
   memtable/write_buffer_manager.cc                              \
+  memtable/trbtreerep.cc                                        \
   monitoring/histogram.cc                                       \
   monitoring/histogram_windowing.cc                             \
   monitoring/instrumented_mutex.cc                              \

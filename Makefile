@@ -630,7 +630,6 @@ $(SHARED2): $(SHARED4)
 	ln -fs $(SHARED4) $(SHARED2)
 $(SHARED3): $(SHARED4)
 	ln -fs $(SHARED4) $(SHARED3)
-endif
 
 ifeq ($(HAVE_POWER8),1)
 SHARED_C_OBJECTS = $(LIB_SOURCES_C:.c=.o)

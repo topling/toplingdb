@@ -679,6 +679,11 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   std::unique_ptr<InternalIterator> input(versions_->MakeInputIterator(
       sub_compact->compaction, range_del_agg.get()));
 
+  std::unique_ptr<RangeDelAggregator> range_del_agg2(
+      new RangeDelAggregator(cfd->internal_comparator(), existing_snapshots_));
+  std::unique_ptr<InternalIterator> input2(versions_->MakeInputIterator(
+      sub_compact->compaction, range_del_agg2.get()));
+
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_PROCESS_KV);
 
@@ -737,6 +742,13 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       existing_snapshots_.empty() ? 0 : existing_snapshots_.back(),
       compact_->compaction->level(), db_options_.statistics.get(),
       shutting_down_);
+  MergeHelper merge2(
+      env_, cfd->user_comparator(), cfd->ioptions()->merge_operator,
+      compaction_filter, db_options_.info_log.get(),
+      false /* internal key corruption is expected */,
+      existing_snapshots_.empty() ? 0 : existing_snapshots_.back(),
+      compact_->compaction->level(), db_options_.statistics.get(),
+      shutting_down_);
 
   TEST_SYNC_POINT("CompactionJob::Run():Inprogress");
 
@@ -746,8 +758,10 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     IterKey start_iter;
     start_iter.SetInternalKey(*start, kMaxSequenceNumber, kValueTypeForSeek);
     input->Seek(start_iter.GetInternalKey());
+    input2->Seek(start_iter.GetInternalKey());
   } else {
     input->SeekToFirst();
+    input2->SeekToFirst();
   }
 
   // we allow only 1 compaction event listener. Used by blob storage
@@ -762,14 +776,27 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
 #endif  // ROCKSDB_LITE
 
   Status status;
-  sub_compact->c_iter.reset(new CompactionIterator(
-      input.get(), cfd->user_comparator(), &merge, versions_->LastSequence(),
+  auto makeCompactionIterator = [&](InternalIterator* input_x,
+                                    MergeHelper& merge_x,
+                                    RangeDelAggregator *range_del_agg_x,
+                                    CompactionEventListener* compaction_listener_x
+                                    ) {
+    return std::unique_ptr<CompactionIterator>(new CompactionIterator(
+      input_x, cfd->user_comparator(), &merge_x, versions_->LastSequence(),
       &existing_snapshots_, earliest_write_conflict_snapshot_,
-      snapshot_checker_, env_, false, range_del_agg.get(),
-      sub_compact->compaction, compaction_filter, comp_event_listener,
-      shutting_down_, preserve_deletes_seqnum_));
+	  snapshot_checker_, env_, false, range_del_agg_x,
+	  sub_compact->compaction, compaction_filter,
+      compaction_listener_x, shutting_down_, preserve_deletes_seqnum_));
+  };
+  sub_compact->c_iter = makeCompactionIterator(input.get(), merge,
+      range_del_agg.get(), comp_event_listener);
   auto c_iter = sub_compact->c_iter.get();
   c_iter->SeekToFirst();
+  auto c_iter2 = makeCompactionIterator(input2.get(), merge2,
+      range_del_agg2.get(), nullptr);
+  c_iter2->SetFilterSampleInterval(0);
+  auto second_pass_iter = c_iter2->AdaptToInternalIterator();
+  c_iter2->SeekToFirst();
   if (c_iter->Valid() &&
       sub_compact->compaction->output_level() != 0) {
     // ShouldStopBefore() maintains state based on keys processed so far. The
@@ -811,6 +838,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       if (!status.ok()) {
         break;
       }
+      sub_compact->builder->SetSecondPassIterator(second_pass_iter.get());
     }
     assert(sub_compact->builder != nullptr);
     assert(sub_compact->current_output() != nullptr);
@@ -1222,7 +1250,7 @@ Status CompactionJob::InstallCompactionResults(
   {
     Compaction::InputLevelSummaryBuffer inputs_summary;
     ROCKS_LOG_INFO(
-        db_options_.info_log, "[%s] [JOB %d] Compacted %s => %" PRIu64 " bytes",
+        db_options_.info_log, "[%s] [JOB %d] Compacted  %s => %" PRIu64 " bytes",
         compaction->column_family_data()->GetName().c_str(), job_id_,
         compaction->InputLevelSummary(&inputs_summary), compact_->total_bytes);
   }

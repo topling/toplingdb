@@ -382,6 +382,26 @@ Compaction* UniversalCompactionPicker::PickCompaction(
 
 uint32_t UniversalCompactionPicker::GetPathId(
     const ImmutableCFOptions& ioptions, uint64_t file_size) {
+  if (ioptions.db_paths.size() == 1) {
+    return 0;
+  }
+  static thread_local std::mt19937_64 random;
+  uint64_t sum = 0;
+  size_t num = ioptions.db_paths.size();
+  for (size_t i = 0; i < num; ++i) {
+    sum += ioptions.db_paths[i].target_size;
+  }
+  uint64_t sum2 = sum;
+  for (size_t i = 0; i < num-1; ++i) {
+    uint64_t target_size = ioptions.db_paths[i].target_size;
+    double prob = double(target_size) / sum2;
+    if (random() < prob * random.max()) {
+      return uint32_t(i);
+    }
+    sum2 -= target_size;
+  }
+  return uint32_t(num-1);
+
   // Two conditions need to be satisfied:
   // (1) the target path needs to be able to hold the file's size
   // (2) Total size left in this and previous paths need to be not
@@ -432,9 +452,18 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   size_t start_index = 0;
   unsigned int candidate_count = 0;
 
-  unsigned int max_files_to_compact =
-      std::min(max_merge_width, max_number_of_files_to_compact);
+  unsigned int max_files_to_compact = std::max(2U,
+      std::min(max_merge_width, max_number_of_files_to_compact));
   min_merge_width = std::max(min_merge_width, 2U);
+  min_merge_width = std::min(min_merge_width, max_files_to_compact);
+
+  LogToBuffer(log_buffer, "[%s] Universal: "
+      "ratio = %u, max_files_to_compact = %u, "
+      "min_merge_width = %u, max_merge_width = %u"
+      , cf_name.c_str()
+      , ratio, max_files_to_compact
+      , min_merge_width, max_merge_width
+      );
 
   // Caller checks the size before executing this function. This invariant is
   // important because otherwise we may have a possible integer underflow when
@@ -488,7 +517,11 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       // default kCompactionStopStyleTotalSize; with
       // kCompactionStopStyleSimilarSize, it's simply the size of the last
       // picked file.
-      double sz = candidate_size * (100.0 + ratio) / 100.0;
+      double mul_ratio = (100.0 + ratio) / 100.0;
+      if (loop + 1 == i) {
+        mul_ratio = std::max(1.3, mul_ratio);
+      }
+      double sz = candidate_size * mul_ratio;
       if (sz < static_cast<double>(succeeding_sr->size)) {
         break;
       }
@@ -553,7 +586,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   }
 
   uint64_t estimated_total_size = 0;
-  for (unsigned int i = 0; i < first_index_after; i++) {
+  for (unsigned int i = start_index; i < first_index_after; i++) {
     estimated_total_size += sorted_runs[i].size;
   }
   uint32_t path_id = GetPathId(ioptions_, estimated_total_size);

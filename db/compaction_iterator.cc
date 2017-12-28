@@ -37,6 +37,28 @@ CompactionEventListener::CompactionListenerValueType fromInternalValueType(
 }
 #endif  // ROCKSDB_LITE
 
+class CompactionIteratorToInternalIterator : public InternalIterator {
+  CompactionIterator* c_iter_;
+public:
+  CompactionIteratorToInternalIterator(CompactionIterator* i) : c_iter_(i) {}
+  virtual bool Valid() const { return c_iter_->Valid(); }
+  virtual void SeekToFirst() { c_iter_->SeekToFirst(); }
+  virtual void SeekToLast() { abort(); } // do not support
+  virtual void SeekForPrev(const rocksdb::Slice&) { abort(); } // do not support
+  virtual void Seek(const Slice& target) { abort(); } // do not support
+  virtual void Next() { c_iter_->Next(); }
+  virtual void Prev() { abort(); } // do not support
+  virtual Slice key() const { return c_iter_->key(); }
+  virtual Slice value() const { return c_iter_->value(); }
+  virtual Status status() const {
+    auto ci = c_iter_;
+    if (ci->IsShuttingDown()) {
+      return Status::ShutdownInProgress();
+    }
+    return ci->status();
+  }
+};
+
 CompactionIterator::CompactionIterator(
     InternalIterator* input, const Comparator* cmp, MergeHelper* merge_helper,
     SequenceNumber last_sequence, std::vector<SequenceNumber>* snapshots,
@@ -114,6 +136,9 @@ CompactionIterator::CompactionIterator(
     ignore_snapshots_ = false;
   }
   input_->SetPinnedItersMgr(&pinned_iters_mgr_);
+  current_user_key_snapshot_ = 0;
+  current_user_key_sequence_ = 0;
+  SeekToFirst_status_ = -1;
 }
 
 CompactionIterator::~CompactionIterator() {
@@ -130,9 +155,24 @@ void CompactionIterator::ResetRecordCounts() {
   iter_stats_.num_optimized_del_drop_obsolete = 0;
 }
 
+std::unique_ptr<InternalIterator>
+CompactionIterator::AdaptToInternalIterator() {
+  return std::unique_ptr<InternalIterator>(
+      new CompactionIteratorToInternalIterator(this));
+}
+
+void CompactionIterator::DoSeekToFirstIfNeeded() const {
+  assert(0 == SeekToFirst_status_ || 1 == SeekToFirst_status_);
+  if (0 == SeekToFirst_status_) {
+    const_cast<CompactionIterator*>(this)->NextFromInput();
+    const_cast<CompactionIterator*>(this)->PrepareOutput();
+    SeekToFirst_status_ = 1;
+  }
+}
+
+
 void CompactionIterator::SeekToFirst() {
-  NextFromInput();
-  PrepareOutput();
+  SeekToFirst_status_ = 0;
 }
 
 void CompactionIterator::Next() {
@@ -196,13 +236,19 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
     CompactionFilter::ValueType value_type =
         ikey_.type == kTypeValue ? CompactionFilter::ValueType::kValue
                                  : CompactionFilter::ValueType::kBlobIndex;
-    {
-      StopWatchNano timer(env_, true);
+    auto doFilter = [&]() {
       filter = compaction_filter_->FilterV2(
           compaction_->level(), ikey_.user_key, value_type, value_,
           &compaction_filter_value_, compaction_filter_skip_until_.rep());
-      iter_stats_.total_filter_time +=
-          env_ != nullptr ? timer.ElapsedNanos() : 0;
+    };
+    auto sample = filter_sample_interval_;
+    if (env_ && sample && (filter_hit_count_ & (sample-1)) == 0) {
+      StopWatchNano timer(env_, true);
+      doFilter();
+      iter_stats_.total_filter_time += timer.ElapsedNanos() * sample;
+    }
+    else {
+      doFilter();
     }
 
     if (filter == CompactionFilter::Decision::kRemoveAndSkipUntil &&
@@ -212,6 +258,7 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       // Keep the key as per FilterV2 documentation.
       filter = CompactionFilter::Decision::kKeep;
     }
+    ++filter_hit_count_;
 
     if (filter == CompactionFilter::Decision::kRemove) {
       // convert the current key to a delete; key_ is pointing into
@@ -230,6 +277,11 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       *skip_until = compaction_filter_skip_until_.Encode();
     }
   }
+}
+
+void CompactionIterator::SetFilterSampleInterval(size_t sample_interval) {
+  assert((sample_interval&(sample_interval-1)) == 0); // must be power of 2
+  filter_sample_interval_ = sample_interval;
 }
 
 void CompactionIterator::NextFromInput() {

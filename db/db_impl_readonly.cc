@@ -12,6 +12,10 @@
 #include "db/range_del_aggregator.h"
 #include "monitoring/perf_context_imp.h"
 
+#ifndef _MSC_VER
+# include <table/terark_zip_weak_function.h>
+#endif
+
 namespace rocksdb {
 
 #ifndef ROCKSDB_LITE
@@ -143,13 +147,26 @@ Status DB::OpenForReadOnly(
   handles->clear();
 
   SuperVersionContext sv_context(/* create_superversion */ true);
+#ifndef _MSC_VER
+  const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terarkdb_localTempDir) {
+    if (TerarkZipMultiCFOptionsFromEnv) {
+      TerarkZipMultiCFOptionsFromEnv(db_options, column_families);
+    } else {
+      return Status::InvalidArgument(
+          "env TerarkZipTable_localTempDir is defined, "
+          "but dynamic libterark-zip-rocksdb is not loaded");
+    }
+  }
+#endif
+
   DBImplReadOnly* impl = new DBImplReadOnly(db_options, dbname);
   impl->mutex_.Lock();
   Status s = impl->Recover(column_families, true /* read only */,
                            error_if_log_file_exist);
   if (s.ok()) {
     // set column family handles
-    for (auto cf : column_families) {
+    for (auto& cf : column_families) {
       auto cfd =
           impl->versions_->GetColumnFamilySet()->GetColumnFamily(cf.name);
       if (cfd == nullptr) {

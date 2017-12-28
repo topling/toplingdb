@@ -49,4 +49,4 @@ extern __thread IOStatsContext iostats_context;
 
 #define IOSTATS_TIMER_GUARD(metric)
 
-#endif  // ROCKSDB_SUPPORT_THREAD_LOCAL
+#endif  // IOS_CROSS_COMPILE

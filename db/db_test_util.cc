@@ -10,6 +10,7 @@
 #include "db/db_test_util.h"
 #include "db/forward_iterator.h"
 #include "rocksdb/env_encryption.h"
+#include <table/terark_zip_weak_function.h>
 
 namespace rocksdb {
 
@@ -278,6 +279,14 @@ Options DBTestBase::GetDefaultOptions() {
   options.max_open_files = 5000;
   options.wal_recovery_mode = WALRecoveryMode::kTolerateCorruptedTailRecords;
   options.compaction_pri = CompactionPri::kByCompensatedSize;
+
+  if (NewTerarkZipTableFactory) {
+    TerarkZipTableOptions tzto;
+    std::shared_ptr<TableFactory> terark_zip_table_factory(NewTerarkZipTableFactory(tzto,
+        NewBlockBasedTableFactory(BlockBasedTableOptions())));
+    options.allow_mmap_reads = true;
+    options.table_factory = terark_zip_table_factory;
+  }
   return options;
 }
 
@@ -292,10 +301,11 @@ Options DBTestBase::GetOptions(
     !defined(OS_AIX)
   rocksdb::SyncPoint::GetInstance()->ClearCallBack(
       "NewRandomAccessFile:O_DIRECT");
-  rocksdb::SyncPoint::GetInstance()->ClearCallBack("NewWritableFile:O_DIRECT");
+  rocksdb::SyncPoint::GetInstance()->ClearCallBack(
+      "NewWritableFile:O_DIRECT");
 #endif
 
-  bool can_allow_mmap = IsMemoryMappedAccessSupported();
+  bool can_allow_mmap = options.allow_mmap_reads || IsMemoryMappedAccessSupported();
   switch (option_config) {
 #ifndef ROCKSDB_LITE
     case kHashSkipList:

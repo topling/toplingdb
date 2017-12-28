@@ -38,7 +38,9 @@
 #include "table/table_reader.h"
 #include "util/compression.h"
 #include "util/random.h"
-
+#ifndef _MSC_VER
+# include <table/terark_zip_weak_function.h>
+#endif
 #include "port/port.h"
 
 namespace rocksdb {
@@ -108,24 +110,26 @@ Status SstFileReader::GetTableReader(const std::string& file_path) {
     // For old sst format, ReadTableProperties might fail but file can be read
     if (ReadTableProperties(magic_number, file_.get(), file_size).ok()) {
       SetTableOptionsByMagicNumber(magic_number);
+      soptions_ = EnvOptions(options_);
+      options_.env->NewRandomAccessFile(file_path, &file, soptions_);
+      file_.reset(new RandomAccessFileReader(std::move(file), file_path));
     } else {
       SetOldTableOptions();
     }
   }
 
   if (s.ok()) {
-    s = NewTableReader(ioptions_, soptions_, internal_comparator_, file_size,
-                       &table_reader_);
+    s = NewTableReader(file_size);
   }
   return s;
 }
 
-Status SstFileReader::NewTableReader(
-    const ImmutableCFOptions& ioptions, const EnvOptions& soptions,
-    const InternalKeyComparator& internal_comparator, uint64_t file_size,
-    unique_ptr<TableReader>* table_reader) {
+Status SstFileReader::NewTableReader(uint64_t file_size) {
   // We need to turn off pre-fetching of index and filter nodes for
   // BlockBasedTable
+
+  ioptions_ = ImmutableCFOptions(options_);
+
   if (BlockBasedTableFactory::kName == options_.table_factory->Name()) {
     return options_.table_factory->NewTableReader(
         TableReaderOptions(ioptions_, soptions_, internal_comparator_,
@@ -223,7 +227,7 @@ Status SstFileReader::ReadTableProperties(uint64_t table_magic_number,
                                           uint64_t file_size) {
   TableProperties* table_properties = nullptr;
   Status s = rocksdb::ReadTableProperties(file, file_size, table_magic_number,
-                                          ioptions_, &table_properties);
+                                          ImmutableCFOptions(options_), &table_properties);
   if (s.ok()) {
     table_properties_.reset(table_properties);
   } else {
@@ -265,11 +269,25 @@ Status SstFileReader::SetTableOptionsByMagicNumber(
     options_.table_factory.reset(NewPlainTableFactory(plain_table_options));
     fprintf(stdout, "Sst file format: plain table\n");
   } else {
+#ifndef _MSC_VER
+    if (TerarkZipAutoConfigForOnlineDB) {
+      TerarkZipTableOptions tzto;
+      TerarkZipAutoConfigForOnlineDB(tzto, options_, options_);
+      options_.table_factory.reset(NewTerarkZipTableFactory(tzto, nullptr));
+    }
+    else {
+      auto msg = "Trying TerarkZipTable, but libterark_zip_rocksdb.so is not loaded";
+      fprintf(stderr, "ERROR: %s\n", msg);
+      return Status::NotSupported(
+          "SstFileReader::SetTableOptionsByMagicNumber", msg);
+    }
+#else
     char error_msg_buffer[80];
     snprintf(error_msg_buffer, sizeof(error_msg_buffer) - 1,
              "Unsupported table magic number --- %lx",
              (long)table_magic_number);
     return Status::InvalidArgument(error_msg_buffer);
+#endif
   }
 
   return Status::OK();

@@ -272,6 +272,24 @@ class VersionEdit {
   std::string DebugString(bool hex_key = false) const;
   std::string DebugJSON(int edit_num, bool hex_key = false) const;
 
+  bool is_has_comparator();
+  bool is_has_log_number();
+  bool is_has_prev_log_number();
+  bool is_has_next_file_number();
+  bool is_has_last_sequence();
+  bool is_has_max_column_family();
+  bool is_column_family_drop();
+  bool is_column_family_add();
+  std::string get_comparator();
+  uint64_t get_log_number();
+  uint64_t get_prev_log_number();
+  uint64_t get_next_file_number();
+  SequenceNumber get_last_sequence();
+  uint32_t get_max_column_family();
+  std::string get_column_family_name();
+  uint32_t get_column_family();
+  DeletedFileSet get_deleted_files();
+  std::vector<std::pair<int, FileMetaData>> get_new_files();
  private:
   friend class VersionSet;
   friend class Version;

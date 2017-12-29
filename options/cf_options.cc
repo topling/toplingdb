@@ -47,7 +47,6 @@ ImmutableCFOptions::ImmutableCFOptions(const ImmutableDBOptions& db_options,
       allow_mmap_reads(db_options.allow_mmap_reads),
       allow_mmap_writes(db_options.allow_mmap_writes),
       db_paths(db_options.db_paths),
-      memtable_factory(cf_options.memtable_factory.get()),
       table_factory(cf_options.table_factory.get()),
       table_properties_collector_factories(
           cf_options.table_properties_collector_factories),
@@ -119,6 +118,8 @@ void MutableCFOptions::Dump(Logger* log) const {
   ROCKS_LOG_INFO(log,
                  "                         arena_block_size: %" ROCKSDB_PRIszt,
                  arena_block_size);
+  ROCKS_LOG_INFO(log, "                    memtable_factory: %s",
+                 memtable_factory->Name());
   ROCKS_LOG_INFO(log, "              memtable_prefix_bloom_ratio: %f",
                  memtable_prefix_bloom_size_ratio);
   ROCKS_LOG_INFO(log,

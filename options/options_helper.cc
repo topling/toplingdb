@@ -643,6 +643,11 @@ bool SerializeSingleOptionHelper(const char* opt_address,
   return true;
 }
 
+Status ParseColumnFamilyOption(const std::string& name,
+                               const std::string& org_value,
+                               ColumnFamilyOptions* new_options,
+                               bool input_strings_escaped = false);
+
 Status GetMutableOptionsFromStrings(
     const MutableCFOptions& base_options,
     const std::unordered_map<std::string, std::string>& options_map,
@@ -651,6 +656,16 @@ Status GetMutableOptionsFromStrings(
   *new_options = base_options;
   for (const auto& o : options_map) {
     try {
+      if ("memtable" == o.first) {
+        ColumnFamilyOptions cfo;
+        Status s = ParseColumnFamilyOption(o.first, o.second, &cfo);
+        if (s.ok()) {
+          new_options->memtable_factory = cfo.memtable_factory;
+          continue;
+        } else {
+          return s;
+        }
+      }
       auto iter = cf_options_type_info.find(o.first);
       if (iter == cf_options_type_info.end()) {
         return Status::InvalidArgument("Unrecognized option: " + o.first);

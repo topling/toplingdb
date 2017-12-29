@@ -10,6 +10,7 @@
 #include "table/get_context.h"
 #ifndef _MSC_VER
 # include <table/terark_zip_weak_function.h>
+# include <sys/unistd.h>
 #endif
 
 namespace rocksdb {
@@ -153,11 +154,21 @@ Status CompactedDBImpl::Open(const Options& options,
   const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
   if (terarkdb_localTempDir) {
     if (TerarkZipIsBlackListCF) {
+      if (::access(terarkdb_localTempDir, R_OK|W_OK) != 0) {
+        return Status::InvalidArgument(
+            "Must exists, and Permission ReadWrite is required on "
+            "env TerarkZipTable_localTempDir",
+            terarkdb_localTempDir);
+      }
       if (!TerarkZipIsBlackListCF(kDefaultColumnFamilyName)) {
         const ColumnFamilyOptions& cf_options = options;
         const DBOptions& db_options = options;
         TerarkZipDBOptionsFromEnv(const_cast<          DBOptions&>(db_options));
         TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf_options));
+        auto& factory = cf_options.table_factory;
+        Status s = factory->SanitizeOptions(db_options, cf_options);
+        if (!s.OK())
+          return s;
       }
     } else {
       return Status::InvalidArgument(

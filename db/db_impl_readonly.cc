@@ -14,6 +14,7 @@
 
 #ifndef _MSC_VER
 # include <table/terark_zip_weak_function.h>
+# include <sys/unistd.h>
 #endif
 
 namespace rocksdb {
@@ -150,6 +151,12 @@ Status DB::OpenForReadOnly(
 #ifndef _MSC_VER
   const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
   if (terarkdb_localTempDir) {
+    if (::access(terarkdb_localTempDir, R_OK|W_OK) != 0) {
+      return Status::InvalidArgument(
+          "Must exists, and Permission ReadWrite is required on "
+          "env TerarkZipTable_localTempDir",
+          terarkdb_localTempDir);
+    }
     if (TerarkZipMultiCFOptionsFromEnv) {
       TerarkZipMultiCFOptionsFromEnv(db_options, column_families);
     } else {

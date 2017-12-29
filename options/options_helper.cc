@@ -177,6 +177,7 @@ ColumnFamilyOptions BuildColumnFamilyOptions(
   cf_opts.compression = mutable_cf_options.compression;
 
   cf_opts.table_factory = options.table_factory;
+  cf_opts.memtable_factory = mutable_cf_options.memtable_factory;
   // TODO(yhchiang): find some way to handle the following derived options
   // * max_file_size
 

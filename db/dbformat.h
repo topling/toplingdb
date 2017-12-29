@@ -18,6 +18,7 @@
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/table.h"
 #include "rocksdb/types.h"
+#include "port/port.h"
 #include "util/coding.h"
 #include "util/logging.h"
 

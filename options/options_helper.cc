@@ -798,7 +798,7 @@ Status StringToMap(const std::string& opts_str,
 Status ParseColumnFamilyOption(const std::string& name,
                                const std::string& org_value,
                                ColumnFamilyOptions* new_options,
-                               bool input_strings_escaped = false) {
+                               bool input_strings_escaped) {
   const std::string& value =
       input_strings_escaped ? UnescapeOptionString(org_value) : org_value;
   try {

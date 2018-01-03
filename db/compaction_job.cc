@@ -533,8 +533,9 @@ Status CompactionJob::Run() {
                              &compact_->sub_compact_states[i]);
   }
 
-  auto& mcfo = compact_->compaction->cfd_->mutable_cf_options_;
   auto c = compact_->compaction;
+  auto& mcfo = *const_cast<MutableCFOptions*>
+       (c->column_family_data()->GetLatestMutableCFOptions());
   size_t input_runs;
   if (c->level() == 0) {
     input_runs = c->num_input_levels() + c->input_levels(0)->num_files - 1;

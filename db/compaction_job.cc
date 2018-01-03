@@ -534,7 +534,14 @@ Status CompactionJob::Run() {
   }
 
   auto& mcfo = compact_->compaction->cfd_->mutable_cf_options_;
-  int input_runs_1 = (int)compact_->compaction->num_input_levels() - 1;
+  auto c = compact_->compaction;
+  size_t input_runs;
+  if (c->level() == 0) {
+    input_runs = c->num_input_levels() + c->input_levels(0)->num_files - 1;
+  } else {
+    input_runs = c->num_input_levels();
+  }
+  int input_runs_1 = (int)input_runs - 1;
 
 #define AtomFor(x) reinterpret_cast<std::atomic<decltype(x)>&>(x)
 

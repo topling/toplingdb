@@ -10,12 +10,13 @@ USE_RTTI = 1
 
 COMPILER=$(shell t=`mktemp --suffix=.exe`; ${CXX} terark-tools/detect-compiler.cpp -o $$t && $$t && rm -f $$t)
 UNAME_MachineSystem=$(shell uname -m -s | sed 's:[ /]:-:g')
-TerarkDir=../terark-zip-rocksdb/pkg/terark-zip-rocksdb-${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
+TERARK_ZIP_ROCKSDB_HOME ?= ../terark-zip-rocksdb
+TerarkDir := ${TERARK_ZIP_ROCKSDB_HOME}/pkg/terark-zip-rocksdb-${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
 BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
 BUILD_ROOT := build/${BUILD_NAME}
 export LD_LIBRARY_PATH:=${TerarkDir}/lib:${LD_LIBRARY_PATH}
 
-EXTRA_CXXFLAGS += -I../terark-zip-rocksdb/src -fPIC
+EXTRA_CXXFLAGS += -I${TERARK_ZIP_ROCKSDB_HOME}/src -fPIC
 BASH_EXISTS := $(shell which bash)
 SHELL := $(shell which bash)
 

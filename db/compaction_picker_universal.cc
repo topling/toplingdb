@@ -296,10 +296,20 @@ Compaction* UniversalCompactionPicker::PickCompaction(
                  mutable_cf_options.level0_file_num_compaction_trigger));
       // Get the total number of sorted runs that are not being compacted
       int num_sr_not_compacted = 0;
+      int num_sr_are_compacting = 0;
       for (size_t i = 0; i < sorted_runs.size(); i++) {
         if (sorted_runs[i].being_compacted == false) {
           num_sr_not_compacted++;
         }
+        else {
+          num_sr_are_compacting++;
+        }
+      }
+      if (num_sr_are_compacting) {
+        ROCKS_LOG_BUFFER(log_buffer,
+                         "[%s] Universal: %d sorted runs compacting by other jobs, skip\n",
+                         cf_name.c_str(), num_sr_are_compacting);
+        return nullptr;
       }
 
       // The number of sorted runs that are not being compacted is greater than

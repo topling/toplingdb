@@ -533,24 +533,6 @@ Status CompactionJob::Run() {
                              &compact_->sub_compact_states[i]);
   }
 
-  auto c = compact_->compaction;
-  auto& mcfo = *const_cast<MutableCFOptions*>
-       (c->column_family_data()->GetLatestMutableCFOptions());
-  size_t input_runs;
-  if (c->level() == 0) {
-    input_runs = c->num_input_levels() + c->input_levels(0)->num_files - 1;
-  } else {
-    input_runs = c->num_input_levels();
-  }
-  int input_runs_1 = (int)input_runs - 1;
-
-#define AtomFor(x) reinterpret_cast<std::atomic<decltype(x)>&>(x)
-
-  // to allow more writes and other compactions during this compaction
-  AtomFor(mcfo.level0_file_num_compaction_trigger) += input_runs_1;
-  AtomFor(mcfo.level0_slowdown_writes_trigger    ) += input_runs_1;
-  AtomFor(mcfo.level0_stop_writes_trigger        ) += input_runs_1;
-
   // Always schedule the first subcompaction (whether or not there are also
   // others) in the current thread to be efficient with resources
   ProcessKeyValueCompaction(&compact_->sub_compact_states[0]);
@@ -559,10 +541,6 @@ Status CompactionJob::Run() {
   for (auto& thread : thread_pool) {
     thread.join();
   }
-
-  AtomFor(mcfo.level0_file_num_compaction_trigger) -= input_runs_1;
-  AtomFor(mcfo.level0_slowdown_writes_trigger    ) -= input_runs_1;
-  AtomFor(mcfo.level0_stop_writes_trigger        ) -= input_runs_1;
 
   if (output_directory_) {
     output_directory_->Fsync();

@@ -269,9 +269,12 @@ Compaction* UniversalCompactionPicker::PickCompaction(
 
   // Check for size amplification first.
   Compaction* c;
-  if ((c = PickCompactionToReduceSizeAmp(cf_name, mutable_cf_options, vstorage,
-                                         score, sorted_runs, log_buffer)) !=
-      nullptr) {
+  if ((c = TrivialMovePickCompaction(cf_name, mutable_cf_options, vstorage,
+                                     log_buffer)) != nullptr) {
+    // universal trivial move;
+  } else if ((c = PickCompactionToReduceSizeAmp(
+                      cf_name, mutable_cf_options, vstorage,
+                      score, sorted_runs, log_buffer)) != nullptr) {
     ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: compacting for size amp\n",
                      cf_name.c_str());
   } else {
@@ -335,7 +338,8 @@ Compaction* UniversalCompactionPicker::PickCompaction(
     return nullptr;
   }
 
-  if (ioptions_.compaction_options_universal.allow_trivial_move == true) {
+  if (!c->is_trivial_move() &&
+      ioptions_.compaction_options_universal.allow_trivial_move) {
     c->set_is_trivial_move(IsInputFilesNonOverlapping(c));
   }
 
@@ -424,6 +428,8 @@ uint32_t UniversalCompactionPicker::GetPathId(
   // TODO(sdong): now the case of multiple column families is not
   // considered in this algorithm. So the target size can be violated in
   // that case. We need to improve it.
+
+/*
   uint64_t accumulated_size = 0;
   uint64_t future_size =
       file_size * (100 - ioptions.compaction_options_universal.size_ratio) /
@@ -439,6 +445,71 @@ uint32_t UniversalCompactionPicker::GetPathId(
     accumulated_size += target_size;
   }
   return p;
+*/
+}
+
+Compaction* UniversalCompactionPicker::TrivialMovePickCompaction(
+    const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
+    VersionStorageInfo* vstorage, LogBuffer* log_buffer) {
+  if (!ioptions_.compaction_options_universal.allow_trivial_move) {
+    return nullptr;
+  }
+  int output_level = vstorage->num_levels() - 1;
+  int start_level = 0;
+  for (; output_level >= 1; output_level = start_level - 1) {
+    for (; output_level >= 1; --output_level) {
+      if (!vstorage->LevelFiles(output_level).empty()) {
+        continue;
+      }
+      bool fail = false;
+      for (auto c : compactions_in_progress_) {
+        if (c->output_level() == output_level) {
+          fail = true;
+          break;
+        }
+      }
+      if (fail) {
+        continue;
+      }
+      break;
+    }
+    if (output_level < 1) {
+      return nullptr;
+    }
+    for (start_level = output_level - 1; start_level > 0; --start_level) {
+      if (vstorage->LevelFiles(start_level).empty()) {
+        continue;
+      }
+      break;
+    }
+    if (start_level == 0 ||
+        !AreFilesInCompaction(vstorage->LevelFiles(start_level))) {
+      break;
+    }
+  }
+  CompactionInputFiles inputs;
+  inputs.level = start_level;
+  uint32_t path_id = 0;
+  if (start_level == 0) {
+    auto& level0_files = vstorage->LevelFiles(0);
+    if (level0_files.empty() || level0_files.back()->being_compacted) {
+      return nullptr;
+    }
+    FileMetaData* meta = level0_files.back();
+    inputs.files = { meta };
+    path_id = meta->fd.GetPathId();
+  } else {
+    inputs.files = vstorage->LevelFiles(start_level);
+    path_id = inputs.files.front()->fd.GetPathId();
+  }
+  auto c = new Compaction(
+      vstorage, ioptions_, mutable_cf_options, { std::move(inputs) },
+      output_level, mutable_cf_options.MaxFileSizeForLevel(output_level),
+      LLONG_MAX, path_id, kNoCompression, /* grandparents */ {},
+      /* is manual */ false, 0, false /* deletion_compaction */,
+      CompactionReason::kUniversalTrivialMove);
+  c->set_is_trivial_move(true);
+  return c;
 }
 
 //

@@ -456,7 +456,7 @@ Compaction* UniversalCompactionPicker::TrivialMovePickCompaction(
   }
   int output_level = vstorage->num_levels() - 1;
   int start_level = 0;
-  for (; output_level >= 1; output_level = start_level - 1) {
+  while (true) {
     for (; output_level >= 1; --output_level) {
       if (!vstorage->LevelFiles(output_level).empty()) {
         continue;
@@ -476,16 +476,25 @@ Compaction* UniversalCompactionPicker::TrivialMovePickCompaction(
     if (output_level < 1) {
       return nullptr;
     }
+    bool fail = false;
     for (start_level = output_level - 1; start_level > 0; --start_level) {
+      for (auto c : compactions_in_progress_) {
+        if (c->output_level() == start_level) {
+          fail = true;
+          break;
+        }
+      }
       if (vstorage->LevelFiles(start_level).empty()) {
         continue;
       }
       break;
     }
-    if (start_level == 0 ||
-        !AreFilesInCompaction(vstorage->LevelFiles(start_level))) {
+    if (!fail &&
+        (start_level == 0 ||
+         !AreFilesInCompaction(vstorage->LevelFiles(start_level)))) {
       break;
     }
+    output_level = start_level - 1;
   }
   CompactionInputFiles inputs;
   inputs.level = start_level;

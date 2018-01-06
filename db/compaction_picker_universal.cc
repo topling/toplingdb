@@ -592,6 +592,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
                        cf_name.c_str(), file_num_buf, loop);
     }
 
+    uint64_t sum_sr_size = candidate_size;
     uint64_t max_sr_size = candidate_size;
     uint64_t last_sr_size = candidate_size;
     // Check if the succeeding files need compaction.
@@ -616,7 +617,6 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       if (sz < static_cast<double>(succeeding_sr->size)) {
         break;
       }
-      max_sr_size  = std::max(max_sr_size, succeeding_sr->compensated_file_size);
       if (ioptions_.compaction_options_universal.stop_style ==
           kCompactionStopStyleSimilarSize) {
         // Similar-size stopping rule: also check the last picked file isn't
@@ -633,44 +633,39 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       } else {  // default kCompactionStopStyleTotalSize
         candidate_size += succeeding_sr->compensated_file_size;
       }
+      sum_sr_size += succeeding_sr->compensated_file_size;
+      max_sr_size  = std::max(max_sr_size, succeeding_sr->compensated_file_size);
       last_sr_size  = succeeding_sr->compensated_file_size;
       candidate_count++;
     }
 
     // Found a series of consecutive files that need compaction.
     if (candidate_count >= (unsigned int)min_merge_width) {
-      bool pick = true;
-      if (kCompactionStopStyleTotalSize ==
-          ioptions_.compaction_options_universal.stop_style) {
-        // in most cases last_sr_size is also the max, but it can be
-        // some bad cases in which the max is not the last, in this bad case,
-        // the candidate must be picked
-        double sum_sr_size  = double(candidate_size);
-        double max_sr_ratio = double(max_sr_size) / sum_sr_size;
-        auto& o = mutable_cf_options;
-        if ((max_sr_size > last_sr_size) ||
-            (max_sr_ratio < 0.60) ||
-            (max_sr_ratio < 0.80 &&
-             candidate_size < o.write_buffer_size * o.max_write_buffer_number
-            )) {
-          // not so bad, pick the compaction
-        }
-        else {
-          pick = false; // too bad, don't pick the compaction
-          for (size_t i = loop;
-               i < loop + candidate_count && i < sorted_runs.size(); i++) {
-            const SortedRun* skipping_sr = &sorted_runs[i];
-            char file_num_buf[256];
-            skipping_sr->DumpSizeInfo(file_num_buf, sizeof(file_num_buf), loop);
-            ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: max/sum = %7.5f too big, skipping %s",
-                             cf_name.c_str(), max_sr_ratio, file_num_buf);
-          }
-        }
-      }
-      if (pick) {
+      // in most cases last_sr_size is also the max, but it can be
+      // some bad cases in which the max is not the last, in this bad case,
+      // the candidate must be picked
+      double max_sr_ratio = double(max_sr_size) / sum_sr_size;
+      auto& o = mutable_cf_options;
+      if ((max_sr_size > last_sr_size) ||
+          (max_sr_ratio < 0.60) ||
+          (max_sr_ratio < 0.80 &&
+           candidate_size < o.write_buffer_size * o.max_write_buffer_number
+          )) {
+        // not so bad, pick the compaction
         start_index = loop;
         done = true;
         break;
+      }
+      else {
+        // too bad, don't pick the compaction
+        for (size_t i = loop;
+             i < loop + candidate_count && i < sorted_runs.size(); i++) {
+          const SortedRun* skipping_sr = &sorted_runs[i];
+          char file_num_buf[256];
+          skipping_sr->DumpSizeInfo(file_num_buf, sizeof(file_num_buf), loop);
+          ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: max/sum = %7.5f too big, skipping %s",
+                           cf_name.c_str(), max_sr_ratio, file_num_buf);
+        }
       }
     } else {
       for (size_t i = loop;

@@ -338,7 +338,7 @@ Compaction* UniversalCompactionPicker::PickCompaction(
     return nullptr;
   }
 
-  if (!c->is_trivial_move() &&
+  if (c->compaction_reason() != CompactionReason::kUniversalTrivialMove &&
       ioptions_.compaction_options_universal.allow_trivial_move) {
     c->set_is_trivial_move(IsInputFilesNonOverlapping(c));
   }

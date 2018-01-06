@@ -609,33 +609,35 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       // default kCompactionStopStyleTotalSize; with
       // kCompactionStopStyleSimilarSize, it's simply the size of the last
       // picked file.
-      double mul_ratio = (100.0 + ratio) / 100.0;
-      if (loop + 1 == i) {
-        mul_ratio = std::max(1.3, mul_ratio);
-      }
-      double sz = candidate_size * mul_ratio;
-      if (sz < static_cast<double>(succeeding_sr->size)) {
-        break;
-      }
       if (ioptions_.compaction_options_universal.stop_style ==
           kCompactionStopStyleSimilarSize) {
         // Similar-size stopping rule: also check the last picked file isn't
         // far larger than the next candidate file.
-        sz = (succeeding_sr->size * (100.0 + ratio)) / 100.0;
-        if (sz < static_cast<double>(candidate_size)) {
+        double sz = (succeeding_sr->size * (100.0 + ratio)) / 100.0;
+        if (sz < static_cast<double>(last_sr_size)) {
           // If the small file we've encountered begins a run of similar-size
           // files, we'll pick them up on a future iteration of the outer
           // loop. If it's some lonely straggler, it'll eventually get picked
           // by the last-resort read amp strategy which disregards size ratios.
           break;
         }
-        candidate_size = succeeding_sr->compensated_file_size;
       } else {  // default kCompactionStopStyleTotalSize
-        candidate_size += succeeding_sr->compensated_file_size;
+        double mul_ratio = (100.0 + ratio) / 100.0;
+        double sz;
+        if (loop + min_merge_width-1 <= i) {
+          sz = sum_sr_size * std::max(1.3, mul_ratio);
+        } else {
+          // if min_merge_width is 2, sz is effective TotalSize
+          sz = mul_ratio * (sum_sr_size + succeeding_sr->size)
+             / min_merge_width;
+        }
+        if (sz < static_cast<double>(succeeding_sr->size)) {
+          break;
+        }
       }
       sum_sr_size += succeeding_sr->compensated_file_size;
       max_sr_size  = std::max(max_sr_size, succeeding_sr->compensated_file_size);
-      last_sr_size  = succeeding_sr->compensated_file_size;
+      last_sr_size = succeeding_sr->compensated_file_size;
       candidate_count++;
     }
 
@@ -649,7 +651,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       if ((max_sr_size > last_sr_size) ||
           (max_sr_ratio < 0.60) ||
           (max_sr_ratio < 0.80 &&
-           candidate_size < o.write_buffer_size * o.max_write_buffer_number
+           sum_sr_size < o.write_buffer_size * o.max_write_buffer_number
           )) {
         // not so bad, pick the compaction
         start_index = loop;

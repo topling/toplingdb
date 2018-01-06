@@ -592,6 +592,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     }
 
     uint64_t max_sr_size = candidate_size;
+    uint64_t last_sr_size = candidate_size;
     // Check if the succeeding files need compaction.
     for (size_t i = loop + 1;
          candidate_count < max_files_to_compact && i < sorted_runs.size();
@@ -631,6 +632,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       } else {  // default kCompactionStopStyleTotalSize
         candidate_size += succeeding_sr->compensated_file_size;
       }
+      last_sr_size  = succeeding_sr->compensated_file_size;
       candidate_count++;
     }
 
@@ -639,10 +641,14 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       bool pick = true;
       if (kCompactionStopStyleTotalSize ==
           ioptions_.compaction_options_universal.stop_style) {
+        // in most cases last_sr_size is also the max, but it can be
+        // some bad cases in which the max is not the last, in this bad case,
+        // the candidate must be picked
         double sum_sr_size  = candidate_size;
         double max_sr_ratio = double(max_sr_size) / sum_sr_size;
         auto& o = mutable_cf_options;
-        if ((max_sr_ratio < 0.60) ||
+        if ((max_sr_size > last_sr_size) ||
+            (max_sr_ratio < 0.60) ||
             (max_sr_ratio < 0.80 &&
              candidate_size < o.write_buffer_size * o.max_write_buffer_number
             )) {
@@ -655,7 +661,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
             const SortedRun* skipping_sr = &sorted_runs[i];
             char file_num_buf[256];
             skipping_sr->DumpSizeInfo(file_num_buf, sizeof(file_num_buf), loop);
-            ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: max_sr_ratio = %7.5f too big, skipping %s",
+            ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: max/sum = %7.5f too big, skipping %s",
                              cf_name.c_str(), max_sr_ratio, file_num_buf);
           }
         }

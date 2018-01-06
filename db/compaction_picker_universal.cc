@@ -624,12 +624,10 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       } else {  // default kCompactionStopStyleTotalSize
         double mul_ratio = (100.0 + ratio) / 100.0;
         double sz;
-        if (loop + min_merge_width-1 <= i) {
+        if (loop + 1 == i) {
           sz = sum_sr_size * std::max(1.3, mul_ratio);
         } else {
-          // if min_merge_width is 2, sz is effective TotalSize
-          sz = mul_ratio * (sum_sr_size + succeeding_sr->size)
-             / min_merge_width;
+          sz = sum_sr_size * mul_ratio;
         }
         if (sz < static_cast<double>(succeeding_sr->size)) {
           break;

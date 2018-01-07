@@ -516,6 +516,7 @@ Compaction* UniversalCompactionPicker::TrivialMovePickCompaction(
     inputs.files = vstorage->LevelFiles(start_level);
     path_id = inputs.files.front()->fd.GetPathId();
   }
+  assert(!AreFilesInCompaction(inputs.files));
   auto c = new Compaction(
       vstorage, ioptions_, mutable_cf_options, { std::move(inputs) },
       output_level, mutable_cf_options.MaxFileSizeForLevel(output_level),

@@ -647,8 +647,8 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       double max_sr_ratio = double(max_sr_size) / sum_sr_size;
       auto& o = mutable_cf_options;
       auto  small_sum = o.write_buffer_size * o.max_write_buffer_number;
-      if ( max_sr_ratio < 0.60 ||
-          (max_sr_ratio < 0.80 && sum_sr_size < small_sum)) {
+      if ( max_sr_ratio < 0.52 ||
+          (max_sr_ratio < 0.67 && sum_sr_size < small_sum)) {
         // not so bad, pick the compaction
         start_index = loop;
         done = true;

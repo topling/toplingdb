@@ -610,9 +610,13 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   for (size_t i = 0; i < sr_bysize.size(); i++) {
     sr_bysize[i] = &sorted_runs[i];
   }
-  std::sort(sr_bysize.begin(), sr_bysize.end(), [](auto x, auto y) {
-    return x->size < y->size;
-  });
+  size_t write_buffer_size = mutable_cf_options.write_buffer_size;
+  std::stable_sort(sr_bysize.begin(), sr_bysize.end(),
+      [write_buffer_size](auto x, auto y) {
+        size_t x_rough = x->size / write_buffer_size;
+        size_t y_rough = y->size / write_buffer_size;
+        return x_rough < y_rough;
+      });
 
   // Considers a candidate file only if it is smaller than the
   // total size accumulated so far.

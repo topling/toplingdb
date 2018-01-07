@@ -319,9 +319,12 @@ Compaction* UniversalCompactionPicker::PickCompaction(
       // the maximum allowed number of sorted runs
       if (num_sr_not_compacted >
           mutable_cf_options.level0_file_num_compaction_trigger) {
+        /*
         unsigned int num_files =
             num_sr_not_compacted -
             mutable_cf_options.level0_file_num_compaction_trigger + 1;
+        */
+        unsigned int num_files = num_sr_not_compacted;
         if ((c = PickCompactionToReduceSortedRuns(
                  cf_name, mutable_cf_options, vstorage, score, UINT_MAX,
                  num_files, sorted_runs, log_buffer)) != nullptr) {
@@ -641,19 +644,11 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
 
     // Found a series of consecutive files that need compaction.
     if (candidate_count >= (unsigned int)min_merge_width) {
-      // in most cases last_sr_size is also the max, but it can be
-      // some bad cases in which the max is not the last, in this bad case,
-      // the candidate must be picked
       double max_sr_ratio = double(max_sr_size) / sum_sr_size;
       auto& o = mutable_cf_options;
-      if ((max_sr_size > last_sr_size) ||
-          (candidate_count >=
-           ioptions_.compaction_options_universal.min_merge_width && (
-             (max_sr_ratio < 0.60) ||
-             (max_sr_ratio < 0.80 &&
-              sum_sr_size < o.write_buffer_size * o.max_write_buffer_number
-            ))
-          )) {
+      auto  small_sum = o.write_buffer_size * o.max_write_buffer_number;
+      if ( max_sr_ratio < 0.60 ||
+          (max_sr_ratio < 0.80 && sum_sr_size < small_sum)) {
         // not so bad, pick the compaction
         start_index = loop;
         done = true;

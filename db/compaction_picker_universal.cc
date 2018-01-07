@@ -606,9 +606,22 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
           return x.max_sr_ratio < y.max_sr_ratio;
         });
   };
+  std::vector<const SortedRun*> sr_bysize(sorted_runs.size());
+  for (size_t i = 0; i < sr_bysize.size(); i++) {
+    sr_bysize[i] = &sorted_runs[i];
+  }
+  std::sort(sr_bysize.begin(), sr_bysize.end(), [](auto x, auto y) {
+    return x->size < y->size;
+  });
+
   // Considers a candidate file only if it is smaller than the
   // total size accumulated so far.
-  for (size_t loop = 0; loop < sorted_runs.size(); loop++) {
+  for (size_t loop1 = 0; loop1 < sr_bysize.size(); loop1++) {
+    auto sr1 = sr_bysize[loop1];
+    if (sr1->being_compacted) {
+      continue;
+    }
+    size_t loop = sr1 - &sorted_runs[0];
     candidate_count = 0;
 
     // Skip files that are already being compacted

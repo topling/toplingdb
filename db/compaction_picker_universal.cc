@@ -721,6 +721,18 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
           break;
         }
       }
+      bool has_small_in_middle = false;
+      if (candidate_count > 2) {
+        for (size_t i = 1; i < candidate_count-1; ++i) {
+          auto& prev = sorted_runs[loop + i - 1];
+          auto& curr = sorted_runs[loop + i + 0];
+          auto& next = sorted_runs[loop + i + 1];
+          if (curr.size < std::min(prev.size, next.size) / 2) {
+            has_small_in_middle = true;
+            break;
+          }
+        }
+      }
       auto& o = mutable_cf_options;
       auto  small_sum = o.write_buffer_size * o.max_write_buffer_number;
       size_t max_sr_num = o.level0_file_num_compaction_trigger
@@ -729,6 +741,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       // is still not satisfied, in this case, we must pick the compaction
       if ( candidate_count >= max_sr_num ||
            max_sr_ratio < 0.51 ||
+          (max_sr_ratio < 0.75 && has_small_in_middle) ||
           (max_sr_ratio < 0.67 && sum_sr_size < small_sum)) {
         // not so bad, pick the compaction
         start_index = loop;

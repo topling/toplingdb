@@ -612,7 +612,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   }
   size_t write_buffer_size = mutable_cf_options.write_buffer_size;
   std::stable_sort(sr_bysize.begin(), sr_bysize.end(),
-      [write_buffer_size](auto x, auto y) {
+      [write_buffer_size](const SortedRun* x, const SortedRun* y) {
         size_t x_rough = x->size / write_buffer_size;
         size_t y_rough = y->size / write_buffer_size;
         return x_rough < y_rough;

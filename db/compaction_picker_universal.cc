@@ -583,8 +583,8 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     rv[0].cur_sr_ratio = 1.0;
     rv[0].max_sr_ratio = 1.0;
     rv[0].size_max_idx = 0;
-    rv[0].size_max_val = sorted_runs[0].size;
-    rv[0].size_sum = sorted_runs[0].size;
+    rv[0].size_max_val = sorted_runs[start_idx].size;
+    rv[0].size_sum = sorted_runs[start_idx].size;
     rv[0].real_idx = start_idx;
     for (size_t i = 1; i < count; i++) {
       auto& sr = sorted_runs[start_idx + i];

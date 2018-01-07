@@ -587,16 +587,16 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     rv[0].size_sum = sorted_runs[start_idx].size;
     rv[0].real_idx = start_idx;
     for (size_t i = 1; i < count; i++) {
-      auto& sr = sorted_runs[start_idx + i];
-      if (sr.size > rv[i-1].size_max_val) {
-        rv[i].size_max_val = sr.size;
+      auto& sr1 = sorted_runs[start_idx + i];
+      if (sr1.size > rv[i-1].size_max_val) {
+        rv[i].size_max_val = sr1.size;
         rv[i].size_max_idx = i;
       } else {
         rv[i].size_max_val = rv[i-1].size_max_val;
         rv[i].size_max_idx = rv[i-1].size_max_idx;
       }
-      rv[i].size_sum = rv[i-1].size_sum + sr.size;
-      rv[i].cur_sr_ratio = double(sr.size) / rv[i].size_sum;
+      rv[i].size_sum = rv[i-1].size_sum + sr1.size;
+      rv[i].cur_sr_ratio = double(sr1.size) / rv[i].size_sum;
       rv[i].max_sr_ratio = double(rv[i].size_max_val) / rv[i].size_sum;
       rv[i].real_idx = i;
     }

@@ -529,9 +529,8 @@ Compaction* UniversalCompactionPicker::TrivialMovePickCompaction(
 
 namespace UniversalCompactionPickerNS {
   struct RankingElem {
-    double   ratio_cur_val; // = sr->size / size_sum
-    double   ratio_max_val;
-    size_t   ratio_max_idx; // to idx <= curr idx
+    double   cur_sr_ratio; // = sr->size / size_sum
+    double   max_sr_ratio;
     uint64_t size_sum;
     uint64_t size_max_val; // most cases is sr->size
     size_t   size_max_idx;
@@ -580,9 +579,9 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   std::vector<RankingElem> rankingVec(sorted_runs.size());
   auto computeRanking = [&](size_t start_idx, size_t count) {
     auto& rv = rankingVec;
-    rv[0].ratio_cur_val = 1.0;
-    rv[0].ratio_max_val = 1.0;
-    rv[0].ratio_max_idx = 0;
+    rv.resize(count);
+    rv[0].cur_sr_ratio = 1.0;
+    rv[0].max_sr_ratio = 1.0;
     rv[0].size_max_idx = 0;
     rv[0].size_max_val = sorted_runs[0].size;
     rv[0].size_sum = sorted_runs[0].size;
@@ -597,20 +596,14 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
         rv[i].size_max_idx = rv[i-1].size_max_idx;
       }
       rv[i].size_sum = rv[i-1].size_sum + sr.size;
-      rv[i].ratio_cur_val = double(sr.size) / rv[i].size_sum;
-      if (rv[i].ratio_cur_val > rv[i-1].ratio_max_idx) {
-        rv[i].ratio_max_idx = i;
-        rv[i].ratio_max_val = rv[i].ratio_cur_val;
-      } else {
-        rv[i].ratio_max_idx = rv[i-1].ratio_max_idx;
-        rv[i].ratio_max_val = rv[i-1].ratio_max_val;
-      }
+      rv[i].cur_sr_ratio = double(sr.size) / rv[i].size_sum;
+      rv[i].max_sr_ratio = double(rv[i].size_max_val) / rv[i].size_sum;
       rv[i].real_idx = i;
     }
-    // a best candidate is which ratio_max_val is the smallest
+    // a best candidate is which max_sr_ratio is the smallest
     std::sort(rv.begin(), rv.begin() + count,
         [](const RankingElem& x, const RankingElem& y) {
-          return x.ratio_max_val < y.ratio_max_val;
+          return x.max_sr_ratio < y.max_sr_ratio;
         });
   };
   // Considers a candidate file only if it is smaller than the
@@ -702,7 +695,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
                   sorting_idx++) {
         size_t merge_width = rankingVec[sorting_idx].real_idx + 1;
         if (merge_width >= min_merge_width) {
-          max_sr_ratio = rankingVec[sorting_idx].ratio_max_val;
+          max_sr_ratio = rankingVec[sorting_idx].max_sr_ratio;
           max_sr_size  = rankingVec[sorting_idx].size_max_val;
           sum_sr_size  = rankingVec[sorting_idx].size_sum;
           candidate_count = merge_width;

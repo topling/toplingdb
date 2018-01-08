@@ -563,7 +563,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   const SortedRun* sr = nullptr;
   bool done = false;
   size_t start_index = 0;
-  size_t candidate_count = 0;
+  size_t candidate_count = 1;
 
   size_t write_buffer_size = mutable_cf_options.write_buffer_size;
   double qlev; // a dynamic level_size multiplier
@@ -571,12 +571,12 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   double xlev; // multiplier for size reversed levels
   {
     uint64_t sum = 0;
-    for (auto& sr : sorted_runs) sum += sr.size;
+    for (auto& sri : sorted_runs) sum += sri.size;
     size_t n = mutable_cf_options.level0_file_num_compaction_trigger
              + ioptions_.num_levels - 1;
     sum = std::max<uint64_t>(sum, n * write_buffer_size);
     double q = SqrtN(double(sum) / write_buffer_size, n);
-    qlev = q / (q - 1);
+    qlev = (q - 1) / q;
     qlev = std::max(qlev, 0.51);
     slev = std::sqrt(qlev);
     xlev = std::sqrt(slev);
@@ -754,7 +754,6 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
         for (size_t i = loop;
              i < loop + candidate_count && i < sorted_runs.size(); i++) {
           const SortedRun* skipping_sr = &sorted_runs[i];
-          char file_num_buf[256];
           skipping_sr->DumpSizeInfo(file_num_buf, sizeof(file_num_buf), loop);
           ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: max/sum = %7.5f too big, skipping %s",
                            cf_name.c_str(), max_sr_ratio, file_num_buf);
@@ -764,7 +763,6 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       for (size_t i = loop;
            i < loop + candidate_count && i < sorted_runs.size(); i++) {
         const SortedRun* skipping_sr = &sorted_runs[i];
-        char file_num_buf[256];
         skipping_sr->DumpSizeInfo(file_num_buf, sizeof(file_num_buf), loop);
         ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: Skipping %s",
                          cf_name.c_str(), file_num_buf);

@@ -19,6 +19,7 @@
 #include <queue>
 #include <string>
 #include <utility>
+#include <cmath>
 #include "db/column_family.h"
 #include "monitoring/statistics.h"
 #include "util/filename.h"
@@ -536,6 +537,12 @@ namespace UniversalCompactionPickerNS {
     size_t   size_max_idx;
     size_t   real_idx;
   };
+
+  static double SqrtN(double a, double n) {
+    using std::exp;
+    using std::log;
+    return exp(log(a) / n);
+  }
 }
 using namespace UniversalCompactionPickerNS;
 
@@ -558,16 +565,34 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   size_t start_index = 0;
   size_t candidate_count = 0;
 
+  size_t write_buffer_size = mutable_cf_options.write_buffer_size;
+  double qlev; // a dynamic level_size multiplier
+  double slev; // multiplier for small sst
+  double xlev; // multiplier for size reversed levels
+  {
+    uint64_t sum = 0;
+    for (auto& sr : sorted_runs) sum += sr.size;
+    size_t n = mutable_cf_options.level0_file_num_compaction_trigger
+             + ioptions_.num_levels - 1;
+    sum = std::max<uint64_t>(sum, n * write_buffer_size);
+    double q = SqrtN(double(sum) / write_buffer_size, n);
+    qlev = q / (q - 1);
+    qlev = std::max(qlev, 0.51);
+    slev = std::sqrt(qlev);
+    xlev = std::sqrt(slev);
+  }
   unsigned int max_files_to_compact = std::max(2U,
       std::min(max_merge_width, max_number_of_files_to_compact));
   min_merge_width = std::max(min_merge_width, 2U);
   min_merge_width = std::min(min_merge_width, max_files_to_compact);
 
-  LogToBuffer(log_buffer, "[%s] Universal: "
+  ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: "
       "ratio = %u, max_files_to_compact = %u, "
+      "score = %f, qlev = %f, slev = %f, xlev = %f, "
       "min_merge_width = %u, max_merge_width = %u"
       , cf_name.c_str()
       , ratio, max_files_to_compact
+      , score, qlev, slev, xlev
       , min_merge_width, max_merge_width
       );
 
@@ -610,7 +635,6 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   for (size_t i = 0; i < sr_bysize.size(); i++) {
     sr_bysize[i] = &sorted_runs[i];
   }
-  size_t write_buffer_size = mutable_cf_options.write_buffer_size;
   std::stable_sort(sr_bysize.begin(), sr_bysize.end(),
       [write_buffer_size](const SortedRun* x, const SortedRun* y) {
         size_t x_rough = x->size / write_buffer_size;
@@ -621,40 +645,20 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   // Considers a candidate file only if it is smaller than the
   // total size accumulated so far.
   for (size_t loop1 = 0; loop1 < sr_bysize.size(); loop1++) {
-    auto sr1 = sr_bysize[loop1];
-    if (sr1->being_compacted) {
+    sr = sr_bysize[loop1];
+    if (sr->being_compacted) {
       continue;
     }
-    size_t loop = sr1 - &sorted_runs[0];
+    size_t loop = sr - &sorted_runs[0];
     candidate_count = 0;
-
-    // Skip files that are already being compacted
-    for (sr = nullptr; loop < sorted_runs.size(); loop++) {
-      sr = &sorted_runs[loop];
-
-      if (!sr->being_compacted) {
-        candidate_count = 1;
-        break;
-      }
-      char file_num_buf[kFormatFileNumberBufSize];
-      sr->Dump(file_num_buf, sizeof(file_num_buf));
-      ROCKS_LOG_BUFFER(log_buffer,
-                       "[%s] Universal: %s"
-                       "[%d] being compacted, skipping",
-                       cf_name.c_str(), file_num_buf, loop);
-
-      sr = nullptr;
-    }
 
     // This file is not being compacted. Consider it as the
     // first candidate to be compacted.
-    uint64_t candidate_size = sr != nullptr ? sr->compensated_file_size : 0;
-    if (sr != nullptr) {
-      char file_num_buf[kFormatFileNumberBufSize];
-      sr->Dump(file_num_buf, sizeof(file_num_buf), true);
-      ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: Possible candidate %s[%d].",
-                       cf_name.c_str(), file_num_buf, loop);
-    }
+    uint64_t candidate_size = sr->compensated_file_size;
+    char file_num_buf[kFormatFileNumberBufSize];
+    sr->Dump(file_num_buf, sizeof(file_num_buf), true);
+    ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: Possible candidate %s[%d].",
+                     cf_name.c_str(), file_num_buf, loop);
 
     uint64_t sum_sr_size = candidate_size;
     uint64_t max_sr_size = candidate_size;
@@ -737,9 +741,9 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       // in worst case, all sorted runs are picked, and the size condition
       // is still not satisfied, in this case, we must pick the compaction
       if ( // candidate_count >= max_sr_num ||
-           max_sr_ratio < 0.51 ||
-          (max_sr_ratio < 0.75 && has_small_bottom) ||
-          (max_sr_ratio < 0.67 && sum_sr_size < small_sum)) {
+           max_sr_ratio < qlev ||
+          (max_sr_ratio < xlev && has_small_bottom) ||
+          (max_sr_ratio < slev && sum_sr_size < small_sum)) {
         // not so bad, pick the compaction
         start_index = loop;
         done = true;

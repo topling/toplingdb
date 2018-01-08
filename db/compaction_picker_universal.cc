@@ -556,7 +556,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   const SortedRun* sr = nullptr;
   bool done = false;
   size_t start_index = 0;
-  unsigned int candidate_count = 0;
+  size_t candidate_count = 0;
 
   unsigned int max_files_to_compact = std::max(2U,
       std::min(max_merge_width, max_number_of_files_to_compact));

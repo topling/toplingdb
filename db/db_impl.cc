@@ -2072,6 +2072,9 @@ Status DBImpl::DeleteFile(std::string name) {
     }
     assert(level < cfd->NumberLevels());
 
+    ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "DeleteFile %s : being_compacted = %d\n",
+                   name.c_str(), metadata->being_compacted);
     // If the file is being compacted no need to delete.
     if (metadata->being_compacted) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,

@@ -15,10 +15,6 @@
 
 namespace rocksdb {
 
-extern void MarkKeyMayExist(void* arg);
-extern bool SaveValue(void* arg, const ParsedInternalKey& parsed_key,
-                      const Slice& v, bool hit_and_return);
-
 CompactedDBImpl::CompactedDBImpl(
   const DBOptions& options, const std::string& dbname)
   : DBImpl(options, dbname), cfd_(nullptr), version_(nullptr),

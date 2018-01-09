@@ -1974,8 +1974,8 @@ void DBImpl::GetApproximateMemTableStats(ColumnFamilyHandle* column_family,
 void DBImpl::GetApproximateSizes(ColumnFamilyHandle* column_family,
                                  const Range* range, int n, uint64_t* sizes,
                                  uint8_t include_flags) {
-  assert(include_flags & DB::SizeApproximationFlags::INCLUDE_FILES ||
-         include_flags & DB::SizeApproximationFlags::INCLUDE_MEMTABLES);
+  assert((include_flags & DB::SizeApproximationFlags::INCLUDE_FILES) ||
+         (include_flags & DB::SizeApproximationFlags::INCLUDE_MEMTABLES));
   Version* v;
   auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
   auto cfd = cfh->cfd();
@@ -2047,8 +2047,7 @@ Status DBImpl::DeleteFile(std::string name) {
                       name.c_str());
       return Status::NotSupported("Delete only supported for archived logs");
     }
-    status =
-        env_->DeleteFile(immutable_db_options_.wal_dir + "/" + name.c_str());
+    status = env_->DeleteFile(immutable_db_options_.wal_dir + "/" + name);
     if (!status.ok()) {
       ROCKS_LOG_ERROR(immutable_db_options_.info_log,
                       "DeleteFile %s failed -- %s.\n", name.c_str(),

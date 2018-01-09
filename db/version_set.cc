@@ -3792,6 +3792,11 @@ bool VersionSet::VerifyCompactionFileConsistency(Compaction* c) {
         }
       }
       if (!found) {
+        ROCKS_LOG_WARN(
+            db_options_->info_log,
+            "[%s] compaction input file: %06lld.sst does not exist",
+            c->column_family_data()->GetName().c_str(),
+            (long long)number);
         return false;  // input files non existent in current version
       }
     }

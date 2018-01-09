@@ -307,10 +307,9 @@ bool Compaction::KeyNotExistsBeyondOutputLevel(
 
 // Mark (or clear) each file that is being compacted
 void Compaction::MarkFilesBeingCompacted(bool mark_as_compacted) {
-  for (size_t i = 0; i < num_input_levels(); i++) {
+  for (size_t i = 0; i < inputs_.size(); i++) {
     for (size_t j = 0; j < inputs_[i].size(); j++) {
-      assert(mark_as_compacted ? !inputs_[i][j]->being_compacted
-                               : inputs_[i][j]->being_compacted);
+      assert(mark_as_compacted ^ inputs_[i][j]->being_compacted);
       inputs_[i][j]->being_compacted = mark_as_compacted;
     }
   }

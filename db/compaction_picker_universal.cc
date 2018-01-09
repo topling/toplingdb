@@ -563,7 +563,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   const SortedRun* sr = nullptr;
   bool done = false;
   size_t start_index = 0;
-  size_t candidate_count = 1;
+  size_t candidate_count = 0;
 
   size_t write_buffer_size = mutable_cf_options.write_buffer_size;
   double qlev; // a dynamic level_size multiplier
@@ -575,7 +575,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     size_t n = mutable_cf_options.level0_file_num_compaction_trigger
              + ioptions_.num_levels - 1;
     sum = std::max<uint64_t>(sum, n * write_buffer_size);
-    double q = SqrtN(double(sum) / write_buffer_size, n);
+    double q = SqrtN(double(sum) / write_buffer_size, double(n));
     qlev = (q - 1) / q;
     qlev = std::max(qlev, 0.51);
     slev = std::sqrt(qlev);
@@ -650,7 +650,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       continue;
     }
     size_t loop = sr - &sorted_runs[0];
-    candidate_count = 0;
+    candidate_count = 1;
 
     // This file is not being compacted. Consider it as the
     // first candidate to be compacted.

@@ -356,9 +356,6 @@ void DBImpl::PurgeObsoleteFiles(const JobContext& state, bool schedule_only) {
   // set is slow.
   std::unordered_map<uint64_t, const FileDescriptor*> sst_live_map;
   for (const FileDescriptor& fd : state.sst_live) {
-    ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                   "[JOB %d] PurgeObsoleteFiles: live file: %" PRIu64 ".sst",
-                   state.job_id, fd.GetNumber());
     sst_live_map[fd.GetNumber()] = &fd;
   }
   std::unordered_set<uint64_t> log_recycle_files_set(

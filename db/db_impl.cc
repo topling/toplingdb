@@ -2107,6 +2107,10 @@ Status DBImpl::DeleteFile(std::string name) {
       // job_context.Clean();
       // return Status::InvalidArgument("File in level 0, but not oldest");
     }
+
+    // treat this DeleteFile being a <<Compaction>>
+    metadata->being_compacted = true; // prevent real CompactionPicker
+
     edit.SetColumnFamily(cfd->GetID());
     edit.DeleteFile(level, number);
     status = versions_->LogAndApply(cfd, *cfd->GetLatestMutableCFOptions(),

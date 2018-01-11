@@ -579,7 +579,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     qlev = (q - 1) / q;
     qlev = std::max(qlev, 0.51);
     slev = std::sqrt(qlev);
-    xlev = std::sqrt(slev);
+    xlev = SqrtN(qlev, 2.5);
   }
   unsigned int max_files_to_compact = std::max(2U,
       std::min(max_merge_width, max_number_of_files_to_compact));

@@ -608,20 +608,20 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     rv[0].cur_sr_ratio = 1.0;
     rv[0].max_sr_ratio = 1.0;
     rv[0].size_max_idx = 0;
-    rv[0].size_max_val = sorted_runs[start_idx].size;
-    rv[0].size_sum = sorted_runs[start_idx].size;
+    rv[0].size_max_val = sorted_runs[start_idx].compensated_file_size;
+    rv[0].size_sum = sorted_runs[start_idx].compensated_file_size;
     rv[0].real_idx = start_idx;
     for (size_t i = 1; i < count; i++) {
       auto& sr1 = sorted_runs[start_idx + i];
-      if (sr1.size > rv[i-1].size_max_val) {
-        rv[i].size_max_val = sr1.size;
+      if (sr1.compensated_file_size > rv[i-1].size_max_val) {
+        rv[i].size_max_val = sr1.compensated_file_size;
         rv[i].size_max_idx = i;
       } else {
         rv[i].size_max_val = rv[i-1].size_max_val;
         rv[i].size_max_idx = rv[i-1].size_max_idx;
       }
-      rv[i].size_sum = rv[i-1].size_sum + sr1.size;
-      rv[i].cur_sr_ratio = double(sr1.size) / rv[i].size_sum;
+      rv[i].size_sum = rv[i-1].size_sum + sr1.compensated_file_size;
+      rv[i].cur_sr_ratio = double(sr1.compensated_file_size) / rv[i].size_sum;
       rv[i].max_sr_ratio = double(rv[i].size_max_val) / rv[i].size_sum;
       rv[i].real_idx = i;
     }
@@ -637,8 +637,8 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   }
   std::stable_sort(sr_bysize.begin(), sr_bysize.end(),
       [write_buffer_size](const SortedRun* x, const SortedRun* y) {
-        size_t x_rough = x->size / write_buffer_size;
-        size_t y_rough = y->size / write_buffer_size;
+        size_t x_rough = x->compensated_file_size / write_buffer_size;
+        size_t y_rough = y->compensated_file_size / write_buffer_size;
         return x_rough < y_rough;
       });
 
@@ -729,7 +729,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       for (size_t i = 1; i < candidate_count; ++i) {
         auto& prev = sorted_runs[loop + i - 1];
         auto& curr = sorted_runs[loop + i + 0];
-        if (curr.size < prev.size) {
+        if (curr.compensated_file_size < prev.compensated_file_size) {
           has_small_bottom = true;
           break;
         }

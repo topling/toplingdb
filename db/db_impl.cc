@@ -2072,9 +2072,6 @@ Status DBImpl::DeleteFile(std::string name) {
     }
     assert(level < cfd->NumberLevels());
 
-    ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                   "DeleteFile %s : being_compacted = %d\n",
-                   name.c_str(), metadata->being_compacted);
     // If the file is being compacted no need to delete.
     if (metadata->being_compacted) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
@@ -2091,21 +2088,21 @@ Status DBImpl::DeleteFile(std::string name) {
     for (int i = level + 1; i < cfd->NumberLevels(); i++) {
       if (vstoreage->NumLevelFiles(i) != 0) {
         ROCKS_LOG_WARN(immutable_db_options_.info_log,
-                       "FALSE DeleteFile %s. File not in last level\n",
+                       "DeleteFile %s FAILED. File not in last level\n",
                        name.c_str());
-        // job_context.Clean();
-        // return Status::InvalidArgument("File not in last level");
+        job_context.Clean();
+        return Status::InvalidArgument("File not in last level");
       }
     }
     // if level == 0, it has to be the oldest file
     if (level == 0 &&
         vstoreage->LevelFiles(0).back()->fd.GetNumber() != number) {
       ROCKS_LOG_WARN(immutable_db_options_.info_log,
-                     "FALSE DeleteFile %s ---"
+                     "DeleteFile %s failed ---"
                      " target file in level 0 must be the oldest.",
                      name.c_str());
-      // job_context.Clean();
-      // return Status::InvalidArgument("File in level 0, but not oldest");
+      job_context.Clean();
+      return Status::InvalidArgument("File in level 0, but not oldest");
     }
 
     // treat this DeleteFile being a <<Compaction>>
@@ -2144,8 +2141,10 @@ Status DBImpl::DeleteFilesInRange(ColumnFamilyHandle* column_family,
   {
     InstrumentedMutexLock l(&mutex_);
     Version* input_version = cfd->current();
+    edit.SetColumnFamily(cfd->GetID());
 
     auto* vstorage = input_version->storage_info();
+    bool is_delete = false;
     for (int i = 1; i < cfd->NumberLevels(); i++) {
       if (vstorage->LevelFiles(i).empty() ||
           !vstorage->OverlapInLevel(i, begin, end)) {
@@ -2166,22 +2165,53 @@ Status DBImpl::DeleteFilesInRange(ColumnFamilyHandle* column_family,
         end_key = &end_storage;
       }
 
-      vstorage->GetCleanInputsWithinInterval(i, begin_key, end_key,
-                                             &level_files, -1 /* hint_index */,
-                                             nullptr /* file_index */);
-      FileMetaData* level_file;
-      for (uint32_t j = 0; j < level_files.size(); j++) {
-        level_file = level_files[j];
-        if (level_file->being_compacted) {
-          continue;
+      if (cfd->ioptions()->enable_partial_remove) {
+        vstorage->GetOverlappingInputs(i, begin_key, end_key,
+                                       &level_files, -1 /* hint_index */,
+                                       nullptr /* file_index */);
+        if (!level_files.empty()) {
+          std::vector<InternalKey> erase_set;
+          erase_set.emplace_back(begin_key == nullptr ?
+                                 level_files.front()->smallest() : *begin_key);
+          erase_set.emplace_back(end_key == nullptr ?
+                                 level_files.back()->largest() : *end_key);
+          FileMetaData* level_file;
+          for (uint32_t j = 0; j < level_files.size(); j++) {
+            level_file = level_files[j];
+            if (level_file->being_compacted) {
+              continue;
+            }
+            PartialRemovedMetaData meta;
+            if (!meta.InitFrom(level_file, erase_set, 0, cfd, env_options_)) {
+              continue;
+            }
+            is_delete = true;
+            edit.DeleteFile(i, level_file->fd.GetNumber());
+            deleted_files.push_back(level_file);
+            level_file->being_compacted = true;
+            if (!meta.range_set.empty()) {
+              edit.AddFile(i, meta.Get());
+            }
+          }
         }
-        edit.SetColumnFamily(cfd->GetID());
-        edit.DeleteFile(i, level_file->fd.GetNumber());
-        deleted_files.push_back(level_file);
-        level_file->being_compacted = true;
+      } else {
+        vstorage->GetCleanInputsWithinInterval(i, begin_key, end_key,
+                                               &level_files, -1 /* hint_index */,
+                                               nullptr /* file_index */);
+        FileMetaData* level_file;
+        for (uint32_t j = 0; j < level_files.size(); j++) {
+          level_file = level_files[j];
+          if (level_file->being_compacted) {
+            continue;
+          }
+          is_delete = true;
+          edit.DeleteFile(i, level_file->fd.GetNumber());
+          deleted_files.push_back(level_file);
+          level_file->being_compacted = true;
+        }
       }
     }
-    if (edit.GetDeletedFiles().empty()) {
+    if (!is_delete) {
       job_context.Clean();
       return Status::OK();
     }

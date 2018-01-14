@@ -496,7 +496,7 @@ class Repairer {
     }
     if (status.ok()) {
       InternalIterator* iter = table_cache_->NewIterator(
-          ReadOptions(), env_options_, cfd->internal_comparator(), t->meta.fd,
+          ReadOptions(), env_options_, cfd->internal_comparator(), t->meta,
           nullptr /* range_del_agg */);
       bool empty = true;
       ParsedInternalKey parsed;
@@ -514,10 +514,10 @@ class Repairer {
         counter++;
         if (empty) {
           empty = false;
-          t->meta.smallest.DecodeFrom(key);
+          t->meta.smallest().DecodeFrom(key);
           t->min_sequence = parsed.sequence;
         }
-        t->meta.largest.DecodeFrom(key);
+        t->meta.largest().DecodeFrom(key);
         if (parsed.sequence < t->min_sequence) {
           t->min_sequence = parsed.sequence;
         }
@@ -561,9 +561,9 @@ class Repairer {
       // TODO(opt): separate out into multiple levels
       for (const auto* table : cf_id_and_tables.second) {
         edit.AddFile(0, table->meta.fd.GetNumber(), table->meta.fd.GetPathId(),
-                     table->meta.fd.GetFileSize(), table->meta.smallest,
-                     table->meta.largest, table->min_sequence,
-                     table->max_sequence, table->meta.marked_for_compaction);
+                     table->meta.fd.GetFileSize(), table->meta.range_set,
+                     table->min_sequence, table->max_sequence,
+                     table->meta.marked_for_compaction, 0, 0);
       }
       assert(next_file_number_ > 0);
       vset_.MarkFileNumberUsed(next_file_number_ - 1);

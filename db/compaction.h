@@ -25,6 +25,20 @@ struct CompactionInputFiles {
   inline void clear() { files.clear(); }
   inline FileMetaData* operator[](size_t i) const { return files[i]; }
 };
+// Input files limit to smallest .. largest (open interval)
+// allow range overlap with outout level
+// DISALLOW FULL COVERED BY SINGLE OPTPUT LEVEL SST
+// smallest & largest are internal keys
+struct CompactionInputFilesRange {
+  const InternalKey* smallest = nullptr;
+  const InternalKey* largest = nullptr;
+  enum IntervalFlag : uint64_t {
+    kEmptyFlag      = 0,
+    kSmallestOpen   = 1 << 0,
+    kLargestOpen    = 1 << 1,
+  };
+  uint64_t flags = kEmptyFlag;
+};
 
 class Version;
 class ColumnFamilyData;
@@ -42,7 +56,9 @@ class Compaction {
              uint32_t output_path_id, CompressionType compression,
              std::vector<FileMetaData*> grandparents,
              bool manual_compaction = false, double score = -1,
-             bool deletion_compaction = false,
+             bool deletion_compaction = false, bool disable_subcompaction = false,
+             bool enable_partial_remove = false,
+             const std::vector<CompactionInputFilesRange>& input_range = {},
              CompactionReason compaction_reason = CompactionReason::kUnknown);
 
   // No copying allowed
@@ -128,6 +144,14 @@ class Compaction {
   // If true, then the compaction can be done by simply deleting input files.
   bool deletion_compaction() const { return deletion_compaction_; }
 
+  // If true, compaction should break when some input sst can remove
+  bool enable_partial_remove() const { return enable_partial_remove_; }
+
+  // See CompactionInputFilesRange declare above
+  const std::vector<CompactionInputFilesRange>& input_range() const {
+    return input_range_;
+  };
+
   // Add all inputs to this compaction as delete operations to *edit.
   void AddInputDeletions(VersionEdit* edit);
 
@@ -195,7 +219,7 @@ class Compaction {
   void SetInputVersion(Version* input_version);
 
   struct InputLevelSummaryBuffer {
-    char buffer[128];
+    char buffer[256];
   };
 
   const char* InputLevelSummary(InputLevelSummaryBuffer* scratch) const;
@@ -280,6 +304,15 @@ class Compaction {
   // If true, then the comaction can be done by simply deleting input files.
   const bool deletion_compaction_;
 
+  // If true, disable subcompaction
+  const bool disable_subcompaction_;
+
+  // If true, compaction should break when some input sst can remove
+  const bool enable_partial_remove_;
+
+  // See CompactionInputFilesRange declare above
+  const std::vector<CompactionInputFilesRange> input_range_;
+
   // Compaction input files organized by level. Constant after construction
   const std::vector<CompactionInputFiles> inputs_;
 
@@ -321,5 +354,11 @@ class Compaction {
 
 // Utility function
 extern uint64_t TotalFileSize(const std::vector<FileMetaData*>& files);
+
+extern std::pair<ptrdiff_t, ptrdiff_t> FindLevelOverlap(
+    const std::vector<FileMetaData*>& files,
+    const InternalKeyComparator& ic,
+    const InternalKey* smallest,
+    const InternalKey* largest);
 
 }  // namespace rocksdb

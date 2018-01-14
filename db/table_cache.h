@@ -29,6 +29,7 @@ namespace rocksdb {
 class Env;
 class Arena;
 struct FileDescriptor;
+struct FileMetaData;
 class GetContext;
 class HistogramImpl;
 class InternalIterator;
@@ -53,10 +54,11 @@ class TableCache {
   InternalIterator* NewIterator(
       const ReadOptions& options, const EnvOptions& toptions,
       const InternalKeyComparator& internal_comparator,
-      const FileDescriptor& file_fd, RangeDelAggregator* range_del_agg,
+      const FileMetaData& file_meta, RangeDelAggregator* range_del_agg,
       TableReader** table_reader_ptr = nullptr,
       HistogramImpl* file_read_hist = nullptr, bool for_compaction = false,
-      Arena* arena = nullptr, bool skip_filters = false, int level = -1);
+      Arena* arena = nullptr, bool skip_filters = false, int level = -1,
+      bool ignore_partial_remove = false);
 
   InternalIterator* NewRangeTombstoneIterator(
       const ReadOptions& options, const EnvOptions& toptions,
@@ -74,7 +76,7 @@ class TableCache {
   // @param level The level this table is at, -1 for "not set / don't know"
   Status Get(const ReadOptions& options,
              const InternalKeyComparator& internal_comparator,
-             const FileDescriptor& file_fd, const Slice& k,
+             const FileMetaData& file_meta, const Slice& k,
              GetContext* get_context, HistogramImpl* file_read_hist = nullptr,
              bool skip_filters = false, int level = -1);
 

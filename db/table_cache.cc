@@ -170,56 +170,55 @@ Status TableCache::FindTable(const EnvOptions& env_options,
 
 InternalIterator* TableCache::NewIterator(
     const ReadOptions& options, const EnvOptions& env_options,
-    const InternalKeyComparator& icomparator, const FileDescriptor& fd,
+    const InternalKeyComparator& icomparator, const FileMetaData& meta,
     RangeDelAggregator* range_del_agg, TableReader** table_reader_ptr,
     HistogramImpl* file_read_hist, bool for_compaction, Arena* arena,
-    bool skip_filters, int level) {
+    bool skip_filters, int level, bool ignore_partial_remove) {
   PERF_TIMER_GUARD(new_table_iterator_nanos);
 
+  auto& fd = meta.fd;
   Status s;
   bool create_new_table_reader = false;
   TableReader* table_reader = nullptr;
   Cache::Handle* handle = nullptr;
-  if (s.ok()) {
-    if (table_reader_ptr != nullptr) {
-      *table_reader_ptr = nullptr;
-    }
-    size_t readahead = 0;
-    if (for_compaction) {
+  if (table_reader_ptr != nullptr) {
+    *table_reader_ptr = nullptr;
+  }
+  size_t readahead = 0;
+  if (for_compaction) {
 #ifndef NDEBUG
-      bool use_direct_reads_for_compaction = env_options.use_direct_reads;
-      TEST_SYNC_POINT_CALLBACK("TableCache::NewIterator:for_compaction",
-                               &use_direct_reads_for_compaction);
+    bool use_direct_reads_for_compaction = env_options.use_direct_reads;
+    TEST_SYNC_POINT_CALLBACK("TableCache::NewIterator:for_compaction",
+                             &use_direct_reads_for_compaction);
 #endif  // !NDEBUG
-      if (ioptions_.new_table_reader_for_compaction_inputs) {
-        readahead = ioptions_.compaction_readahead_size;
-        create_new_table_reader = true;
-      }
-    } else {
-      readahead = options.readahead_size;
-      create_new_table_reader = readahead > 0;
+    if (ioptions_.new_table_reader_for_compaction_inputs) {
+      readahead = ioptions_.compaction_readahead_size;
+      create_new_table_reader = true;
     }
+  } else {
+    readahead = options.readahead_size;
+    create_new_table_reader = readahead > 0;
+  }
 
-    if (create_new_table_reader) {
-      unique_ptr<TableReader> table_reader_unique_ptr;
-      s = GetTableReader(
-          env_options, icomparator, fd, true /* sequential_mode */, readahead,
-          !for_compaction /* record stats */, nullptr, &table_reader_unique_ptr,
-          false /* skip_filters */, level,
-          true /* prefetch_index_and_filter_in_cache */, for_compaction);
+  if (create_new_table_reader) {
+    unique_ptr<TableReader> table_reader_unique_ptr;
+    s = GetTableReader(
+        env_options, icomparator, fd, true /* sequential_mode */, readahead,
+        !for_compaction /* record stats */, nullptr, &table_reader_unique_ptr,
+        false /* skip_filters */, level,
+        true /* prefetch_index_and_filter_in_cache */, for_compaction);
+    if (s.ok()) {
+      table_reader = table_reader_unique_ptr.release();
+    }
+  } else {
+    table_reader = fd.table_reader;
+    if (table_reader == nullptr) {
+      s = FindTable(env_options, icomparator, fd, &handle,
+                    options.read_tier == kBlockCacheTier /* no_io */,
+                    !for_compaction /* record read_stats */, file_read_hist,
+                    skip_filters, level);
       if (s.ok()) {
-        table_reader = table_reader_unique_ptr.release();
-      }
-    } else {
-      table_reader = fd.table_reader;
-      if (table_reader == nullptr) {
-        s = FindTable(env_options, icomparator, fd, &handle,
-                      options.read_tier == kBlockCacheTier /* no_io */,
-                      !for_compaction /* record read_stats */, file_read_hist,
-                      skip_filters, level);
-        if (s.ok()) {
-          table_reader = GetTableReaderFromHandle(handle);
-        }
+        table_reader = GetTableReaderFromHandle(handle);
       }
     }
   }
@@ -230,6 +229,19 @@ InternalIterator* TableCache::NewIterator(
       result = NewEmptyInternalIterator(arena);
     } else {
       result = table_reader->NewIterator(options, arena, skip_filters);
+      if (!ignore_partial_remove && meta.partial_removed) {
+        auto wrapper = NewRangeWrappedInternalIterator(
+            result, icomparator, &meta.range_set, arena);
+        wrapper->RegisterCleanup([](void* arg1, void* arg2) {
+          auto iter = reinterpret_cast<InternalIterator*>(arg1);
+          if (arg2) {
+            iter->~InternalIterator();
+          } else {
+            delete iter;
+          }
+        }, result, arena);
+        result = wrapper;
+      }
     }
     if (create_new_table_reader) {
       assert(handle == nullptr);
@@ -307,9 +319,31 @@ InternalIterator* TableCache::NewRangeTombstoneIterator(
 
 Status TableCache::Get(const ReadOptions& options,
                        const InternalKeyComparator& internal_comparator,
-                       const FileDescriptor& fd, const Slice& k,
+                       const FileMetaData& meta, const Slice& raw_k,
                        GetContext* get_context, HistogramImpl* file_read_hist,
                        bool skip_filters, int level) {
+  const FileDescriptor& fd = meta.fd;
+  Slice k = raw_k;
+  while (meta.partial_removed) {
+    auto find = std::upper_bound(
+                    meta.range_set.begin(), meta.range_set.end(), k,
+                    [&](const Slice& l, const InternalKey& r) {
+                        return internal_comparator.Compare(l, r.Encode()) < 0;
+                    });
+    if ((find - meta.range_set.begin()) % 2 == 0) {
+      if (find != meta.range_set.end()) {
+        // assert( Comp(k , find->internal_key() <= 0)
+        if (ExtractUserKey(k) == find->user_key()) {
+          k = find->Encode();
+          break;
+        }
+      }
+      if (find == meta.range_set.begin() || find[-1].Encode() != k) {
+        return Status::OK();
+      }
+    }
+    break;
+  }
   std::string* row_cache_entry = nullptr;
   bool done = false;
 #ifndef ROCKSDB_LITE

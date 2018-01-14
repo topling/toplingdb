@@ -60,6 +60,10 @@ class UniversalCompactionPicker : public CompactionPicker {
     bool being_compacted;
   };
 
+  Compaction* PickCompactionConitnue(
+    const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
+    VersionStorageInfo* vstorage, LogBuffer* log_buffer);
+
   Compaction* TrivialMovePickCompaction(
       const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
       VersionStorageInfo* vstorage, LogBuffer* log_buffer);
@@ -84,7 +88,8 @@ class UniversalCompactionPicker : public CompactionPicker {
   bool IsInputFilesNonOverlapping(Compaction* c);
 
   static std::vector<SortedRun> CalculateSortedRuns(
-      const VersionStorageInfo& vstorage, const ImmutableCFOptions& ioptions);
+      const VersionStorageInfo& vstorage, const ImmutableCFOptions& ioptions,
+      bool& need_continue);
 
   // Pick a path ID to place a newly generated file, with its estimated file
   // size.

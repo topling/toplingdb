@@ -21,6 +21,9 @@
 namespace rocksdb {
 
 class VersionSet;
+class InternalIterator;
+struct FileMetaData;
+class ColumnFamilyData;
 
 const uint64_t kFileNumberMask = 0x3FFFFFFFFFFFFFFF;
 
@@ -73,10 +76,40 @@ struct FileSampledStats {
   mutable std::atomic<uint64_t> num_reads_sampled;
 };
 
+
+void MergeRangeSet(const std::vector<InternalKey>& range_set,
+                   const std::vector<InternalKey>& erase_set,
+                   std::vector<InternalKey>& output,
+                   const InternalKeyComparator& ic,
+                   InternalIterator* iter);
+
+struct PartialRemovedMetaData {
+  std::vector<InternalKey> range_set;
+  FileMetaData* meta;
+  uint8_t partial_removed = 0;
+  uint8_t compact_to_level = 0;
+
+  // return changed
+  // if output_level non-zero , this sst is reclaim from compact
+  bool InitFrom(FileMetaData* file,
+                const std::vector<InternalKey>& erase_set,
+                uint8_t output_level,
+                ColumnFamilyData* cfd,
+                const EnvOptions& env_opt);
+
+  FileMetaData Get();
+};
+
 struct FileMetaData {
   FileDescriptor fd;
-  InternalKey smallest;            // Smallest internal key served by table
-  InternalKey largest;             // Largest internal key served by table
+  std::vector<InternalKey> range_set; // valid range set
+
+  // Smallest internal key served by table
+  InternalKey& smallest() { return range_set.front(); }
+  const InternalKey& smallest() const { return range_set.front(); }
+  // Largest internal key served by table
+  InternalKey& largest() { return range_set.back(); }
+  const InternalKey& largest() const { return range_set.back(); }
   SequenceNumber smallest_seqno;   // The smallest seqno in this file
   SequenceNumber largest_seqno;    // The largest seqno in this file
 
@@ -107,6 +140,13 @@ struct FileMetaData {
   bool marked_for_compaction;  // True if client asked us nicely to compact this
                                // file.
 
+  uint8_t partial_removed;     // iterator need wrapper if non zero
+
+  // If non-zero , this sst reclaim from compaction job with partial remove
+  //   or compaction inout range .
+  // partial remove will not worked on lv0 -> lv0 compact
+  uint8_t compact_to_level;
+
   FileMetaData()
       : smallest_seqno(kMaxSequenceNumber),
         largest_seqno(0),
@@ -119,15 +159,19 @@ struct FileMetaData {
         refs(0),
         being_compacted(false),
         init_stats_from_file(false),
-        marked_for_compaction(false) {}
+        marked_for_compaction(false),
+        partial_removed(0),
+        compact_to_level(0) {
+    range_set.resize(2);
+  }
 
   // REQUIRED: Keys must be given to the function in sorted order (it expects
   // the last key to be the largest).
   void UpdateBoundaries(const Slice& key, SequenceNumber seqno) {
-    if (smallest.size() == 0) {
-      smallest.DecodeFrom(key);
+    if (smallest().size() == 0) {
+      smallest().DecodeFrom(key);
     }
-    largest.DecodeFrom(key);
+    largest().DecodeFrom(key);
     smallest_seqno = std::min(smallest_seqno, seqno);
     largest_seqno = std::max(largest_seqno, seqno);
   }
@@ -204,18 +248,20 @@ class VersionEdit {
   // REQUIRES: This version has not been saved (see VersionSet::SaveTo)
   // REQUIRES: "smallest" and "largest" are smallest and largest keys in file
   void AddFile(int level, uint64_t file, uint32_t file_path_id,
-               uint64_t file_size, const InternalKey& smallest,
-               const InternalKey& largest, const SequenceNumber& smallest_seqno,
+               uint64_t file_size, const std::vector<InternalKey>& range_set,
+               const SequenceNumber& smallest_seqno,
                const SequenceNumber& largest_seqno,
-               bool marked_for_compaction) {
+               bool marked_for_compaction, uint8_t partial_removed,
+               uint8_t compact_to_level) {
     assert(smallest_seqno <= largest_seqno);
     FileMetaData f;
     f.fd = FileDescriptor(file, file_path_id, file_size);
-    f.smallest = smallest;
-    f.largest = largest;
+    f.range_set = range_set;
     f.smallest_seqno = smallest_seqno;
     f.largest_seqno = largest_seqno;
     f.marked_for_compaction = marked_for_compaction;
+    f.partial_removed = partial_removed;
+    f.compact_to_level = compact_to_level;
     new_files_.emplace_back(level, std::move(f));
   }
 

@@ -15,6 +15,12 @@
 #include "util/sync_point.h"
 namespace rocksdb {
 
+void MergeRangeSet(const std::vector<InternalKey>& range_set,
+                   const std::vector<InternalKey>& erase_set,
+                   std::vector<InternalKey>& output,
+                   const InternalKeyComparator& ic,
+                   InternalIterator* iter)
+
 // SYNC_POINT is not supported in released Windows mode.
 #if !defined(ROCKSDB_LITE)
 
@@ -2987,6 +2993,88 @@ TEST_F(DBCompactionTest, CompactBottomLevelFilesWithDeletions) {
     // deletion markers/deleted keys.
     ASSERT_LT(post_file.size, pre_file.size);
   }
+}
+
+TEST_F(DBCompactionTest, MergeRangeSetTest) {
+  auto test = [](const std::vector<uint64_t>& values,
+                 const std::vector<uint64_t>& ranges,
+                 const std::vector<uint64_t>& erases,
+                 const std::vector<uint64_t>& result) {
+    InternalKeyComparator ic(BytewiseComparator());
+    anon::TestInternalIterator value_iter(values);
+    std::vector<InternalKey> range_set;
+    std::vector<InternalKey> erase_set;
+    std::vector<uint64_t> new_result;
+    range_set.reserve(ranges.size());
+    for (auto r : ranges) {
+      if (port::kLittleEndian) {
+        r = EndianTransform(r, 8);
+      }
+      range_set.emplace_back();
+      range_set.back().rep()->resize(16, 0);
+      memcpy(&*range_set.back().rep()->begin(), &r, 4);
+    }
+    for (auto r : erases) {
+      if (port::kLittleEndian) {
+        r = EndianTransform(r, 8);
+      }
+      erase_set.emplace_back();
+      erase_set.back().rep()->resize(16, 0);
+      memcpy(&*erase_set.back().rep()->begin(), &r, 4);
+    }
+    std::vector<uint64_t> new_range_set;
+    MergeRangeSet(range_set, erase_set, new_range_set, ic, &value_iter);
+    for (auto& r : new_range_set) {
+      uint64_t value = *(const uint64_t*)r.rep()->data();
+      if (port::kLittleEndian) {
+        value = EndianTransform(value, 8);
+      }
+      new_result.emplace_back(value);
+    }
+    ASSERT_EQ(new_result, result);
+  };
+  test(
+    { 1, 2, 3, 4, 5, 6 },
+    { 1, 2, 4, 6 },
+    { 2, 4 },
+    { 1, 1, 5, 6 }
+  );
+  test(
+    { 1, 2, 4, 5, 7, 8 },
+    { 2, 7 },
+    { 7, 8 },
+    { 2, 5 }
+  );
+  test(
+    { 2, 4, 6, 9, 10, 20 },
+    { 1, 3, 5, 7 },
+    { 1, 10 },
+    {}
+  );
+  test(
+    { 2, 3, 5, 30 },
+    { 3, 4, 6, 6, 8, 10, 20, 40 },
+    { 50, 50 },
+    { 3, 3, 30, 30 }
+  );
+  test(
+    { 2, 3, 5 },
+    { 2, 5 },
+    { 0, 1, 10, 20 },
+    { 2, 5 }
+  );
+  test(
+    { 2, 3, 5, 7, 9 },
+    { 2, 5, 6, 10 },
+    { 0, 1, 10, 20 },
+    { 2, 5, 7, 9 }
+  );
+  test(
+    { 2, 3, 4, 50, 100, 101, 102 },
+    { 2, 4, 50, 102 },
+    { 10, 80 },
+    { 2, 4, 100, 102 }
+  );
 }
 
 INSTANTIATE_TEST_CASE_P(DBCompactionTestWithParam, DBCompactionTestWithParam,

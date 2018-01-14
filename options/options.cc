@@ -56,6 +56,7 @@ AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions(const Options& options)
       max_write_buffer_number_to_maintain(
           options.max_write_buffer_number_to_maintain),
       inplace_update_support(options.inplace_update_support),
+      enable_partial_remove(options.enable_partial_remove),
       inplace_update_num_locks(options.inplace_update_num_locks),
       inplace_callback(options.inplace_callback),
       memtable_prefix_bloom_size_ratio(
@@ -298,6 +299,9 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
     ROCKS_LOG_HEADER(log,
                      "                  Options.inplace_update_support: %d",
                      inplace_update_support);
+    ROCKS_LOG_HEADER(log,
+                     "                   Options.enable_partial_remove: %d",
+                     enable_partial_remove);
     ROCKS_LOG_HEADER(
         log,
         "                Options.inplace_update_num_locks: %" ROCKSDB_PRIszt,

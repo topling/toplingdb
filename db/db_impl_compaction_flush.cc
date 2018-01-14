@@ -762,9 +762,9 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
     for (const auto& f : vstorage->LevelFiles(level)) {
       edit.DeleteFile(level, f->fd.GetNumber());
       edit.AddFile(to_level, f->fd.GetNumber(), f->fd.GetPathId(),
-                   f->fd.GetFileSize(), f->smallest, f->largest,
+                   f->fd.GetFileSize(), f->range_set,
                    f->smallest_seqno, f->largest_seqno,
-                   f->marked_for_compaction);
+                   f->marked_for_compaction, f->partial_removed, 0);
     }
     ROCKS_LOG_DEBUG(immutable_db_options_.info_log,
                     "[%s] Apply version edit:\n%s", cfd->GetName().c_str(),
@@ -1614,9 +1614,9 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
         FileMetaData* f = c->input(l, i);
         c->edit()->DeleteFile(c->level(l), f->fd.GetNumber());
         c->edit()->AddFile(c->output_level(), f->fd.GetNumber(),
-                           f->fd.GetPathId(), f->fd.GetFileSize(), f->smallest,
-                           f->largest, f->smallest_seqno, f->largest_seqno,
-                           f->marked_for_compaction);
+                           f->fd.GetPathId(), f->fd.GetFileSize(), f->range_set,
+                           f->smallest_seqno, f->largest_seqno,
+                           f->marked_for_compaction, f->partial_removed, 0);
 
         ROCKS_LOG_BUFFER(log_buffer, "[%s] Moving #%" PRIu64
                                      " to level-%d %" PRIu64 " bytes\n",

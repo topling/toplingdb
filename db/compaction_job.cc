@@ -717,12 +717,12 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   std::unique_ptr<RangeDelAggregator> range_del_agg(
       new RangeDelAggregator(cfd->internal_comparator(), existing_snapshots_));
   std::unique_ptr<InternalIterator> input(versions_->MakeInputIterator(
-      sub_compact->compaction, range_del_agg.get(), env_optiosn_for_read_));
+      sub_compact->compaction, range_del_agg.get()));
 
   std::unique_ptr<RangeDelAggregator> range_del_agg2(
       new RangeDelAggregator(cfd->internal_comparator(), existing_snapshots_));
   std::unique_ptr<InternalIterator> input2(versions_->MakeInputIterator(
-      sub_compact->compaction, range_del_agg2.get(), env_optiosn_for_read_));
+      sub_compact->compaction, range_del_agg2.get()));
 
   // apply input_range
   if (!sub_compact->compaction->input_range().empty()) {

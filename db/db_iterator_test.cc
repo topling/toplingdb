@@ -2189,7 +2189,7 @@ TEST_F(DBIteratorTest, RangeWrappedInternalIteratorTest) {
     ASSERT_FALSE(iter->Valid());
     iter->SeekToLast();
     for (auto it = valid.rbegin(); it != valid.rend(); ++it) {
-      uint64_t value = *(const uint64_t*)iter->key().data());
+      uint64_t value = *(const uint64_t*)iter->key().data();
       if (port::kLittleEndian) {
         value = EndianTransform(value, 8);
       }
@@ -2210,7 +2210,7 @@ TEST_F(DBIteratorTest, RangeWrappedInternalIteratorTest) {
       if (find1 == valid.end()) {
         ASSERT_FALSE(iter->Valid());
       } else {
-        uint64_t value = *(const uint64_t*)iter->key().data());
+        uint64_t value = *(const uint64_t*)iter->key().data();
         if (port::kLittleEndian) {
           value = EndianTransform(value, 8);
         }
@@ -2221,11 +2221,11 @@ TEST_F(DBIteratorTest, RangeWrappedInternalIteratorTest) {
       if (find2 == valid.begin()) {
         ASSERT_FALSE(iter->Valid());
       } else {
-        uint64_t value = *(const uint64_t*)iter->key().data());
+        uint64_t value = *(const uint64_t*)iter->key().data();
         if (port::kLittleEndian) {
           value = EndianTransform(value, 8);
         }
-        ASSERT_EQ(value, find2[-1]));
+        ASSERT_EQ(value, find2[-1]);
       }
     }
   };

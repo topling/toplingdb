@@ -152,8 +152,8 @@ namespace {
         explicit TRBTreeRep(size_type reserve_size, const MemTableRep::KeyComparator &compare, Allocator *allocator,
                             const SliceTransform *transform) : MemTableRep(allocator),
                                                                key_set_({compare}, {&memory_size_, reserve_size}),
-                                                               immutable_{false},
-                                                               memory_size_{0},
+                                                               immutable_(false),
+                                                               memory_size_(0),
                                                                transform_(transform)
         {
         }

@@ -19,7 +19,7 @@ void MergeRangeSet(const std::vector<InternalKey>& range_set,
                    const std::vector<InternalKey>& erase_set,
                    std::vector<InternalKey>& output,
                    const InternalKeyComparator& ic,
-                   InternalIterator* iter)
+                   InternalIterator* iter);
 
 // SYNC_POINT is not supported in released Windows mode.
 #if !defined(ROCKSDB_LITE)
@@ -3022,7 +3022,7 @@ TEST_F(DBCompactionTest, MergeRangeSetTest) {
       erase_set.back().rep()->resize(16, 0);
       memcpy(&*erase_set.back().rep()->begin(), &r, 4);
     }
-    std::vector<uint64_t> new_range_set;
+    std::vector<InternalKey> new_range_set;
     MergeRangeSet(range_set, erase_set, new_range_set, ic, &value_iter);
     for (auto& r : new_range_set) {
       uint64_t value = *(const uint64_t*)r.rep()->data();

@@ -570,7 +570,8 @@ Compaction* CompactionPicker::CompactRange(
         /* max_compaction_bytes */ LLONG_MAX, output_path_id,
         GetCompressionType(ioptions_, vstorage, mutable_cf_options,
                            output_level, 1),
-        /* grandparents */ {}, /* is manual */ true);
+        /* grandparents */ {}, /* is manual */ true, -1, false, false,
+        ioptions_.enable_partial_remove);
     RegisterCompaction(c);
     return c;
   }
@@ -677,7 +678,8 @@ Compaction* CompactionPicker::CompactRange(
       mutable_cf_options.max_compaction_bytes, output_path_id,
       GetCompressionType(ioptions_, vstorage, mutable_cf_options, output_level,
                          vstorage->base_level()),
-      std::move(grandparents), /* is manual compaction */ true);
+      std::move(grandparents), /* is manual compaction */ true, -1, false,
+      false, ioptions_.enable_partial_remove);
 
   TEST_SYNC_POINT_CALLBACK("CompactionPicker::CompactRange:Return", compaction);
   RegisterCompaction(compaction);

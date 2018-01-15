@@ -6,6 +6,16 @@ my %suf = (
 	GB => 1e9,
 	TB => 1e12,
 );
+sub PrintSize($) {
+	my $val = shift;
+	if ($val < 1e9) {
+		printf(" %8.3f'M", $val/1e6);
+	}
+	else {
+		printf(" %8.3f'G", $val/1e9);
+	}
+}
+
 while (<>) {
 	my @F=();
 	my $levels;
@@ -14,18 +24,24 @@ while (<>) {
 		$levels = $';
 		while ($lev0 =~ /\((\d+)(.B)\)/g) {
 			my $mul = $suf{$2};
-			push @F, $1 * $suf{"$2"};
+			if (defined($mul)) {
+				push @F, $1 * $suf{"$2"};
+			}
 		}
 	}
 	else {
 		$levels = $_;
 	}
-	while ($levels =~ /\[([^\]]*)\]/g) {
+	while ($levels =~ /\[([^\]]+)\]/g) {
 		my $lev = $1;
 		my $size = 0;
 		while ($lev =~ /\((\d+)(.B)\)/g) {
 			my $mul = $suf{$2};
-			$size += $1 * $suf{"$2"};
+			if (defined($mul)) {
+				$size += $1 * $suf{"$2"};
+			} else {
+				#print $_;
+			}
 		}
 		if ($size > 0) {
 			push @F, $size;
@@ -40,14 +56,12 @@ while (<>) {
 	my $max = $F[$#F];
 	if (scalar(@F) >= 2) {
 		printf("%9.6f  %9.6f  %9.6f ;", $sum / $max, $max / ($sum - $max), $max/$sum);
+		PrintSize($sum);
+		printf(" ;");
 		for my $val (@F) {
-			if ($val < 1e9) {
-				printf(" %8.3f'M", $val/1e6);
-			}
-			else {
-				printf(" %8.3f'G", $val/1e9);
-			}
+			PrintSize($val);
 		}
 		printf("\n");
+		#	print $_;
 	}
 }

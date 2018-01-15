@@ -748,12 +748,6 @@ namespace {
     size_t   size_max_idx;
     size_t   real_idx;
   };
-
-  static double SqrtN(double a, double n) {
-    using std::exp;
-    using std::log;
-    return exp(log(a) / n);
-  }
 }
 
 //
@@ -784,11 +778,11 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     size_t n = mutable_cf_options.level0_file_num_compaction_trigger
              + ioptions_.num_levels - 1;
     sum = std::max<uint64_t>(sum, n * write_buffer_size);
-    double q = SqrtN(double(sum) / write_buffer_size, double(n));
+    double q = std::pow(double(sum) / write_buffer_size, 1.0/n);
     qlev = (q - 1) / q;
     qlev = std::max(qlev, 0.51);
     slev = std::sqrt(qlev);
-    xlev = SqrtN(qlev, 2.5);
+    xlev = std::pow(qlev, 0.4);
   }
   unsigned int max_files_to_compact = std::max(2U,
       std::min(max_merge_width, max_number_of_files_to_compact));

@@ -1107,7 +1107,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSizeAmp(
   }
 
   // keep adding up all the remaining files
-  for (size_t loop = start_index; loop < sorted_runs.size() - 1; loop++) {
+  for (size_t loop = start_index; loop < sorted_runs.size(); loop++) {
     sr = &sorted_runs[loop];
     if (sr->being_compacted) {
       char file_num_buf[kFormatFileNumberBufSize];

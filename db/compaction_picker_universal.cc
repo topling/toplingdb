@@ -161,7 +161,8 @@ bool UniversalCompactionPicker::IsInputFilesNonOverlapping(Compaction* c) {
 bool UniversalCompactionPicker::NeedsCompaction(
     const VersionStorageInfo* vstorage) const {
   const int kLevel0 = 0;
-  return vstorage->CompactionScore(kLevel0) >= 1;
+  return vstorage->need_continue_compaction() ||
+         vstorage->CompactionScore(kLevel0) >= 1;
 }
 
 void UniversalCompactionPicker::SortedRun::Dump(char* out_buf,

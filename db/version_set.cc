@@ -1475,6 +1475,9 @@ void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
       if (!f->being_compacted && f->marked_for_compaction) {
         files_marked_for_compaction_.emplace_back(level, f);
       }
+      if (f->compact_to_level) {
+        need_continue_compaction_ = true;
+      }
     }
   }
 }

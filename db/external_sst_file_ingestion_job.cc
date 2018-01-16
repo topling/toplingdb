@@ -458,6 +458,13 @@ Status ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile(
       if (compaction_style == kCompactionStyleUniversal && lvl != 0) {
         const std::vector<FileMetaData*>& level_files =
             vstorage->LevelFiles(lvl);
+        if (vstorage->need_continue_compaction() &&
+            std::find_if(level_files.begin(), level_files.end(),
+                         [](FileMetaData* f) {
+                           return f->compact_to_level > 0;
+                         }) != level_files.end()) {
+          continue;
+        }
         const SequenceNumber level_largest_seqno =
             (*max_element(level_files.begin(), level_files.end(),
                           [](FileMetaData* f1, FileMetaData* f2) {

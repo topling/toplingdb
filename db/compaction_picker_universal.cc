@@ -248,8 +248,9 @@ Compaction* UniversalCompactionPicker::PickCompaction(
       CalculateSortedRuns(*vstorage, ioptions_, need_continue);
 
   if (sorted_runs.size() == 0 ||
-      sorted_runs.size() <
-          (unsigned int)mutable_cf_options.level0_file_num_compaction_trigger) {
+      (!vstorage->need_continue_compaction() &&
+       sorted_runs.size() <
+           (size_t)mutable_cf_options.level0_file_num_compaction_trigger)) {
     ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: nothing to do\n",
                      cf_name.c_str());
     TEST_SYNC_POINT_CALLBACK("UniversalCompactionPicker::PickCompaction:Return",

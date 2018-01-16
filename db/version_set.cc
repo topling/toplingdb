@@ -917,7 +917,8 @@ VersionStorageInfo::VersionStorageInfo(
       current_num_samples_(0),
       estimated_compaction_needed_bytes_(0),
       finalized_(false),
-      force_consistency_checks_(_force_consistency_checks) {
+      force_consistency_checks_(_force_consistency_checks),
+      need_continue_compaction_(false) {
   if (ref_vstorage != nullptr) {
     accumulated_file_size_ = ref_vstorage->accumulated_file_size_;
     accumulated_raw_key_size_ = ref_vstorage->accumulated_raw_key_size_;
@@ -1458,6 +1459,7 @@ void VersionStorageInfo::ComputeCompactionScore(
 
 void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
   files_marked_for_compaction_.clear();
+  need_continue_compaction_ = false;
   int last_qualify_level = 0;
 
   // Do not include files from the last level with data
@@ -1465,6 +1467,11 @@ void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
   // we should not move it to a new level.
   for (int level = num_levels() - 1; level >= 1; level--) {
     if (!files_[level].empty()) {
+      for (auto* f : files_[level]) {
+        if (!f->being_compacted && f->compact_to_level) {
+          need_continue_compaction_ = true;
+        }
+      }
       last_qualify_level = level - 1;
       break;
     }
@@ -1472,11 +1479,13 @@ void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
 
   for (int level = 0; level <= last_qualify_level; level++) {
     for (auto* f : files_[level]) {
-      if (!f->being_compacted && f->marked_for_compaction) {
-        files_marked_for_compaction_.emplace_back(level, f);
-      }
-      if (f->compact_to_level) {
-        need_continue_compaction_ = true;
+      if (!f->being_compacted) {
+        if (f->marked_for_compaction) {
+          files_marked_for_compaction_.emplace_back(level, f);
+        }
+        if (f->compact_to_level) {
+          need_continue_compaction_ = true;
+        }
       }
     }
   }

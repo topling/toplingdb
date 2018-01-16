@@ -896,7 +896,7 @@ Status DBImpl::RunManualCompaction(ColumnFamilyData* cfd, int input_level,
     assert(HasPendingManualCompaction());
     manual_conflict = false;
     Compaction* compaction = nullptr;
-    if (ShouldntRunManualCompaction(&manual) || (manual.in_progress == true) ||
+    if (ShouldntRunManualCompaction(&manual) || manual.in_progress ||
         scheduled ||
         (((manual.manual_end = &manual.tmp_storage1) != nullptr) &&
              ((compaction = manual.cfd->CompactRange(
@@ -1710,7 +1710,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     mutex_.Lock();
 
     status = compaction_job.Install(*c->mutable_cf_options());
-    if (status.ok()) {
+    if (status.ok() && !is_manual) {
       InstallSuperVersionAndScheduleWork(
           c->column_family_data(), &job_context->superversion_context,
           *c->mutable_cf_options());
@@ -1752,33 +1752,32 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
       m->status = status;
       m->done = true;
     }
-    // For universal compaction:
-    //   Because universal compaction always happens at level 0, so one
-    //   compaction will pick up all overlapped files. No files will be
-    //   filtered out due to size limit and left for a successive compaction.
-    //   So we can safely conclude the current compaction.
-    //
-    //   Also note that, if we don't stop here, then the current compaction
-    //   writes a new file back to level 0, which will be used in successive
-    //   compaction. Hence the manual compaction will never finish.
-    //
-    // Stop the compaction if manual_end points to nullptr -- this means
-    // that we compacted the whole range. manual_end should always point
-    // to nullptr in case of universal compaction
-    if (m->manual_end == nullptr) {
-      m->done = true;
-    }
-    if (!m->done) {
-      // We only compacted part of the requested range.  Update *m
-      // to the range that is left to be compacted.
-      // Universal and FIFO compactions should always compact the whole range
-      assert(m->cfd->ioptions()->compaction_style !=
-                 kCompactionStyleUniversal ||
-             m->cfd->ioptions()->num_levels > 1);
-      assert(m->cfd->ioptions()->compaction_style != kCompactionStyleFIFO);
-      m->tmp_storage = *m->manual_end;
-      m->begin = &m->tmp_storage;
-      m->incomplete = true;
+    if (m->cfd->ioptions()->compaction_style == kCompactionStyleUniversal) {
+      // Because universal compaction always happens at level 0, so one
+      // compaction will pick up all overlapped files. No files will be
+      // filtered out due to size limit and left for a successive compaction.
+      // So we can safely conclude the current compaction.
+      //
+      // if need_continue_compaction , need repick universal compaction
+      m->done = !m->cfd->current()->storage_info()->need_continue_compaction();
+      m->incomplete = !m->done;
+    } else {
+      if (m->manual_end == nullptr) {
+        // Stop the compaction if manual_end points to nullptr -- this means
+        // that we compacted the whole range. manual_end should always point
+        // to nullptr in case of universal compaction
+        m->done = true;
+      }
+      if (!m->done) {
+        // We only compacted part of the requested range.  Update *m
+        // to the range that is left to be compacted.
+        // FIFO compactions should always compact the whole range
+        assert(m->cfd->ioptions()->num_levels > 1);
+        assert(m->cfd->ioptions()->compaction_style != kCompactionStyleFIFO);
+        m->tmp_storage = *m->manual_end;
+        m->begin = &m->tmp_storage;
+        m->incomplete = true;
+      }
     }
     m->in_progress = false; // not being processed anymore
   }

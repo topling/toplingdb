@@ -511,6 +511,9 @@ Compaction* CompactionPicker::CompactRange(
 
   if (input_level == ColumnFamilyData::kCompactAllLevels) {
     assert(ioptions_.compaction_style == kCompactionStyleUniversal);
+    if (vstorage->need_continue_compaction()) {
+      return PickCompaction(cf_name, mutable_cf_options, vstorage, nullptr);
+    }
 
     // Universal compaction with more than one level always compacts all the
     // files together to the last level.
@@ -678,8 +681,7 @@ Compaction* CompactionPicker::CompactRange(
       mutable_cf_options.max_compaction_bytes, output_path_id,
       GetCompressionType(ioptions_, vstorage, mutable_cf_options, output_level,
                          vstorage->base_level()),
-      std::move(grandparents), /* is manual compaction */ true, -1, false,
-      false, ioptions_.enable_partial_remove);
+      std::move(grandparents), /* is manual compaction */ true);
 
   TEST_SYNC_POINT_CALLBACK("CompactionPicker::CompactRange:Return", compaction);
   RegisterCompaction(compaction);

@@ -620,9 +620,6 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
       ThreadStatus::STAGE_COMPACTION_INSTALL);
   db_mutex_->AssertHeld();
   Status status = compact_->status;
-  ColumnFamilyData* cfd = compact_->compaction->column_family_data();
-  cfd->internal_stats()->AddCompactionStats(
-      compact_->compaction->output_level(), compaction_stats_);
 
   std::unordered_map<uint64_t, int> file_remove;
   if (status.ok()) {
@@ -632,6 +629,11 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   AggregateStatistics();
   UpdateCompactionStats(file_remove);
   RecordCompactionIOStats();
+
+  ColumnFamilyData* cfd = compact_->compaction->column_family_data();
+  cfd->internal_stats()->AddCompactionStats(
+    compact_->compaction->output_level(), compaction_stats_);
+
   VersionStorageInfo::LevelSummaryStorage tmp;
   auto vstorage = cfd->current()->storage_info();
   const auto& stats = compaction_stats_;

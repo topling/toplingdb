@@ -648,13 +648,14 @@ Status ExternalSstFileIngestionJob::IngestedFileOverlapWithLevel(
   ro.total_order_seek = true;
   MergeIteratorBuilder merge_iter_builder(&cfd_->internal_comparator(),
                                           &arena);
-  sv->current->AddIteratorsForLevel(ro, env_options_, &merge_iter_builder, lvl,
-                                    nullptr /* range_del_agg */);
+  auto version = cfd_->current();
+  version->AddIteratorsForLevel(ro, env_options_, &merge_iter_builder, lvl,
+                                nullptr /* range_del_agg */);
   ScopedArenaIterator level_iter(merge_iter_builder.Finish());
 
   std::vector<InternalIterator*> level_range_del_iters;
-  sv->current->AddRangeDelIteratorsForLevel(ro, env_options_, lvl,
-                                            &level_range_del_iters);
+  version->AddRangeDelIteratorsForLevel(ro, env_options_, lvl,
+                                        &level_range_del_iters);
   std::unique_ptr<InternalIterator> level_range_del_iter(NewMergingIterator(
       &cfd_->internal_comparator(),
       level_range_del_iters.empty() ? nullptr : &level_range_del_iters[0],

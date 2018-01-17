@@ -1073,7 +1073,7 @@ bool Version::IsFilterSkipped(int level, bool is_file_last_in_level) {
 }
 
 void VersionStorageInfo::GenerateLevelFilesBrief() {
-  level_files_brief_.resize(num_non_empty_levels_);
+  level_files_brief_.resize(num_levels_);
   for (int level = 0; level < num_non_empty_levels_; level++) {
     DoGenerateLevelFilesBrief(
         &level_files_brief_[level], files_[level], &arena_);

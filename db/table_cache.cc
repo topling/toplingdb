@@ -29,6 +29,12 @@ namespace rocksdb {
 
 namespace {
 
+struct TableReaderPtrHolder {
+  std::unique_ptr<TableReader> ptr;
+  std::mutex  mtx;
+  std::condition_variable cond;
+};
+
 template <class T>
 static void DeleteEntry(const Slice& key, void* value) {
   T* typed_value = reinterpret_cast<T*>(value);
@@ -42,7 +48,7 @@ static void UnrefEntry(void* arg1, void* arg2) {
 }
 
 static void DeleteTableReader(void* arg1, void* arg2) {
-  TableReader* table_reader = reinterpret_cast<TableReader*>(arg1);
+  TableReaderPtrHolder* table_reader = reinterpret_cast<TableReaderPtrHolder*>(arg1);
   delete table_reader;
 }
 
@@ -77,7 +83,16 @@ TableCache::~TableCache() {
 }
 
 TableReader* TableCache::GetTableReaderFromHandle(Cache::Handle* handle) {
-  return reinterpret_cast<TableReader*>(cache_->Value(handle));
+  auto pvalue = cache_->Value(handle);
+  auto holder = reinterpret_cast<TableReaderPtrHolder*>(pvalue);
+  if (!holder->ptr) { // double check
+    // loop forever if the table open failed in that other thread
+    // move the wait to FindTable?
+    std::unique_lock<std::mutex> lock(holder->mtx);
+    while (!holder->ptr)
+      holder->cond.wait(lock);
+  }
+  return holder->ptr.get();
 }
 
 void TableCache::ReleaseHandle(Cache::Handle* handle) {
@@ -146,24 +161,26 @@ Status TableCache::FindTable(const EnvOptions& env_options,
     if (no_io) {  // Don't do IO and return a not-found status
       return Status::Incomplete("Table not found in table_cache, no_io is set");
     }
-    unique_ptr<TableReader> table_reader;
+    std::unique_ptr<TableReaderPtrHolder> holder(new TableReaderPtrHolder);
+    auto deleter = &DeleteEntry<TableReaderPtrHolder>;
+    s = cache_->Insert(key, holder.get(), 1, deleter, handle);
+    if (!s.ok()) {
+      return s;
+    }
+    std::unique_lock<std::mutex> lock(holder->mtx);
     s = GetTableReader(env_options, internal_comparator, fd,
                        false /* sequential mode */, 0 /* readahead */,
-                       record_read_stats, file_read_hist, &table_reader,
+                       record_read_stats, file_read_hist, &holder->ptr,
                        skip_filters, level, prefetch_index_and_filter_in_cache);
+    holder->cond.notify_all();
     if (!s.ok()) {
-      assert(table_reader == nullptr);
+      assert(holder == nullptr);
       RecordTick(ioptions_.statistics, NO_FILE_ERRORS);
       // We do not cache error results so that if the error is transient,
       // or somebody repairs the file, we recover automatically.
-    } else {
-      s = cache_->Insert(key, table_reader.get(), 1, &DeleteEntry<TableReader>,
-                         handle);
-      if (s.ok()) {
-        // Release ownership of table reader.
-        table_reader.release();
-      }
     }
+    // Release ownership of table reader.
+    holder.release();
   }
   return s;
 }

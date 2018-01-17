@@ -107,7 +107,9 @@ class CompactionJob {
       const Slice* next_table_min_key = nullptr);
   bool IsCoveredBySingleSST(SubcompactionState* sub_compact);
   bool IsCoverAnySST(SubcompactionState* sub_compact);
-  Status InstallCompactionResults(const MutableCFOptions& mutable_cf_options);
+  Status InstallCompactionResults(
+      const MutableCFOptions& mutable_cf_options,
+      std::unordered_map<uint64_t, int>& file_remove);
   void RecordCompactionIOStats();
   Status OpenCompactionOutputFile(SubcompactionState* sub_compact);
   void CleanupCompaction();
@@ -116,9 +118,11 @@ class CompactionJob {
   void RecordDroppedKeys(const CompactionIterationStats& c_iter_stats,
                          CompactionJobStats* compaction_job_stats = nullptr);
 
-  void UpdateCompactionStats();
+  void UpdateCompactionStats(
+      const std::unordered_map<uint64_t, int>& file_remove);
   void UpdateCompactionInputStatsHelper(
-      int* num_files, uint64_t* bytes_read, int input_level);
+      int* num_files, uint64_t* bytes_read, int input_level,
+      const std::unordered_map<uint64_t, int>& file_remove);
 
   void LogCompaction();
 

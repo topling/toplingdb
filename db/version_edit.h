@@ -26,6 +26,7 @@ struct FileMetaData;
 class ColumnFamilyData;
 
 const uint64_t kFileNumberMask = 0x3FFFFFFFFFFFFFFF;
+const uint8_t kPartialRemovedMax = 100;
 
 extern uint64_t PackFileNumberAndPathId(uint64_t number, uint64_t path_id);
 

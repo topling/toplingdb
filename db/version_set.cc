@@ -1225,7 +1225,7 @@ void VersionStorageInfo::ComputeCompensatedSizes() {
         if (file_meta->partial_removed) {
           file_meta->compensated_file_size =
               file_meta->compensated_file_size *
-              (100 - file_meta->partial_removed) / 100;
+              (kPartialRemovedMax - file_meta->partial_removed) / kPartialRemovedMax;
         }
       }
     }

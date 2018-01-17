@@ -631,7 +631,8 @@ Compaction* UniversalCompactionPicker::PickCompactionConitnue(
     for (auto f : input.files) {
       assert(!f->being_compacted);
       estimated_total_size +=
-          f->fd.GetFileSize() * (100 - f->partial_removed) / 100;
+          f->fd.GetFileSize() *
+          (kPartialRemovedMax - f->partial_removed) / kPartialRemovedMax;
     }
   }
   auto path_id = GetPathId(ioptions_, estimated_total_size);

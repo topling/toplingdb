@@ -128,7 +128,7 @@ bool PartialRemovedMetaData::InitFrom(FileMetaData* file,
   assert(table_reader);
   MergeRangeSet(file->range_set, erase_set, range_set, ic, iter.get());
   if (range_set.empty()) {
-    partial_removed = 100;
+    partial_removed = kPartialRemovedMax;
     return true;
   }
   if (range_set.size() == file->range_set.size() &&
@@ -151,14 +151,14 @@ bool PartialRemovedMetaData::InitFrom(FileMetaData* file,
   }
   partial_removed =
       (uint8_t)std::min<uint64_t>(
-          99, std::max<uint64_t>(
-                  1, (std::max(alive_size,
-                               sst_size) - alive_size) * 100 / sst_size));
+          kPartialRemovedMax - 1, std::max<uint64_t>(
+                  1, (std::max(alive_size, sst_size) - alive_size) *
+                          kPartialRemovedMax / sst_size));
   return true;
 }
 
 FileMetaData PartialRemovedMetaData::Get() {
-  assert(partial_removed < 100);
+  assert(partial_removed < kPartialRemovedMax);
   FileMetaData f;
   f.fd = FileDescriptor(meta->fd.GetNumber(), meta->fd.GetPathId(),
                         meta->fd.GetFileSize());

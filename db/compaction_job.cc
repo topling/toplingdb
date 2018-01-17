@@ -608,10 +608,6 @@ Status CompactionJob::Run() {
   }
   compact_->compaction->SetOutputTableProperties(std::move(tp));
 
-  // Finish up all book-keeping to unify the subcompaction results
-  AggregateStatistics();
-  UpdateCompactionStats();
-  RecordCompactionIOStats();
   LogFlush(db_options_.info_log);
   TEST_SYNC_POINT("CompactionJob::Run():End");
 
@@ -628,9 +624,14 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   cfd->internal_stats()->AddCompactionStats(
       compact_->compaction->output_level(), compaction_stats_);
 
+  std::unordered_map<uint64_t, int> file_remove;
   if (status.ok()) {
-    status = InstallCompactionResults(mutable_cf_options);
+    status = InstallCompactionResults(mutable_cf_options, file_remove);
   }
+  // Finish up all book-keeping to unify the subcompaction results
+  AggregateStatistics();
+  UpdateCompactionStats(file_remove);
+  RecordCompactionIOStats();
   VersionStorageInfo::LevelSummaryStorage tmp;
   auto vstorage = cfd->current()->storage_info();
   const auto& stats = compaction_stats_;
@@ -1485,7 +1486,8 @@ bool CompactionJob::IsCoverAnySST(SubcompactionState* sub_compact) {
 }
 
 Status CompactionJob::InstallCompactionResults(
-    const MutableCFOptions& mutable_cf_options) {
+    const MutableCFOptions& mutable_cf_options,
+    std::unordered_map<uint64_t, int>& file_remove) {
   db_mutex_->AssertHeld();
 
   auto* compaction = compact_->compaction;
@@ -1544,6 +1546,7 @@ Status CompactionJob::InstallCompactionResults(
                                      env_optiosn_for_read_);
         if (compact_to_level == 0 && !changed) {
           // unchanged sst
+          file_remove.emplace(file->fd.GetNumber(), 0);
           continue;
         }
         // should delete first
@@ -1552,6 +1555,9 @@ Status CompactionJob::InstallCompactionResults(
         if (!meta.range_set.empty()) {
           compaction->edit()->AddFile(level.level, meta.Get());
         }
+        assert(meta.partial_removed >= file->partial_removed);
+        file_remove.emplace(file->fd.GetNumber(),
+                            meta.partial_removed - file->partial_removed);
       }
     }
   } else {
@@ -1689,7 +1695,8 @@ void CopyPrefix(
 
 #endif  // !ROCKSDB_LITE
 
-void CompactionJob::UpdateCompactionStats() {
+void CompactionJob::UpdateCompactionStats(
+    const std::unordered_map<uint64_t, int>& file_remove) {
   Compaction* compaction = compact_->compaction;
   compaction_stats_.num_input_files_in_non_output_levels = 0;
   compaction_stats_.num_input_files_in_output_level = 0;
@@ -1700,12 +1707,12 @@ void CompactionJob::UpdateCompactionStats() {
       UpdateCompactionInputStatsHelper(
           &compaction_stats_.num_input_files_in_non_output_levels,
           &compaction_stats_.bytes_read_non_output_levels,
-          input_level);
+          input_level, file_remove);
     } else {
       UpdateCompactionInputStatsHelper(
           &compaction_stats_.num_input_files_in_output_level,
           &compaction_stats_.bytes_read_output_level,
-          input_level);
+          input_level, file_remove);
     }
   }
 
@@ -1729,17 +1736,29 @@ void CompactionJob::UpdateCompactionStats() {
 }
 
 void CompactionJob::UpdateCompactionInputStatsHelper(
-    int* num_files, uint64_t* bytes_read, int input_level) {
+    int* num_files, uint64_t* bytes_read, int input_level,
+    const std::unordered_map<uint64_t, int>& file_remove) {
   const Compaction* compaction = compact_->compaction;
   auto num_input_files = compaction->num_input_files(input_level);
-  *num_files += static_cast<int>(num_input_files);
 
+  int num_files_add = 0;
   for (size_t i = 0; i < num_input_files; ++i) {
     const auto* file_meta = compaction->input(input_level, i);
-    *bytes_read += file_meta->fd.GetFileSize();
+    int ratio = kPartialRemovedMax;
+    if (!file_remove.empty()) {
+      auto find = file_remove.find(file_meta->fd.GetNumber());
+      assert(find != file_remove.end());
+      ratio = find->second;
+    }
+    *bytes_read += file_meta->fd.GetFileSize() * ratio / kPartialRemovedMax;
     compaction_stats_.num_input_records +=
-        static_cast<uint64_t>(file_meta->num_entries);
+        static_cast<uint64_t>(file_meta->num_entries) *
+            ratio / kPartialRemovedMax;
+    if (ratio > 0) {
+      ++num_files_add;
+    }
   }
+  *num_files += num_files_add;
 }
 
 void CompactionJob::UpdateCompactionJobStats(

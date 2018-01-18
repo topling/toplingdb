@@ -33,6 +33,7 @@ struct TableReaderPtrHolder {
   std::unique_ptr<TableReader> ptr;
   std::mutex  mtx;
   std::condition_variable cond;
+  Status open_status = Status::OK();
 };
 
 template <class T>
@@ -80,19 +81,6 @@ TableCache::TableCache(const ImmutableCFOptions& ioptions,
 }
 
 TableCache::~TableCache() {
-}
-
-TableReader* TableCache::GetTableReaderFromHandle(Cache::Handle* handle) {
-  auto pvalue = cache_->Value(handle);
-  auto holder = reinterpret_cast<TableReaderPtrHolder*>(pvalue);
-  if (!holder->ptr) { // double check
-    // loop forever if the table open failed in that other thread
-    // move the wait to FindTable?
-    std::unique_lock<std::mutex> lock(holder->mtx);
-    while (!holder->ptr)
-      holder->cond.wait(lock);
-  }
-  return holder->ptr.get();
 }
 
 void TableCache::ReleaseHandle(Cache::Handle* handle) {
@@ -145,6 +133,7 @@ void TableCache::EraseHandle(const FileDescriptor& fd, Cache::Handle* handle) {
 Status TableCache::FindTable(const EnvOptions& env_options,
                              const InternalKeyComparator& internal_comparator,
                              const FileDescriptor& fd, Cache::Handle** handle,
+                             TableReader** pp_table,
                              const bool no_io, bool record_read_stats,
                              HistogramImpl* file_read_hist, bool skip_filters,
                              int level,
@@ -156,7 +145,8 @@ Status TableCache::FindTable(const EnvOptions& env_options,
   *handle = cache_->Lookup(key);
   TEST_SYNC_POINT_CALLBACK("TableCache::FindTable:0",
                            const_cast<bool*>(&no_io));
-
+  assert(nullptr != pp_table);
+  *pp_table = nullptr;
   if (*handle == nullptr) {
     if (no_io) {  // Don't do IO and return a not-found status
       return Status::Incomplete("Table not found in table_cache, no_io is set");
@@ -172,15 +162,36 @@ Status TableCache::FindTable(const EnvOptions& env_options,
                        false /* sequential mode */, 0 /* readahead */,
                        record_read_stats, file_read_hist, &holder->ptr,
                        skip_filters, level, prefetch_index_and_filter_in_cache);
-    holder->cond.notify_all();
     if (!s.ok()) {
-      assert(holder == nullptr);
+      assert(nullptr == holder->ptr);
       RecordTick(ioptions_.statistics, NO_FILE_ERRORS);
       // We do not cache error results so that if the error is transient,
       // or somebody repairs the file, we recover automatically.
+      holder->open_status = s;
     }
+    *pp_table = holder->ptr.get();
+    holder->cond.notify_all();
     // Release ownership of table reader.
     holder.release();
+  }
+  else {
+    auto pvalue = cache_->Value(*handle);
+    auto holder = reinterpret_cast<TableReaderPtrHolder*>(pvalue);
+    if (!holder->ptr) { // double check
+      // loop forever if the table open failed in that other thread
+      // move the wait to FindTable?
+      std::unique_lock<std::mutex> lock(holder->mtx);
+      while (!holder->ptr) {
+        if (!holder->open_status.ok()) {
+          s = holder->open_status;
+          cache_->Release(*handle);
+          *handle = NULL; // holder will also be destroyed
+          return s;
+        }
+        holder->cond.wait(lock);
+      }
+    }
+    *pp_table = holder->ptr.get();
   }
   return s;
 }
@@ -230,13 +241,10 @@ InternalIterator* TableCache::NewIterator(
   } else {
     table_reader = fd.table_reader;
     if (table_reader == nullptr) {
-      s = FindTable(env_options, icomparator, fd, &handle,
+      s = FindTable(env_options, icomparator, fd, &handle, &table_reader,
                     options.read_tier == kBlockCacheTier /* no_io */,
                     !for_compaction /* record read_stats */, file_read_hist,
                     skip_filters, level);
-      if (s.ok()) {
-        table_reader = GetTableReaderFromHandle(handle);
-      }
     }
   }
   InternalIterator* result = nullptr;
@@ -305,13 +313,10 @@ InternalIterator* TableCache::NewRangeTombstoneIterator(
   Cache::Handle* handle = nullptr;
   table_reader = fd.table_reader;
   if (table_reader == nullptr) {
-    s = FindTable(env_options, icomparator, fd, &handle,
+    s = FindTable(env_options, icomparator, fd, &handle, &table_reader,
                   options.read_tier == kBlockCacheTier /* no_io */,
                   true /* record read_stats */, file_read_hist, skip_filters,
                   level);
-    if (s.ok()) {
-      table_reader = GetTableReaderFromHandle(handle);
-    }
   }
   InternalIterator* result = nullptr;
   if (s.ok()) {
@@ -424,13 +429,10 @@ Status TableCache::Get(const ReadOptions& options,
   Cache::Handle* handle = nullptr;
   if (!done && s.ok()) {
     if (t == nullptr) {
-      s = FindTable(env_options_, internal_comparator, fd, &handle,
+      s = FindTable(env_options_, internal_comparator, fd, &handle, &t,
                     options.read_tier == kBlockCacheTier /* no_io */,
                     true /* record_read_stats */, file_read_hist, skip_filters,
                     level);
-      if (s.ok()) {
-        t = GetTableReaderFromHandle(handle);
-      }
     }
     if (s.ok() && get_context->range_del_agg() != nullptr &&
         !options.ignore_range_deletions) {
@@ -486,15 +488,15 @@ Status TableCache::GetTableProperties(
     return s;
   }
 
-  Cache::Handle* table_handle = nullptr;
-  s = FindTable(env_options, internal_comparator, fd, &table_handle, no_io);
+  Cache::Handle* handle = nullptr;
+  TableReader* table = nullptr;
+  s = FindTable(env_options, internal_comparator, fd, &handle, &table, no_io);
   if (!s.ok()) {
     return s;
   }
-  assert(table_handle);
-  auto table = GetTableReaderFromHandle(table_handle);
+  assert(handle);
   *properties = table->GetTableProperties();
-  ReleaseHandle(table_handle);
+  ReleaseHandle(handle);
   return s;
 }
 
@@ -509,15 +511,15 @@ size_t TableCache::GetMemoryUsageByTableReader(
     return table_reader->ApproximateMemoryUsage();
   }
 
-  Cache::Handle* table_handle = nullptr;
-  s = FindTable(env_options, internal_comparator, fd, &table_handle, true);
+  Cache::Handle* handle = nullptr;
+  TableReader* table = nullptr;
+  s = FindTable(env_options, internal_comparator, fd, &handle, &table, true);
   if (!s.ok()) {
     return 0;
   }
-  assert(table_handle);
-  auto table = GetTableReaderFromHandle(table_handle);
+  assert(handle);
   auto ret = table->ApproximateMemoryUsage();
-  ReleaseHandle(table_handle);
+  ReleaseHandle(handle);
   return ret;
 }
 

@@ -93,13 +93,11 @@ class TableCache {
   Status FindTable(const EnvOptions& toptions,
                    const InternalKeyComparator& internal_comparator,
                    const FileDescriptor& file_fd, Cache::Handle**,
+                   TableReader**,
                    const bool no_io = false, bool record_read_stats = true,
                    HistogramImpl* file_read_hist = nullptr,
                    bool skip_filters = false, int level = -1,
                    bool prefetch_index_and_filter_in_cache = true);
-
-  // Get TableReader from a cache handle.
-  TableReader* GetTableReaderFromHandle(Cache::Handle* handle);
 
   // Get the table properties of a given table.
   // @no_io: indicates if we should load table to the cache if it is not present

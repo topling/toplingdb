@@ -2443,16 +2443,12 @@ VersionSet::VersionSet(const std::string& dbname,
       env_options_compactions_(
           env_->OptimizeForCompactionTableRead(env_options_, *db_options_)) {}
 
-void CloseTables(void* ptr, size_t) {
-  TableReader* table_reader = reinterpret_cast<TableReader*>(ptr);
-  table_reader->Close();
-}
 
 VersionSet::~VersionSet() {
   // we need to delete column_family_set_ because its destructor depends on
   // VersionSet
   Cache* table_cache = column_family_set_->get_table_cache();
-  table_cache->ApplyToAllCacheEntries(&CloseTables, false /* thread_safe */);
+  table_cache->ApplyToAllCacheEntries(&TableCache::CloseTables, false /* thread_safe */);
   column_family_set_.reset();
   for (auto file : obsolete_files_) {
     if (file->table_reader_handle) {

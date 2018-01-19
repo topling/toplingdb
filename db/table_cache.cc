@@ -83,6 +83,13 @@ TableCache::TableCache(const ImmutableCFOptions& ioptions,
 TableCache::~TableCache() {
 }
 
+void TableCache::CloseTables(void* ptr, size_t) {
+  TableReaderPtrHolder *holder = reinterpret_cast<TableReaderPtrHolder *>(ptr);
+  if (holder->ptr) {
+    holder->ptr->Close();
+  }
+}
+
 void TableCache::ReleaseHandle(Cache::Handle* handle) {
   cache_->Release(handle);
 }

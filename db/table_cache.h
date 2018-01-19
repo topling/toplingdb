@@ -40,6 +40,8 @@ class TableCache {
              const EnvOptions& storage_options, Cache* cache);
   ~TableCache();
 
+  static void CloseTables(void* ptr, size_t);
+
   // Return an iterator for the specified file number (the corresponding
   // file length must be exactly "file_size" bytes).  If "tableptr" is
   // non-nullptr, also sets "*tableptr" to point to the Table object
@@ -142,5 +144,6 @@ class TableCache {
   Cache* const cache_;
   std::string row_cache_id_;
 };
+
 
 }  // namespace rocksdb

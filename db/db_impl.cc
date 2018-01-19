@@ -2170,11 +2170,7 @@ Status DBImpl::DeleteFilesInRange(ColumnFamilyHandle* column_family,
 
     auto* vstorage = input_version->storage_info();
     bool is_delete = false;
-    for (int i = 1; i < cfd->NumberLevels(); i++) {
-      if (vstorage->LevelFiles(i).empty() ||
-          !vstorage->OverlapInLevel(i, begin, end)) {
-        continue;
-      }
+    for (int i = 0; i < cfd->NumberLevels(); i++) {
       std::vector<FileMetaData*> level_files;
       InternalKey begin_storage, end_storage, *begin_key, *end_key;
       if (begin == nullptr) {
@@ -2220,6 +2216,10 @@ Status DBImpl::DeleteFilesInRange(ColumnFamilyHandle* column_family,
           }
         }
       } else {
+        if (i == 0 || vstorage->LevelFiles(i).empty() ||
+            !vstorage->OverlapInLevel(i, begin, end)) {
+          continue;
+        }
         vstorage->GetCleanInputsWithinInterval(i, begin_key, end_key,
                                                &level_files, -1 /* hint_index */,
                                                nullptr /* file_index */);

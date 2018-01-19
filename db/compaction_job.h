@@ -106,7 +106,7 @@ class CompactionJob {
       CompactionIterationStats* range_del_out_stats,
       const Slice* next_table_min_key = nullptr);
   bool IsCoveredBySingleSST(SubcompactionState* sub_compact);
-  bool IsCoverAnySST(SubcompactionState* sub_compact);
+  bool IsCoverAnyInputSST(SubcompactionState* sub_compact);
   Status InstallCompactionResults(
       const MutableCFOptions& mutable_cf_options,
       std::unordered_map<uint64_t, int>& file_remove);

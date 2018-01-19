@@ -193,7 +193,6 @@ Compaction::Compaction(VersionStorageInfo* vstorage,
     compaction_reason_ = CompactionReason::kManualCompaction;
   }
 
-  auto &ic = immutable_cf_options_.internal_comparator;
 #ifndef NDEBUG
   for (size_t i = 1; i < inputs_.size(); ++i) {
     assert(inputs_[i].level > inputs_[i - 1].level);
@@ -211,6 +210,7 @@ Compaction::Compaction(VersionStorageInfo* vstorage,
 
   GetBoundaryKeys(vstorage, inputs_, &smallest_user_key_, &largest_user_key_);
   // shrink to input range
+  auto &ic = immutable_cf_options_.internal_comparator;
   if (!input_range_.empty()) {
     if (input_range_.front().smallest != nullptr &&
         ic.Compare(smallest_user_key_,

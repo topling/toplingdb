@@ -67,7 +67,7 @@ public:
         break;
       }
       largest_ = &find[-1];
-      if (ic_.Compare(iter_->key(), largest_->Encode()) == 0) {
+      if (iter_->key() == largest_->Encode()) {
         smallest_ = largest_ - 1;
         invalid_ = false;
         break;
@@ -105,7 +105,7 @@ public:
         break;
       }
       smallest_ = &find[-1];
-      if (ic_.Compare(iter_->key(), smallest_->Encode()) == 0) {
+      if (iter_->key() == smallest_->Encode()) {
         largest_ = smallest_ + 1;
         invalid_ = false;
         break;

@@ -133,14 +133,12 @@ bool PartialRemovedMetaData::InitFrom(FileMetaData* file,
   }
   if (range_set.size() == file->range_set.size() &&
       std::equal(range_set.begin(), range_set.end(), file->range_set.begin(),
-      [&](const InternalKey& l, const InternalKey& r) {
-    return ic.Compare(l, r) == 0;
+      [](const InternalKey& l, const InternalKey& r) {
+    return l.Encode() == r.Encode();
   })) {
     return false;
   }
-  iter->SeekToLast();
-  size_t sst_size = std::max<uint64_t>(1,
-      table_reader->ApproximateOffsetOf(iter->key()));
+  size_t sst_size = file->fd.GetFileSize();
   size_t alive_size = 0;
   for (size_t i = 0; i < range_set.size(); i += 2) {
     uint64_t left_offset =

@@ -1710,10 +1710,10 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     mutex_.Lock();
 
     status = compaction_job.Install(*c->mutable_cf_options());
-    if (status.ok() && !is_manual) {
+    if (status.ok()) {
       InstallSuperVersionAndScheduleWork(
           c->column_family_data(), &job_context->superversion_context,
-          *c->mutable_cf_options());
+          *c->mutable_cf_options(), is_manual);
     }
     *made_progress = true;
   }
@@ -1893,7 +1893,7 @@ bool DBImpl::MCOverlap(ManualCompactionState* m, ManualCompactionState* m1) {
 
 void DBImpl::InstallSuperVersionAndScheduleWork(
     ColumnFamilyData* cfd, SuperVersionContext* sv_context,
-    const MutableCFOptions& mutable_cf_options) {
+    const MutableCFOptions& mutable_cf_options, bool is_manual) {
   mutex_.AssertHeld();
 
   // Update max_total_in_memory_state_
@@ -1912,9 +1912,12 @@ void DBImpl::InstallSuperVersionAndScheduleWork(
 
   // Whenever we install new SuperVersion, we might need to issue new flushes or
   // compactions.
-  SchedulePendingFlush(cfd);
-  SchedulePendingCompaction(cfd);
-  MaybeScheduleFlushOrCompaction();
+  // if manual , don't pending more bg work ...
+  if (!is_manual) {
+    SchedulePendingFlush(cfd);
+    SchedulePendingCompaction(cfd);
+    MaybeScheduleFlushOrCompaction();
+  }
 
   // Update max_total_in_memory_state_
   max_total_in_memory_state_ =

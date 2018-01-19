@@ -1102,7 +1102,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
           sub_compact->partial_remove_info.largest.Clear();
           sub_compact->partial_remove_info.largest.SetMinPossibleForUserKey(
               ExtractUserKey(*next_key));
-          if (IsCoverAnySST(sub_compact)) {
+          if (IsCoverAnyInputSST(sub_compact)) {
             sub_compact->partial_remove_info.active = true;
             break;
           }
@@ -1429,13 +1429,11 @@ bool CompactionJob::IsCoveredBySingleSST(SubcompactionState* sub_compact) {
       continue;
     }
     auto overlap = FindLevelOverlap(level.files, ic, &smallest, &largest);
-    if (level.level == output_level) {
-      if (overlap.first == overlap.second) {
-        auto file = level.files[overlap.first];
-        if (ic.Compare(smallest, file->smallest()) > 0 &&
-            ic.Compare(largest, file->largest()) < 0) {
-          return true;
-        }
+    if (overlap.first == overlap.second) {
+      auto file = level.files[overlap.first];
+      if (ic.Compare(smallest, file->smallest()) > 0 &&
+          ic.Compare(largest, file->largest()) < 0) {
+        return true;
       }
     }
     break;
@@ -1443,7 +1441,7 @@ bool CompactionJob::IsCoveredBySingleSST(SubcompactionState* sub_compact) {
   return false;
 }
 
-bool CompactionJob::IsCoverAnySST(SubcompactionState* sub_compact) {
+bool CompactionJob::IsCoverAnyInputSST(SubcompactionState* sub_compact) {
   auto& smallest = sub_compact->partial_remove_info.smallest;
   auto& largest = sub_compact->partial_remove_info.largest;
   ColumnFamilyData* cfd = sub_compact->compaction->column_family_data();

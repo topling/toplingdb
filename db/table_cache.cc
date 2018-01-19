@@ -361,7 +361,7 @@ Status TableCache::Get(const ReadOptions& options,
                     });
     if ((find - meta.range_set.begin()) % 2 == 0) {
       if (find != meta.range_set.end()) {
-        // assert( Comp(k , find->internal_key() <= 0)
+        // assert( Comp(k , find->internal_key() <= 0 )
         if (ExtractUserKey(k) == find->user_key()) {
           k = find->Encode();
           break;

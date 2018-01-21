@@ -156,7 +156,6 @@ Status ExternalSstFileIngestionJob::Run() {
   assert(status.ok() && need_flush == false);
 #endif
 
-  bool consumed_seqno = false;
   bool force_global_seqno = false;
 
   if (ingestion_options_.snapshot_consistency && !db_snapshots_->empty()) {
@@ -166,13 +165,14 @@ Status ExternalSstFileIngestionJob::Run() {
   }
   // It is safe to use this instead of LastAllocatedSequence since we are
   // the only active writer, and hence they are equal
-  const SequenceNumber last_seqno = versions_->LastSequence();
   SuperVersion* super_version = cfd_->GetSuperVersion();
   edit_.SetColumnFamily(cfd_->GetID());
   // The levels that the files will be ingested into
 
   for (IngestedFileInfo& f : files_to_ingest_) {
+    const SequenceNumber last_seqno = versions_->LastSequence();
     SequenceNumber assigned_seqno = 0;
+    bool consumed_seqno = false;
     if (ingestion_options_.ingest_behind) {
       status = CheckLevelForIngestedBehindFile(&f);
     } else {
@@ -196,11 +196,11 @@ Status ExternalSstFileIngestionJob::Run() {
                   f.fd.GetFileSize(),
                   { f.smallest_internal_key(), f.largest_internal_key() },
                   f.assigned_seqno, f.assigned_seqno, false, 0, 0);
-  }
 
-  if (consumed_seqno) {
-    versions_->SetLastAllocatedSequence(last_seqno + 1);
-    versions_->SetLastSequence(last_seqno + 1);
+    if (consumed_seqno) {
+      versions_->SetLastAllocatedSequence(last_seqno + 1);
+      versions_->SetLastSequence(last_seqno + 1);
+    }
   }
 
   return status;

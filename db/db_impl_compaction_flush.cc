@@ -1713,7 +1713,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     if (status.ok()) {
       InstallSuperVersionAndScheduleWork(
           c->column_family_data(), &job_context->superversion_context,
-          *c->mutable_cf_options(), is_manual);
+          *c->mutable_cf_options());
     }
     *made_progress = true;
   }
@@ -1758,9 +1758,10 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
       // filtered out due to size limit and left for a successive compaction.
       // So we can safely conclude the current compaction.
       //
-      // if need_continue_compaction , need repick universal compaction
-      m->done = !m->cfd->current()->storage_info()->need_continue_compaction();
-      m->incomplete = !m->done;
+      // manual compaction need continue ?
+      auto vstorage = m->cfd->current()->storage_info();
+      m->incomplete = vstorage->need_continue_compaction(m->output_level);
+      m->done = !m->incomplete;
     } else {
       if (m->manual_end == nullptr) {
         // Stop the compaction if manual_end points to nullptr -- this means
@@ -1893,7 +1894,7 @@ bool DBImpl::MCOverlap(ManualCompactionState* m, ManualCompactionState* m1) {
 
 void DBImpl::InstallSuperVersionAndScheduleWork(
     ColumnFamilyData* cfd, SuperVersionContext* sv_context,
-    const MutableCFOptions& mutable_cf_options, bool is_manual) {
+    const MutableCFOptions& mutable_cf_options) {
   mutex_.AssertHeld();
 
   // Update max_total_in_memory_state_
@@ -1912,12 +1913,9 @@ void DBImpl::InstallSuperVersionAndScheduleWork(
 
   // Whenever we install new SuperVersion, we might need to issue new flushes or
   // compactions.
-  // if manual , don't pending more bg work ...
-  if (!is_manual) {
-    SchedulePendingFlush(cfd);
-    SchedulePendingCompaction(cfd);
-    MaybeScheduleFlushOrCompaction();
-  }
+  SchedulePendingFlush(cfd);
+  SchedulePendingCompaction(cfd);
+  MaybeScheduleFlushOrCompaction();
 
   // Update max_total_in_memory_state_
   max_total_in_memory_state_ =

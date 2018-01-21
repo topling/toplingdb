@@ -23,6 +23,11 @@ class UniversalCompactionPicker : public CompactionPicker {
                                      VersionStorageInfo* vstorage,
                                      LogBuffer* log_buffer) override;
 
+  virtual Compaction* PickCompactionConitnue(
+      const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
+      VersionStorageInfo* vstorage, LogBuffer* log_buffer,
+      int continue_output_level) override;
+
   virtual int MaxOutputLevel() const override { return NumberLevels() - 1; }
 
   virtual bool NeedsCompaction(
@@ -59,10 +64,6 @@ class UniversalCompactionPicker : public CompactionPicker {
     uint64_t compensated_file_size;
     bool being_compacted;
   };
-
-  Compaction* PickCompactionConitnue(
-    const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
-    VersionStorageInfo* vstorage, LogBuffer* log_buffer);
 
   Compaction* TrivialMovePickCompaction(
       const std::string& cf_name, const MutableCFOptions& mutable_cf_options,

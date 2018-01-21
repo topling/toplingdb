@@ -161,7 +161,12 @@ bool UniversalCompactionPicker::IsInputFilesNonOverlapping(Compaction* c) {
 bool UniversalCompactionPicker::NeedsCompaction(
     const VersionStorageInfo* vstorage) const {
   const int kLevel0 = 0;
-  return vstorage->need_continue_compaction() ||
+  // deep copy
+  auto need_continue_compaction = vstorage->need_continue_compaction();
+  for (auto c : compactions_in_progress_) {
+    need_continue_compaction.erase(c->output_level());
+  }
+  return !need_continue_compaction.empty() ||
          vstorage->CompactionScore(kLevel0) >= 1;
 }
 
@@ -241,7 +246,7 @@ Compaction* UniversalCompactionPicker::PickCompaction(
       CalculateSortedRuns(*vstorage, ioptions_);
 
   if (sorted_runs.size() == 0 ||
-      (!vstorage->need_continue_compaction() &&
+      (vstorage->need_continue_compaction().empty() &&
        sorted_runs.size() <
            (size_t)mutable_cf_options.level0_file_num_compaction_trigger)) {
     ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: nothing to do\n",
@@ -258,9 +263,9 @@ Compaction* UniversalCompactionPicker::PickCompaction(
 
   // Check for size amplification first.
   Compaction* c;
-  if (vstorage->need_continue_compaction() &&
+  if (!vstorage->need_continue_compaction().empty() &&
       (c = PickCompactionConitnue(cf_name, mutable_cf_options, vstorage,
-                                  log_buffer)) != nullptr) {
+                                  log_buffer, 0)) != nullptr) {
     // continue compaction
   } else if ((c = TrivialMovePickCompaction(cf_name, mutable_cf_options,
                                             vstorage,
@@ -442,7 +447,8 @@ uint32_t UniversalCompactionPicker::GetPathId(
 
 Compaction* UniversalCompactionPicker::PickCompactionConitnue(
     const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
-    VersionStorageInfo* vstorage, LogBuffer* log_buffer) {
+    VersionStorageInfo* vstorage, LogBuffer* log_buffer,
+    int continue_output_level) {
   int start_level = 0;
   int output_level = 0;
   // found some sst has compact_to_level
@@ -455,6 +461,12 @@ Compaction* UniversalCompactionPicker::PickCompactionConitnue(
       }
     }
     if (output_level != 0) {
+      if (continue_output_level != 0 && output_level != continue_output_level) {
+        // ignore non continue_output_level
+        level = output_level;
+        output_level = 0;
+        continue;
+      }
       for (int i = level; i <= output_level; ++i) {
         if (i == 0) {
           for (auto f : vstorage->LevelFiles(0)) {

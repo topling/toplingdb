@@ -387,7 +387,13 @@ class VersionStorageInfo {
 
   bool force_consistency_checks() const { return force_consistency_checks_; }
 
-  bool need_continue_compaction() const { return need_continue_compaction_; }
+  const std::unordered_set<int>& need_continue_compaction() const {
+    return need_continue_compaction_;
+  }
+  bool need_continue_compaction(int level) const {
+    auto& ncc = need_continue_compaction_;
+    return ncc.find(level) != ncc.end();
+  }
 
   // Returns whether any key in [`smallest_key`, `largest_key`] could appear in
   // an older L0 file than `last_l0_idx` or in a greater level than `last_level`
@@ -507,8 +513,9 @@ class VersionStorageInfo {
   // is compiled in release mode
   bool force_consistency_checks_;
 
-  // If set to true, some compaction break by partial remove
-  bool need_continue_compaction_;
+  // If not empty, some compaction break by partial remove
+  // key = output_level , value = beging_compacted
+  std::unordered_set<int> need_continue_compaction_;
 
   friend class Version;
   friend class VersionSet;

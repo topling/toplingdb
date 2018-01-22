@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <new>
 #include <vector>
+#include <type_traits>
 
 template<class index_t>
 struct threaded_rbtree_node_t
@@ -1642,6 +1643,19 @@ void threaded_rbtree_remove(root_t &root,
     }
 }
 
+template<class cast_t, class from_t>
+cast_t threaded_rbtree_strict_aliasing_cast(from_t from)
+{
+    static_assert(std::is_pointer<from_t>::value, "from type must be pointer");
+    static_assert(std::is_pointer<cast_t>::value, "cast type must be pointer");
+    union
+    {
+        from_t from;
+        cast_t cast;
+    } conv;
+    conv.from = from;
+    return conv.cast;
+}
 
 template<class config_t>
 class threaded_rbtree_impl
@@ -1831,12 +1845,12 @@ public:
 
         reference operator *() const
         {
-            return reinterpret_cast<reference>(config_t::get_value(tree->root_.container, where));
+            return *threaded_rbtree_strict_aliasing_cast<pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         pointer operator->() const
         {
-            return reinterpret_cast<pointer>(&config_t::get_value(tree->root_.container, where));
+            return threaded_rbtree_strict_aliasing_cast<pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         bool operator == (iterator const &other) const
@@ -1914,12 +1928,12 @@ public:
 
         const_reference operator *() const
         {
-            return reinterpret_cast<const_reference>(config_t::get_value(tree->root_.container, where));
+            return *threaded_rbtree_strict_aliasing_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         const_pointer operator->() const
         {
-            return reinterpret_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
+            return threaded_rbtree_strict_aliasing_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         bool operator == (const_iterator const &other) const
@@ -2003,12 +2017,12 @@ public:
 
         reference operator *() const
         {
-            return reinterpret_cast<reference>(config_t::get_value(tree->root_.container, where));
+            return *threaded_rbtree_strict_aliasing_cast<pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         pointer operator->() const
         {
-            return reinterpret_cast<pointer>(&config_t::get_value(tree->root_.container, where));
+            return threaded_rbtree_strict_aliasing_cast<pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         bool operator == (reverse_iterator const &other) const
@@ -2107,12 +2121,12 @@ public:
 
         const_reference operator *() const
         {
-            return reinterpret_cast<const_reference>(config_t::get_value(tree->root_.container, where));
+            return *threaded_rbtree_strict_aliasing_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         const_pointer operator->() const
         {
-            return reinterpret_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
+            return threaded_rbtree_strict_aliasing_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         bool operator == (const_reverse_iterator const &other) const
@@ -2568,12 +2582,12 @@ public:
 
     value_type &elem_at(size_type i)
     {
-        return reinterpret_cast<value_type &>(config_t::get_value(root_.container, i));
+        return *threaded_rbtree_strict_aliasing_cast<value_type *>(&config_t::get_value(root_.container, i));
     }
 
     value_type const &elem_at(size_type i) const
     {
-        return reinterpret_cast<value_type const &>(config_t::get_value(root_.container, i));
+        return *threaded_rbtree_strict_aliasing_cast<value_type const *>(&config_t::get_value(root_.container, i));
     }
 
     iterator begin()
@@ -2852,12 +2866,12 @@ struct threaded_rbtree_default_set_config_t
 
     static storage_type &get_value(container_type &container, std::size_t index)
     {
-        return reinterpret_cast<storage_type &>(container[index].value);
+        return *threaded_rbtree_strict_aliasing_cast<storage_type *>(container[index].value);
     }
 
     static storage_type const &get_value(container_type const &container, std::size_t index)
     {
-        return reinterpret_cast<storage_type const &>(container[index].value);
+        return *threaded_rbtree_strict_aliasing_cast<storage_type const *>(container[index].value);
     }
 
     static std::size_t alloc_index(container_type &container)

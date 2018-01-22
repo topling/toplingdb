@@ -308,11 +308,12 @@ public:
 
   class Iterator {
   public:
+    virtual ~Iterator() {}
     virtual bool Valid() const = 0;
     virtual void SeekToFirst() = 0;
     virtual void SeekToLast() = 0;
-    virtual void Seek(WriteBatchIndexEntry* key) = 0;
-    virtual void SeekForPrev(WriteBatchIndexEntry* key) = 0;
+    virtual void Seek(WriteBatchIndexEntry* target) = 0;
+    virtual void SeekForPrev(WriteBatchIndexEntry* target) = 0;
     virtual void Next() = 0;
     virtual void Prev() = 0;
     virtual WriteBatchIndexEntry* key() const = 0;
@@ -341,11 +342,11 @@ protected:
     virtual void SeekToLast() override {
       iter_.SeekToLast();
     }
-    virtual void Seek(WriteBatchIndexEntry* key) override {
-      iter_.Seek(key);
+    virtual void Seek(WriteBatchIndexEntry* target) override {
+      iter_.Seek(target);
     }
-    virtual void SeekForPrev(WriteBatchIndexEntry* key) override {
-      iter_.SeekForPrev(key);
+    virtual void SeekForPrev(WriteBatchIndexEntry* target) override {
+      iter_.SeekForPrev(target);
     }
     virtual void Next() override {
       iter_.Next();
@@ -399,11 +400,11 @@ protected:
     virtual void SeekToLast() override {
       where_ = index_->rbeg_i();
     }
-    virtual void Seek(WriteBatchIndexEntry* key) override {
-      where_ = index_->lwb_i(key);
+    virtual void Seek(WriteBatchIndexEntry* target) override {
+      where_ = index_->lwb_i(target);
     }
-    virtual void SeekForPrev(WriteBatchIndexEntry* key) override {
-      where_ = index_->rlwb_i(key);
+    virtual void SeekForPrev(WriteBatchIndexEntry* target) override {
+      where_ = index_->rlwb_i(target);
     }
     virtual void Next() override {
       where_ = index_->next_i(where_);

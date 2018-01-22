@@ -794,11 +794,13 @@ class DBImpl : public DB {
 
   Status ScheduleFlushes(WriteContext* context);
 
-  Status SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context);
+  Status SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context,
+                        bool nonmem_writes_stopped = false);
 
   // Force current memtable contents to be flushed.
   Status FlushMemTable(ColumnFamilyData* cfd, const FlushOptions& options,
-                       bool writes_stopped = false);
+                       bool writes_stopped = false,
+                       bool nonmem_writes_stopped = false);
 
   // Wait for memtable flushed
   Status WaitForFlushMemTable(ColumnFamilyData* cfd);

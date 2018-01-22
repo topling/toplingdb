@@ -2847,7 +2847,9 @@ Status DBImpl::IngestExternalFile(
       }
       if (status.ok() && need_flush) {
         mutex_.Unlock();
-        status = FlushMemTable(cfd, FlushOptions(), true /* writes_stopped */);
+        status = FlushMemTable(cfd, FlushOptions(),
+                               true /* writes_stopped */,
+                               true /* nonmem_writes_stopped */);
         mutex_.Lock();
       }
     }

@@ -942,7 +942,8 @@ Status DBImpl::RunManualCompaction(ColumnFamilyData* cfd, int input_level,
 
 Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
                              const FlushOptions& flush_options,
-                             bool writes_stopped) {
+                             bool writes_stopped,
+                             bool nonmem_writes_stopped) {
   Status s;
   {
     WriteContext context;
@@ -960,7 +961,7 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
     }
 
     // SwitchMemtable() will release and reacquire mutex during execution
-    s = SwitchMemtable(cfd, &context);
+    s = SwitchMemtable(cfd, &context, nonmem_writes_stopped);
 
     if (!writes_stopped) {
       write_thread_.ExitUnbatched(&w);

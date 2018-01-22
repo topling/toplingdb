@@ -490,7 +490,8 @@ Status ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile(
       "ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile",
       &overlap_with_db);
   file_to_ingest->picked_level = target_level;
-  if (overlap_with_db && *assigned_seqno == 0) {
+  if (target_level == 0 ||
+      (overlap_with_db && *assigned_seqno == 0)) {
     *assigned_seqno = last_seqno + 1;
   }
   return status;

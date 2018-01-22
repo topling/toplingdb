@@ -2197,14 +2197,14 @@ public:
     }
 
     //copy
-    threaded_rbtree_impl(threaded_rbtree_impl const &other) : root_(other.get_comparator_(), container_type())
+    threaded_rbtree_impl(threaded_rbtree_impl const &other) : root_(other.get_comparator(), container_type())
     {
         insert(other.begin(), other.end());
     }
 
     //copy
     threaded_rbtree_impl(threaded_rbtree_impl const &other, container_type const &container)
-        : root_(other.get_comparator_(), container)
+        : root_(other.get_comparator(), container)
     {
         insert(other.begin(), other.end());
     }
@@ -2350,7 +2350,7 @@ public:
                                                          const_deref_node_t{&root_.container},
                                                          key,
                                                          deref_key_t{&root_.container},
-                                                         get_comparator_()
+                                                         get_comparator()
                             )
             );;
         }
@@ -2360,10 +2360,10 @@ public:
                                                           const_deref_node_t{&root_.container},
                                                           key,
                                                           deref_key_t{&root_.container},
-                                                          get_comparator_()
+                                                          get_comparator()
             );
             return iterator(this,
-                (where == node_type::nil_sentinel || get_comparator_()(key, get_key_(where)))
+                (where == node_type::nil_sentinel || get_comparator()(key, get_key_(where)))
                             ? node_type::nil_sentinel
                             : where
             );
@@ -2379,7 +2379,7 @@ public:
                                                                const_deref_node_t{&root_.container},
                                                                key,
                                                                deref_key_t{&root_.container},
-                                                               get_comparator_()
+                                                               get_comparator()
                                   )
             );
         }
@@ -2389,10 +2389,10 @@ public:
                                                           const_deref_node_t{&root_.container},
                                                           key,
                                                           deref_key_t{&root_.container},
-                                                          get_comparator_()
+                                                          get_comparator()
             );
             return const_iterator(this,
-                (where == node_type::nil_sentinel || get_comparator_()(key, get_key_(where)))
+                (where == node_type::nil_sentinel || get_comparator()(key, get_key_(where)))
                                   ? node_type::nil_sentinel
                                   : where
             );
@@ -2470,7 +2470,7 @@ public:
                                     const_deref_node_t{&root_.container},
                                     key,
                                     deref_key_t{&root_.container},
-                                    get_comparator_(),
+                                    get_comparator(),
                                     lower,
                                     upper
         );
@@ -2484,7 +2484,7 @@ public:
                                     const_deref_node_t{&root_.container},
                                     key,
                                     deref_key_t{&root_.container},
-                                    get_comparator_(),
+                                    get_comparator(),
                                     lower,
                                     upper
         );
@@ -2527,7 +2527,7 @@ public:
                                            const_deref_node_t{&root_.container},
                                            key,
                                            deref_key_t{&root_.container},
-                                           get_comparator_()
+                                           get_comparator()
         );
     }
 
@@ -2537,7 +2537,7 @@ public:
                                            const_deref_node_t{&root_.container},
                                            key,
                                            deref_key_t{&root_.container},
-                                           get_comparator_()
+                                           get_comparator()
         );
     }
 
@@ -2547,7 +2547,7 @@ public:
                                                    const_deref_node_t{&root_.container},
                                                    key,
                                                    deref_key_t{&root_.container},
-                                                   get_comparator_()
+                                                   get_comparator()
         );
     }
 
@@ -2557,7 +2557,7 @@ public:
                                                    const_deref_node_t{&root_.container},
                                                    key,
                                                    deref_key_t{&root_.container},
-                                                   get_comparator_()
+                                                   get_comparator()
         );
     }
 
@@ -2666,19 +2666,20 @@ public:
         return root_.container;
     }
 
+    key_compare &get_comparator()
+    {
+      return root_;
+    }
+
+    key_compare const &get_comparator() const
+    {
+      return root_;
+    }
+
 protected:
     root_t root_;
 
 protected:
-    key_compare &get_comparator_()
-    {
-        return root_;
-    }
-
-    key_compare const &get_comparator_() const
-    {
-        return root_;
-    }
 
     key_type const &get_key_(size_type index) const
     {
@@ -2734,7 +2735,7 @@ protected:
                                                            deref_node_t{&root_.container},
                                                            key,
                                                            deref_key_t{&root_.container},
-                                                           get_comparator_()
+                                                           get_comparator()
         );
         if(exists)
         {
@@ -2755,7 +2756,7 @@ protected:
                                                            deref_node_t{&root_.container},
                                                            key,
                                                            deref_key_t{&root_.container},
-                                                           get_comparator_()
+                                                           get_comparator()
         );
         if(!exists)
         {
@@ -2961,7 +2962,7 @@ public:
     typename base_t::mapped_type &operator[](typename base_t::key_type const &key)
     {
         typename base_t::size_type offset = base_t::lwb_i(key);
-        if(offset == base_t::node_type::nil_sentinel || base_t::get_comparator_()(key, typename base_t::deref_key_t{&base_t::root_.container}(offset)))
+        if(offset == base_t::node_type::nil_sentinel || base_t::get_comparator()(key, typename base_t::deref_key_t{&base_t::root_.container}(offset)))
         {
             offset = base_t::trb_insert_(std::false_type(), key, typename base_t::mapped_type()).first;
         }

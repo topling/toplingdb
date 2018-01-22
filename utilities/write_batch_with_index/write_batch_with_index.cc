@@ -378,10 +378,10 @@ protected:
     TrbComp(WriteBatchEntryComparator& c) : comp(c) {}
     WriteBatchEntryComparator& comp;
     bool operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
-      return comp(l, r);
+      return comp(l, r) < 0;
     }
   };
-  typedef trb_set<WriteBatchIndexEntry*, TrbComp> Index;
+  typedef trb_multiset<WriteBatchIndexEntry*, TrbComp> Index;
   Index index_;
 
   class RBTreeIterator : public WriteBatchEntryIndex::Iterator {

@@ -392,7 +392,7 @@ protected:
 
   public:
     virtual bool Valid() const override {
-      return where_ == index_->end_i();
+      return where_ != index_->end_i();
     }
     virtual void SeekToFirst() override {
       where_ = index_->beg_i();

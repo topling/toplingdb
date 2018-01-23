@@ -300,28 +300,6 @@ class BaseDeltaIterator : public Iterator {
   const Comparator* comparator_;  // not owned
 };
 
-class WriteBatchEntryIndex {
-public:
-  virtual ~WriteBatchEntryIndex() {}
-  static WriteBatchEntryIndex* New(WriteBatchEntryComparator& c,
-                                   Arena* a, const std::string& type);
-
-  class Iterator {
-  public:
-    virtual ~Iterator() {}
-    virtual bool Valid() const = 0;
-    virtual void SeekToFirst() = 0;
-    virtual void SeekToLast() = 0;
-    virtual void Seek(WriteBatchIndexEntry* target) = 0;
-    virtual void SeekForPrev(WriteBatchIndexEntry* target) = 0;
-    virtual void Next() = 0;
-    virtual void Prev() = 0;
-    virtual WriteBatchIndexEntry* key() const = 0;
-  };
-  virtual Iterator* NewIterator() = 0;
-  virtual void Insert(WriteBatchIndexEntry* key) = 0;
-};
-
 class WriteBatchEntrySkipList : public WriteBatchEntryIndex {
 protected:
   typedef SkipList<WriteBatchIndexEntry*, const WriteBatchEntryComparator&> Index;
@@ -366,6 +344,11 @@ public:
 
   virtual Iterator* NewIterator() override {
     return new SkipListIterator(&index_);
+  }
+  virtual void NewIterator(IteratorStorage& storage) override {
+    static_assert(sizeof(SkipListIterator) <= sizeof storage.buffer,
+                      "Need larger buffer for SkipListIterator");
+    storage.iter = new(storage.buffer) SkipListIterator(&index_);
   }
   virtual void Insert(WriteBatchIndexEntry* key) override {
     index_.Insert(key);
@@ -425,6 +408,11 @@ public:
   virtual Iterator* NewIterator() override {
     return new RBTreeIterator(&index_);
   }
+  virtual void NewIterator(IteratorStorage& storage) override {
+    static_assert(sizeof(RBTreeIterator) <= sizeof storage.buffer,
+                      "Need larger buffer for RBTreeIterator");
+    storage.iter = new(storage.buffer) RBTreeIterator(&index_);
+  }
   virtual void Insert(WriteBatchIndexEntry* key) override {
     index_.emplace(key);
   }
@@ -445,8 +433,9 @@ class WBWIIteratorImpl : public WBWIIterator {
                    WriteBatchEntryIndex* entry_index,
                    const ReadableWriteBatch* write_batch)
       : column_family_id_(column_family_id),
-        iter_(entry_index->NewIterator()),
-        write_batch_(write_batch) {}
+        write_batch_(write_batch) {
+    entry_index->NewIterator(iter_);
+  }
 
   virtual ~WBWIIteratorImpl() {}
 
@@ -518,7 +507,7 @@ class WBWIIteratorImpl : public WBWIIterator {
 
  private:
   uint32_t column_family_id_;
-  std::unique_ptr<WriteBatchEntryIndex::Iterator> iter_;
+  WBIteratorStorage<WriteBatchEntryIndex::Iterator, 24> iter_;
   const ReadableWriteBatch* write_batch_;
 };
 
@@ -790,6 +779,16 @@ WBWIIterator* WriteBatchWithIndex::NewIterator(
                               rep->entry_index.get(), &rep->write_batch);
 }
 
+void WriteBatchWithIndex::NewIterator(
+    ColumnFamilyHandle* column_family,
+    WBWIIterator::IteratorStorage& storage) {
+  static_assert(sizeof(WBWIIteratorImpl) <= sizeof storage.buffer,
+                    "Need larger buffer for WBWIIteratorImpl");
+  storage.iter = new(storage.buffer) WBWIIteratorImpl(
+                                         GetColumnFamilyID(column_family),
+                                         rep->entry_index.get(),
+                                         &rep->write_batch);
+}
 Iterator* WriteBatchWithIndex::NewIteratorWithBase(
     ColumnFamilyHandle* column_family, Iterator* base_iterator) {
   if (rep->overwrite_key == false) {

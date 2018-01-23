@@ -49,6 +49,20 @@ struct WriteEntry {
   Slice value;
 };
 
+template<class T, size_t N>
+struct WBIteratorStorage {
+  ~WBIteratorStorage() {
+    if (iter != nullptr) {
+      iter->~T();
+    }
+  }
+  T* operator->() const {
+    return iter;
+  }
+  T* iter = nullptr;
+  uint8_t buffer[N];
+};
+
 // Iterator of one column family out of a WriteBatchWithIndex.
 class WBWIIterator {
  public:
@@ -73,6 +87,8 @@ class WBWIIterator {
   virtual WriteEntry Entry() const = 0;
 
   virtual Status status() const = 0;
+
+  typedef WBIteratorStorage<WBWIIterator, 56> IteratorStorage;
 };
 
 // A WriteBatchWithIndex with a binary searchable index built for all the keys
@@ -143,6 +159,8 @@ class WriteBatchWithIndex : public WriteBatchBase {
   //
   // The returned iterator should be deleted by the caller.
   WBWIIterator* NewIterator(ColumnFamilyHandle* column_family);
+  void NewIterator(ColumnFamilyHandle* column_family,
+                   WBWIIterator::IteratorStorage& storage);
   // Create an iterator of the default column family.
   WBWIIterator* NewIterator();
 

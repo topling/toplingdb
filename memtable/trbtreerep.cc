@@ -196,7 +196,7 @@ namespace {
                 key_set_.approximate_rank(EncodeKey(&tmp, start_ikey));
             uint64_t end_rank =
                 key_set_.approximate_rank(EncodeKey(&tmp, end_ikey));
-            return (start_rank >= end_rank) ? (start_rank - end_rank) : 0;
+            return (end_rank > start_rank) ? (end_rank - start_rank) : 0;
         }
 
         virtual void

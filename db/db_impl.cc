@@ -2838,13 +2838,9 @@ Status DBImpl::IngestExternalFile(
     // Figure out if we need to flush the memtable first
     if (status.ok()) {
       bool need_flush = false;
-      if (cfd->ioptions()->compaction_style == kCompactionStyleUniversal) {
-        need_flush = true;
-      } else {
-        status = ingestion_job.NeedsFlush(&need_flush);
-        TEST_SYNC_POINT_CALLBACK("DBImpl::IngestExternalFile:NeedFlush",
-                                 &need_flush);
-      }
+      status = ingestion_job.NeedsFlush(&need_flush);
+      TEST_SYNC_POINT_CALLBACK("DBImpl::IngestExternalFile:NeedFlush",
+                                &need_flush);
       if (status.ok() && need_flush) {
         mutex_.Unlock();
         status = FlushMemTable(cfd, FlushOptions(),

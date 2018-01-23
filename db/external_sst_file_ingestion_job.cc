@@ -134,6 +134,11 @@ Status ExternalSstFileIngestionJob::Prepare(
 
 Status ExternalSstFileIngestionJob::NeedsFlush(bool* flush_needed) {
   SuperVersion* super_version = cfd_->GetSuperVersion();
+  if (cfd_->ioptions()->compaction_style == kCompactionStyleUniversal) {
+    *flush_needed = super_version->mem->num_entries() > 0 ||
+                    super_version->imm->GetTotalNumEntries() > 0;
+    return Status::OK();
+  }
   Status status =
       IngestedFilesOverlapWithMemtables(super_version, flush_needed);
 

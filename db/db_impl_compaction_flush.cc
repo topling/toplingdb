@@ -982,6 +982,7 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
 }
 
 Status DBImpl::WaitForFlushMemTable(ColumnFamilyData* cfd) {
+  const uint64_t kWaitIntervalUS = 10 * 1000;
   Status s;
   // Wait until the compaction completes
   InstrumentedMutexLock l(&mutex_);
@@ -995,7 +996,7 @@ Status DBImpl::WaitForFlushMemTable(ColumnFamilyData* cfd) {
       // drop to zero
       return Status::InvalidArgument("Cannot flush a dropped CF");
     }
-    bg_cv_.Wait();
+    bg_cv_.TimedWait(kWaitIntervalUS);
   }
   if (!bg_error_.ok()) {
     s = bg_error_;

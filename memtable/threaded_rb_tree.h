@@ -744,6 +744,44 @@ bool threaded_rbtree_find_path_for_remove(root_t &root,
 }
 
 template<class root_t, class comparator_t, class key_t, class deref_node_t, class deref_key_t>
+std::size_t threaded_rbtree_approximate_rank(root_t &root,
+                                             deref_node_t deref,
+                                             key_t const &key,
+                                             deref_key_t deref_key,
+                                             comparator_t comparator
+)
+{
+    typedef typename root_t::node_type node_type;
+    float rank = float(root.get_count()) / 2;
+    float step = rank / 2;
+
+    std::size_t p = root.root.root;
+    while(p != node_type::nil_sentinel && step > 0.3f)
+    {
+        if(comparator(key, deref_key(p)))
+        {
+            rank -= step;
+            if(deref(p).left_is_thread())
+            {
+                break;
+            }
+            p = deref(p).left_get_link();
+        }
+        else
+        {
+            rank += step;
+            if(deref(p).right_is_thread())
+            {
+                break;
+            }
+            p = deref(p).right_get_link();
+        }
+        step /= 2;
+    }
+    return std::size_t(rank);
+}
+
+template<class root_t, class comparator_t, class key_t, class deref_node_t, class deref_key_t>
 std::size_t threaded_rbtree_lower_bound(root_t &root,
                                         deref_node_t deref,
                                         key_t const &key,
@@ -2455,6 +2493,15 @@ public:
     {
         pair_cici_t range = equal_range(key);
         return std::distance(range.first, range.second);
+    }
+
+    size_type approximate_rank(key_type const &key) const
+    {
+        return threaded_rbtree_approximate_rank(root_,
+                                                const_deref_node_t{&root_.container },
+                                                key,
+                                                deref_key_t{&root_.container},
+                                                get_comparator());
     }
 
     iterator lower_bound(key_type const &key)

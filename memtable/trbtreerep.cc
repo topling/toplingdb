@@ -189,6 +189,16 @@ namespace {
             return memory_size_.load();
         }
 
+        virtual uint64_t ApproximateNumEntries(const Slice& start_ikey,
+                                               const Slice& end_ikey) override {
+            std::string tmp;
+            uint64_t start_rank =
+                key_set_.approximate_rank(EncodeKey(&tmp, start_ikey));
+            uint64_t end_rank =
+                key_set_.approximate_rank(EncodeKey(&tmp, end_ikey));
+            return (start_rank >= end_rank) ? (start_rank - end_rank) : 0;
+        }
+
         virtual void
         Get(const LookupKey &k, void *callback_args,
             bool (*callback_func)(void *arg, const char *entry)) override

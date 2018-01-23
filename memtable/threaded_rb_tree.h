@@ -752,8 +752,8 @@ std::size_t threaded_rbtree_approximate_rank(root_t &root,
 )
 {
     typedef typename root_t::node_type node_type;
-    float rank = float(root.get_count()) / 2;
-    float step = rank / 2;
+    double rank = root.get_count() / 2.0;
+    double step = rank / 2;
 
     std::size_t p = root.root.root;
     while(p != node_type::nil_sentinel && step > 0.3f)

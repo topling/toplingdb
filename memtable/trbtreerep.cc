@@ -161,7 +161,7 @@ namespace {
         struct deref_outer_key_t
         {
             outer_element_t *array;
-            Slice operator()(size_type p)
+            Slice const &operator()(size_type p)
             {
                 return array[p].bound;
             }
@@ -272,6 +272,10 @@ namespace {
             {
                 return deref_inner_node_t();
             }
+            inner_comparator_ex_t inner_comparator_ex()
+            {
+                return inner_comparator_ex_t{inner_comparator_};
+            }
 
             deref_outer_key_t deref_outer_key()
             {
@@ -280,6 +284,10 @@ namespace {
             deref_outer_node_t deref_outer_node()
             {
                 return deref_outer_node_t{outer_array_};
+            }
+            outer_comparator_ex_t outer_comparator_ex()
+            {
+                return outer_comparator_ex_t{outer_comparator_, outer_array_ };
             }
 
         public:
@@ -297,13 +305,14 @@ namespace {
                 outer_array_ = (outer_element_t *)malloc(sizeof(outer_element_t));
                 outer_count_ = 1;
                 outer_count_max_ = 1;
-                outer_comparator_.max_element = &outer_array_->bound;
                 *memory_size_ = sizeof(outer_element_t) + sizeof(inner_root_t);
                 new(*inner_holder_) inner_holder_t();
                 (*inner_holder_)->version = 0;
+                new(outer_array_) outer_element_t();
+                outer_comparator_.max_element = &outer_array_->bound;
 
                 threaded_rbtree_stack_t<outer_node_t, stack_max_depth> stack;
-                threaded_rbtree_find_path_for_multi(outer_root_, stack, deref_outer_node(), 0, outer_comparator_t());
+                threaded_rbtree_find_path_for_multi(outer_root_, stack, deref_outer_node(), 0, outer_comparator_ex());
                 threaded_rbtree_insert(outer_root_, stack, deref_outer_node(), 0);
             }
 
@@ -312,33 +321,259 @@ namespace {
                 for (size_t i = 0; i < outer_count_; ++i)
                 {
                     inner_holder_[i]->~inner_holder_t();
+                    outer_array_[i].bound.~Slice();
                 }
                 free(inner_holder_);
                 free(outer_array_);
             }
 
-            bool contains(const char *key) const
+            template<class Lock>
+            struct iterator
+            {
+                key_set_t      *key_set_;
+                size_type       inner_index_;
+                inner_holder_t *inner_holder_;
+                size_type       inner_node_;
+                size_type       version_;
+
+            public:
+                iterator(key_set_t *key_set)
+                {
+                    key_set_ = key_set;
+                    inner_index_ = outer_node_t::nil_sentinel;
+                    inner_holder_ = nullptr;
+                    inner_node_ = inner_node_t::nil_sentinel;
+                    version_ = 0;
+                }
+
+                bool valid()
+                {
+                    return inner_node_ != inner_node_t::nil_sentinel;
+                }
+                const char *key()
+                {
+                    assert(inner_node_ != inner_node_t::nil_sentinel);
+                    return key_set_->deref_inner_key()(inner_node_);
+                }
+
+                bool seek_to_first()
+                {
+                    Lock outer_lock(&key_set_->outer_mutex_);
+                    inner_index_ = key_set_->outer_root_.get_most_left(key_set_->deref_outer_node());
+                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    Lock inner_lock(&inner_holder_->mutex);
+                    inner_node_ = inner_holder_->root.get_most_left(key_set_->deref_inner_node());
+                    version_ = inner_holder_->version;
+                    return inner_node_ == inner_node_t::nil_sentinel;
+                }
+
+                bool seek_to_last()
+                {
+                    Lock outer_lock(&key_set_->outer_mutex_);
+                    inner_index_ = key_set_->outer_root_.get_most_right(key_set_->deref_outer_node());
+                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    Lock inner_lock(&inner_holder_->mutex);
+                    inner_node_ = inner_holder_->root.get_most_right(key_set_->deref_inner_node());
+                    version_ = inner_holder_->version;
+                    return inner_node_ == inner_node_t::nil_sentinel;
+                }
+
+                bool seek(const char *key)
+                {
+                    Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key));
+                    Lock outer_lock(&key_set_->outer_mutex_);
+                    inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
+                                                               key_set_->deref_outer_node(),
+                                                               user_key,
+                                                               key_set_->deref_outer_key(),
+                                                               key_set_->outer_comparator_);
+                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    bool next;
+                    {
+                        Lock inner_lock(&inner_holder_->mutex);
+                        inner_node_ = threaded_rbtree_lower_bound(inner_holder_->root,
+                                                                  key_set_->deref_inner_node(),
+                                                                  key,
+                                                                  key_set_->deref_inner_key(),
+                                                                  key_set_->inner_comparator_);
+                        version_ = inner_holder_->version;
+                        next = inner_node_ == inner_node_t::nil_sentinel;
+                    }
+                    if (next)
+                    {
+                        if (inner_index_ == key_set_->outer_root_.get_most_right(key_set_->deref_outer_node()))
+                        {
+                            inner_node_ = inner_node_t::nil_sentinel;
+                            return false;
+                        }
+                        inner_index_ = threaded_rbtree_move_next(inner_index_, key_set_->deref_outer_node());
+                        inner_holder_ = key_set_->inner_holder_[inner_index_];
+                        Lock inner_lock(&inner_holder_->mutex);
+                        inner_node_ = inner_holder_->root.get_most_left(key_set_->deref_inner_node());
+                        version_ = inner_holder_->version;
+                    }
+                    return true;
+                }
+                bool seek_for_prev(const char *key)
+                {
+                    Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key));
+                    Lock outer_lock(&key_set_->outer_mutex_);
+                    inner_index_ = threaded_rbtree_reverse_lower_bound(key_set_->outer_root_,
+                                                                       key_set_->deref_outer_node(),
+                                                                       user_key,
+                                                                       key_set_->deref_outer_key(),
+                                                                       key_set_->outer_comparator_);
+                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    bool prev;
+                    {
+                        Lock inner_lock(&inner_holder_->mutex);
+                        inner_node_ = threaded_rbtree_reverse_lower_bound(key_set_->inner_holder_[inner_index_]->root,
+                                                                          key_set_->deref_inner_node(),
+                                                                          key,
+                                                                          key_set_->deref_inner_key(),
+                                                                          key_set_->inner_comparator_);
+                        version_ = inner_holder_->version;
+                        prev = inner_node_ == inner_node_t::nil_sentinel;
+                    }
+                    if (prev)
+                    {
+                        if (inner_index_ == key_set_->outer_root_.get_most_left(key_set_->deref_outer_node()))
+                        {
+                            inner_node_ = inner_node_t::nil_sentinel;
+                            return false;
+                        }
+                        inner_index_ = threaded_rbtree_move_prev(inner_index_, key_set_->deref_outer_node());
+                        inner_holder_ = key_set_->inner_holder_[inner_index_];
+                        Lock inner_lock(&inner_holder_->mutex);
+                        inner_node_ = inner_holder_->root.get_most_right(key_set_->deref_inner_node());
+                        version_ = inner_holder_->version;
+                    }
+                    return true;
+                }
+
+                bool next()
+                {
+                    bool expired;
+                    while (true)
+                    {
+                        Lock inner_lock(&inner_holder_->mutex);
+                        if (inner_holder_->version != version_)
+                        {
+                            expired = true;
+                            break;
+                        }
+                        inner_node_ = threaded_rbtree_move_next(inner_node_, key_set_->deref_inner_node());
+                        if (inner_node_ != inner_node_t::nil_sentinel)
+                        {
+                            return true;
+                        }
+                        expired = false;
+                        break;
+                    }
+                    Lock outer_lock(&key_set_->outer_mutex_);
+                    if (expired)
+                    {
+                        Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key_set_->deref_inner_key()(inner_node_)));
+                        inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
+                                                                   key_set_->deref_outer_node(),
+                                                                   user_key,
+                                                                   key_set_->deref_outer_key(),
+                                                                   key_set_->outer_comparator_);
+                        inner_holder_ = key_set_->inner_holder_[inner_index_];
+                        version_ = inner_holder_->version;
+                        Lock inner_lock(&inner_holder_->mutex);
+                        inner_node_ = threaded_rbtree_move_next(inner_node_, key_set_->deref_inner_node());
+                        if (inner_node_ != inner_node_t::nil_sentinel)
+                        {
+                            return true;
+                        }
+                    }
+                    if (inner_index_ == key_set_->outer_root_.get_most_right(key_set_->deref_outer_node()))
+                    {
+                        inner_node_ = inner_node_t::nil_sentinel;
+                        return false;
+                    }
+                    inner_index_ = threaded_rbtree_move_next(inner_index_, key_set_->deref_outer_node());
+                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    Lock inner_lock(&inner_holder_->mutex);
+                    inner_node_ = inner_holder_->root.get_most_left(key_set_->deref_inner_node());
+                    version_ = inner_holder_->version;
+                    assert(inner_node_ != inner_node_t::nil_sentinel);
+                    return true;
+                }
+                bool prev()
+                {
+                    bool expired;
+                    while (true)
+                    {
+                        Lock inner_lock(&inner_holder_->mutex);
+                        if (inner_holder_->version != version_)
+                        {
+                            expired = true;
+                            break;
+                        }
+                        inner_node_ = threaded_rbtree_move_prev(inner_node_, key_set_->deref_inner_node());
+                        if (inner_node_ != inner_node_t::nil_sentinel)
+                        {
+                            return true;
+                        }
+                        expired = false;
+                        break;
+                    }
+                    Lock outer_lock(&key_set_->outer_mutex_);
+                    if (expired)
+                    {
+                        Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key_set_->deref_inner_key()(inner_node_)));
+                        inner_index_ = threaded_rbtree_reverse_lower_bound(key_set_->outer_root_,
+                                                                           key_set_->deref_outer_node(),
+                                                                           user_key,
+                                                                           key_set_->deref_outer_key(),
+                                                                           key_set_->outer_comparator_);
+                        inner_holder_ = key_set_->inner_holder_[inner_index_];
+                        version_ = inner_holder_->version;
+                        Lock inner_lock(&inner_holder_->mutex);
+                        inner_node_ = threaded_rbtree_move_prev(inner_node_, key_set_->deref_inner_node());
+                        if (inner_node_ != inner_node_t::nil_sentinel)
+                        {
+                            return true;
+                        }
+                    }
+                    if (inner_index_ == key_set_->outer_root_.get_most_left(key_set_->deref_outer_node()))
+                    {
+                        inner_node_ = inner_node_t::nil_sentinel;
+                        return false;
+                    }
+                    inner_index_ = threaded_rbtree_move_prev(inner_index_, key_set_->deref_outer_node());
+                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    Lock inner_lock(&inner_holder_->mutex);
+                    inner_node_ = inner_holder_->root.get_most_right(key_set_->deref_inner_node());
+                    version_ = inner_holder_->version;
+                    assert(inner_node_ != inner_node_t::nil_sentinel);
+                    return true;
+                }
+            };
+
+            template<class Lock>
+            bool contains(const char *key)
             {
                 Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key));
                 size_type inner_index;
+                size_type inner_node;
                 {
-                    ReadLock l(&outer_mutex_);
+                    Lock outer_lock(&outer_mutex_);
                     inner_index = threaded_rbtree_lower_bound(outer_root_,
                                                               deref_outer_node(),
                                                               user_key,
                                                               deref_outer_key(),
                                                               outer_comparator_);
+                    Lock inner_lock(&inner_holder_[inner_index]->mutex);
+                    inner_node = threaded_rbtree_equal_unique(inner_holder_[inner_index]->root,
+                                                              deref_inner_node(),
+                                                              key,
+                                                              deref_inner_key(),
+                                                              inner_comparator_);
                 }
-                size_type key_index;
-                {
-                    ReadLock l(&inner_holder_[inner_index]->mutex);
-                    key_index = threaded_rbtree_equal_unique(inner_holder_[inner_index]->root,
-                                                             deref_inner_node(),
-                                                             key,
-                                                             deref_inner_key(),
-                                                             inner_comparator_);
-                }
-                return key_index != inner_node_t::nil_sentinel;
+                return inner_node != inner_node_t::nil_sentinel;
             }
 
             void insert(KeyHandle handle)
@@ -347,25 +582,22 @@ namespace {
                 Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(deref_inner_key()(inner_node)));
                 size_type inner_index;
                 size_type outer_count_save;
-                {
-                    ReadLock l(&outer_mutex_);
-                    inner_index = threaded_rbtree_lower_bound(outer_root_,
-                                                                   deref_outer_node(),
-                                                                   user_key,
-                                                                   deref_outer_key(),
-                                                                   outer_comparator_);
-                    outer_count_save = outer_count_;
-                }
-                assert(inner_index < outer_root_.get_count());
                 size_type version;
                 size_type height;
                 inner_root_t *inner_root;
                 {
-                    WriteLock l(&inner_holder_[inner_index]->mutex);
+                    ReadLock outer_lock(&outer_mutex_);
+                    inner_index = threaded_rbtree_lower_bound(outer_root_,
+                                                              deref_outer_node(),
+                                                              user_key,
+                                                              deref_outer_key(),
+                                                              outer_comparator_);
+                    outer_count_save = outer_count_;
+                    WriteLock inner_lock(&inner_holder_[inner_index]->mutex);
                     version = inner_holder_[inner_index]->version;
                     inner_root = &inner_holder_[inner_index]->root;
                     threaded_rbtree_stack_t<inner_node_t, stack_max_depth> stack;
-                    threaded_rbtree_find_path_for_multi(*inner_root, stack, deref_inner_node(), inner_node, inner_comparator_);
+                    threaded_rbtree_find_path_for_multi(*inner_root, stack, deref_inner_node(), inner_node, inner_comparator_ex());
                     height = stack.height;
                     threaded_rbtree_insert(*inner_root, stack, deref_inner_node(), inner_node);
                 }
@@ -373,7 +605,7 @@ namespace {
                 {
                     return;
                 }
-                WriteLock l(&outer_mutex_);
+                WriteLock outer_lock(&outer_mutex_);
                 assert(inner_root->root.root != inner_node_t::nil_sentinel);
                 Slice bound = ExtractUserKey(GetLengthPrefixedSlice(deref_inner_key()(inner_root->root.root)));
                 int c = outer_comparator_.compare(bound, outer_array_[inner_index].bound);
@@ -382,7 +614,7 @@ namespace {
                 {
                     return;
                 }
-                WriteLock l(&inner_holder_[inner_index]->mutex);
+                WriteLock inner_lock(&inner_holder_[inner_index]->mutex);
                 if (version != inner_holder_[inner_index]->version)
                 {
                     return;
@@ -407,44 +639,54 @@ namespace {
                 size_type root_save = inner_root->root.root;
                 size_type prev = threaded_rbtree_move_prev(root_save, deref);
                 size_type next = threaded_rbtree_move_next(root_save, deref);
-                assert(deref(prev).right_is_child());
-                assert(deref(next).left_is_child());
+                assert(deref(prev).right_is_thread());
+                assert(deref(next).left_is_thread());
 
                 split_root->root.root = deref(root_save).left_get_link();
                 deref(split_root->root.root).set_black();
+                split_root->root.set_left(inner_root->get_most_left(deref_inner_node()));
                 split_root->root.set_right(prev);
-                deref(prev).right_set_link(outer_node_t::nil_sentinel);
+                deref(prev).right_set_link(inner_node_t::nil_sentinel);
 
                 inner_root->root.root = deref(root_save).right_get_link();
                 deref(inner_root->root.root).set_black();
                 inner_root->root.set_left(next);
-                deref(next).left_set_link(outer_node_t::nil_sentinel);
+                deref(next).left_set_link(inner_node_t::nil_sentinel);
                 {
                     threaded_rbtree_stack_t<inner_node_t, stack_max_depth> stack;
-                    threaded_rbtree_find_path_for_multi(*inner_root, stack, deref, root_save, inner_comparator_);
+                    threaded_rbtree_find_path_for_multi(*inner_root, stack, deref, root_save, inner_comparator_ex());
                     threaded_rbtree_insert(*inner_root, stack, deref, root_save);
                 }
                 {
+                    new(outer_array_ + outer_count_) outer_element_t();
+                    outer_array_[outer_count_].bound = bound;
                     threaded_rbtree_stack_t<outer_node_t, stack_max_depth> stack;
-                    threaded_rbtree_find_path_for_multi(outer_root_, stack, deref_outer_node(), outer_count_, outer_comparator_t());
+                    threaded_rbtree_find_path_for_multi(outer_root_, stack, deref_outer_node(), outer_count_, outer_comparator_ex());
                     threaded_rbtree_insert(outer_root_, stack, deref_outer_node(), outer_count_);
                 }
+                ++outer_count_;
             }
+        };
+
+        struct FakeLock
+        {
+            template<class T> FakeLock(T const &) {}
         };
 
 
     public:
+        std::atomic_uintptr_t memory_size_;
         mutable key_set_t key_set_;
         std::atomic_bool immutable_;
-        std::atomic_uintptr_t memory_size_;
+        std::atomic_size_t num_entries;
         const SliceTransform *transform_;
 
     public:
         explicit TRBTreeRep(const MemTableRep::KeyComparator &compare, Allocator *allocator,
                             const SliceTransform *transform) : MemTableRep(allocator),
+                                                               memory_size_(0),
                                                                key_set_(compare, allocator, &memory_size_),
                                                                immutable_(false),
-                                                               memory_size_(0),
                                                                transform_(transform)
         {
         }
@@ -461,18 +703,27 @@ namespace {
         virtual void Insert(KeyHandle handle) override
         {
             key_set_.insert(handle);
+            ++num_entries;
         }
 
         // Like Insert(handle), but may be called concurrent with other calls
         // to InsertConcurrently for other handles
         virtual void InsertConcurrently(KeyHandle handle) {
             key_set_.insert(handle);
+            ++num_entries;
         }
 
         // Returns true iff an entry that compares equal to key is in the list.
         virtual bool Contains(const char *key) const override
         {
-            return key_set_.contains(key);
+            if (immutable_)
+            {
+                return key_set_.contains<FakeLock>(key);
+            }
+            else
+            {
+                return key_set_.contains<ReadLock>(key);
+            }
         }
 
         virtual void MarkReadOnly() override
@@ -487,56 +738,70 @@ namespace {
 
         virtual uint64_t ApproximateNumEntries(const Slice& start_ikey,
                                                const Slice& end_ikey) override {
-            std::string tmp;
-            uint64_t start_rank =
-                key_set_.approximate_rank(EncodeKey(&tmp, start_ikey));
-            uint64_t end_rank =
-                key_set_.approximate_rank(EncodeKey(&tmp, end_ikey));
-            return (end_rank > start_rank) ? (end_rank - start_rank) : 0;
+            //std::string tmp;
+            //uint64_t start_rank =
+            //    key_set_.approximate_rank(EncodeKey(&tmp, start_ikey));
+            //uint64_t end_rank =
+            //    key_set_.approximate_rank(EncodeKey(&tmp, end_ikey));
+            //return (end_rank > start_rank) ? (end_rank - start_rank) : 0;
+            return 0;
         }
 
         virtual void
         Get(const LookupKey &k, void *callback_args,
             bool (*callback_func)(void *arg, const char *entry)) override
         {
-            size_type i;
-            char const *key;
+            if (immutable_)
             {
-                ReadLock l(&lock_);
-                i = key_set_.lwb_i(k.memtable_key().data());
-                if(i == key_set_.end_i())
+                key_set_t::iterator<FakeLock> iter(&key_set_);
+                char const *key;
+                if (!iter.seek(k.memtable_key().data()))
                 {
                     return;
                 }
-                key = key_set_.key_at(i);
+                key = iter.key();
+                while (callback_func(callback_args, key))
+                {
+                    if (!iter.next())
+                    {
+                        return;
+                    }
+                    key = iter.key();
+                }
             }
-            while(callback_func(callback_args, key))
+            else
             {
-                ReadLock l(&lock_);
-                i = key_set_.next_i(i);
-                if(i == key_set_.end_i())
+                key_set_t::iterator<ReadLock> iter(&key_set_);
+                char const *key;
+                if (!iter.seek(k.memtable_key().data()))
                 {
                     return;
                 }
-                key = key_set_.key_at(i);
+                key = iter.key();
+                while (callback_func(callback_args, key))
+                {
+                    if (!iter.next())
+                    {
+                        return;
+                    }
+                    key = iter.key();
+                }
             }
         }
 
         virtual ~TRBTreeRep() override
         {
-            key_set_.clear();
         }
 
+        template<class Lock>
         class Iterator : public MemTableRep::Iterator
         {
-            key_set_t *tree_;
-            size_type where_;
-            port::RWMutex &lock_;
+            mutable key_set_t::iterator<Lock> iter_;
             mutable std::string tmp_key_;
 
             friend class TRBTreeRep;
 
-            Iterator(key_set_t *tree, port::RWMutex &lock) : tree_(tree), where_(tree_->end_i()), lock_(lock)
+            Iterator(key_set_t *tree) : iter_(tree)
             {
             }
 
@@ -546,31 +811,28 @@ namespace {
             // Returns true iff the iterator is positioned at a valid node.
             virtual bool Valid() const override
             {
-              return where_ != tree_->end_i();
+                return iter_.valid();
             }
 
             // Returns the key at the current position.
             // REQUIRES: Valid()
             virtual const char *key() const override
             {
-                ReadLock l(&lock_);
-                return tree_->key_at(where_);
+                return iter_.key();
             }
 
             // Advances to the next position.
             // REQUIRES: Valid()
             virtual void Next() override
             {
-                ReadLock l(&lock_);
-                where_ = tree_->next_i(where_);
+                iter_.next();
             }
 
             // Advances to the previous position.
             // REQUIRES: Valid()
             virtual void Prev() override
             {
-                ReadLock l(&lock_);
-                where_ = tree_->prev_i(where_);
+                iter_.prev();
             }
 
             // Advance to the first entry with a key >= target
@@ -579,14 +841,12 @@ namespace {
             {
                 if(memtable_key != nullptr)
                 {
-                    ReadLock l(&lock_);
-                    where_ = tree_->lwb_i(memtable_key);
+                    iter_.seek(memtable_key);
                 }
                 else
                 {
                     EncodeKey(&tmp_key_, user_key);
-                    ReadLock l(&lock_);
-                    where_ = tree_->lwb_i(tmp_key_.c_str());
+                    iter_.seek(tmp_key_.c_str());
                 }
             }
 
@@ -596,14 +856,12 @@ namespace {
             {
                 if(memtable_key != nullptr)
                 {
-                    ReadLock l(&lock_);
-                    where_ = tree_->rlwb_i(memtable_key);
+                    iter_.seek_for_prev(memtable_key);
                 }
                 else
                 {
                     EncodeKey(&tmp_key_, user_key);
-                    ReadLock l(&lock_);
-                    where_ = tree_->rlwb_i(tmp_key_.c_str());
+                    iter_.seek_for_prev(tmp_key_.c_str());
                 }
             }
 
@@ -611,120 +869,31 @@ namespace {
             // Final state of iterator is Valid() iff list is not empty.
             virtual void SeekToFirst() override
             {
-                ReadLock l(&lock_);
-                where_ = tree_->beg_i();
+                iter_.seek_to_first();
             }
 
             // Position at the last entry in list.
             // Final state of iterator is Valid() iff list is not empty.
             virtual void SeekToLast() override
             {
-                ReadLock l(&lock_);
-                where_ = tree_->rbeg_i();
+                iter_.seek_to_last();
             }
         };
-        class ImmutableIterator : public MemTableRep::Iterator
-        {
-            key_set_t *tree_;
-            size_type where_;
-            mutable std::string tmp_key_;
-
-            friend class TRBTreeRep;
-
-            ImmutableIterator(key_set_t *tree) : tree_(tree), where_(tree_->end_i())
-            {
-            }
-
-        public:
-            virtual ~ImmutableIterator() override{}
-
-            // Returns true iff the iterator is positioned at a valid node.
-            virtual bool Valid() const override
-            {
-                return where_ != tree_->end_i();
-            }
-
-            // Returns the key at the current position.
-            // REQUIRES: Valid()
-            virtual const char *key() const override
-            {
-                return tree_->key_at(where_);
-            }
-
-            // Advances to the next position.
-            // REQUIRES: Valid()
-            virtual void Next() override
-            {
-                where_ = tree_->next_i(where_);
-            }
-
-            // Advances to the previous position.
-            // REQUIRES: Valid()
-            virtual void Prev() override
-            {
-                where_ = tree_->prev_i(where_);
-            }
-
-            // Advance to the first entry with a key >= target
-            virtual void Seek(const Slice &user_key, const char *memtable_key)
-            override
-            {
-                if(memtable_key != nullptr)
-                {
-                    where_ = tree_->lwb_i(memtable_key);
-                }
-                else
-                {
-                    EncodeKey(&tmp_key_, user_key);
-                    where_ = tree_->lwb_i(tmp_key_.c_str());
-                }
-            }
-
-            // retreat to the first entry with a key <= target
-            virtual void SeekForPrev(const Slice& user_key, const char* memtable_key)
-            override
-            {
-                if(memtable_key != nullptr)
-                {
-                    where_ = tree_->rlwb_i(memtable_key);
-                }
-                else
-                {
-                    EncodeKey(&tmp_key_, user_key);
-                    where_ = tree_->rlwb_i(tmp_key_.c_str());
-                }
-            }
-
-            // Position at the first entry in list.
-            // Final state of iterator is Valid() iff list is not empty.
-            virtual void SeekToFirst() override
-            {
-                where_ = tree_->beg_i();
-            }
-
-            // Position at the last entry in list.
-            // Final state of iterator is Valid() iff list is not empty.
-            virtual void SeekToLast() override
-            {
-                where_ = tree_->rbeg_i();
-            }
-        };
-
         virtual MemTableRep::Iterator *GetIterator(Arena *arena = nullptr) override
         {
             if(immutable_)
             {
                 void *mem =
-                        arena ? arena->AllocateAligned(sizeof(TRBTreeRep::ImmutableIterator))
-                              : operator new(sizeof(TRBTreeRep::ImmutableIterator));
-                return new(mem) TRBTreeRep::ImmutableIterator(&key_set_);
+                        arena ? arena->AllocateAligned(sizeof(TRBTreeRep::Iterator<FakeLock>))
+                              : operator new(sizeof(TRBTreeRep::Iterator<FakeLock>));
+                return new(mem) TRBTreeRep::Iterator<FakeLock>(&key_set_);
             }
             else
             {
                 void *mem =
-                        arena ? arena->AllocateAligned(sizeof(TRBTreeRep::Iterator))
-                              : operator new(sizeof(TRBTreeRep::Iterator));
-                return new(mem) TRBTreeRep::Iterator(&key_set_, lock_);
+                        arena ? arena->AllocateAligned(sizeof(TRBTreeRep::Iterator<ReadLock>))
+                              : operator new(sizeof(TRBTreeRep::Iterator<ReadLock>));
+                return new(mem) TRBTreeRep::Iterator<ReadLock>(&key_set_);
             }
         }
     };
@@ -754,9 +923,9 @@ namespace {
     };
 }
 
-MemTableRepFactory *NewThreadedRBTreeRepFactory(size_t reserve_size)
+MemTableRepFactory *NewThreadedRBTreeRepFactory()
 {
-  return new TRBTreeMemTableRepFactory(reserve_size);
+  return new TRBTreeMemTableRepFactory();
 }
 
 } // namespace rocksdb

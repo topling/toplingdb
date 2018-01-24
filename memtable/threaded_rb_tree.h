@@ -1718,7 +1718,7 @@ protected:
 
     typedef threaded_rbtree_root_t<node_type, std::true_type, std::true_type> root_node_t;
 
-    static size_type constexpr stack_max_depth = sizeof(index_type) * 12;
+    static size_type constexpr stack_max_depth = sizeof(index_type) * 16 - 3;
 
     struct root_t : public threaded_rbtree_root_t<node_type, std::true_type, std::true_type>, public key_compare
     {
@@ -1815,17 +1815,30 @@ protected:
             key_compare &compare = *root_ptr;
             auto &left_key = config_t::get_key(config_t::get_value(root_ptr->container, left));
             auto &right_key = config_t::get_key(config_t::get_value(root_ptr->container, right));
-            if(compare(left_key, right_key))
+            typedef typename threded_rb_tree_tools::has_compare<comparator_t, key_t>::type comparator_3way;
+            if (comparator_3way::value)
             {
-                return true;
-            }
-            else if(compare(right_key, left_key))
-            {
-                return false;
+                int c = compare.compare(left_key, right_key);
+                if (c == 0)
+                {
+                    return left < right;
+                }
+                return c < 0;
             }
             else
             {
-                return left < right;
+                if (compare(left_key, right_key))
+                {
+                    return true;
+                }
+                else if (compare(right_key, left_key))
+                {
+                    return false;
+                }
+                else
+                {
+                    return left < right;
+                }
             }
         }
 

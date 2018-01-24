@@ -19,139 +19,430 @@
 
 namespace rocksdb {
 namespace {
+    class FallbackDetail
+    {
+        typedef Slice bound_t;
+        MemTableRep::KeyComparator const &c;
+    };
+    class BytewistDetail
+    {
+        typedef std::array<uint64_t, 3> bound_t;
+    };
+    
     class TRBTreeRep : public MemTableRep
     {
         typedef std::size_t size_type;
 
-        struct trb_container_t
+        struct inner_node_t
         {
-            typedef threaded_rbtree_node_t<uint32_t> node_type;
+            typedef uintptr_t index_type;
 
-            struct element_t
+            index_type children[2];
+
+            inner_node_t(index_type left, index_type right)
             {
-                node_type node;
-                char const *key;
-            };
-
-            std::atomic_uintptr_t *memory_size_ptr;
-            size_type default_size;
-            size_type capacity;
-            size_type size;
-            element_t *node;
-
-            trb_container_t(std::atomic_uintptr_t *_size_ptr, size_type _default_size)
-                    : memory_size_ptr(_size_ptr), default_size(_default_size), capacity(0), size(0)
+                children[0] = left;
+                children[1] = right;
+            }
+            inner_node_t()
             {
             }
 
-            ~trb_container_t()
-            {
-                clear();
-            }
+            static size_type constexpr flag_bit_mask = index_type(1);
+            static size_type constexpr type_bit_mask = index_type(2);
+            static size_type constexpr full_bit_mask = flag_bit_mask | type_bit_mask;
 
-            size_type alloc_one()
-            {
-                if(size == capacity)
-                {
-                    if(size == 0)
-                    {
-                        *memory_size_ptr += default_size * sizeof(element_t);
-                        capacity = default_size;
-                        node = (element_t *) std::malloc(sizeof(element_t) * default_size);
-                    }
-                    else
-                    {
-                        *memory_size_ptr += capacity * sizeof(element_t);
-                        capacity *= 2;
-                        node = (element_t *) std::realloc(node, sizeof(element_t) * capacity);
-                    }
-                }
-                return size++;
-            }
+            static size_type constexpr nil_sentinel = ~index_type(0) & ~full_bit_mask;
 
-            void clear()
+            bool left_is_child() const
             {
-                if(capacity > 0)
-                {
-                    *memory_size_ptr -= capacity * sizeof(element_t);
-                    std::free(node);
-                    capacity = 0;
-                    size = 0;
-                }
+                return (children[0] & type_bit_mask) == 0;
             }
-
-            size_type max_size() const
+            bool right_is_child() const
             {
-                return node_type::nil_sentinel;
+                return (children[1] & type_bit_mask) == 0;
+            }
+            bool left_is_thread() const
+            {
+                return (children[0] & type_bit_mask) != 0;
+            }
+            bool right_is_thread() const
+            {
+                return (children[1] & type_bit_mask) != 0;
+            }
+            void left_set_child()
+            {
+                children[0] &= ~type_bit_mask;
+            }
+            void right_set_child()
+            {
+                children[1] &= ~type_bit_mask;
+            }
+            void left_set_thread()
+            {
+                children[0] |= type_bit_mask;
+            }
+            void right_set_thread()
+            {
+                children[1] |= type_bit_mask;
+            }
+            void left_set_link(size_type link)
+            {
+                children[0] = index_type((children[0] & full_bit_mask) | link);
+            }
+            void right_set_link(size_type link)
+            {
+                children[1] = index_type((children[1] & full_bit_mask) | link);
+            }
+            size_type left_get_link() const
+            {
+                return children[0] & ~full_bit_mask;
+            }
+            size_type right_get_link() const
+            {
+                return children[1] & ~full_bit_mask;
+            }
+            bool is_used() const
+            {
+                return (children[1] & flag_bit_mask) == 0;
+            }
+            void set_used()
+            {
+                children[1] &= ~flag_bit_mask;
+            }
+            bool is_empty() const
+            {
+                return (children[1] & flag_bit_mask) != 0;
+            }
+            void set_empty()
+            {
+                children[1] |= flag_bit_mask;
+            }
+            bool is_black() const
+            {
+                return (children[0] & flag_bit_mask) == 0;
+            }
+            void set_black()
+            {
+                children[0] &= ~flag_bit_mask;
+            }
+            bool is_red() const
+            {
+                return (children[0] & flag_bit_mask) != 0;
+            }
+            void set_red()
+            {
+                children[0] |= flag_bit_mask;
+            }
+        };
+        typedef threaded_rbtree_node_t<uint32_t> outer_node_t;
+        typedef threaded_rbtree_root_t<inner_node_t, std::false_type, std::true_type> inner_root_t;
+        typedef threaded_rbtree_root_t<outer_node_t, std::false_type, std::true_type> outer_root_t;
+
+        struct inner_holder_t
+        {
+            inner_root_t root;
+            size_t version;
+            port::RWMutex mutex;
+        };
+        struct outer_element_t
+        {
+            outer_node_t node;
+            Slice bound;
+        };
+
+        struct deref_inner_key_t
+        {
+            char const *operator()(size_type p)
+            {
+                return (char const *)p + sizeof(inner_node_t);
+            }
+        };
+        struct deref_outer_key_t
+        {
+            outer_element_t *array;
+            Slice operator()(size_type p)
+            {
+                return array[p].bound;
             }
         };
 
-        struct trb_comparator_t
+        struct deref_inner_node_t
         {
-            bool operator()(char const *left, char const *right) const
+            inner_node_t &operator()(size_type p)
             {
-                return c(left, right) < 0;
+                return *(inner_node_t *)p;
             }
+        };
+        struct deref_outer_node_t
+        {
+            outer_element_t *array;
+            outer_node_t &operator()(size_type p)
+            {
+                return array[p].node;
+            }
+        };
 
+        struct inner_comparator_t
+        {
+            bool operator()(char const *l, char const *r) const
+            {
+                return c(l, r) < 0;
+            }
+            int compare(char const *l, char const *r) const
+            {
+                return c(l, r);
+            }
             MemTableRep::KeyComparator const &c;
         };
-
-        struct trb_config_t
+        struct outer_comparator_t
         {
-            typedef char const *key_type;
-            typedef char const *const mapped_type;
-            typedef char const *const value_type;
-            typedef char const *storage_type;
-            typedef trb_comparator_t key_compare;
-
-            typedef threaded_rbtree_node_t<uint32_t> node_type;
-            typedef std::false_type unique_type;
-            typedef trb_container_t container_type;
-
-            static node_type &get_node(container_type &container, std::size_t index)
+            bool operator()(Slice const &l, Slice const &r) const
             {
-                return container.node[index].node;
+                if (max_element != &l && max_element != &r)
+                {
+                    return c->Compare(l, r) < 0;
+                }
+                assert(l != r);
+                return &l != max_element;
+            }
+            int compare(Slice const &l, Slice const &r) const
+            {
+                if (max_element != &l && max_element != &r)
+                {
+                    return c->Compare(l, r);
+                }
+                assert(l != r);
+                return &l == max_element ? 1 : -1;
+            }
+            Slice const *max_element;
+            Comparator const *c;
+        };
+
+        struct inner_comparator_ex_t
+        {
+            bool operator()(size_type l, size_type r) const
+            {
+                deref_inner_key_t deref_inner_key;
+                int c = comp.compare(deref_inner_key(l), deref_inner_key(r));
+                if (c == 0)
+                {
+                    return l < r;
+                }
+                return c < 0;
+            }
+            inner_comparator_t &comp;
+        };
+        struct outer_comparator_ex_t
+        {
+            bool operator()(size_type l, size_type r) const
+            {
+                int c = comp.compare(array[l].bound, array[r].bound);
+                if (c == 0)
+                {
+                    return l < r;
+                }
+                return c < 0;
+            }
+            outer_comparator_t &comp;
+            outer_element_t *array;
+        };
+
+        class key_set_t
+        {
+            inner_holder_t       **inner_holder_;
+            outer_element_t       *outer_array_;
+            size_type              outer_count_;
+            size_type              outer_count_max_;
+            outer_root_t           outer_root_;
+            port::RWMutex          outer_mutex_;
+            Allocator             *allocator_;
+            std::atomic_uintptr_t *memory_size_;
+            inner_comparator_t     inner_comparator_;
+            outer_comparator_t     outer_comparator_;
+
+            const static size_type stack_max_depth = sizeof(uint32_t) * 16 - 3;
+            const static size_type split_max_depth = 14;
+            
+            deref_inner_key_t deref_inner_key()
+            {
+                return deref_inner_key_t();
+            }
+            deref_inner_node_t deref_inner_node()
+            {
+                return deref_inner_node_t();
             }
 
-            static node_type const &get_node(container_type const &container, std::size_t index)
+            deref_outer_key_t deref_outer_key()
             {
-                return container.node[index].node;
+                return deref_outer_key_t{outer_array_};
+            }
+            deref_outer_node_t deref_outer_node()
+            {
+                return deref_outer_node_t{outer_array_};
             }
 
-            static storage_type &get_value(container_type &container, std::size_t index)
+        public:
+            key_set_t(const MemTableRep::KeyComparator &c, Allocator *a, std::atomic_uintptr_t *m)
+                : allocator_(a)
+                , memory_size_(m)
+                , inner_comparator_{c}
             {
-                return container.node[index].key;
+                assert(dynamic_cast<const MemTable::KeyComparator *>(&c) != nullptr);
+                auto key_comparator = static_cast<const MemTable::KeyComparator *>(&c);
+                outer_comparator_.c = key_comparator->comparator.user_comparator();
+
+                inner_holder_ = (inner_holder_t **)malloc(sizeof(inner_holder_t *));
+                *inner_holder_ = (inner_holder_t *)allocator_->AllocateAligned(sizeof(inner_holder_t));
+                outer_array_ = (outer_element_t *)malloc(sizeof(outer_element_t));
+                outer_count_ = 1;
+                outer_count_max_ = 1;
+                outer_comparator_.max_element = &outer_array_->bound;
+                *memory_size_ = sizeof(outer_element_t) + sizeof(inner_root_t);
+                new(*inner_holder_) inner_holder_t();
+                (*inner_holder_)->version = 0;
+
+                threaded_rbtree_stack_t<outer_node_t, stack_max_depth> stack;
+                threaded_rbtree_find_path_for_multi(outer_root_, stack, deref_outer_node(), 0, outer_comparator_t());
+                threaded_rbtree_insert(outer_root_, stack, deref_outer_node(), 0);
             }
 
-            static storage_type const &get_value(container_type const &container, std::size_t index)
+            ~key_set_t()
             {
-                return container.node[index].key;
+                for (size_t i = 0; i < outer_count_; ++i)
+                {
+                    inner_holder_[i]->~inner_holder_t();
+                }
+                free(inner_holder_);
+                free(outer_array_);
             }
 
-            static std::size_t alloc_index(container_type &container)
+            bool contains(const char *key) const
             {
-                return container.alloc_one();
+                Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key));
+                size_type inner_index;
+                {
+                    ReadLock l(&outer_mutex_);
+                    inner_index = threaded_rbtree_lower_bound(outer_root_,
+                                                              deref_outer_node(),
+                                                              user_key,
+                                                              deref_outer_key(),
+                                                              outer_comparator_);
+                }
+                size_type key_index;
+                {
+                    ReadLock l(&inner_holder_[inner_index]->mutex);
+                    key_index = threaded_rbtree_equal_unique(inner_holder_[inner_index]->root,
+                                                             deref_inner_node(),
+                                                             key,
+                                                             deref_inner_key(),
+                                                             inner_comparator_);
+                }
+                return key_index != inner_node_t::nil_sentinel;
             }
 
-            template<class in_type>
-            static key_type const &get_key(in_type &&value)
+            void insert(KeyHandle handle)
             {
-                return value;
+                size_type inner_node = reinterpret_cast<size_type>(handle);
+                Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(deref_inner_key()(inner_node)));
+                size_type inner_index;
+                size_type outer_count_save;
+                {
+                    ReadLock l(&outer_mutex_);
+                    inner_index = threaded_rbtree_lower_bound(outer_root_,
+                                                                   deref_outer_node(),
+                                                                   user_key,
+                                                                   deref_outer_key(),
+                                                                   outer_comparator_);
+                    outer_count_save = outer_count_;
+                }
+                assert(inner_index < outer_root_.get_count());
+                size_type version;
+                size_type height;
+                inner_root_t *inner_root;
+                {
+                    WriteLock l(&inner_holder_[inner_index]->mutex);
+                    version = inner_holder_[inner_index]->version;
+                    inner_root = &inner_holder_[inner_index]->root;
+                    threaded_rbtree_stack_t<inner_node_t, stack_max_depth> stack;
+                    threaded_rbtree_find_path_for_multi(*inner_root, stack, deref_inner_node(), inner_node, inner_comparator_);
+                    height = stack.height;
+                    threaded_rbtree_insert(*inner_root, stack, deref_inner_node(), inner_node);
+                }
+                if (height < split_max_depth || outer_count_save + 1 == outer_node_t::nil_sentinel)
+                {
+                    return;
+                }
+                WriteLock l(&outer_mutex_);
+                assert(inner_root->root.root != inner_node_t::nil_sentinel);
+                Slice bound = ExtractUserKey(GetLengthPrefixedSlice(deref_inner_key()(inner_root->root.root)));
+                int c = outer_comparator_.compare(bound, outer_array_[inner_index].bound);
+                assert(c <= 0);
+                if (c == 0)
+                {
+                    return;
+                }
+                WriteLock l(&inner_holder_[inner_index]->mutex);
+                if (version != inner_holder_[inner_index]->version)
+                {
+                    return;
+                }
+                if (outer_count_ == outer_count_max_)
+                {
+                    outer_count_max_ *= 2;
+                    inner_holder_ = (inner_holder_t **)realloc(inner_holder_, sizeof(inner_holder_t *) * outer_count_max_);
+                    outer_array_ = (outer_element_t *)realloc(outer_array_, sizeof(outer_element_t) * outer_count_max_);
+                    outer_comparator_.max_element = &outer_array_[0].bound;
+                    *memory_size_ += (sizeof(outer_element_t) + sizeof(inner_root_t)) * outer_count_;
+                }
+                inner_holder_[outer_count_] = (inner_holder_t *)allocator_->AllocateAligned(sizeof(inner_holder_t));
+                new(inner_holder_[outer_count_]) inner_holder_t();
+                inner_root_t *split_root = &inner_holder_[outer_count_]->root;
+                ++inner_holder_[inner_index]->version;
+                inner_holder_[outer_count_]->version = inner_holder_[inner_index]->version;
+
+                deref_inner_node_t deref = deref_inner_node();
+                assert(deref(inner_root->root.root).left_is_child());
+                assert(deref(inner_root->root.root).right_is_child());
+                size_type root_save = inner_root->root.root;
+                size_type prev = threaded_rbtree_move_prev(root_save, deref);
+                size_type next = threaded_rbtree_move_next(root_save, deref);
+                assert(deref(prev).right_is_child());
+                assert(deref(next).left_is_child());
+
+                split_root->root.root = deref(root_save).left_get_link();
+                deref(split_root->root.root).set_black();
+                split_root->root.set_right(prev);
+                deref(prev).right_set_link(outer_node_t::nil_sentinel);
+
+                inner_root->root.root = deref(root_save).right_get_link();
+                deref(inner_root->root.root).set_black();
+                inner_root->root.set_left(next);
+                deref(next).left_set_link(outer_node_t::nil_sentinel);
+                {
+                    threaded_rbtree_stack_t<inner_node_t, stack_max_depth> stack;
+                    threaded_rbtree_find_path_for_multi(*inner_root, stack, deref, root_save, inner_comparator_);
+                    threaded_rbtree_insert(*inner_root, stack, deref, root_save);
+                }
+                {
+                    threaded_rbtree_stack_t<outer_node_t, stack_max_depth> stack;
+                    threaded_rbtree_find_path_for_multi(outer_root_, stack, deref_outer_node(), outer_count_, outer_comparator_t());
+                    threaded_rbtree_insert(outer_root_, stack, deref_outer_node(), outer_count_);
+                }
             }
         };
 
+
     public:
-        typedef threaded_rbtree_impl<trb_config_t> key_set_t;
-        key_set_t key_set_;
-        mutable port::RWMutex lock_;
+        mutable key_set_t key_set_;
         std::atomic_bool immutable_;
         std::atomic_uintptr_t memory_size_;
         const SliceTransform *transform_;
 
     public:
-        explicit TRBTreeRep(size_type reserve_size, const MemTableRep::KeyComparator &compare, Allocator *allocator,
+        explicit TRBTreeRep(const MemTableRep::KeyComparator &compare, Allocator *allocator,
                             const SliceTransform *transform) : MemTableRep(allocator),
-                                                               key_set_({compare}, {&memory_size_, reserve_size}),
+                                                               key_set_(compare, allocator, &memory_size_),
                                                                immutable_(false),
                                                                memory_size_(0),
                                                                transform_(transform)
@@ -160,23 +451,28 @@ namespace {
 
         virtual KeyHandle Allocate(const size_t len, char **buf) override
         {
-            *buf = allocator_->Allocate(len);
-            return static_cast<KeyHandle>(*buf);
+            char *mem = allocator_->AllocateAligned(sizeof(inner_node_t) + len);
+            *buf = mem + sizeof(inner_node_t);
+            return static_cast<KeyHandle>(mem);
         }
 
         // Insert key into the list.
         // REQUIRES: nothing that compares equal to key is currently in the list.
         virtual void Insert(KeyHandle handle) override
         {
-            WriteLock l(&lock_);
-            key_set_.insert(reinterpret_cast<char const *>(handle));
+            key_set_.insert(handle);
+        }
+
+        // Like Insert(handle), but may be called concurrent with other calls
+        // to InsertConcurrently for other handles
+        virtual void InsertConcurrently(KeyHandle handle) {
+            key_set_.insert(handle);
         }
 
         // Returns true iff an entry that compares equal to key is in the list.
         virtual bool Contains(const char *key) const override
         {
-            ReadLock l(&lock_);
-            return key_set_.find(key) != key_set_.end();
+            return key_set_.contains(key);
         }
 
         virtual void MarkReadOnly() override
@@ -436,8 +732,6 @@ namespace {
     class TRBTreeMemTableRepFactory : public MemTableRepFactory
     {
     public:
-        explicit TRBTreeMemTableRepFactory(std::size_t _reserve_size) : reserve_size(_reserve_size){}
-
         virtual ~TRBTreeMemTableRepFactory(){}
 
         using MemTableRepFactory::CreateMemTableRep;
@@ -445,7 +739,7 @@ namespace {
                 const MemTableRep::KeyComparator &compare, Allocator *allocator,
                 const SliceTransform *transform, Logger *logger) override
         {
-          return new TRBTreeRep(reserve_size, compare, allocator, transform);
+          return new TRBTreeRep(compare, allocator, transform);
         }
 
         virtual const char *Name() const override
@@ -453,8 +747,10 @@ namespace {
           return "TRBTreeMemTableRepFactory";
         }
 
-    private:
-        std::size_t reserve_size;
+        virtual bool IsInsertConcurrentlySupported() const override
+        {
+            return true;
+        }
     };
 }
 

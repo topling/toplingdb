@@ -155,7 +155,8 @@ class SimCacheImpl : public SimCache {
       : cache_(cache),
         key_only_cache_(NewLRUCache(sim_capacity, num_shard_bits)),
         miss_times_(0),
-        hit_times_(0) {}
+        hit_times_(0),
+        stats_(nullptr) {}
 
   virtual ~SimCacheImpl() {}
   virtual void SetCapacity(size_t capacity) override {
@@ -168,7 +169,8 @@ class SimCacheImpl : public SimCache {
 
   virtual Status Insert(const Slice& key, void* value, size_t charge,
                         void (*deleter)(const Slice& key, void* value),
-                        Handle** handle, Priority priority) override {
+                        Handle** handle, Priority priority,
+                        void** accept_existing) override {
     // The handle and value passed in are for real cache, so we pass nullptr
     // to key_only_cache_ for both instead. Also, the deleter function pointer
     // will be called by user to perform some external operation which should
@@ -178,14 +180,15 @@ class SimCacheImpl : public SimCache {
     if (h == nullptr) {
       key_only_cache_->Insert(key, nullptr, charge,
                               [](const Slice& k, void* v) {}, nullptr,
-                              priority);
+                              priority, accept_existing);
     } else {
       key_only_cache_->Release(h);
     }
 
     cache_activity_logger_.ReportAdd(key, charge);
 
-    return cache_->Insert(key, value, charge, deleter, handle, priority);
+    return cache_->Insert(key, value, charge, deleter, handle, priority,
+                          accept_existing);
   }
 
   virtual Handle* Lookup(const Slice& key, Statistics* stats) override {

@@ -154,15 +154,21 @@ Status TableCache::FindTable(const EnvOptions& env_options,
                            const_cast<bool*>(&no_io));
   assert(nullptr != pp_table);
   *pp_table = nullptr;
+  TableReaderPtrHolder* existing = nullptr;
   if (*handle == nullptr) {
     if (no_io) {  // Don't do IO and return a not-found status
       return Status::Incomplete("Table not found in table_cache, no_io is set");
     }
     std::unique_ptr<TableReaderPtrHolder> holder(new TableReaderPtrHolder);
     auto deleter = &DeleteEntry<TableReaderPtrHolder>;
-    s = cache_->Insert(key, holder.get(), 1, deleter, handle);
+    s = cache_->Insert(key, holder.get(), 1, deleter, handle,
+        Cache::Priority::LOW, (void**)&existing);
     if (!s.ok()) {
       return s;
+    }
+    if (*existing) {
+      assert(nullptr != *handle);
+      goto HasExisting;
     }
     std::unique_lock<std::mutex> lock(holder->mtx);
     s = GetTableReader(env_options, internal_comparator, fd,
@@ -182,23 +188,22 @@ Status TableCache::FindTable(const EnvOptions& env_options,
     holder.release();
   }
   else {
-    auto pvalue = cache_->Value(*handle);
-    auto holder = reinterpret_cast<TableReaderPtrHolder*>(pvalue);
-    if (!holder->ptr) { // double check
-      // loop forever if the table open failed in that other thread
-      // move the wait to FindTable?
-      std::unique_lock<std::mutex> lock(holder->mtx);
-      while (!holder->ptr) {
-        if (!holder->open_status.ok()) {
-          s = holder->open_status;
+    existing = reinterpret_cast<TableReaderPtrHolder*>(cache_->Value(*handle));
+    assert(nullptr != existing);
+  HasExisting:
+    if (!existing->ptr) { // double check
+      std::unique_lock<std::mutex> lock(existing->mtx);
+      while (!existing->ptr) {
+        if (!existing->open_status.ok()) {
+          s = existing->open_status;
           cache_->Release(*handle);
           *handle = NULL; // holder will also be destroyed
           return s;
         }
-        holder->cond.wait(lock);
+        existing->cond.wait(lock);
       }
     }
-    *pp_table = holder->ptr.get();
+    *pp_table = existing->ptr.get();
   }
   return s;
 }

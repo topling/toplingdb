@@ -39,20 +39,13 @@ LRUHandle* LRUHandleTable::Lookup(const Slice& key, uint32_t hash) {
   return *FindPointer(key, hash);
 }
 
-LRUHandle* LRUHandleTable::Insert(LRUHandle* h) {
-  LRUHandle** ptr = FindPointer(h->key(), h->hash);
-  LRUHandle* old = *ptr;
-  h->next_hash = (old == nullptr ? nullptr : old->next_hash);
-  *ptr = h;
-  if (old == nullptr) {
-    ++elems_;
-    if (elems_ > length_) {
-      // Since each cache entry is fairly large, we aim for a small
-      // average linked list length (<= 1).
-      Resize();
-    }
+void LRUHandleTable::IncSize() {
+  ++elems_;
+  if (elems_ > length_) {
+    // Since each cache entry is fairly large, we aim for a small
+    // average linked list length (<= 1).
+    Resize();
   }
-  return old;
 }
 
 LRUHandle* LRUHandleTable::Remove(const Slice& key, uint32_t hash) {
@@ -342,7 +335,8 @@ bool LRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
 Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
                              size_t charge,
                              void (*deleter)(const Slice& key, void* value),
-                             Cache::Handle** handle, Cache::Priority priority) {
+                             Cache::Handle** handle, Cache::Priority priority,
+                             void** accept_existing) {
   // Allocate the memory here outside of the mutex
   // If the cache is full, we'll have to release it
   // It shouldn't happen very often though.
@@ -367,6 +361,18 @@ Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
 
   {
     MutexLock l(&mutex_);
+    LRUHandle** ptr = table_.FindPointer(key, hash);
+    LRUHandle*  old = *ptr;
+    if (old && accept_existing) {
+      assert(nullptr != old->value);
+      delete e;
+      if (1 == old->refs++) {
+        LRU_Remove(old);
+      }
+      *handle = reinterpret_cast<Cache::Handle*>(old);
+      *accept_existing = old->value;
+      return s;
+    }
 
     // Free the space following strict LRU policy until enough space
     // is freed or the lru list is empty
@@ -387,9 +393,9 @@ Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
       // insert into the cache
       // note that the cache might get larger than its capacity if not enough
       // space was freed
-      LRUHandle* old = table_.Insert(e);
       usage_ += e->charge;
       if (old != nullptr) {
+        e->next_hash = old->next_hash;
         old->SetInCache(false);
         if (Unref(old)) {
           usage_ -= old->charge;
@@ -399,6 +405,12 @@ Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
           last_reference_list.push_back(old);
         }
       }
+      else {
+        e->next_hash = nullptr;
+        table_.IncSize();
+      }
+      *ptr = e;
+
       if (handle == nullptr) {
         LRU_Insert(e);
       } else {

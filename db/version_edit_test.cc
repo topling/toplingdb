@@ -163,7 +163,7 @@ TEST_F(VersionEditTest, NewFile4NotSupportedField) {
 
 TEST_F(VersionEditTest, EncodeEmptyFile) {
   VersionEdit edit;
-  edit.AddFile(0, 0, 0, 0, InternalKey(), InternalKey(), 0, 0, false);
+  edit.AddFile(0, 0, 0, 0, { InternalKey(), InternalKey() }, 0, 0, false, 0, 0);
   std::string buffer;
   ASSERT_TRUE(!edit.EncodeTo(&buffer));
 }

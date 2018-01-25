@@ -54,8 +54,8 @@ class FileIndexerTest : public testing::Test {
 
   void AddFile(int level, int64_t smallest, int64_t largest) {
     auto* f = new FileMetaData();
-    f->smallest = IntKey(smallest);
-    f->largest = IntKey(largest);
+    f->smallest() = IntKey(smallest);
+    f->largest() = IntKey(largest);
     files[level].push_back(f);
   }
 

@@ -148,9 +148,9 @@ TEST_F(FlushJobTest, NonEmpty) {
   flush_job.PickMemTable();
   ASSERT_OK(flush_job.Run(&fd));
   mutex_.Unlock();
-  ASSERT_EQ(ToString(0), fd.smallest.user_key().ToString());
+  ASSERT_EQ(ToString(0), fd.smallest().user_key().ToString());
   ASSERT_EQ("9999a",
-            fd.largest.user_key().ToString());  // range tombstone end key
+            fd.largest().user_key().ToString());  // range tombstone end key
   ASSERT_EQ(1, fd.smallest_seqno);
   ASSERT_EQ(10000, fd.largest_seqno);  // range tombstone seqnum 10000
   mock_table_factory_->AssertSingleFile(inserted_keys);

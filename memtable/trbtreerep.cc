@@ -24,11 +24,11 @@ namespace {
         typedef Slice bound_t;
         MemTableRep::KeyComparator const &c;
     };
-    class BytewistDetail
+    class BytewiseDetail
     {
         typedef std::array<uint64_t, 3> bound_t;
     };
-    
+
     class TRBTreeRep : public MemTableRep
     {
         typedef std::size_t size_type;
@@ -203,7 +203,7 @@ namespace {
                 {
                     return c->Compare(l, r) < 0;
                 }
-                assert(l != r);
+                assert(&l != &r);
                 return &l != max_element;
             }
             int compare(Slice const &l, Slice const &r) const
@@ -212,8 +212,8 @@ namespace {
                 {
                     return c->Compare(l, r);
                 }
-                assert(l != r);
-                return &l == max_element ? 1 : -1;
+                assert(&l != &r);
+                return &l != max_element ? -1 : 1;
             }
             Slice const *max_element;
             Comparator const *c;
@@ -576,6 +576,51 @@ namespace {
                 return inner_node != inner_node_t::nil_sentinel;
             }
 
+            template<class Lock>
+            double approximate_range_ratio(const char *start, const char *end)
+            {
+                Slice start_user_key = ExtractUserKey(GetLengthPrefixedSlice(start));
+                Slice end_user_key = ExtractUserKey(GetLengthPrefixedSlice(end));
+                std::size_t start_inner_index, end_inner_index;
+                Lock outer_lock(&outer_mutex_);
+                double start_ratio = threaded_rbtree_approximate_rank_ratio(outer_root_,
+                                                                            deref_outer_node(),
+                                                                            start_user_key,
+                                                                            deref_outer_key(),
+                                                                            outer_comparator_,
+                                                                            start_inner_index);
+                double end_ratio = threaded_rbtree_approximate_rank_ratio(outer_root_,
+                                                                          deref_outer_node(),
+                                                                          end_user_key,
+                                                                          deref_outer_key(),
+                                                                          outer_comparator_,
+                                                                          end_inner_index);
+                if (start_inner_index != end_inner_index)
+                {
+                    assert(end_ratio >= start_ratio);
+                    return end_ratio - start_ratio;
+                }
+                double inner_start_ratio, inner_end_ratio;
+                std::size_t where;
+                {
+                    Lock inner_lock(&inner_holder_[start_inner_index]->mutex);
+                    inner_start_ratio = threaded_rbtree_approximate_rank_ratio(inner_holder_[start_inner_index]->root,
+                                                                               deref_inner_node(),
+                                                                               start,
+                                                                               deref_inner_key(),
+                                                                               inner_comparator_,
+                                                                               where);
+                    inner_end_ratio = threaded_rbtree_approximate_rank_ratio(inner_holder_[end_inner_index]->root,
+                                                                             deref_inner_node(),
+                                                                             end,
+                                                                             deref_inner_key(),
+                                                                             inner_comparator_,
+                                                                             where);
+                }
+                assert(inner_end_ratio >= inner_start_ratio);
+                return (inner_end_ratio - inner_start_ratio) / outer_count_;
+            }
+
             void insert(KeyHandle handle)
             {
                 size_type inner_node = reinterpret_cast<size_type>(handle);
@@ -687,6 +732,7 @@ namespace {
                                                                memory_size_(0),
                                                                key_set_(compare, allocator, &memory_size_),
                                                                immutable_(false),
+                                                               num_entries(0),
                                                                transform_(transform)
         {
         }
@@ -738,13 +784,19 @@ namespace {
 
         virtual uint64_t ApproximateNumEntries(const Slice& start_ikey,
                                                const Slice& end_ikey) override {
-            //std::string tmp;
-            //uint64_t start_rank =
-            //    key_set_.approximate_rank(EncodeKey(&tmp, start_ikey));
-            //uint64_t end_rank =
-            //    key_set_.approximate_rank(EncodeKey(&tmp, end_ikey));
-            //return (end_rank > start_rank) ? (end_rank - start_rank) : 0;
-            return 0;
+            std::string start_tmp, end_tmp;
+            double ratio;
+            if (immutable_)
+            {
+                ratio = key_set_.approximate_range_ratio<FakeLock>(EncodeKey(&start_tmp, start_ikey),
+                                                                   EncodeKey(&end_tmp, end_ikey));
+            }
+            else
+            {
+                ratio = key_set_.approximate_range_ratio<ReadLock>(EncodeKey(&start_tmp, start_ikey),
+                                                                   EncodeKey(&end_tmp, end_ikey));
+            }
+            return ratio > 0 ? uint64_t(ratio * num_entries) : 0;
         }
 
         virtual void

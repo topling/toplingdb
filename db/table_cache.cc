@@ -166,7 +166,7 @@ Status TableCache::FindTable(const EnvOptions& env_options,
     if (!s.ok()) {
       return s;
     }
-    if (*existing) {
+    if (existing) {
       assert(nullptr != *handle);
       goto HasExisting;
     }

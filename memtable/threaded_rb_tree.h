@@ -10,7 +10,7 @@
 #include <vector>
 #include <type_traits>
 
-template<class index_t>
+template<class index_t, class flags_in_front_t = std::true_type>
 struct threaded_rbtree_node_t
 {
     typedef index_t index_type;
@@ -26,8 +26,8 @@ struct threaded_rbtree_node_t
     {
     }
 
-    static std::size_t constexpr flag_bit_mask = index_type(1) << (sizeof(index_type) * 8 - 1);
-    static std::size_t constexpr type_bit_mask = index_type(1) << (sizeof(index_type) * 8 - 2);
+    static std::size_t constexpr flag_bit_mask = index_type(1) << (flags_in_front_t::value ? sizeof(index_type) * 8 - 1 : 0);
+    static std::size_t constexpr type_bit_mask = index_type(1) << (flags_in_front_t::value ? sizeof(index_type) * 8 - 2 : 1);
     static std::size_t constexpr full_bit_mask = flag_bit_mask | type_bit_mask;
 
     static std::size_t constexpr nil_sentinel = ~index_type(0) & ~full_bit_mask;

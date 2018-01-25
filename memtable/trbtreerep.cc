@@ -24,20 +24,28 @@ namespace {
     {
         typedef std::size_t size_type;
 
+        // inner node use uintpre_t save pointer , save tags at lower bits
         typedef threaded_rbtree_node_t<uintptr_t, std::false_type> inner_node_t;
+        // outer node use uint32 , save tags at higher bits
         typedef threaded_rbtree_node_t<uint32_t> outer_node_t;
+
         typedef threaded_rbtree_root_t<inner_node_t, std::false_type, std::true_type> inner_root_t;
-        typedef threaded_rbtree_root_t<outer_node_t, std::false_type, std::true_type> outer_root_t;
+        typedef threaded_rbtree_root_t<outer_node_t, std::true_type, std::true_type> outer_root_t;
 
         struct inner_holder_t
         {
+            // inner root
             inner_root_t root;
+            // version++ when split
             size_t version;
+            // inner lock
             port::RWMutex mutex;
         };
         struct outer_element_t
         {
+            // outer node
             outer_node_t node;
+            // user key
             Slice bound;
         };
 
@@ -87,6 +95,7 @@ namespace {
         };
         struct outer_comparator_t
         {
+            // max_element must be the largest
             bool operator()(Slice const &l, Slice const &r) const
             {
                 if (max_element != &l && max_element != &r)
@@ -125,6 +134,7 @@ namespace {
         };
         struct outer_comparator_ex_t
         {
+            // 0 is the largest
             bool operator()(size_type l, size_type r) const
             {
                 if (l != 0 && r != 0)
@@ -140,10 +150,9 @@ namespace {
 
         class key_set_t
         {
-            inner_holder_t       **inner_holder_;
-            outer_element_t       *outer_array_;
-            size_type              outer_count_;
-            size_type              outer_count_max_;
+            inner_holder_t       **inner_holder_;       // inner trbtree holder
+            outer_element_t       *outer_array_;        // outer node & key
+            size_type              outer_capacity_;
             outer_root_t           outer_root_;
             port::RWMutex          outer_mutex_;
             Allocator             *allocator_;
@@ -193,8 +202,7 @@ namespace {
                 inner_holder_ = (inner_holder_t **)malloc(sizeof(inner_holder_t *));
                 *inner_holder_ = (inner_holder_t *)allocator_->AllocateAligned(sizeof(inner_holder_t));
                 outer_array_ = (outer_element_t *)malloc(sizeof(outer_element_t));
-                outer_count_ = 1;
-                outer_count_max_ = 1;
+                outer_capacity_ = 1;
                 *memory_size_ = sizeof(outer_element_t) + sizeof(inner_root_t);
                 new(*inner_holder_) inner_holder_t();
                 (*inner_holder_)->version = 0;
@@ -208,7 +216,7 @@ namespace {
 
             ~key_set_t()
             {
-                for (size_t i = 0; i < outer_count_; ++i)
+                for (size_t i = 0; i < outer_root_.get_count(); ++i)
                 {
                     inner_holder_[i]->~inner_holder_t();
                     outer_array_[i].bound.~Slice();
@@ -507,7 +515,7 @@ namespace {
                                                                        where);
                 }
                 assert(end_ratio >= start_ratio);
-                return (end_ratio - start_ratio) / outer_count_;
+                return (end_ratio - start_ratio) / outer_root_.get_count();
             }
 
             void insert(KeyHandle handle)
@@ -515,7 +523,7 @@ namespace {
                 size_type inner_node = reinterpret_cast<size_type>(handle);
                 Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(deref_inner_key()(inner_node)));
                 size_type inner_index;
-                size_type outer_count_save;
+                size_type outer_count;
                 size_type version;
                 size_type height;
                 inner_root_t *inner_root;
@@ -526,7 +534,7 @@ namespace {
                                                               user_key,
                                                               deref_outer_key(),
                                                               outer_comparator_);
-                    outer_count_save = outer_count_;
+                    outer_count = outer_root_.get_count();
                     WriteLock inner_lock(&inner_holder_[inner_index]->mutex);
                     version = inner_holder_[inner_index]->version;
                     inner_root = &inner_holder_[inner_index]->root;
@@ -535,7 +543,7 @@ namespace {
                     height = stack.height;
                     threaded_rbtree_insert(*inner_root, stack, deref_inner_node(), inner_node);
                 }
-                if (height < split_max_depth || outer_count_save + 1 == outer_node_t::nil_sentinel)
+                if (height < split_max_depth || outer_count + 1 == outer_node_t::nil_sentinel)
                 {
                     return;
                 }
@@ -553,20 +561,24 @@ namespace {
                 {
                     return;
                 }
-                if (outer_count_ == outer_count_max_)
+                outer_count = outer_root_.get_count();
+                if (outer_count == outer_capacity_)
                 {
-                    outer_count_max_ *= 2;
-                    inner_holder_ = (inner_holder_t **)realloc(inner_holder_, sizeof(inner_holder_t *) * outer_count_max_);
-                    outer_array_ = (outer_element_t *)realloc(outer_array_, sizeof(outer_element_t) * outer_count_max_);
+                    outer_capacity_ *= 2;
+                    inner_holder_ = (inner_holder_t **)realloc(inner_holder_, sizeof(inner_holder_t *) * outer_capacity_);
+                    outer_array_ = (outer_element_t *)realloc(outer_array_, sizeof(outer_element_t) * outer_capacity_);
                     outer_comparator_.max_element = &outer_array_[0].bound;
-                    *memory_size_ += (sizeof(outer_element_t) + sizeof(inner_root_t)) * outer_count_;
+                    *memory_size_ += (sizeof(outer_element_t) + sizeof(inner_root_t)) * outer_count;
                 }
-                inner_holder_[outer_count_] = (inner_holder_t *)allocator_->AllocateAligned(sizeof(inner_holder_t));
-                new(inner_holder_[outer_count_]) inner_holder_t();
-                inner_root_t *split_root = &inner_holder_[outer_count_]->root;
-                ++inner_holder_[inner_index]->version;
-                inner_holder_[outer_count_]->version = inner_holder_[inner_index]->version;
+                // prepare new outer element & inner holder
+                auto new_inner_holder = (inner_holder_t *)allocator_->AllocateAligned(sizeof(inner_holder_t));
+                new(new_inner_holder) inner_holder_t();
+                new(outer_array_ + outer_count) outer_element_t();
+                inner_root_t *split_root = &new_inner_holder->root;
+                ++new_inner_holder->version;
+                new_inner_holder->version = new_inner_holder->version;
 
+                // take out root
                 deref_inner_node_t deref = deref_inner_node();
                 assert(deref(inner_root->root.root).left_is_child());
                 assert(deref(inner_root->root.root).right_is_child());
@@ -576,29 +588,32 @@ namespace {
                 assert(deref(prev).right_is_thread());
                 assert(deref(next).left_is_thread());
 
+                // fix new rbtree
                 split_root->root.root = deref(root_save).left_get_link();
                 deref(split_root->root.root).set_black();
                 split_root->root.set_left(inner_root->get_most_left(deref_inner_node()));
                 split_root->root.set_right(prev);
                 deref(prev).right_set_link(inner_node_t::nil_sentinel);
 
+                // fix old tbree
                 inner_root->root.root = deref(root_save).right_get_link();
                 deref(inner_root->root.root).set_black();
                 inner_root->root.set_left(next);
                 deref(next).left_set_link(inner_node_t::nil_sentinel);
                 {
+                    // put root into old tree
                     threaded_rbtree_stack_t<inner_node_t, stack_max_depth> stack;
                     threaded_rbtree_find_path_for_multi(*inner_root, stack, deref, root_save, inner_comparator_ex());
                     threaded_rbtree_insert(*inner_root, stack, deref, root_save);
                 }
                 {
-                    new(outer_array_ + outer_count_) outer_element_t();
-                    outer_array_[outer_count_].bound = bound;
+                    // put new tbtree to outer
+                    inner_holder_[outer_count] = new_inner_holder;
+                    outer_array_[outer_count].bound = bound;
                     threaded_rbtree_stack_t<outer_node_t, stack_max_depth> stack;
-                    threaded_rbtree_find_path_for_multi(outer_root_, stack, deref_outer_node(), outer_count_, outer_comparator_ex());
-                    threaded_rbtree_insert(outer_root_, stack, deref_outer_node(), outer_count_);
+                    threaded_rbtree_find_path_for_multi(outer_root_, stack, deref_outer_node(), outer_count, outer_comparator_ex());
+                    threaded_rbtree_insert(outer_root_, stack, deref_outer_node(), outer_count);
                 }
-                ++outer_count_;
             }
         };
 

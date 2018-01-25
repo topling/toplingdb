@@ -106,7 +106,7 @@ class AtomicCounter {
 
 class TestInternalIterator : public InternalIterator {
 public:
-  TestInternalIterator(const std::vector<uint64_t>& value) : value_(value) {
+  TestInternalIterator(const std::vector<uint64_t>& value1) : value_(value1) {
     key_.resize(16, 0);
   }
 
@@ -155,11 +155,11 @@ public:
     }
   }
   Slice key() const override final {
-    uint64_t key = *iter_;
+    uint64_t key1 = *iter_;
     if (port::kLittleEndian) {
-      key = EndianTransform(key, 8);
+      key1 = EndianTransform(key1, 8);
     }
-    memcpy(&key_[0], &key, 8);
+    memcpy(&key_[0], &key1, 8);
     return key_;
   }
   Slice value() const override final {

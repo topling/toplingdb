@@ -237,12 +237,12 @@ namespace {
         {
             bool operator()(size_type l, size_type r) const
             {
-                int c = comp.compare(array[l].bound, array[r].bound);
-                if (c == 0)
+                if (l != 0 && r != 0)
                 {
-                    return l < r;
+                    return comp.c->Compare(array[l].bound, array[r].bound) < 0;
                 }
-                return c < 0;
+                assert(l != r);
+                return l != 0;
             }
             outer_comparator_t &comp;
             outer_element_t *array;

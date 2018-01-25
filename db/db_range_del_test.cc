@@ -162,7 +162,7 @@ TEST_F(DBRangeDelTest, MaxCompactionBytesCutsOutputFiles) {
 
   for (size_t i = 0; i < files[1].size() - 1; ++i) {
     ASSERT_TRUE(InternalKeyComparator(opts.comparator)
-                    .Compare(files[1][i].largest, files[1][i + 1].smallest) <
+                    .Compare(files[1][i].largest(), files[1][i + 1].smallest()) <
                 0);
   }
   db_->ReleaseSnapshot(snapshot);
@@ -988,8 +988,8 @@ TEST_F(DBRangeDelTest, UnorderedTombstones) {
   std::vector<std::vector<FileMetaData>> files;
   dbfull()->TEST_GetFilesMetaData(cf, &files);
   ASSERT_EQ(1, files[0].size());
-  ASSERT_EQ("a", files[0][0].smallest.user_key());
-  ASSERT_EQ("c", files[0][0].largest.user_key());
+  ASSERT_EQ("a", files[0][0].smallest().user_key());
+  ASSERT_EQ("c", files[0][0].largest().user_key());
 
   std::string v;
   auto s = db_->Get(ReadOptions(), "a", &v);

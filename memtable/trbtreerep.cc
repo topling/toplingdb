@@ -327,11 +327,11 @@ namespace {
                     // symmetric with seek(const char *)
                     Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key));
                     Lock outer_lock(&key_set_->outer_mutex_);
-                    inner_index_ = threaded_rbtree_reverse_lower_bound(key_set_->outer_root_,
-                                                                       key_set_->deref_outer_node(),
-                                                                       user_key,
-                                                                       key_set_->deref_outer_key(),
-                                                                       key_set_->outer_comparator_);
+                    inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
+                                                               key_set_->deref_outer_node(),
+                                                               user_key,
+                                                               key_set_->deref_outer_key(),
+                                                               key_set_->outer_comparator_);
                     inner_holder_ = key_set_->inner_holder_[inner_index_];
                     bool prev;
                     {
@@ -440,11 +440,11 @@ namespace {
                     if (expired)
                     {
                         Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key_set_->deref_inner_key()(inner_node_)));
-                        inner_index_ = threaded_rbtree_reverse_lower_bound(key_set_->outer_root_,
-                                                                           key_set_->deref_outer_node(),
-                                                                           user_key,
-                                                                           key_set_->deref_outer_key(),
-                                                                           key_set_->outer_comparator_);
+                        inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
+                                                                   key_set_->deref_outer_node(),
+                                                                   user_key,
+                                                                   key_set_->deref_outer_key(),
+                                                                   key_set_->outer_comparator_);
                         inner_holder_ = key_set_->inner_holder_[inner_index_];
                         version_ = inner_holder_->version;
 

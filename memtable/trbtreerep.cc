@@ -15,7 +15,7 @@
 #include "rocksdb/memtablerep.h"
 #include "util/arena.h"
 #include "util/mutexlock.h"
-#include "threaded_rb_tree.h"
+#include "util/threaded_rbtree.h"
 
 namespace rocksdb {
 namespace {
@@ -336,7 +336,7 @@ namespace {
                     bool prev;
                     {
                         Lock inner_lock(&inner_holder_->mutex);
-                        inner_node_ = threaded_rbtree_reverse_lower_bound(key_set_->inner_holder_[inner_index_]->root,
+                        inner_node_ = threaded_rbtree_reverse_lower_bound(inner_holder_->root,
                                                                           key_set_->deref_inner_node(),
                                                                           key,
                                                                           key_set_->deref_inner_key(),
@@ -385,7 +385,8 @@ namespace {
                     if (expired)
                     {
                         // expired , inner rbtree has splited , re-search
-                        Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key_set_->deref_inner_key()(inner_node_)));
+                        Slice user_key =
+                            ExtractUserKey(GetLengthPrefixedSlice(key_set_->deref_inner_key()(inner_node_)));
                         inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
                                                                    key_set_->deref_outer_node(),
                                                                    user_key,
@@ -439,7 +440,8 @@ namespace {
                     Lock outer_lock(&key_set_->outer_mutex_);
                     if (expired)
                     {
-                        Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key_set_->deref_inner_key()(inner_node_)));
+                        Slice user_key =
+                            ExtractUserKey(GetLengthPrefixedSlice(key_set_->deref_inner_key()(inner_node_)));
                         inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
                                                                    key_set_->deref_outer_node(),
                                                                    user_key,
@@ -561,7 +563,11 @@ namespace {
                     version = inner_holder_[inner_index]->version;
                     inner_root = &inner_holder_[inner_index]->root;
                     threaded_rbtree_stack_t<inner_node_t, stack_max_depth> stack;
-                    threaded_rbtree_find_path_for_multi(*inner_root, stack, deref_inner_node(), inner_node, inner_comparator_ex());
+                    threaded_rbtree_find_path_for_multi(*inner_root,
+                                                        stack,
+                                                        deref_inner_node(),
+                                                        inner_node,
+                                                        inner_comparator_ex());
                     height = stack.height;
                     threaded_rbtree_insert(*inner_root, stack, deref_inner_node(), inner_node);
                 }
@@ -579,20 +585,23 @@ namespace {
                 WriteLock inner_lock(&inner_holder_[inner_index]->mutex);
                 size_type root = inner_root->root.root;
                 Slice bound = ExtractUserKey(GetLengthPrefixedSlice(deref_inner_key()(root)));
-                int c = outer_comparator_.compare(bound, outer_array_[inner_index].bound);
-                assert(c <= 0);
-                if (c == 0)
+                // don't use if (bound == outer_array_[inner_index].bound)
+                // when inner_index == 0 , bound is the largest , but it's empty
+                if (outer_comparator_.compare(bound, outer_array_[inner_index].bound) == 0)
                 {
                     // OMG ! there are so many same user keys in diff seqno
                     // can't split ...
                     return;
                 }
+                assert(outer_comparator_.compare(bound, outer_array_[inner_index].bound) < 0);
                 // grow
                 if (outer_count == outer_capacity_)
                 {
                     outer_capacity_ *= 2;
-                    inner_holder_ = (inner_holder_t **)realloc(inner_holder_, sizeof(inner_holder_t *) * outer_capacity_);
-                    outer_array_ = (outer_element_t *)realloc(outer_array_, sizeof(outer_element_t) * outer_capacity_);
+                    inner_holder_ =
+                        (inner_holder_t **)realloc(inner_holder_, sizeof(inner_holder_t *) * outer_capacity_);
+                    outer_array_ =
+                        (outer_element_t *)realloc(outer_array_, sizeof(outer_element_t) * outer_capacity_);
                     outer_comparator_.max_element = &outer_array_[0].bound;
                     *memory_size_ += (sizeof(outer_element_t) + sizeof(inner_root_t)) * outer_count;
                 }
@@ -635,12 +644,18 @@ namespace {
                     inner_holder_[outer_count] = new_inner_holder;
                     outer_array_[outer_count].bound = bound;
                     threaded_rbtree_stack_t<outer_node_t, stack_max_depth> stack;
-                    threaded_rbtree_find_path_for_multi(outer_root_, stack, deref_outer_node(), outer_count, outer_comparator_ex());
+                    threaded_rbtree_find_path_for_multi(outer_root_,
+                                                        stack,
+                                                        deref_outer_node(),
+                                                        outer_count,
+                                                        outer_comparator_ex());
                     threaded_rbtree_insert(outer_root_, stack, deref_outer_node(), outer_count);
                 }
+                assert(outer_count + 1 == outer_root_.get_count());
             }
         };
 
+        // used for immutable
         struct DummyLock
         {
             template<class T> DummyLock(T const &) {}
@@ -652,16 +667,14 @@ namespace {
         mutable key_set_t key_set_;
         std::atomic_bool immutable_;
         std::atomic_size_t num_entries;
-        const SliceTransform *transform_;
 
     public:
         explicit TRBTreeRep(const MemTableRep::KeyComparator &compare, Allocator *allocator,
-                            const SliceTransform *transform) : MemTableRep(allocator),
-                                                               memory_size_(0),
-                                                               key_set_(compare, allocator, &memory_size_),
-                                                               immutable_(false),
-                                                               num_entries(0),
-                                                               transform_(transform)
+                            const SliceTransform *) : MemTableRep(allocator),
+                                                      memory_size_(0),
+                                                      key_set_(compare, allocator, &memory_size_),
+                                                      immutable_(false),
+                                                      num_entries(0)
         {
         }
 

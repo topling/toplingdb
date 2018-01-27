@@ -15,12 +15,12 @@
 #include "db/merge_context.h"
 #include "db/merge_helper.h"
 #include "memtable/skiplist.h"
-#include "memtable/threaded_rb_tree.h"
 #include "options/db_options.h"
 #include "rocksdb/comparator.h"
 #include "rocksdb/iterator.h"
 #include "util/arena.h"
 #include "util/cast_util.h"
+#include "util/threaded_rbtree.h"
 #include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 
 namespace rocksdb {

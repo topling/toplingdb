@@ -283,9 +283,9 @@ namespace {
                     return inner_node_ == inner_node_t::nil_sentinel;
                 }
 
-                bool seek(const char *key)
+                bool seek(const char *target)
                 {
-                    Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key));
+                    Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(target));
                     Lock outer_lock(&key_set_->outer_mutex_);
                     // search outer
                     inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
@@ -294,20 +294,20 @@ namespace {
                                                                key_set_->deref_outer_key(),
                                                                key_set_->outer_comparator_);
                     auto inner_holder = key_set_->inner_holder_[inner_index_];
-                    bool next;
+                    bool move_next;
                     {
                         Lock inner_lock(&inner_holder->mutex);
                         // search inner
                         inner_node_ = threaded_rbtree_lower_bound(inner_holder->root,
                                                                   key_set_->deref_inner_node(),
-                                                                  key,
+                                                                  target,
                                                                   key_set_->deref_inner_key(),
                                                                   key_set_->inner_comparator_);
                         version_ = inner_holder->version;
-                        next = inner_node_ == inner_node_t::nil_sentinel;
+                        move_next = inner_node_ == inner_node_t::nil_sentinel;
                     }
                     // at inner end , go next inner rbtree
-                    if (next)
+                    if (move_next)
                     {
                         if (inner_index_ == key_set_->outer_root_.get_most_right(key_set_->deref_outer_node()))
                         {
@@ -325,10 +325,10 @@ namespace {
                     }
                     return true;
                 }
-                bool seek_for_prev(const char *key)
+                bool seek_for_prev(const char *target)
                 {
                     // symmetric with seek(const char *)
-                    Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(key));
+                    Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(target));
                     Lock outer_lock(&key_set_->outer_mutex_);
                     inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
                                                                key_set_->deref_outer_node(),
@@ -336,18 +336,18 @@ namespace {
                                                                key_set_->deref_outer_key(),
                                                                key_set_->outer_comparator_);
                     auto inner_holder = key_set_->inner_holder_[inner_index_];
-                    bool prev;
+                    bool move_prev;
                     {
                         Lock inner_lock(&inner_holder->mutex);
                         inner_node_ = threaded_rbtree_reverse_lower_bound(inner_holder->root,
                                                                           key_set_->deref_inner_node(),
-                                                                          key,
+                                                                          target,
                                                                           key_set_->deref_inner_key(),
                                                                           key_set_->inner_comparator_);
                         version_ = inner_holder->version;
-                        prev = inner_node_ == inner_node_t::nil_sentinel;
+                        move_prev = inner_node_ == inner_node_t::nil_sentinel;
                     }
-                    if (prev)
+                    if (move_prev)
                     {
                         if (inner_index_ == key_set_->outer_root_.get_most_left(key_set_->deref_outer_node()))
                         {
@@ -616,7 +616,8 @@ namespace {
                 new(new_inner_holder) inner_holder_t();
                 new(outer_array_ + outer_count) outer_element_t();
                 inner_root_t *split_root = &new_inner_holder->root;
-                new_inner_holder->version = ++new_inner_holder->version;
+                ++new_inner_holder->version;
+                new_inner_holder->version = new_inner_holder->version;
 
                 // base check
                 deref_inner_node_t deref = deref_inner_node();

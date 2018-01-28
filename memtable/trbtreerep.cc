@@ -210,7 +210,11 @@ namespace {
                 outer_comparator_.max_element = &outer_array_->bound;
 
                 threaded_rbtree_stack_t<outer_node_t, stack_max_depth> stack;
-                threaded_rbtree_find_path_for_multi(outer_root_, stack, deref_outer_node(), 0, outer_comparator_ex());
+                threaded_rbtree_find_path_for_multi(outer_root_,
+                                                    stack,
+                                                    deref_outer_node(),
+                                                    0,
+                                                    outer_comparator_ex());
                 threaded_rbtree_insert(outer_root_, stack, deref_outer_node(), 0);
                 assert(outer_root_.get_count() == 1);
             }
@@ -231,7 +235,6 @@ namespace {
             {
                 key_set_t      *key_set_;
                 size_type       inner_index_;
-                inner_holder_t *inner_holder_;
                 size_type       inner_node_;
                 size_type       version_;
 
@@ -240,7 +243,6 @@ namespace {
                 {
                     key_set_ = key_set;
                     inner_index_ = outer_node_t::nil_sentinel;
-                    inner_holder_ = nullptr;
                     inner_node_ = inner_node_t::nil_sentinel;
                     version_ = 0;
                 }
@@ -259,11 +261,11 @@ namespace {
                 {
                     Lock outer_lock(&key_set_->outer_mutex_);
                     inner_index_ = key_set_->outer_root_.get_most_left(key_set_->deref_outer_node());
-                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    auto inner_holder = key_set_->inner_holder_[inner_index_];
 
-                    Lock inner_lock(&inner_holder_->mutex);
-                    inner_node_ = inner_holder_->root.get_most_left(key_set_->deref_inner_node());
-                    version_ = inner_holder_->version;
+                    Lock inner_lock(&inner_holder->mutex);
+                    inner_node_ = inner_holder->root.get_most_left(key_set_->deref_inner_node());
+                    version_ = inner_holder->version;
 
                     return inner_node_ == inner_node_t::nil_sentinel;
                 }
@@ -272,11 +274,11 @@ namespace {
                 {
                     Lock outer_lock(&key_set_->outer_mutex_);
                     inner_index_ = key_set_->outer_root_.get_most_right(key_set_->deref_outer_node());
-                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    auto inner_holder = key_set_->inner_holder_[inner_index_];
 
-                    Lock inner_lock(&inner_holder_->mutex);
-                    inner_node_ = inner_holder_->root.get_most_right(key_set_->deref_inner_node());
-                    version_ = inner_holder_->version;
+                    Lock inner_lock(&inner_holder->mutex);
+                    inner_node_ = inner_holder->root.get_most_right(key_set_->deref_inner_node());
+                    version_ = inner_holder->version;
 
                     return inner_node_ == inner_node_t::nil_sentinel;
                 }
@@ -291,17 +293,17 @@ namespace {
                                                                user_key,
                                                                key_set_->deref_outer_key(),
                                                                key_set_->outer_comparator_);
-                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    auto inner_holder = key_set_->inner_holder_[inner_index_];
                     bool next;
                     {
-                        Lock inner_lock(&inner_holder_->mutex);
+                        Lock inner_lock(&inner_holder->mutex);
                         // search inner
-                        inner_node_ = threaded_rbtree_lower_bound(inner_holder_->root,
+                        inner_node_ = threaded_rbtree_lower_bound(inner_holder->root,
                                                                   key_set_->deref_inner_node(),
                                                                   key,
                                                                   key_set_->deref_inner_key(),
                                                                   key_set_->inner_comparator_);
-                        version_ = inner_holder_->version;
+                        version_ = inner_holder->version;
                         next = inner_node_ == inner_node_t::nil_sentinel;
                     }
                     // at inner end , go next inner rbtree
@@ -314,11 +316,12 @@ namespace {
                             return false;
                         }
                         inner_index_ = threaded_rbtree_move_next(inner_index_, key_set_->deref_outer_node());
-                        inner_holder_ = key_set_->inner_holder_[inner_index_];
+                        inner_holder = key_set_->inner_holder_[inner_index_];
 
-                        Lock inner_lock(&inner_holder_->mutex);
-                        inner_node_ = inner_holder_->root.get_most_left(key_set_->deref_inner_node());
-                        version_ = inner_holder_->version;
+                        Lock inner_lock(&inner_holder->mutex);
+                        inner_node_ = inner_holder->root.get_most_left(key_set_->deref_inner_node());
+                        version_ = inner_holder->version;
+                        assert(inner_node_ != inner_node_t::nil_sentinel);
                     }
                     return true;
                 }
@@ -332,16 +335,16 @@ namespace {
                                                                user_key,
                                                                key_set_->deref_outer_key(),
                                                                key_set_->outer_comparator_);
-                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    auto inner_holder = key_set_->inner_holder_[inner_index_];
                     bool prev;
                     {
-                        Lock inner_lock(&inner_holder_->mutex);
-                        inner_node_ = threaded_rbtree_reverse_lower_bound(inner_holder_->root,
+                        Lock inner_lock(&inner_holder->mutex);
+                        inner_node_ = threaded_rbtree_reverse_lower_bound(inner_holder->root,
                                                                           key_set_->deref_inner_node(),
                                                                           key,
                                                                           key_set_->deref_inner_key(),
                                                                           key_set_->inner_comparator_);
-                        version_ = inner_holder_->version;
+                        version_ = inner_holder->version;
                         prev = inner_node_ == inner_node_t::nil_sentinel;
                     }
                     if (prev)
@@ -352,22 +355,25 @@ namespace {
                             return false;
                         }
                         inner_index_ = threaded_rbtree_move_prev(inner_index_, key_set_->deref_outer_node());
-                        inner_holder_ = key_set_->inner_holder_[inner_index_];
+                        inner_holder = key_set_->inner_holder_[inner_index_];
 
-                        Lock inner_lock(&inner_holder_->mutex);
-                        inner_node_ = inner_holder_->root.get_most_right(key_set_->deref_inner_node());
-                        version_ = inner_holder_->version;
+                        Lock inner_lock(&inner_holder->mutex);
+                        inner_node_ = inner_holder->root.get_most_right(key_set_->deref_inner_node());
+                        version_ = inner_holder->version;
+                        assert(inner_node_ != inner_node_t::nil_sentinel);
                     }
                     return true;
                 }
 
                 bool next()
                 {
+                    Lock outer_lock(&key_set_->outer_mutex_);
+                    auto inner_holder = key_set_->inner_holder_[inner_index_];
                     bool expired;
                     while (true)
                     {
-                        Lock inner_lock(&inner_holder_->mutex);
-                        if (inner_holder_->version != version_)
+                        Lock inner_lock(&inner_holder->mutex);
+                        if (inner_holder->version != version_)
                         {
                             // wrong lock ...
                             expired = true;
@@ -381,7 +387,6 @@ namespace {
                         expired = false;
                         break;
                     }
-                    Lock outer_lock(&key_set_->outer_mutex_);
                     if (expired)
                     {
                         // expired , inner rbtree has splited , re-search
@@ -392,10 +397,10 @@ namespace {
                                                                    user_key,
                                                                    key_set_->deref_outer_key(),
                                                                    key_set_->outer_comparator_);
-                        inner_holder_ = key_set_->inner_holder_[inner_index_];
-                        version_ = inner_holder_->version;
+                        inner_holder = key_set_->inner_holder_[inner_index_];
+                        version_ = inner_holder->version;
 
-                        Lock inner_lock(&inner_holder_->mutex);
+                        Lock inner_lock(&inner_holder->mutex);
                         inner_node_ = threaded_rbtree_move_next(inner_node_, key_set_->deref_inner_node());
                         if (inner_node_ != inner_node_t::nil_sentinel)
                         {
@@ -409,22 +414,24 @@ namespace {
                         return false;
                     }
                     inner_index_ = threaded_rbtree_move_next(inner_index_, key_set_->deref_outer_node());
-                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    inner_holder = key_set_->inner_holder_[inner_index_];
 
-                    Lock inner_lock(&inner_holder_->mutex);
-                    inner_node_ = inner_holder_->root.get_most_left(key_set_->deref_inner_node());
-                    version_ = inner_holder_->version;
+                    Lock inner_lock(&inner_holder->mutex);
+                    inner_node_ = inner_holder->root.get_most_left(key_set_->deref_inner_node());
+                    version_ = inner_holder->version;
                     assert(inner_node_ != inner_node_t::nil_sentinel);
                     return true;
                 }
                 bool prev()
                 {
                     // symmetric with next()
+                    Lock outer_lock(&key_set_->outer_mutex_);
+                    auto inner_holder = key_set_->inner_holder_[inner_index_];
                     bool expired;
                     while (true)
                     {
-                        Lock inner_lock(&inner_holder_->mutex);
-                        if (inner_holder_->version != version_)
+                        Lock inner_lock(&inner_holder->mutex);
+                        if (inner_holder->version != version_)
                         {
                             expired = true;
                             break;
@@ -437,7 +444,6 @@ namespace {
                         expired = false;
                         break;
                     }
-                    Lock outer_lock(&key_set_->outer_mutex_);
                     if (expired)
                     {
                         Slice user_key =
@@ -447,10 +453,10 @@ namespace {
                                                                    user_key,
                                                                    key_set_->deref_outer_key(),
                                                                    key_set_->outer_comparator_);
-                        inner_holder_ = key_set_->inner_holder_[inner_index_];
-                        version_ = inner_holder_->version;
+                        inner_holder = key_set_->inner_holder_[inner_index_];
+                        version_ = inner_holder->version;
 
-                        Lock inner_lock(&inner_holder_->mutex);
+                        Lock inner_lock(&inner_holder->mutex);
                         inner_node_ = threaded_rbtree_move_prev(inner_node_, key_set_->deref_inner_node());
                         if (inner_node_ != inner_node_t::nil_sentinel)
                         {
@@ -463,11 +469,11 @@ namespace {
                         return false;
                     }
                     inner_index_ = threaded_rbtree_move_prev(inner_index_, key_set_->deref_outer_node());
-                    inner_holder_ = key_set_->inner_holder_[inner_index_];
+                    inner_holder = key_set_->inner_holder_[inner_index_];
 
-                    Lock inner_lock(&inner_holder_->mutex);
-                    inner_node_ = inner_holder_->root.get_most_right(key_set_->deref_inner_node());
-                    version_ = inner_holder_->version;
+                    Lock inner_lock(&inner_holder->mutex);
+                    inner_node_ = inner_holder->root.get_most_right(key_set_->deref_inner_node());
+                    version_ = inner_holder->version;
                     assert(inner_node_ != inner_node_t::nil_sentinel);
                     return true;
                 }

@@ -295,7 +295,8 @@ Compaction* UniversalCompactionPicker::PickCompaction(
       // This is guaranteed by NeedsCompaction()
       assert(sorted_runs.size() >=
              static_cast<size_t>(
-                 mutable_cf_options.level0_file_num_compaction_trigger));
+                 mutable_cf_options.level0_file_num_compaction_trigger) ||
+             !vstorage->need_continue_compaction().empty());
       // Get the total number of sorted runs that are not being compacted
       int num_sr_not_compacted = 0;
       int num_sr_are_compacting = 0;

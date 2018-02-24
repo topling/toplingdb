@@ -164,7 +164,9 @@ bool UniversalCompactionPicker::NeedsCompaction(
   // deep copy
   auto need_continue_compaction = vstorage->need_continue_compaction();
   for (auto c : compactions_in_progress_) {
-    need_continue_compaction.erase(c->output_level());
+    if (c->input_version()->storage_info() == vstorage) {
+      need_continue_compaction.erase(c->output_level());
+    }
   }
   return !need_continue_compaction.empty() ||
          vstorage->CompactionScore(kLevel0) >= 1;

@@ -478,13 +478,14 @@ Compaction* UniversalCompactionPicker::TrivialMovePickCompaction(
     }
     bool fail = false;
     for (start_level = output_level - 1; start_level > 0; --start_level) {
+      fail = false;
       for (auto c : compactions_in_progress_) {
         if (c->output_level() == start_level) {
           fail = true;
           break;
         }
       }
-      if (vstorage->LevelFiles(start_level).empty()) {
+      if (!fail && vstorage->LevelFiles(start_level).empty()) {
         continue;
       }
       break;
@@ -644,7 +645,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
         // in most cases last_sr_size is also the max, but it can be
         // some bad cases in which the max is not the last, in this bad case,
         // the candidate must be picked
-        double sum_sr_size  = candidate_size;
+        double sum_sr_size  = double(candidate_size);
         double max_sr_ratio = double(max_sr_size) / sum_sr_size;
         auto& o = mutable_cf_options;
         if ((max_sr_size > last_sr_size) ||

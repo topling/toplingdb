@@ -393,6 +393,7 @@ Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
       // insert into the cache
       // note that the cache might get larger than its capacity if not enough
       // space was freed
+      *ptr = e;
       usage_ += e->charge;
       if (old != nullptr) {
         e->next_hash = old->next_hash;
@@ -409,7 +410,6 @@ Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
         e->next_hash = nullptr;
         table_.IncSize();
       }
-      *ptr = e;
 
       if (handle == nullptr) {
         LRU_Insert(e);

@@ -273,7 +273,8 @@ Compaction* UniversalCompactionPicker::PickCompaction(
                                             vstorage,
                                             log_buffer)) != nullptr) {
     // universal trivial move;
-  } else if ((c = PickCompactionToReduceSizeAmp(
+  } else if (false &&
+             (c = PickCompactionToReduceSizeAmp(
                       cf_name, mutable_cf_options, vstorage,
                       score, sorted_runs, log_buffer)) != nullptr) {
     ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: compacting for size amp\n",

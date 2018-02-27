@@ -22,7 +22,7 @@ namespace {
 
     class TRBTreeRep : public MemTableRep
     {
-        typedef std::size_t size_type;
+        typedef size_t size_type;
 
         // inner node use uintpre_t save pointer , save tags at lower bits
         typedef threaded_rbtree_node_t<uintptr_t, std::false_type> inner_node_t;
@@ -37,7 +37,7 @@ namespace {
             // inner root
             inner_root_t root;
             // version++ when split
-            size_t version;
+            size_type version;
             // inner lock
             port::RWMutex mutex;
         };
@@ -95,26 +95,14 @@ namespace {
         };
         struct outer_comparator_t
         {
-            // max_element must be the largest
             bool operator()(Slice const &l, Slice const &r) const
             {
-                if (max_element != &l && max_element != &r)
-                {
-                    return c->Compare(l, r) < 0;
-                }
-                assert(&l != &r);
-                return &l != max_element;
+                return c->Compare(l, r) < 0;
             }
             int compare(Slice const &l, Slice const &r) const
             {
-                if (max_element != &l && max_element != &r)
-                {
-                    return c->Compare(l, r);
-                }
-                assert(&l != &r);
-                return &l != max_element ? -1 : 1;
+                return c->Compare(l, r);
             }
-            Slice const *max_element;
             Comparator const *c;
         };
 
@@ -134,15 +122,14 @@ namespace {
         };
         struct outer_comparator_ex_t
         {
-            // 0 is the largest
             bool operator()(size_type l, size_type r) const
             {
-                if (l != 0 && r != 0)
+                int c = comp.c->Compare(array[l].bound, array[r].bound);
+                if (c == 0)
                 {
-                    return comp.c->Compare(array[l].bound, array[r].bound) < 0;
+                    return l < r;
                 }
-                assert(l != r);
-                return l != 0;
+                return c < 0;
             }
             outer_comparator_t &comp;
             outer_element_t *array;
@@ -207,7 +194,6 @@ namespace {
                 new(*inner_holder_) inner_holder_t();
                 (*inner_holder_)->version = 0;
                 new(outer_array_) outer_element_t();
-                outer_comparator_.max_element = &outer_array_->bound;
 
                 threaded_rbtree_stack_t<outer_node_t, stack_max_depth> stack;
                 threaded_rbtree_find_path_for_multi(outer_root_,
@@ -221,7 +207,7 @@ namespace {
 
             ~key_set_t()
             {
-                for (size_t i = 0; i < outer_root_.get_count(); ++i)
+                for (size_type i = 0; i < outer_root_.get_count(); ++i)
                 {
                     inner_holder_[i]->~inner_holder_t();
                     outer_array_[i].bound.~Slice();
@@ -288,11 +274,11 @@ namespace {
                     Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(target));
                     Lock outer_lock(&key_set_->outer_mutex_);
                     // search outer
-                    inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
-                                                               key_set_->deref_outer_node(),
-                                                               user_key,
-                                                               key_set_->deref_outer_key(),
-                                                               key_set_->outer_comparator_);
+                    inner_index_ = threaded_rbtree_reverse_lower_bound(key_set_->outer_root_,
+                                                                       key_set_->deref_outer_node(),
+                                                                       user_key,
+                                                                       key_set_->deref_outer_key(),
+                                                                       key_set_->outer_comparator_);
                     auto inner_holder = key_set_->inner_holder_[inner_index_];
                     bool move_next;
                     {
@@ -330,11 +316,11 @@ namespace {
                     // symmetric with seek(const char *)
                     Slice user_key = ExtractUserKey(GetLengthPrefixedSlice(target));
                     Lock outer_lock(&key_set_->outer_mutex_);
-                    inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
-                                                               key_set_->deref_outer_node(),
-                                                               user_key,
-                                                               key_set_->deref_outer_key(),
-                                                               key_set_->outer_comparator_);
+                    inner_index_ = threaded_rbtree_reverse_lower_bound(key_set_->outer_root_,
+                                                                       key_set_->deref_outer_node(),
+                                                                       user_key,
+                                                                       key_set_->deref_outer_key(),
+                                                                       key_set_->outer_comparator_);
                     auto inner_holder = key_set_->inner_holder_[inner_index_];
                     bool move_prev;
                     {
@@ -392,11 +378,11 @@ namespace {
                         // expired , inner rbtree has splited , re-search
                         Slice user_key =
                             ExtractUserKey(GetLengthPrefixedSlice(key_set_->deref_inner_key()(inner_node_)));
-                        inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
-                                                                   key_set_->deref_outer_node(),
-                                                                   user_key,
-                                                                   key_set_->deref_outer_key(),
-                                                                   key_set_->outer_comparator_);
+                        inner_index_ = threaded_rbtree_reverse_lower_bound(key_set_->outer_root_,
+                                                                           key_set_->deref_outer_node(),
+                                                                           user_key,
+                                                                           key_set_->deref_outer_key(),
+                                                                           key_set_->outer_comparator_);
                         inner_holder = key_set_->inner_holder_[inner_index_];
                         version_ = inner_holder->version;
 
@@ -448,11 +434,11 @@ namespace {
                     {
                         Slice user_key =
                             ExtractUserKey(GetLengthPrefixedSlice(key_set_->deref_inner_key()(inner_node_)));
-                        inner_index_ = threaded_rbtree_lower_bound(key_set_->outer_root_,
-                                                                   key_set_->deref_outer_node(),
-                                                                   user_key,
-                                                                   key_set_->deref_outer_key(),
-                                                                   key_set_->outer_comparator_);
+                        inner_index_ = threaded_rbtree_reverse_lower_bound(key_set_->outer_root_,
+                                                                           key_set_->deref_outer_node(),
+                                                                           user_key,
+                                                                           key_set_->deref_outer_key(),
+                                                                           key_set_->outer_comparator_);
                         inner_holder = key_set_->inner_holder_[inner_index_];
                         version_ = inner_holder->version;
 
@@ -487,11 +473,11 @@ namespace {
                 size_type inner_node;
                 {
                     Lock outer_lock(&outer_mutex_);
-                    inner_index = threaded_rbtree_lower_bound(outer_root_,
-                                                              deref_outer_node(),
-                                                              user_key,
-                                                              deref_outer_key(),
-                                                              outer_comparator_);
+                    inner_index = threaded_rbtree_reverse_lower_bound(outer_root_,
+                                                                      deref_outer_node(),
+                                                                      user_key,
+                                                                      deref_outer_key(),
+                                                                      outer_comparator_);
 
                     Lock inner_lock(&inner_holder_[inner_index]->mutex);
                     inner_node = threaded_rbtree_equal_unique(inner_holder_[inner_index]->root,
@@ -504,45 +490,44 @@ namespace {
             }
 
             template<class Lock>
-            double approximate_range_ratio(const char *start, const char *end)
+            size_type approximate_range_count(const char *start, const char *end, size_type count)
             {
                 Slice start_user_key = ExtractUserKey(GetLengthPrefixedSlice(start));
                 Slice end_user_key = ExtractUserKey(GetLengthPrefixedSlice(end));
-                std::size_t inner_index, end_inner_index;
                 Lock outer_lock(&outer_mutex_);
                 double start_ratio = threaded_rbtree_approximate_rank_ratio(outer_root_,
                                                                             deref_outer_node(),
                                                                             start_user_key,
                                                                             deref_outer_key(),
-                                                                            outer_comparator_,
-                                                                            inner_index);
+                                                                            outer_comparator_);
                 double end_ratio = threaded_rbtree_approximate_rank_ratio(outer_root_,
                                                                           deref_outer_node(),
                                                                           end_user_key,
                                                                           deref_outer_key(),
-                                                                          outer_comparator_,
-                                                                          end_inner_index);
-                if (inner_index != end_inner_index)
+                                                                          outer_comparator_);
+                assert(end_ratio >= start_ratio);
+                if (end_ratio - start_ratio >= std::numeric_limits<double>::epsilon())
                 {
-                    assert(end_ratio >= start_ratio);
-                    return end_ratio - start_ratio;
+                    return size_type(count * (end_ratio - start_ratio));
                 }
-                std::size_t where;
+                size_type inner_index = threaded_rbtree_reverse_lower_bound(outer_root_,
+                                                                            deref_outer_node(),
+                                                                            start_user_key,
+                                                                            deref_outer_key(),
+                                                                            outer_comparator_);
                 Lock inner_lock(&inner_holder_[inner_index]->mutex);
                 start_ratio = threaded_rbtree_approximate_rank_ratio(inner_holder_[inner_index]->root,
                                                                      deref_inner_node(),
                                                                      start,
                                                                      deref_inner_key(),
-                                                                     inner_comparator_,
-                                                                     where);
+                                                                     inner_comparator_);
                 end_ratio = threaded_rbtree_approximate_rank_ratio(inner_holder_[inner_index]->root,
                                                                    deref_inner_node(),
                                                                    end,
                                                                    deref_inner_key(),
-                                                                   inner_comparator_,
-                                                                   where);
+                                                                   inner_comparator_);
                 assert(end_ratio >= start_ratio);
-                return (end_ratio - start_ratio) / outer_root_.get_count();
+                return size_type(count * ((end_ratio - start_ratio) / outer_root_.get_count()));
             }
 
             void insert(KeyHandle handle)
@@ -557,11 +542,11 @@ namespace {
                 {
                     ReadLock outer_lock(&outer_mutex_);
                     // search outer rbtree
-                    inner_index = threaded_rbtree_lower_bound(outer_root_,
-                                                              deref_outer_node(),
-                                                              user_key,
-                                                              deref_outer_key(),
-                                                              outer_comparator_);
+                    inner_index = threaded_rbtree_reverse_lower_bound(outer_root_,
+                                                                      deref_outer_node(),
+                                                                      user_key,
+                                                                      deref_outer_key(),
+                                                                      outer_comparator_);
                     outer_count = outer_root_.get_count();
 
                     WriteLock inner_lock(&inner_holder_[inner_index]->mutex);
@@ -577,7 +562,7 @@ namespace {
                     height = stack.height;
                     threaded_rbtree_insert(*inner_root, stack, deref_inner_node(), inner_node);
                 }
-                if (height < split_depth || outer_count + 1 == outer_node_t::nil_sentinel)
+                if (height <= split_depth || outer_count + 1 == outer_node_t::nil_sentinel)
                 {
                     return;
                 }
@@ -591,15 +576,13 @@ namespace {
                 WriteLock inner_lock(&inner_holder_[inner_index]->mutex);
                 size_type root = inner_root->root.root;
                 Slice bound = ExtractUserKey(GetLengthPrefixedSlice(deref_inner_key()(root)));
-                // don't use if (bound == outer_array_[inner_index].bound)
-                // when inner_index == 0 , bound is the largest , but it's empty
                 if (outer_comparator_.compare(bound, outer_array_[inner_index].bound) == 0)
                 {
                     // OMG ! there are so many same user keys in diff seqno
                     // can't split ...
                     return;
                 }
-                assert(outer_comparator_.compare(bound, outer_array_[inner_index].bound) < 0);
+                assert(outer_comparator_.compare(bound, outer_array_[inner_index].bound) > 0);
                 // grow
                 if (outer_count == outer_capacity_)
                 {
@@ -608,7 +591,6 @@ namespace {
                         (inner_holder_t **)realloc(inner_holder_, sizeof(inner_holder_t *) * outer_capacity_);
                     outer_array_ =
                         (outer_element_t *)realloc(outer_array_, sizeof(outer_element_t) * outer_capacity_);
-                    outer_comparator_.max_element = &outer_array_[0].bound;
                     *memory_size_ += (sizeof(outer_element_t) + sizeof(inner_root_t)) * outer_count;
                 }
                 // prepare new outer element & inner holder
@@ -616,8 +598,8 @@ namespace {
                 new(new_inner_holder) inner_holder_t();
                 new(outer_array_ + outer_count) outer_element_t();
                 inner_root_t *split_root = &new_inner_holder->root;
-                ++new_inner_holder->version;
-                new_inner_holder->version = new_inner_holder->version;
+                ++inner_holder_[inner_index]->version;
+                new_inner_holder->version = inner_holder_[inner_index]->version;
 
                 // base check
                 deref_inner_node_t deref = deref_inner_node();
@@ -629,22 +611,36 @@ namespace {
                 assert(deref(next).left_is_thread());
 
                 // fix new rbtree
-                split_root->root.root = deref(root).left_get_link();
+                split_root->root.root = deref(root).right_get_link();
                 deref(split_root->root.root).set_black();
-                split_root->root.set_left(inner_root->get_most_left(deref_inner_node()));
-                split_root->root.set_right(prev);
-                deref(prev).right_set_link(inner_node_t::nil_sentinel);
+                split_root->root.set_right(inner_root->get_most_right(deref));
+                split_root->root.set_left(next);
+                deref(next).left_set_link(inner_node_t::nil_sentinel);
 
                 // fix old rbtree
-                inner_root->root.root = deref(root).right_get_link();
+                inner_root->root.root = deref(root).left_get_link();
                 deref(inner_root->root.root).set_black();
-                inner_root->root.set_left(next);
-                deref(next).left_set_link(inner_node_t::nil_sentinel);
+                inner_root->root.set_right(prev);
+                deref(prev).right_set_link(inner_node_t::nil_sentinel);
+
                 {
-                    // insert root into old rbtree
+                    // insert root into new rbtree
                     threaded_rbtree_stack_t<inner_node_t, stack_max_depth> stack;
-                    threaded_rbtree_find_path_for_multi(*inner_root, stack, deref, root, inner_comparator_ex());
-                    threaded_rbtree_insert(*inner_root, stack, deref, root);
+                    threaded_rbtree_find_path_for_multi(*split_root, stack, deref, root, inner_comparator_ex());
+                    threaded_rbtree_insert(*split_root, stack, deref, root);
+                    // move internal keys under bound to new rbtree
+                    for (size_type most_right = inner_root->get_most_right(deref);
+                         ExtractUserKey(GetLengthPrefixedSlice(deref_inner_key()(most_right))) == bound;
+                         most_right = inner_root->get_most_right(deref)) {
+                        threaded_rbtree_find_path_for_remove(*inner_root,
+                                                             stack,
+                                                             deref,
+                                                             most_right,
+                                                             inner_comparator_ex());
+                        threaded_rbtree_remove(*inner_root, stack, deref);
+                        threaded_rbtree_find_path_for_multi(*split_root, stack, deref, most_right, inner_comparator_ex());
+                        threaded_rbtree_insert(*split_root, stack, deref, most_right);
+                    }
                 }
                 {
                     // insert new tbtree into outer
@@ -733,18 +729,18 @@ namespace {
         virtual uint64_t ApproximateNumEntries(const Slice& start_ikey,
                                                const Slice& end_ikey) override {
             std::string start_tmp, end_tmp;
-            double ratio;
             if (immutable_)
             {
-                ratio = key_set_.approximate_range_ratio<DummyLock>(EncodeKey(&start_tmp, start_ikey),
-                                                                    EncodeKey(&end_tmp, end_ikey));
+                return key_set_.approximate_range_count<DummyLock>(EncodeKey(&start_tmp, start_ikey),
+                                                                   EncodeKey(&end_tmp, end_ikey),
+                                                                   num_entries);
             }
             else
             {
-                ratio = key_set_.approximate_range_ratio<ReadLock>(EncodeKey(&start_tmp, start_ikey),
-                                                                   EncodeKey(&end_tmp, end_ikey));
+                return key_set_.approximate_range_count<ReadLock>(EncodeKey(&start_tmp, start_ikey),
+                                                                  EncodeKey(&end_tmp, end_ikey),
+                                                                  num_entries);
             }
-            return ratio > 0 ? uint64_t(ratio * num_entries) : 0;
         }
 
         virtual void

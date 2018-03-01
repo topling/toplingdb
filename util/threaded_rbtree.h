@@ -748,8 +748,7 @@ double threaded_rbtree_approximate_rank_ratio(root_t &root,
                                               deref_node_t deref,
                                               key_t const &key,
                                               deref_key_t deref_key,
-                                              comparator_t comparator,
-                                              std::size_t &where
+                                              comparator_t comparator
 )
 {
     typedef typename root_t::node_type node_type;
@@ -757,27 +756,25 @@ double threaded_rbtree_approximate_rank_ratio(root_t &root,
     double step = rank_ratio / 2;
 
     std::size_t p = root.root.root;
-    where = node_type::nil_sentinel;
     while(p != node_type::nil_sentinel)
     {
-        if(comparator(key, deref_key(p)))
-        {
-            rank_ratio -= step;
-            where = p;
-            if(deref(p).left_is_thread())
-            {
-                break;
-            }
-            p = deref(p).left_get_link();
-        }
-        else
+        if(comparator(deref_key(p), key))
         {
             rank_ratio += step;
-            if(deref(p).right_is_thread())
+            if (deref(p).right_is_thread())
             {
                 break;
             }
             p = deref(p).right_get_link();
+        }
+        else
+        {
+            rank_ratio -= step;
+            if (deref(p).left_is_thread())
+            {
+                break;
+            }
+            p = deref(p).left_get_link();
         }
         step /= 2;
     }
@@ -2518,25 +2515,21 @@ public:
 
     size_type approximate_rank(key_type const &key) const
     {
-        std::size_t where;
         double rank_ratio = threaded_rbtree_approximate_rank_ratio(root_,
                                                                    const_deref_node_t{&root_.container },
                                                                    key,
                                                                    deref_key_t{&root_.container},
-                                                                   get_comparator(),
-                                                                   where);
+                                                                   get_comparator());
         return size_type(rank_ratio * size());
     }
 
     double approximate_rank_ratio(key_type const &key) const
     {
-        std::size_t where;
         return threaded_rbtree_approximate_rank_ratio(root_,
                                                       const_deref_node_t{&root_.container },
                                                       key,
                                                       deref_key_t{&root_.container},
-                                                      get_comparator(),
-                                                      where);
+                                                      get_comparator());
     }
 
     iterator lower_bound(key_type const &key)

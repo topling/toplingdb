@@ -2172,7 +2172,7 @@ TEST_F(DBIteratorTest, RangeWrappedInternalIteratorTest) {
       }
       range_set.emplace_back();
       range_set.back().rep()->resize(16, 0);
-      memcpy(&*range_set.back().rep()->begin(), &r, 4);
+      memcpy(&*range_set.back().rep()->begin(), &r, 8);
     }
     auto iter = NewRangeWrappedInternalIterator(&value_iter, ic, &range_set, nullptr);
     std::string key;
@@ -2204,7 +2204,7 @@ TEST_F(DBIteratorTest, RangeWrappedInternalIteratorTest) {
       if (port::kLittleEndian) {
         ii = EndianTransform(ii, 8);
       }
-      memcpy(&key[0], &ii, 4);
+      memcpy(&key[0], &ii, 8);
       iter->Seek(key);
       auto find1 = std::lower_bound(valid.begin(), valid.end(), i);
       if (find1 == valid.end()) {

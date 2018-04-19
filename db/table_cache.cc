@@ -49,7 +49,7 @@ static void UnrefEntry(void* arg1, void* arg2) {
 }
 
 static void DeleteTableReader(void* arg1, void* arg2) {
-  TableReaderPtrHolder* table_reader = reinterpret_cast<TableReaderPtrHolder*>(arg1);
+  TableReader* table_reader = reinterpret_cast<TableReader*>(arg1);
   delete table_reader;
 }
 

@@ -2845,7 +2845,7 @@ Status DBImpl::IngestExternalFile(
         mutex_.Unlock();
         status = FlushMemTable(cfd, FlushOptions(),
                                true /* writes_stopped */,
-                               true /* nonmem_writes_stopped */);
+                               two_write_queues_ /* nonmem_writes_stopped */);
         mutex_.Lock();
       }
     }

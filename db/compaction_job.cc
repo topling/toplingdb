@@ -733,15 +733,15 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     auto& input_range = sub_compact->compaction->input_range();
     auto range_set = new std::vector<InternalKey>;
     range_set->resize(2);
-    std::vector<InternalKey> erase_set;
+    RangeEraseSet erase_set;
     if (input_range.front().smallest != nullptr) {
       range_set->front().SetMinPossibleForUserKey(
           input_range.front().smallest->user_key());
       if (input_range.front().flags & IntervalFlag::kSmallestOpen) {
-        erase_set.emplace_back(range_set->front());
-        erase_set.emplace_back();
-        erase_set.back().SetMaxPossibleForUserKey(
+        InternalKey largest;
+        largest.SetMaxPossibleForUserKey(
             input_range.front().smallest->user_key());
+        erase_set.push(range_set->front(), largest);
       }
     } else {
       input->SeekToFirst();
@@ -751,38 +751,38 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       for (size_t i = 1; i < input_range.size(); ++i) {
         assert(input_range[i - 1].largest != nullptr);
         assert(input_range[i].smallest != nullptr);
-        erase_set.emplace_back();
+        InternalKey smallest, largest;
         if (input_range[i - 1].flags & IntervalFlag::kLargestOpen) {
-          erase_set.back().SetMinPossibleForUserKey(
+          smallest.SetMinPossibleForUserKey(
               input_range[i - 1].largest->user_key());
         } else {
-          erase_set.back().SetMaxPossibleForUserKey(
+          smallest.SetMaxPossibleForUserKey(
               input_range[i - 1].largest->user_key());
         }
-        erase_set.emplace_back();
         if (input_range[i].flags & IntervalFlag::kSmallestOpen) {
-          erase_set.back().SetMaxPossibleForUserKey(
+          largest.SetMaxPossibleForUserKey(
               input_range[i].smallest->user_key());
         } else {
-          erase_set.back().SetMinPossibleForUserKey(
+          largest.SetMinPossibleForUserKey(
               input_range[i].smallest->user_key());
         }
+        erase_set.push(smallest, largest);
       }
     }
     if (input_range.back().largest != nullptr) {
       range_set->back().SetMaxPossibleForUserKey(
           input_range.back().largest->user_key());
       if (input_range.back().flags & IntervalFlag::kLargestOpen) {
-        erase_set.emplace_back();
-        erase_set.back().SetMinPossibleForUserKey(
+        InternalKey smallest;
+        smallest.SetMinPossibleForUserKey(
             input_range.back().largest->user_key());
-        erase_set.emplace_back(range_set->back());
+        erase_set.push(smallest, range_set->back());
       }
     } else {
       input->SeekToLast();
       range_set->back().DecodeFrom(input->key());
     }
-    if (!erase_set.empty()) {
+    if (!erase_set.erase.empty()) {
       std::vector<InternalKey> new_range_set;
       MergeRangeSet(*range_set, erase_set, new_range_set,
                     cfd->ioptions()->internal_comparator, input.get());
@@ -1519,12 +1519,12 @@ Status CompactionJob::InstallCompactionResults(
                    [](const CompactionJob::SubcompactionState& s) {
                        return s.partial_remove_info.active;
                    }) != compact_->sub_compact_states.end()) {
-    std::vector<InternalKey> erase_set;
+    RangeEraseSet erase_set;
     for (const auto& s : compact_->sub_compact_states) {
       if (s.partial_remove_info.smallest.size() != 0 &&
           s.partial_remove_info.largest.size() != 0) {
-        erase_set.emplace_back(s.partial_remove_info.smallest);
-        erase_set.emplace_back(s.partial_remove_info.largest);
+        erase_set.push(s.partial_remove_info.smallest,
+                       s.partial_remove_info.largest);
       } else {
         // this sub compact empty ...
         assert(s.partial_remove_info.smallest.size() == 0);

@@ -18,16 +18,24 @@
 
 namespace rocksdb {
 
+void RangeEraseSet::push(const InternalKey& smallest, const InternalKey& largest,
+                    bool smallest_open, bool largest_open) {
+  erase.emplace_back(smallest);
+  erase.emplace_back(largest);
+  open.emplace_back(smallest_open);
+  open.emplace_back(largest_open);
+}
+
 void MergeRangeSet(const std::vector<InternalKey>& range_set,
-                   const std::vector<InternalKey>& erase_set,
+                   const RangeEraseSet& erase_set,
                    std::vector<InternalKey>& output,
                    const InternalKeyComparator& ic,
                    InternalIterator* iter) {
   output.clear();
   assert(!range_set.empty());
-  assert(!erase_set.empty());
+  assert(!erase_set.erase.empty());
   assert(range_set.size() % 2 == 0);
-  assert(erase_set.size() % 2 == 0);
+  assert(erase_set.erase.size() % 2 == 0);
   auto put_left_bound = [&](const InternalKey& left, bool include) {
     output.emplace_back();
     iter->Seek(left.Encode());
@@ -44,6 +52,7 @@ void MergeRangeSet(const std::vector<InternalKey>& range_set,
   };
   auto put_right_bound = [&](const InternalKey& right, bool include) {
     if (output.back().size() == 0) {
+      // left bound invalid
       output.pop_back();
       return;
     }
@@ -61,6 +70,7 @@ void MergeRangeSet(const std::vector<InternalKey>& range_set,
     }
     if (output.back().size() == 0 ||
         ic.Compare(output.end()[-2], output.back()) > 0) {
+      // right bound invalid or right bound less than left bound
       output.pop_back();
       output.pop_back();
     }
@@ -69,8 +79,8 @@ void MergeRangeSet(const std::vector<InternalKey>& range_set,
   size_t rc, ec;          // change
   do {
     int c;
-    if (ri < range_set.size() && ei < erase_set.size()) {
-      c = ic.Compare(range_set[ri], erase_set[ei]);
+    if (ri < range_set.size() && ei < erase_set.erase.size()) {
+      c = ic.Compare(range_set[ri], erase_set.erase[ei]);
     } else {
       c = ri < range_set.size() ? -1 : 1;
     }
@@ -90,31 +100,31 @@ void MergeRangeSet(const std::vector<InternalKey>& range_set,
     case MergeRangeSet_CASE(1, 0, 0, 1):
     // in range , out erase , end range & begin erase
     case MergeRangeSet_CASE(1, 0, 1, 1):
-      put_right_bound(erase_set[ei], false);
+      put_right_bound(erase_set.erase[ei], erase_set.open[ei]);
       break;
-    // in range , in erase ,  end erase
+    // in range , in erase , end erase
     case MergeRangeSet_CASE(1, 1, 0, 1):
-    // out range , in erase , end range & begin range
+    // out range , in erase , end erase & begin range
     case MergeRangeSet_CASE(0, 1, 1, 1):
-      put_left_bound(erase_set[ei], false);
+      put_left_bound(erase_set.erase[ei], erase_set.open[ei]);
       break;
     }
 #undef MergeRangeSet_CASE
     ri += rc;
     ei += ec;
-  } while (ri != range_set.size() || ei != erase_set.size());
+  } while (ri != range_set.size() || ei != erase_set.erase.size());
   assert(output.size() % 2 == 0);
 }
 
 bool PartialRemovedMetaData::InitFrom(FileMetaData* file,
-                                      const std::vector<InternalKey>& erase_set,
+                                      const RangeEraseSet& erase_set,
                                       uint8_t output_level,
                                       ColumnFamilyData* cfd,
                                       const EnvOptions& env_opt) {
   meta = file;
   partial_removed = file->partial_removed;
   compact_to_level = output_level;
-  if (erase_set.empty()) {
+  if (erase_set.erase.empty()) {
     range_set = file->range_set;
     return false;
   }

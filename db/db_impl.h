@@ -252,6 +252,11 @@ class DBImpl : public DB {
   Status DeleteFilesInRange(ColumnFamilyHandle* column_family,
                             const Slice* begin, const Slice* end);
 
+  Status DeleteFilesInRanges(ColumnFamilyHandle* column_family,
+    const RangePtr* ranges, size_t n,
+    bool include_end);
+  
+
   virtual void GetLiveFilesMetaData(
       std::vector<LiveFileMetaData>* metadata) override;
 

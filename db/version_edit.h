@@ -77,9 +77,17 @@ struct FileSampledStats {
   mutable std::atomic<uint64_t> num_reads_sampled;
 };
 
+struct RangeEraseSet {
+  // smallest_open : If true, exclude the smallest key
+  // largest_open : If true, exclude the largest key
+  void push(const InternalKey& smallest, const InternalKey& largest,
+            bool smallest_open = false, bool largest_open = false);
+  std::vector<InternalKey> erase;
+  std::vector<bool> open;
+};
 
 void MergeRangeSet(const std::vector<InternalKey>& range_set,
-                   const std::vector<InternalKey>& erase_set,
+                   const RangeEraseSet& erase_set,
                    std::vector<InternalKey>& output,
                    const InternalKeyComparator& ic,
                    InternalIterator* iter);
@@ -93,7 +101,7 @@ struct PartialRemovedMetaData {
   // return changed
   // if output_level non-zero , this sst is reclaim from compact
   bool InitFrom(FileMetaData* file,
-                const std::vector<InternalKey>& erase_set,
+                const RangeEraseSet& erase_set,
                 uint8_t output_level,
                 ColumnFamilyData* cfd,
                 const EnvOptions& env_opt);

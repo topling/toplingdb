@@ -97,6 +97,14 @@ std::string get_key(size_t i)
   snprintf(buffer, sizeof buffer, "%04zd", i);
   return buffer;
 }
+std::string get_key(size_t i, size_t len)
+{
+    char fmt[16];
+    char buffer[32];
+    snprintf(fmt, sizeof fmt, "%%04zd%%0%zdzd", len - 4);
+    snprintf(buffer, sizeof buffer, fmt, i, i);
+    return buffer;
+}
 std::string get_value(size_t i)
 {
   char const *str = "0123456789QWERTYUIOPASDFGHJKLZXCVBNM";
@@ -111,6 +119,16 @@ std::string get_value(size_t i, size_t len)
     value += str[i++ % size];
   }
   return value;
+}
+std::string get_clean_value(size_t i, size_t len)
+{
+    char const *str = "0123456789QWERTYUIOPASDFGHJKLZXCVBNM";
+    std::string value;
+    size_t size = (strlen(str) - 1);
+    while (len-- > 0) {
+        value += str[i++ % size];
+    }
+    return value;
 }
 
 Rdb_pk_comparator pk_c;
@@ -144,16 +162,17 @@ public:
 #endif
   }
 
-  void BasicTest(bool rev, size_t count, size_t prefix, size_t blockUnits, size_t minValue) {
+  void BasicTest(bool rev, size_t count, size_t prefix, size_t blockUnits, size_t minValue, size_t valueLen = 0) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
-    tzto.disableSecondPassIter = true;
+    tzto.disableSecondPassIter = false;
     tzto.keyPrefixLen = prefix;
     tzto.offsetArrayBlockUnits = (uint16_t)blockUnits;
     tzto.minDictZipValueSize = minValue;
     tzto.entropyAlgo = TerarkZipTableOptions::kFSE;
     tzto.localTempDir = localTempDir;
     options.allow_mmap_reads = true;
+    options.memtable_factory.reset(NewThreadedRBTreeRepFactory());
     if (rev) {
       options.comparator = &rev_c;
     }
@@ -170,9 +189,13 @@ public:
 
     auto db = db_;
 
+    auto gen_value = [valueLen](size_t i) {
+        return valueLen == 0 ? get_value(i) : get_clean_value(i, valueLen);
+    };
+
     for (size_t i = 0; i < count; ++i)
     {
-      ASSERT_OK(db->Put(wo, get_key(i), get_value(i)));
+      ASSERT_OK(db->Put(wo, get_key(i), gen_value(i)));
     }
     ASSERT_OK(db->Flush(fo));
     for (size_t i = count / 2; i < count; ++i)
@@ -188,14 +211,14 @@ public:
     for (size_t i = 0; i < count / 2; ++i)
     {
       ASSERT_OK(db->Get(ro, get_key(i), &value));
-      ASSERT_EQ(value, get_value(i));
+      ASSERT_EQ(value, gen_value(i));
     }
     auto it = db->NewIterator(ro);
     auto forward = [&](size_t i, int d, size_t e) {
       for (it->SeekToFirst(); it->Valid(); it->Next())
       {
         ASSERT_EQ(it->key().ToString(), get_key(i));
-        ASSERT_EQ(it->value().ToString(), get_value(i));
+        ASSERT_EQ(it->value().ToString(), gen_value(i));
         i += d;
       }
       ASSERT_EQ(i, e);
@@ -204,7 +227,7 @@ public:
       for (it->SeekToLast(); it->Valid(); it->Prev())
       {
         ASSERT_EQ(it->key().ToString(), get_key(i));
-        ASSERT_EQ(it->value().ToString(), get_value(i));
+        ASSERT_EQ(it->value().ToString(), gen_value(i));
         i += d;
       }
       ASSERT_EQ(i, e);
@@ -223,12 +246,13 @@ public:
   void HardZipTest(bool rev, size_t count, size_t prefix) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
-    tzto.disableSecondPassIter = true;
+    tzto.disableSecondPassIter = false;
     tzto.keyPrefixLen = prefix;
     tzto.localTempDir = localTempDir;
     tzto.minDictZipValueSize = 0;
     tzto.singleIndexMemLimit = 512;
     options.allow_mmap_reads = true;
+    options.memtable_factory.reset(NewThreadedRBTreeRepFactory());
     if (rev) {
       options.comparator = &rev_c;
     }
@@ -289,12 +313,13 @@ public:
   void NonCompressedBlobStoreTest(bool rev, BlobStoreType type, size_t count, size_t prefix) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
-    tzto.disableSecondPassIter = true;
+    tzto.disableSecondPassIter = false;
     tzto.keyPrefixLen = prefix;
     tzto.entropyAlgo = TerarkZipTableOptions::kFSE;
     tzto.localTempDir = localTempDir;
     tzto.minDictZipValueSize = 4096;
     options.allow_mmap_reads = true;
+    options.memtable_factory.reset(NewThreadedRBTreeRepFactory());
     switch (type) {
     case PlainBlobStore:
     case MixedLenBlobStore:
@@ -409,11 +434,12 @@ public:
   void ZeroLengthBlobStoreTest(bool rev, size_t count, size_t prefix) {
       Options options = CurrentOptions();
       TerarkZipTableOptions tzto;
-      tzto.disableSecondPassIter = true;
+      tzto.disableSecondPassIter = false;
       tzto.keyPrefixLen = prefix;
       tzto.entropyAlgo = TerarkZipTableOptions::kFSE;
       tzto.localTempDir = localTempDir;
       options.allow_mmap_reads = true;
+      options.memtable_factory.reset(NewThreadedRBTreeRepFactory());
       if (rev) {
           options.comparator = &rev_c;
       }
@@ -501,7 +527,7 @@ public:
                 bool rev, size_t prefix, size_t blockUnits, size_t minValue, size_t indexMem = 2ULL << 30) {
     Options options = CurrentOptions();
     TerarkZipTableOptions tzto;
-    tzto.disableSecondPassIter = true;
+    tzto.disableSecondPassIter = false;
     tzto.keyPrefixLen = prefix;
     tzto.offsetArrayBlockUnits = (uint16_t)blockUnits;
     tzto.minDictZipValueSize = minValue;
@@ -509,6 +535,7 @@ public:
     tzto.entropyAlgo = TerarkZipTableOptions::kFSE;
     tzto.localTempDir = localTempDir;
     options.allow_mmap_reads = true;
+    options.memtable_factory.reset(NewThreadedRBTreeRepFactory());
     if (rev) {
       options.comparator = &rev_c;
     }
@@ -667,7 +694,6 @@ public:
   }
 };
 
-
 TEST_F(TerarkZipReaderTest, BasicTest                        ) { BasicTest(false, 1000, 0,   0,    0); }
 TEST_F(TerarkZipReaderTest, BasicTestRev                     ) { BasicTest(true , 1000, 0,   0,    0); }
 TEST_F(TerarkZipReaderTest, BasicTestMulti                   ) { BasicTest(false, 1000, 1,   0,    0); }
@@ -696,6 +722,15 @@ TEST_F(TerarkZipReaderTest, BasicTestMultiZipOffset128       ) { BasicTest(false
 TEST_F(TerarkZipReaderTest, BasicTestMultiZipOffset128Rev    ) { BasicTest(true ,  100, 3, 128, 1024); }
 TEST_F(TerarkZipReaderTest, BasicTestMultiManyZipOffset128   ) { BasicTest(false,   33, 4, 128, 1024); }
 TEST_F(TerarkZipReaderTest, BasicTestMultiManyZipOffset128Rev) { BasicTest(true ,   33, 4, 128, 1024); }
+
+TEST_F(TerarkZipReaderTest, BasicTestShortDictZipZO128   ) { BasicTest(false, 2000, 1, 128,    0,    4); }
+TEST_F(TerarkZipReaderTest, BasicTestShortDictZipZO128Rev) { BasicTest(true , 2000, 1, 128,    0,    4); }
+TEST_F(TerarkZipReaderTest, BasicTestShortZipOffset128   ) { BasicTest(false, 2000, 1, 128, 1024,    4); }
+TEST_F(TerarkZipReaderTest, BasicTestShortZipOffset128Rev) { BasicTest(true , 2000, 1, 128, 1024,    4); }
+TEST_F(TerarkZipReaderTest, BasicTestLongDictZipZO128    ) { BasicTest(false, 2000, 1, 128,    0, 4096); }
+TEST_F(TerarkZipReaderTest, BasicTestLongDictZipZO128Rev ) { BasicTest(true , 2000, 1, 128,    0, 4096); }
+TEST_F(TerarkZipReaderTest, BasicTestLongZipOffset128    ) { BasicTest(false, 2000, 1, 128, 8192, 4096); }
+TEST_F(TerarkZipReaderTest, BasicTestLongZipOffset128Rev ) { BasicTest(true , 2000, 1, 128, 8192, 4096); }
 
 TEST_F(TerarkZipReaderTest, HardZipTest            ) { HardZipTest(false, 1000, 0); }
 TEST_F(TerarkZipReaderTest, HardZipTestRev         ) { HardZipTest(true , 1000, 0); }

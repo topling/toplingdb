@@ -97,12 +97,18 @@ namespace {
         {
             bool operator()(Slice const &l, Slice const &r) const
             {
-                return c->Compare(l, r) < 0;
+                return compare(l, r) < 0;
             }
             int compare(Slice const &l, Slice const &r) const
             {
-                return c->Compare(l, r);
+                if (smallest != &l && smallest != &r)
+                {
+                    return c->Compare(l, r);
+                }
+                assert(&l != &r);
+                return &r != smallest ? -1 : 1;
             }
+            Slice const *smallest;
             Comparator const *c;
         };
 
@@ -124,12 +130,11 @@ namespace {
         {
             bool operator()(size_type l, size_type r) const
             {
-                int c = comp.c->Compare(array[l].bound, array[r].bound);
-                if (c == 0)
+                if (l != 0 && r != 0)
                 {
-                    return l < r;
+                    return comp.c->Compare(array[l].bound, array[r].bound) < 0;
                 }
-                return c < 0;
+                return r != 0;
             }
             outer_comparator_t &comp;
             outer_element_t *array;
@@ -194,6 +199,7 @@ namespace {
                 new(*inner_holder_) inner_holder_t();
                 (*inner_holder_)->version = 0;
                 new(outer_array_) outer_element_t();
+                outer_comparator_.smallest = &outer_array_->bound;
 
                 threaded_rbtree_stack_t<outer_node_t, stack_max_depth> stack;
                 threaded_rbtree_find_path_for_multi(outer_root_,
@@ -576,6 +582,8 @@ namespace {
                 WriteLock inner_lock(&inner_holder_[inner_index]->mutex);
                 size_type root = inner_root->root.root;
                 Slice bound = ExtractUserKey(GetLengthPrefixedSlice(deref_inner_key()(root)));
+                // don't use if (bound == outer_array_[inner_index].bound)
+                // when inner_index == 0 , bound is the smallest , but it's empty
                 if (outer_comparator_.compare(bound, outer_array_[inner_index].bound) == 0)
                 {
                     // OMG ! there are so many same user keys in diff seqno
@@ -591,6 +599,7 @@ namespace {
                         (inner_holder_t **)realloc(inner_holder_, sizeof(inner_holder_t *) * outer_capacity_);
                     outer_array_ =
                         (outer_element_t *)realloc(outer_array_, sizeof(outer_element_t) * outer_capacity_);
+                    outer_comparator_.smallest = &outer_array_->bound;
                     *memory_size_ += (sizeof(outer_element_t) + sizeof(inner_root_t)) * outer_count;
                 }
                 // prepare new outer element & inner holder

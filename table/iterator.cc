@@ -7,12 +7,173 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include "db/dbformat.h"
 #include "rocksdb/iterator.h"
 #include "table/internal_iterator.h"
 #include "table/iterator_wrapper.h"
 #include "util/arena.h"
 
 namespace rocksdb {
+
+// range_set are sorted
+// for (int i = 0; i < size / 2; ++i)
+//   range_set[2 * i] .. range_set[2 * i + 1] is closed interval
+// all ranges non overlap
+class RangeWrappedInternalIterator : public InternalIterator {
+public:
+  RangeWrappedInternalIterator(
+      InternalIterator* iter,
+      const InternalKeyComparator& internal_key_comp,
+      const std::vector<InternalKey>* range_set)
+      : iter_(iter),
+        ic_(internal_key_comp),
+        range_set_(range_set),
+        smallest_(nullptr),
+        largest_(nullptr),
+        invalid_(false) {
+    assert(iter_);
+    assert(range_set_->size() >= 2);
+  }
+
+  bool Valid() const override final {
+    return !invalid_ && iter_->Valid();
+  }
+  void SeekToFirst() override final {
+    Seek(range_set_->front().Encode());
+  }
+  void SeekToLast() override final {
+    SeekForPrev(range_set_->back().Encode());
+  }
+  void Seek(const Slice& target) override final {
+    Slice s = target;
+    while (true) {
+      iter_->Seek(s);
+      if (!iter_->Valid()) {
+        break;
+      }
+      auto find = std::upper_bound(
+          range_set_->begin(), range_set_->end(),
+          iter_->key(), [this](const Slice& l, const InternalKey& r) {
+                            return ic_.Compare(l, r.Encode()) < 0;
+                        });
+      if ((find - range_set_->begin()) % 2 == 1) {
+        largest_ = &*find;
+        smallest_ = largest_ - 1;
+        invalid_ = false;
+        break;
+      }
+      if (find == range_set_->begin()) {
+        SeekToFirst();
+        break;
+      }
+      largest_ = &find[-1];
+      if (iter_->key() == largest_->Encode()) {
+        smallest_ = largest_ - 1;
+        invalid_ = false;
+        break;
+      }
+      if (find == range_set_->end()) {
+        invalid_ = true;
+        break;
+      }
+      s = largest_[1].Encode();
+    }
+    assert(!Valid() ||
+           (ic_.Compare(smallest_->Encode(), iter_->key()) <= 0 &&
+            ic_.Compare(largest_->Encode(), iter_->key()) >= 0));
+  }
+  void SeekForPrev(const Slice& target) override final {
+    Slice s = target;
+    while (true) {
+      iter_->SeekForPrev(s);
+      if (!iter_->Valid()) {
+        break;
+      }
+      auto find = std::upper_bound(
+          range_set_->rbegin(), range_set_->rend(),
+          iter_->key(), [this](const Slice& l, const InternalKey& r) {
+                            return ic_.Compare(l, r.Encode()) > 0;
+                        });
+      if ((find - range_set_->rbegin()) % 2 == 1) {
+        smallest_ = &*find;
+        largest_ = smallest_ + 1;
+        invalid_ = false;
+        break;
+      }
+      if (find == range_set_->rbegin()) {
+        SeekToLast();
+        break;
+      }
+      smallest_ = &find[-1];
+      if (iter_->key() == smallest_->Encode()) {
+        largest_ = smallest_ + 1;
+        invalid_ = false;
+        break;
+      }
+      if (find == range_set_->rend()) {
+        invalid_ = true;
+        break;
+      }
+      s = smallest_[-1].Encode();
+    }
+    assert(!Valid() ||
+           (ic_.Compare(smallest_->Encode(), iter_->key()) <= 0 &&
+            ic_.Compare(largest_->Encode(), iter_->key()) >= 0));
+  }
+  void Next() override final {
+    assert(!invalid_);
+    iter_->Next();
+    if (iter_->Valid() && ic_.Compare(iter_->key(), largest_->Encode()) > 0) {
+      if (largest_ == &range_set_->back()) {
+        invalid_ = true;
+      } else {
+        Seek(smallest_[2].Encode());
+      }
+    }
+  }
+  void Prev() override final {
+    assert(!invalid_);
+    iter_->Prev();
+    if (iter_->Valid() && ic_.Compare(iter_->key(), smallest_->Encode()) < 0) {
+      if (smallest_ == &range_set_->front()) {
+        invalid_ = true;
+      } else {
+        SeekForPrev(largest_[-2].Encode());
+      }
+    }
+  }
+  Slice key() const override final {
+    assert(!invalid_);
+    return iter_->key();
+  }
+  Slice value() const override final {
+    assert(!invalid_);
+    return iter_->value();
+  }
+  Status status() const override final {
+    return iter_->status();
+  }
+  void SetPinnedItersMgr(PinnedIteratorsManager* pinned_iters_mgr) override final {
+    iter_->SetPinnedItersMgr(pinned_iters_mgr);
+  }
+  bool IsKeyPinned() const override final {
+    return iter_->IsKeyPinned();
+  }
+  bool IsValuePinned() const override final {
+    return iter_->IsValuePinned();
+  }
+  Status GetProperty(std::string prop_name, std::string* prop) override final {
+    return iter_->GetProperty(prop_name, prop);
+  }
+
+private:
+  InternalIterator * iter_;
+  const InternalKeyComparator& ic_;
+  const std::vector<InternalKey>* range_set_;
+  const InternalKey* smallest_;
+  const InternalKey* largest_;
+  bool invalid_;
+};
 
 Cleanable::Cleanable() {
   cleanup_.function = nullptr;
@@ -162,6 +323,18 @@ Iterator* NewEmptyIterator() {
 
 Iterator* NewErrorIterator(const Status& status) {
   return new EmptyIterator(status);
+}
+
+InternalIterator* NewRangeWrappedInternalIterator(
+    InternalIterator* iter, const InternalKeyComparator& ic,
+    const std::vector<InternalKey>* range_set, Arena* arena) {
+  if (arena == nullptr) {
+    return new RangeWrappedInternalIterator(iter, ic, range_set);
+  } else {
+    auto mem = arena->AllocateAligned(
+        sizeof(RangeWrappedInternalIterator));
+    return new (mem) RangeWrappedInternalIterator(iter, ic, range_set);
+  }
 }
 
 InternalIterator* NewEmptyInternalIterator() {

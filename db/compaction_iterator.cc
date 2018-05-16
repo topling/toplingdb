@@ -75,8 +75,9 @@ void CompactionIteratorToInternalIterator::Seek(const Slice& target) {
                               kValueTypeForSeek);
   c_iter_->input_->Seek(key_for_seek.GetInternalKey());
   c_iter_->SeekToFirst();
+  InternalKeyComparator ic(c_iter_->cmp_);
   while (c_iter_->Valid() &&
-         c_iter_->cmp_->Compare(c_iter_->key(), target) < 0) {
+         ic.Compare(c_iter_->key(), target) < 0) {
     c_iter_->Next();
   }
 }

@@ -41,9 +41,9 @@ public:
     const size_t a_size = a.size();
     const size_t b_size = b.size();
     const size_t len = (a_size < b_size) ? a_size : b_size;
-    int res;
+    int res = memcmp(a.data(), b.data(), len);
 
-    if ((res = memcmp(a.data(), b.data(), len)))
+    if (res)
       return res;
 
     /* Ok, res== 0 */
@@ -210,12 +210,12 @@ public:
       ASSERT_EQ(i, e);
     };
     if (rev) {
-      forward(count / 2 - 1, -1, -1);
+      forward(count / 2 - 1, -1, size_t(-1));
       backward(0, 1, count / 2);
     }
     else {
       forward(0, 1, count / 2);
-      backward(count / 2 - 1, -1, -1);
+      backward(count / 2 - 1, -1, size_t(-1));
     }
     CheckApproximateOffset(rev, it);
     delete it;
@@ -396,12 +396,12 @@ public:
       ASSERT_EQ(i, e);
     };
     if (rev) {
-      forward(count - 1, -1, -1);
+      forward(count - 1, -1, size_t(-1));
       backward(0, 1, count);
     }
     else {
       forward(0, 1, count);
-      backward(count - 1, -1, -1);
+      backward(count - 1, -1, size_t(-1));
     }
     CheckApproximateOffset(rev, it);
     delete it;
@@ -486,12 +486,12 @@ public:
           ASSERT_EQ(i, e);
       };
       if (rev) {
-          forward(count - 1, -1, -1);
+          forward(count - 1, -1, size_t(-1));
           backward(0, 1, count);
       }
       else {
           forward(0, 1, count);
-          backward(count - 1, -1, -1);
+          backward(count - 1, -1, size_t(-1));
       }
       CheckApproximateOffset(rev, it);
       delete it;

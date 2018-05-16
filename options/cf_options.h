@@ -49,6 +49,8 @@ struct ImmutableCFOptions {
 
   bool inplace_update_support;
 
+  bool enable_partial_remove;;
+
   UpdateStatus (*inplace_callback)(char* existing_value,
                                    uint32_t* existing_value_size,
                                    Slice delta_value,

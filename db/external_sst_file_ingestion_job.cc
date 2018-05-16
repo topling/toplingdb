@@ -134,6 +134,11 @@ Status ExternalSstFileIngestionJob::Prepare(
 
 Status ExternalSstFileIngestionJob::NeedsFlush(bool* flush_needed) {
   SuperVersion* super_version = cfd_->GetSuperVersion();
+  if (cfd_->ioptions()->compaction_style == kCompactionStyleUniversal) {
+    *flush_needed = super_version->mem->num_entries() > 0 ||
+                    super_version->imm->GetTotalNumEntries() > 0;
+    return Status::OK();
+  }
   Status status =
       IngestedFilesOverlapWithMemtables(super_version, flush_needed);
 
@@ -156,7 +161,6 @@ Status ExternalSstFileIngestionJob::Run() {
   assert(status.ok() && need_flush == false);
 #endif
 
-  bool consumed_seqno = false;
   bool force_global_seqno = false;
 
   if (ingestion_options_.snapshot_consistency && !db_snapshots_->empty()) {
@@ -166,13 +170,14 @@ Status ExternalSstFileIngestionJob::Run() {
   }
   // It is safe to use this instead of LastAllocatedSequence since we are
   // the only active writer, and hence they are equal
-  const SequenceNumber last_seqno = versions_->LastSequence();
   SuperVersion* super_version = cfd_->GetSuperVersion();
   edit_.SetColumnFamily(cfd_->GetID());
   // The levels that the files will be ingested into
 
   for (IngestedFileInfo& f : files_to_ingest_) {
+    const SequenceNumber last_seqno = versions_->LastSequence();
     SequenceNumber assigned_seqno = 0;
+    bool consumed_seqno = false;
     if (ingestion_options_.ingest_behind) {
       status = CheckLevelForIngestedBehindFile(&f);
     } else {
@@ -193,14 +198,14 @@ Status ExternalSstFileIngestionJob::Run() {
       return status;
     }
     edit_.AddFile(f.picked_level, f.fd.GetNumber(), f.fd.GetPathId(),
-                  f.fd.GetFileSize(), f.smallest_internal_key(),
-                  f.largest_internal_key(), f.assigned_seqno, f.assigned_seqno,
-                  false);
-  }
+                  f.fd.GetFileSize(),
+                  { f.smallest_internal_key(), f.largest_internal_key() },
+                  f.assigned_seqno, f.assigned_seqno, false, 0, 0);
 
-  if (consumed_seqno) {
-    versions_->SetLastAllocatedSequence(last_seqno + 1);
-    versions_->SetLastSequence(last_seqno + 1);
+    if (consumed_seqno) {
+      versions_->SetLastAllocatedSequence(last_seqno + 1);
+      versions_->SetLastSequence(last_seqno + 1);
+    }
   }
 
   return status;
@@ -458,6 +463,12 @@ Status ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile(
       if (compaction_style == kCompactionStyleUniversal && lvl != 0) {
         const std::vector<FileMetaData*>& level_files =
             vstorage->LevelFiles(lvl);
+        if (std::find_if(level_files.begin(), level_files.end(),
+                         [](FileMetaData* f) {
+                           return f->being_compacted || f->compact_to_level > 0;
+                         }) != level_files.end()) {
+          continue;
+        }
         const SequenceNumber level_largest_seqno =
             (*max_element(level_files.begin(), level_files.end(),
                           [](FileMetaData* f1, FileMetaData* f2) {
@@ -484,7 +495,8 @@ Status ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile(
       "ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile",
       &overlap_with_db);
   file_to_ingest->picked_level = target_level;
-  if (overlap_with_db && *assigned_seqno == 0) {
+  if (target_level == 0 ||
+      (overlap_with_db && *assigned_seqno == 0)) {
     *assigned_seqno = last_seqno + 1;
   }
   return status;
@@ -641,13 +653,14 @@ Status ExternalSstFileIngestionJob::IngestedFileOverlapWithLevel(
   ro.total_order_seek = true;
   MergeIteratorBuilder merge_iter_builder(&cfd_->internal_comparator(),
                                           &arena);
-  sv->current->AddIteratorsForLevel(ro, env_options_, &merge_iter_builder, lvl,
-                                    nullptr /* range_del_agg */);
+  auto version = cfd_->current();
+  version->AddIteratorsForLevel(ro, env_options_, &merge_iter_builder, lvl,
+                                nullptr /* range_del_agg */);
   ScopedArenaIterator level_iter(merge_iter_builder.Finish());
 
   std::vector<InternalIterator*> level_range_del_iters;
-  sv->current->AddRangeDelIteratorsForLevel(ro, env_options_, lvl,
-                                            &level_range_del_iters);
+  version->AddRangeDelIteratorsForLevel(ro, env_options_, lvl,
+                                        &level_range_del_iters);
   std::unique_ptr<InternalIterator> level_range_del_iter(NewMergingIterator(
       &cfd_->internal_comparator(),
       level_range_del_iters.empty() ? nullptr : &level_range_del_iters[0],

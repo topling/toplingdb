@@ -93,7 +93,8 @@ void PrepareLevelStats(std::map<LevelStatType, double>* level_stats,
   uint64_t bytes_read =
       stats.bytes_read_non_output_levels + stats.bytes_read_output_level;
   int64_t bytes_new =
-      stats.bytes_written - stats.bytes_read_output_level;
+      std::max(stats.bytes_written, stats.bytes_read_output_level) -
+      stats.bytes_read_output_level;
   double elapsed = (stats.micros + 1) / kMicrosInSec;
 
   (*level_stats)[LevelStatType::NUM_FILES] = num_files;

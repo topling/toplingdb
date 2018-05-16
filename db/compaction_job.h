@@ -105,7 +105,11 @@ class CompactionJob {
       RangeDelAggregator* range_del_agg,
       CompactionIterationStats* range_del_out_stats,
       const Slice* next_table_min_key = nullptr);
-  Status InstallCompactionResults(const MutableCFOptions& mutable_cf_options);
+  bool IsCoveredBySingleSST(SubcompactionState* sub_compact);
+  bool IsCoverAnyInputSST(SubcompactionState* sub_compact);
+  Status InstallCompactionResults(
+      const MutableCFOptions& mutable_cf_options,
+      std::unordered_map<uint64_t, int>& file_remove);
   void RecordCompactionIOStats();
   Status OpenCompactionOutputFile(SubcompactionState* sub_compact);
   void CleanupCompaction();
@@ -114,9 +118,11 @@ class CompactionJob {
   void RecordDroppedKeys(const CompactionIterationStats& c_iter_stats,
                          CompactionJobStats* compaction_job_stats = nullptr);
 
-  void UpdateCompactionStats();
+  void UpdateCompactionStats(
+      const std::unordered_map<uint64_t, int>& file_remove);
   void UpdateCompactionInputStatsHelper(
-      int* num_files, uint64_t* bytes_read, int input_level);
+      int* num_files, uint64_t* bytes_read, int input_level,
+      const std::unordered_map<uint64_t, int>& file_remove);
 
   void LogCompaction();
 
@@ -134,6 +140,8 @@ class CompactionJob {
   const EnvOptions env_options_;
 
   Env* env_;
+  // env_option optimized for compaction table reads
+  EnvOptions env_optiosn_for_read_;
   VersionSet* versions_;
   const std::atomic<bool>* shutting_down_;
   const SequenceNumber preserve_deletes_seqnum_;

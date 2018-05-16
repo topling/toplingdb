@@ -110,5 +110,30 @@ class WriteBatchWithIndexInternal {
       std::string* value, bool overwrite_key, Status* s);
 };
 
+class WriteBatchEntryIndex {
+public:
+  virtual ~WriteBatchEntryIndex() {}
+  static WriteBatchEntryIndex* New(WriteBatchEntryComparator& c,
+    Arena* a, const std::string& type);
+
+  class Iterator {
+  public:
+    virtual ~Iterator() {}
+    virtual bool Valid() const = 0;
+    virtual void SeekToFirst() = 0;
+    virtual void SeekToLast() = 0;
+    virtual void Seek(WriteBatchIndexEntry* target) = 0;
+    virtual void SeekForPrev(WriteBatchIndexEntry* target) = 0;
+    virtual void Next() = 0;
+    virtual void Prev() = 0;
+    virtual WriteBatchIndexEntry* key() const = 0;
+  };
+  typedef WBIteratorStorage<Iterator, 24> IteratorStorage;
+
+  virtual Iterator* NewIterator() = 0;
+  virtual void NewIterator(IteratorStorage& storage) = 0;
+  virtual void Insert(WriteBatchIndexEntry* key) = 0;
+};
+
 }  // namespace rocksdb
 #endif  // !ROCKSDB_LITE

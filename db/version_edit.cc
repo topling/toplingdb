@@ -18,6 +18,167 @@
 
 namespace rocksdb {
 
+void RangeEraseSet::push(const InternalKey& smallest, const InternalKey& largest,
+                    bool smallest_open, bool largest_open) {
+  erase.emplace_back(smallest);
+  erase.emplace_back(largest);
+  open.emplace_back(smallest_open);
+  open.emplace_back(largest_open);
+}
+
+void MergeRangeSet(const std::vector<InternalKey>& range_set,
+                   const RangeEraseSet& erase_set,
+                   std::vector<InternalKey>& output,
+                   const InternalKeyComparator& ic,
+                   InternalIterator* iter) {
+  output.clear();
+  assert(!range_set.empty());
+  assert(!erase_set.erase.empty());
+  assert(range_set.size() % 2 == 0);
+  assert(erase_set.erase.size() % 2 == 0);
+  auto put_left_bound = [&](const InternalKey& left, bool include) {
+    output.emplace_back();
+    iter->Seek(left.Encode());
+    if (iter->Valid()) {
+      if (include || iter->key() != left.Encode()) {
+        output.back().DecodeFrom(iter->key());
+      } else {
+        iter->Next();
+        if (iter->Valid()) {
+          output.back().DecodeFrom(iter->key());
+        }
+      }
+    }
+  };
+  auto put_right_bound = [&](const InternalKey& right, bool include) {
+    if (output.back().size() == 0) {
+      // left bound invalid
+      output.pop_back();
+      return;
+    }
+    output.emplace_back();
+    iter->SeekForPrev(right.Encode());
+    if (iter->Valid()) {
+      if (include || iter->key() != right.Encode()) {
+        output.back().DecodeFrom(iter->key());
+      } else {
+        iter->Prev();
+        if (iter->Valid()) {
+          output.back().DecodeFrom(iter->key());
+        }
+      }
+    }
+    if (output.back().size() == 0 ||
+        ic.Compare(output.end()[-2], output.back()) > 0) {
+      // right bound invalid or right bound less than left bound
+      output.pop_back();
+      output.pop_back();
+    }
+  };
+  size_t ri = 0, ei = 0;  // index
+  size_t rc, ec;          // change
+  do {
+    int c;
+    if (ri < range_set.size() && ei < erase_set.erase.size()) {
+      c = ic.Compare(range_set[ri], erase_set.erase[ei]);
+    } else {
+      c = ri < range_set.size() ? -1 : 1;
+    }
+    rc = c <= 0;
+    ec = c >= 0;
+#define MergeRangeSet_CASE(a,b,c,d) ((a) | ((b) << 1) | ((c) << 2) | ((d) << 3))
+    switch (MergeRangeSet_CASE(ri % 2, ei % 2, rc, ec)) {
+    // out range , out erase , begin range
+    case MergeRangeSet_CASE(0, 0, 1, 0):
+      put_left_bound(range_set[ri], true);
+      break;
+    // in range , out erase , end range
+    case MergeRangeSet_CASE(1, 0, 1, 0):
+      put_right_bound(range_set[ri], true);
+      break;
+    // in range , out erase , begin erase
+    case MergeRangeSet_CASE(1, 0, 0, 1):
+    // in range , out erase , end range & begin erase
+    case MergeRangeSet_CASE(1, 0, 1, 1):
+      put_right_bound(erase_set.erase[ei], erase_set.open[ei]);
+      break;
+    // in range , in erase , end erase
+    case MergeRangeSet_CASE(1, 1, 0, 1):
+    // out range , in erase , end erase & begin range
+    case MergeRangeSet_CASE(0, 1, 1, 1):
+      put_left_bound(erase_set.erase[ei], erase_set.open[ei]);
+      break;
+    }
+#undef MergeRangeSet_CASE
+    ri += rc;
+    ei += ec;
+  } while (ri != range_set.size() || ei != erase_set.erase.size());
+  assert(output.size() % 2 == 0);
+}
+
+bool PartialRemovedMetaData::InitFrom(FileMetaData* file,
+                                      const RangeEraseSet& erase_set,
+                                      uint8_t output_level,
+                                      ColumnFamilyData* cfd,
+                                      const EnvOptions& env_opt) {
+  meta = file;
+  partial_removed = file->partial_removed;
+  compact_to_level = output_level;
+  if (erase_set.erase.empty()) {
+    range_set = file->range_set;
+    return false;
+  }
+  const InternalKeyComparator& ic = cfd->ioptions()->internal_comparator;
+  TableReader* table_reader = nullptr;
+  auto table_cache = cfd->table_cache();
+  std::unique_ptr<InternalIterator> iter(
+      table_cache->NewIterator(ReadOptions(), env_opt, ic, *file, nullptr,
+                               &table_reader, nullptr, false, nullptr,
+                               false, -1, true));
+  assert(table_reader);
+  MergeRangeSet(file->range_set, erase_set, range_set, ic, iter.get());
+  if (range_set.empty()) {
+    partial_removed = kPartialRemovedMax;
+    return true;
+  }
+  if (range_set.size() == file->range_set.size() &&
+      std::equal(range_set.begin(), range_set.end(), file->range_set.begin(),
+      [](const InternalKey& l, const InternalKey& r) {
+    return l.Encode() == r.Encode();
+  })) {
+    return false;
+  }
+  size_t sst_size = file->fd.GetFileSize();
+  size_t alive_size = 0;
+  for (size_t i = 0; i < range_set.size(); i += 2) {
+    uint64_t left_offset =
+        table_reader->ApproximateOffsetOf(range_set[i].Encode());
+    uint64_t right_offset =
+        table_reader->ApproximateOffsetOf(range_set[i + 1].Encode());
+    alive_size += right_offset - left_offset;
+  }
+  partial_removed =
+      (uint8_t)std::min<uint64_t>(
+          kPartialRemovedMax - 1, std::max<uint64_t>(
+                  1, (std::max(alive_size, sst_size) - alive_size) *
+                          kPartialRemovedMax / sst_size));
+  return true;
+}
+
+FileMetaData PartialRemovedMetaData::Get() {
+  assert(partial_removed < kPartialRemovedMax);
+  FileMetaData f;
+  f.fd = FileDescriptor(meta->fd.GetNumber(), meta->fd.GetPathId(),
+                        meta->fd.GetFileSize());
+  f.range_set = std::move(range_set);
+  f.smallest_seqno = meta->smallest_seqno;
+  f.largest_seqno = meta->largest_seqno;
+  f.marked_for_compaction = meta->marked_for_compaction;
+  f.partial_removed = partial_removed;
+  f.compact_to_level = compact_to_level;
+  return f;
+}
+
 // Tag numbers for serialized VersionEdit.  These numbers are written to
 // disk and should not be changed.
 enum Tag {
@@ -44,6 +205,9 @@ enum Tag {
 enum CustomTag {
   kTerminate = 1,  // The end of customized fields
   kNeedCompaction = 2,
+  kPartialRemoved = 3,
+  kCompactToLevel = 4,
+  kExpandRangeSet = 5,
   kPathId = 65,
 };
 // If this bit for the custom tag is set, opening DB should fail if
@@ -105,11 +269,12 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
 
   for (size_t i = 0; i < new_files_.size(); i++) {
     const FileMetaData& f = new_files_[i].second;
-    if (!f.smallest.Valid() || !f.largest.Valid()) {
+    if (!f.smallest().Valid() || !f.largest().Valid()) {
       return false;
     }
     bool has_customized_fields = false;
-    if (f.marked_for_compaction) {
+    if (f.marked_for_compaction || f.partial_removed ||
+        f.compact_to_level) {
       PutVarint32(dst, kNewFile4);
       has_customized_fields = true;
     } else if (f.fd.GetPathId() == 0) {
@@ -125,8 +290,8 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
       PutVarint32(dst, f.fd.GetPathId());
     }
     PutVarint64(dst, f.fd.GetFileSize());
-    PutLengthPrefixedSlice(dst, f.smallest.Encode());
-    PutLengthPrefixedSlice(dst, f.largest.Encode());
+    PutLengthPrefixedSlice(dst, f.smallest().Encode());
+    PutLengthPrefixedSlice(dst, f.largest().Encode());
     PutVarint64Varint64(dst, f.smallest_seqno, f.largest_seqno);
     if (has_customized_fields) {
       // Customized fields' format:
@@ -164,6 +329,20 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
         PutVarint32(dst, CustomTag::kNeedCompaction);
         char p = static_cast<char>(1);
         PutLengthPrefixedSlice(dst, Slice(&p, 1));
+      }
+      if (f.partial_removed) {
+        PutVarint32(dst, CustomTag::kPartialRemoved);
+        char p = static_cast<char>(f.partial_removed);
+        PutLengthPrefixedSlice(dst, Slice(&p, 1));
+      }
+      if (f.compact_to_level) {
+        PutVarint32(dst, CustomTag::kCompactToLevel);
+        char p = static_cast<char>(f.compact_to_level);
+        PutLengthPrefixedSlice(dst, Slice(&p, 1));
+      }
+      for (size_t j = 1; j < f.range_set.size() - 1; ++j) {
+        PutVarint32(dst, CustomTag::kExpandRangeSet);
+        PutLengthPrefixedSlice(dst, f.range_set[j].Encode());
       }
       TEST_SYNC_POINT_CALLBACK("VersionEdit::EncodeTo:NewFile4:CustomizeFields",
                                dst);
@@ -218,9 +397,12 @@ const char* VersionEdit::DecodeNewFile4From(Slice* input) {
   uint64_t number;
   uint32_t path_id = 0;
   uint64_t file_size;
+  InternalKey largest;
+  f.range_set.resize(1);
   if (GetLevel(input, &level, &msg) && GetVarint64(input, &number) &&
-      GetVarint64(input, &file_size) && GetInternalKey(input, &f.smallest) &&
-      GetInternalKey(input, &f.largest) &&
+      GetVarint64(input, &file_size) &&
+      GetInternalKey(input, &f.smallest()) &&
+      GetInternalKey(input, &largest) &&
       GetVarint64(input, &f.smallest_seqno) &&
       GetVarint64(input, &f.largest_seqno)) {
     // See comments in VersionEdit::EncodeTo() for format of customized fields
@@ -252,6 +434,24 @@ const char* VersionEdit::DecodeNewFile4From(Slice* input) {
           }
           f.marked_for_compaction = (field[0] == 1);
           break;
+        case kPartialRemoved:
+          if (field.size() != 1) {
+            return "partial_removed field wrong size";
+          }
+          f.partial_removed = static_cast<uint8_t>(field[0]);
+          break;
+        case kCompactToLevel:
+          if (field.size() != 1) {
+            return "compact_to_level field wrong size";
+          }
+          f.compact_to_level = static_cast<uint8_t>(field[0]);
+          break;
+        case kExpandRangeSet:
+          f.range_set.emplace_back();
+          f.range_set.back().DecodeFrom(field);
+          if (!f.range_set.back().Valid()) {
+            return "range_set field invalid internal key";
+          }
         default:
           if ((custom_tag & kCustomTagNonSafeIgnoreMask) != 0) {
             // Should not proceed if cannot understand it
@@ -262,6 +462,10 @@ const char* VersionEdit::DecodeNewFile4From(Slice* input) {
     }
   } else {
     return "new-file4 entry";
+  }
+  f.range_set.emplace_back(std::move(largest));
+  if (f.range_set.size() % 2 != 0) {
+    return "range_set field wrong element count";
   }
   f.fd = FileDescriptor(number, path_id, file_size);
   new_files_.push_back(std::make_pair(level, f));
@@ -361,8 +565,8 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         uint64_t file_size;
         if (GetLevel(&input, &level, &msg) && GetVarint64(&input, &number) &&
             GetVarint64(&input, &file_size) &&
-            GetInternalKey(&input, &f.smallest) &&
-            GetInternalKey(&input, &f.largest)) {
+            GetInternalKey(&input, &f.smallest()) &&
+            GetInternalKey(&input, &f.largest())) {
           f.fd = FileDescriptor(number, 0, file_size);
           new_files_.push_back(std::make_pair(level, f));
         } else {
@@ -377,8 +581,8 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         uint64_t file_size;
         if (GetLevel(&input, &level, &msg) && GetVarint64(&input, &number) &&
             GetVarint64(&input, &file_size) &&
-            GetInternalKey(&input, &f.smallest) &&
-            GetInternalKey(&input, &f.largest) &&
+            GetInternalKey(&input, &f.smallest()) &&
+            GetInternalKey(&input, &f.largest()) &&
             GetVarint64(&input, &f.smallest_seqno) &&
             GetVarint64(&input, &f.largest_seqno)) {
           f.fd = FileDescriptor(number, 0, file_size);
@@ -397,8 +601,8 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         uint64_t file_size;
         if (GetLevel(&input, &level, &msg) && GetVarint64(&input, &number) &&
             GetVarint32(&input, &path_id) && GetVarint64(&input, &file_size) &&
-            GetInternalKey(&input, &f.smallest) &&
-            GetInternalKey(&input, &f.largest) &&
+            GetInternalKey(&input, &f.smallest()) &&
+            GetInternalKey(&input, &f.largest()) &&
             GetVarint64(&input, &f.smallest_seqno) &&
             GetVarint64(&input, &f.largest_seqno)) {
           f.fd = FileDescriptor(number, path_id, file_size);
@@ -495,10 +699,12 @@ std::string VersionEdit::DebugString(bool hex_key) const {
     AppendNumberTo(&r, f.fd.GetNumber());
     r.append(" ");
     AppendNumberTo(&r, f.fd.GetFileSize());
-    r.append(" ");
-    r.append(f.smallest.DebugString(hex_key));
-    r.append(" .. ");
-    r.append(f.largest.DebugString(hex_key));
+    for (size_t j = 0; j < f.range_set.size(); j += 2) {
+      r.append(" ");
+      r.append(f.range_set[j].DebugString(hex_key));
+      r.append(" .. ");
+      r.append(f.range_set[j + 1].DebugString(hex_key));
+    }
   }
   r.append("\n  ColumnFamily: ");
   AppendNumberTo(&r, column_family_);
@@ -563,8 +769,10 @@ std::string VersionEdit::DebugJSON(int edit_num, bool hex_key) const {
       const FileMetaData& f = new_files_[i].second;
       jw << "FileNumber" << f.fd.GetNumber();
       jw << "FileSize" << f.fd.GetFileSize();
-      jw << "SmallestIKey" << f.smallest.DebugString(hex_key);
-      jw << "LargestIKey" << f.largest.DebugString(hex_key);
+      for (size_t j = 0; j < f.range_set.size(); j += 2) {
+        jw << "SmallestIKey" << f.range_set[j].DebugString(hex_key);
+        jw << "LargestIKey" << f.range_set[j + 1].DebugString(hex_key);
+      }
       jw.EndArrayedObject();
     }
 

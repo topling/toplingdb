@@ -39,6 +39,7 @@ ImmutableCFOptions::ImmutableCFOptions(const ImmutableDBOptions& db_options,
       max_write_buffer_number_to_maintain(
           cf_options.max_write_buffer_number_to_maintain),
       inplace_update_support(cf_options.inplace_update_support),
+      enable_partial_remove(cf_options.enable_partial_remove),
       inplace_callback(cf_options.inplace_callback),
       info_log(db_options.info_log.get()),
       statistics(db_options.statistics.get()),

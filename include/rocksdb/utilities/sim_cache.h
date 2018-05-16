@@ -40,8 +40,6 @@ class SimCache : public Cache {
  public:
   SimCache() {}
 
-  ~SimCache() override {}
-
   const char* Name() const override { return "SimCache"; }
 
   // returns the maximum configured capacity of the simcache for simulation

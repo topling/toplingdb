@@ -29,6 +29,7 @@ namespace rocksdb {
 class Env;
 class Arena;
 struct FileDescriptor;
+struct FileMetaData;
 class GetContext;
 class HistogramImpl;
 class InternalIterator;
@@ -38,6 +39,8 @@ class TableCache {
   TableCache(const ImmutableCFOptions& ioptions,
              const EnvOptions& storage_options, Cache* cache);
   ~TableCache();
+
+  static void CloseTables(void* ptr, size_t);
 
   // Return an iterator for the specified file number (the corresponding
   // file length must be exactly "file_size" bytes).  If "tableptr" is
@@ -53,10 +56,11 @@ class TableCache {
   InternalIterator* NewIterator(
       const ReadOptions& options, const EnvOptions& toptions,
       const InternalKeyComparator& internal_comparator,
-      const FileDescriptor& file_fd, RangeDelAggregator* range_del_agg,
+      const FileMetaData& file_meta, RangeDelAggregator* range_del_agg,
       TableReader** table_reader_ptr = nullptr,
       HistogramImpl* file_read_hist = nullptr, bool for_compaction = false,
-      Arena* arena = nullptr, bool skip_filters = false, int level = -1);
+      Arena* arena = nullptr, bool skip_filters = false, int level = -1,
+      bool ignore_partial_remove = false);
 
   InternalIterator* NewRangeTombstoneIterator(
       const ReadOptions& options, const EnvOptions& toptions,
@@ -74,7 +78,7 @@ class TableCache {
   // @param level The level this table is at, -1 for "not set / don't know"
   Status Get(const ReadOptions& options,
              const InternalKeyComparator& internal_comparator,
-             const FileDescriptor& file_fd, const Slice& k,
+             const FileMetaData& file_meta, const Slice& k,
              GetContext* get_context, HistogramImpl* file_read_hist = nullptr,
              bool skip_filters = false, int level = -1);
 
@@ -91,13 +95,11 @@ class TableCache {
   Status FindTable(const EnvOptions& toptions,
                    const InternalKeyComparator& internal_comparator,
                    const FileDescriptor& file_fd, Cache::Handle**,
+                   TableReader**,
                    const bool no_io = false, bool record_read_stats = true,
                    HistogramImpl* file_read_hist = nullptr,
                    bool skip_filters = false, int level = -1,
                    bool prefetch_index_and_filter_in_cache = true);
-
-  // Get TableReader from a cache handle.
-  TableReader* GetTableReaderFromHandle(Cache::Handle* handle);
 
   // Get the table properties of a given table.
   // @no_io: indicates if we should load table to the cache if it is not present
@@ -142,5 +144,6 @@ class TableCache {
   Cache* const cache_;
   std::string row_cache_id_;
 };
+
 
 }  // namespace rocksdb

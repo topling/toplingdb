@@ -122,7 +122,6 @@ class LRUHandleTable {
   ~LRUHandleTable();
 
   LRUHandle* Lookup(const Slice& key, uint32_t hash);
-  LRUHandle* Insert(LRUHandle* h);
   LRUHandle* Remove(const Slice& key, uint32_t hash);
 
   template <typename T>
@@ -138,12 +137,13 @@ class LRUHandleTable {
     }
   }
 
- private:
   // Return a pointer to slot that points to a cache entry that
   // matches key/hash.  If there is no such cache entry, return a
   // pointer to the trailing slot in the corresponding linked list.
   LRUHandle** FindPointer(const Slice& key, uint32_t hash);
+  void IncSize();
 
+ private:
   void Resize();
 
   // The table consists of an array of buckets where each bucket is
@@ -175,7 +175,8 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard : public CacheShard {
                         size_t charge,
                         void (*deleter)(const Slice& key, void* value),
                         Cache::Handle** handle,
-                        Cache::Priority priority) override;
+                        Cache::Priority priority,
+                        void** accept_existing) override;
   virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash) override;
   virtual bool Ref(Cache::Handle* handle) override;
   virtual bool Release(Cache::Handle* handle,

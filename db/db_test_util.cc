@@ -10,7 +10,6 @@
 #include "db/db_test_util.h"
 #include "db/forward_iterator.h"
 #include "rocksdb/env_encryption.h"
-#include <table/terark_zip_weak_function.h>
 
 namespace rocksdb {
 
@@ -280,13 +279,6 @@ Options DBTestBase::GetDefaultOptions() {
   options.wal_recovery_mode = WALRecoveryMode::kTolerateCorruptedTailRecords;
   options.compaction_pri = CompactionPri::kByCompensatedSize;
 
-  if (NewTerarkZipTableFactory) {
-    TerarkZipTableOptions tzto;
-    std::shared_ptr<TableFactory> terark_zip_table_factory(NewTerarkZipTableFactory(tzto,
-        NewBlockBasedTableFactory(BlockBasedTableOptions())));
-    options.allow_mmap_reads = true;
-    options.table_factory = terark_zip_table_factory;
-  }
   return options;
 }
 

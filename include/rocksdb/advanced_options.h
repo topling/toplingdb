@@ -178,6 +178,11 @@ struct AdvancedColumnFamilyOptions {
   // Default: false.
   bool inplace_update_support = false;
 
+  // Enable sst file partial remove makes compaction finish earlier
+  // for removing unneeded input files as soon as possible, thus
+  // reduce space amplification (esp. for universal compaction)
+  bool enable_partial_remove = false;
+
   // Number of locks used for inplace update
   // Default: 10000, if inplace_update_support = true, else 0.
   //

@@ -8,8 +8,9 @@
 #include <algorithm>
 #include <new>
 #include <vector>
+#include <type_traits>
 
-template<class index_t>
+template<class index_t, class flags_in_front_t = std::true_type>
 struct threaded_rbtree_node_t
 {
     typedef index_t index_type;
@@ -25,8 +26,8 @@ struct threaded_rbtree_node_t
     {
     }
 
-    static std::size_t constexpr flag_bit_mask = index_type(1) << (sizeof(index_type) * 8 - 1);
-    static std::size_t constexpr type_bit_mask = index_type(1) << (sizeof(index_type) * 8 - 2);
+    static std::size_t constexpr flag_bit_mask = index_type(1) << (flags_in_front_t::value ? sizeof(index_type) * 8 - 1 : 0);
+    static std::size_t constexpr type_bit_mask = index_type(1) << (flags_in_front_t::value ? sizeof(index_type) * 8 - 2 : 1);
     static std::size_t constexpr full_bit_mask = flag_bit_mask | type_bit_mask;
 
     static std::size_t constexpr nil_sentinel = ~index_type(0) & ~full_bit_mask;
@@ -740,6 +741,44 @@ bool threaded_rbtree_find_path_for_remove(root_t &root,
         }
     }
     return false;
+}
+
+template<class root_t, class comparator_t, class key_t, class deref_node_t, class deref_key_t>
+double threaded_rbtree_approximate_rank_ratio(root_t &root,
+                                              deref_node_t deref,
+                                              key_t const &key,
+                                              deref_key_t deref_key,
+                                              comparator_t comparator
+)
+{
+    typedef typename root_t::node_type node_type;
+    double rank_ratio = 0.5;
+    double step = rank_ratio / 2;
+
+    std::size_t p = root.root.root;
+    while(p != node_type::nil_sentinel)
+    {
+        if(comparator(deref_key(p), key))
+        {
+            rank_ratio += step;
+            if (deref(p).right_is_thread())
+            {
+                break;
+            }
+            p = deref(p).right_get_link();
+        }
+        else
+        {
+            rank_ratio -= step;
+            if (deref(p).left_is_thread())
+            {
+                break;
+            }
+            p = deref(p).left_get_link();
+        }
+        step /= 2;
+    }
+    return rank_ratio;
 }
 
 template<class root_t, class comparator_t, class key_t, class deref_node_t, class deref_key_t>
@@ -1642,6 +1681,19 @@ void threaded_rbtree_remove(root_t &root,
     }
 }
 
+template<class cast_t, class from_t>
+cast_t threaded_rbtree_strict_aliasing_cast(from_t from)
+{
+    static_assert(std::is_pointer<from_t>::value, "from type must be pointer");
+    static_assert(std::is_pointer<cast_t>::value, "cast type must be pointer");
+    union
+    {
+        from_t from;
+        cast_t cast;
+    } conv;
+    conv.from = from;
+    return conv.cast;
+}
 
 template<class config_t>
 class threaded_rbtree_impl
@@ -1666,7 +1718,7 @@ protected:
 
     typedef threaded_rbtree_root_t<node_type, std::true_type, std::true_type> root_node_t;
 
-    static size_type constexpr stack_max_depth = sizeof(index_type) * 12;
+    static size_type constexpr stack_max_depth = sizeof(index_type) * 16 - 3;
 
     struct root_t : public threaded_rbtree_root_t<node_type, std::true_type, std::true_type>, public key_compare
     {
@@ -1758,16 +1810,22 @@ protected:
 
     struct key_compare_ex
     {
+        typedef typename threded_rb_tree_tools::has_compare<key_compare, key_type>::type comparator_3way;
+
         bool operator()(size_type left, size_type right) const
+        {
+            return (*this)(left, right, comparator_3way());
+        }
+        bool operator()(size_type left, size_type right, std::false_type) const
         {
             key_compare &compare = *root_ptr;
             auto &left_key = config_t::get_key(config_t::get_value(root_ptr->container, left));
             auto &right_key = config_t::get_key(config_t::get_value(root_ptr->container, right));
-            if(compare(left_key, right_key))
+            if (compare(left_key, right_key))
             {
                 return true;
             }
-            else if(compare(right_key, left_key))
+            else if (compare(right_key, left_key))
             {
                 return false;
             }
@@ -1775,6 +1833,18 @@ protected:
             {
                 return left < right;
             }
+        }
+        bool operator()(size_type left, size_type right, std::true_type) const
+        {
+            key_compare &compare = *root_ptr;
+            auto &left_key = config_t::get_key(config_t::get_value(root_ptr->container, left));
+            auto &right_key = config_t::get_key(config_t::get_value(root_ptr->container, right));
+            int c = compare.compare(left_key, right_key);
+            if (c == 0)
+            {
+                return left < right;
+            }
+            return c < 0;
         }
 
         root_t *root_ptr;
@@ -1831,12 +1901,12 @@ public:
 
         reference operator *() const
         {
-            return reinterpret_cast<reference>(config_t::get_value(tree->root_.container, where));
+            return *threaded_rbtree_strict_aliasing_cast<pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         pointer operator->() const
         {
-            return reinterpret_cast<pointer>(&config_t::get_value(tree->root_.container, where));
+            return threaded_rbtree_strict_aliasing_cast<pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         bool operator == (iterator const &other) const
@@ -1914,12 +1984,12 @@ public:
 
         const_reference operator *() const
         {
-            return reinterpret_cast<const_reference>(config_t::get_value(tree->root_.container, where));
+            return *threaded_rbtree_strict_aliasing_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         const_pointer operator->() const
         {
-            return reinterpret_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
+            return threaded_rbtree_strict_aliasing_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         bool operator == (const_iterator const &other) const
@@ -2003,12 +2073,12 @@ public:
 
         reference operator *() const
         {
-            return reinterpret_cast<reference>(config_t::get_value(tree->root_.container, where));
+            return *threaded_rbtree_strict_aliasing_cast<pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         pointer operator->() const
         {
-            return reinterpret_cast<pointer>(&config_t::get_value(tree->root_.container, where));
+            return threaded_rbtree_strict_aliasing_cast<pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         bool operator == (reverse_iterator const &other) const
@@ -2107,12 +2177,12 @@ public:
 
         const_reference operator *() const
         {
-            return reinterpret_cast<const_reference>(config_t::get_value(tree->root_.container, where));
+            return *threaded_rbtree_strict_aliasing_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         const_pointer operator->() const
         {
-            return reinterpret_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
+            return threaded_rbtree_strict_aliasing_cast<const_pointer>(&config_t::get_value(tree->root_.container, where));
         }
 
         bool operator == (const_reverse_iterator const &other) const
@@ -2197,14 +2267,14 @@ public:
     }
 
     //copy
-    threaded_rbtree_impl(threaded_rbtree_impl const &other) : root_(other.get_comparator_(), container_type())
+    threaded_rbtree_impl(threaded_rbtree_impl const &other) : root_(other.get_comparator(), container_type())
     {
         insert(other.begin(), other.end());
     }
 
     //copy
     threaded_rbtree_impl(threaded_rbtree_impl const &other, container_type const &container)
-        : root_(other.get_comparator_(), container)
+        : root_(other.get_comparator(), container)
     {
         insert(other.begin(), other.end());
     }
@@ -2350,7 +2420,7 @@ public:
                                                          const_deref_node_t{&root_.container},
                                                          key,
                                                          deref_key_t{&root_.container},
-                                                         get_comparator_()
+                                                         get_comparator()
                             )
             );;
         }
@@ -2360,10 +2430,10 @@ public:
                                                           const_deref_node_t{&root_.container},
                                                           key,
                                                           deref_key_t{&root_.container},
-                                                          get_comparator_()
+                                                          get_comparator()
             );
             return iterator(this,
-                (where == node_type::nil_sentinel || get_comparator_()(key, get_key_(where)))
+                (where == node_type::nil_sentinel || get_comparator()(key, get_key_(where)))
                             ? node_type::nil_sentinel
                             : where
             );
@@ -2379,7 +2449,7 @@ public:
                                                                const_deref_node_t{&root_.container},
                                                                key,
                                                                deref_key_t{&root_.container},
-                                                               get_comparator_()
+                                                               get_comparator()
                                   )
             );
         }
@@ -2389,10 +2459,10 @@ public:
                                                           const_deref_node_t{&root_.container},
                                                           key,
                                                           deref_key_t{&root_.container},
-                                                          get_comparator_()
+                                                          get_comparator()
             );
             return const_iterator(this,
-                (where == node_type::nil_sentinel || get_comparator_()(key, get_key_(where)))
+                (where == node_type::nil_sentinel || get_comparator()(key, get_key_(where)))
                                   ? node_type::nil_sentinel
                                   : where
             );
@@ -2443,6 +2513,25 @@ public:
         return std::distance(range.first, range.second);
     }
 
+    size_type approximate_rank(key_type const &key) const
+    {
+        double rank_ratio = threaded_rbtree_approximate_rank_ratio(root_,
+                                                                   const_deref_node_t{&root_.container },
+                                                                   key,
+                                                                   deref_key_t{&root_.container},
+                                                                   get_comparator());
+        return size_type(rank_ratio * size());
+    }
+
+    double approximate_rank_ratio(key_type const &key) const
+    {
+        return threaded_rbtree_approximate_rank_ratio(root_,
+                                                      const_deref_node_t{&root_.container },
+                                                      key,
+                                                      deref_key_t{&root_.container},
+                                                      get_comparator());
+    }
+
     iterator lower_bound(key_type const &key)
     {
         return iterator(this, lwb_i(key));
@@ -2470,7 +2559,7 @@ public:
                                     const_deref_node_t{&root_.container},
                                     key,
                                     deref_key_t{&root_.container},
-                                    get_comparator_(),
+                                    get_comparator(),
                                     lower,
                                     upper
         );
@@ -2484,7 +2573,7 @@ public:
                                     const_deref_node_t{&root_.container},
                                     key,
                                     deref_key_t{&root_.container},
-                                    get_comparator_(),
+                                    get_comparator(),
                                     lower,
                                     upper
         );
@@ -2527,7 +2616,7 @@ public:
                                            const_deref_node_t{&root_.container},
                                            key,
                                            deref_key_t{&root_.container},
-                                           get_comparator_()
+                                           get_comparator()
         );
     }
 
@@ -2537,7 +2626,7 @@ public:
                                            const_deref_node_t{&root_.container},
                                            key,
                                            deref_key_t{&root_.container},
-                                           get_comparator_()
+                                           get_comparator()
         );
     }
 
@@ -2547,7 +2636,7 @@ public:
                                                    const_deref_node_t{&root_.container},
                                                    key,
                                                    deref_key_t{&root_.container},
-                                                   get_comparator_()
+                                                   get_comparator()
         );
     }
 
@@ -2557,7 +2646,7 @@ public:
                                                    const_deref_node_t{&root_.container},
                                                    key,
                                                    deref_key_t{&root_.container},
-                                                   get_comparator_()
+                                                   get_comparator()
         );
     }
 
@@ -2568,12 +2657,12 @@ public:
 
     value_type &elem_at(size_type i)
     {
-        return reinterpret_cast<value_type &>(config_t::get_value(root_.container, i));
+        return *threaded_rbtree_strict_aliasing_cast<value_type *>(&config_t::get_value(root_.container, i));
     }
 
     value_type const &elem_at(size_type i) const
     {
-        return reinterpret_cast<value_type const &>(config_t::get_value(root_.container, i));
+        return *threaded_rbtree_strict_aliasing_cast<value_type const *>(&config_t::get_value(root_.container, i));
     }
 
     iterator begin()
@@ -2666,19 +2755,20 @@ public:
         return root_.container;
     }
 
+    key_compare &get_comparator()
+    {
+      return root_;
+    }
+
+    key_compare const &get_comparator() const
+    {
+      return root_;
+    }
+
 protected:
     root_t root_;
 
 protected:
-    key_compare &get_comparator_()
-    {
-        return root_;
-    }
-
-    key_compare const &get_comparator_() const
-    {
-        return root_;
-    }
 
     key_type const &get_key_(size_type index) const
     {
@@ -2734,7 +2824,7 @@ protected:
                                                            deref_node_t{&root_.container},
                                                            key,
                                                            deref_key_t{&root_.container},
-                                                           get_comparator_()
+                                                           get_comparator()
         );
         if(exists)
         {
@@ -2755,7 +2845,7 @@ protected:
                                                            deref_node_t{&root_.container},
                                                            key,
                                                            deref_key_t{&root_.container},
-                                                           get_comparator_()
+                                                           get_comparator()
         );
         if(!exists)
         {
@@ -2851,12 +2941,12 @@ struct threaded_rbtree_default_set_config_t
 
     static storage_type &get_value(container_type &container, std::size_t index)
     {
-        return reinterpret_cast<storage_type &>(container[index].value);
+        return *threaded_rbtree_strict_aliasing_cast<storage_type *>(container[index].value);
     }
 
     static storage_type const &get_value(container_type const &container, std::size_t index)
     {
-        return reinterpret_cast<storage_type const &>(container[index].value);
+        return *threaded_rbtree_strict_aliasing_cast<storage_type const *>(container[index].value);
     }
 
     static std::size_t alloc_index(container_type &container)
@@ -2961,7 +3051,7 @@ public:
     typename base_t::mapped_type &operator[](typename base_t::key_type const &key)
     {
         typename base_t::size_type offset = base_t::lwb_i(key);
-        if(offset == base_t::node_type::nil_sentinel || base_t::get_comparator_()(key, typename base_t::deref_key_t{&base_t::root_.container}(offset)))
+        if(offset == base_t::node_type::nil_sentinel || base_t::get_comparator()(key, typename base_t::deref_key_t{&base_t::root_.container}(offset)))
         {
             offset = base_t::trb_insert_(std::false_type(), key, typename base_t::mapped_type()).first;
         }

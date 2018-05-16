@@ -762,9 +762,9 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
     for (const auto& f : vstorage->LevelFiles(level)) {
       edit.DeleteFile(level, f->fd.GetNumber());
       edit.AddFile(to_level, f->fd.GetNumber(), f->fd.GetPathId(),
-                   f->fd.GetFileSize(), f->smallest, f->largest,
+                   f->fd.GetFileSize(), f->range_set,
                    f->smallest_seqno, f->largest_seqno,
-                   f->marked_for_compaction);
+                   f->marked_for_compaction, f->partial_removed, 0);
     }
     ROCKS_LOG_DEBUG(immutable_db_options_.info_log,
                     "[%s] Apply version edit:\n%s", cfd->GetName().c_str(),
@@ -896,7 +896,7 @@ Status DBImpl::RunManualCompaction(ColumnFamilyData* cfd, int input_level,
     assert(HasPendingManualCompaction());
     manual_conflict = false;
     Compaction* compaction = nullptr;
-    if (ShouldntRunManualCompaction(&manual) || (manual.in_progress == true) ||
+    if (ShouldntRunManualCompaction(&manual) || manual.in_progress ||
         scheduled ||
         (((manual.manual_end = &manual.tmp_storage1) != nullptr) &&
              ((compaction = manual.cfd->CompactRange(
@@ -942,7 +942,8 @@ Status DBImpl::RunManualCompaction(ColumnFamilyData* cfd, int input_level,
 
 Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
                              const FlushOptions& flush_options,
-                             bool writes_stopped) {
+                             bool writes_stopped,
+                             bool nonmem_writes_stopped) {
   Status s;
   {
     WriteContext context;
@@ -960,7 +961,7 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
     }
 
     // SwitchMemtable() will release and reacquire mutex during execution
-    s = SwitchMemtable(cfd, &context);
+    s = SwitchMemtable(cfd, &context, nonmem_writes_stopped);
 
     if (!writes_stopped) {
       write_thread_.ExitUnbatched(&w);
@@ -981,6 +982,7 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
 }
 
 Status DBImpl::WaitForFlushMemTable(ColumnFamilyData* cfd) {
+  const uint64_t kWaitIntervalUS = 10 * 1000;
   Status s;
   // Wait until the compaction completes
   InstrumentedMutexLock l(&mutex_);
@@ -994,7 +996,7 @@ Status DBImpl::WaitForFlushMemTable(ColumnFamilyData* cfd) {
       // drop to zero
       return Status::InvalidArgument("Cannot flush a dropped CF");
     }
-    bg_cv_.Wait();
+    bg_cv_.TimedWait(kWaitIntervalUS);
   }
   if (!bg_error_.ok()) {
     s = bg_error_;
@@ -1614,9 +1616,9 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
         FileMetaData* f = c->input(l, i);
         c->edit()->DeleteFile(c->level(l), f->fd.GetNumber());
         c->edit()->AddFile(c->output_level(), f->fd.GetNumber(),
-                           f->fd.GetPathId(), f->fd.GetFileSize(), f->smallest,
-                           f->largest, f->smallest_seqno, f->largest_seqno,
-                           f->marked_for_compaction);
+                           f->fd.GetPathId(), f->fd.GetFileSize(), f->range_set,
+                           f->smallest_seqno, f->largest_seqno,
+                           f->marked_for_compaction, f->partial_removed, 0);
 
         ROCKS_LOG_BUFFER(log_buffer, "[%s] Moving #%" PRIu64
                                      " to level-%d %" PRIu64 " bytes\n",
@@ -1752,33 +1754,33 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
       m->status = status;
       m->done = true;
     }
-    // For universal compaction:
-    //   Because universal compaction always happens at level 0, so one
-    //   compaction will pick up all overlapped files. No files will be
-    //   filtered out due to size limit and left for a successive compaction.
-    //   So we can safely conclude the current compaction.
-    //
-    //   Also note that, if we don't stop here, then the current compaction
-    //   writes a new file back to level 0, which will be used in successive
-    //   compaction. Hence the manual compaction will never finish.
-    //
-    // Stop the compaction if manual_end points to nullptr -- this means
-    // that we compacted the whole range. manual_end should always point
-    // to nullptr in case of universal compaction
-    if (m->manual_end == nullptr) {
-      m->done = true;
-    }
-    if (!m->done) {
-      // We only compacted part of the requested range.  Update *m
-      // to the range that is left to be compacted.
-      // Universal and FIFO compactions should always compact the whole range
-      assert(m->cfd->ioptions()->compaction_style !=
-                 kCompactionStyleUniversal ||
-             m->cfd->ioptions()->num_levels > 1);
-      assert(m->cfd->ioptions()->compaction_style != kCompactionStyleFIFO);
-      m->tmp_storage = *m->manual_end;
-      m->begin = &m->tmp_storage;
-      m->incomplete = true;
+    if (m->cfd->ioptions()->compaction_style == kCompactionStyleUniversal) {
+      // Because universal compaction always happens at level 0, so one
+      // compaction will pick up all overlapped files. No files will be
+      // filtered out due to size limit and left for a successive compaction.
+      // So we can safely conclude the current compaction.
+      //
+      // manual compaction need continue ?
+      auto vstorage = m->cfd->current()->storage_info();
+      m->incomplete = vstorage->need_continue_compaction(m->output_level);
+      m->done = !m->incomplete;
+    } else {
+      if (m->manual_end == nullptr) {
+        // Stop the compaction if manual_end points to nullptr -- this means
+        // that we compacted the whole range. manual_end should always point
+        // to nullptr in case of universal compaction
+        m->done = true;
+      }
+      if (!m->done) {
+        // We only compacted part of the requested range.  Update *m
+        // to the range that is left to be compacted.
+        // FIFO compactions should always compact the whole range
+        assert(m->cfd->ioptions()->num_levels > 1);
+        assert(m->cfd->ioptions()->compaction_style != kCompactionStyleFIFO);
+        m->tmp_storage = *m->manual_end;
+        m->begin = &m->tmp_storage;
+        m->incomplete = true;
+      }
     }
     m->in_progress = false; // not being processed anymore
   }

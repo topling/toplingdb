@@ -109,7 +109,7 @@ ifeq ("$(LINK_SHARED_TERARK)","1")
                     -lterark-zip-rocksdb-${DBG_OR_RLS} \
                     -lterark-zbs-${DBG_OR_RLS} \
                     -lterark-fsa-${DBG_OR_RLS} \
-                    -lterark-core-${DBG_OR_RLS}
+                    -lterark-core-${DBG_OR_RLS} -ldl
 endif
 
 ifeq ("$(LINK_STATIC_TERARK)","1")

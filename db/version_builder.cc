@@ -48,7 +48,7 @@ bool NewestFirstBySeqNo(FileMetaData* a, FileMetaData* b) {
 namespace {
 bool BySmallestKey(FileMetaData* a, FileMetaData* b,
                    const InternalKeyComparator* cmp) {
-  int r = cmp->Compare(a->smallest, b->smallest);
+  int r = cmp->Compare(a->smallest(), b->smallest());
   if (r != 0) {
     return (r < 0);
   }
@@ -75,6 +75,16 @@ class VersionBuilder::Rep {
       }
       assert(false);
       return false;
+    }
+  };
+  struct FileNumberComparator {
+    bool operator()(FileMetaData* f1, FileMetaData* f2) const {
+      return f1->fd.GetNumber() < f2->fd.GetNumber();
+    }
+  };
+  struct FileNumberEqual {
+    bool operator()(FileMetaData* f1, FileMetaData* f2) const {
+      return f1->fd.GetNumber() == f2->fd.GetNumber();
     }
   };
 
@@ -185,11 +195,11 @@ class VersionBuilder::Rep {
           }
 
           // Make sure there is no overlap in levels > 0
-          if (vstorage->InternalComparator()->Compare(f1->largest,
-                                                      f2->smallest) >= 0) {
+          if (vstorage->InternalComparator()->Compare(f1->largest(),
+                                                      f2->smallest()) >= 0) {
             fprintf(stderr, "L%d have overlapping ranges %s vs. %s\n", level,
-                    (f1->largest).DebugString(true).c_str(),
-                    (f2->smallest).DebugString(true).c_str());
+                    f1->largest().DebugString(true).c_str(),
+                    f2->smallest().DebugString(true).c_str());
             abort();
           }
         }
@@ -320,19 +330,29 @@ class VersionBuilder::Rep {
       // Merge the set of added files with the set of pre-existing files.
       // Drop any deleted files.  Store the result in *v.
       const auto& base_files = base_vstorage_->LevelFiles(level);
-      auto base_iter = base_files.begin();
-      auto base_end = base_files.end();
       const auto& unordered_added_files = levels_[level].added_files;
-      vstorage->Reserve(level,
-                        base_files.size() + unordered_added_files.size());
+      const size_t add_files_num = unordered_added_files.size();
+      vstorage->Reserve(level, base_files.size() + add_files_num);
 
-      // Sort added files for the level.
+      // Merge base files and added files for the level.
       std::vector<FileMetaData*> added_files;
-      added_files.reserve(unordered_added_files.size());
+      added_files.reserve(base_files.size() + add_files_num);
       for (const auto& pair : unordered_added_files) {
         added_files.push_back(pair.second);
       }
-      std::sort(added_files.begin(), added_files.end(), cmp);
+      added_files.insert(added_files.end(), base_files.begin(),
+                         base_files.end());
+      if (add_files_num > 0) {
+        if (!base_files.empty()) {
+          // Make sure added files in front
+          std::stable_sort(added_files.begin(), added_files.end(),
+                           FileNumberComparator());
+          auto end = std::unique(added_files.begin(), added_files.end(),
+                                 FileNumberEqual());
+          added_files.erase(end, added_files.end());
+        }
+        std::sort(added_files.begin(), added_files.end(), cmp);
+      }
 
 #ifndef NDEBUG
       FileMetaData* prev_file = nullptr;
@@ -342,23 +362,11 @@ class VersionBuilder::Rep {
 #ifndef NDEBUG
         if (level > 0 && prev_file != nullptr) {
           assert(base_vstorage_->InternalComparator()->Compare(
-                     prev_file->smallest, added->smallest) <= 0);
+                     prev_file->smallest(), added->smallest()) <= 0);
         }
         prev_file = added;
 #endif
-
-        // Add all smaller files listed in base_
-        for (auto bpos = std::upper_bound(base_iter, base_end, added, cmp);
-             base_iter != bpos; ++base_iter) {
-          MaybeAddFile(vstorage, level, *base_iter);
-        }
-
         MaybeAddFile(vstorage, level, added);
-      }
-
-      // Add remaining base files
-      for (; base_iter != base_end; ++base_iter) {
-        MaybeAddFile(vstorage, level, *base_iter);
       }
     }
 
@@ -391,14 +399,10 @@ class VersionBuilder::Rep {
         table_cache_->FindTable(env_options_,
                                 *(base_vstorage_->InternalComparator()),
                                 file_meta->fd, &file_meta->table_reader_handle,
+                                &file_meta->fd.table_reader,
                                 false /*no_io */, true /* record_read_stats */,
                                 internal_stats->GetFileReadHist(level), false,
                                 level, prefetch_index_and_filter_in_cache);
-        if (file_meta->table_reader_handle != nullptr) {
-          // Load table_reader
-          file_meta->fd.table_reader = table_cache_->GetTableReaderFromHandle(
-              file_meta->table_reader_handle);
-        }
       }
     };
 

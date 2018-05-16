@@ -104,6 +104,83 @@ class AtomicCounter {
   int count_;
 };
 
+class TestInternalIterator : public InternalIterator {
+public:
+  TestInternalIterator(const std::vector<uint64_t>& value1) : value_(value1) {
+    key_.resize(16, 0);
+  }
+
+  bool Valid() const override final {
+    return iter_ != value_.end();
+  }
+  void SeekToFirst() override final {
+    iter_ = value_.begin();
+  }
+  void SeekToLast() override final {
+    iter_ = std::prev(value_.end());
+  }
+  void Seek(const Slice& target) override final {
+    uint64_t t = *(const uint64_t*)target.data();
+    if (port::kLittleEndian) {
+      t = EndianTransform(t, 8);
+    }
+    iter_ = std::lower_bound(value_.begin(), value_.end(), t, [this](uint64_t l, uint64_t r) {
+      return l < r;
+    });
+  }
+  void SeekForPrev(const Slice& target) override final {
+    uint64_t t = *(const uint64_t*)target.data();
+    if (port::kLittleEndian) {
+      t = EndianTransform(t, 8);
+    }
+    iter_ = std::upper_bound(value_.begin(), value_.end(), t, [this](uint64_t l, uint64_t r) {
+      return l < r;
+    });
+    if (iter_ == value_.begin()) {
+      iter_ = value_.end();
+    }
+    else {
+      --iter_;
+    }
+  }
+  void Next() override final {
+    ++iter_;
+  }
+  void Prev() override final {
+    if (iter_ == value_.begin()) {
+      iter_ = value_.end();
+    }
+    else {
+      --iter_;
+    }
+  }
+  Slice key() const override final {
+    uint64_t key1 = *iter_;
+    if (port::kLittleEndian) {
+      key1 = EndianTransform(key1, 8);
+    }
+    memcpy(&key_[0], &key1, 8);
+    return key_;
+  }
+  Slice value() const override final {
+    return Slice();
+  }
+  Status status() const override final {
+    return Status::OK();
+  }
+  void SetPinnedItersMgr(PinnedIteratorsManager* pinned_iters_mgr) override final {}
+  bool IsKeyPinned() const override final { return false; }
+  bool IsValuePinned() const override final { return false; }
+  Status GetProperty(std::string prop_name, std::string* prop) override final {
+    return Status::OK();
+  }
+
+private:
+  mutable std::string key_;
+  std::vector<uint64_t>::const_iterator iter_;
+  const std::vector<uint64_t>& value_;
+};
+
 struct OptionsOverride {
   std::shared_ptr<const FilterPolicy> filter_policy = nullptr;
   // These will be used only if filter_policy is set

@@ -1278,12 +1278,14 @@ bool LevelCompactionBuilder::SetupOtherInputsIfNeeded() {
         range.largest = &start_level_inputs.files.back()->largest();
       }
       // make sure output file not covered by single sst
-      if (output_level_inputs.files.size() > 1 ||
-          icmp.Compare(*range.smallest,
-                       output_level_inputs.files.front()->smallest()) <= 0 ||
-          icmp.Compare(*range.largest,
-                       output_level_inputs.files.back()->largest()) >= 0) {
-        input_range_.emplace_back(std::move(range));
+      auto overlap = FindLevelOverlap(output_level_inputs.files, icmp,
+                                      range.smallest, range.largest);
+      if (overlap.first == overlap.second) {
+        auto file = output_level_inputs.files[overlap.first];
+        if (icmp.Compare(*range.smallest, file->smallest()) <= 0 ||
+            icmp.Compare(*range.largest, file->largest()) >= 0) {
+          input_range_.emplace_back(std::move(range));
+        }
       }
     }
   }

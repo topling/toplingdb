@@ -1468,7 +1468,7 @@ void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
     if (!files_[level].empty()) {
       for (auto* f : files_[level]) {
         if (f->compact_to_level) {
-          need_continue_compaction_.emplace(f->compact_to_level);
+          need_continue_compaction_.emplace(level, f->compact_to_level);
         }
       }
       last_qualify_level = level - 1;
@@ -1482,7 +1482,7 @@ void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
         files_marked_for_compaction_.emplace_back(level, f);
       }
       if (f->compact_to_level) {
-        need_continue_compaction_.emplace(f->compact_to_level);
+        need_continue_compaction_.emplace(level, f->compact_to_level);
       }
     }
   }

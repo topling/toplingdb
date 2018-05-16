@@ -15,11 +15,11 @@
 #endif
 
 #include <inttypes.h>
+#include <cmath>
 #include <limits>
 #include <queue>
 #include <string>
 #include <utility>
-#include <cmath>
 #include "db/column_family.h"
 #include "monitoring/statistics.h"
 #include "util/filename.h"
@@ -164,8 +164,15 @@ bool UniversalCompactionPicker::NeedsCompaction(
   // deep copy
   auto need_continue_compaction = vstorage->need_continue_compaction();
   for (auto c : compactions_in_progress_) {
-    if (c->input_version()->storage_info() == vstorage) {
-      need_continue_compaction.erase(c->output_level());
+    if (!c->is_finished()) {
+      for (auto it = need_continue_compaction.begin();
+           it != need_continue_compaction.end();) {
+        if (it->second == c->output_level()) {
+          it = need_continue_compaction.erase(it);
+        } else {
+          ++it;
+        }
+      }
     }
   }
   return !need_continue_compaction.empty() ||
@@ -474,8 +481,7 @@ Compaction* UniversalCompactionPicker::PickCompactionConitnue(
       for (int i = level; i <= output_level; ++i) {
         if (i == 0) {
           for (auto f : vstorage->LevelFiles(0)) {
-            if (f->compact_to_level == output_level &&
-                f->being_compacted) {
+            if (f->compact_to_level == output_level && f->being_compacted) {
               level = output_level;
               output_level = 0;
               break;
@@ -596,8 +602,7 @@ Compaction* UniversalCompactionPicker::PickCompactionConitnue(
           range.flags |= CompactionInputFilesRange::kLargestOpen;
         }
         input_range.emplace_back(range);
-      }
-      else if (end == 0) {
+      } else if (end == 0) {
         if (need_compact_between(nullptr, files.front())) {
           // this case should be rare
           // head range
@@ -646,9 +651,9 @@ Compaction* UniversalCompactionPicker::PickCompactionConitnue(
   for (auto& input : inputs) {
     for (auto f : input.files) {
       assert(!f->being_compacted);
-      estimated_total_size +=
-          f->fd.GetFileSize() *
-          (kPartialRemovedMax - f->partial_removed) / kPartialRemovedMax;
+      estimated_total_size += f->fd.GetFileSize() *
+                              (kPartialRemovedMax - f->partial_removed) /
+                              kPartialRemovedMax;
     }
   }
   auto path_id = GetPathId(ioptions_, estimated_total_size);
@@ -764,7 +769,7 @@ namespace {
     size_t   size_max_idx;
     size_t   real_idx;
   };
-}
+}  // namespace
 
 //
 // Consider compaction files based on their size differences with
@@ -922,7 +927,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
         }
       }
       sum_sr_size += succeeding_sr->compensated_file_size;
-      max_sr_size  = std::max(max_sr_size, succeeding_sr->compensated_file_size);
+      max_sr_size = std::max(max_sr_size, succeeding_sr->compensated_file_size);
       last_sr_size = succeeding_sr->compensated_file_size;
       candidate_count++;
     }
@@ -932,13 +937,12 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       computeRanking(loop, candidate_count);
       double max_sr_ratio = double(max_sr_size) / sum_sr_size;
       for (size_t sorting_idx = 0;
-                  sorting_idx < candidate_count - min_merge_width;
-                  sorting_idx++) {
+           sorting_idx < candidate_count - min_merge_width; sorting_idx++) {
         size_t merge_width = rankingVec[sorting_idx].real_idx + 1;
         if (merge_width >= min_merge_width) {
           max_sr_ratio = rankingVec[sorting_idx].max_sr_ratio;
-          max_sr_size  = rankingVec[sorting_idx].size_max_val;
-          sum_sr_size  = rankingVec[sorting_idx].size_sum;
+          max_sr_size = rankingVec[sorting_idx].size_max_val;
+          sum_sr_size = rankingVec[sorting_idx].size_sum;
           candidate_count = merge_width;
           // found a best picker which start from loop and has
           // at least min_merge_width sorted runs
@@ -955,7 +959,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
         }
       }
       auto& o = mutable_cf_options;
-      auto  small_sum = o.write_buffer_size * o.max_write_buffer_number;
+      auto small_sum = o.write_buffer_size * o.max_write_buffer_number;
       // in worst case, all sorted runs are picked, and the size condition
       // is still not satisfied, in this case, we must pick the compaction
       if ( // candidate_count >= max_sr_num ||

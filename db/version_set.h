@@ -387,7 +387,7 @@ class VersionStorageInfo {
 
   bool force_consistency_checks() const { return force_consistency_checks_; }
 
-  const std::unordered_set<int>& need_continue_compaction() const {
+  const std::unordered_map<int, int>& need_continue_compaction() const {
     return need_continue_compaction_;
   }
   bool need_continue_compaction(int level) const {
@@ -515,7 +515,7 @@ class VersionStorageInfo {
 
   // If not empty, some compaction break by partial remove
   // key = output_level , value = beging_compacted
-  std::unordered_set<int> need_continue_compaction_;
+  std::unordered_map<int, int> need_continue_compaction_;
 
   friend class Version;
   friend class VersionSet;

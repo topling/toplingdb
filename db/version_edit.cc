@@ -22,8 +22,8 @@ void RangeEraseSet::push(const InternalKey& smallest, const InternalKey& largest
                     bool smallest_open, bool largest_open) {
   erase.emplace_back(smallest);
   erase.emplace_back(largest);
-  open.emplace_back(smallest_open);
-  open.emplace_back(largest_open);
+  open.push_back(smallest_open);
+  open.push_back(largest_open);
 }
 
 void MergeRangeSet(const std::vector<InternalKey>& range_set,

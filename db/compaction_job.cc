@@ -1679,6 +1679,7 @@ void CompactionJob::CleanupCompaction() {
       }
     }
   }
+  compact_->compaction->set_is_finished(true);
   delete compact_;
   compact_ = nullptr;
 }

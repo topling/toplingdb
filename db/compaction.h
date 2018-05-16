@@ -183,6 +183,12 @@ class Compaction {
   // Was this compaction triggered manually by the client?
   bool is_manual_compaction() const { return is_manual_compaction_; }
 
+  // set is compaction finished
+  void set_is_finished(bool finished) { is_finished_ = finished; }
+
+  // get is compaction finished
+  bool is_finished() { return is_finished_; }
+
   // Used when allow_trivial_move option is set in
   // Universal compaction. If all the input files are
   // non overlapping, then is_trivial_move_ variable
@@ -335,6 +341,9 @@ class Compaction {
   // True if we can do trivial move in Universal multi level
   // compaction
   bool is_trivial_move_;
+
+  // Is compaction finished
+  bool is_finished_;
 
   // Does input compression match the output compression?
   bool InputCompressionMatchesOutput() const;

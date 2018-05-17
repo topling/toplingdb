@@ -795,7 +795,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   double xlev; // multiplier for size reversed levels
   {
     uint64_t sum = 0;
-    for (auto& sr : sorted_runs) sum += sr.size;
+    for (auto& sr : sorted_runs) sum += sr.compensated_file_size;
     size_t n = mutable_cf_options.level0_file_num_compaction_trigger
              + ioptions_.num_levels - 1;
     sum = std::max<uint64_t>(sum, n * write_buffer_size);

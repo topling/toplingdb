@@ -875,60 +875,21 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       continue;
     }
     size_t loop = sr - &sorted_runs[0];
-    candidate_count = 1;
+    candidate_count = 0;
 
-    // This file is not being compacted. Consider it as the
-    // first candidate to be compacted.
-    uint64_t candidate_size = sr->compensated_file_size;
     char file_num_buf[kFormatFileNumberBufSize];
     sr->Dump(file_num_buf, sizeof(file_num_buf), true);
     ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: Possible candidate %s[%d].",
                      cf_name.c_str(), file_num_buf, loop);
 
-    uint64_t sum_sr_size = candidate_size;
-    uint64_t max_sr_size = candidate_size;
-    uint64_t last_sr_size = candidate_size;
-    // Check if the succeeding files need compaction.
-    for (size_t i = loop + 1;
-         candidate_count < max_files_to_compact && i < sorted_runs.size();
-         i++) {
-      const SortedRun* succeeding_sr = &sorted_runs[i];
-      if (succeeding_sr->being_compacted) {
-        break;
-      }
-      // Pick files if the total/last candidate file size (increased by the
-      // specified ratio) is still larger than the next candidate file.
-      // candidate_size is the total size of files picked so far with the
-      // default kCompactionStopStyleTotalSize; with
-      // kCompactionStopStyleSimilarSize, it's simply the size of the last
-      // picked file.
-      if (ioptions_.compaction_options_universal.stop_style ==
-          kCompactionStopStyleSimilarSize) {
-        // Similar-size stopping rule: also check the last picked file isn't
-        // far larger than the next candidate file.
-        double sz = (succeeding_sr->size * (100.0 + ratio)) / 100.0;
-        if (sz < static_cast<double>(last_sr_size)) {
-          // If the small file we've encountered begins a run of similar-size
-          // files, we'll pick them up on a future iteration of the outer
-          // loop. If it's some lonely straggler, it'll eventually get picked
-          // by the last-resort read amp strategy which disregards size ratios.
-          break;
-        }
-      } else {  // default kCompactionStopStyleTotalSize
-        double mul_ratio = (100.0 + ratio) / 100.0;
-        double sz;
-        if (loop + 1 == i) {
-          sz = sum_sr_size * std::max(1.3, mul_ratio);
-        } else {
-          sz = sum_sr_size * mul_ratio;
-        }
-        if (sz < static_cast<double>(succeeding_sr->size)) {
-          break;
-        }
-      }
-      sum_sr_size += succeeding_sr->compensated_file_size;
-      max_sr_size = std::max(max_sr_size, succeeding_sr->compensated_file_size);
-      last_sr_size = succeeding_sr->compensated_file_size;
+    // ignore compaction_options_universal.size_ratio and stop_style
+    uint64_t sum_sr_size = 0;
+    uint64_t max_sr_size = 0;
+    size_t limit = std::min(sorted_runs.size(), loop + max_files_to_compact);
+    for (size_t i = loop; i < limit && !sorted_runs[i].being_compacted; i++) {
+      auto x = sorted_runs[i].compensated_file_size;
+      sum_sr_size += x;
+      max_sr_size = std::max(max_sr_size, x);
       candidate_count++;
     }
 

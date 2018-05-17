@@ -297,46 +297,6 @@ Compaction* UniversalCompactionPicker::PickCompaction(
       ROCKS_LOG_BUFFER(log_buffer,
                        "[%s] Universal: compacting for size ratio\n",
                        cf_name.c_str());
-    } else {
-      // Size amplification and file size ratios are within configured limits.
-      // If max read amplification is exceeding configured limits, then force
-      // compaction without looking at filesize ratios and try to reduce
-      // the number of files to fewer than level0_file_num_compaction_trigger.
-      // This is guaranteed by NeedsCompaction()
-      assert(sorted_runs.size() >=
-             static_cast<size_t>(
-                 mutable_cf_options.level0_file_num_compaction_trigger) ||
-             !vstorage->need_continue_compaction().empty());
-      // Get the total number of sorted runs that are not being compacted
-      int num_sr_not_compacted = 0;
-      int num_sr_are_compacting = 0;
-      for (size_t i = 0; i < sorted_runs.size(); i++) {
-        if (sorted_runs[i].being_compacted == false) {
-          num_sr_not_compacted++;
-        } else {
-          num_sr_are_compacting++;
-        }
-      }
-      if (num_sr_are_compacting) {
-        ROCKS_LOG_BUFFER(log_buffer,
-                         "[%s] Universal: %d sorted runs compacting by other jobs, skip\n",
-                         cf_name.c_str(), num_sr_are_compacting);
-        return nullptr;
-      }
-
-      // The number of sorted runs that are not being compacted is greater than
-      // the maximum allowed number of sorted runs
-      if (num_sr_not_compacted >
-          mutable_cf_options.level0_file_num_compaction_trigger) {
-        unsigned int num_files = num_sr_not_compacted;
-        if ((c = PickCompactionToReduceSortedRuns(
-                 cf_name, mutable_cf_options, vstorage, score, UINT_MAX,
-                 num_files, sorted_runs, log_buffer)) != nullptr) {
-          ROCKS_LOG_BUFFER(log_buffer,
-                           "[%s] Universal: compacting for file num -- %u\n",
-                           cf_name.c_str(), num_files);
-        }
-      }
     }
   }
   if (c == nullptr) {

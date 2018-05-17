@@ -897,13 +897,12 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     if (candidate_count >= min_merge_width) {
       computeRanking(loop, candidate_count);
       double max_sr_ratio = double(max_sr_size) / sum_sr_size;
-      for (size_t sorting_idx = 0;
-           sorting_idx < candidate_count - min_merge_width; sorting_idx++) {
-        size_t merge_width = rankingVec[sorting_idx].real_idx + 1;
+      for (size_t rank = 0; rank < candidate_count - min_merge_width; rank++) {
+        size_t merge_width = rankingVec[rank].real_idx + 1;
         if (merge_width >= min_merge_width) {
-          max_sr_ratio = rankingVec[sorting_idx].max_sr_ratio;
-          max_sr_size = rankingVec[sorting_idx].size_max_val;
-          sum_sr_size = rankingVec[sorting_idx].size_sum;
+          max_sr_ratio = rankingVec[rank].max_sr_ratio;
+          max_sr_size = rankingVec[rank].size_max_val;
+          sum_sr_size = rankingVec[rank].size_sum;
           candidate_count = merge_width;
           // found a best picker which start from loop and has
           // at least min_merge_width sorted runs

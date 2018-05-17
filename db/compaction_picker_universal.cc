@@ -854,8 +854,8 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     }
 
     auto logSkipping = [&](const char* reason) {
-      size_t limit = std::min(loop + candidate_count, sorted_runs.size());
-      for (size_t i = loop; i < limit; i++) {
+      size_t limit2 = std::min(loop + candidate_count, sorted_runs.size());
+      for (size_t i = loop; i < limit2; i++) {
         sorted_runs[i].DumpSizeInfo(file_num_buf, sizeof(file_num_buf), loop);
         ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal:%s Skipping %s",
                          cf_name.c_str(), reason, file_num_buf);

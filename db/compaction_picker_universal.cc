@@ -893,6 +893,15 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
       candidate_count++;
     }
 
+    auto logSkipping = [&](const char* reason) {
+      size_t limit = std::min(loop + candidate_count, sorted_runs.size());
+      for (size_t i = loop; i < limit; i++) {
+        sorted_runs[i].DumpSizeInfo(file_num_buf, sizeof(file_num_buf), loop);
+        ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal:%s Skipping %s",
+                         cf_name.c_str(), reason, file_num_buf);
+      }
+    };
+
     // Found a series of consecutive files that need compaction.
     if (candidate_count >= min_merge_width) {
       computeRanking(loop, candidate_count);
@@ -932,22 +941,11 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
         break;
       } else {
         // too bad, don't pick the compaction
-        for (size_t i = loop;
-             i < loop + candidate_count && i < sorted_runs.size(); i++) {
-          const SortedRun* skipping_sr = &sorted_runs[i];
-          skipping_sr->DumpSizeInfo(file_num_buf, sizeof(file_num_buf), loop);
-          ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: max/sum = %7.5f too big, skipping %s",
-                           cf_name.c_str(), max_sr_ratio, file_num_buf);
-        }
+        char buf[64]; sprintf(buf, " max/sum = %7.5f too big,", max_sr_ratio);
+        logSkipping(buf);
       }
     } else {
-      for (size_t i = loop;
-           i < loop + candidate_count && i < sorted_runs.size(); i++) {
-        const SortedRun* skipping_sr = &sorted_runs[i];
-        skipping_sr->DumpSizeInfo(file_num_buf, sizeof(file_num_buf), loop);
-        ROCKS_LOG_BUFFER(log_buffer, "[%s] Universal: Skipping %s",
-                         cf_name.c_str(), file_num_buf);
-      }
+      logSkipping("");
     }
   }
   if (!done || candidate_count <= 1) {

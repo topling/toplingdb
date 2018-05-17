@@ -917,6 +917,7 @@ VersionStorageInfo::VersionStorageInfo(
       current_num_samples_(0),
       estimated_compaction_needed_bytes_(0),
       finalized_(false),
+      is_pick_fail_(false),
       force_consistency_checks_(_force_consistency_checks) {
   if (ref_vstorage != nullptr) {
     accumulated_file_size_ = ref_vstorage->accumulated_file_size_;
@@ -1377,18 +1378,41 @@ void VersionStorageInfo::ComputeCompactionScore(
       // overwrites/deletions).
       int num_sorted_runs = 0;
       uint64_t total_size = 0;
-      for (auto* f : files_[level]) {
-        if (!f->being_compacted) {
-          total_size += f->compensated_file_size;
-          num_sorted_runs++;
-        }
-      }
+
       if (compaction_style_ == kCompactionStyleUniversal) {
+        int sorted_runs_in_row = 0;
+        auto push_sorted_run = [&](bool inc) {
+          if (inc) {
+            ++sorted_runs_in_row;
+          } else {
+            num_sorted_runs = std::max(sorted_runs_in_row, num_sorted_runs);
+            sorted_runs_in_row = 0;
+          }
+        };
+        for (auto* f : files_[level]) {
+          push_sorted_run(!f->being_compacted);
+          if (!f->being_compacted) {
+            total_size += f->compensated_file_size;
+          }
+        }
         // For universal compaction, we use level0 score to indicate
         // compaction score for the whole DB. Adding other levels as if
         // they are L0 files.
         for (int i = 1; i < num_levels(); i++) {
-          if (!files_[i].empty() && !files_[i][0]->being_compacted) {
+          bool inc = !files_[i].empty();
+          for (auto* f : files_[i]) {
+            if (f->being_compacted) {
+              inc = false;
+              break;
+            }
+          }
+          push_sorted_run(inc);
+        }
+        push_sorted_run(false);
+      } else {
+        for (auto* f : files_[level]) {
+          if (!f->being_compacted) {
+            total_size += f->compensated_file_size;
             num_sorted_runs++;
           }
         }
@@ -1451,6 +1475,7 @@ void VersionStorageInfo::ComputeCompactionScore(
       }
     }
   }
+  is_pick_fail_ = false;
   ComputeFilesMarkedForCompaction();
   ComputeBottommostFilesMarkedForCompaction();
   EstimateCompactionBytesNeeded(mutable_cf_options);

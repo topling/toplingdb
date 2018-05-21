@@ -2278,6 +2278,7 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
   {
     InstrumentedMutexLock l(&mutex_);
     Version* input_version = cfd->current();
+    edit.SetColumnFamily(cfd->GetID());
 
     auto* vstorage = input_version->storage_info();
     bool is_delete = false;
@@ -2294,20 +2295,20 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
           for (size_t i = 0; i < level_files.size(); ++i) {
             auto& f = level_files[i];
             if (nullptr_start == nullptr ||
-              ic.Compare(f->smallest(), *nullptr_start) < 0) {
+                ic.Compare(f->smallest(), *nullptr_start) < 0) {
               nullptr_start = &f->smallest();
             }
             if (nullptr_limit == nullptr ||
-              ic.Compare(f->largest(), *nullptr_limit) > 0) {
+                ic.Compare(f->largest(), *nullptr_limit) > 0) {
               nullptr_limit = &f->largest();
             }
           }
         }
-        else {
+        else if (!level_files.empty()) {
           auto& f0 = level_files.front();
           auto& fn = level_files.back();
           if (nullptr_start == nullptr ||
-            ic.Compare(f0->smallest(), *nullptr_start) < 0) {
+              ic.Compare(f0->smallest(), *nullptr_start) < 0) {
             nullptr_start = &f0->smallest();
           }
           if (nullptr_limit == nullptr ||
@@ -2355,12 +2356,8 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
       RangeEraseSet erase_set;
       for (size_t i = 0; i < ranges_copy.size(); ++i) {
         InternalKey smallest, largest;
-        if (ranges_copy[i].start != nullptr) {
-          smallest.SetMinPossibleForUserKey(ranges_copy[i].start);
-        }
-        if (ranges_copy[i].limit != nullptr) {
-          largest.SetMaxPossibleForUserKey(ranges_copy[i].limit);
-        }
+        smallest.SetMinPossibleForUserKey(ranges_copy[i].start);
+        largest.SetMaxPossibleForUserKey(ranges_copy[i].limit);
         erase_set.push(smallest, largest, false, !include_end);
       }
       // limit is nullptr , force include end (set open interval)
@@ -2440,7 +2437,6 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
               continue;
             }
             is_delete = true;
-            edit.SetColumnFamily(cfd->GetID());
             edit.DeleteFile(i, level_file->fd.GetNumber());
             deleted_files.insert(level_file);
             level_file->being_compacted = true;

@@ -24,6 +24,12 @@ Status DeleteFilesInRange(DB* db, ColumnFamilyHandle* column_family,
       ->DeleteFilesInRange(column_family, begin, end);
 }
 
+Status DeleteFilesInRanges(DB* db, ColumnFamilyHandle* column_family,
+                           const RangePtr* ranges, size_t n, bool include_end) {
+  return (static_cast_with_check<DBImpl, DB>(db->GetRootDB()))
+      ->DeleteFilesInRanges(column_family, ranges, n, include_end);
+}
+
 Status VerifySstFileChecksum(const Options& options,
                              const EnvOptions& env_options,
                              const std::string& file_path) {

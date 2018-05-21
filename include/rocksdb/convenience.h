@@ -331,6 +331,9 @@ void CancelAllBackgroundWork(DB* db, bool wait = false);
 Status DeleteFilesInRange(DB* db, ColumnFamilyHandle* column_family,
                           const Slice* begin, const Slice* end);
 
+Status DeleteFilesInRanges(DB* db, ColumnFamilyHandle* column_family,
+                           const RangePtr* ranges, size_t n, bool include_end);
+
 // Verify the checksum of file
 Status VerifySstFileChecksum(const Options& options,
                              const EnvOptions& env_options,

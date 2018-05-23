@@ -753,6 +753,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   double qlev; // a dynamic level_size multiplier
   double slev; // multiplier for small sst
   double xlev; // multiplier for size reversed levels
+  double skip_min_ratio = max_merge_width * std::log2(max_merge_width);
   {
     uint64_t sum = 0;
     for (auto& sr : sorted_runs) sum += sr.compensated_file_size;
@@ -897,6 +898,18 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
           (max_sr_ratio < slev && sum_sr_size < small_sum)) {
         // not so bad, pick the compaction
         start_index = loop;
+        while (candidate_count > min_merge_width &&
+               sorted_runs[start_index].size * skip_min_ratio < max_sr_size) {
+          sorted_runs[start_index].Dump(file_num_buf, sizeof(file_num_buf),
+                                        true);
+          ROCKS_LOG_BUFFER(log_buffer,
+                           "[%s] Universal: min/max = %7.5f too small, "
+                           "Skipping %s", cf_name.c_str(),
+                           sorted_runs[start_index].size / double(max_sr_size),
+                           file_num_buf);
+          ++start_index;
+          --candidate_count;
+        }
         done = true;
         break;
       } else {

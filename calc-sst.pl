@@ -17,6 +17,11 @@ sub PrintSize($) {
 }
 
 while (<>) {
+	if (/"score":\s*([\d.]),/) {
+		if ($1 <= 0.0) {
+			next;
+		}
+	}
 	my @F=();
 	my $levels;
 	if (/Base level 0, inputs: \[([^\]]*)\]/) {

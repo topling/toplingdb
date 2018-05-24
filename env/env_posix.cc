@@ -231,7 +231,7 @@ class PosixEnv : public Env {
       uint64_t size;
       s = GetFileSize(fname, &size);
       if (s.ok()) {
-        int flags = MAP_SHARED;
+        flags = MAP_SHARED;
 #if defined(OS_LINUX)
         if (options.use_mmap_populate) {
           flags |= MAP_POPULATE;

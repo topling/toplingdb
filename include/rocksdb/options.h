@@ -617,6 +617,8 @@ struct DBOptions {
   // Default: true
   bool advise_random_on_open = true;
 
+  bool allow_mmap_populate = false;
+
   // Amount of data to build up in memtables across all column
   // families before writing to disk.
   //

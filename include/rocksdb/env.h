@@ -96,6 +96,8 @@ struct EnvOptions {
   // WAL writes
   bool fallocate_with_keep_size = true;
 
+  bool use_mmap_populate = false;
+
   // See DBOptions doc
   size_t compaction_readahead_size;
 

@@ -945,25 +945,32 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     }
   }
   if (!done || candidate_count <= 1) {
-    auto re_pick = [&](double qRatio) {
-      for (auto& cand : candidate_vec) {
-        if (cand.max_sr_ratio < qRatio) {
-          char file_num_buf[kFormatFileNumberBufSize];
-          sorted_runs[cand.start].Dump(file_num_buf, sizeof(file_num_buf), true);
-          ROCKS_LOG_BUFFER(log_buffer,
-              "[%s] Universal: re_pick-ed candidate %s[%d], "
-              "count = %zd, max/sum = %7.5f",
-              cf_name.c_str(), file_num_buf, cand.start,
-              cand.count, cand.max_sr_ratio);
-          start_index = cand.start;
-          candidate_count = cand.count;
-          discard_small_sr(cand.max_sr_size);
-          return done = true;
-        }
+    if (candidate_vec.size() < 1) {
+      return nullptr;
+    }
+    auto best = candidate_vec.begin();
+    for (auto iter = best + 1; iter < candidate_vec.end(); ++iter) {
+      if (iter->max_sr_ratio < best->max_sr_ratio) {
+        best = iter;
       }
-      return false;
+    }
+    auto repick = [&](double qRatio) {
+      if (best->max_sr_ratio > qRatio) {
+        return false;
+      }
+      char file_num_buf[kFormatFileNumberBufSize];
+      sorted_runs[best->start].Dump(file_num_buf, sizeof(file_num_buf), true);
+      ROCKS_LOG_BUFFER(log_buffer,
+          "[%s] Universal: repicked candidate %s[%d], "
+          "count = %zd, max/sum = %7.5f",
+          cf_name.c_str(), file_num_buf, best->start,
+          best->count, best->max_sr_ratio);
+      start_index = best->start;
+      candidate_count = best->count;
+      discard_small_sr(best->max_sr_size);
+      return done = true;
     };
-    if (!re_pick(slev) && !re_pick(xlev)) {
+    if (!repick(slev) && !repick(xlev)) {
       return nullptr;
     }
   }

@@ -954,25 +954,20 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
         best = iter;
       }
     }
-    auto repick = [&](double qRatio) {
-      if (best->max_sr_ratio > qRatio) {
-        return false;
-      }
-      char file_num_buf[kFormatFileNumberBufSize];
-      sorted_runs[best->start].Dump(file_num_buf, sizeof(file_num_buf), true);
-      ROCKS_LOG_BUFFER(log_buffer,
-          "[%s] Universal: repicked candidate %s[%d], "
-          "count = %zd, max/sum = %7.5f",
-          cf_name.c_str(), file_num_buf, best->start,
-          best->count, best->max_sr_ratio);
-      start_index = best->start;
-      candidate_count = best->count;
-      discard_small_sr(best->max_sr_size);
-      return done = true;
-    };
-    if (!repick(slev) && !repick(xlev)) {
+    if (best->max_sr_ratio > slev) {
       return nullptr;
     }
+    char file_num_buf[kFormatFileNumberBufSize];
+    sorted_runs[best->start].Dump(file_num_buf, sizeof(file_num_buf), true);
+    ROCKS_LOG_BUFFER(log_buffer,
+        "[%s] Universal: repicked candidate %s[%d], "
+        "count = %zd, max/sum = %7.5f",
+        cf_name.c_str(), file_num_buf, best->start,
+        best->count, best->max_sr_ratio);
+    start_index = best->start;
+    candidate_count = best->count;
+    discard_small_sr(best->max_sr_size);
+    done = true;
   }
   size_t first_index_after = start_index + candidate_count;
   // Compression is enabled if files compacted earlier already reached

@@ -763,8 +763,12 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   {
     uint64_t sum = 0;
     for (auto& sr : sorted_runs) sum += sr.compensated_file_size;
-    size_t n = mutable_cf_options.level0_file_num_compaction_trigger
-             + ioptions_.num_levels - 1;
+    size_t n = mutable_cf_options.level0_file_num_compaction_trigger;
+    if (compactions_in_progress_.empty()) {
+      n += (ioptions_.num_levels - 1) / 2;
+    } else {
+      n += (ioptions_.num_levels - 1);
+    }
     sum = std::max<uint64_t>(sum, n * write_buffer_size);
     double q = std::pow(double(sum) / write_buffer_size, 1.0/n);
     qlev = (q - 1) / q;

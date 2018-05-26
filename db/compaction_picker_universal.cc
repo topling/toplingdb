@@ -941,7 +941,7 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
         cand.max_sr_ratio = max_sr_ratio;
         candidate_vec.push_back(cand);
       }
-    } else {
+    } else if (candidate_count > 1) { // do not print if candidate_count == 1
       char buf[80];
       sprintf(buf, " candidate_count(%zd) < min_merge_width(%d),"
                  , candidate_count, min_merge_width);

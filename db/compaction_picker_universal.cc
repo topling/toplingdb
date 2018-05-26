@@ -761,11 +761,13 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   double xlev; // multiplier for size reversed levels
   double skip_min_ratio = max_merge_width * std::log2(max_merge_width);
   {
+    // assume sorted run sizes are a geometric sequence, and seq len is n
+    // compute an approximate q
     uint64_t sum = 0;
     for (auto& sr : sorted_runs) sum += sr.compensated_file_size;
     size_t n = mutable_cf_options.level0_file_num_compaction_trigger;
     if (compactions_in_progress_.empty()) {
-      n += (ioptions_.num_levels - 1) / 2;
+      n += (ioptions_.num_levels - 1) / 2; // reduce n to increase q
     } else {
       n += (ioptions_.num_levels - 1);
     }

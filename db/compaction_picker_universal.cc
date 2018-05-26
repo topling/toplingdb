@@ -746,10 +746,8 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     VersionStorageInfo* vstorage, double score, unsigned int ratio,
     unsigned int max_number_of_files_to_compact,
     const std::vector<SortedRun>& sorted_runs, LogBuffer* log_buffer) {
-  unsigned int min_merge_width =
-      ioptions_.compaction_options_universal.min_merge_width;
-  unsigned int max_merge_width =
-      ioptions_.compaction_options_universal.max_merge_width;
+  auto min_merge_width=ioptions_.compaction_options_universal.min_merge_width;
+  auto max_merge_width=ioptions_.compaction_options_universal.max_merge_width;
 
   bool done = false;
   size_t start_index = 0;
@@ -761,8 +759,20 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
   double xlev; // multiplier for size reversed levels
   double skip_min_ratio = max_merge_width * std::log2(max_merge_width);
   {
-    // assume sorted run sizes are a geometric sequence, and seq len is n
-    // compute an approximate q
+    // assume sorted run sizes are a geometric sequence, and seq len is n.
+    // compute an approximate q, then compute qlev
+    //
+    // treat a[i] is ith sorted run, then a[i] = a[0]*pow(q,i)
+    // then q = pow(a[n]/a[0], 1/n)
+    //   -- to make the approximation simple and stable, we let a[n]=sum
+    //
+    // given 'm' adjacent sorted runs, in the geometric sequence, a[m] is
+    // the largest one. the ratio=a[m]/sum(am) dominate WriteAmp, so it
+    // should be limited, we compute qlev as the threshold, qlev means: we
+    // assume the 'm' is infinite, then sum of 'm' sorted runs is:
+    //   sum(am) = a[m] / (1 - 1/q) = a[m]*q/(q-1), so
+    //   qlev = a[m]/sum(am) = (q-1)/q
+    //
     uint64_t sum = 0;
     for (auto& sr : sorted_runs) sum += sr.compensated_file_size;
     size_t n = mutable_cf_options.level0_file_num_compaction_trigger;
@@ -775,11 +785,11 @@ Compaction* UniversalCompactionPicker::PickCompactionToReduceSortedRuns(
     double q = std::pow(double(sum) / write_buffer_size, 1.0/n);
     qlev = (q - 1) / q;
     qlev = std::max(qlev, 0.51);
-    slev = std::sqrt(qlev);
-    xlev = std::pow(qlev, 0.4);
+    slev = std::sqrt(qlev);     // relax
+    xlev = std::pow(qlev, 0.4); // relax more
   }
-  unsigned int max_files_to_compact = std::max(2U,
-      std::min(max_merge_width, max_number_of_files_to_compact));
+  unsigned int max_files_to_compact =
+       std::max(2U, std::min(max_merge_width, max_number_of_files_to_compact));
   min_merge_width = std::max(min_merge_width, 2U);
   min_merge_width = std::min(min_merge_width, max_files_to_compact);
 

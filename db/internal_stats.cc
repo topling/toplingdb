@@ -762,7 +762,7 @@ bool InternalStats::HandleEstimateTableReadersMem(uint64_t* value, DBImpl* db,
 
 bool InternalStats::HandleEstimateLiveDataSize(uint64_t* value, DBImpl* db,
                                                Version* version) {
-  const auto* vstorage = cfd_->current()->storage_info();
+  const auto* vstorage = version->storage_info();
   *value = vstorage->EstimateLiveDataSize();
   return true;
 }

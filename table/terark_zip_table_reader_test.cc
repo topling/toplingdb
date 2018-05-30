@@ -179,8 +179,7 @@ public:
     else {
       options.comparator = &pk_c;
     }
-    options.table_factory.reset(NewTerarkZipTableFactory(tzto,
-      NewBlockBasedTableFactory(BlockBasedTableOptions())));
+    options.table_factory.reset(NewTerarkZipTableFactory(tzto, nullptr));
     DestroyAndReopen(options);
     rocksdb::ReadOptions ro;
     rocksdb::WriteOptions wo;
@@ -259,8 +258,7 @@ public:
     else {
       options.comparator = &pk_c;
     }
-    options.table_factory.reset(NewTerarkZipTableFactory(tzto,
-      NewBlockBasedTableFactory(BlockBasedTableOptions())));
+    options.table_factory.reset(NewTerarkZipTableFactory(tzto, nullptr));
     DestroyAndReopen(options);
     rocksdb::ReadOptions ro;
     rocksdb::WriteOptions wo;
@@ -338,8 +336,7 @@ public:
     else {
       options.comparator = &pk_c;
     }
-    options.table_factory.reset(NewTerarkZipTableFactory(tzto,
-      NewBlockBasedTableFactory(BlockBasedTableOptions())));
+    options.table_factory.reset(NewTerarkZipTableFactory(tzto, nullptr));
     options.disable_auto_compactions = true;
     DestroyAndReopen(options);
     rocksdb::ReadOptions ro;
@@ -446,8 +443,7 @@ public:
       else {
           options.comparator = &pk_c;
       }
-      options.table_factory.reset(NewTerarkZipTableFactory(tzto,
-          NewBlockBasedTableFactory(BlockBasedTableOptions())));
+      options.table_factory.reset(NewTerarkZipTableFactory(tzto, nullptr));
       options.disable_auto_compactions = true;
       DestroyAndReopen(options);
       rocksdb::ReadOptions ro;
@@ -542,8 +538,7 @@ public:
     else {
       options.comparator = &pk_c;
     }
-    options.table_factory.reset(NewTerarkZipTableFactory(tzto,
-      NewBlockBasedTableFactory(BlockBasedTableOptions())));
+    options.table_factory.reset(NewTerarkZipTableFactory(tzto, nullptr));
     DestroyAndReopen(options);
     rocksdb::ReadOptions ro1, ro2, ro3, ro4;
     rocksdb::WriteOptions wo;

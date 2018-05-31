@@ -912,6 +912,9 @@ struct DBOptions {
   // relies on manual invocation of FlushWAL to write the WAL buffer to its
   // file.
   bool manual_wal_flush = false;
+
+  // Add this field to make rocksdb 5.9.0 compatible to 5.9.2
+  bool seq_per_batch = false;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)

@@ -301,7 +301,7 @@ class BaseDeltaIterator : public Iterator {
 };
 
 class WriteBatchEntrySkipList : public WriteBatchEntryIndex {
-protected:
+ protected:
   typedef SkipList<WriteBatchIndexEntry*, const WriteBatchEntryComparator&> Index;
   Index index_;
 
@@ -337,7 +337,7 @@ protected:
     }
   };
 
-public:
+ public:
   WriteBatchEntrySkipList(WriteBatchEntryComparator& c, Arena* a)
     : index_(c, a) {
   }
@@ -347,14 +347,13 @@ public:
   }
   virtual void NewIterator(IteratorStorage& storage) override {
     static_assert(sizeof(SkipListIterator) <= sizeof storage.buffer,
-                      "Need larger buffer for SkipListIterator");
-    storage.iter = new(storage.buffer) SkipListIterator(&index_);
+                  "Need larger buffer for SkipListIterator");
+    storage.iter = new (storage.buffer) SkipListIterator(&index_);
   }
   virtual void Insert(WriteBatchIndexEntry* key) override {
     index_.Insert(key);
   }
 };
-
 class WriteBatchEntryRBTree : public WriteBatchEntryIndex {
 protected:
   struct TrbComp {
@@ -400,7 +399,7 @@ protected:
     }
   };
 
-public:
+ public:
   WriteBatchEntryRBTree(WriteBatchEntryComparator& c, Arena* a)
     : index_(TrbComp(c)) {
   }
@@ -410,8 +409,8 @@ public:
   }
   virtual void NewIterator(IteratorStorage& storage) override {
     static_assert(sizeof(RBTreeIterator) <= sizeof storage.buffer,
-                      "Need larger buffer for RBTreeIterator");
-    storage.iter = new(storage.buffer) RBTreeIterator(&index_);
+                  "Need larger buffer for RBTreeIterator");
+    storage.iter = new (storage.buffer) RBTreeIterator(&index_);
   }
   virtual void Insert(WriteBatchIndexEntry* key) override {
     index_.emplace(key);
@@ -432,37 +431,23 @@ class WBWIIteratorImpl : public WBWIIterator {
   WBWIIteratorImpl(uint32_t column_family_id,
                    WriteBatchEntryIndex* entry_index,
                    const ReadableWriteBatch* write_batch)
-      : column_family_id_(column_family_id),
-        write_batch_(write_batch) {
+    : column_family_id_(column_family_id),
+      write_batch_(write_batch) {
     entry_index->NewIterator(iter_);
   }
 
   virtual ~WBWIIteratorImpl() {}
 
   virtual bool Valid() const override {
-    if (!iter_->Valid()) {
-      return false;
-    }
-    const WriteBatchIndexEntry* iter_entry = iter_->key();
-    return (iter_entry != nullptr &&
-            iter_entry->column_family == column_family_id_);
+    return iter_->Valid();
   }
 
   virtual void SeekToFirst() override {
-    WriteBatchIndexEntry search_entry(WriteBatchIndexEntry::kFlagMin,
-                                      column_family_id_, 0, 0);
-    iter_->Seek(&search_entry);
+    iter_->SeekToFirst();
   }
 
   virtual void SeekToLast() override {
-    WriteBatchIndexEntry search_entry(WriteBatchIndexEntry::kFlagMin,
-                                      column_family_id_ + 1, 0, 0);
-    iter_->Seek(&search_entry);
-    if (!iter_->Valid()) {
-      iter_->SeekToLast();
-    } else {
-      iter_->Prev();
-    }
+    iter_->SeekToLast();
   }
 
   virtual void Seek(const Slice& key) override {
@@ -518,14 +503,13 @@ struct WriteBatchWithIndex::Rep {
       : write_batch(reserved_bytes, max_bytes),
         comparator(index_comparator, &write_batch),
         index_type(_index_type),
-        entry_index(WriteBatchEntryIndex::New(comparator, &arena, index_type)),
         overwrite_key(_overwrite_key),
         last_entry_offset(0) {}
   ReadableWriteBatch write_batch;
   WriteBatchEntryComparator comparator;
   Arena arena;
   std::string index_type;
-  std::unique_ptr<WriteBatchEntryIndex> entry_index;
+  std::vector<std::unique_ptr<WriteBatchEntryIndex>> entry_indices;
   bool overwrite_key;
   size_t last_entry_offset;
   std::vector<size_t> obsolete_offsets;
@@ -549,6 +533,11 @@ struct WriteBatchWithIndex::Rep {
   // put it to skip list.
   void AddNewEntry(uint32_t column_family_id);
 
+  // Get entry_index, create if missing
+  WriteBatchEntryIndex* GetEntryIndex(ColumnFamilyHandle* column_family);
+  // Get entry_index
+  WriteBatchEntryIndex* GetEntryIndexWithCfId(uint32_t column_family_id);
+
   // Clear all updates buffered in this batch.
   void Clear();
   void ClearIndex();
@@ -570,7 +559,8 @@ bool WriteBatchWithIndex::Rep::UpdateExistingEntryWithCfId(
     return false;
   }
 
-  WBWIIteratorImpl iter(column_family_id, entry_index.get(), &write_batch);
+  WBWIIteratorImpl iter(column_family_id,
+                        GetEntryIndexWithCfId(column_family_id), &write_batch);
   iter.Seek(key);
   if (!iter.Valid()) {
     return false;
@@ -587,13 +577,11 @@ bool WriteBatchWithIndex::Rep::UpdateExistingEntryWithCfId(
 
 void WriteBatchWithIndex::Rep::AddOrUpdateIndex(
     ColumnFamilyHandle* column_family, const Slice& key) {
+  // create entry index if missing
+  // ignore return value
+  GetEntryIndex(column_family);
   if (!UpdateExistingEntry(column_family, key)) {
-    uint32_t cf_id = GetColumnFamilyID(column_family);
-    const auto* cf_cmp = GetColumnFamilyUserComparator(column_family);
-    if (cf_cmp != nullptr) {
-      comparator.SetComparatorForCF(cf_id, cf_cmp);
-    }
-    AddNewEntry(cf_id);
+    AddNewEntry(GetColumnFamilyID(column_family));
   }
 }
 
@@ -618,7 +606,34 @@ void WriteBatchWithIndex::Rep::AddNewEntry(uint32_t column_family_id) {
     auto* index_entry =
         new (mem) WriteBatchIndexEntry(last_entry_offset, column_family_id,
                                        key.data() - wb_data.data(), key.size());
-    entry_index->Insert(index_entry);
+    GetEntryIndexWithCfId(column_family_id)->Insert(index_entry);
+  }
+
+  WriteBatchEntryIndex* WriteBatchWithIndex::Rep::GetEntryIndex(
+      ColumnFamilyHandle* column_family) {
+    uint32_t cf_id = GetColumnFamilyID(column_family);
+    if (cf_id >= entry_indices.size()) {
+      entry_indices.resize(cf_id + 1);
+    }
+    auto index = entry_indices[cf_id].get();
+    if (index == nullptr) {
+      const auto* cf_cmp = GetColumnFamilyUserComparator(column_family);
+      if (cf_cmp == nullptr) {
+        cf_cmp = comparator.default_comparator();
+      }
+      comparator.SetComparatorForCF(cf_id, cf_cmp);
+      entry_indices[cf_id].reset(
+          index = WriteBatchEntryIndex::New(comparator, &arena, index_type));
+    }
+    return index;
+  }
+
+  WriteBatchEntryIndex* WriteBatchWithIndex::Rep::GetEntryIndexWithCfId(
+      uint32_t column_family_id) {
+    assert(column_family_id < entry_indices.size());
+    auto index = entry_indices[column_family_id].get();
+    assert(index != nullptr);
+    return index;
   }
 
   void WriteBatchWithIndex::Rep::Clear() {
@@ -627,10 +642,9 @@ void WriteBatchWithIndex::Rep::AddNewEntry(uint32_t column_family_id) {
   }
 
   void WriteBatchWithIndex::Rep::ClearIndex() {
-    entry_index.reset();
+    entry_indices.clear();
     arena.~Arena();
     new (&arena) Arena();
-    entry_index.reset(WriteBatchEntryIndex::New(comparator, &arena, index_type));
     last_entry_offset = 0;
   }
 
@@ -769,29 +783,29 @@ void WriteBatchWithIndex::Rep::AddNewEntry(uint32_t column_family_id) {
     return true;
   }
 
-  WBWIIterator* WriteBatchWithIndex::NewIterator() {
-    return new WBWIIteratorImpl(0, rep->entry_index.get(), &rep->write_batch);
+WBWIIterator* WriteBatchWithIndex::NewIterator() {
+  return new WBWIIteratorImpl(0, rep->GetEntryIndex(nullptr),
+                              &rep->write_batch);
 }
 
 WBWIIterator* WriteBatchWithIndex::NewIterator(
     ColumnFamilyHandle* column_family) {
-  return new WBWIIteratorImpl(GetColumnFamilyID(column_family),
-                              rep->entry_index.get(), &rep->write_batch);
+  auto cf_id = GetColumnFamilyID(column_family);
+  return new WBWIIteratorImpl(cf_id, rep->GetEntryIndex(column_family),
+                              &rep->write_batch);
 }
 
-void WriteBatchWithIndex::NewIterator(
-    ColumnFamilyHandle* column_family,
-    WBWIIterator::IteratorStorage& storage) {
+void WriteBatchWithIndex::NewIterator(ColumnFamilyHandle* column_family,
+                                      WBWIIterator::IteratorStorage& storage) {
   static_assert(sizeof(WBWIIteratorImpl) <= sizeof storage.buffer,
-                    "Need larger buffer for WBWIIteratorImpl");
-  storage.iter = new(storage.buffer) WBWIIteratorImpl(
-                                         GetColumnFamilyID(column_family),
-                                         rep->entry_index.get(),
-                                         &rep->write_batch);
+                "Need larger buffer for WBWIIteratorImpl");
+  storage.iter = new (storage.buffer)
+      WBWIIteratorImpl(GetColumnFamilyID(column_family),
+                       rep->GetEntryIndex(column_family), &rep->write_batch);
 }
 Iterator* WriteBatchWithIndex::NewIteratorWithBase(
     ColumnFamilyHandle* column_family, Iterator* base_iterator) {
-  if (rep->overwrite_key == false) {
+  if (!rep->overwrite_key) {
     assert(false);
     return nullptr;
   }

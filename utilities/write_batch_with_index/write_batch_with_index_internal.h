@@ -38,10 +38,6 @@ struct WriteBatchIndexEntry {
         key_size(0),
         search_key(sk) {}
 
-  // If this flag appears in the offset, it indicates a key that is smaller
-  // than any other entry for the same column family
-  static const size_t kFlagMin = port::kMaxSizet;
-
   size_t offset;           // offset of an entry in write batch's string buffer.
   uint32_t column_family;  // column family of the entry.
   size_t key_offset;       // offset of the key in write batch's string buffer.

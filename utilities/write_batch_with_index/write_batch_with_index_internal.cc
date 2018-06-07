@@ -85,17 +85,7 @@ Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
 int WriteBatchEntryComparator::operator()(
     const WriteBatchIndexEntry* entry1,
     const WriteBatchIndexEntry* entry2) const {
-  if (entry1->column_family > entry2->column_family) {
-    return 1;
-  } else if (entry1->column_family < entry2->column_family) {
-    return -1;
-  }
-
-  if (entry1->offset == WriteBatchIndexEntry::kFlagMin) {
-    return -1;
-  } else if (entry2->offset == WriteBatchIndexEntry::kFlagMin) {
-    return 1;
-  }
+  assert(entry1->column_family == entry2->column_family);
 
   Slice key1, key2;
   if (entry1->search_key == nullptr) {
@@ -125,12 +115,9 @@ int WriteBatchEntryComparator::operator()(
 int WriteBatchEntryComparator::CompareKey(uint32_t column_family,
                                           const Slice& key1,
                                           const Slice& key2) const {
-  if (column_family < cf_comparators_.size() &&
-      cf_comparators_[column_family] != nullptr) {
-    return cf_comparators_[column_family]->Compare(key1, key2);
-  } else {
-    return default_comparator_->Compare(key1, key2);
-  }
+  assert(column_family < cf_comparators_.size() &&
+         cf_comparators_[column_family] != nullptr);
+  return cf_comparators_[column_family]->Compare(key1, key2);
 }
 
 WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(

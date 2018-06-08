@@ -82,53 +82,28 @@ Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
   return Status::OK();
 }
 
-int WriteBatchEntryComparator::operator()(
-    const WriteBatchIndexEntry* entry1,
-    const WriteBatchIndexEntry* entry2) const {
-  assert(entry1->column_family == entry2->column_family);
-
-  Slice key1, key2;
-  if (entry1->search_key == nullptr) {
-    key1 = Slice(write_batch_->Data().data() + entry1->key_offset,
-                 entry1->key_size);
+Slice WriteBatchKeyExtractor::operator()(
+    const WriteBatchIndexEntry* entry) const {
+  if (entry->search_key == nullptr) {
+    return Slice(write_batch_->Data().data() + entry->key_offset,
+                 entry->key_size);
   } else {
-    key1 = *(entry1->search_key);
+    return *(entry->search_key);
   }
-  if (entry2->search_key == nullptr) {
-    key2 = Slice(write_batch_->Data().data() + entry2->key_offset,
-                 entry2->key_size);
-  } else {
-    key2 = *(entry2->search_key);
-  }
-
-  int cmp = CompareKey(entry1->column_family, key1, key2);
-  if (cmp != 0) {
-    return cmp;
-  } else if (entry1->offset > entry2->offset) {
-    return 1;
-  } else if (entry1->offset < entry2->offset) {
-    return -1;
-  }
-  return 0;
-}
-
-int WriteBatchEntryComparator::CompareKey(uint32_t column_family,
-                                          const Slice& key1,
-                                          const Slice& key2) const {
-  assert(column_family < cf_comparators_.size() &&
-         cf_comparators_[column_family] != nullptr);
-  return cf_comparators_[column_family]->Compare(key1, key2);
 }
 
 WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
     const ImmutableDBOptions& immuable_db_options, WriteBatchWithIndex* batch,
     ColumnFamilyHandle* column_family, const Slice& key,
-    MergeContext* merge_context, WriteBatchEntryComparator* cmp,
+    MergeContext* merge_context, const Comparator* cmp,
     std::string* value, bool overwrite_key, Status* s) {
-  uint32_t cf_id = GetColumnFamilyID(column_family);
   *s = Status::OK();
   WriteBatchWithIndexInternal::Result result =
       WriteBatchWithIndexInternal::Result::kNotFound;
+
+  if (cmp == nullptr) {
+    return result;
+  }
 
   WBWIIterator::IteratorStorage iter;
   batch->NewIterator(column_family, iter);
@@ -139,7 +114,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
   iter->Seek(key);
   while (iter->Valid()) {
     const WriteEntry entry = iter->Entry();
-    if (cmp->CompareKey(cf_id, entry.key, key) != 0) {
+    if (cmp->Compare(entry.key, key) != 0) {
       break;
     }
 
@@ -160,7 +135,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
   Slice entry_value;
   while (iter->Valid()) {
     const WriteEntry entry = iter->Entry();
-    if (cmp->CompareKey(cf_id, entry.key, key) != 0) {
+    if (cmp->Compare(entry.key, key) != 0) {
       // Unexpected error or we've reached a different next key
       break;
     }

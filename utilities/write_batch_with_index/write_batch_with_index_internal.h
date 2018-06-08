@@ -58,35 +58,15 @@ class ReadableWriteBatch : public WriteBatch {
                                 Slice* value, Slice* blob, Slice* xid) const;
 };
 
-class WriteBatchEntryComparator {
+class WriteBatchKeyExtractor {
  public:
-  WriteBatchEntryComparator(const Comparator* _default_comparator,
-                            const ReadableWriteBatch* write_batch)
-      : default_comparator_(_default_comparator), write_batch_(write_batch) {}
-  // Compare a and b. Return a negative value if a is less than b, 0 if they
-  // are equal, and a positive value if a is greater than b
-  int operator()(const WriteBatchIndexEntry* entry1,
-                 const WriteBatchIndexEntry* entry2) const;
-
-  int CompareKey(uint32_t column_family, const Slice& key1,
-                 const Slice& key2) const;
-
-  void SetComparatorForCF(uint32_t column_family_id,
-                          const Comparator* comparator) {
-    if (column_family_id >= cf_comparators_.size()) {
-      cf_comparators_.resize(column_family_id + 1, nullptr);
-    }
-    cf_comparators_[column_family_id] = comparator;
+  WriteBatchKeyExtractor(const ReadableWriteBatch* write_batch)
+      : write_batch_(write_batch) {
   }
 
-  const Comparator* default_comparator() { return default_comparator_; }
-  const std::vector<const Comparator*>& cf_comparator() {
-    return cf_comparators_;
-  }
+  Slice operator()(const WriteBatchIndexEntry* entry) const;
 
  private:
-  const Comparator* default_comparator_;
-  std::vector<const Comparator*> cf_comparators_;
   const ReadableWriteBatch* write_batch_;
 };
 
@@ -105,18 +85,20 @@ class WriteBatchWithIndexInternal {
   static WriteBatchWithIndexInternal::Result GetFromBatch(
       const ImmutableDBOptions& ioptions, WriteBatchWithIndex* batch,
       ColumnFamilyHandle* column_family, const Slice& key,
-      MergeContext* merge_context, WriteBatchEntryComparator* cmp,
+      MergeContext* merge_context, const Comparator* cmp,
       std::string* value, bool overwrite_key, Status* s);
 };
 
 class WriteBatchEntryIndex {
-public:
+ public:
   virtual ~WriteBatchEntryIndex() {}
-  static WriteBatchEntryIndex* New(WriteBatchEntryComparator& c,
-    Arena* a, const std::string& type);
+  static WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
+                                   const Comparator* c, Arena* a,
+                                   bool overwrite_key,
+                                   WriteBatchIndexType type);
 
   class Iterator {
-  public:
+   public:
     virtual ~Iterator() {}
     virtual bool Valid() const = 0;
     virtual void SeekToFirst() = 0;
@@ -131,7 +113,7 @@ public:
 
   virtual Iterator* NewIterator() = 0;
   virtual void NewIterator(IteratorStorage& storage) = 0;
-  virtual void Insert(WriteBatchIndexEntry* key) = 0;
+  virtual bool Upsert(WriteBatchIndexEntry* key) = 0;
 };
 
 }  // namespace rocksdb

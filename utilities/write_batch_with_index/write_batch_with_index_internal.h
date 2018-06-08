@@ -80,6 +80,9 @@ class WriteBatchEntryComparator {
   }
 
   const Comparator* default_comparator() { return default_comparator_; }
+  const std::vector<const Comparator*>& cf_comparator() {
+    return cf_comparators_;
+  }
 
  private:
   const Comparator* default_comparator_;

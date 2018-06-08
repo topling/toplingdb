@@ -658,6 +658,15 @@ void WriteBatchWithIndex::Rep::AddNewEntry(uint32_t column_family_id) {
       return s;
     }
 
+    const auto& cf_comparator = comparator.cf_comparator();
+    entry_indices.resize(cf_comparator.size());
+    for (size_t i = 0; i < cf_comparator.size(); ++i) {
+      if (cf_comparator[i] != nullptr) {
+        entry_indices[i].reset(
+            WriteBatchEntryIndex::New(comparator, &arena, index_type));
+      }
+    }
+
     size_t offset = WriteBatchInternal::GetFirstOffset(&write_batch);
 
     Slice input(write_batch.Data());

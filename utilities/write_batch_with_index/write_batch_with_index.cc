@@ -300,36 +300,40 @@ class BaseDeltaIterator : public Iterator {
   const Comparator* comparator_;  // not owned
 };
 
-class WriteBatchEntrySkipList : public WriteBatchEntryIndex {
- protected:
-  struct EntryComparator {
-    int operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
-      int cmp = c->Compare(extractor(l), extractor(r));
-      if (cmp != 0) {
-        return cmp;
-      }
-      if (l->offset > r->offset) {
-        return 1;
-      }
-      if (l->offset < r->offset) {
-        return -1;
-      }
-      return 0;
+template<bool OverwriteKey>
+struct WriteBatchEntryComparator {
+  int operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
+    int cmp = c->Compare(extractor(l), extractor(r));
+    if (OverwriteKey || cmp != 0) {
+      return cmp;
     }
-    WriteBatchKeyExtractor extractor;
-    const Comparator* c;
-  };
+    if (l->offset > r->offset) {
+      return 1;
+    }
+    if (l->offset < r->offset) {
+      return -1;
+    }
+    return 0;
+  }
+  WriteBatchKeyExtractor extractor;
+  const Comparator* c;
+};
+
+template<bool OverwriteKey>
+class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
+ protected:
+  typedef WriteBatchEntryComparator<OverwriteKey> EntryComparator;
   typedef SkipList<WriteBatchIndexEntry*, const EntryComparator&> Index;
   EntryComparator comparator_;
   Index index_;
   bool overwrite_key_;
 
   class SkipListIterator : public WriteBatchEntryIndex::Iterator {
-  public:
+   public:
     SkipListIterator(Index* index) : iter_(index) {}
-    Index::Iterator iter_;
+    typename Index::Iterator iter_;
 
-  public:
+   public:
     virtual bool Valid() const override {
       return iter_.Valid();
     }
@@ -357,11 +361,10 @@ class WriteBatchEntrySkipList : public WriteBatchEntryIndex {
   };
 
  public:
-  WriteBatchEntrySkipList(WriteBatchKeyExtractor e, const Comparator* c,
-                          Arena* a, bool overwrite_key)
+  WriteBatchEntrySkipListIndex(WriteBatchKeyExtractor e, const Comparator* c,
+                               Arena* a)
       : comparator_({e, c}),
-        index_(comparator_, a),
-        overwrite_key_(overwrite_key) {
+        index_(comparator_, a) {
   }
 
   virtual Iterator* NewIterator() override {
@@ -373,10 +376,10 @@ class WriteBatchEntrySkipList : public WriteBatchEntryIndex {
     storage.iter = new (storage.buffer) SkipListIterator(&index_);
   }
   virtual bool Upsert(WriteBatchIndexEntry* key) override {
-    if (overwrite_key_) {
+    if (OverwriteKey) {
       Slice sraech_key = comparator_.extractor(key);
       WriteBatchIndexEntry search_entry(&sraech_key, key->column_family);
-      Index::Iterator iter(&index_);
+      typename Index::Iterator iter(&index_);
       iter.Seek(&search_entry);
       if (iter.Valid() &&
           comparator_.c->Compare(sraech_key,
@@ -392,54 +395,31 @@ class WriteBatchEntrySkipList : public WriteBatchEntryIndex {
 };
 
 template<bool OverwriteKey>
-class WriteBatchEntryRBTree : public WriteBatchEntryIndex {
-protected:
+class WriteBatchEntryRBTreeIndex : public WriteBatchEntryIndex {
+ protected:
+  typedef WriteBatchEntryComparator<OverwriteKey> EntryComparator;
   struct TrbComp {
     bool operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
-      return compare(l, r) < 0;
+      return comparator(l, r) < 0;
     }
     int compare(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
-      return c->Compare(extractor(l), extractor(r));
+      return comparator(l, r);
     }
-    WriteBatchKeyExtractor extractor;
-    const Comparator* c;
+    EntryComparator comparator;
   };
-  struct TrbCompWithOffset {
-    bool operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
-      return compare(l, r) < 0;
-    }
-    int compare(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
-      int cmp = c->Compare(extractor(l), extractor(r));
-      if (cmp != 0) {
-        return cmp;
-      }
-      if (l->offset > r->offset) {
-        return 1;
-      }
-      if (l->offset < r->offset) {
-        return -1;
-      }
-      return 0;
-    }
-    WriteBatchKeyExtractor extractor;
-    const Comparator* c;
-  };
-  typedef typename std::conditional<OverwriteKey, TrbComp,
-                                    TrbCompWithOffset>::type IndexComp;
   typedef std::integral_constant<bool, OverwriteKey> IndexUnique;
   typedef threaded_rbtree_impl<threaded_rbtree_default_set_config_t<
-                                   WriteBatchIndexEntry*, IndexComp, uint32_t,
-                                   IndexUnique>> Index;
-  IndexComp comparator_;
+                                   WriteBatchIndexEntry*, TrbComp,
+                                   uint32_t, IndexUnique>> Index;
   Index index_;
 
   class RBTreeIterator : public WriteBatchEntryIndex::Iterator {
-  public:
+   public:
     RBTreeIterator(Index* index) : index_(index), where_(index->end_i()) {}
     Index* index_;
     typename Index::size_type where_;
 
-  public:
+   public:
     virtual bool Valid() const override {
       return where_ != index_->end_i();
     }
@@ -467,10 +447,9 @@ protected:
   };
 
  public:
-  WriteBatchEntryRBTree(WriteBatchKeyExtractor e, const Comparator* c,
-                        Arena* a, bool overwrite_key)
-      : comparator_({e, c}),
-        index_(comparator_) {
+  WriteBatchEntryRBTreeIndex(WriteBatchKeyExtractor e, const Comparator* c,
+                             Arena* a)
+      : index_(TrbComp({EntryComparator({e, c})})) {
   }
 
   virtual Iterator* NewIterator() override {
@@ -483,17 +462,16 @@ protected:
   }
   virtual bool Upsert(WriteBatchIndexEntry* key) override {
     struct result_adapter {
-      Index::iterator iter;
+      typename Index::iterator iter;
       bool success;
 
-      result_adapter(std::pair<Index::iterator, bool> ib)
+      result_adapter(std::pair<typename Index::iterator, bool> ib)
           : iter(ib.first),
             success(ib.second){}
-      result_adapter(Index::iterator i)
+      result_adapter(typename Index::iterator i)
           : iter(i),
             success(true){}
-    };
-    result_adapter result = index_.emplace(key);
+    } result = index_.emplace(key);
     if (!OverwriteKey || result.success) {
       return true;
     }
@@ -509,12 +487,16 @@ WriteBatchEntryIndex* WriteBatchEntryIndex::New(WriteBatchKeyExtractor e,
                                                 WriteBatchIndexType type) {
   if (type == WriteBatchIndexType::kRBTree) {
     if (overwrite_key) {
-      return new WriteBatchEntryRBTree<true>(e, c, a, true);
+      return new WriteBatchEntryRBTreeIndex<true>(e, c, a);
     } else {
-      return new WriteBatchEntryRBTree<false>(e, c, a, false);
+      return new WriteBatchEntryRBTreeIndex<false>(e, c, a);
     }
   }
-  return new WriteBatchEntrySkipList(e, c, a, overwrite_key);
+  if (overwrite_key) {
+    return new WriteBatchEntrySkipListIndex<true>(e, c, a);
+  } else {
+    return new WriteBatchEntrySkipListIndex<false>(e, c, a);
+  }
 }
 
 class WBWIIteratorImpl : public WBWIIterator {
@@ -599,10 +581,13 @@ struct WriteBatchWithIndex::Rep {
         last_entry_offset(0) {}
   ReadableWriteBatch write_batch;
   const Comparator* default_comparator;
-  std::vector<const Comparator*> cf_comparators;
+  struct ComparatorIndexPair {
+    const Comparator* comparator;
+    std::unique_ptr<WriteBatchEntryIndex> index;
+  };
+  std::vector<ComparatorIndexPair> entry_indices;
   Arena arena;
   WriteBatchIndexType index_type;
-  std::vector<std::unique_ptr<WriteBatchEntryIndex>> entry_indices;
   bool overwrite_key;
   WriteBatchIndexEntry* free_entry;
   size_t last_entry_offset;
@@ -622,7 +607,6 @@ struct WriteBatchWithIndex::Rep {
 
   // Get entry_index, create if missing
   WriteBatchEntryIndex* GetEntryIndex(ColumnFamilyHandle* column_family);
-  // Get entry_index
   WriteBatchEntryIndex* GetEntryIndexWithCfId(uint32_t column_family_id);
 
   // Get comparator, nullptr if missing
@@ -682,16 +666,15 @@ WriteBatchEntryIndex* WriteBatchWithIndex::Rep::GetEntryIndex(
   uint32_t cf_id = GetColumnFamilyID(column_family);
   if (cf_id >= entry_indices.size()) {
     entry_indices.resize(cf_id + 1);
-    cf_comparators.resize(cf_id + 1);
   }
-  auto index = entry_indices[cf_id].get();
+  auto index = entry_indices[cf_id].index.get();
   if (index == nullptr) {
     const auto* cf_cmp = GetColumnFamilyUserComparator(column_family);
     if (cf_cmp == nullptr) {
       cf_cmp = default_comparator;
     }
-    cf_comparators[cf_id] = cf_cmp;
-    entry_indices[cf_id].reset(
+    entry_indices[cf_id].comparator = cf_cmp;
+    entry_indices[cf_id].index.reset(
         index = WriteBatchEntryIndex::New(WriteBatchKeyExtractor(&write_batch),
                                           cf_cmp, &arena, overwrite_key,
                                           index_type));
@@ -702,18 +685,25 @@ WriteBatchEntryIndex* WriteBatchWithIndex::Rep::GetEntryIndex(
 WriteBatchEntryIndex* WriteBatchWithIndex::Rep::GetEntryIndexWithCfId(
     uint32_t column_family_id) {
   assert(column_family_id < entry_indices.size());
-  auto index = entry_indices[column_family_id].get();
-  assert(index != nullptr);
+  auto index = entry_indices[column_family_id].index.get();
+  if (index == nullptr) {
+    const auto* cf_cmp = entry_indices[column_family_id].comparator;
+    assert(cf_cmp != nullptr);
+    entry_indices[column_family_id].index.reset(
+        index = WriteBatchEntryIndex::New(WriteBatchKeyExtractor(&write_batch),
+                                          cf_cmp, &arena, overwrite_key,
+                                          index_type));
+  }
   return index;
 }
 
 const Comparator* WriteBatchWithIndex::Rep::GetComparator(
     ColumnFamilyHandle* column_family) {
   uint32_t cf_id = GetColumnFamilyID(column_family);
-  if (cf_id >= cf_comparators.size()) {
+  if (cf_id >= entry_indices.size()) {
     return nullptr;
   }
-  return cf_comparators[cf_id];
+  return entry_indices[cf_id].comparator;
 }
 
 void WriteBatchWithIndex::Rep::Clear() {
@@ -722,7 +712,9 @@ void WriteBatchWithIndex::Rep::Clear() {
 }
 
 void WriteBatchWithIndex::Rep::ClearIndex() {
-  entry_indices.clear();
+  for (auto& pair : entry_indices) {
+    pair.index.reset();
+  }
   arena.~Arena();
   new (&arena) Arena();
   last_entry_offset = 0;
@@ -737,16 +729,6 @@ Status WriteBatchWithIndex::Rep::ReBuildIndex() {
   if (write_batch.Count() == 0) {
     // Nothing to re-index
     return s;
-  }
-
-  entry_indices.resize(cf_comparators.size());
-  for (size_t i = 0; i < cf_comparators.size(); ++i) {
-    if (cf_comparators[i] != nullptr) {
-      entry_indices[i].reset(
-          WriteBatchEntryIndex::New(WriteBatchKeyExtractor(&write_batch),
-                                    cf_comparators[i], &arena,
-                                    overwrite_key, index_type));
-    }
   }
 
   size_t offset = WriteBatchInternal::GetFirstOffset(&write_batch);

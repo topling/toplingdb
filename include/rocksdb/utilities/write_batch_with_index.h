@@ -42,9 +42,20 @@ enum WriteType {
   kXIDRecord,
 };
 
-// Singleton factory instance, DON'T delete
+// Singleton factory instance, DO NOT delete
 const WriteBatchEntryIndexFactory* WriteBatchEntrySkipListIndexFactory();
 const WriteBatchEntryIndexFactory* WriteBatchEntryRBTreeIndexFactory();
+
+extern const std::string kWriteBatchEntrySkipListFactoryName; // = "skiplist"
+extern const std::string kWriteBatchEntryRBTreeFactoryName;   // = "rbtree"
+
+// Regist third-party factory, NOT take ownership
+void RegistWriteBatchEntryIndexFactory(const char* name,
+                                       const WriteBatchEntryIndexFactory* factory);
+
+// name: skiplist/rbtree or other names registed
+// return nullptr if invalid name
+const WriteBatchEntryIndexFactory* GetWriteBatchEntryIndexFactory(const char* name);
 
 // an entry for Put, Merge, Delete, or SingleDelete entry for write batches.
 // Used in WBWIIterator.

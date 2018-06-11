@@ -58,18 +58,6 @@ class ReadableWriteBatch : public WriteBatch {
                                 Slice* value, Slice* blob, Slice* xid) const;
 };
 
-class WriteBatchKeyExtractor {
- public:
-  WriteBatchKeyExtractor(const ReadableWriteBatch* write_batch)
-      : write_batch_(write_batch) {
-  }
-
-  Slice operator()(const WriteBatchIndexEntry* entry) const;
-
- private:
-  const ReadableWriteBatch* write_batch_;
-};
-
 class WriteBatchWithIndexInternal {
  public:
   enum Result { kFound, kDeleted, kNotFound, kMergeInProgress, kError };
@@ -87,6 +75,19 @@ class WriteBatchWithIndexInternal {
       ColumnFamilyHandle* column_family, const Slice& key,
       MergeContext* merge_context, const Comparator* cmp,
       std::string* value, bool overwrite_key, Status* s);
+};
+
+class WriteBatchKeyExtractor {
+ public:
+  WriteBatchKeyExtractor(const ReadableWriteBatch* write_batch)
+      : write_batch_(write_batch) {
+  }
+
+  Slice operator()(const WriteBatchIndexEntry* entry) const;
+  size_t Offset(const WriteBatchIndexEntry* entry) const;
+
+ private:
+  const ReadableWriteBatch* write_batch_;
 };
 
 class WriteBatchEntryIndex {
@@ -108,7 +109,11 @@ class WriteBatchEntryIndex {
   typedef WBIteratorStorage<Iterator, 24> IteratorStorage;
 
   virtual Iterator* NewIterator() = 0;
+  // sizeof(iterator) size must less or equal than 24
+  // INCLUDE virtual table pointer
   virtual void NewIterator(IteratorStorage& storage) = 0;
+  // return true if insert success
+  // assign key->offset to exists entry's offset otherwise
   virtual bool Upsert(WriteBatchIndexEntry* key) = 0;
 };
 

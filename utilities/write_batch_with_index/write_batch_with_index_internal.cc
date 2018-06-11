@@ -7,6 +7,7 @@
 
 #include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 
+#include <unordered_map>
 #include "db/column_family.h"
 #include "db/merge_context.h"
 #include "db/merge_helper.h"
@@ -23,6 +24,17 @@ namespace rocksdb {
 class Env;
 class Logger;
 class Statistics;
+
+const std::string kWriteBatchEntrySkipListFactoryName = "skiplist";
+const std::string kWriteBatchEntryRBTreeFactoryName = "rbtree";
+
+static std::unordered_map<std::string, const WriteBatchEntryIndexFactory*>
+    write_batch_entry_index_factory_info = {
+        {kWriteBatchEntrySkipListFactoryName,
+         WriteBatchEntrySkipListIndexFactory()},
+        {kWriteBatchEntryRBTreeFactoryName,
+         WriteBatchEntryRBTreeIndexFactory()},
+    };
 
 Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
                                                   WriteType* type, Slice* Key,
@@ -82,16 +94,6 @@ Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
       return Status::Corruption("unknown WriteBatch tag");
   }
   return Status::OK();
-}
-
-Slice WriteBatchKeyExtractor::operator()(
-    const WriteBatchIndexEntry* entry) const {
-  if (entry->search_key == nullptr) {
-    return Slice(write_batch_->Data().data() + entry->key_offset,
-                 entry->key_size);
-  } else {
-    return *(entry->search_key);
-  }
 }
 
 WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
@@ -229,17 +231,32 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
   return result;
 }
 
+Slice WriteBatchKeyExtractor::operator()(
+    const WriteBatchIndexEntry* entry) const {
+  if (entry->search_key == nullptr) {
+    return Slice(write_batch_->Data().data() + entry->key_offset,
+                 entry->key_size);
+  } else {
+    return *(entry->search_key);
+  }
+}
+
+size_t WriteBatchKeyExtractor::Offset(const WriteBatchIndexEntry* entry) const {
+  return entry->offset;
+}
+
 template<bool OverwriteKey>
 struct WriteBatchEntryComparator {
   int operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
     int cmp = c->Compare(extractor(l), extractor(r));
+    // unnecessary comp offset if overwrite key
     if (OverwriteKey || cmp != 0) {
       return cmp;
     }
-    if (l->offset > r->offset) {
+    if (extractor.Offset(l) > extractor.Offset(r)) {
       return 1;
     }
-    if (l->offset < r->offset) {
+    if (extractor.Offset(l) < extractor.Offset(r)) {
       return -1;
     }
     return 0;
@@ -421,6 +438,7 @@ class WriteBatchEntryRBTreeIndex : public WriteBatchEntryIndex {
     if (!OverwriteKey || result.success) {
       return true;
     }
+    // insert fail , replace
     WriteBatchIndexEntry* entry = *result.iter;
     std::swap(entry->offset, key->offset);
     return false;
@@ -442,6 +460,19 @@ const WriteBatchEntryIndexFactory* WriteBatchEntryRBTreeIndexFactory() {
   };
   static RBTreeIndexFactory factory;
   return &factory;
+}
+
+void RegistWriteBatchEntryIndexFactory(const char* name,
+                                       const WriteBatchEntryIndexFactory* factory) {
+  write_batch_entry_index_factory_info.emplace(name, factory);
+}
+
+const WriteBatchEntryIndexFactory* GetWriteBatchEntryIndexFactory(const char* name) {
+  auto find = write_batch_entry_index_factory_info.find(name);
+  if (find == write_batch_entry_index_factory_info.end()) {
+    return nullptr;
+  }
+  return find->second;
 }
 
 }  // namespace rocksdb

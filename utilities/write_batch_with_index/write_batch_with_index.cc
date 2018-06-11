@@ -371,7 +371,7 @@ class WBWIIteratorImpl : public WBWIIterator {
 struct WriteBatchWithIndex::Rep {
   explicit Rep(const Comparator* index_comparator, size_t reserved_bytes = 0,
                size_t max_bytes = 0, bool _overwrite_key = false,
-               WriteBatchEntryIndexFactory *_index_factory = nullptr)
+               const WriteBatchEntryIndexFactory *_index_factory = nullptr)
       : write_batch(reserved_bytes, max_bytes),
         default_comparator(index_comparator),
         index_factory(_index_factory == nullptr
@@ -388,7 +388,7 @@ struct WriteBatchWithIndex::Rep {
   };
   std::vector<ComparatorIndexPair> entry_indices;
   Arena arena;
-  WriteBatchEntryIndexFactory* index_factory;
+  const WriteBatchEntryIndexFactory* index_factory;
   bool overwrite_key;
   WriteBatchIndexEntry* free_entry;
   size_t last_entry_offset;
@@ -585,7 +585,7 @@ Status WriteBatchWithIndex::Rep::ReBuildIndex() {
 WriteBatchWithIndex::WriteBatchWithIndex(
     const Comparator* default_index_comparator, size_t reserved_bytes,
     bool overwrite_key, size_t max_bytes,
-    WriteBatchEntryIndexFactory* index_factory)
+    const WriteBatchEntryIndexFactory* index_factory)
     : rep(new Rep(default_index_comparator, reserved_bytes, max_bytes,
                   overwrite_key, index_factory)) {}
 

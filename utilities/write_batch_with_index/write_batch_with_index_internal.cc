@@ -323,12 +323,12 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
   }
 };
 
-WriteBatchEntryIndexFactory* WriteBatchEntrySkipListIndexFactory() {
+const WriteBatchEntryIndexFactory* WriteBatchEntrySkipListIndexFactory() {
   class SkipListIndexFactory : public WriteBatchEntryIndexFactory {
    public:
     WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
                               const Comparator* c, Arena* a,
-                              bool overwrite_key) override {
+                              bool overwrite_key) const override {
       if (overwrite_key) {
         return new WriteBatchEntrySkipListIndex<true>(e, c, a);
       } else {
@@ -427,12 +427,12 @@ class WriteBatchEntryRBTreeIndex : public WriteBatchEntryIndex {
   }
 };
 
-WriteBatchEntryIndexFactory* WriteBatchEntryRBTreeIndexFactory() {
+const WriteBatchEntryIndexFactory* WriteBatchEntryRBTreeIndexFactory() {
   class RBTreeIndexFactory : public WriteBatchEntryIndexFactory {
    public:
     WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
                               const Comparator* c, Arena* a,
-                              bool overwrite_key) override {
+                              bool overwrite_key) const override {
       if (overwrite_key) {
         return new WriteBatchEntryRBTreeIndex<true>(e, c, a);
       } else {

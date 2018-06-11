@@ -42,8 +42,9 @@ enum WriteType {
   kXIDRecord,
 };
 
-WriteBatchEntryIndexFactory* WriteBatchEntrySkipListIndexFactory();
-WriteBatchEntryIndexFactory* WriteBatchEntryRBTreeIndexFactory();
+// Singleton factory instance, DON'T delete
+const WriteBatchEntryIndexFactory* WriteBatchEntrySkipListIndexFactory();
+const WriteBatchEntryIndexFactory* WriteBatchEntryRBTreeIndexFactory();
 
 // an entry for Put, Merge, Delete, or SingleDelete entry for write batches.
 // Used in WBWIIterator.
@@ -113,11 +114,12 @@ class WriteBatchWithIndex : public WriteBatchBase {
   // overwrite_key: if true, overwrite the key in the index when inserting
   //                the same key as previously, so iterator will never
   //                show two entries with the same key.
+  // index_factory: third-party entry index support, NOT take ownership
   explicit WriteBatchWithIndex(
       const Comparator* backup_index_comparator = BytewiseComparator(),
       size_t reserved_bytes = 0, bool overwrite_key = false,
       size_t max_bytes = 0,
-      WriteBatchEntryIndexFactory* index_factory = nullptr);
+      const WriteBatchEntryIndexFactory* index_factory = nullptr);
 
   ~WriteBatchWithIndex() override;
 

@@ -274,8 +274,9 @@ void TestValueAsSecondaryIndexHelper(std::vector<Entry> entries,
 }
 
 namespace {
-const std::initializer_list<WriteBatchIndexType>& all_index_types = {
-  WriteBatchIndexType::kSkipList, WriteBatchIndexType::kRBTree
+const std::initializer_list<WriteBatchEntryIndexFactory*>& all_index_types = {
+    WriteBatchEntrySkipListIndexFactory(),
+    WriteBatchEntryRBTreeIndexFactory(),
 };
 }
 

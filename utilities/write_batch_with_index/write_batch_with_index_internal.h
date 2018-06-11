@@ -92,10 +92,6 @@ class WriteBatchWithIndexInternal {
 class WriteBatchEntryIndex {
  public:
   virtual ~WriteBatchEntryIndex() {}
-  static WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
-                                   const Comparator* c, Arena* a,
-                                   bool overwrite_key,
-                                   WriteBatchIndexType type);
 
   class Iterator {
    public:
@@ -114,6 +110,13 @@ class WriteBatchEntryIndex {
   virtual Iterator* NewIterator() = 0;
   virtual void NewIterator(IteratorStorage& storage) = 0;
   virtual bool Upsert(WriteBatchIndexEntry* key) = 0;
+};
+
+class WriteBatchEntryIndexFactory {
+ public:
+  virtual WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
+                                    const Comparator* c, Arena* a,
+                                    bool overwrite_key) = 0;
 };
 
 }  // namespace rocksdb

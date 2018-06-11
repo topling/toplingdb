@@ -30,6 +30,7 @@ class DB;
 class ReadCallback;
 struct ReadOptions;
 struct DBOptions;
+class WriteBatchEntryIndexFactory;
 
 enum WriteType {
   kPutRecord,
@@ -41,10 +42,8 @@ enum WriteType {
   kXIDRecord,
 };
 
-enum class WriteBatchIndexType {
-  kSkipList,
-  kRBTree,
-};
+WriteBatchEntryIndexFactory* WriteBatchEntrySkipListIndexFactory();
+WriteBatchEntryIndexFactory* WriteBatchEntryRBTreeIndexFactory();
 
 // an entry for Put, Merge, Delete, or SingleDelete entry for write batches.
 // Used in WBWIIterator.
@@ -118,7 +117,7 @@ class WriteBatchWithIndex : public WriteBatchBase {
       const Comparator* backup_index_comparator = BytewiseComparator(),
       size_t reserved_bytes = 0, bool overwrite_key = false,
       size_t max_bytes = 0,
-      WriteBatchIndexType index_type = WriteBatchIndexType::kRBTree);
+      WriteBatchEntryIndexFactory* index_factory = nullptr);
 
   ~WriteBatchWithIndex() override;
 

@@ -30,7 +30,7 @@ struct OptimisticTransactionOptions {
   // See comment in WriteBatchWithIndex constructor.
   const Comparator* cmp = BytewiseComparator();
 
-  // Set index type factory of WriteBatchWithIndex
+  // Set index factory for WriteBatchWithIndex
   const rocksdb::WriteBatchEntryIndexFactory* index_type = nullptr;
 };
 

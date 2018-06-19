@@ -11,6 +11,7 @@
 
 #include "rocksdb/comparator.h"
 #include "rocksdb/db.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 
 namespace rocksdb {
 
@@ -28,6 +29,9 @@ struct OptimisticTransactionOptions {
   // Should be set if the DB has a non-default comparator.
   // See comment in WriteBatchWithIndex constructor.
   const Comparator* cmp = BytewiseComparator();
+
+  // Set index type factory of WriteBatchWithIndex
+  const rocksdb::WriteBatchEntryIndexFactory* index_type = nullptr;
 };
 
 class OptimisticTransactionDB {

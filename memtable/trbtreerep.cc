@@ -187,9 +187,8 @@ namespace {
                 , memory_size_(m)
                 , inner_comparator_{c}
             {
-                assert(dynamic_cast<const MemTable::KeyComparator *>(&c) != nullptr);
-                auto key_comparator = static_cast<const MemTable::KeyComparator *>(&c);
-                outer_comparator_.c = key_comparator->comparator.user_comparator();
+                auto key_comparator = c.icomparator();
+                outer_comparator_.c = key_comparator->user_comparator();
 
                 inner_holder_   = (inner_holder_t **)malloc(sizeof(inner_holder_t *));
                 outer_array_    = (outer_element_t *)malloc(sizeof(outer_element_t));
@@ -713,15 +712,17 @@ namespace {
         }
 
         // Returns true iff an entry that compares equal to key is in the list.
-        virtual bool Contains(const char *key) const override
+        virtual bool Contains(const Slice &internal_key) const override
         {
+            std::string memtable_key;
+            EncodeKey(&memtable_key, internal_key);
             if (immutable_)
             {
-                return key_set_.contains<DummyLock>(key);
+                return key_set_.contains<DummyLock>(memtable_key.data());
             }
             else
             {
-                return key_set_.contains<ReadLock>(key);
+                return key_set_.contains<ReadLock>(memtable_key.data());
             }
         }
 
@@ -754,8 +755,9 @@ namespace {
 
         virtual void
         Get(const LookupKey &k, void *callback_args,
-            bool (*callback_func)(void *arg, const char *entry)) override
+            bool (*callback_func)(void *arg, const KVGetter*)) override
         {
+            CompositeKVGetter getter;
             if (immutable_)
             {
                 key_set_t::iterator<DummyLock> iter(&key_set_);
@@ -765,7 +767,7 @@ namespace {
                     return;
                 }
                 key = iter.key();
-                while (callback_func(callback_args, key))
+                while (callback_func(callback_args, getter.SetKey(key)))
                 {
                     if (!iter.next())
                     {
@@ -783,7 +785,7 @@ namespace {
                     return;
                 }
                 key = iter.key();
-                while (callback_func(callback_args, key))
+                while (callback_func(callback_args, getter.SetKey(key)))
                 {
                     if (!iter.next())
                     {
@@ -882,6 +884,11 @@ namespace {
             virtual void SeekToLast() override
             {
                 iter_.seek_to_last();
+            }
+
+            virtual bool IsSeekForPrevSupported() const override
+            {
+                return true;
             }
         };
         virtual MemTableRep::Iterator *GetIterator(Arena *arena = nullptr) override

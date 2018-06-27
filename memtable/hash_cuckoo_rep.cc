@@ -90,7 +90,7 @@ class HashCuckooRep : public MemTableRep {
   virtual bool IsSnapshotSupported() const override { return false; }
 
   // Returns true iff an entry that compares equal to key is in the collection.
-  virtual bool Contains(const char* internal_key) const override;
+  virtual bool Contains(const Slice& internal_key) const override;
 
   virtual ~HashCuckooRep() override {}
 
@@ -113,8 +113,7 @@ class HashCuckooRep : public MemTableRep {
   }
 
   virtual void Get(const LookupKey& k, void* callback_args,
-                   bool (*callback_func)(void* arg,
-                                         const char* entry)) override;
+                   bool (*callback_func)(void* arg, const KVGetter*)) override;
 
   class Iterator : public MemTableRep::Iterator {
     std::shared_ptr<std::vector<const char*>> bucket_;
@@ -295,15 +294,16 @@ class HashCuckooRep : public MemTableRep {
 };
 
 void HashCuckooRep::Get(const LookupKey& key, void* callback_args,
-                        bool (*callback_func)(void* arg, const char* entry)) {
+                        bool (*callback_func)(void* arg, const KVGetter*)) {
   Slice user_key = key.user_key();
+  CompositeKVGetter getter;
   for (unsigned int hid = 0; hid < hash_function_count_; ++hid) {
     const char* bucket =
         cuckoo_array_[GetHash(user_key, hid)].load(std::memory_order_acquire);
     if (bucket != nullptr) {
       Slice bucket_user_key = UserKey(bucket);
       if (user_key == bucket_user_key) {
-        callback_func(callback_args, bucket);
+        callback_func(callback_args, getter.SetKey(bucket));
         break;
       }
     } else {
@@ -368,13 +368,15 @@ void HashCuckooRep::Insert(KeyHandle handle) {
   cuckoo_array_[insert_key_bid].store(key, std::memory_order_release);
 }
 
-bool HashCuckooRep::Contains(const char* internal_key) const {
-  auto user_key = UserKey(internal_key);
+bool HashCuckooRep::Contains(const Slice& internal_key) const {
+  auto user_key = ExtractUserKey(internal_key);
+  std::string memtable_key;
+  EncodeKey(&memtable_key, internal_key);
   for (unsigned int hid = 0; hid < hash_function_count_; ++hid) {
     const char* stored_key =
         cuckoo_array_[GetHash(user_key, hid)].load(std::memory_order_acquire);
     if (stored_key != nullptr) {
-      if (compare_(internal_key, stored_key) == 0) {
+      if (compare_(memtable_key.data(), stored_key) == 0) {
         return true;
       }
     }

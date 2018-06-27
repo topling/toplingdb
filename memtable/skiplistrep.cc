@@ -47,8 +47,9 @@ public:
   }
 
   // Returns true iff an entry that compares equal to key is in the list.
-  virtual bool Contains(const char* key) const override {
-    return skip_list_.Contains(key);
+  virtual bool Contains(const Slice& internal_key) const override {
+    std::string memtable_key;
+    return skip_list_.Contains(EncodeKey(&memtable_key, internal_key));
   }
 
   virtual size_t ApproximateMemoryUsage() override {
@@ -57,12 +58,12 @@ public:
   }
 
   virtual void Get(const LookupKey& k, void* callback_args,
-                   bool (*callback_func)(void* arg,
-                                         const char* entry)) override {
+                   bool (*callback_func)(void* arg, const KVGetter*)) override {
     SkipListRep::Iterator iter(&skip_list_);
+    CompositeKVGetter getter;
     Slice dummy_slice;
     for (iter.Seek(dummy_slice, k.memtable_key().data());
-         iter.Valid() && callback_func(callback_args, iter.key());
+         iter.Valid() && callback_func(callback_args, getter.SetKey(iter.key()));
          iter.Next()) {
     }
   }
@@ -145,6 +146,9 @@ public:
     virtual void SeekToLast() override {
       iter_.SeekToLast();
     }
+
+    virtual bool IsSeekForPrevSupported() const { return true; }
+
    protected:
     std::string tmp_;       // For passing to EncodeKey
   };
@@ -242,6 +246,8 @@ public:
       iter_.SeekToLast();
       prev_ = iter_;
     }
+
+    virtual bool IsSeekForPrevSupported() const override { return true; }
 
    protected:
     std::string tmp_;       // For passing to EncodeKey

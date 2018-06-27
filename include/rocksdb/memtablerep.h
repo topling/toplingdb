@@ -35,15 +35,16 @@
 
 #pragma once
 
-#include <memory>
-#include <stdexcept>
 #include <stdint.h>
 #include <stdlib.h>
+#include <memory>
+#include <stdexcept>
 
 namespace rocksdb {
 
 class Arena;
 class Allocator;
+class InternalKeyComparator;
 class LookupKey;
 class Slice;
 class SliceTransform;
@@ -65,10 +66,38 @@ class MemTableRep {
     virtual int operator()(const char* prefix_len_key,
                            const Slice& key) const = 0;
 
-    virtual ~KeyComparator() { }
+    virtual const InternalKeyComparator* icomparator() const = 0;
+
+    virtual ~KeyComparator() {}
   };
 
+  static size_t CompositeEncodeSize(const Slice& internal_key,
+                                    const Slice& value);
+  static void CompositeEncode(const Slice& internal_key, const Slice& value,
+                              char* buf);
+  static Slice CompositeDecodeKey(const char* buf);
+  static Slice CompositeDecodeKeyValue(const char* buf, Slice* value);
+
   explicit MemTableRep(Allocator* allocator) : allocator_(allocator) {}
+
+  // Insert key into the collection.
+  // REQUIRES: nothing that compares equal to key is currently in the
+  // collection, and no concurrent modifications to the table in progress
+  virtual void Insert(const Slice& internal_key, const Slice& value);
+
+  // Same as Insert(), but in additional pass a hint to insert location for
+  // the key. If hint points to nullptr, a new hint will be populated.
+  // otherwise the hint will be updated to reflect the last insert location.
+  //
+  // Currently only skip-list based memtable implement the interface. Other
+  // implementations will fallback to Insert() by default.
+  virtual void InsertWithHint(const Slice& internal_key, const Slice& value,
+                              void** hint);
+
+  // Like Insert(handle), but may be called concurrent with other calls
+  // to InsertConcurrently for other handles
+  virtual void InsertConcurrently(const Slice& internal_key,
+                                  const Slice& value);
 
   // Allocate a buf of len size for storing key. The idea is that a
   // specific memtable representation knows its underlying data structure
@@ -105,13 +134,33 @@ class MemTableRep {
   }
 
   // Returns true iff an entry that compares equal to key is in the collection.
-  virtual bool Contains(const char* key) const = 0;
+  virtual bool Contains(const Slice& internal_key) const = 0;
 
   // Notify this table rep that it will no longer be added to. By default,
   // does nothing.  After MarkReadOnly() is called, this table rep will
   // not be written to (ie No more calls to Allocate(), Insert(),
   // or any writes done directly to entries accessed through the iterator.)
-  virtual void MarkReadOnly() { }
+  virtual void MarkReadOnly() {}
+
+  class KVGetter {
+   public:
+    virtual Slice GetKey() const = 0;
+    virtual Slice GetValue() const = 0;
+    virtual std::pair<Slice, Slice> GetKeyValue() const = 0;
+    virtual ~KVGetter() {}
+  };
+
+  class CompositeKVGetter : public KVGetter {
+   public:
+    virtual Slice GetKey() const override;
+    virtual Slice GetValue() const override;
+    virtual std::pair<Slice, Slice> GetKeyValue() const override;
+
+    KVGetter* SetKey(const char* key);
+
+   private:
+    const char* key_ = nullptr;
+  };
 
   // Look up key from the mem table, since the first key in the mem table whose
   // user_key matches the one given k, call the function callback_func(), with
@@ -126,7 +175,7 @@ class MemTableRep {
   // Get() function with a default value of dynamically construct an iterator,
   // seek and call the call back function.
   virtual void Get(const LookupKey& k, void* callback_args,
-                   bool (*callback_func)(void* arg, const char* entry));
+                   bool (*callback_func)(void* arg, const KVGetter* kv));
 
   virtual uint64_t ApproximateNumEntries(const Slice& start_ikey,
                                          const Slice& end_key) {
@@ -137,10 +186,10 @@ class MemTableRep {
   // that was allocated through the allocator.  Safe to call from any thread.
   virtual size_t ApproximateMemoryUsage() = 0;
 
-  virtual ~MemTableRep() { }
+  virtual ~MemTableRep() {}
 
   // Iteration over the contents of a skip collection
-  class Iterator {
+  class Iterator : public KVGetter {
    public:
     // Initialize an iterator over the specified collection.
     // The returned iterator is not valid.
@@ -153,6 +202,18 @@ class MemTableRep {
     // Returns the key at the current position.
     // REQUIRES: Valid()
     virtual const char* key() const = 0;
+
+    // Returns the key at the current position.
+    // REQUIRES: Valid()
+    virtual Slice GetKey() const override;
+
+    // Returns the value at the current position.
+    // REQUIRES: Valid()
+    virtual Slice GetValue() const override;
+
+    // Returns the key & value at the current position.
+    // REQUIRES: Valid()
+    virtual std::pair<Slice, Slice> GetKeyValue() const override;
 
     // Advances to the next position.
     // REQUIRES: Valid()
@@ -176,6 +237,8 @@ class MemTableRep {
     // Position at the last entry in collection.
     // Final state of iterator is Valid() iff collection is not empty.
     virtual void SeekToLast() = 0;
+
+    virtual bool IsSeekForPrevSupported() const { return false; }
   };
 
   // Return an iterator over the keys in this representation.
@@ -270,16 +333,14 @@ class VectorRepFactory : public MemTableRepFactory {
   const size_t count_;
 
  public:
-  explicit VectorRepFactory(size_t count = 0) : count_(count) { }
+  explicit VectorRepFactory(size_t count = 0) : count_(count) {}
 
   using MemTableRepFactory::CreateMemTableRep;
   virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
                                          Allocator*, const SliceTransform*,
                                          Logger* logger) override;
 
-  virtual const char* Name() const override {
-    return "VectorRepFactory";
-  }
+  virtual const char* Name() const override { return "VectorRepFactory"; }
 };
 
 // This class contains a fixed array of buckets, each
@@ -290,8 +351,7 @@ class VectorRepFactory : public MemTableRepFactory {
 //                            link lists in the skiplist
 extern MemTableRepFactory* NewHashSkipListRepFactory(
     size_t bucket_count = 1000000, int32_t skiplist_height = 4,
-    int32_t skiplist_branching_factor = 4
-);
+    int32_t skiplist_branching_factor = 4);
 
 // The factory is to create memtables based on a hash table:
 // it contains a fixed array of buckets, each pointing to either a linked list
@@ -350,7 +410,7 @@ extern MemTableRepFactory* NewHashCuckooRepFactory(
     size_t write_buffer_size, size_t average_data_size = 64,
     unsigned int hash_function_count = 4);
 
-extern MemTableRepFactory *NewThreadedRBTreeRepFactory();
+extern MemTableRepFactory* NewThreadedRBTreeRepFactory();
 
 #endif  // ROCKSDB_LITE
 }  // namespace rocksdb

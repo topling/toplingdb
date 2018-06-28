@@ -608,7 +608,7 @@ Status CompactionJob::Run() {
     }
     ColumnFamilyData* cfd = compact_->compaction->column_family_data();
     std::atomic<size_t> next_file_meta_idx(0);
-    auto verify_table = [&](Status& status) {
+    auto verify_table = [&](Status& out_status) {
       while (true) {
         size_t file_idx = next_file_meta_idx.fetch_add(1);
         if (file_idx >= files_meta.size()) {
@@ -637,7 +637,7 @@ Status CompactionJob::Run() {
         delete iter;
 
         if (!s.ok()) {
-          status = s;
+          out_status = s;
           break;
         }
       }

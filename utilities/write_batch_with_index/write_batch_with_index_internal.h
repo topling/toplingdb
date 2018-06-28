@@ -122,6 +122,7 @@ class WriteBatchEntryIndexFactory {
   virtual WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
                                     const Comparator* c, Arena* a,
                                     bool overwrite_key) const = 0;
+  virtual ~WriteBatchEntryIndexFactory() {}
 };
 
 }  // namespace rocksdb

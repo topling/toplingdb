@@ -3001,7 +3001,7 @@ void VerifyDBFromDB(std::string& truth_db_name) {
             options.write_buffer_size, FLAGS_key_size + FLAGS_value_size));
         break;
       case kThreadedRBTree:
-        options.memtable_factory.reset(NewThreadedRBTreeRepFactory(600000));
+        options.memtable_factory.reset(NewThreadedRBTreeRepFactory());
         break;
 #else
       default:

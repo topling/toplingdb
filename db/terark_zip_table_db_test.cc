@@ -43,9 +43,7 @@ class TerarkZipTableDBTest : public testing::Test {
   Options CurrentOptions() {
     TerarkZipTableOptions opt;
     Options options;
-    std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
-    options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
-    // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
+    options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
     options.allow_mmap_reads = true;
     options.create_if_missing = true;
     return options;
@@ -476,9 +474,7 @@ TEST_F(TerarkZipTableDBTest, AdaptiveTable) { // there is some wrong with adapti
   
   // Write some keys using terarkzip table.
   TerarkZipTableOptions opt;
-  std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
-  options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
-  // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
+  options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
 
   Reopen(&options);
 
@@ -518,9 +514,7 @@ TEST_F(TerarkZipTableDBTest, AdaptiveTable) { // there is some wrong with adapti
   ASSERT_EQ("v11", Get("key1"));
 
   // Write some keys using block based table.
-  // std::shared_ptr<TableFactory> block_based_factory(
-  //    NewBlockBasedTableFactory());
-  options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
+  options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
   Reopen(&options);
   ASSERT_OK(Put("key6", "v6"));
   ASSERT_OK(Put("key7", "v7"));
@@ -546,9 +540,7 @@ TEST_F(TerarkZipTableDBTest, Correctness) {
 
   // Write some keys using terarkzip table.
   TerarkZipTableOptions opt;
-  std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
-  options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
-  // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
+  options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
 
   Destroy(&options);
   Reopen(&options);
@@ -597,9 +589,7 @@ TEST_F(TerarkZipTableDBTest, EmptyTable) {
 
   // Write some keys using terarkzip table.
   TerarkZipTableOptions opt;
-  std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
-  options.table_factory.reset(NewTerarkZipTableFactory(opt, NewAdaptiveTableFactory(block_based_factory)));
-  // options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
+  options.table_factory.reset(NewTerarkZipTableFactory(opt, nullptr));
 
   Destroy(&options);
   Reopen(&options);

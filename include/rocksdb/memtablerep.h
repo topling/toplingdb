@@ -71,12 +71,8 @@ class MemTableRep {
     virtual ~KeyComparator() {}
   };
 
-  static size_t CompositeEncodeSize(const Slice& internal_key,
-                                    const Slice& value);
-  static void CompositeEncode(const Slice& internal_key, const Slice& value,
-                              char* buf);
-  static Slice CompositeDecodeKey(const char* buf);
-  static Slice CompositeDecodeKeyValue(const char* buf, Slice* value);
+  static size_t EncodeKeyValueSize(const Slice& key, const Slice& value);
+  static void EncodeKeyValue(const Slice& key, const Slice& value, char* buf);
 
   explicit MemTableRep(Allocator* allocator) : allocator_(allocator) {}
 
@@ -142,21 +138,21 @@ class MemTableRep {
   // or any writes done directly to entries accessed through the iterator.)
   virtual void MarkReadOnly() {}
 
-  class KVGetter {
+  class KeyValuePair {
    public:
     virtual Slice GetKey() const = 0;
     virtual Slice GetValue() const = 0;
     virtual std::pair<Slice, Slice> GetKeyValue() const = 0;
-    virtual ~KVGetter() {}
+    virtual ~KeyValuePair() {}
   };
 
-  class CompositeKVGetter : public KVGetter {
+  class EncodedKeyValuePair : public KeyValuePair {
    public:
     virtual Slice GetKey() const override;
     virtual Slice GetValue() const override;
     virtual std::pair<Slice, Slice> GetKeyValue() const override;
 
-    KVGetter* SetKey(const char* key);
+    KeyValuePair* SetKey(const char* key);
 
    private:
     const char* key_ = nullptr;
@@ -175,7 +171,7 @@ class MemTableRep {
   // Get() function with a default value of dynamically construct an iterator,
   // seek and call the call back function.
   virtual void Get(const LookupKey& k, void* callback_args,
-                   bool (*callback_func)(void* arg, const KVGetter* kv));
+                   bool (*callback_func)(void* arg, const KeyValuePair* kv));
 
   virtual uint64_t ApproximateNumEntries(const Slice& start_ikey,
                                          const Slice& end_key) {
@@ -189,7 +185,7 @@ class MemTableRep {
   virtual ~MemTableRep() {}
 
   // Iteration over the contents of a skip collection
-  class Iterator : public KVGetter {
+  class Iterator : public KeyValuePair {
    public:
     // Initialize an iterator over the specified collection.
     // The returned iterator is not valid.
@@ -237,6 +233,9 @@ class MemTableRep {
     // Position at the last entry in collection.
     // Final state of iterator is Valid() iff collection is not empty.
     virtual void SeekToLast() = 0;
+
+    // If true, this means that the Slice returned by GetKey() is always valid
+    virtual bool IsKeyPinned() const { return true;  }
 
     virtual bool IsSeekForPrevSupported() const { return false; }
   };

@@ -113,7 +113,8 @@ class HashCuckooRep : public MemTableRep {
   }
 
   virtual void Get(const LookupKey& k, void* callback_args,
-                   bool (*callback_func)(void* arg, const KVGetter*)) override;
+                   bool (*callback_func)(void* arg,
+                                         const KeyValuePair*)) override;
 
   class Iterator : public MemTableRep::Iterator {
     std::shared_ptr<std::vector<const char*>> bucket_;
@@ -294,16 +295,16 @@ class HashCuckooRep : public MemTableRep {
 };
 
 void HashCuckooRep::Get(const LookupKey& key, void* callback_args,
-                        bool (*callback_func)(void* arg, const KVGetter*)) {
+                        bool (*callback_func)(void* arg, const KeyValuePair*)) {
   Slice user_key = key.user_key();
-  CompositeKVGetter getter;
+  EncodedKeyValuePair pair;
   for (unsigned int hid = 0; hid < hash_function_count_; ++hid) {
     const char* bucket =
         cuckoo_array_[GetHash(user_key, hid)].load(std::memory_order_acquire);
     if (bucket != nullptr) {
       Slice bucket_user_key = UserKey(bucket);
       if (user_key == bucket_user_key) {
-        callback_func(callback_args, getter.SetKey(bucket));
+        callback_func(callback_args, pair.SetKey(bucket));
         break;
       }
     } else {

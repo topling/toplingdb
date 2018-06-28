@@ -58,12 +58,13 @@ public:
   }
 
   virtual void Get(const LookupKey& k, void* callback_args,
-                   bool (*callback_func)(void* arg, const KVGetter*)) override {
+                   bool (*callback_func)(void* arg,
+                                         const KeyValuePair*)) override {
     SkipListRep::Iterator iter(&skip_list_);
-    CompositeKVGetter getter;
+    EncodedKeyValuePair pair;
     Slice dummy_slice;
     for (iter.Seek(dummy_slice, k.memtable_key().data());
-         iter.Valid() && callback_func(callback_args, getter.SetKey(iter.key()));
+         iter.Valid() && callback_func(callback_args, pair.SetKey(iter.key()));
          iter.Next()) {
     }
   }

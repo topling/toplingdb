@@ -177,7 +177,8 @@ class HashLinkListRep : public MemTableRep {
   virtual size_t ApproximateMemoryUsage() override;
 
   virtual void Get(const LookupKey& k, void* callback_args,
-                   bool (*callback_func)(void* arg, const KVGetter*)) override;
+                   bool (*callback_func)(void* arg,
+                                         const KeyValuePair*)) override;
 
   virtual ~HashLinkListRep();
 
@@ -718,17 +719,18 @@ size_t HashLinkListRep::ApproximateMemoryUsage() {
 }
 
 void HashLinkListRep::Get(const LookupKey& k, void* callback_args,
-                          bool (*callback_func)(void* arg, const KVGetter*)) {
+                          bool (*callback_func)(void* arg,
+                                                const KeyValuePair*)) {
   auto transformed = transform_->Transform(k.user_key());
   auto bucket = GetBucket(transformed);
 
-  CompositeKVGetter getter;
+  EncodedKeyValuePair pair;
   auto* skip_list_header = GetSkipListBucketHeader(bucket);
   if (skip_list_header != nullptr) {
     // Is a skip list
     MemtableSkipList::Iterator iter(&skip_list_header->skip_list);
     for (iter.Seek(k.memtable_key().data());
-         iter.Valid() && callback_func(callback_args, getter.SetKey(iter.key()));
+         iter.Valid() && callback_func(callback_args, pair.SetKey(iter.key()));
          iter.Next()) {
     }
   } else {
@@ -737,7 +739,7 @@ void HashLinkListRep::Get(const LookupKey& k, void* callback_args,
       LinkListIterator iter(this, link_list_head);
       for (iter.Seek(k.internal_key(), nullptr);
            iter.Valid() &&
-           callback_func(callback_args, getter.SetKey(iter.key()));
+           callback_func(callback_args, pair.SetKey(iter.key()));
            iter.Next()) {
       }
     }

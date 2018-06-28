@@ -755,9 +755,9 @@ namespace {
 
         virtual void
         Get(const LookupKey &k, void *callback_args,
-            bool (*callback_func)(void *arg, const KVGetter*)) override
+            bool (*callback_func)(void *arg, const KeyValuePair*)) override
         {
-            CompositeKVGetter getter;
+            EncodedKeyValuePair pair;
             if (immutable_)
             {
                 key_set_t::iterator<DummyLock> iter(&key_set_);
@@ -767,7 +767,7 @@ namespace {
                     return;
                 }
                 key = iter.key();
-                while (callback_func(callback_args, getter.SetKey(key)))
+                while (callback_func(callback_args, pair.SetKey(key)))
                 {
                     if (!iter.next())
                     {
@@ -785,7 +785,7 @@ namespace {
                     return;
                 }
                 key = iter.key();
-                while (callback_func(callback_args, getter.SetKey(key)))
+                while (callback_func(callback_args, pair.SetKey(key)))
                 {
                     if (!iter.next())
                     {

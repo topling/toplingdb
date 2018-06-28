@@ -244,53 +244,45 @@ Slice MemTableRep::UserKey(const char* key) const {
   return Slice(slice.data(), slice.size() - 8);
 }
 
-size_t MemTableRep::CompositeEncodeSize(const Slice& internal_key,
-                                        const Slice& value) {
+size_t MemTableRep::EncodeKeyValueSize(const Slice& key,
+                                       const Slice& value) {
   size_t buf_size = 0;
-  buf_size += VarintLength(internal_key.size()) + internal_key.size();
+  buf_size += VarintLength(key.size()) + key.size();
   buf_size += VarintLength(value.size()) + value.size();
   return buf_size;
 }
-void MemTableRep::CompositeEncode(const Slice& internal_key, const Slice& value,
-                                  char* buf) {
-  char* p = EncodeVarint32(buf, (uint32_t)internal_key.size());
-  memcpy(p, internal_key.data(), internal_key.size());
-  p = EncodeVarint32(p + internal_key.size(), (uint32_t)value.size());
-  memcpy(p, value.data(), value.size());
-}
-Slice MemTableRep::CompositeDecodeKey(const char* buf) {
-  return GetLengthPrefixedSlice(buf);
-}
 
-Slice MemTableRep::CompositeDecodeKeyValue(const char* buf, Slice* value) {
-  Slice key_slice = GetLengthPrefixedSlice(buf);
-  *value = GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
-  return key_slice;
+void MemTableRep::EncodeKeyValue(const Slice& key, const Slice& value,
+                                 char* buf) {
+  char* p = EncodeVarint32(buf, (uint32_t)key.size());
+  memcpy(p, key.data(), key.size());
+  p = EncodeVarint32(p + key.size(), (uint32_t)value.size());
+  memcpy(p, value.data(), value.size());
 }
 
 void MemTableRep::Insert(const Slice& internal_key, const Slice& value) {
-  size_t buf_size = CompositeEncodeSize(internal_key, value);
+  size_t buf_size = EncodeKeyValueSize(internal_key, value);
   char* buf;
   KeyHandle handle = Allocate(buf_size, &buf);
-  CompositeEncode(internal_key, value, buf);
+  EncodeKeyValue(internal_key, value, buf);
   Insert(handle);
 }
 
 void MemTableRep::InsertWithHint(const Slice& internal_key, const Slice& value,
                                  void** hint) {
-  size_t buf_size = CompositeEncodeSize(internal_key, value);
+  size_t buf_size = EncodeKeyValueSize(internal_key, value);
   char* buf;
   KeyHandle handle = Allocate(buf_size, &buf);
-  CompositeEncode(internal_key, value, buf);
+  EncodeKeyValue(internal_key, value, buf);
   InsertWithHint(handle, hint);
 }
 
 void MemTableRep::InsertConcurrently(const Slice& internal_key,
                                      const Slice& value) {
-  size_t buf_size = CompositeEncodeSize(internal_key, value);
+  size_t buf_size = EncodeKeyValueSize(internal_key, value);
   char* buf;
   KeyHandle handle = Allocate(buf_size, &buf);
-  CompositeEncode(internal_key, value, buf);
+  EncodeKeyValue(internal_key, value, buf);
   InsertConcurrently(handle);
 }
 
@@ -428,10 +420,7 @@ class MemTableIterator : public InternalIterator {
 
   virtual Status status() const override { return Status::OK(); }
 
-  virtual bool IsKeyPinned() const override {
-    // memtable data is always pinned
-    return true;
-  }
+  virtual bool IsKeyPinned() const override { return iter_->IsKeyPinned(); }
 
   virtual bool IsValuePinned() const override {
     // memtable value is always pinned, except if we allow inplace update.
@@ -504,7 +493,7 @@ void MemTable::Add(SequenceNumber s, ValueType type,
 
   InternalKey internal_key(key, s, type);
   size_t encoded_len =
-      MemTableRep::CompositeEncodeSize(internal_key.Encode(), value);
+      MemTableRep::EncodeKeyValueSize(internal_key.Encode(), value);
   if (!allow_concurrent) {
     // Extract prefix for insert with hint.
     if (insert_with_hint_prefix_extractor_ != nullptr &&
@@ -610,7 +599,7 @@ struct Saver {
 };
 }  // namespace
 
-static bool SaveValue(void* arg, const MemTableRep::KVGetter* kv) {
+static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
   Saver* s = reinterpret_cast<Saver*>(arg);
   MergeContext* merge_context = s->merge_context;
   RangeDelAggregator* range_del_agg = s->range_del_agg;
@@ -619,7 +608,7 @@ static bool SaveValue(void* arg, const MemTableRep::KVGetter* kv) {
   assert(s != nullptr && merge_context != nullptr && range_del_agg != nullptr);
 
   Slice internal_key, value;
-  std::tie(internal_key, value) = kv->GetKeyValue();
+  std::tie(internal_key, value) = pair->GetKeyValue();
   // Check that it belongs to same user key.  We do not check the
   // sequence number since the Seek() call above should have skipped
   // all entries with overly large sequence numbers.
@@ -807,39 +796,29 @@ void MemTable::Update(SequenceNumber seq, const Slice& key,
   iter->Seek(lkey.internal_key(), mem_key.data());
 
   if (iter->Valid()) {
-    // entry format is:
-    //    key_length  varint32
-    //    userkey  char[klength-8]
-    //    tag      uint64
-    //    vlength  varint32
-    //    value    char[vlength]
-    // Check that it belongs to same user key.  We do not check the
     // sequence number since the Seek() call above should have skipped
     // all entries with overly large sequence numbers.
-    const char* entry = iter->key();
-    uint32_t key_length = 0;
-    const char* key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
+    Slice internal_key, prev_value;
+    std::tie(internal_key, prev_value) = iter->GetKeyValue();
     if (comparator_.comparator.user_comparator()->Equal(
-            Slice(key_ptr, key_length - 8), lkey.user_key())) {
+            ExtractUserKey(internal_key), lkey.user_key())) {
       // Correct user key
-      const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
+      const uint64_t tag =
+          DecodeFixed64(internal_key.data() + internal_key .size() - 8);
       ValueType type;
       SequenceNumber unused;
       UnPackSequenceAndType(tag, &unused, &type);
       if (type == kTypeValue) {
-        Slice prev_value = GetLengthPrefixedSlice(key_ptr + key_length);
         uint32_t prev_size = static_cast<uint32_t>(prev_value.size());
         uint32_t new_size = static_cast<uint32_t>(value.size());
 
-        // Update value, if new value size  <= previous value size
+        // Update value, if new value size <= previous value size
         if (new_size <= prev_size) {
           char* p =
-              EncodeVarint32(const_cast<char*>(key_ptr) + key_length, new_size);
+              const_cast<char*>(prev_value.data()) - VarintLength(prev_size);
+          p = EncodeVarint32(p, new_size);
           WriteLock wl(GetLock(lkey.user_key()));
           memcpy(p, value.data(), value.size());
-          assert((unsigned)((p + value.size()) - entry) ==
-                 (unsigned)(VarintLength(key_length) + key_length +
-                            VarintLength(value.size()) + value.size()));
           RecordTick(moptions_.statistics, NUMBER_KEYS_UPDATED);
           return;
         }
@@ -861,28 +840,21 @@ bool MemTable::UpdateCallback(SequenceNumber seq, const Slice& key,
   iter->Seek(lkey.internal_key(), memkey.data());
 
   if (iter->Valid()) {
-    // entry format is:
-    //    key_length  varint32
-    //    userkey  char[klength-8]
-    //    tag      uint64
-    //    vlength  varint32
-    //    value    char[vlength]
     // Check that it belongs to same user key.  We do not check the
     // sequence number since the Seek() call above should have skipped
     // all entries with overly large sequence numbers.
-    const char* entry = iter->key();
-    uint32_t key_length = 0;
-    const char* key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
+    Slice internal_key, prev_value;
+    std::tie(internal_key, prev_value) = iter->GetKeyValue();
     if (comparator_.comparator.user_comparator()->Equal(
-            Slice(key_ptr, key_length - 8), lkey.user_key())) {
+            ExtractUserKey(internal_key), lkey.user_key())) {
       // Correct user key
-      const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
+      const uint64_t tag =
+          DecodeFixed64(internal_key.data() + internal_key.size() - 8);
       ValueType type;
       uint64_t unused;
       UnPackSequenceAndType(tag, &unused, &type);
       switch (type) {
         case kTypeValue: {
-          Slice prev_value = GetLengthPrefixedSlice(key_ptr + key_length);
           uint32_t prev_size = static_cast<uint32_t>(prev_value.size());
 
           char* prev_buffer = const_cast<char*>(prev_value.data());
@@ -897,11 +869,12 @@ bool MemTable::UpdateCallback(SequenceNumber seq, const Slice& key,
             assert(new_prev_size <= prev_size);
             if (new_prev_size < prev_size) {
               // overwrite the new prev_size
-              char* p = EncodeVarint32(const_cast<char*>(key_ptr) + key_length,
-                                       new_prev_size);
-              if (VarintLength(new_prev_size) < VarintLength(prev_size)) {
+              char* p =
+                const_cast<char*>(prev_value.data()) - VarintLength(prev_size);
+              p = EncodeVarint32(p, new_prev_size);
+              if (p < prev_buffer) {
                 // shift the value buffer as well.
-                memcpy(p, prev_buffer, new_prev_size);
+                memmove(p, prev_buffer, new_prev_size);
               }
             }
             RecordTick(moptions_.statistics, NUMBER_KEYS_UPDATED);
@@ -963,30 +936,32 @@ size_t MemTable::CountSuccessiveMergeEntries(const LookupKey& key) {
 }
 
 void MemTableRep::Get(const LookupKey& k, void* callback_args,
-                      bool (*callback_func)(void* arg, const KVGetter*)) {
+                      bool (*callback_func)(void* arg, const KeyValuePair*)) {
   auto iter = GetDynamicPrefixIterator();
   for (iter->Seek(k.internal_key(), k.memtable_key().data());
        iter->Valid() && callback_func(callback_args, iter); iter->Next()) {
   }
+  delete iter;
 }
 
-Slice MemTableRep::CompositeKVGetter::GetKey() const {
+Slice MemTableRep::EncodedKeyValuePair::GetKey() const {
   return GetLengthPrefixedSlice(key_);
 }
 
-Slice MemTableRep::CompositeKVGetter::GetValue() const {
+Slice MemTableRep::EncodedKeyValuePair::GetValue() const {
   Slice key_slice = GetLengthPrefixedSlice(key_);
   return GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
 }
 
-std::pair<Slice, Slice> MemTableRep::CompositeKVGetter::GetKeyValue() const {
+std::pair<Slice, Slice> MemTableRep::EncodedKeyValuePair::GetKeyValue() const {
   Slice key_slice = GetLengthPrefixedSlice(key_);
   Slice value_slice =
       GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
   return { key_slice, value_slice };
 }
 
-MemTableRep::KVGetter* MemTableRep::CompositeKVGetter::SetKey(const char* key) {
+MemTableRep::KeyValuePair*
+MemTableRep::EncodedKeyValuePair::SetKey(const char* key) {
   key_ = key;
   return this;
 }
@@ -1006,7 +981,7 @@ std::pair<Slice, Slice> MemTableRep::Iterator::GetKeyValue() const {
   Slice key_slice = GetLengthPrefixedSlice(key());
   Slice value_slice =
       GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
-  return {key_slice, value_slice};
+  return { key_slice, value_slice };
 }
 
 void MemTable::RefLogContainingPrepSection(uint64_t log) {

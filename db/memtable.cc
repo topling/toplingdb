@@ -260,7 +260,8 @@ void MemTableRep::EncodeKeyValue(const Slice& key, const Slice& value,
   memcpy(p, value.data(), value.size());
 }
 
-void MemTableRep::Insert(const Slice& internal_key, const Slice& value) {
+void MemTableRep::InsertKeyValue(const Slice& internal_key,
+                                 const Slice& value) {
   size_t buf_size = EncodeKeyValueSize(internal_key, value);
   char* buf;
   KeyHandle handle = Allocate(buf_size, &buf);
@@ -268,8 +269,9 @@ void MemTableRep::Insert(const Slice& internal_key, const Slice& value) {
   Insert(handle);
 }
 
-void MemTableRep::InsertWithHint(const Slice& internal_key, const Slice& value,
-                                 void** hint) {
+void MemTableRep::InsertKeyValueWithHint(const Slice& internal_key,
+                                         const Slice& value,
+                                         void** hint) {
   size_t buf_size = EncodeKeyValueSize(internal_key, value);
   char* buf;
   KeyHandle handle = Allocate(buf_size, &buf);
@@ -277,8 +279,8 @@ void MemTableRep::InsertWithHint(const Slice& internal_key, const Slice& value,
   InsertWithHint(handle, hint);
 }
 
-void MemTableRep::InsertConcurrently(const Slice& internal_key,
-                                     const Slice& value) {
+void MemTableRep::InsertKeyValueConcurrently(const Slice& internal_key,
+                                             const Slice& value) {
   size_t buf_size = EncodeKeyValueSize(internal_key, value);
   char* buf;
   KeyHandle handle = Allocate(buf_size, &buf);
@@ -500,10 +502,10 @@ void MemTable::Add(SequenceNumber s, ValueType type,
         insert_with_hint_prefix_extractor_->InDomain(internal_key.user_key())) {
       Slice prefix = insert_with_hint_prefix_extractor_->Transform(
           internal_key.user_key());
-      table->InsertWithHint(internal_key.Encode(), value,
+      table->InsertKeyValueWithHint(internal_key.Encode(), value,
                             &insert_hints_[prefix]);
     } else {
-      table->Insert(internal_key.Encode(), value);
+      table->InsertKeyValue(internal_key.Encode(), value);
     }
 
     // this is a bit ugly, but is the way to avoid locked instructions
@@ -536,7 +538,7 @@ void MemTable::Add(SequenceNumber s, ValueType type,
     assert(post_process_info == nullptr);
     UpdateFlushState();
   } else {
-    table->InsertConcurrently(internal_key.Encode(), value);
+    table->InsertKeyValueConcurrently(internal_key.Encode(), value);
 
     assert(post_process_info != nullptr);
     post_process_info->num_entries++;

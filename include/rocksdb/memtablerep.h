@@ -76,24 +76,18 @@ class MemTableRep {
 
   explicit MemTableRep(Allocator* allocator) : allocator_(allocator) {}
 
-  // Insert key into the collection.
-  // REQUIRES: nothing that compares equal to key is currently in the
-  // collection, and no concurrent modifications to the table in progress
-  virtual void Insert(const Slice& internal_key, const Slice& value);
+  // Insert(handler) key value impl
+  virtual void InsertKeyValue(const Slice& internal_key, const Slice& value);
 
-  // Same as Insert(), but in additional pass a hint to insert location for
-  // the key. If hint points to nullptr, a new hint will be populated.
-  // otherwise the hint will be updated to reflect the last insert location.
-  //
-  // Currently only skip-list based memtable implement the interface. Other
-  // implementations will fallback to Insert() by default.
-  virtual void InsertWithHint(const Slice& internal_key, const Slice& value,
-                              void** hint);
 
-  // Like Insert(handle), but may be called concurrent with other calls
-  // to InsertConcurrently for other handles
-  virtual void InsertConcurrently(const Slice& internal_key,
-                                  const Slice& value);
+  // InsertWithHint(handler, hint) key value impl
+  virtual void InsertKeyValueWithHint(const Slice& internal_key,
+                                      const Slice& value,
+                                      void** hint);
+
+  // InsertConcurrently(handler) key value impl
+  virtual void InsertKeyValueConcurrently(const Slice& internal_key,
+                                          const Slice& value);
 
   // Allocate a buf of len size for storing key. The idea is that a
   // specific memtable representation knows its underlying data structure

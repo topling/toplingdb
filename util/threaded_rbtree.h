@@ -366,7 +366,11 @@ struct threaded_rbtree_root_t
         root.root = node_type::nil_sentinel;
     }
 
-    struct root_type
+    struct
+#ifdef _MSC_VER
+     __declspec(empty_bases)
+#endif
+     root_type
         : public threaded_rbtree_count_t<node_t, enable_count_t>
         , public threaded_rbtree_most_t<node_t, enable_most_t>
     {

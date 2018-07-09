@@ -323,12 +323,12 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
   }
   virtual bool Upsert(WriteBatchIndexEntry* key) override {
     if (OverwriteKey) {
-      Slice sraech_key = comparator_.extractor(key);
-      WriteBatchIndexEntry search_entry(&sraech_key, key->column_family);
+      Slice search_key = comparator_.extractor(key);
+      WriteBatchIndexEntry search_entry(&search_key, key->column_family);
       typename Index::Iterator iter(&index_);
       iter.Seek(&search_entry);
       if (iter.Valid() &&
-          comparator_.c->Compare(sraech_key,
+          comparator_.c->Compare(search_key,
                                  comparator_.extractor(iter.key())) == 0) {
         // found , replace
         std::swap(iter.key()->offset, key->offset);

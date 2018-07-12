@@ -41,16 +41,18 @@ class CompactionIteratorToInternalIterator : public InternalIterator {
   CompactionIterator* c_iter_;
 public:
   CompactionIteratorToInternalIterator(CompactionIterator* i) : c_iter_(i) {}
-  virtual bool Valid() const { return c_iter_->Valid(); }
-  virtual void SeekToFirst() { c_iter_->SeekToFirst(); }
-  virtual void SeekToLast() { abort(); } // do not support
-  virtual void SeekForPrev(const rocksdb::Slice&) { abort(); } // do not support
-  virtual void Seek(const Slice& target);
-  virtual void Next() { c_iter_->Next(); }
-  virtual void Prev() { abort(); } // do not support
-  virtual Slice key() const { return c_iter_->key(); }
-  virtual Slice value() const { return c_iter_->value(); }
-  virtual Status status() const {
+  virtual bool Valid() const override { return c_iter_->Valid(); }
+  virtual void SeekToFirst() override { c_iter_->SeekToFirst(); }
+  virtual void SeekToLast() override { abort(); }  // do not support
+  virtual void SeekForPrev(const rocksdb::Slice&) override {
+    abort();
+  }  // do not support
+  virtual void Seek(const Slice& target) override;
+  virtual void Next() override { c_iter_->Next(); }
+  virtual void Prev() override { abort(); }  // do not support
+  virtual Slice key() const override { return c_iter_->key(); }
+  virtual Slice value() const override { return c_iter_->value(); }
+  virtual Status status() const override {
     auto ci = c_iter_;
     if (ci->IsShuttingDown()) {
       return Status::ShutdownInProgress();

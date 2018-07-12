@@ -503,7 +503,7 @@ void MemTable::Add(SequenceNumber s, ValueType type,
       Slice prefix = insert_with_hint_prefix_extractor_->Transform(
           internal_key.user_key());
       table->InsertKeyValueWithHint(internal_key.Encode(), value,
-                            &insert_hints_[prefix]);
+                                    &insert_hints_[prefix]);
     } else {
       table->InsertKeyValue(internal_key.Encode(), value);
     }

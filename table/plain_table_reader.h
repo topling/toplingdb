@@ -78,9 +78,9 @@ class PlainTableReader: public TableReader {
                      size_t index_sparseness, size_t huge_page_tlb_size,
                      bool full_scan_mode);
 
-  InternalIterator* NewIterator(const ReadOptions&,
-                                Arena* arena = nullptr,
-                                bool skip_filters = false) override;
+  SourceInternalIterator* NewIterator(const ReadOptions&,
+                                      Arena* arena = nullptr,
+                                      bool skip_filters = false) override;
 
   void Prepare(const Slice& target) override;
 

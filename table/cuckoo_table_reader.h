@@ -45,7 +45,7 @@ class CuckooTableReader: public TableReader {
   Status Get(const ReadOptions& read_options, const Slice& key,
              GetContext* get_context, bool skip_filters = false) override;
 
-  InternalIterator* NewIterator(
+  SourceInternalIterator* NewIterator(
       const ReadOptions&, Arena* arena = nullptr,
       bool skip_filters = false) override;
   void Prepare(const Slice& target) override;

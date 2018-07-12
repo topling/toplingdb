@@ -241,10 +241,6 @@ Slice WriteBatchKeyExtractor::operator()(
   }
 }
 
-size_t WriteBatchKeyExtractor::Offset(const WriteBatchIndexEntry* entry) const {
-  return entry->offset;
-}
-
 template<bool OverwriteKey>
 struct WriteBatchEntryComparator {
   int operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
@@ -253,10 +249,10 @@ struct WriteBatchEntryComparator {
     if (OverwriteKey || cmp != 0) {
       return cmp;
     }
-    if (extractor.Offset(l) > extractor.Offset(r)) {
+    if (l->offset > r->offset) {
       return 1;
     }
-    if (extractor.Offset(l) < extractor.Offset(r)) {
+    if (l->offset < r->offset) {
       return -1;
     }
     return 0;
@@ -343,13 +339,16 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
 const WriteBatchEntryIndexFactory* WriteBatchEntrySkipListIndexFactory() {
   class SkipListIndexFactory : public WriteBatchEntryIndexFactory {
    public:
-    WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
+    WriteBatchEntryIndex* New(WriteBatchEntryIndexContext* ctx,
+                              WriteBatchKeyExtractor e,
                               const Comparator* c, Arena* a,
                               bool overwrite_key) const override {
       if (overwrite_key) {
-        return new WriteBatchEntrySkipListIndex<true>(e, c, a);
+        typedef WriteBatchEntrySkipListIndex<true> index_t;
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
       } else {
-        return new WriteBatchEntrySkipListIndex<false>(e, c, a);
+        typedef WriteBatchEntrySkipListIndex<false> index_t;
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
       }
     }
   };
@@ -448,13 +447,16 @@ class WriteBatchEntryRBTreeIndex : public WriteBatchEntryIndex {
 const WriteBatchEntryIndexFactory* WriteBatchEntryRBTreeIndexFactory() {
   class RBTreeIndexFactory : public WriteBatchEntryIndexFactory {
    public:
-    WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
+    WriteBatchEntryIndex* New(WriteBatchEntryIndexContext* ctx,
+                              WriteBatchKeyExtractor e,
                               const Comparator* c, Arena* a,
                               bool overwrite_key) const override {
       if (overwrite_key) {
-        return new WriteBatchEntryRBTreeIndex<true>(e, c, a);
+        typedef WriteBatchEntryRBTreeIndex<true> index_t;
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
       } else {
-        return new WriteBatchEntryRBTreeIndex<false>(e, c, a);
+        typedef WriteBatchEntryRBTreeIndex<false> index_t;
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
       }
     }
   };

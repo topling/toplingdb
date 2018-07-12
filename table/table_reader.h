@@ -38,9 +38,9 @@ class TableReader {
   //        all the states but those allocated in arena.
   // skip_filters: disables checking the bloom filters even if they exist. This
   //               option is effective only for block-based table format.
-  virtual InternalIterator* NewIterator(const ReadOptions&,
-                                        Arena* arena = nullptr,
-                                        bool skip_filters = false) = 0;
+  virtual SourceInternalIterator* NewIterator(const ReadOptions&,
+                                              Arena* arena = nullptr,
+                                              bool skip_filters = false) = 0;
 
   virtual InternalIterator* NewRangeTombstoneIterator(
       const ReadOptions& read_options) {

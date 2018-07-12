@@ -265,7 +265,11 @@ InternalIterator* TableCache::NewIterator(
         !options.table_filter(*table_reader->GetTableProperties())) {
       result = NewEmptyInternalIterator(arena);
     } else {
-      result = table_reader->NewIterator(options, arena, skip_filters);
+      SourceInternalIterator* source_iter =
+          table_reader->NewIterator(options, arena, skip_filters);
+      source_iter->SetSource(IteratorSource(IteratorSource::kSST,
+                                            (uintptr_t)&meta));
+      result = source_iter;
       if (!ignore_partial_remove && meta.partial_removed) {
         auto wrapper = NewRangeWrappedInternalIterator(
             result, icomparator, &meta.range_set, arena);

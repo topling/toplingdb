@@ -59,6 +59,10 @@ class IteratorWrapper {
   Slice value() const       { assert(Valid()); return iter_->value(); }
   // Methods below require iter() != nullptr
   Status status() const     { assert(iter_); return iter_->status(); }
+  IteratorSource source() const {
+    assert(iter_);
+    return iter_->source();
+  }
   void Next()               { assert(iter_); iter_->Next();        Update(); }
   void Prev()               { assert(iter_); iter_->Prev();        Update(); }
   void Seek(const Slice& k) { assert(iter_); iter_->Seek(k);       Update(); }
@@ -107,10 +111,10 @@ extern InternalIterator* NewRangeWrappedInternalIterator(
     const std::vector<InternalKey>* range_set, Arena* arena);
 
 // Return an empty iterator (yields nothing) allocated from arena.
-extern InternalIterator* NewEmptyInternalIterator(Arena* arena);
+extern SourceInternalIterator* NewEmptyInternalIterator(Arena* arena);
 
 // Return an empty iterator with the specified status, allocated arena.
-extern InternalIterator* NewErrorInternalIterator(const Status& status,
-                                                  Arena* arena);
+extern SourceInternalIterator* NewErrorInternalIterator(const Status& status,
+                                                        Arena* arena);
 
 }  // namespace rocksdb

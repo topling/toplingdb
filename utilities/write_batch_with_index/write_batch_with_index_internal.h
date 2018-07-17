@@ -118,7 +118,7 @@ class WriteBatchEntryIndex {
 
 class WriteBatchEntryIndexContext {
  public:
-  ~WriteBatchEntryIndexContext(){};
+  virtual ~WriteBatchEntryIndexContext(){};
 };
 
 class WriteBatchEntryIndexFactory {

@@ -50,6 +50,9 @@ class Slice;
 class SliceTransform;
 class Logger;
 
+struct ImmutableCFOptions;
+struct MutableCFOptions;
+
 typedef void* KeyHandle;
 
 class MemTableRep {
@@ -282,6 +285,11 @@ class MemTableRepFactory {
       uint32_t /* column_family_id */) {
     return CreateMemTableRep(key_cmp, allocator, slice_transform, logger);
   }
+  virtual MemTableRep* CreateMemTableRep(
+      const MemTableRep::KeyComparator& key_cmp, Allocator* allocator,
+      const ImmutableCFOptions& ioptions,
+      const MutableCFOptions& /* mutable_cf_options */,
+      uint32_t /* column_family_id */);
 
   virtual const char* Name() const = 0;
 

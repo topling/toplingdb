@@ -74,7 +74,7 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
               : nullptr,
           mutable_cf_options.memtable_huge_page_size),
       table_(mutable_cf_options.memtable_factory->CreateMemTableRep(
-          comparator_, &arena_, ioptions.prefix_extractor, ioptions.info_log,
+          comparator_, &arena_, ioptions, mutable_cf_options,
           column_family_id)),
       range_del_table_(SkipListFactory().CreateMemTableRep(
           comparator_, &arena_, nullptr /* transform */, ioptions.info_log,
@@ -111,6 +111,15 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
         6 /* hard coded 6 probes */, nullptr, moptions_.memtable_huge_page_size,
         ioptions.info_log));
   }
+}
+
+MemTableRep* MemTableRepFactory::CreateMemTableRep(
+    const MemTableRep::KeyComparator& key_cmp, Allocator* allocator,
+    const ImmutableCFOptions& ioptions,
+    const MutableCFOptions& /* mutable_cf_options */,
+    uint32_t /* column_family_id */) {
+  return CreateMemTableRep(key_cmp, allocator, ioptions.prefix_extractor,
+                           ioptions.info_log);
 }
 
 MemTable::~MemTable() {

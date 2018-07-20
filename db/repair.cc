@@ -563,7 +563,7 @@ class Repairer {
         edit.AddFile(0, table->meta.fd.GetNumber(), table->meta.fd.GetPathId(),
                      table->meta.fd.GetFileSize(), table->meta.range_set,
                      table->min_sequence, table->max_sequence,
-                     table->meta.marked_for_compaction, 0, 0);
+                     table->meta.marked_for_compaction, 0, 0, 0);
       }
       assert(next_file_number_ > 0);
       vset_.MarkFileNumberUsed(next_file_number_ - 1);

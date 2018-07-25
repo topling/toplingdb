@@ -302,10 +302,11 @@ class WBWIIteratorImpl : public WBWIIterator {
  public:
   WBWIIteratorImpl(uint32_t column_family_id,
                    WriteBatchEntryIndex* entry_index,
-                   const ReadableWriteBatch* write_batch)
+                   const ReadableWriteBatch* write_batch,
+                   bool ephemeral)
     : column_family_id_(column_family_id),
       write_batch_(write_batch) {
-    entry_index->NewIterator(iter_);
+    entry_index->NewIterator(iter_, ephemeral);
   }
 
   virtual ~WBWIIteratorImpl() {}
@@ -678,23 +679,25 @@ bool WriteBatchWithIndex::Collapse() {
 
 WBWIIterator* WriteBatchWithIndex::NewIterator() {
   return new WBWIIteratorImpl(0, rep->GetEntryIndex(nullptr),
-                              &rep->write_batch);
+                              &rep->write_batch, false);
 }
 
 WBWIIterator* WriteBatchWithIndex::NewIterator(
     ColumnFamilyHandle* column_family) {
   auto cf_id = GetColumnFamilyID(column_family);
   return new WBWIIteratorImpl(cf_id, rep->GetEntryIndex(column_family),
-                              &rep->write_batch);
+                              &rep->write_batch, false);
 }
 
 void WriteBatchWithIndex::NewIterator(ColumnFamilyHandle* column_family,
-                                      WBWIIterator::IteratorStorage& storage) {
+                                      WBWIIterator::IteratorStorage& storage,
+                                      bool ephemeral) {
   static_assert(sizeof(WBWIIteratorImpl) <= sizeof storage.buffer,
                 "Need larger buffer for WBWIIteratorImpl");
   storage.iter = new (storage.buffer)
       WBWIIteratorImpl(GetColumnFamilyID(column_family),
-                       rep->GetEntryIndex(column_family), &rep->write_batch);
+                       rep->GetEntryIndex(column_family), &rep->write_batch,
+                       ephemeral);
 }
 Iterator* WriteBatchWithIndex::NewIteratorWithBase(
     ColumnFamilyHandle* column_family, Iterator* base_iterator) {

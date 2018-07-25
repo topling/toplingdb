@@ -110,7 +110,7 @@ class WriteBatchEntryIndex {
   virtual Iterator* NewIterator() = 0;
   // sizeof(iterator) size must less or equal than 24
   // INCLUDE virtual table pointer
-  virtual void NewIterator(IteratorStorage& storage) = 0;
+  virtual void NewIterator(IteratorStorage& storage, bool ephemeral) = 0;
   // return true if insert success
   // assign key->offset to exists entry's offset otherwise
   virtual bool Upsert(WriteBatchIndexEntry* key) = 0;

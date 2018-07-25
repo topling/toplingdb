@@ -19,7 +19,7 @@
 namespace rocksdb {
 
 void RangeEraseSet::push(const InternalKey& smallest, const InternalKey& largest,
-                    bool smallest_open, bool largest_open) {
+                         bool smallest_open, bool largest_open) {
   erase.emplace_back(smallest);
   erase.emplace_back(largest);
   open.push_back(smallest_open);

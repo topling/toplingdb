@@ -110,7 +110,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
   }
 
   WBWIIterator::IteratorStorage iter;
-  batch->NewIterator(column_family, iter);
+  batch->NewIterator(column_family, iter, true);
 
   // We want to iterate in the reverse order that the writes were added to the
   // batch.  Since we don't have a reverse iterator, we must seek past the end.
@@ -125,7 +125,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
     iter->Next();
   }
 
-  if (!(*s).ok()) {
+  if (!s->ok()) {
     return WriteBatchWithIndexInternal::Result::kError;
   }
 
@@ -167,8 +167,8 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
       }
       default: {
         result = WriteBatchWithIndexInternal::Result::kError;
-        (*s) = Status::Corruption("Unexpected entry in WriteBatchWithIndex:",
-                                  ToString(entry.type));
+        *s = Status::Corruption("Unexpected entry in WriteBatchWithIndex:",
+                                ToString(entry.type));
         break;
       }
     }
@@ -189,7 +189,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
     iter->Prev();
   }
 
-  if ((*s).ok()) {
+  if (s->ok()) {
     if (result == WriteBatchWithIndexInternal::Result::kFound ||
         result == WriteBatchWithIndexInternal::Result::kDeleted) {
       // Found a Put or Delete.  Merge if necessary.
@@ -215,7 +215,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
         } else {
           *s = Status::InvalidArgument("Options::merge_operator must be set");
         }
-        if ((*s).ok()) {
+        if (s->ok()) {
           result = WriteBatchWithIndexInternal::Result::kFound;
         } else {
           result = WriteBatchWithIndexInternal::Result::kError;
@@ -312,7 +312,7 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
   virtual Iterator* NewIterator() override {
     return new SkipListIterator(&index_);
   }
-  virtual void NewIterator(IteratorStorage& storage) override {
+  virtual void NewIterator(IteratorStorage& storage, bool ephemeral) override {
     static_assert(sizeof(SkipListIterator) <= sizeof storage.buffer,
                   "Need larger buffer for SkipListIterator");
     storage.iter = new (storage.buffer) SkipListIterator(&index_);
@@ -417,7 +417,7 @@ class WriteBatchEntryRBTreeIndex : public WriteBatchEntryIndex {
   virtual Iterator* NewIterator() override {
     return new RBTreeIterator(&index_);
   }
-  virtual void NewIterator(IteratorStorage& storage) override {
+  virtual void NewIterator(IteratorStorage& storage, bool ephemeral) override {
     static_assert(sizeof(RBTreeIterator) <= sizeof storage.buffer,
                   "Need larger buffer for RBTreeIterator");
     storage.iter = new (storage.buffer) RBTreeIterator(&index_);

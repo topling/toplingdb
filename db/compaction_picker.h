@@ -62,8 +62,7 @@ class CompactionPicker {
       VersionStorageInfo* vstorage, int input_level, int output_level,
       uint32_t output_path_id, uint32_t max_subcompactions,
       const InternalKey* begin, const InternalKey* end,
-      InternalKey** compaction_end, bool* manual_conflict,
-      const std::unordered_set<uint64_t>* files_being_compact);
+      InternalKey** compaction_end, bool* manual_conflict);
 
   // The maximum allowed output level.  Default value is NumberLevels() - 1.
   virtual int MaxOutputLevel() const { return NumberLevels() - 1; }
@@ -254,8 +253,7 @@ class FIFOCompactionPicker : public CompactionPicker {
       VersionStorageInfo* vstorage, int input_level, int output_level,
       uint32_t output_path_id, uint32_t max_subcompactions,
       const InternalKey* begin, const InternalKey* end,
-      InternalKey** compaction_end, bool* manual_conflict,
-      const std::unordered_set<uint64_t>* files_being_compact) override;
+      InternalKey** compaction_end, bool* manual_conflict) override;
 
   // The maximum allowed output level.  Always returns 0.
   virtual int MaxOutputLevel() const override { return 0; }
@@ -300,8 +298,7 @@ class NullCompactionPicker : public CompactionPicker {
                            const InternalKey* /*begin*/,
                            const InternalKey* /*end*/,
                            InternalKey** /*compaction_end*/,
-                           bool* /*manual_conflict*/,
-      const std::unordered_set<uint64_t>* /*files_being_compact*/) override {
+                           bool* /*manual_conflict*/) override {
     return nullptr;
   }
 

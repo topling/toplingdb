@@ -269,7 +269,7 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
 
   for (size_t i = 0; i < new_files_.size(); i++) {
     const FileMetaData& f = new_files_[i].second;
-    if (!f.smallest().Valid() || !f.largest().Valid()) {
+    if (!f.smallest.Valid() || !f.largest.Valid()) {
       return false;
     }
     bool has_customized_fields = false;
@@ -290,8 +290,8 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
       PutVarint32(dst, f.fd.GetPathId());
     }
     PutVarint64(dst, f.fd.GetFileSize());
-    PutLengthPrefixedSlice(dst, f.smallest().Encode());
-    PutLengthPrefixedSlice(dst, f.largest().Encode());
+    PutLengthPrefixedSlice(dst, f.smallest.Encode());
+    PutLengthPrefixedSlice(dst, f.largest.Encode());
     PutVarint64Varint64(dst, f.smallest_seqno, f.largest_seqno);
     if (has_customized_fields) {
       // Customized fields' format:
@@ -401,7 +401,7 @@ const char* VersionEdit::DecodeNewFile4From(Slice* input) {
   f.range_set.resize(1);
   if (GetLevel(input, &level, &msg) && GetVarint64(input, &number) &&
       GetVarint64(input, &file_size) &&
-      GetInternalKey(input, &f.smallest()) &&
+      GetInternalKey(input, &f.smallest) &&
       GetInternalKey(input, &largest) &&
       GetVarint64(input, &f.smallest_seqno) &&
       GetVarint64(input, &f.largest_seqno)) {
@@ -566,8 +566,8 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         uint64_t file_size;
         if (GetLevel(&input, &level, &msg) && GetVarint64(&input, &number) &&
             GetVarint64(&input, &file_size) &&
-            GetInternalKey(&input, &f.smallest()) &&
-            GetInternalKey(&input, &f.largest())) {
+            GetInternalKey(&input, &f.smallest) &&
+            GetInternalKey(&input, &f.largest)) {
           f.fd = FileDescriptor(number, 0, file_size);
           new_files_.push_back(std::make_pair(level, f));
         } else {
@@ -582,8 +582,8 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         uint64_t file_size;
         if (GetLevel(&input, &level, &msg) && GetVarint64(&input, &number) &&
             GetVarint64(&input, &file_size) &&
-            GetInternalKey(&input, &f.smallest()) &&
-            GetInternalKey(&input, &f.largest()) &&
+            GetInternalKey(&input, &f.smallest) &&
+            GetInternalKey(&input, &f.largest) &&
             GetVarint64(&input, &f.smallest_seqno) &&
             GetVarint64(&input, &f.largest_seqno)) {
           f.fd = FileDescriptor(number, 0, file_size);
@@ -602,8 +602,8 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         uint64_t file_size;
         if (GetLevel(&input, &level, &msg) && GetVarint64(&input, &number) &&
             GetVarint32(&input, &path_id) && GetVarint64(&input, &file_size) &&
-            GetInternalKey(&input, &f.smallest()) &&
-            GetInternalKey(&input, &f.largest()) &&
+            GetInternalKey(&input, &f.smallest) &&
+            GetInternalKey(&input, &f.largest) &&
             GetVarint64(&input, &f.smallest_seqno) &&
             GetVarint64(&input, &f.largest_seqno)) {
           f.fd = FileDescriptor(number, path_id, file_size);

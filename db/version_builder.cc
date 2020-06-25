@@ -48,7 +48,7 @@ bool NewestFirstBySeqNo(FileMetaData* a, FileMetaData* b) {
 namespace {
 bool BySmallestKey(FileMetaData* a, FileMetaData* b,
                    const InternalKeyComparator* cmp) {
-  int r = cmp->Compare(a->smallest(), b->smallest());
+  int r = cmp->Compare(a->smallest, b->smallest);
   if (r != 0) {
     return (r < 0);
   }
@@ -195,11 +195,11 @@ class VersionBuilder::Rep {
           }
 
           // Make sure there is no overlap in levels > 0
-          if (vstorage->InternalComparator()->Compare(f1->largest(),
-                                                      f2->smallest()) >= 0) {
+          if (vstorage->InternalComparator()->Compare(f1->largest,
+                                                      f2->smallest) >= 0) {
             fprintf(stderr, "L%d have overlapping ranges %s vs. %s\n", level,
-                    f1->largest().DebugString(true).c_str(),
-                    f2->smallest().DebugString(true).c_str());
+                    f1->largest.DebugString(true).c_str(),
+                    f2->smallest.DebugString(true).c_str());
             abort();
           }
         }
@@ -362,7 +362,7 @@ class VersionBuilder::Rep {
 #ifndef NDEBUG
         if (level > 0 && prev_file != nullptr) {
           assert(base_vstorage_->InternalComparator()->Compare(
-                     prev_file->smallest(), added->smallest()) <= 0);
+                     prev_file->smallest, added->smallest) <= 0);
         }
         prev_file = added;
 #endif

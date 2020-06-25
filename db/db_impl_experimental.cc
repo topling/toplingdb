@@ -87,7 +87,7 @@ Status DBImpl::PromoteL0(ColumnFamilyHandle* column_family, int target_level) {
     auto l0_files = vstorage->LevelFiles(0);
     std::sort(l0_files.begin(), l0_files.end(),
               [icmp](FileMetaData* f1, FileMetaData* f2) {
-                return icmp->Compare(f1->largest(), f2->largest()) < 0;
+                return icmp->Compare(f1->largest, f2->largest) < 0;
               });
 
     // Check that no L0 file is being compacted and that they have
@@ -104,7 +104,7 @@ Status DBImpl::PromoteL0(ColumnFamilyHandle* column_family, int target_level) {
 
       if (i == 0) continue;
       auto prev_f = l0_files[i - 1];
-      if (icmp->Compare(prev_f->largest(), f->smallest()) >= 0) {
+      if (icmp->Compare(prev_f->largest, f->smallest) >= 0) {
         ROCKS_LOG_INFO(immutable_db_options_.info_log,
                        "PromoteL0 FAILED. Files %" PRIu64 " and %" PRIu64
                        " have overlapping ranges\n",

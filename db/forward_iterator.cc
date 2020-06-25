@@ -348,7 +348,7 @@ void ForwardIterator::SeekInternal(const Slice& internal_key,
         // If the target key passes over the larget key, we are sure Next()
         // won't go over this file.
         if (user_comparator_->Compare(user_key,
-              l0[i]->largest().user_key()) > 0) {
+              l0[i]->largest.user_key()) > 0) {
           if (read_options_.iterate_upper_bound != nullptr) {
             has_iter_trimmed_for_upper_bound_ = true;
             DeleteIterator(l0_iters_[i]);
@@ -584,7 +584,7 @@ void ForwardIterator::RebuildIterators(bool refresh_sv) {
   for (const auto* l0 : l0_files) {
     if ((read_options_.iterate_upper_bound != nullptr) &&
         cfd_->internal_comparator().user_comparator()->Compare(
-            l0->smallest().user_key(), *read_options_.iterate_upper_bound) > 0) {
+            l0->smallest.user_key(), *read_options_.iterate_upper_bound) > 0) {
       has_iter_trimmed_for_upper_bound_ = true;
       l0_iters_.push_back(nullptr);
       continue;
@@ -695,7 +695,7 @@ void ForwardIterator::BuildLevelIterators(const VersionStorageInfo* vstorage) {
     if ((level_files.empty()) ||
         ((read_options_.iterate_upper_bound != nullptr) &&
          (user_comparator_->Compare(*read_options_.iterate_upper_bound,
-                                    level_files[0]->smallest().user_key()) <
+                                    level_files[0]->smallest.user_key()) <
           0))) {
       level_iters_.push_back(nullptr);
       if (!level_files.empty()) {
@@ -871,7 +871,7 @@ uint32_t ForwardIterator::FindFileInRange(
     uint32_t mid = (left + right) / 2;
     const FileMetaData* f = files[mid];
     if (cfd_->internal_comparator().InternalKeyComparator::Compare(
-          f->largest().Encode(), internal_key) < 0) {
+          f->largest.Encode(), internal_key) < 0) {
       // Key at "mid.largest" is < "target".  Therefore all
       // files at or before "mid" are uninteresting.
       left = mid + 1;

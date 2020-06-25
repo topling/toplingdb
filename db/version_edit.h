@@ -111,14 +111,9 @@ struct PartialRemovedMetaData {
 
 struct FileMetaData {
   FileDescriptor fd;
+  InternalKey smallest;            // Smallest internal key served by table
+  InternalKey largest;             // Largest internal key served by table
   std::vector<InternalKey> range_set; // valid range set
-
-  // Smallest internal key served by table
-  InternalKey& smallest() { return range_set.front(); }
-  const InternalKey& smallest() const { return range_set.front(); }
-  // Largest internal key served by table
-  InternalKey& largest() { return range_set.back(); }
-  const InternalKey& largest() const { return range_set.back(); }
   SequenceNumber smallest_seqno;   // The smallest seqno in this file
   SequenceNumber largest_seqno;    // The largest seqno in this file
 
@@ -184,12 +179,16 @@ struct FileMetaData {
   // REQUIRED: Keys must be given to the function in sorted order (it expects
   // the last key to be the largest).
   void UpdateBoundaries(const Slice& key, SequenceNumber seqno) {
-    if (smallest().size() == 0) {
-      smallest().DecodeFrom(key);
+    if (smallest.size() == 0) {
+      smallest.DecodeFrom(key);
     }
-    largest().DecodeFrom(key);
+    largest.DecodeFrom(key);
     smallest_seqno = std::min(smallest_seqno, seqno);
     largest_seqno = std::max(largest_seqno, seqno);
+    // range_set and smallest/largest are keep synced
+    // do not change smallest/largest to functions is to keep min diff with upstream
+    range_set.front() = smallest;
+    range_set.back() = largest;
   }
 };
 
@@ -273,6 +272,8 @@ class VersionEdit {
     FileMetaData f;
     f.fd = FileDescriptor(file, file_path_id, file_size);
     f.range_set = range_set;
+    f.smallest = range_set.front();
+    f.largest = range_set.back();
     f.smallest_seqno = smallest_seqno;
     f.largest_seqno = largest_seqno;
     f.marked_for_compaction = marked_for_compaction;

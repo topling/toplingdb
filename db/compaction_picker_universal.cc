@@ -48,8 +48,8 @@ struct SmallestKeyHeapComparator {
   explicit SmallestKeyHeapComparator(const Comparator* ucmp) { ucmp_ = ucmp; }
 
   bool operator()(InputFileInfo i1, InputFileInfo i2) const {
-    return (ucmp_->Compare(i1.f->smallest().user_key(),
-                           i2.f->smallest().user_key()) > 0);
+    return (ucmp_->Compare(i1.f->smallest.user_key(),
+                           i2.f->smallest.user_key()) > 0);
   }
 
  private:
@@ -133,13 +133,13 @@ bool UniversalCompactionPicker::IsInputFilesNonOverlapping(Compaction* c) {
       prev = curr;
       first_iter = 0;
     } else {
-      if (comparator->Compare(prev.f->largest().user_key(),
-                              curr.f->smallest().user_key()) >= 0) {
+      if (comparator->Compare(prev.f->largest.user_key(),
+                              curr.f->smallest.user_key()) >= 0) {
         // found overlapping files, return false
         return false;
       }
-      assert(comparator->Compare(curr.f->largest().user_key(),
-                                 prev.f->largest().user_key()) > 0);
+      assert(comparator->Compare(curr.f->largest.user_key(),
+                                 prev.f->largest.user_key()) > 0);
       prev = curr;
     }
 
@@ -493,8 +493,8 @@ Compaction* UniversalCompactionPicker::PickCompactionConitnue(
     if (meta->compact_to_level == output_level) {
       return true;
     }
-    Slice smallest = meta->smallest().user_key();
-    Slice largest = meta->largest().user_key();
+    Slice smallest = meta->smallest.user_key();
+    Slice largest = meta->largest.user_key();
     auto ucmp = icmp_->user_comparator();
     const std::vector<FileMetaData*>* files_ptr;
     for (auto level = start_level; level < output_level; ++level) {
@@ -518,8 +518,8 @@ Compaction* UniversalCompactionPicker::PickCompactionConitnue(
   };
   // return true if exists data between these tow sst
   auto need_compact_between = [&, this](FileMetaData* left, FileMetaData* right) {
-    const InternalKey* smallest = left ? &left->largest() : nullptr;
-    const InternalKey* largest = right ? &right->smallest() : nullptr;
+    const InternalKey* smallest = left ? &left->largest : nullptr;
+    const InternalKey* largest = right ? &right->smallest : nullptr;
     auto ucmp = icmp_->user_comparator();
     const std::vector<FileMetaData*>* files_ptr;
     for (auto level = start_level; level < output_level; ++level) {
@@ -554,11 +554,11 @@ Compaction* UniversalCompactionPicker::PickCompactionConitnue(
         // range
         CompactionInputFilesRange range;
         if (start > 0) {
-          range.smallest = &files[start - 1]->largest();
+          range.smallest = &files[start - 1]->largest;
           range.flags = CompactionInputFilesRange::kSmallestOpen;
         }
         if (end < (int)files.size()) {
-          range.largest = &files[end]->smallest();
+          range.largest = &files[end]->smallest;
           range.flags |= CompactionInputFilesRange::kLargestOpen;
         }
         input_range.emplace_back(range);
@@ -567,7 +567,7 @@ Compaction* UniversalCompactionPicker::PickCompactionConitnue(
           // this case should be rare
           // head range
           CompactionInputFilesRange range;
-          range.largest = &files.front()->largest();
+          range.largest = &files.front()->largest;
           range.flags |= CompactionInputFilesRange::kLargestOpen;
           input_range.emplace_back(range);
         }
@@ -575,15 +575,15 @@ Compaction* UniversalCompactionPicker::PickCompactionConitnue(
         if (need_compact_between(files.back(), nullptr)) {
           // tail range
           CompactionInputFilesRange range;
-          range.smallest = &files[start]->largest();
+          range.smallest = &files[start]->largest;
           range.flags |= CompactionInputFilesRange::kSmallestOpen;
           input_range.emplace_back(range);
         }
       } else if (need_compact_between(files[end - 1], files[end])) {
         // insert break
         CompactionInputFilesRange range;
-        range.smallest = &files[end - 1]->largest();
-        range.largest = &files[end]->smallest();
+        range.smallest = &files[end - 1]->largest;
+        range.largest = &files[end]->smallest;
         range.flags = CompactionInputFilesRange::kSmallestOpen |
                       CompactionInputFilesRange::kLargestOpen;
         input_range.emplace_back(range);

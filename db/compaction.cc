@@ -42,14 +42,14 @@ std::pair<ptrdiff_t, ptrdiff_t> FindLevelOverlap(
     left = std::lower_bound(
                files.begin(), files.end(), *smallest,
                [&ic](const FileMetaData* l, const InternalKey& r) {
-                   return ic.Compare(l->largest(), r) < 0;
+                   return ic.Compare(l->largest, r) < 0;
                }) - files.begin();
   }
   if (largest != nullptr) {
     right = std::upper_bound(
                 files.begin(), files.end(), *largest,
                 [&ic](const InternalKey& l, const FileMetaData* r) {
-                    return ic.Compare(l, r->smallest()) < 0;
+                    return ic.Compare(l, r->smallest) < 0;
                 }) - files.begin() - 1;
   }
   return std::make_pair(left, right);
@@ -77,12 +77,12 @@ void Compaction::GetBoundaryKeys(
     if (inputs[i].level == 0) {
       // we need to consider all files on level 0
       for (const auto* f : inputs[i].files) {
-        const Slice& start_user_key = f->smallest().user_key();
+        const Slice& start_user_key = f->smallest.user_key();
         if (!initialized ||
             ucmp->Compare(start_user_key, *smallest_user_key) < 0) {
           *smallest_user_key = start_user_key;
         }
-        const Slice& end_user_key = f->largest().user_key();
+        const Slice& end_user_key = f->largest.user_key();
         if (!initialized ||
             ucmp->Compare(end_user_key, *largest_user_key) > 0) {
           *largest_user_key = end_user_key;
@@ -91,12 +91,12 @@ void Compaction::GetBoundaryKeys(
       }
     } else {
       // we only need to consider the first and last file
-      const Slice& start_user_key = inputs[i].files[0]->smallest().user_key();
+      const Slice& start_user_key = inputs[i].files[0]->smallest.user_key();
       if (!initialized ||
           ucmp->Compare(start_user_key, *smallest_user_key) < 0) {
         *smallest_user_key = start_user_key;
       }
-      const Slice& end_user_key = inputs[i].files.back()->largest().user_key();
+      const Slice& end_user_key = inputs[i].files.back()->largest.user_key();
       if (!initialized || ucmp->Compare(end_user_key, *largest_user_key) > 0) {
         *largest_user_key = end_user_key;
       }
@@ -297,8 +297,8 @@ bool Compaction::IsTrivialMove() const {
     if (output_level_ + 1 >= number_levels_) {
       continue;
     }
-    input_vstorage_->GetOverlappingInputs(output_level_ + 1, &file->smallest(),
-                                          &file->largest(), &file_grand_parents);
+    input_vstorage_->GetOverlappingInputs(output_level_ + 1, &file->smallest,
+                                          &file->largest, &file_grand_parents);
     const auto compaction_size =
         file->fd.GetFileSize() + TotalFileSize(file_grand_parents);
     if (compaction_size > max_compaction_bytes_) {
@@ -333,9 +333,9 @@ bool Compaction::KeyNotExistsBeyondOutputLevel(
           input_vstorage_->LevelFiles(lvl);
       for (; level_ptrs->at(lvl) < files.size(); level_ptrs->at(lvl)++) {
         auto* f = files[level_ptrs->at(lvl)];
-        if (user_cmp->Compare(user_key, f->largest().user_key()) <= 0) {
+        if (user_cmp->Compare(user_key, f->largest.user_key()) <= 0) {
           // We've advanced far enough
-          if (user_cmp->Compare(user_key, f->smallest().user_key()) >= 0) {
+          if (user_cmp->Compare(user_key, f->smallest.user_key()) >= 0) {
             // Key falls in this file's range, so definitely
             // exists beyond output level
             return false;

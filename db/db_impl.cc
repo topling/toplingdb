@@ -2193,9 +2193,9 @@ Status DBImpl::DeleteFilesInRange(ColumnFamilyHandle* column_family,
         if (!level_files.empty()) {
           RangeEraseSet erase_set;
           erase_set.push(begin_key == nullptr ?
-                             level_files.front()->smallest() : *begin_key,
+                             level_files.front()->smallest : *begin_key,
                          end_key == nullptr ?
-                             level_files.back()->largest() : *end_key);
+                             level_files.back()->largest : *end_key);
           FileMetaData* level_file;
           for (uint32_t j = 0; j < level_files.size(); j++) {
             level_file = level_files[j];
@@ -2295,12 +2295,12 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
           for (size_t i = 0; i < level_files.size(); ++i) {
             auto& f = level_files[i];
             if (nullptr_start == nullptr ||
-                ic.Compare(f->smallest(), *nullptr_start) < 0) {
-              nullptr_start = &f->smallest();
+                ic.Compare(f->smallest, *nullptr_start) < 0) {
+              nullptr_start = &f->smallest;
             }
             if (nullptr_limit == nullptr ||
-                ic.Compare(f->largest(), *nullptr_limit) > 0) {
-              nullptr_limit = &f->largest();
+                ic.Compare(f->largest, *nullptr_limit) > 0) {
+              nullptr_limit = &f->largest;
             }
           }
         }
@@ -2308,12 +2308,12 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
           auto& f0 = level_files.front();
           auto& fn = level_files.back();
           if (nullptr_start == nullptr ||
-              ic.Compare(f0->smallest(), *nullptr_start) < 0) {
-            nullptr_start = &f0->smallest();
+              ic.Compare(f0->smallest, *nullptr_start) < 0) {
+            nullptr_start = &f0->smallest;
           }
           if (nullptr_limit == nullptr ||
-            ic.Compare(fn->largest(), *nullptr_limit) > 0) {
-            nullptr_limit = &fn->largest();
+            ic.Compare(fn->largest, *nullptr_limit) > 0) {
+            nullptr_limit = &fn->largest;
           }
         }
       }
@@ -2433,7 +2433,7 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
               continue;
             }
             if (!include_end && end != nullptr &&
-                cfd->user_comparator()->Compare(level_file->largest().user_key(), *end) == 0) {
+                cfd->user_comparator()->Compare(level_file->largest.user_key(), *end) == 0) {
               continue;
             }
             is_delete = true;

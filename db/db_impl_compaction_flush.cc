@@ -16,7 +16,6 @@
 #include "db/builder.h"
 #include "db/error_handler.h"
 #include "db/event_helpers.h"
-#include "db/map_builder.h"
 #include "monitoring/iostats_context_imp.h"
 #include "monitoring/perf_context_imp.h"
 #include "monitoring/thread_status_updater.h"
@@ -545,7 +544,7 @@ Status DBImpl::CompactRange(const CompactRangeOptions& options,
     FlushOptions fo;
     fo.allow_write_stall = options.allow_write_stall;
     s = FlushMemTable(cfd, fo, FlushReason::kManualCompaction,
-                      false /* writes_stopped*/);
+      false /* writes_stopped*/);
     if (!s.ok()) {
       LogFlush(immutable_db_options_.info_log);
       return s;
@@ -553,9 +552,6 @@ Status DBImpl::CompactRange(const CompactRangeOptions& options,
   }
 
   int max_level_with_files = 0;
-  bool enable_lazy_compaction =
-      cfd->GetCurrentMutableCFOptions()->enable_lazy_compaction;
-  std::unordered_set<uint64_t> files_being_compact;
   {
     InstrumentedMutexLock l(&mutex_);
     Version* base = cfd->current();
@@ -565,14 +561,11 @@ Status DBImpl::CompactRange(const CompactRangeOptions& options,
         max_level_with_files = level;
       }
     }
-    cfd->PrepareManualCompaction(*cfd->GetLatestMutableCFOptions(), begin, end,
-                                 &files_being_compact, enable_lazy_compaction);
   }
 
   int final_output_level = 0;
   if (cfd->ioptions()->compaction_style == kCompactionStyleUniversal &&
-      cfd->NumberLevels() > 1 &&
-      (!enable_lazy_compaction || (begin == nullptr && end == nullptr))) {
+      cfd->NumberLevels() > 1) {
     // Always compact all files together.
     final_output_level = cfd->NumberLevels() - 1;
     // if bottom most level is reserved
@@ -581,9 +574,7 @@ Status DBImpl::CompactRange(const CompactRangeOptions& options,
     }
     s = RunManualCompaction(cfd, ColumnFamilyData::kCompactAllLevels,
                             final_output_level, options.target_path_id,
-                            options.max_subcompactions, begin, end,
-                            &files_being_compact, exclusive, false,
-                            enable_lazy_compaction);
+                            options.max_subcompactions, begin, end, exclusive);
   } else {
     for (int level = 0; level <= max_level_with_files; level++) {
       int output_level;
@@ -617,9 +608,7 @@ Status DBImpl::CompactRange(const CompactRangeOptions& options,
         }
       }
       s = RunManualCompaction(cfd, level, output_level, options.target_path_id,
-                              options.max_subcompactions, begin, end,
-                              &files_being_compact, exclusive, false,
-                              enable_lazy_compaction);
+                              options.max_subcompactions, begin, end, exclusive);
       if (!s.ok()) {
         break;
       }
@@ -1131,7 +1120,7 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
       edit.AddFile(to_level, f->fd.GetNumber(), f->fd.GetPathId(),
                    f->fd.GetFileSize(), f->smallest, f->largest,
                    f->fd.smallest_seqno, f->fd.largest_seqno,
-                   f->marked_for_compaction, f->sst_purpose, f->sst_depend);
+                   f->marked_for_compaction);
     }
     ROCKS_LOG_DEBUG(immutable_db_options_.info_log,
                     "[%s] Apply version edit:\n%s", cfd->GetName().c_str(),
@@ -1248,11 +1237,11 @@ Status DBImpl::FlushAllCFs(FlushReason flush_reason) {
   return s;
 }
 
-Status DBImpl::RunManualCompaction(
-    ColumnFamilyData* cfd, int input_level, int output_level,
-    uint32_t output_path_id, uint32_t max_subcompactions, const Slice* begin,
-    const Slice* end, const std::unordered_set<uint64_t>* files_being_compact,
-    bool exclusive, bool disallow_trivial_move, bool enable_lazy_compaction) {
+Status DBImpl::RunManualCompaction(ColumnFamilyData* cfd, int input_level,
+                                   int output_level, uint32_t output_path_id,
+                                   uint32_t max_subcompactions,
+                                   const Slice* begin, const Slice* end,
+                                   bool exclusive, bool disallow_trivial_move) {
   assert(input_level == ColumnFamilyData::kCompactAllLevels ||
          input_level >= 0);
 
@@ -1271,12 +1260,10 @@ Status DBImpl::RunManualCompaction(
   manual.incomplete = false;
   manual.exclusive = exclusive;
   manual.disallow_trivial_move = disallow_trivial_move;
-  manual.enable_lazy_compaction = enable_lazy_compaction;
   // For universal compaction, we enforce every manual compaction to compact
   // all files.
   if (begin == nullptr ||
-      (cfd->ioptions()->compaction_style == kCompactionStyleUniversal &&
-       !enable_lazy_compaction) ||
+      cfd->ioptions()->compaction_style == kCompactionStyleUniversal ||
       cfd->ioptions()->compaction_style == kCompactionStyleFIFO) {
     manual.begin = nullptr;
   } else {
@@ -1284,8 +1271,7 @@ Status DBImpl::RunManualCompaction(
     manual.begin = &begin_storage;
   }
   if (end == nullptr ||
-      (cfd->ioptions()->compaction_style == kCompactionStyleUniversal &&
-       !enable_lazy_compaction) ||
+      cfd->ioptions()->compaction_style == kCompactionStyleUniversal ||
       cfd->ioptions()->compaction_style == kCompactionStyleFIFO) {
     manual.end = nullptr;
   } else {
@@ -1329,7 +1315,6 @@ Status DBImpl::RunManualCompaction(
   ROCKS_LOG_INFO(immutable_db_options_.info_log,
                  "[%s] Manual compaction starting", cfd->GetName().c_str());
 
-
   // We don't check bg_error_ here, because if we get the error in compaction,
   // the compaction will set manual.status to bg_error_ and set manual.done to
   // true.
@@ -1337,14 +1322,14 @@ Status DBImpl::RunManualCompaction(
     assert(HasPendingManualCompaction());
     manual_conflict = false;
     Compaction* compaction = nullptr;
-    if (ShouldntRunManualCompaction(&manual) || manual.in_progress ||
+    if (ShouldntRunManualCompaction(&manual) || (manual.in_progress == true) ||
         scheduled ||
         (((manual.manual_end = &manual.tmp_storage1) != nullptr) &&
          ((compaction = manual.cfd->CompactRange(
                *manual.cfd->GetLatestMutableCFOptions(), manual.input_level,
                manual.output_level, manual.output_path_id, max_subcompactions,
-               manual.begin, manual.end, &manual.manual_end, &manual_conflict,
-               files_being_compact, enable_lazy_compaction)) == nullptr &&
+               manual.begin, manual.end, &manual.manual_end,
+               &manual_conflict)) == nullptr &&
           manual_conflict))) {
       // exclusive manual compactions should not see a conflict during
       // CompactRange
@@ -1446,7 +1431,7 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
 // it against various constrains and delays flush if it'd cause write stall.
 // Called should check status and flush_needed to see if flush already happened.
 Status DBImpl::WaitUntilFlushWouldNotStallWrites(ColumnFamilyData* cfd,
-                                                 bool* flush_needed) {
+    bool* flush_needed) {
   {
     *flush_needed = true;
     InstrumentedMutexLock l(&mutex_);
@@ -1575,7 +1560,7 @@ void DBImpl::MaybeScheduleFlushOrCompaction() {
     // we paused the background work
     return;
   } else if (error_handler_.IsBGWorkStopped() &&
-             !error_handler_.IsRecoveryInProgress()) {
+      !error_handler_.IsRecoveryInProgress()) {
     // There has been a hard error and this call is not part of the recovery
     // sequence. Bail out here so we don't get into an endless loop of
     // scheduling BG work which will again call this function
@@ -1636,15 +1621,10 @@ void DBImpl::MaybeScheduleFlushOrCompaction() {
 
 DBImpl::BGJobLimits DBImpl::GetBGJobLimits() const {
   mutex_.AssertHeld();
-  bool need_speedup_compaction = write_controller_.NeedSpeedupCompaction();
-  for (auto cfd : *versions_->column_family_set_) {
-    need_speedup_compaction |=
-        cfd->current()->storage_info()->has_space_amplification();
-  }
   return GetBGJobLimits(immutable_db_options_.max_background_flushes,
                         mutable_db_options_.max_background_compactions,
                         mutable_db_options_.max_background_jobs,
-                        need_speedup_compaction);
+                        write_controller_.NeedSpeedupCompaction());
 }
 
 DBImpl::BGJobLimits DBImpl::GetBGJobLimits(int max_background_flushes,
@@ -2263,8 +2243,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
         c->edit()->AddFile(c->output_level(), f->fd.GetNumber(),
                            f->fd.GetPathId(), f->fd.GetFileSize(), f->smallest,
                            f->largest, f->fd.smallest_seqno,
-                           f->fd.largest_seqno, f->marked_for_compaction,
-                           f->sst_purpose, f->sst_depend);
+                           f->fd.largest_seqno, f->marked_for_compaction);
 
         ROCKS_LOG_BUFFER(
             log_buffer,
@@ -2438,17 +2417,12 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
       // We only compacted part of the requested range.  Update *m
       // to the range that is left to be compacted.
       // Universal and FIFO compactions should always compact the whole range
-      if (m->cfd->ioptions()->compaction_style == kCompactionStyleUniversal &&
-          m->enable_lazy_compaction) {
-        // do nothing
-      } else {
-        assert(m->cfd->ioptions()->compaction_style !=
-                   kCompactionStyleUniversal ||
-               m->cfd->ioptions()->num_levels > 1);
-        assert(m->cfd->ioptions()->compaction_style != kCompactionStyleFIFO);
-        m->tmp_storage = *m->manual_end;
-        m->begin = &m->tmp_storage;
-      }
+      assert(m->cfd->ioptions()->compaction_style !=
+                 kCompactionStyleUniversal ||
+             m->cfd->ioptions()->num_levels > 1);
+      assert(m->cfd->ioptions()->compaction_style != kCompactionStyleFIFO);
+      m->tmp_storage = *m->manual_end;
+      m->begin = &m->tmp_storage;
       m->incomplete = true;
     }
     m->in_progress = false;  // not being processed anymore

@@ -52,7 +52,6 @@ enum CustomTag : uint32_t {
   // kMinLogNumberToKeep as part of a CustomTag as a hack. This should be
   // removed when manifest becomes forward-comptabile.
   kMinLogNumberToKeepHack = 3,
-  kSstPurpose = 64,
   kPathId = 65,
 };
 // If this bit for the custom tag is set, opening DB should fail if
@@ -122,8 +121,7 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
       return false;
     }
     bool has_customized_fields = false;
-    if (f.marked_for_compaction || has_min_log_number_to_keep_ ||
-        f.sst_purpose != 0) {
+    if (f.marked_for_compaction || has_min_log_number_to_keep_) {
       PutVarint32(dst, kNewFile4);
       has_customized_fields = true;
     } else if (f.fd.GetPathId() == 0) {
@@ -185,16 +183,6 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
         PutFixed64(&varint_log_number, min_log_number_to_keep_);
         PutLengthPrefixedSlice(dst, Slice(varint_log_number));
         min_log_num_written = true;
-      }
-      if (f.sst_purpose != 0) {
-        PutVarint32(dst, CustomTag::kSstPurpose);
-        std::string encode_buffer;
-        encode_buffer.push_back((char)f.sst_purpose);
-        PutVarint64(&encode_buffer, f.sst_depend.size());
-        for (auto depend : f.sst_depend) {
-          PutVarint64(&encode_buffer, depend);
-        }
-        PutLengthPrefixedSlice(dst, Slice(encode_buffer));
       }
       TEST_SYNC_POINT_CALLBACK("VersionEdit::EncodeTo:NewFile4:CustomizeFields",
                                dst);
@@ -300,28 +288,6 @@ const char* VersionEdit::DecodeNewFile4From(Slice* input) {
             return "deleted log number malformatted";
           }
           has_min_log_number_to_keep_ = true;
-          break;
-        case kSstPurpose:
-          do {
-            const char* error_msg = "sst_purpose field wrong size";
-            if (field.empty()) {
-              return error_msg;
-            }
-            f.sst_purpose = (uint8_t)field[0];
-            field.remove_prefix(1);
-            uint64_t size;
-            if (!GetVarint64(&field, &size)) {
-              return error_msg;
-            }
-            f.sst_depend.reserve(size);
-            for (size_t i = 0; i < size; ++i) {
-              uint64_t file_number;
-              if (!GetVarint64(&field, &file_number)) {
-                return error_msg;
-              }
-              f.sst_depend.emplace_back(file_number);
-            }
-          } while (false);
           break;
         default:
           if ((custom_tag & kCustomTagNonSafeIgnoreMask) != 0) {

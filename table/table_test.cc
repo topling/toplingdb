@@ -334,8 +334,7 @@ class TableConstructor: public Constructor {
             ioptions, moptions, internal_comparator,
             &int_tbl_prop_collector_factories, options.compression,
             CompressionOptions(), nullptr /* compression_dict */,
-            false /* skip_filters */, false /* ignore_key_tyoe */,
-            column_family_name, level_),
+            false /* skip_filters */, column_family_name, level_),
         TablePropertiesCollectorFactory::Context::kUnknownColumnFamily,
         file_writer_.get()));
 
@@ -448,7 +447,6 @@ class MemTableConstructor: public Constructor {
     ImmutableCFOptions ioptions(options_);
     memtable_ =
         new MemTable(internal_comparator_, ioptions, MutableCFOptions(options_),
-                     false, // needs_dup_key_check
                      wb, kMaxSequenceNumber, 0 /* column_family_id */);
     memtable_->Ref();
   }
@@ -464,9 +462,7 @@ class MemTableConstructor: public Constructor {
     delete memtable_->Unref();
     ImmutableCFOptions mem_ioptions(ioptions);
     memtable_ = new MemTable(internal_comparator_, mem_ioptions,
-                             MutableCFOptions(options_),
-                             false, // needs_dup_key_check
-                             write_buffer_manager_,
+                             MutableCFOptions(options_), write_buffer_manager_,
                              kMaxSequenceNumber, 0 /* column_family_id */);
     memtable_->Ref();
     int seq = 1;
@@ -2640,8 +2636,7 @@ TEST_F(PlainTableTest, BasicPlainTableProperties) {
       TableBuilderOptions(
           ioptions, moptions, ikc, &int_tbl_prop_collector_factories,
           kNoCompression, CompressionOptions(), nullptr /* compression_dict */,
-          false /* skip_filters */, false /* ignore_key_type */,
-          column_family_name, unknown_level),
+          false /* skip_filters */, column_family_name, unknown_level),
       TablePropertiesCollectorFactory::Context::kUnknownColumnFamily,
       file_writer.get()));
 
@@ -2877,9 +2872,7 @@ TEST_F(MemTableTest, Simple) {
   ImmutableCFOptions ioptions(options);
   WriteBufferManager wb(options.db_write_buffer_size);
   MemTable* memtable =
-      new MemTable(cmp, ioptions, MutableCFOptions(options),
-                   false, // needs_dup_key_check
-                   &wb,
+      new MemTable(cmp, ioptions, MutableCFOptions(options), &wb,
                    kMaxSequenceNumber, 0 /* column_family_id */);
   memtable->Ref();
   WriteBatch batch;

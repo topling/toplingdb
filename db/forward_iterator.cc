@@ -34,12 +34,10 @@ class ForwardLevelIterator : public InternalIterator {
   ForwardLevelIterator(const ColumnFamilyData* const cfd,
                        const ReadOptions& read_options,
                        const std::vector<FileMetaData*>& files,
-                       const DependFileMap& depend_files,
                        const SliceTransform* prefix_extractor)
       : cfd_(cfd),
         read_options_(read_options),
         files_(files),
-        depend_files_(depend_files),
         valid_(false),
         file_index_(std::numeric_limits<uint32_t>::max()),
         file_iter_(nullptr),
@@ -77,7 +75,7 @@ class ForwardLevelIterator : public InternalIterator {
         cfd_->internal_comparator(), {} /* snapshots */);
     file_iter_ = cfd_->table_cache()->NewIterator(
         read_options_, *(cfd_->soptions()), cfd_->internal_comparator(),
-        *files_[file_index_], depend_files_,
+        *files_[file_index_],
         read_options_.ignore_range_deletions ? nullptr : &range_del_agg,
         prefix_extractor_, nullptr /* table_reader_ptr */, nullptr, false);
     file_iter_->SetPinnedItersMgr(pinned_iters_mgr_);
@@ -186,7 +184,6 @@ class ForwardLevelIterator : public InternalIterator {
   const ColumnFamilyData* const cfd_;
   const ReadOptions& read_options_;
   const std::vector<FileMetaData*>& files_;
-  const DependFileMap& depend_files_;
 
   bool valid_;
   uint32_t file_index_;
@@ -252,13 +249,13 @@ struct SVCleanupParams {
   SuperVersion* sv;
   bool background_purge_on_iterator_cleanup;
 };
-}  // namespace
+}
 
 // Used in PinnedIteratorsManager to release pinned SuperVersion
 void ForwardIterator::DeferredSVCleanup(void* arg) {
   auto d = reinterpret_cast<SVCleanupParams*>(arg);
   ForwardIterator::SVCleanup(
-      d->db, d->sv, d->background_purge_on_iterator_cleanup);
+    d->db, d->sv, d->background_purge_on_iterator_cleanup);
   delete d;
 }
 
@@ -272,7 +269,7 @@ void ForwardIterator::SVCleanup() {
     // The slices may point into some memtables owned by sv_, so we need to keep
     // sv_ referenced until pinned_iters_mgr_ unpins everything.
     auto p = new SVCleanupParams{
-        db_, sv_, read_options_.background_purge_on_iterator_cleanup};
+      db_, sv_, read_options_.background_purge_on_iterator_cleanup};
     pinned_iters_mgr_->PinPtr(p, &ForwardIterator::DeferredSVCleanup);
   } else {
     SVCleanup(db_, sv_, read_options_.background_purge_on_iterator_cleanup);
@@ -342,8 +339,8 @@ void ForwardIterator::SeekInternal(const Slice& internal_key,
                                    bool seek_to_first) {
   assert(mutable_iter_);
   // mutable
-  seek_to_first ? mutable_iter_->SeekToFirst()
-                : mutable_iter_->Seek(internal_key);
+  seek_to_first ? mutable_iter_->SeekToFirst() :
+                  mutable_iter_->Seek(internal_key);
 
   // immutable
   // TODO(ljin): NeedToSeekImmutable has negative impact on performance
@@ -396,7 +393,7 @@ void ForwardIterator::SeekInternal(const Slice& internal_key,
         // If the target key passes over the larget key, we are sure Next()
         // won't go over this file.
         if (user_comparator_->Compare(user_key,
-                                      l0[i]->largest.user_key()) > 0) {
+              l0[i]->largest.user_key()) > 0) {
           if (read_options_.iterate_upper_bound != nullptr) {
             has_iter_trimmed_for_upper_bound_ = true;
             DeleteIterator(l0_iters_[i]);
@@ -437,8 +434,8 @@ void ForwardIterator::SeekInternal(const Slice& internal_key,
       // Seek
       if (f_idx < level_files.size()) {
         level_iters_[level - 1]->SetFileIndex(f_idx);
-        seek_to_first ? level_iters_[level - 1]->SeekToFirst()
-                      : level_iters_[level - 1]->Seek(internal_key);
+        seek_to_first ? level_iters_[level - 1]->SeekToFirst() :
+                        level_iters_[level - 1]->Seek(internal_key);
 
         if (!level_iters_[level - 1]->status().ok()) {
           immutable_status_ = level_iters_[level - 1]->status();
@@ -639,7 +636,6 @@ void ForwardIterator::RebuildIterators(bool refresh_sv) {
     }
     l0_iters_.push_back(cfd_->table_cache()->NewIterator(
         read_options_, *cfd_->soptions(), cfd_->internal_comparator(), *l0,
-        vstorage->depend_files(),
         read_options_.ignore_range_deletions ? nullptr : &range_del_agg,
         sv_->mutable_cf_options.prefix_extractor.get()));
   }
@@ -710,7 +706,7 @@ void ForwardIterator::RenewIterators() {
     }
     l0_iters_new.push_back(cfd_->table_cache()->NewIterator(
         read_options_, *cfd_->soptions(), cfd_->internal_comparator(),
-        *l0_files_new[inew], vstorage_new->depend_files(),
+        *l0_files_new[inew],
         read_options_.ignore_range_deletions ? nullptr : &range_del_agg,
         svnew->mutable_cf_options.prefix_extractor.get()));
   }
@@ -754,15 +750,14 @@ void ForwardIterator::BuildLevelIterators(const VersionStorageInfo* vstorage) {
       }
     } else {
       level_iters_.push_back(new ForwardLevelIterator(
-          cfd_, read_options_, level_files, vstorage->depend_files(),
+          cfd_, read_options_, level_files,
           sv_->mutable_cf_options.prefix_extractor.get()));
     }
   }
 }
 
 void ForwardIterator::ResetIncompleteIterators() {
-  auto& vstorage = *sv_->current->storage_info();
-  const auto& l0_files = vstorage.LevelFiles(0);
+  const auto& l0_files = sv_->current->storage_info()->LevelFiles(0);
   for (size_t i = 0; i < l0_iters_.size(); ++i) {
     assert(i < l0_files.size());
     if (!l0_iters_[i] || !l0_iters_[i]->status().IsIncomplete()) {
@@ -771,7 +766,7 @@ void ForwardIterator::ResetIncompleteIterators() {
     DeleteIterator(l0_iters_[i]);
     l0_iters_[i] = cfd_->table_cache()->NewIterator(
         read_options_, *cfd_->soptions(), cfd_->internal_comparator(),
-        *l0_files[i], vstorage.depend_files(), nullptr /* range_del_agg */,
+        *l0_files[i], nullptr /* range_del_agg */,
         sv_->mutable_cf_options.prefix_extractor.get());
     l0_iters_[i]->SetPinnedItersMgr(pinned_iters_mgr_);
   }
@@ -833,11 +828,11 @@ bool ForwardIterator::NeedToSeekImmutable(const Slice& target) {
   }
   Slice prev_key = prev_key_.GetInternalKey();
   if (prefix_extractor_ && prefix_extractor_->Transform(target).compare(
-                               prefix_extractor_->Transform(prev_key)) != 0) {
+    prefix_extractor_->Transform(prev_key)) != 0) {
     return true;
   }
   if (cfd_->internal_comparator().InternalKeyComparator::Compare(
-          prev_key, target) >= (is_prev_inclusive_ ? 1 : 0)) {
+        prev_key, target) >= (is_prev_inclusive_ ? 1 : 0)) {
     return true;
   }
 
@@ -846,8 +841,8 @@ bool ForwardIterator::NeedToSeekImmutable(const Slice& target) {
     return false;
   }
   if (cfd_->internal_comparator().InternalKeyComparator::Compare(
-          target, current_ == mutable_iter_ ? immutable_min_heap_.top()->key()
-                                            : current_->key()) > 0) {
+        target, current_ == mutable_iter_ ? immutable_min_heap_.top()->key()
+                                          : current_->key()) > 0) {
     return true;
   }
   return false;

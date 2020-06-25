@@ -61,7 +61,6 @@ ImmutableMemTableOptions::ImmutableMemTableOptions(
 MemTable::MemTable(const InternalKeyComparator& cmp,
                    const ImmutableCFOptions& ioptions,
                    const MutableCFOptions& mutable_cf_options,
-                   bool needs_dup_key_check,
                    WriteBufferManager* write_buffer_manager,
                    SequenceNumber latest_seq, uint32_t column_family_id)
     : comparator_(cmp),
@@ -76,12 +75,10 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
               : nullptr,
           mutable_cf_options.memtable_huge_page_size),
       table_(mutable_cf_options.memtable_factory->CreateMemTableRep(
-          comparator_, needs_dup_key_check,
-          &arena_, ioptions, mutable_cf_options,
+          comparator_, &arena_, ioptions, mutable_cf_options,
           column_family_id)),
       range_del_table_(SkipListFactory().CreateMemTableRep(
-          comparator_, needs_dup_key_check,
-          &arena_, nullptr /* transform */, ioptions.info_log,
+          comparator_, &arena_, nullptr /* transform */, ioptions.info_log,
           column_family_id)),
       is_range_del_table_empty_(true),
       data_size_(0),
@@ -120,12 +117,11 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
 
 MemTableRep* MemTableRepFactory::CreateMemTableRep(
     const MemTableRep::KeyComparator& key_cmp,
-    bool needs_dup_key_check,
     Allocator* allocator,
     const ImmutableCFOptions& ioptions,
     const MutableCFOptions& mutable_cf_options,
     uint32_t column_family_id) {
-  return CreateMemTableRep(key_cmp, needs_dup_key_check, allocator,
+  return CreateMemTableRep(key_cmp, allocator,
                            mutable_cf_options.prefix_extractor.get(),
                            ioptions.info_log, column_family_id);
 }
@@ -281,7 +277,6 @@ class MemTableIterator : public InternalIterator {
     } else {
       iter_ = mem.table_->GetIterator(arena);
     }
-    is_seek_for_prev_supported_ = iter_->IsSeekForPrevSupported();
   }
 
   ~MemTableIterator() {
@@ -335,18 +330,13 @@ class MemTableIterator : public InternalIterator {
         PERF_COUNTER_ADD(bloom_memtable_hit_count, 1);
       }
     }
-    if (is_seek_for_prev_supported_) {
-      iter_->SeekForPrev(k, nullptr);
-      valid_ = iter_->Valid();
-    } else {
-      iter_->Seek(k, nullptr);
-      valid_ = iter_->Valid();
-      if (!Valid()) {
-        SeekToLast();
-      }
-      while (Valid() && comparator_.comparator.Compare(k, key()) < 0) {
-        Prev();
-      }
+    iter_->Seek(k, nullptr);
+    valid_ = iter_->Valid();
+    if (!Valid()) {
+      SeekToLast();
+    }
+    while (Valid() && comparator_.comparator.Compare(k, key()) < 0) {
+      Prev();
     }
   }
   virtual void SeekToFirst() override {
@@ -395,7 +385,6 @@ class MemTableIterator : public InternalIterator {
   bool valid_;
   bool arena_mode_;
   bool value_pinned_;
-  bool is_seek_for_prev_supported_;
 
   // No copying allowed
   MemTableIterator(const MemTableIterator&);

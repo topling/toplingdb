@@ -95,10 +95,6 @@ class MergingIterator : public InternalIterator {
 
   virtual Status status() const override { return status_; }
 
-  virtual uint64_t FileNumber() const override {
-    return current_->FileNumber();
-  }
-
   virtual void SeekToFirst() override {
     ClearHeaps();
     status_ = Status::OK();

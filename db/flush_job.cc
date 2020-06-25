@@ -396,8 +396,7 @@ Status FlushJob::WriteLevel0Table() {
     edit_->AddFile(0 /* level */, meta_.fd.GetNumber(), meta_.fd.GetPathId(),
                    meta_.fd.GetFileSize(), meta_.smallest, meta_.largest,
                    meta_.fd.smallest_seqno, meta_.fd.largest_seqno,
-                   meta_.marked_for_compaction, meta_.sst_purpose,
-                   meta_.sst_depend);
+                   meta_.marked_for_compaction);
   }
 
   // Note that here we treat flush as level 0 compaction in internal stats

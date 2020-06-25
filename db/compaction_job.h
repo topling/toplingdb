@@ -29,8 +29,8 @@
 #include "db/version_edit.h"
 #include "db/write_controller.h"
 #include "db/write_thread.h"
-#include "options/cf_options.h"
 #include "options/db_options.h"
+#include "options/cf_options.h"
 #include "port/port.h"
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/compaction_job_stats.h"
@@ -62,9 +62,10 @@ class CompactionJob {
                 const EnvOptions env_options, VersionSet* versions,
                 const std::atomic<bool>* shutting_down,
                 const SequenceNumber preserve_deletes_seqnum,
-                LogBuffer* log_buffer, Directory* db_directory,
-                Directory* output_directory, Statistics* stats,
-                InstrumentedMutex* db_mutex, ErrorHandler* db_error_handler,
+                LogBuffer* log_buffer,
+                Directory* db_directory, Directory* output_directory,
+                Statistics* stats, InstrumentedMutex* db_mutex,
+                ErrorHandler* db_error_handler,
                 std::vector<SequenceNumber> existing_snapshots,
                 SequenceNumber earliest_write_conflict_snapshot,
                 const SnapshotChecker* snapshot_checker,
@@ -100,8 +101,6 @@ class CompactionJob {
   // Call compaction filter. Then iterate through input and compact the
   // kv-pairs
   void ProcessKeyValueCompaction(SubcompactionState* sub_compact);
-  void ProcessEssenceCompaction(SubcompactionState* sub_compact);
-  void ProcessLinkCompaction(SubcompactionState* sub_compact);
 
   Status FinishCompactionOutputFile(
       const Status& input_status, SubcompactionState* sub_compact,
@@ -110,19 +109,18 @@ class CompactionJob {
       const Slice* next_table_min_key = nullptr);
   Status InstallCompactionResults(const MutableCFOptions& mutable_cf_options);
   void RecordCompactionIOStats();
-  Status OpenCompactionOutputFile(
-      SubcompactionState* sub_compact,
+  Status OpenCompactionOutputFile(SubcompactionState* sub_compact,
       std::vector<std::unique_ptr<IntTblPropCollectorFactory>>*
           replace_collector_factorys = nullptr);
   void CleanupCompaction();
   void UpdateCompactionJobStats(
-      const InternalStats::CompactionStats& stats) const;
+    const InternalStats::CompactionStats& stats) const;
   void RecordDroppedKeys(const CompactionIterationStats& c_iter_stats,
                          CompactionJobStats* compaction_job_stats = nullptr);
 
   void UpdateCompactionStats();
-  void UpdateCompactionInputStatsHelper(int* num_files, uint64_t* bytes_read,
-                                        int input_level);
+  void UpdateCompactionInputStatsHelper(
+      int* num_files, uint64_t* bytes_read, int input_level);
 
   void LogCompaction();
 

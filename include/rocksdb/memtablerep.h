@@ -35,14 +35,12 @@
 
 #pragma once
 
-#include <rocksdb/slice.h>
-#include <rocksdb/status.h>
-#include <stdint.h>
-#include <stdlib.h>
 #include <memory>
 #include <stdexcept>
-#include <unordered_map>
-#include <vector>
+#include <stdint.h>
+#include <stdlib.h>
+#include <rocksdb/slice.h>
+#include <rocksdb/status.h>
 
 namespace rocksdb {
 
@@ -255,8 +253,6 @@ class MemTableRep {
 
     // If true, this means that the Slice returned by GetKey() is always valid
     virtual bool IsKeyPinned() const { return true; }
-
-    virtual bool IsSeekForPrevSupported() const { return false; }
   };
 
   // Return an iterator over the keys in this representation.
@@ -299,18 +295,16 @@ class MemTableRepFactory {
   virtual ~MemTableRepFactory() {}
 
   virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
-                                         bool needs_dup_key_check, Allocator*,
-                                         const SliceTransform*,
+                                         Allocator*, const SliceTransform*,
                                          Logger* logger) = 0;
   virtual MemTableRep* CreateMemTableRep(
-      const MemTableRep::KeyComparator& key_cmp, bool needs_dup_key_check,
-      Allocator* allocator, const SliceTransform* slice_transform,
-      Logger* logger, uint32_t /* column_family_id */) {
-    return CreateMemTableRep(key_cmp, needs_dup_key_check, allocator,
-                             slice_transform, logger);
+      const MemTableRep::KeyComparator& key_cmp, Allocator* allocator,
+      const SliceTransform* slice_transform, Logger* logger,
+      uint32_t /* column_family_id */) {
+    return CreateMemTableRep(key_cmp, allocator, slice_transform, logger);
   }
   virtual MemTableRep* CreateMemTableRep(
-      const MemTableRep::KeyComparator& key_cmp, bool needs_dup_key_check,
+      const MemTableRep::KeyComparator& key_cmp,
       Allocator* allocator, const ImmutableCFOptions& ioptions,
       const MutableCFOptions& mutable_cf_options,
       uint32_t /* column_family_id */);
@@ -341,8 +335,7 @@ class SkipListFactory : public MemTableRepFactory {
 
   using MemTableRepFactory::CreateMemTableRep;
   virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
-                                         bool needs_dup_key_check, Allocator*,
-                                         const SliceTransform*,
+                                         Allocator*, const SliceTransform*,
                                          Logger* logger) override;
   virtual const char* Name() const override { return "SkipListFactory"; }
 
@@ -367,18 +360,19 @@ class VectorRepFactory : public MemTableRepFactory {
   const size_t count_;
 
  public:
-  explicit VectorRepFactory(size_t count = 0) : count_(count) {}
+  explicit VectorRepFactory(size_t count = 0) : count_(count) { }
 
   using MemTableRepFactory::CreateMemTableRep;
   virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
-                                         bool needs_dup_key_check, Allocator*,
-                                         const SliceTransform*,
+                                         Allocator*, const SliceTransform*,
                                          Logger* logger) override;
 
-  virtual const char* Name() const override { return "VectorRepFactory"; }
+  virtual const char* Name() const override {
+    return "VectorRepFactory";
+  }
 };
 
-  // This class contains a fixed array of buckets, each
+// This class contains a fixed array of buckets, each
 // pointing to a skiplist (null if the bucket is empty).
 // bucket_count: number of fixed array buckets
 // skiplist_height: the max height of the skiplist
@@ -386,7 +380,8 @@ class VectorRepFactory : public MemTableRepFactory {
 //                            link lists in the skiplist
 extern MemTableRepFactory* NewHashSkipListRepFactory(
     size_t bucket_count = 1000000, int32_t skiplist_height = 4,
-    int32_t skiplist_branching_factor = 4);
+    int32_t skiplist_branching_factor = 4
+);
 
 // The factory is to create memtables based on a hash table:
 // it contains a fixed array of buckets, each pointing to either a linked list
@@ -444,8 +439,6 @@ extern MemTableRepFactory* NewHashLinkListRepFactory(
 extern MemTableRepFactory* NewHashCuckooRepFactory(
     size_t write_buffer_size, size_t average_data_size = 64,
     unsigned int hash_function_count = 4);
-
-
 #endif  // ROCKSDB_LITE
 
 struct MemTableRegister {

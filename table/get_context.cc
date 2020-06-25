@@ -59,7 +59,6 @@ GetContext::GetContext(const Comparator* ucmp,
       range_del_agg_(_range_del_agg),
       env_(env),
       seq_(seq),
-      min_seq_type_(0),
       replay_log_(nullptr),
       pinned_iters_mgr_(_pinned_iters_mgr),
       callback_(callback),
@@ -168,11 +167,6 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
   assert((state_ != kMerge && parsed_key.type != kTypeMerge) ||
          merge_context_ != nullptr);
   if (ucmp_->Equal(parsed_key.user_key, user_key_)) {
-    if (DecodeFixed64(parsed_key.user_key.data() +
-                      parsed_key.user_key.size()) < min_seq_type_) {
-      // for map sst, this key is masked
-      return false;
-    }
     *matched = true;
     // If the value is not in the snapshot, skip it
     if (!CheckCallback(parsed_key.sequence)) {
@@ -268,8 +262,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           merge_context_->PushOperand(value, false);
         }
         if (merge_operator_ != nullptr &&
-            merge_operator_->ShouldMerge(
-                merge_context_->GetOperandsDirectionBackward())) {
+            merge_operator_->ShouldMerge(merge_context_->GetOperandsDirectionBackward())) {
           state_ = kFound;
           if (LIKELY(pinnable_val_ != nullptr)) {
             Status merge_status = MergeHelper::TimedFullMerge(

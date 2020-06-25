@@ -318,8 +318,6 @@ class HashLinkListRep : public MemTableRep {
     // Position at the last entry in collection.
     // Final state of iterator is Valid() iff collection is not empty.
     virtual void SeekToLast() override { iter_.SeekToLast(); }
-
-    virtual bool IsSeekForPrevSupported() const override { return true; }
    private:
     MemtableSkipList::Iterator iter_;
     // To destruct with the iterator.
@@ -576,8 +574,8 @@ Node* HashLinkListRep::GetLinkListFirstNode(Pointer* first_next_pointer) const {
 
 void HashLinkListRep::Insert(KeyHandle handle) {
   Node* x = static_cast<Node*>(handle);
+  assert(!Contains(x->key));
   Slice internal_key = GetLengthPrefixedSlice(x->key);
-  assert(!Contains(internal_key));
   auto transformed = GetPrefix(internal_key);
   auto& bucket = buckets_[GetHash(transformed)];
   Pointer* first_next_pointer =
@@ -833,9 +831,7 @@ Node* HashLinkListRep::FindGreaterOrEqualInBucket(Node* head,
 } // anon namespace
 
 MemTableRep* HashLinkListRepFactory::CreateMemTableRep(
-    const MemTableRep::KeyComparator& compare,
-    bool /*needs_dup_key_check*/,
-    Allocator* allocator,
+    const MemTableRep::KeyComparator& compare, Allocator* allocator,
     const SliceTransform* transform, Logger* logger) {
   return new HashLinkListRep(compare, allocator, transform, bucket_count_,
                              threshold_use_skiplist_, huge_page_tlb_size_,

@@ -440,8 +440,7 @@ TEST_F(DBRangeDelTest, ValidUniversalSubcompactionBoundaries) {
           ->cfd(),
       1 /* input_level */, 2 /* output_level */, 0 /* output_path_id */,
       0 /* max_subcompactions */, nullptr /* begin */, nullptr /* end */,
-      nullptr /* files_being_compact */, true /* exclusive */,
-      true /* disallow_trivial_move */));
+      true /* exclusive */, true /* disallow_trivial_move */));
 }
 #endif  // ROCKSDB_LITE
 

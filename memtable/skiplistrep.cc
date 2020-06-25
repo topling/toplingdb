@@ -176,8 +176,6 @@ bool InsertKeyValueConcurrently(const Slice& internal_key,
     virtual void SeekToLast() override {
       iter_.SeekToLast();
     }
-
-    virtual bool IsSeekForPrevSupported() const override { return true; }
    protected:
     std::string tmp_;       // For passing to EncodeKey
   };
@@ -276,8 +274,6 @@ bool InsertKeyValueConcurrently(const Slice& internal_key,
       prev_ = iter_;
     }
 
-    virtual bool IsSeekForPrevSupported() const override { return true; }
-
    protected:
     std::string tmp_;       // For passing to EncodeKey
 
@@ -304,9 +300,7 @@ bool InsertKeyValueConcurrently(const Slice& internal_key,
 }
 
 MemTableRep* SkipListFactory::CreateMemTableRep(
-    const MemTableRep::KeyComparator& compare,
-    bool /*needs_dup_key_check*/,
-    Allocator* allocator,
+    const MemTableRep::KeyComparator& compare, Allocator* allocator,
     const SliceTransform* transform, Logger* /*logger*/) {
   return new SkipListRep(compare, allocator, transform, lookahead_);
 }

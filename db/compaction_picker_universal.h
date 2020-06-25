@@ -15,11 +15,9 @@
 namespace rocksdb {
 class UniversalCompactionPicker : public CompactionPicker {
  public:
-  UniversalCompactionPicker(TableCache* table_cache,
-                            const EnvOptions& env_options,
-                            const ImmutableCFOptions& ioptions,
+  UniversalCompactionPicker(const ImmutableCFOptions& ioptions,
                             const InternalKeyComparator* icmp)
-      : CompactionPicker(table_cache, env_options, ioptions, icmp) {}
+      : CompactionPicker(ioptions, icmp) {}
   virtual Compaction* PickCompaction(const std::string& cf_name,
                                      const MutableCFOptions& mutable_cf_options,
                                      VersionStorageInfo* vstorage,
@@ -31,8 +29,7 @@ class UniversalCompactionPicker : public CompactionPicker {
       uint32_t output_path_id, uint32_t max_subcompactions,
       const InternalKey* begin, const InternalKey* end,
       InternalKey** compaction_end, bool* manual_conflict,
-      const std::unordered_set<uint64_t>* files_being_compact,
-      bool enable_lazy_compaction) override;
+      const std::unordered_set<uint64_t>* files_being_compact) override;
 
   virtual int MaxOutputLevel() const override { return NumberLevels() - 1; }
 
@@ -47,8 +44,7 @@ class UniversalCompactionPicker : public CompactionPicker {
           file(_file),
           size(_size),
           compensated_file_size(_compensated_file_size),
-          being_compacted(_being_compacted),
-          wait_reduce(false) {
+          being_compacted(_being_compacted) {
       assert(compensated_file_size > 0);
       assert(level != 0 || file != nullptr);
     }
@@ -70,11 +66,10 @@ class UniversalCompactionPicker : public CompactionPicker {
     uint64_t size;
     uint64_t compensated_file_size;
     bool being_compacted;
-    bool wait_reduce;
   };
 
   // Pick Universal compaction to limit read amplification
-  Compaction* PickCompactionToReduceSortedRunsOld(
+  Compaction* PickCompactionToReduceSortedRuns(
       const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
       VersionStorageInfo* vstorage, double score, unsigned int ratio,
       unsigned int num_files, const std::vector<SortedRun>& sorted_runs,
@@ -90,32 +85,6 @@ class UniversalCompactionPicker : public CompactionPicker {
       const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
       VersionStorageInfo* vstorage, double score,
       const std::vector<SortedRun>& sorted_runs, LogBuffer* log_buffer);
-
-  Compaction* PickTrivialMoveCompaction(
-      const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
-      VersionStorageInfo* vstorage, LogBuffer* log_buffer);
-
-  // Pick compaction which level has map or link sst
-  Compaction* PickCompositeCompaction(
-      const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
-      VersionStorageInfo* vstorage, const std::vector<SortedRun>& sorted_runs,
-      LogBuffer* log_buffer);
-
-  // Pick compaction which pointed range files
-  // range use internal keys
-  Compaction* PickRangeCompaction(
-      const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
-      VersionStorageInfo* vstorage, int level, const InternalKey* begin,
-      const InternalKey* end,
-      const std::unordered_set<uint64_t>* files_being_compact,
-      bool* manual_conflict, LogBuffer* log_buffer);
-
-  // Pick Universal compaction to limit read amplification
-  Compaction* PickCompactionToReduceSortedRuns(
-      const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
-      VersionStorageInfo* vstorage, double score,
-      std::vector<SortedRun>* sorted_runs, size_t reduce_sorted_run_target,
-      LogBuffer* log_buffer);
 
   // Used in universal compaction when the enabled_trivial_move
   // option is set. Checks whether there are any overlapping files

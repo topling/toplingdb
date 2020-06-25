@@ -47,9 +47,8 @@ TableBuilder* NewTableBuilder(
     uint32_t column_family_id, const std::string& column_family_name,
     WritableFileWriter* file, const CompressionType compression_type,
     const CompressionOptions& compression_opts, int level,
-    const std::string* compression_dict, bool skip_filters,
-    bool ignore_key_type, uint64_t creation_time, uint64_t oldest_key_time,
-    SstPurpose sst_purpose) {
+    const std::string* compression_dict, const bool skip_filters,
+    const uint64_t creation_time, const uint64_t oldest_key_time) {
   assert((column_family_id ==
           TablePropertiesCollectorFactory::Context::kUnknownColumnFamily) ==
          column_family_name.empty());
@@ -57,8 +56,8 @@ TableBuilder* NewTableBuilder(
       TableBuilderOptions(ioptions, moptions, internal_comparator,
                           int_tbl_prop_collector_factories, compression_type,
                           compression_opts, compression_dict, skip_filters,
-                          ignore_key_type, column_family_name, level,
-                          creation_time, oldest_key_time, sst_purpose),
+                          column_family_name, level, creation_time,
+                          oldest_key_time),
       column_family_id, file);
 }
 
@@ -130,7 +129,7 @@ Status BuildTable(
           int_tbl_prop_collector_factories, column_family_id,
           column_family_name, file_writer.get(), compression, compression_opts,
           level, nullptr /* compression_dict */, false /* skip_filters */,
-          false /* ignore_key_type */, creation_time, oldest_key_time);
+          creation_time, oldest_key_time);
     }
 
     MergeHelper merge(env, internal_comparator.user_comparator(),
@@ -212,9 +211,6 @@ Status BuildTable(
     }
 
     if (s.ok() && !empty) {
-      // this sst has no depend ...
-      DependFileMap empty_depend_files;
-      assert(meta->sst_purpose == 0);
       // Verify that the table is usable
       // We set for_compaction to false and don't OptimizeForCompactionTableRead
       // here because this is a special case after we finish the table building
@@ -223,7 +219,7 @@ Status BuildTable(
       // to cache it here for further user reads
       std::unique_ptr<InternalIterator> it(table_cache->NewIterator(
           ReadOptions(), env_options, internal_comparator, *meta,
-          empty_depend_files, nullptr /* range_del_agg */,
+          nullptr /* range_del_agg */,
           mutable_cf_options.prefix_extractor.get(), nullptr,
           (internal_stats == nullptr) ? nullptr
                                       : internal_stats->GetFileReadHist(0),

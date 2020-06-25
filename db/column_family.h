@@ -9,11 +9,10 @@
 
 #pragma once
 
-#include <atomic>
-#include <string>
 #include <unordered_map>
-#include <unordered_set>
+#include <string>
 #include <vector>
+#include <atomic>
 
 #include "db/memtable_list.h"
 #include "db/table_cache.h"
@@ -260,10 +259,8 @@ class ColumnFamilyData {
 
   // See Memtable constructor for explanation of earliest_seq param.
   MemTable* ConstructNewMemtable(const MutableCFOptions& mutable_cf_options,
-                                 bool needs_dup_key_check,
                                  SequenceNumber earliest_seq);
   void CreateNewMemtable(const MutableCFOptions& mutable_cf_options,
-                         bool needs_dup_key_check,
                          SequenceNumber earliest_seq);
 
   TableCache* table_cache() const { return table_cache_.get(); }
@@ -296,21 +293,12 @@ class ColumnFamilyData {
   static const int kCompactAllLevels;
   // A flag to tell a manual compaction's output is base level.
   static const int kCompactToBaseLevel;
-
   // REQUIRES: DB mutex held
-  void PrepareManualCompaction(
-      const MutableCFOptions& mutable_cf_options, const Slice* begin,
-      const Slice* end, std::unordered_set<uint64_t>* files_being_compact,
-      bool enable_lazy_compaction);
-
-  // REQUIRES: DB mutex held
-  Compaction* CompactRange(
-      const MutableCFOptions& mutable_cf_options, int input_level,
-      int output_level, uint32_t output_path_id, uint32_t max_subcompactions,
-      const InternalKey* begin, const InternalKey* end,
-      InternalKey** compaction_end, bool* manual_conflict,
-      const std::unordered_set<uint64_t>* files_being_compact,
-      bool enable_lazy_compaction);
+  Compaction* CompactRange(const MutableCFOptions& mutable_cf_options,
+                           int input_level, int output_level,
+                           uint32_t output_path_id, uint32_t max_subcompactions,
+                           const InternalKey* begin, const InternalKey* end,
+                           InternalKey** compaction_end, bool* manual_conflict);
 
   CompactionPicker* compaction_picker() { return compaction_picker_.get(); }
   // thread-safe

@@ -76,8 +76,6 @@ class PlainTableIterator : public InternalIterator {
 
   Status status() const override;
 
-  uint64_t FileNumber() const override;
-
  private:
   PlainTableReader* table_;
   PlainTableKeyDecoder decoder_;
@@ -98,7 +96,7 @@ PlainTableReader::PlainTableReader(const ImmutableCFOptions& ioptions,
                                    const EnvOptions& storage_options,
                                    const InternalKeyComparator& icomparator,
                                    EncodingType encoding_type,
-                                   uint64_t file_number, uint64_t file_size,
+                                   uint64_t file_size,
                                    const TableProperties* table_properties,
                                    const SliceTransform* prefix_extractor)
     : internal_comparator_(icomparator),
@@ -111,7 +109,6 @@ PlainTableReader::PlainTableReader(const ImmutableCFOptions& ioptions,
       file_info_(std::move(file), storage_options,
                  static_cast<uint32_t>(table_properties->data_size)),
       ioptions_(ioptions),
-      file_number_(file_number),
       file_size_(file_size),
       table_properties_(nullptr) {}
 
@@ -121,11 +118,10 @@ PlainTableReader::~PlainTableReader() {
 Status PlainTableReader::Open(
     const ImmutableCFOptions& ioptions, const EnvOptions& env_options,
     const InternalKeyComparator& internal_comparator,
-    unique_ptr<RandomAccessFileReader>&& file, uint64_t file_number,
-    uint64_t file_size, unique_ptr<TableReader>* table_reader,
-    const int bloom_bits_per_key, double hash_table_ratio,
-    size_t index_sparseness, size_t huge_page_tlb_size, bool full_scan_mode,
-    const SliceTransform* prefix_extractor) {
+    unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
+    unique_ptr<TableReader>* table_reader, const int bloom_bits_per_key,
+    double hash_table_ratio, size_t index_sparseness, size_t huge_page_tlb_size,
+    bool full_scan_mode, const SliceTransform* prefix_extractor) {
   if (file_size > PlainTableIndex::kMaxFileSize) {
     return Status::NotSupported("File is too large for PlainTableReader!");
   }
@@ -167,7 +163,7 @@ Status PlainTableReader::Open(
 
   std::unique_ptr<PlainTableReader> new_reader(new PlainTableReader(
       ioptions, std::move(file), env_options, internal_comparator,
-      encoding_type, file_number, file_size, props, prefix_extractor));
+      encoding_type, file_size, props, prefix_extractor));
 
   s = new_reader->MmapDataIfNeeded();
   if (!s.ok()) {
@@ -754,11 +750,6 @@ Slice PlainTableIterator::value() const {
 
 Status PlainTableIterator::status() const {
   return status_;
-}
-
-
-uint64_t PlainTableIterator::FileNumber() const {
-  return table_->file_number_;
 }
 
 }  // namespace rocksdb

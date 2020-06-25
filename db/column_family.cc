@@ -14,10 +14,10 @@
 #endif
 
 #include <inttypes.h>
+#include <vector>
+#include <string>
 #include <algorithm>
 #include <limits>
-#include <string>
-#include <vector>
 
 #include "db/compaction_picker.h"
 #include "db/compaction_picker_universal.h"
@@ -443,18 +443,18 @@ ColumnFamilyData::ColumnFamilyData(
         new InternalStats(ioptions_.num_levels, db_options.env, this));
     table_cache_.reset(new TableCache(ioptions_, env_options, _table_cache));
     if (ioptions_.compaction_style == kCompactionStyleLevel) {
-      compaction_picker_.reset(new LevelCompactionPicker(
-          table_cache_.get(), env_options, ioptions_, &internal_comparator_));
+      compaction_picker_.reset(
+          new LevelCompactionPicker(ioptions_, &internal_comparator_));
 #ifndef ROCKSDB_LITE
     } else if (ioptions_.compaction_style == kCompactionStyleUniversal) {
-      compaction_picker_.reset(new UniversalCompactionPicker(
-          table_cache_.get(), env_options, ioptions_, &internal_comparator_));
+      compaction_picker_.reset(
+          new UniversalCompactionPicker(ioptions_, &internal_comparator_));
     } else if (ioptions_.compaction_style == kCompactionStyleFIFO) {
-      compaction_picker_.reset(new FIFOCompactionPicker(
-          table_cache_.get(), env_options, ioptions_, &internal_comparator_));
+      compaction_picker_.reset(
+          new FIFOCompactionPicker(ioptions_, &internal_comparator_));
     } else if (ioptions_.compaction_style == kCompactionStyleNone) {
       compaction_picker_.reset(new NullCompactionPicker(
-          table_cache_.get(), env_options, ioptions_, &internal_comparator_));
+          ioptions_, &internal_comparator_));
       ROCKS_LOG_WARN(ioptions_.info_log,
                      "Column family %s does not use any background compaction. "
                      "Compactions can only be done via CompactFiles\n",
@@ -465,8 +465,8 @@ ColumnFamilyData::ColumnFamilyData(
                       "Unable to recognize the specified compaction style %d. "
                       "Column family %s will use kCompactionStyleLevel.\n",
                       ioptions_.compaction_style, GetName().c_str());
-      compaction_picker_.reset(new LevelCompactionPicker(
-          table_cache_.get(), env_options, ioptions_, &internal_comparator_));
+      compaction_picker_.reset(
+          new LevelCompactionPicker(ioptions_, &internal_comparator_));
     }
 
     if (column_family_set_->NumberOfColumnFamilies() < 10) {
@@ -714,7 +714,7 @@ ColumnFamilyData::GetWriteStallConditionAndCause(
 }
 
 WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
-    const MutableCFOptions& mutable_cf_options) {
+      const MutableCFOptions& mutable_cf_options) {
   auto write_stall_condition = WriteStallCondition::kNormal;
   if (current_ != nullptr) {
     auto* vstorage = current_->storage_info();
@@ -895,29 +895,22 @@ uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
 }
 
 MemTable* ColumnFamilyData::ConstructNewMemtable(
-    const MutableCFOptions& mutable_cf_options,
-    bool needs_dup_key_check,
-    SequenceNumber earliest_seq) {
+    const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
   return new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
-                      needs_dup_key_check,
                       write_buffer_manager_, earliest_seq, id_);
 }
 
 void ColumnFamilyData::CreateNewMemtable(
-    const MutableCFOptions& mutable_cf_options,
-    bool needs_dup_key_check,
-    SequenceNumber earliest_seq) {
+    const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
   if (mem_ != nullptr) {
     delete mem_->Unref();
   }
-  SetMemtable(ConstructNewMemtable(
-      mutable_cf_options, needs_dup_key_check, earliest_seq));
+  SetMemtable(ConstructNewMemtable(mutable_cf_options, earliest_seq));
   mem_->Ref();
 }
 
 bool ColumnFamilyData::NeedsCompaction() const {
-  return !current_->storage_info()->IsPickFail() &&
-         compaction_picker_->NeedsCompaction(current_->storage_info());
+  return compaction_picker_->NeedsCompaction(current_->storage_info());
 }
 
 Compaction* ColumnFamilyData::PickCompaction(
@@ -926,8 +919,6 @@ Compaction* ColumnFamilyData::PickCompaction(
       GetName(), mutable_options, current_->storage_info(), log_buffer);
   if (result != nullptr) {
     result->SetInputVersion(current_);
-  } else {
-    current_->storage_info()->SetPickFail();
   }
   return result;
 }
@@ -1004,37 +995,15 @@ Status ColumnFamilyData::RangesOverlapWithMemtables(
 const int ColumnFamilyData::kCompactAllLevels = -1;
 const int ColumnFamilyData::kCompactToBaseLevel = -2;
 
-void ColumnFamilyData::PrepareManualCompaction(
-    const MutableCFOptions& mutable_cf_options, const Slice* begin,
-    const Slice* end, std::unordered_set<uint64_t>* files_being_compact,
-    bool enable_lazy_compaction) {
-  InternalKey ibegin, iend;
-  InternalKey* ibegin_ptr = nullptr;
-  InternalKey* iend_ptr = nullptr;
-  if (begin != nullptr) {
-    ibegin.SetMinPossibleForUserKey(*begin);
-    ibegin_ptr = &ibegin;
-  }
-  if (end != nullptr) {
-    iend.SetMaxPossibleForUserKey(*end);
-    iend_ptr = &iend;
-  }
-  compaction_picker_->InitFilesBeingCompact(
-      mutable_cf_options, current_->storage_info(), ibegin_ptr, iend_ptr,
-      files_being_compact, enable_lazy_compaction);
-}
-
 Compaction* ColumnFamilyData::CompactRange(
     const MutableCFOptions& mutable_cf_options, int input_level,
     int output_level, uint32_t output_path_id, uint32_t max_subcompactions,
     const InternalKey* begin, const InternalKey* end,
-    InternalKey** compaction_end, bool* conflict,
-    const std::unordered_set<uint64_t>* files_being_compact,
-    bool enable_lazy_compaction) {
+    InternalKey** compaction_end, bool* conflict) {
   auto* result = compaction_picker_->CompactRange(
       GetName(), mutable_cf_options, current_->storage_info(), input_level,
       output_level, output_path_id, max_subcompactions, begin, end,
-      compaction_end, conflict, files_being_compact, enable_lazy_compaction);
+      compaction_end, conflict);
   if (result != nullptr) {
     result->SetInputVersion(current_);
   }
@@ -1182,7 +1151,7 @@ void ColumnFamilyData::ResetThreadLocalSuperVersions() {
 
 #ifndef ROCKSDB_LITE
 Status ColumnFamilyData::SetOptions(
-    const std::unordered_map<std::string, std::string>& options_map) {
+      const std::unordered_map<std::string, std::string>& options_map) {
   MutableCFOptions new_mutable_cf_options;
   Status s =
       GetMutableOptionsFromStrings(mutable_cf_options_, options_map,
@@ -1209,8 +1178,8 @@ Env::WriteLifeTimeHint ColumnFamilyData::CalculateSSTWriteHint(int level) {
   if (level - base_level >= 2) {
     return Env::WLTH_EXTREME;
   }
-  return static_cast<Env::WriteLifeTimeHint>(
-      level - base_level + static_cast<int>(Env::WLTH_MEDIUM));
+  return static_cast<Env::WriteLifeTimeHint>(level - base_level +
+                            static_cast<int>(Env::WLTH_MEDIUM));
 }
 
 Status ColumnFamilyData::AddDirectories() {

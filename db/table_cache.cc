@@ -20,8 +20,6 @@
 #include "table/iterator_wrapper.h"
 #include "table/table_builder.h"
 #include "table/table_reader.h"
-#include "table/two_level_iterator.h"
-#include "util/c_style_callback.h"
 #include "util/coding.h"
 #include "util/file_reader_writer.h"
 #include "util/stop_watch.h"
@@ -62,186 +60,6 @@ void AppendVarint64(IterKey* key, uint64_t v) {
 }
 
 #endif  // ROCKSDB_LITE
-
-InternalIterator* TranslateCompositeSstIterator(
-    const FileMetaData& file_meta, InternalIterator* composite_sst_iter,
-    const DependFileMap& depend_files, const InternalKeyComparator& icomp,
-    void* create_iter_arg, const IteratorCache::CreateIterCallback& create_iter,
-    Arena* arena) {
-  if (file_meta.sst_purpose == 0) {
-    assert(false);
-    return composite_sst_iter;
-  }
-  InternalIterator* result =
-      NewCompositeSstIterator(file_meta, composite_sst_iter, depend_files, icomp,
-                            create_iter_arg, create_iter, arena);
-  result->RegisterCleanup(
-      [](void* arg1, void* arg2) {
-        auto param_iter = static_cast<InternalIterator*>(arg1);
-        auto param_arena = static_cast<Arena*>(arg2);
-        if (param_arena == nullptr) {
-          delete param_iter;
-        } else {
-          param_iter->~InternalIterator();
-        }
-      },
-      composite_sst_iter, arena);
-  return result;
-}
-
-Status GetFromCompositeSst(const FileMetaData& file_meta,
-                           TableReader* table_reader,
-                           const InternalKeyComparator& icomp, const Slice& k,
-                           GetContext* get_context,
-                           const SliceTransform* prefix_extractor, void* arg,
-                           bool (*get_from_sst)(void* arg, const Slice& find_k,
-                                                uint64_t file_number,
-                                                Status& status)) {
-  Status s;
-  switch (file_meta.sst_purpose) {
-    case kLinkSst: {
-      InternalKey smallest_key;
-      auto get_from_link = [&](const Slice& largest_key,
-                               const Slice& link_value) {
-        // Manual inline LinkSstElement::Decode
-        Slice link_input = link_value;
-        uint64_t file_number;
-        Slice find_k = k;
-
-        if (smallest_key.size() == 0) {
-          if (icomp.Compare(k, file_meta.smallest.Encode()) < 0) {
-            if (icomp.user_comparator()->Compare(file_meta.smallest.user_key(),
-                                                 ExtractUserKey(k)) != 0) {
-              // k is less than file_meta.smallest ? is this a bug ?
-              return false;
-            }
-            find_k = file_meta.smallest.Encode();
-          }
-        } else {
-          assert(icomp.user_comparator()->Compare(smallest_key.user_key(),
-                                                  ExtractUserKey(k)) == 0);
-          // shrink to smallest_key
-          find_k = smallest_key.Encode();
-        }
-
-        if (!GetFixed64(&link_input, &file_number)) {
-          s = Status::Corruption("Link sst invalid link_value");
-          return false;
-        }
-        if (!get_from_sst(arg, find_k, file_number, s)) {
-          // error or found
-          return false;
-        }
-        if (icomp.user_comparator()->Compare(ExtractUserKey(largest_key),
-                                             ExtractUserKey(k)) != 0 ||
-            ExtractInternalKeyFooter(largest_key) == 0) {
-          // next smallest_key is current largest_key
-          // k less than next link smallest_key
-          return false;
-        }
-        // trans largest_key to next smallest_key
-        assert(ExtractInternalKeyFooter(largest_key) > 0);
-        smallest_key.DecodeFrom(largest_key);
-        EncodeFixed64(
-            &smallest_key.rep()->front() + smallest_key.user_key().size(),
-            ExtractInternalKeyFooter(largest_key) - 1);
-        return true;
-      };
-      table_reader->RangeScan(&k, prefix_extractor, &get_from_link,
-                              c_style_callback(get_from_link));
-      return s;
-    }
-    case kMapSst: {
-      auto get_from_map = [&](const Slice& largest_key,
-                              const Slice& map_value) {
-        // Manual inline MapSstElement::Decode
-        Slice map_input = map_value;
-        Slice smallest_key;
-        uint64_t link_count;
-        uint64_t flags;
-        Slice find_k = k;
-        InternalKey find_storage;
-
-        if (!GetLengthPrefixedSlice(&map_input, &smallest_key) ||
-            !GetVarint64(&map_input, &link_count) ||
-            !GetVarint64(&map_input, &flags) ||
-            map_input.size() < link_count * sizeof(uint64_t)) {
-          s = Status::Corruption("Map sst invalid link_value");
-          return false;
-        }
-        // don't care kNoRecords, Get call need load RangeDelAggregator
-        int include_smallest = (flags >> MapSstElement::kIncludeSmallest) & 1;
-        int include_largest = (flags >> MapSstElement::kIncludeLargest) & 1;
-
-        // include_smallest ? cmp_result > 0 : cmp_result >= 0
-        if (icomp.Compare(smallest_key, k) >= include_smallest) {
-          if (icomp.user_comparator()->Compare(ExtractUserKey(smallest_key),
-                                               ExtractUserKey(k)) != 0) {
-            // k is out of smallest bound
-            return false;
-          }
-          assert(ExtractInternalKeyFooter(k) >
-                 ExtractInternalKeyFooter(smallest_key));
-          // same user_key, shrink to smallest_key
-          if (include_smallest) {
-            find_k = smallest_key;
-          } else {
-            uint64_t seq_type = ExtractInternalKeyFooter(smallest_key);
-            if (seq_type == 0) {
-              // 'smallest_key' has the largest seq_type of current user_key
-              // k is out of smallest bound
-              return false;
-            }
-            // make find_k a bit greater than k
-            find_storage.DecodeFrom(smallest_key);
-            EncodeFixed64(
-                &find_storage.rep()->front() + find_storage.user_key().size(),
-                seq_type - 1);
-            find_k = find_storage.Encode();
-          }
-        }
-
-        bool is_largest_user_key =
-            icomp.user_comparator()->Compare(ExtractUserKey(largest_key),
-                                             ExtractUserKey(k)) == 0;
-        uint64_t min_seq_type_backup = get_context->GetMinSequenceAndType();
-        if (is_largest_user_key) {
-          // shrink seqno to largest_key, make sure can't read greater keys
-          uint64_t seq_type = ExtractInternalKeyFooter(largest_key);
-          assert(seq_type <=
-                 PackSequenceAndType(kMaxSequenceNumber, kValueTypeForSeek));
-          // For safety. may kValueTypeForSeek can be 255 in the future ?
-          if (seq_type == port::kMaxUint64 && !include_largest) {
-            // 'largest_key' has the smallest seq_type of current user_key
-            // k is out of largest bound
-            return true;
-          }
-          get_context->SetMinSequenceAndType(
-              std::max(min_seq_type_backup, seq_type + !include_largest));
-        }
-
-        for (uint64_t i = 0; i < link_count; ++i) {
-          // Manual inline GetFixed64
-          uint64_t file_number = DecodeFixed64(map_input.data());
-          if (!get_from_sst(arg, find_k, file_number, s)) {
-            // error or found, recovery min_seq_type_backup is unnecessary
-            return false;
-          }
-          map_input.remove_prefix(sizeof(uint64_t));
-        }
-        // recovery min_seq_backup
-        get_context->SetMinSequenceAndType(min_seq_type_backup);
-        return is_largest_user_key;
-      };
-      table_reader->RangeScan(&k, prefix_extractor, & get_from_map,
-                              c_style_callback(get_from_map));
-      return s;
-    }
-    default:
-      assert(false);
-      return s;
-  }
-}
 
 }  // namespace
 
@@ -303,7 +121,7 @@ Status TableCache::GetTableReader(
     s = ioptions_.table_factory->NewTableReader(
         TableReaderOptions(ioptions_, prefix_extractor, env_options,
                            internal_comparator, skip_filters, immortal_tables_,
-                           level, fd.GetNumber(), fd.largest_seqno),
+                           level, fd.largest_seqno),
         std::move(file_reader), fd.GetFileSize(), table_reader,
         prefetch_index_and_filter_in_cache);
     TEST_SYNC_POINT("TableCache::GetTableReader:0");
@@ -364,10 +182,10 @@ Status TableCache::FindTable(const EnvOptions& env_options,
 InternalIterator* TableCache::NewIterator(
     const ReadOptions& options, const EnvOptions& env_options,
     const InternalKeyComparator& icomparator, const FileMetaData& file_meta,
-    const DependFileMap& depend_files, RangeDelAggregator* range_del_agg,
-    const SliceTransform* prefix_extractor, TableReader** table_reader_ptr,
-    HistogramImpl* file_read_hist, bool for_compaction, Arena* arena,
-    bool skip_filters, int level, const InternalKey* smallest_compaction_key,
+    RangeDelAggregator* range_del_agg, const SliceTransform* prefix_extractor,
+    TableReader** table_reader_ptr, HistogramImpl* file_read_hist,
+    bool for_compaction, Arena* arena, bool skip_filters, int level,
+    const InternalKey* smallest_compaction_key,
     const InternalKey* largest_compaction_key) {
   PERF_TIMER_GUARD(new_table_iterator_nanos);
 
@@ -427,64 +245,6 @@ InternalIterator* TableCache::NewIterator(
     } else {
       result = table_reader->NewIterator(options, prefix_extractor, arena,
                                          skip_filters, for_compaction);
-      if (result->FileNumber() != fd.GetNumber()) {
-        assert(result->FileNumber() == uint64_t(-1));
-        result = NewFileNumberInternalIteratorWrapper(result, fd.GetNumber(),
-                                                      arena);
-        assert(result->FileNumber() == fd.GetNumber());
-      }
-      if (file_meta.sst_purpose != 0 && !depend_files.empty()) {
-        // Store params for create depend table iterator in future
-        // DON'T REF THIS OBJECT, DEEP COPY IT !
-        struct CreateIterator {
-          TableCache* table_cache;
-          ReadOptions options;  // deep copy
-          const EnvOptions& env_options;
-          const InternalKeyComparator& icomparator;
-          RangeDelAggregator* range_del_agg;
-          const SliceTransform* prefix_extractor;
-          bool for_compaction;
-          bool skip_filters;
-          int level;
-
-          InternalIterator* operator()(const FileMetaData* _f,
-                                       const DependFileMap& _depend_files,
-                                       Arena* _arena,
-                                       TableReader** _reader_ptr) {
-            return table_cache->NewIterator(
-                options, env_options, icomparator, *_f, _depend_files,
-                range_del_agg, prefix_extractor, _reader_ptr, nullptr,
-                for_compaction, _arena, skip_filters, level);
-          }
-        };
-        using CreateIteratorStorage =
-            std::aligned_storage<sizeof(CreateIterator)>::type;
-        void* buffer;
-        if (arena != nullptr) {
-          buffer = arena->AllocateAligned(sizeof(CreateIterator));
-        } else {
-          buffer = new CreateIteratorStorage();
-        }
-        bool ignore_range_del_agg = file_meta.sst_purpose == kLinkSst;
-        CreateIterator* create_iter = new (buffer)
-            CreateIterator{this, options, env_options, icomparator,
-                           ignore_range_del_agg ? nullptr : range_del_agg,
-                           prefix_extractor, for_compaction, skip_filters,
-                           level};
-        result->RegisterCleanup(
-            [](void* arg1, void* arg2) {
-              auto param_create_iter = static_cast<CreateIterator*>(arg1);
-              auto param_arena = static_cast<Arena*>(arg2);
-              param_create_iter->~CreateIterator();
-              if (param_arena == nullptr) {
-                delete static_cast<CreateIteratorStorage*>(arg1);
-              }
-            },
-            create_iter, arena);
-        result = TranslateCompositeSstIterator(
-            file_meta, result, depend_files, icomparator, create_iter,
-            c_style_callback(*create_iter), arena);
-      }
     }
     if (create_new_table_reader) {
       assert(handle == nullptr);
@@ -501,8 +261,7 @@ InternalIterator* TableCache::NewIterator(
       *table_reader_ptr = table_reader;
     }
   }
-  if (s.ok() && range_del_agg != nullptr && !options.ignore_range_deletions &&
-      file_meta.sst_purpose != kMapSst) {
+  if (s.ok() && range_del_agg != nullptr && !options.ignore_range_deletions) {
     if (range_del_agg->AddFile(fd.GetNumber())) {
       std::unique_ptr<InternalIterator> range_del_iter(
           table_reader->NewRangeTombstoneIterator(options));
@@ -536,8 +295,7 @@ InternalIterator* TableCache::NewIterator(
 
 Status TableCache::Get(const ReadOptions& options,
                        const InternalKeyComparator& internal_comparator,
-                       const FileMetaData& file_meta,
-                       const DependFileMap& depend_files, const Slice& k,
+                       const FileMetaData& file_meta, const Slice& k,
                        GetContext* get_context,
                        const SliceTransform* prefix_extractor,
                        HistogramImpl* file_read_hist, bool skip_filters,
@@ -551,8 +309,7 @@ Status TableCache::Get(const ReadOptions& options,
 
   // Check row cache if enabled. Since row cache does not currently store
   // sequence numbers, we cannot use it if we need to fetch the sequence.
-  if (ioptions_.row_cache && !get_context->NeedToReadSequence() &&
-      file_meta.sst_purpose == 0) {
+  if (ioptions_.row_cache && !get_context->NeedToReadSequence()) {
     uint64_t fd_number = fd.GetNumber();
     auto user_key = ExtractUserKey(k);
     // We use the user key as cache key instead of the internal key,
@@ -616,7 +373,7 @@ Status TableCache::Get(const ReadOptions& options,
       }
     }
     if (s.ok() && get_context->range_del_agg() != nullptr &&
-        !options.ignore_range_deletions && file_meta.sst_purpose != kMapSst) {
+        !options.ignore_range_deletions) {
       std::unique_ptr<InternalIterator> range_del_iter(
           t->NewRangeTombstoneIterator(options));
       if (range_del_iter != nullptr) {
@@ -631,29 +388,7 @@ Status TableCache::Get(const ReadOptions& options,
     }
     if (s.ok()) {
       get_context->SetReplayLog(row_cache_entry);  // nullptr if no cache.
-      if (file_meta.sst_purpose == 0) {
-        s = t->Get(options, k, get_context, prefix_extractor, skip_filters);
-      } else if (depend_files.empty()) {
-        s = Status::Corruption("Composite sst depend files missing");
-      } else {
-        // Forward query to target sst
-        auto get_from_sst = [&](const Slice& find_k, uint64_t file_number,
-                                Status& status) {
-          auto find = depend_files.find(file_number);
-          if (find == depend_files.end()) {
-            status = Status::Corruption("Composite sst depend files missing");
-            return false;
-          }
-          status = Get(options, internal_comparator, *find->second,
-                       depend_files, find_k, get_context, prefix_extractor,
-                       file_read_hist, skip_filters, level);
-
-          return status.ok() && !get_context->is_finished();
-        };
-        s = GetFromCompositeSst(file_meta, t, internal_comparator, k,
-                                get_context, prefix_extractor, &get_from_sst,
-                                c_style_callback(get_from_sst));
-      }
+      s = t->Get(options, k, get_context, prefix_extractor, skip_filters);
       get_context->SetReplayLog(nullptr);
     } else if (options.read_tier == kBlockCacheTier && s.IsIncomplete()) {
       // Couldn't find Table in cache but treat as kFound if no_io set

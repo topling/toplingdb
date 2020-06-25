@@ -261,7 +261,8 @@ class DBImpl : public DB {
           read_options = TransactionLogIterator::ReadOptions()) override;
   virtual Status DeleteFile(std::string name) override;
   Status DeleteFilesInRanges(ColumnFamilyHandle* column_family,
-                             const RangePtr* ranges, size_t n);
+                             const RangePtr* ranges, size_t n,
+                             bool include_end = true);
 
   virtual void GetLiveFilesMetaData(
       std::vector<LiveFileMetaData>* metadata) override;
@@ -358,12 +359,12 @@ class DBImpl : public DB {
 
   virtual Status GetDbIdentity(std::string& identity) const override;
 
-  Status RunManualCompaction(
-      ColumnFamilyData* cfd, int input_level, int output_level,
-      uint32_t output_path_id, uint32_t max_subcompactions, const Slice* begin,
-      const Slice* end, const std::unordered_set<uint64_t>* files_being_compact,
-      bool exclusive, bool disallow_trivial_move = false,
-      bool enable_lazy_compaction = false);
+  Status RunManualCompaction(ColumnFamilyData* cfd, int input_level,
+                             int output_level, uint32_t output_path_id,
+                             uint32_t max_subcompactions,
+                             const Slice* begin, const Slice* end,
+                             bool exclusive,
+                             bool disallow_trivial_move = false);
 
   // Return an internal iterator over the current state of the database.
   // The keys of this iterator are internal keys (see format.h).
@@ -1380,7 +1381,6 @@ class DBImpl : public DB {
     bool incomplete;              // only part of requested range compacted
     bool exclusive;               // current behavior of only one manual
     bool disallow_trivial_move;   // Force actual compaction to run
-    bool enable_lazy_compaction;  // Enable lazy compaction
     const InternalKey* begin;     // nullptr means beginning of key range
     const InternalKey* end;       // nullptr means end of key range
     InternalKey* manual_end;      // how far we are compacting

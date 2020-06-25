@@ -32,7 +32,6 @@
 #include "db/event_helpers.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"
-#include "db/map_builder.h"
 #include "db/memtable.h"
 #include "db/memtable_list.h"
 #include "db/merge_context.h"
@@ -519,21 +518,6 @@ void CompactionJob::GenSubcompactionBoundaries() {
             bounds.emplace_back(flevel->files[i].smallest_key);
           }
         }
-        for (size_t i = 0; i < num_files; i++) {
-          if (flevel->files[i].file_metadata->sst_purpose == kMapSst) {
-            auto& depend_files =
-                c->input_version()->storage_info()->depend_files();
-            for (auto depend : flevel->files[i].file_metadata->sst_depend) {
-              auto find = depend_files.find(depend);
-              if (find == depend_files.end()) {
-                assert(false);
-                continue;
-              }
-              bounds.emplace_back(find->second->smallest.Encode());
-              bounds.emplace_back(find->second->largest.Encode());
-            }
-          }
-        }
       }
     }
   }
@@ -623,10 +607,6 @@ Status CompactionJob::Run() {
 
   // Launch a thread for each of subcompactions 1...num_threads-1
   std::vector<port::Thread> thread_pool;
-  // map compact don't need multithreads
-  assert(compact_->compaction->compaction_purpose() != kMapSst ||
-         (compact_->sub_compact_states.size() == 1 &&
-          compact_->compaction->input_range().empty()));
   thread_pool.reserve(num_threads - 1);
   for (size_t i = 1; i < compact_->sub_compact_states.size(); i++) {
     thread_pool.emplace_back(&CompactionJob::ProcessKeyValueCompaction, this,
@@ -678,9 +658,6 @@ Status CompactionJob::Run() {
         if (file_idx >= files_meta.size()) {
           break;
         }
-        // Use empty depend files to disable map or link sst forward calls.
-        // depend files will build in InstallCompactionResults
-        DependFileMap empty_depend_files;
         // Verify that the table is usable
         // We set for_compaction to false and don't OptimizeForCompactionTableRead
         // here because this is a special case after we finish the table building
@@ -689,8 +666,8 @@ Status CompactionJob::Run() {
         // to cache it here for further user reads
         InternalIterator* iter = cfd->table_cache()->NewIterator(
             ReadOptions(), env_options_, cfd->internal_comparator(),
-            *files_meta[file_idx], empty_depend_files,
-            nullptr /* range_del_agg */, prefix_extractor, nullptr,
+            *files_meta[file_idx], nullptr /* range_del_agg */,
+            prefix_extractor, nullptr,
             cfd->internal_stats()->GetFileReadHist(
                 compact_->compaction->output_level()),
             false, nullptr /* arena */, false /* skip_filters */,
@@ -726,6 +703,17 @@ Status CompactionJob::Run() {
     }
   }
 
+  TablePropertiesCollection tp;
+  for (const auto& state : compact_->sub_compact_states) {
+    for (const auto& output : state.outputs) {
+      auto fn =
+          TableFileName(state.compaction->immutable_cf_options()->cf_paths,
+                        output.meta.fd.GetNumber(), output.meta.fd.GetPathId());
+      tp[fn] = output.table_properties;
+    }
+  }
+  compact_->compaction->SetOutputTableProperties(std::move(tp));
+
   // Finish up all book-keeping to unify the subcompaction results
   AggregateStatistics();
   UpdateCompactionStats();
@@ -744,7 +732,7 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   Status status = compact_->status;
   ColumnFamilyData* cfd = compact_->compaction->column_family_data();
   cfd->internal_stats()->AddCompactionStats(
-    compact_->compaction->output_level(), compaction_stats_);
+      compact_->compaction->output_level(), compaction_stats_);
 
   if (status.ok()) {
     status = InstallCompactionResults(mutable_cf_options);
@@ -834,20 +822,6 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
 }
 
 void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
-  switch (sub_compact->compaction->compaction_purpose()) {
-    case kEssenceSst:
-      ProcessEssenceCompaction(sub_compact);
-      break;
-    case kLinkSst:
-      ProcessLinkCompaction(sub_compact);
-      break;
-    case kMapSst:
-      // do nothing ...
-      break;
-  }
-}
-
-void CompactionJob::ProcessEssenceCompaction(SubcompactionState* sub_compact) {
   assert(sub_compact != nullptr);
   ColumnFamilyData* cfd = sub_compact->compaction->column_family_data();
   std::unique_ptr<RangeDelAggregator> range_del_agg(
@@ -1082,22 +1056,21 @@ void CompactionJob::ProcessEssenceCompaction(SubcompactionState* sub_compact) {
       }
     }
 
-    // Close output file if it is big enough. Two possibilities determine
-    // it's time to close it: (1) the current key should be this file's last
-    // key, (2) the next key should not be in this file.
+    // Close output file if it is big enough. Two possibilities determine it's
+    // time to close it: (1) the current key should be this file's last key, (2)
+    // the next key should not be in this file.
     //
     // TODO(aekmekji): determine if file should be closed earlier than this
-    // during subcompactions (i.e. if output size, estimated by input size,
-    // is going to be 1.2MB and max_output_file_size = 1MB, prefer to have
-    // 0.6MB and 0.6MB instead of 1MB and 0.2MB)
+    // during subcompactions (i.e. if output size, estimated by input size, is
+    // going to be 1.2MB and max_output_file_size = 1MB, prefer to have 0.6MB
+    // and 0.6MB instead of 1MB and 0.2MB)
     bool output_file_ended = false;
     Status input_status;
     if (sub_compact->compaction->max_output_file_size() != 0 &&
         sub_compact->current_output_file_size >=
             sub_compact->compaction->max_output_file_size()) {
-      // (1) this key terminates the file. For historical reasons, the
-      // iterator status before advancing will be given to
-      // FinishCompactionOutputFile().
+      // (1) this key terminates the file. For historical reasons, the iterator
+      // status before advancing will be given to FinishCompactionOutputFile().
       input_status = input->status();
       output_file_ended = true;
     }
@@ -1189,7 +1162,7 @@ void CompactionJob::ProcessEssenceCompaction(SubcompactionState* sub_compact) {
   if (status.ok()) {
     status = c_iter->status();
   }
-  
+
   if (status.ok() && sub_compact->builder == nullptr &&
       sub_compact->outputs.size() == 0 &&
       !range_del_agg->IsEmpty()) {
@@ -1226,110 +1199,6 @@ void CompactionJob::ProcessEssenceCompaction(SubcompactionState* sub_compact) {
   sub_compact->c_iter.reset();
   input.reset();
   sub_compact->status = status;
-}
-
-void CompactionJob::ProcessLinkCompaction(SubcompactionState* sub_compact) {
-  ColumnFamilyData* cfd = sub_compact->compaction->column_family_data();
-  std::unique_ptr<RangeDelAggregator> range_del_agg(
-      new RangeDelAggregator(cfd->internal_comparator(), existing_snapshots_));
-  std::unique_ptr<InternalIterator> input(versions_->MakeInputIterator(
-      sub_compact->compaction, range_del_agg.get(), env_options_for_read_));
-
-  // Used for write properties
-  std::vector<uint64_t> sst_depend;
-  size_t sst_read_amp = 1;
-  std::vector<std::unique_ptr<IntTblPropCollectorFactory>> collectors;
-  collectors.emplace_back(new SstPurposePropertiesCollectorFactory(
-      (uint8_t)kLinkSst, &sst_depend, &sst_read_amp));
-
-  auto& s = sub_compact->status;
-  s = OpenCompactionOutputFile(sub_compact, &collectors);
-  if (!s.ok()) {
-    return;
-  }
-
-  const Slice* start = sub_compact->start;
-  const Slice* end = sub_compact->end;
-  if (start != nullptr) {
-    sub_compact->actual_start.SetMinPossibleForUserKey(*start);
-    input->Seek(sub_compact->actual_start.Encode());
-  } else {
-    sub_compact->actual_start.SetMinPossibleForUserKey(
-        sub_compact->compaction->GetSmallestUserKey());
-    input->SeekToFirst();
-  }
-
-  auto ucomp = cfd->user_comparator();
-  auto& meta = sub_compact->current_output()->meta;
-
-  std::unordered_set<uint64_t> sst_depend_build;
-  InternalKey last_key;
-  uint64_t key_count = 0;
-  uint64_t last_file_number;
-  std::string buffer;
-
-  auto update_key = [&] {
-    ++key_count;
-    assert(last_key.size() == 0 || cfd->internal_comparator().Compare(
-                                       last_key.Encode(), input->key()) < 0);
-    last_key.DecodeFrom(input->key());
-    meta.UpdateBoundaries(last_key.Encode(),
-                          GetInternalKeySeqno(last_key.Encode()));
-  };
-  auto put_link_element = [&] {
-    LinkSstElement link;
-    link.largest_key_ = last_key.Encode();
-    link.file_number_ = last_file_number;
-    sst_depend_build.emplace(link.file_number_);
-    key_count = 0;
-
-    sub_compact->builder->Add(link.Key(), link.Value(&buffer));
-    sub_compact->current_output_file_size = sub_compact->builder->FileSize();
-    sub_compact->num_output_records++;
-  };
-
-  // Multiway merge, write table switch point into sst
-  if (input->Valid() &&
-      (end == nullptr ||
-       ucomp->Compare(ExtractUserKey(input->key()), *end) < 0)) {
-    update_key();
-    last_file_number = input->FileNumber();
-    assert(last_file_number != uint64_t(-1));
-    for (input->Next(); input->Valid(); input->Next()) {
-      if (end != nullptr &&
-          ucomp->Compare(ExtractUserKey(input->key()), *end) >= 0) {
-        break;
-      }
-      if (sub_compact->compaction->max_output_file_size() != 0 &&
-          sub_compact->current_output_file_size >=
-              sub_compact->compaction->max_output_file_size() &&
-          cfd->user_comparator()->Compare(ExtractUserKey(input->key()),
-                                          last_key.user_key()) != 0) {
-        break;
-      }
-      if (input->FileNumber() != last_file_number) {
-        put_link_element();
-        last_file_number = input->FileNumber();
-      }
-      update_key();
-    }
-    put_link_element();
-
-    // Prepare sst_depend, IntTblPropCollector::Finish will read it
-    sst_depend.reserve(sst_depend_build.size());
-    sst_depend.insert(sst_depend.end(), sst_depend_build.begin(),
-                      sst_depend_build.end());
-    sst_depend_build.clear();
-    std::sort(sst_depend.begin(), sst_depend.end());
-  }
-
-  CompactionIterationStats range_del_out_stats;
-  s = FinishCompactionOutputFile(input->status(), sub_compact,
-                                 range_del_agg.get(), &range_del_out_stats);
-
-  // Update metadata
-  meta.sst_purpose = kLinkSst;
-  meta.sst_depend = std::move(sst_depend);
 }
 
 void CompactionJob::RecordDroppedKeys(
@@ -1609,79 +1478,14 @@ Status CompactionJob::InstallCompactionResults(
         compaction->InputLevelSummary(&inputs_summary), compact_->total_bytes);
   }
 
-  if (!compaction->input_range().empty() ||
-      compaction->mutable_cf_options()->enable_lazy_compaction ||
-      compaction->compaction_purpose() == kMapSst) {
-    MapBuilder map_builder(job_id_, db_options_, env_options_, versions_,
-                           stats_, dbname_);
-    auto cfd = compaction->column_family_data();
-    auto vstorage = compaction->input_version()->storage_info();
-    std::unique_ptr<TableProperties> prop;
-    FileMetaData file_meta;
-    std::vector<Range> deleted_range;
-    std::vector<const FileMetaData*> added_files;
-    if (compaction->compaction_purpose() != kMapSst) {
-      for (auto& sub_compact : compact_->sub_compact_states) {
-        bool include_start = true;
-        bool include_end = false;
-        if (sub_compact.actual_end.size() == 0) {
-          if (sub_compact.end != nullptr) {
-            sub_compact.actual_end.SetMinPossibleForUserKey(*sub_compact.end);
-            include_end = true;
-          } else {
-            sub_compact.actual_end.SetMaxPossibleForUserKey(
-                compaction->GetLargestUserKey());
-          }
-        }
-        deleted_range.emplace_back(sub_compact.actual_start.Encode(),
-                                   sub_compact.actual_end.Encode(),
-                                   include_start, include_end);
-        for (auto& output : sub_compact.outputs) {
-          added_files.emplace_back(&output.meta);
-          compaction->AddOutputTableFileNumber(output.meta.fd.GetNumber());
-        }
-      }
-    }
-    auto s = map_builder.Build(*compaction->inputs(), deleted_range,
-                               added_files, compaction->compaction_purpose(),
-                               compaction->output_level(),
-                               compaction->output_path_id(), vstorage, cfd,
-                               compact_->compaction->edit(), &file_meta,
-                               &prop);
-    if (!s.ok()) {
-      return s;
-    }
-    if (file_meta.fd.file_size > 0) {
-      compact_->sub_compact_states[0].outputs.emplace_back();
-      auto current = compact_->sub_compact_states[0].current_output();
-      current->meta = file_meta;
-      current->finished = true;
-      current->table_properties.reset(prop.release());
-      compaction->AddOutputTableFileNumber(file_meta.fd.GetNumber());
-    }
-  } else {
-    // Add compaction inputs
-    compaction->AddInputDeletions(compact_->compaction->edit());
+  // Add compaction inputs
+  compaction->AddInputDeletions(compact_->compaction->edit());
 
-    for (const auto& sub_compact : compact_->sub_compact_states) {
-      for (const auto& out : sub_compact.outputs) {
-        compaction->edit()->AddFile(compaction->output_level(), out.meta);
-        compaction->AddOutputTableFileNumber(out.meta.fd.GetNumber());
-      }
+  for (const auto& sub_compact : compact_->sub_compact_states) {
+    for (const auto& out : sub_compact.outputs) {
+      compaction->edit()->AddFile(compaction->output_level(), out.meta);
     }
   }
-
-  TablePropertiesCollection tp;
-  for (const auto& state : compact_->sub_compact_states) {
-    for (const auto& output : state.outputs) {
-      auto fn =
-          TableFileName(state.compaction->immutable_cf_options()->cf_paths,
-                        output.meta.fd.GetNumber(), output.meta.fd.GetPathId());
-      tp[fn] = output.table_properties;
-    }
-  }
-  compact_->compaction->SetOutputTableProperties(std::move(tp));
-
   return versions_->LogAndApply(compaction->column_family_data(),
                                 mutable_cf_options, compaction->edit(),
                                 db_mutex_, db_directory_);
@@ -1783,13 +1587,12 @@ Status CompactionJob::OpenCompactionOutputFile(
   }
   sub_compact->builder.reset(NewTableBuilder(
       *cfd->ioptions(), *(sub_compact->compaction->mutable_cf_options()),
-      cfd->internal_comparator(), collectors, cfd->GetID(), cfd->GetName(),
-      sub_compact->outfile.get(),
+      cfd->internal_comparator(), collectors,
+      cfd->GetID(), cfd->GetName(), sub_compact->outfile.get(),
       sub_compact->compaction->output_compression(),
       sub_compact->compaction->output_compression_opts(),
       sub_compact->compaction->output_level(), &sub_compact->compression_dict,
-      skip_filters, false /* ignore_key_type */, output_file_creation_time,
-      0 /* oldest_key_time */, sub_compact->compaction->compaction_purpose()));
+      skip_filters, output_file_creation_time));
   LogFlush(db_options_.info_log);
   return s;
 }
@@ -1929,19 +1732,8 @@ void CompactionJob::LogCompaction() {
         compaction->InputLevelSummary(&inputs_summary), compaction->score());
     char scratch[2345];
     compaction->Summary(scratch, sizeof(scratch));
-    const char* purpose = "";
-    switch (compaction->compaction_purpose()) {
-      case kLinkSst:
-        purpose = "Link ";
-        break;
-      case kMapSst:
-        purpose = "Map ";
-        break;
-      default:
-        break;
-    }
-    ROCKS_LOG_INFO(db_options_.info_log, "[%s] %sCompaction start summary: %s\n",
-                   cfd->GetName().c_str(), purpose, scratch);
+    ROCKS_LOG_INFO(db_options_.info_log, "[%s] Compaction start summary: %s\n",
+                   cfd->GetName().c_str(), scratch);
     // build event logger report
     auto stream = event_logger_->Log();
     stream << "job" << job_id_ << "event"

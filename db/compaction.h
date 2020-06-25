@@ -58,40 +58,11 @@ struct CompactionInputFiles {
   inline FileMetaData* operator[](size_t i) const { return files[i]; }
 };
 
-class ColumnFamilyData;
-class CompactionFilter;
-class LevelFileContainer;
 class Version;
+class ColumnFamilyData;
+class LevelFileContainer;
 class VersionStorageInfo;
-
-struct CompactionParams {
-  VersionStorageInfo* input_version;
-  const ImmutableCFOptions& immutable_cf_options;
-  const MutableCFOptions& mutable_cf_options;
-  std::vector<CompactionInputFiles> inputs;
-  int output_level = 0;
-  uint64_t target_file_size = 0;
-  uint64_t max_compaction_bytes = 0;
-  uint32_t output_path_id = 0;
-  CompressionType compression = kNoCompression;
-  CompressionOptions compression_opts;
-  uint32_t max_subcompactions = 0;
-  std::vector<FileMetaData*> grandparents;
-  bool manual_compaction = false;
-  double score = -1;
-  bool deletion_compaction = false;
-  bool partial_compaction = false;
-  SstPurpose compaction_purpose = kEssenceSst;
-  std::vector<RangeStorage> input_range = {};
-  CompactionReason compaction_reason = CompactionReason::kUnknown;
-
-  CompactionParams(VersionStorageInfo* _input_version,
-      const ImmutableCFOptions& _immutable_cf_options,
-                   const MutableCFOptions& _mutable_cf_options)
-      : input_version(_input_version),
-        immutable_cf_options(_immutable_cf_options),
-        mutable_cf_options(_mutable_cf_options) {}
-};
+class CompactionFilter;
 
 // A Compaction encapsulates information about a compaction.
 class Compaction {
@@ -194,9 +165,6 @@ class Compaction {
 
   // If true, then enable partial compaction
   bool partial_compaction() const { return partial_compaction_; }
-
-  // Compaction purpose
-  SstPurpose compaction_purpose() const { return compaction_purpose_; }
 
   // Range limit for inputs
   const std::vector<RangeStorage>& input_range() const {
@@ -377,9 +345,6 @@ class Compaction {
   const bool deletion_compaction_;
   // If true, then enable partial compaction
   const bool partial_compaction_;
-
-  // Compaction purpose
-  const SstPurpose compaction_purpose_;
 
   // Range limit for inputs
   const std::vector<RangeStorage> input_range_;

@@ -224,7 +224,6 @@ Compaction::Compaction(CompactionParams&& params)
       output_compression_opts_(params.compression_opts),
       deletion_compaction_(params.deletion_compaction),
       partial_compaction_(params.partial_compaction),
-      compaction_purpose_(params.compaction_purpose),
       input_range_(std::move(params.input_range)),
       inputs_(PopulateWithAtomicBoundaries(params.input_version,
                                            std::move(params.inputs))),
@@ -322,8 +321,8 @@ bool Compaction::IsTrivialMove() const {
   }
 
   if (!(start_level_ != output_level_ && num_input_levels() == 1 &&
-        input(0, 0)->fd.GetPathId() == output_path_id() &&
-        InputCompressionMatchesOutput())) {
+          input(0, 0)->fd.GetPathId() == output_path_id() &&
+          InputCompressionMatchesOutput())) {
     return false;
   }
 

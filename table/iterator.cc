@@ -109,7 +109,7 @@ Status Iterator::GetProperty(std::string prop_name, std::string* prop) {
 namespace {
 class EmptyIterator : public Iterator {
  public:
-  explicit EmptyIterator(const Status& s) : status_(s) {}
+  explicit EmptyIterator(const Status& s) : status_(s) { }
   virtual bool Valid() const override { return false; }
   virtual void Seek(const Slice& /*target*/) override {}
   virtual void SeekForPrev(const Slice& /*target*/) override {}
@@ -132,9 +132,9 @@ class EmptyIterator : public Iterator {
 };
 
 template <class TValue = Slice>
-class EmptyInternalIteratorBase : public InternalIteratorBase<TValue> {
+class EmptyInternalIterator : public InternalIteratorBase<TValue> {
  public:
-  explicit EmptyInternalIteratorBase(const Status& s) : status_(s) {}
+  explicit EmptyInternalIterator(const Status& s) : status_(s) {}
   virtual bool Valid() const override { return false; }
   virtual void Seek(const Slice& /*target*/) override {}
   virtual void SeekForPrev(const Slice& /*target*/) override {}
@@ -155,77 +155,33 @@ class EmptyInternalIteratorBase : public InternalIteratorBase<TValue> {
  private:
   Status status_;
 };
-
-template <class TValue = Slice>
-class FileNumberInternalIteratorWrapperBase
-    : public InternalIteratorBase<TValue> {
- public:
-  FileNumberInternalIteratorWrapperBase(InternalIteratorBase<TValue>* inner,
-                                        uint64_t file_number)
-      : inner_(inner), file_number_(file_number) {}
-  virtual bool Valid() const override { return inner_->Valid(); }
-  virtual void Seek(const Slice& target) override { inner_->Seek(target); }
-  virtual void SeekForPrev(const Slice& target) override {
-    inner_->SeekForPrev(target);
-  }
-  virtual void SeekToFirst() override { inner_->SeekToFirst(); }
-  virtual void SeekToLast() override { inner_->SeekToLast(); }
-  virtual void Next() override { inner_->Next(); }
-  virtual void Prev() override { inner_->Prev(); }
-  Slice key() const override { return inner_->key(); }
-  TValue value() const override { return inner_->value(); }
-  virtual Status status() const override { return inner_->status(); }
-  virtual uint64_t FileNumber() const override { return file_number_; }
-  virtual bool IsOutOfBound() override { return inner_->IsOutOfBound(); }
-  virtual void SetPinnedItersMgr(
-      PinnedIteratorsManager* pinned_iters_mgr) override {
-    inner_->SetPinnedItersMgr(pinned_iters_mgr);
-  }
-  virtual bool IsKeyPinned() const override { return inner_->IsKeyPinned(); }
-  virtual bool IsValuePinned() const override {
-    return inner_->IsValuePinned();
-  }
-  virtual Status GetProperty(std::string prop_name,
-                             std::string* prop) override {
-    return inner_->GetProperty(prop_name, prop);
-  }
-
- private:
-  InternalIteratorBase<TValue>* inner_;
-  uint64_t file_number_;
-};
-
 }  // namespace
 
-Iterator* NewEmptyIterator() { return new EmptyIterator(Status::OK()); }
+Iterator* NewEmptyIterator() {
+  return new EmptyIterator(Status::OK());
+}
 
 Iterator* NewErrorIterator(const Status& status) {
   return new EmptyIterator(status);
 }
 
 template <class TValue>
-InternalIteratorBase<TValue>* NewEmptyInternalIterator(Arena* arena) {
-  using EmptyInternalIterator = EmptyInternalIteratorBase<TValue>;
-  if (arena == nullptr) {
-    return new EmptyInternalIterator(Status::OK());
-  } else {
-    auto mem = arena->AllocateAligned(sizeof(EmptyInternalIterator));
-    return new (mem) EmptyInternalIterator(Status::OK());
-  }
+InternalIteratorBase<TValue>* NewErrorInternalIterator(const Status& status) {
+  return new EmptyInternalIterator<TValue>(status);
 }
-template InternalIteratorBase<BlockHandle>* NewEmptyInternalIterator(
-    Arena* arena);
-template InternalIteratorBase<Slice>* NewEmptyInternalIterator(Arena* arena);
+template InternalIteratorBase<BlockHandle>* NewErrorInternalIterator(
+    const Status& status);
+template InternalIteratorBase<Slice>* NewErrorInternalIterator(
+    const Status& status);
 
 template <class TValue>
 InternalIteratorBase<TValue>* NewErrorInternalIterator(const Status& status,
                                                        Arena* arena) {
-  using EmptyInternalIterator = EmptyInternalIteratorBase<TValue>;
   if (arena == nullptr) {
-    return new EmptyInternalIterator(status);
+    return NewErrorInternalIterator<TValue>(status);
   } else {
-    auto mem = arena->AllocateAligned(sizeof(EmptyInternalIterator));
-    return new (mem) EmptyInternalIterator(status);
+    auto mem = arena->AllocateAligned(sizeof(EmptyIterator));
+    return new (mem) EmptyInternalIterator<TValue>(status);
   }
 }
 template InternalIteratorBase<BlockHandle>* NewErrorInternalIterator(
@@ -234,29 +190,23 @@ template InternalIteratorBase<Slice>* NewErrorInternalIterator(
     const Status& status, Arena* arena);
 
 template <class TValue>
-InternalIteratorBase<TValue>* NewFileNumberInternalIteratorWrapper(
-    InternalIteratorBase<TValue>* inner, uint64_t file_number, Arena* arena) {
-  using Wrapper = FileNumberInternalIteratorWrapperBase<TValue>;
-  using Inner = InternalIteratorBase<TValue>;
-  Wrapper* wrapper;
-  if (arena == nullptr) {
-    wrapper = new Wrapper(inner, file_number);
-    wrapper->RegisterCleanup(
-        [](void* arg1, void*) { delete static_cast<Inner*>(arg1); }, inner,
-        nullptr);
-  } else {
-    auto mem = arena->AllocateAligned(sizeof(Wrapper));
-    wrapper = new (mem) Wrapper(inner, file_number);
-    wrapper->RegisterCleanup(
-        [](void* arg1, void*) { static_cast<Inner*>(arg1)->~Inner(); }, inner,
-        nullptr);
-  }
-  return wrapper;
+InternalIteratorBase<TValue>* NewEmptyInternalIterator() {
+  return new EmptyInternalIterator<TValue>(Status::OK());
 }
-template InternalIteratorBase<BlockHandle>*
-NewFileNumberInternalIteratorWrapper(InternalIteratorBase<BlockHandle>* inner,
-                                     uint64_t file_number, Arena* arena);
-template InternalIteratorBase<Slice>* NewFileNumberInternalIteratorWrapper(
-    InternalIteratorBase<Slice>* inner, uint64_t file_number, Arena* arena);
+template InternalIteratorBase<BlockHandle>* NewEmptyInternalIterator();
+template InternalIteratorBase<Slice>* NewEmptyInternalIterator();
+
+template <class TValue>
+InternalIteratorBase<TValue>* NewEmptyInternalIterator(Arena* arena) {
+  if (arena == nullptr) {
+    return NewEmptyInternalIterator<TValue>();
+  } else {
+    auto mem = arena->AllocateAligned(sizeof(EmptyIterator));
+    return new (mem) EmptyInternalIterator<TValue>(Status::OK());
+  }
+}
+template InternalIteratorBase<BlockHandle>* NewEmptyInternalIterator(
+    Arena* arena);
+template InternalIteratorBase<Slice>* NewEmptyInternalIterator(Arena* arena);
 
 }  // namespace rocksdb

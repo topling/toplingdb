@@ -117,7 +117,6 @@ class Repairer {
         wb_(db_options_.db_write_buffer_size),
         wc_(db_options_.delayed_write_rate),
         vset_(dbname_, &immutable_db_options_, env_options_,
-              false, // seq_per_batch
               raw_table_cache_.get(), &wb_, &wc_),
         next_file_number_(1) {
     for (const auto& cfd : column_families) {
@@ -369,7 +368,6 @@ class Repairer {
     // Initialize per-column family memtables
     for (auto* cfd : *vset_.GetColumnFamilySet()) {
       cfd->CreateNewMemtable(*cfd->GetLatestMutableCFOptions(),
-                             false, // needs_dup_key_check
                              kMaxSequenceNumber);
     }
     auto cf_mems = new ColumnFamilyMemTablesImpl(vset_.GetColumnFamilySet());
@@ -445,10 +443,6 @@ class Repairer {
   }
 
   void ExtractMetaData() {
-    DependFileMap depend_files;
-    std::map<uint64_t, TableInfo*> mediate_sst; // map or link sst
-    // make sure tables_ enouth, so we can hold ptr of elements
-    tables_.reserve(table_fds_.size());
     for (size_t i = 0; i < table_fds_.size(); i++) {
       TableInfo t;
       t.meta.fd = table_fds_[i];
@@ -464,86 +458,8 @@ class Repairer {
         ArchiveFile(fname);
       } else {
         tables_.push_back(t);
-        depend_files.emplace(t.meta.fd.GetNumber(), &tables_.back().meta);
-        if (t.meta.sst_purpose != 0) {
-          mediate_sst.emplace(t.meta.fd.GetNumber(), &tables_.back());
-        }
       }
     }
-    // recover map/link sst meta data
-    while (!mediate_sst.empty()) {
-      size_t mediate_sst_count = mediate_sst.size();
-      for (auto it = mediate_sst.begin(); it != mediate_sst.end(); ) {
-        auto& t = *it->second;
-        auto cfd =
-            vset_.GetColumnFamilySet()->GetColumnFamily(t.column_family_id);
-        InternalKey smallest, largest;
-        SequenceNumber min_sequence = kMaxSequenceNumber, max_sequence = 0;
-        enum {
-          kOK, kError, kRetry,
-        } result = kOK;
-        for (auto file_number : t.meta.sst_depend) {
-          auto find = depend_files.find(file_number);
-          if (find == depend_files.end()) {
-            result = kError;
-            break;
-          }
-          if (mediate_sst.count(file_number) > 0) {
-            // depend file is mediate sst, retry next loop
-            assert(file_number != t.meta.fd.GetNumber());
-            result = kRetry;
-            break;
-          }
-          auto f = find->second;
-          if (smallest.size() == 0 ||
-              cfd->internal_comparator().Compare(f->smallest, smallest) < 0) {
-            smallest = f->smallest;
-          }
-          if (largest.size() == 0 ||
-              cfd->internal_comparator().Compare(f->largest, largest) > 0) {
-            largest = f->largest;
-          }
-          min_sequence = std::min(min_sequence, f->fd.smallest_seqno);
-          max_sequence = std::max(max_sequence, f->fd.largest_seqno);
-        }
-        if (result == kOK) {
-          t.meta.smallest = smallest;
-          t.meta.largest = largest;
-          t.min_sequence = min_sequence;
-          t.max_sequence = max_sequence;
-        }
-        if (result == kError) {
-          char file_num_buf[kFormatFileNumberBufSize];
-          FormatFileNumber(t.meta.fd.GetNumber(), t.meta.fd.GetPathId(),
-                           file_num_buf, sizeof(file_num_buf));
-          ROCKS_LOG_WARN(db_options_.info_log, "Table #%s: ignoring %s",
-                         file_num_buf, "missing depend files");
-          t.column_family_id = uint32_t(-1);  // mark to delete
-        }
-        if (result == kRetry) {
-          ++it;
-        } else {
-          mediate_sst.erase(it++);
-        }
-      }
-      if (mediate_sst_count == mediate_sst.size()) {
-        // cyclic depend files ???
-        char file_num_buf[kFormatFileNumberBufSize];
-        for (auto& pair : mediate_sst) {
-          auto& t = *pair.second;
-          FormatFileNumber(t.meta.fd.GetNumber(), t.meta.fd.GetPathId(),
-                           file_num_buf, sizeof(file_num_buf));
-          ROCKS_LOG_WARN(db_options_.info_log, "Table #%s: ignoring %s",
-                         file_num_buf, "cyclic depend files");
-          t.column_family_id = uint32_t(-1);  // mark to delete
-        }
-        break;
-      }
-    }
-    auto new_end = std::remove_if(
-        tables_.begin(), tables_.end(),
-        [](TableInfo& t) { return t.column_family_id == uint32_t(-1); });
-    tables_.erase(new_end, tables_.end());
   }
 
   Status ScanTable(TableInfo* t) {
@@ -592,14 +508,10 @@ class Repairer {
         status = Status::Corruption(dbname_, "inconsistent column family name");
       }
     }
-
     if (status.ok()) {
-      // Use empty depend files to disable map or link sst forward calls.
-      // P.S. depend files in VersionStorage has not build yet ...
-      DependFileMap empty_depend_files;
       InternalIterator* iter = table_cache_->NewIterator(
           ReadOptions(), env_options_, cfd->internal_comparator(), t->meta,
-          empty_depend_files, nullptr /* range_del_agg */,
+          nullptr /* range_del_agg */,
           cfd->GetLatestMutableCFOptions()->prefix_extractor.get());
       bool empty = true;
       ParsedInternalKey parsed;
@@ -636,9 +548,6 @@ class Repairer {
       ROCKS_LOG_INFO(db_options_.info_log, "Table #%" PRIu64 ": %d entries %s",
                      t->meta.fd.GetNumber(), counter,
                      status.ToString().c_str());
-
-      t->meta.sst_purpose = GetSstPurpose(props->user_collected_properties);
-      t->meta.sst_depend = GetSstDepend(props->user_collected_properties);
     }
     return status;
   }
@@ -665,25 +574,12 @@ class Repairer {
       edit.SetNextFile(next_file_number_);
       edit.SetColumnFamily(cfd->GetID());
 
-      std::set<uint64_t> depend_set;
-      for (const auto* table : cf_id_and_tables.second) {
-        if (table->meta.sst_purpose != 0) {
-          auto& sst_depend = table->meta.sst_depend;
-          depend_set.insert(sst_depend.begin(), sst_depend.end());
-        }
-      }
       // TODO(opt): separate out into multiple levels
       for (const auto* table : cf_id_and_tables.second) {
-        int level = 0;
-        if (depend_set.count(table->meta.fd.GetNumber()) > 0) {
-          // This sst should insert into depend level
-          level = -1;
-        }
-        edit.AddFile(level, table->meta.fd.GetNumber(), table->meta.fd.GetPathId(),
+        edit.AddFile(0, table->meta.fd.GetNumber(), table->meta.fd.GetPathId(),
                      table->meta.fd.GetFileSize(), table->meta.smallest,
                      table->meta.largest, table->min_sequence,
-                     table->max_sequence, table->meta.marked_for_compaction,
-                     table->meta.sst_purpose, table->meta.sst_depend);
+                     table->max_sequence, table->meta.marked_for_compaction);
       }
       assert(next_file_number_ > 0);
       vset_.MarkFileNumberUsed(next_file_number_ - 1);

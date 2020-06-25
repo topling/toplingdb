@@ -92,11 +92,6 @@ class GetContext {
 
   bool is_finished() const { return state_ != kNotFound && state_ != kMerge; }
 
-  void SetMinSequenceAndType(uint64_t min_seq_type) {
-    min_seq_type_ = min_seq_type;
-  }
-  uint64_t GetMinSequenceAndType() const { return min_seq_type_; }
-
   bool CheckCallback(SequenceNumber seq) {
     if (callback_) {
       return callback_->IsVisible(seq);
@@ -123,8 +118,6 @@ class GetContext {
   // If a key is found, seq_ will be set to the SequenceNumber of most recent
   // write to the key or kMaxSequenceNumber if unknown
   SequenceNumber* seq_;
-  // For Merge, don't accept key while seq type less than min_seq_type
-  uint64_t min_seq_type_;
   std::string* replay_log_;
   // Used to temporarily pin blocks when state_ == GetContext::kMerge
   PinnedIteratorsManager* pinned_iters_mgr_;

@@ -50,6 +50,11 @@ option(WITH_LZ4 "build with lz4" OFF)
 option(WITH_ZLIB "build with zlib" OFF)
 option(WITH_ZSTD "build with zstd" OFF)
 option(WITH_WINDOWS_UTF8_FILENAMES "use UTF8 as characterset for opening files, regardles of the system code page" OFF)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../teark-zip-rocksdb/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../teark/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../teark/src/boost-include)
+
 if (WITH_WINDOWS_UTF8_FILENAMES)
   add_definitions(-DROCKSDB_WINDOWS_UTF8_FILENAMES)
 endif()
@@ -502,7 +507,6 @@ set(SOURCES
         db/log_reader.cc
         db/log_writer.cc
         db/malloc_stats.cc
-        db/map_builder.cc
         db/memtable.cc
         db/memtablerep.cc
         db/memtable_list.cc

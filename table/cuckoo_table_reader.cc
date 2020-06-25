@@ -34,8 +34,8 @@ extern const uint64_t kCuckooTableMagicNumber;
 
 CuckooTableReader::CuckooTableReader(
     const ImmutableCFOptions& ioptions,
-    std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_number,
-    uint64_t file_size, const Comparator* comparator,
+    std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
+    const Comparator* comparator,
     uint64_t (*get_slice_hash)(const Slice&, uint32_t, uint64_t))
     : file_(std::move(file)),
       is_last_level_(false),
@@ -49,7 +49,6 @@ CuckooTableReader::CuckooTableReader(
       bucket_length_(0),
       cuckoo_block_size_(0),
       cuckoo_block_bytes_minus_one_(0),
-      file_number_(file_number),
       table_size_(0),
       ucomp_(comparator),
       get_slice_hash_(get_slice_hash) {
@@ -374,10 +373,6 @@ Slice CuckooTableIterator::key() const {
 Slice CuckooTableIterator::value() const {
   assert(Valid());
   return curr_value_;
-}
-
-uint64_t CuckooTableIterator::FileNumber() const {
-  return reader_->file_number_;
 }
 
 InternalIterator* CuckooTableReader::NewIterator(

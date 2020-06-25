@@ -41,7 +41,6 @@
 #include "db/log_reader.h"
 #include "db/log_writer.h"
 #include "db/malloc_stats.h"
-#include "db/map_builder.h"
 #include "db/memtable.h"
 #include "db/memtable_list.h"
 #include "db/merge_context.h"
@@ -240,7 +239,6 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
                              immutable_db_options_.table_cache_numshardbits);
 
   versions_.reset(new VersionSet(dbname_, &immutable_db_options_, env_options_,
-                                 seq_per_batch,
                                  table_cache_.get(), write_buffer_manager_,
                                  &write_controller_));
   column_family_memtables_.reset(
@@ -303,8 +301,7 @@ Status DBImpl::ResumeImpl() {
     s = Status::ShutdownInProgress();
   }
   if (s.ok() && bg_error.severity() > Status::Severity::kHardError) {
-    ROCKS_LOG_INFO(
-        immutable_db_options_.info_log,
+    ROCKS_LOG_INFO(immutable_db_options_.info_log,
         "DB resume requested but failed due to Fatal/Unrecoverable error");
     s = bg_error;
   }
@@ -2399,7 +2396,8 @@ Status DBImpl::DeleteFile(std::string name) {
 }
 
 Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
-                                   const RangePtr* ranges, size_t n) {
+                                   const RangePtr* ranges, size_t n,
+                                   bool include_end) {
   Status status;
   auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
   ColumnFamilyData* cfd = cfh->cfd();
@@ -2409,193 +2407,55 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
   {
     InstrumentedMutexLock l(&mutex_);
     Version* input_version = cfd->current();
-    edit.SetColumnFamily(cfd->GetID());
 
     auto* vstorage = input_version->storage_info();
-    if (cfd->GetCurrentMutableCFOptions()->enable_lazy_compaction) {
-      const InternalKeyComparator& ic = cfd->ioptions()->internal_comparator;
-
-      // deref nullptr of start/limit
-      InternalKey* nullptr_start = nullptr;
-      InternalKey* nullptr_limit = nullptr;
-      for (int level = 0; level < cfd->NumberLevels(); level++) {
-        auto& level_files = vstorage->LevelFiles(level);
-        if (level == 0) {
-          for (size_t i = 0; i < level_files.size(); ++i) {
-            auto& f = level_files[i];
-            if (nullptr_start == nullptr ||
-                ic.Compare(f->smallest, *nullptr_start) < 0) {
-              nullptr_start = &f->smallest;
-            }
-            if (nullptr_limit == nullptr ||
-                ic.Compare(f->largest, *nullptr_limit) > 0) {
-              nullptr_limit = &f->largest;
-            }
-          }
-        } else if (!level_files.empty()) {
-          auto& f0 = level_files.front();
-          auto& fn = level_files.back();
-          if (nullptr_start == nullptr ||
-              ic.Compare(f0->smallest, *nullptr_start) < 0) {
-            nullptr_start = &f0->smallest;
-          }
-          if (nullptr_limit == nullptr ||
-              ic.Compare(fn->largest, *nullptr_limit) > 0) {
-            nullptr_limit = &fn->largest;
-          }
-        }
-      }
-      if (nullptr_start == nullptr || nullptr_limit == nullptr) {
-        // empty vstorage ...
-        job_context.Clean();
-        return Status::OK();
-      }
-      // trans user_key to internal_key
-      std::vector<std::pair<InternalKey, InternalKey>> deleted_range_storage;
-      std::vector<Range> deleted_range;
-      deleted_range_storage.resize(n);
-      deleted_range.resize(n);
-      for (size_t i = 0; i < n; ++i) {
-        deleted_range[i].include_start = ranges[i].include_start;
-        deleted_range[i].include_limit = ranges[i].include_limit;
-        auto& storage = deleted_range_storage[i];
-        if (ranges[i].start == nullptr) {
-          storage.first = *nullptr_start;
-          deleted_range[i].include_start = true;
-        } else {
-          if (deleted_range[i].include_start) {
-            storage.first.SetMinPossibleForUserKey(*ranges[i].start);
-          } else {
-            storage.first.SetMaxPossibleForUserKey(*ranges[i].start);
-          }
-        }
-        if (ranges[i].limit == nullptr) {
-          storage.second = *nullptr_limit;
-          deleted_range[i].include_limit = true;
-        } else {
-          if (deleted_range[i].include_limit) {
-            storage.second.SetMaxPossibleForUserKey(*ranges[i].limit);
-          } else {
-            storage.second.SetMinPossibleForUserKey(*ranges[i].limit);
-          }
-        }
-        deleted_range[i].start = storage.first.Encode();
-        deleted_range[i].limit = storage.second.Encode();
-      }
-      // sort & merge ranges
-      std::sort(deleted_range.begin(), deleted_range.end(),
-                [&ic](const Range& rl, const Range& rr) {
-                  return ic.Compare(rl.start, rr.start) < 0;
-                });
-      size_t c = 0;
-      for (size_t i = 1; i < n; ++i) {
-        if (ic.Compare(deleted_range[c].limit, deleted_range[i].start) >= 0) {
-          deleted_range[c].include_start |= deleted_range[i].include_start;
-          if (ic.Compare(deleted_range[c].limit, deleted_range[i].limit) <= 0) {
-            deleted_range[c].limit = deleted_range[i].limit;
-            deleted_range[c].include_limit |= deleted_range[i].include_limit;
-          }
-        } else {
-          deleted_range[++c] = deleted_range[i];
-        }
-      }
-      deleted_range.resize(c + 1);
-      MapBuilder map_builder(job_context.job_id, immutable_db_options_,
-                             env_options_, versions_.get(), stats_, dbname_);
-      auto level_being_compacted = [vstorage](int level) {
-        for (auto f : vstorage->LevelFiles(level)) {
-          if (f->being_compacted) {
-            return true;
-          }
-        }
-        return false;
-      };
-      for (int i = 0; i < cfd->NumberLevels(); i++) {
-        if (vstorage->LevelFiles(i).empty()) {
+    for (size_t r = 0; r < n; r++) {
+      auto begin = ranges[r].start, end = ranges[r].limit;
+      for (int i = 1; i < cfd->NumberLevels(); i++) {
+        if (vstorage->LevelFiles(i).empty() ||
+            !vstorage->OverlapInLevel(i, begin, end)) {
           continue;
         }
-        if (cfd->ioptions()->compaction_style == kCompactionStyleUniversal &&
-            !level_being_compacted(i)) {
-          status = map_builder.Build(
-              {CompactionInputFiles{i, vstorage->LevelFiles(i)}}, deleted_range,
-              {}, kMapSst, i, vstorage->LevelFiles(i)[0]->fd.GetPathId(),
-              vstorage, cfd, &edit, nullptr, nullptr, &deleted_files);
-          if (!status.ok()) {
-            return status;
-          }
+        std::vector<FileMetaData*> level_files;
+        InternalKey begin_storage, end_storage, *begin_key, *end_key;
+        if (begin == nullptr) {
+          begin_key = nullptr;
         } else {
-          for (auto f : vstorage->LevelFiles(i)) {
-            if (f->being_compacted) {
-              continue;
-            }
-            status = map_builder.Build({CompactionInputFiles{i, {f}}},
-                                       deleted_range, {}, kMapSst, i,
-                                       f->fd.GetPathId(), vstorage, cfd, &edit,
-                                       nullptr, nullptr, &deleted_files);
-            if (!status.ok()) {
-              return status;
-            }
-          }
+          begin_storage.SetMinPossibleForUserKey(*begin);
+          begin_key = &begin_storage;
         }
-      }
-      for (auto f : deleted_files) {
-        f->being_compacted = true;
-      }
-    } else {
-      for (size_t r = 0; r < n; r++) {
-        auto begin = ranges[r].start, end = ranges[r].limit;
-        auto include_begin = ranges[r].include_start;
-        auto include_end = ranges[r].include_limit;
-        for (int i = 1; i < cfd->NumberLevels(); i++) {
-          if (vstorage->LevelFiles(i).empty() ||
-              !vstorage->OverlapInLevel(i, begin, end)) {
+        if (end == nullptr) {
+          end_key = nullptr;
+        } else {
+          end_storage.SetMaxPossibleForUserKey(*end);
+          end_key = &end_storage;
+        }
+
+        vstorage->GetCleanInputsWithinInterval(
+            i, begin_key, end_key, &level_files, -1 /* hint_index */,
+            nullptr /* file_index */);
+        FileMetaData* level_file;
+        for (uint32_t j = 0; j < level_files.size(); j++) {
+          level_file = level_files[j];
+          if (level_file->being_compacted) {
             continue;
           }
-          std::vector<FileMetaData*> level_files;
-          InternalKey begin_storage, end_storage, *begin_key, *end_key;
-          if (begin == nullptr) {
-            begin_key = nullptr;
-          } else {
-            begin_storage.SetMinPossibleForUserKey(*begin);
-            begin_key = &begin_storage;
+          if (deleted_files.find(level_file) != deleted_files.end()) {
+            continue;
           }
-          if (end == nullptr) {
-            end_key = nullptr;
-          } else {
-            end_storage.SetMaxPossibleForUserKey(*end);
-            end_key = &end_storage;
+          if (!include_end && end != nullptr &&
+              cfd->user_comparator()->Compare(level_file->largest.user_key(),
+                                              *end) == 0) {
+            continue;
           }
-
-          vstorage->GetCleanInputsWithinInterval(
-              i, begin_key, end_key, &level_files, -1 /* hint_index */,
-              nullptr /* file_index */);
-          FileMetaData* level_file;
-          for (uint32_t j = 0; j < level_files.size(); j++) {
-            level_file = level_files[j];
-            if (level_file->being_compacted) {
-              continue;
-            }
-            if (deleted_files.find(level_file) != deleted_files.end()) {
-              continue;
-            }
-            if (!include_begin && begin != nullptr &&
-                cfd->user_comparator()->Compare(level_file->smallest.user_key(),
-                                                *begin) == 0) {
-              continue;
-            }
-            if (!include_end && end != nullptr &&
-                cfd->user_comparator()->Compare(level_file->largest.user_key(),
-                                                *end) == 0) {
-              continue;
-            }
-            edit.DeleteFile(i, level_file->fd.GetNumber());
-            deleted_files.insert(level_file);
-            level_file->being_compacted = true;
-          }
+          edit.SetColumnFamily(cfd->GetID());
+          edit.DeleteFile(i, level_file->fd.GetNumber());
+          deleted_files.insert(level_file);
+          level_file->being_compacted = true;
         }
       }
     }
-    if (edit.GetNewFiles().empty() && edit.GetDeletedFiles().empty()) {
+    if (edit.GetDeletedFiles().empty()) {
       job_context.Clean();
       return Status::OK();
     }
@@ -2693,8 +2553,7 @@ Status DBImpl::GetDbIdentity(std::string& identity) const {
   if (!s.ok()) {
     return s;
   }
-  char* buffer =
-      reinterpret_cast<char*>(alloca(static_cast<size_t>(file_size)));
+  char* buffer = reinterpret_cast<char*>(alloca(static_cast<size_t>(file_size)));
   Slice id;
   s = id_file_reader->Read(static_cast<size_t>(file_size), &id, buffer);
   if (!s.ok()) {
@@ -2781,7 +2640,7 @@ Status DestroyDB(const std::string& dbname, const Options& options,
     InfoLogPrefix info_log_prefix(!soptions.db_log_dir.empty(), dbname);
     for (const auto& fname : filenames) {
       if (ParseFileName(fname, &number, info_log_prefix.prefix, &type) &&
-          type != kDBLockFile) {  // Lock file will be deleted at end
+        type != kDBLockFile) {  // Lock file will be deleted at end
         Status del;
         std::string path_to_delete = dbname + "/" + fname;
         if (type == kMetaDatabase) {
@@ -2819,7 +2678,7 @@ Status DestroyDB(const std::string& dbname, const Options& options,
       if (env->GetChildren(path, &filenames).ok()) {
         for (const auto& fname : filenames) {
           if (ParseFileName(fname, &number, &type) &&
-              type == kTableFile) {  // Lock file will be deleted at end
+            type == kTableFile) {  // Lock file will be deleted at end
             std::string table_path = path + "/" + fname;
             Status del = DeleteSSTFile(&soptions, table_path, dbname);
             if (result.ok() && !del.ok()) {
@@ -2846,7 +2705,8 @@ Status DestroyDB(const std::string& dbname, const Options& options,
     if (env->GetChildren(archivedir, &archiveFiles).ok()) {
       // Delete archival files.
       for (const auto& file : archiveFiles) {
-        if (ParseFileName(file, &number, &type) && type == kLogFile) {
+        if (ParseFileName(file, &number, &type) &&
+          type == kLogFile) {
           Status del = env->DeleteFile(archivedir + "/" + file);
           if (result.ok() && !del.ok()) {
             result = del;
@@ -3343,7 +3203,7 @@ Status DBImpl::VerifyChecksum() {
     {
       InstrumentedMutexLock l(&mutex_);
       opts = Options(BuildDBOptions(immutable_db_options_,
-          mutable_db_options_), cfd->GetLatestCFOptions());
+         mutable_db_options_), cfd->GetLatestCFOptions());
     }
     for (int i = 0; i < vstorage->num_non_empty_levels() && s.ok(); i++) {
       for (size_t j = 0; j < vstorage->LevelFilesBrief(i).num_files && s.ok();

@@ -6,7 +6,6 @@
 #include <stdint.h>
 #include <map>
 #include <string>
-#include <vector>
 #include "rocksdb/status.h"
 #include "rocksdb/types.h"
 
@@ -220,9 +219,5 @@ struct TableProperties {
 extern uint64_t GetDeletedKeys(const UserCollectedProperties& props);
 extern uint64_t GetMergeOperands(const UserCollectedProperties& props,
                                  bool* property_present);
-extern uint8_t GetSstPurpose(const UserCollectedProperties&);
-extern std::vector<uint64_t> GetSstDepend(
-    const UserCollectedProperties& props);
-extern size_t GetSstReadAmp(const UserCollectedProperties& props);
 
 }  // namespace rocksdb

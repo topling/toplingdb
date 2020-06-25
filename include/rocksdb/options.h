@@ -75,13 +75,6 @@ enum CompressionType : unsigned char {
   kDisableCompressionOption = 0xff,
 };
 
-// Sst purpose
-enum SstPurpose {
-  kEssenceSst,  // Essence sst is actual data storage sst
-  kLinkSst,     // Link sst is composite sst
-  kMapSst,      // Map sst is composite sst
-};
-
 struct Options;
 struct DbPath;
 
@@ -278,9 +271,6 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   //
   // Dynamically changeable through SetOptions() API
   bool disable_auto_compactions = false;
-
-  // Enable map or link compaction
-  bool enable_lazy_compaction = false;
 
   // This is a factory that provides TableFactory objects.
   // Default: a block-based table factory that provides a default
@@ -659,8 +649,6 @@ struct DBOptions {
   // access pattern is random, when a sst file is opened.
   // Default: true
   bool advise_random_on_open = true;
-
-  bool allow_mmap_populate = false;
 
   // Amount of data to build up in memtables across all column
   // families before writing to disk.
@@ -1224,14 +1212,11 @@ struct CompactionOptions {
   uint64_t output_file_size_limit;
   // If > 0, it will replace the option in the DBOptions for this compaction.
   uint32_t max_subcompactions;
-  // Compaction target output sst variety
-  SstPurpose compaction_purpose;
 
   CompactionOptions()
       : compression(kSnappyCompression),
         output_file_size_limit(std::numeric_limits<uint64_t>::max()),
-        max_subcompactions(0),
-        compaction_purpose(kEssenceSst) {}
+        max_subcompactions(0) {}
 };
 
 // For level based compaction, we can configure if we want to skip/force

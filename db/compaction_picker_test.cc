@@ -33,7 +33,6 @@ class CompactionPickerTest : public testing::Test {
   Options options_;
   ImmutableCFOptions ioptions_;
   MutableCFOptions mutable_cf_options_;
-  EnvOptions env_options_;
   LevelCompactionPicker level_compaction_picker;
   std::string cf_name_;
   CountingLogger logger_;
@@ -53,7 +52,7 @@ class CompactionPickerTest : public testing::Test {
         icmp_(ucmp_),
         ioptions_(options_),
         mutable_cf_options_(options_),
-        level_compaction_picker(nullptr, env_options_, ioptions_, &icmp_),
+        level_compaction_picker(ioptions_, &icmp_),
         cf_name_("dummy"),
         log_buffer_(InfoLogLevel::INFO_LEVEL, &logger_),
         file_num_(1),
@@ -390,9 +389,8 @@ TEST_F(CompactionPickerTest, LevelTriggerDynamic4) {
 #ifndef ROCKSDB_LITE
 TEST_F(CompactionPickerTest, NeedsCompactionUniversal) {
   NewVersionStorage(1, kCompactionStyleUniversal);
-  EnvOptions env_options;
   UniversalCompactionPicker universal_compaction_picker(
-      nullptr, env_options, ioptions_, &icmp_);
+      ioptions_, &icmp_);
   UpdateVersionStorageInfo();
   // must return false when there's no files.
   ASSERT_EQ(universal_compaction_picker.NeedsCompaction(vstorage_.get()),
@@ -416,9 +414,7 @@ TEST_F(CompactionPickerTest, CompactionUniversalIngestBehindReservedLevel) {
   NewVersionStorage(1, kCompactionStyleUniversal);
   ioptions_.allow_ingest_behind = true;
   ioptions_.num_levels = 3;
-  EnvOptions env_options;
-  UniversalCompactionPicker universal_compaction_picker(
-      nullptr, env_options, ioptions_, &icmp_);
+  UniversalCompactionPicker universal_compaction_picker(ioptions_, &icmp_);
   UpdateVersionStorageInfo();
   // must return false when there's no files.
   ASSERT_EQ(universal_compaction_picker.NeedsCompaction(vstorage_.get()),
@@ -452,9 +448,7 @@ TEST_F(CompactionPickerTest, CannotTrivialMoveUniversal) {
 
   mutable_cf_options_.compaction_options_universal.allow_trivial_move = true;
   NewVersionStorage(1, kCompactionStyleUniversal);
-  EnvOptions env_options;
-  UniversalCompactionPicker universal_compaction_picker(
-      nullptr, env_options, ioptions_, &icmp_);
+  UniversalCompactionPicker universal_compaction_picker(ioptions_, &icmp_);
   UpdateVersionStorageInfo();
   // must return false when there's no files.
   ASSERT_EQ(universal_compaction_picker.NeedsCompaction(vstorage_.get()),
@@ -485,9 +479,7 @@ TEST_F(CompactionPickerTest, AllowsTrivialMoveUniversal) {
   const uint64_t kFileSize = 100000;
 
   mutable_cf_options_.compaction_options_universal.allow_trivial_move = true;
-  EnvOptions env_options;
-  UniversalCompactionPicker universal_compaction_picker(
-      nullptr, env_options, ioptions_, &icmp_);
+  UniversalCompactionPicker universal_compaction_picker(ioptions_, &icmp_);
 
   NewVersionStorage(3, kCompactionStyleUniversal);
 
@@ -515,7 +507,7 @@ TEST_F(CompactionPickerTest, NeedsCompactionFIFO) {
 
   fifo_options_.max_table_files_size = kMaxSize;
   mutable_cf_options_.compaction_options_fifo = fifo_options_;
-  FIFOCompactionPicker fifo_compaction_picker(nullptr, env_options_, ioptions_, &icmp_);
+  FIFOCompactionPicker fifo_compaction_picker(ioptions_, &icmp_);
   UpdateVersionStorageInfo();
   // must return false when there's no files.
   ASSERT_EQ(fifo_compaction_picker.NeedsCompaction(vstorage_.get()), false);

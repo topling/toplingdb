@@ -165,8 +165,8 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
       }
       default: {
         result = WriteBatchWithIndexInternal::Result::kError;
-        *s = Status::Corruption("Unexpected entry in WriteBatchWithIndex:",
-                                ToString(entry.type));
+        (*s) = Status::Corruption("Unexpected entry in WriteBatchWithIndex:",
+                                  ToString(entry.type));
         break;
       }
     }
@@ -187,7 +187,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
     iter->Prev();
   }
 
-  if (s->ok()) {
+  if ((*s).ok()) {
     if (result == WriteBatchWithIndexInternal::Result::kFound ||
         result == WriteBatchWithIndexInternal::Result::kDeleted) {
       // Found a Put or Delete.  Merge if necessary.
@@ -213,7 +213,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
         } else {
           *s = Status::InvalidArgument("Options::merge_operator must be set");
         }
-        if (s->ok()) {
+        if ((*s).ok()) {
           result = WriteBatchWithIndexInternal::Result::kFound;
         } else {
           result = WriteBatchWithIndexInternal::Result::kError;

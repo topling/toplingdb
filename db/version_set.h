@@ -25,7 +25,6 @@
 #include <memory>
 #include <set>
 #include <string>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -245,22 +244,7 @@ class VersionStorageInfo {
   bool HasOverlappingUserKey(const std::vector<FileMetaData*>* inputs,
                              int level);
 
-  // Set picker compaction fail
-  void SetPickFail() { is_pick_fail_ = true; }
-
-  // Is picker compaction fail
-  bool IsPickFail() const { return is_pick_fail_; }
-
   int num_levels() const { return num_levels_; }
-
-  bool has_space_amplification() const {
-    return !has_space_amplification_.empty();
-  }
-
-  bool has_space_amplification(int level) const {
-    return has_space_amplification_.find(level) !=
-           has_space_amplification_.end();
-  }
 
   // REQUIRES: This version has been saved (see VersionSet::SaveTo)
   int num_non_empty_levels() const {
@@ -289,9 +273,6 @@ class VersionStorageInfo {
   const std::vector<FileMetaData*>& LevelFiles(int level) const {
     return files_[level];
   }
-
-  // REQUIRES: This version has been saved (see VersionSet::SaveTo)
-  const DependFileMap& depend_files() const { return depend_files_; }
 
   const rocksdb::LevelFilesBrief& LevelFilesBrief(int level) const {
     assert(level < static_cast<int>(level_files_brief_.size()));
@@ -450,9 +431,6 @@ class VersionStorageInfo {
   // in increasing order of keys
   std::vector<FileMetaData*>* files_;
 
-  // depend files both in files[num_levels] and depend_files
-  DependFileMap depend_files_;
-
   // Level that L0 data should be compacted to. All levels < base_level_ should
   // be empty. -1 if it is not level-compaction so it's not applicable.
   int base_level_;
@@ -513,9 +491,6 @@ class VersionStorageInfo {
   // These are used to pick the best compaction level
   std::vector<double> compaction_score_;
   std::vector<int> compaction_level_;
-
-  std::unordered_set<int> has_space_amplification_;
-
   int l0_delay_trigger_count_ = 0;  // Count used to trigger slow down and stop
                                     // for number of L0 files.
 
@@ -541,8 +516,6 @@ class VersionStorageInfo {
   uint64_t estimated_compaction_needed_bytes_;
 
   bool finalized_;
-
-  bool is_pick_fail_;
 
   // If set to true, we will run consistency checks even if RocksDB
   // is compiled in release mode
@@ -570,8 +543,8 @@ class Version {
 
   Status OverlapWithLevelIterator(const ReadOptions&, const EnvOptions&,
                                   const Slice& smallest_user_key,
-                                  const Slice& largest_user_key, int level,
-                                  bool* overlap);
+                                  const Slice& largest_user_key,
+                                  int level, bool* overlap);
 
   // Lookup the value for key.  If found, store it in *val and
   // return OK.  Else return a non-OK status.
@@ -739,8 +712,9 @@ struct ObsoleteFileInfo {
   ObsoleteFileInfo(const ObsoleteFileInfo&) = delete;
   ObsoleteFileInfo& operator=(const ObsoleteFileInfo&) = delete;
 
-  ObsoleteFileInfo(ObsoleteFileInfo&& rhs) noexcept : ObsoleteFileInfo() {
-    *this = std::move(rhs);
+  ObsoleteFileInfo(ObsoleteFileInfo&& rhs) noexcept :
+    ObsoleteFileInfo() {
+      *this = std::move(rhs);
   }
 
   ObsoleteFileInfo& operator=(ObsoleteFileInfo&& rhs) noexcept {
@@ -764,9 +738,7 @@ class BaseReferencedVersionBuilder;
 class VersionSet {
  public:
   VersionSet(const std::string& dbname, const ImmutableDBOptions* db_options,
-             const EnvOptions& env_options,
-             bool seq_per_batch,
-             Cache* table_cache,
+             const EnvOptions& env_options, Cache* table_cache,
              WriteBufferManager* write_buffer_manager,
              WriteController* write_controller);
   ~VersionSet();
@@ -984,7 +956,7 @@ class VersionSet {
                             FileMetaData** metadata, ColumnFamilyData** cfd);
 
   // This function doesn't support leveldb SST filenames
-  void GetLiveFilesMetaData(std::vector<LiveFileMetaData>* metadata);
+  void GetLiveFilesMetaData(std::vector<LiveFileMetaData> *metadata);
 
   void GetObsoleteFiles(std::vector<ObsoleteFileInfo>* files,
                         std::vector<std::string>* manifest_filenames,
@@ -1090,8 +1062,6 @@ class VersionSet {
 
   std::vector<ObsoleteFileInfo> obsolete_files_;
   std::vector<std::string> obsolete_manifests_;
-
-  const bool seq_per_batch_;
 
   // env options for all reads and writes except compactions
   EnvOptions env_options_;

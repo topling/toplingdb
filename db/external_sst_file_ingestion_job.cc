@@ -205,7 +205,7 @@ Status ExternalSstFileIngestionJob::Run() {
     edit_.AddFile(f.picked_level, f.fd.GetNumber(), f.fd.GetPathId(),
                   f.fd.GetFileSize(), f.smallest_internal_key(),
                   f.largest_internal_key(), f.assigned_seqno, f.assigned_seqno,
-                  false, 0 /* sst_purpose*/, {} /* sst_depend */);
+                  false);
   }
 
   if (consumed_seqno) {

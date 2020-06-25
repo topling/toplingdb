@@ -25,16 +25,15 @@
 namespace rocksdb {
 
 class Compaction;
-struct CompactionInputFiles;
 struct EnvOptions;
 class LogBuffer;
-class TableCache;
+class Compaction;
 class VersionStorageInfo;
+struct CompactionInputFiles;
 
 class CompactionPicker {
  public:
-  CompactionPicker(TableCache* table_cache, const EnvOptions& env_options,
-                   const ImmutableCFOptions& ioptions,
+  CompactionPicker(const ImmutableCFOptions& ioptions,
                    const InternalKeyComparator* icmp);
   virtual ~CompactionPicker();
 
@@ -46,12 +45,6 @@ class CompactionPicker {
                                      const MutableCFOptions& mutable_cf_options,
                                      VersionStorageInfo* vstorage,
                                      LogBuffer* log_buffer) = 0;
-
-  virtual void InitFilesBeingCompact(
-      const MutableCFOptions& mutable_cf_options, VersionStorageInfo* vstorage,
-      const InternalKey* begin, const InternalKey* end,
-      std::unordered_set<uint64_t>* files_being_compact,
-      bool enable_lazy_compaction);
 
   // Return a compaction object for compacting the range [begin,end] in
   // the specified level.  Returns nullptr if there is nothing in that
@@ -70,8 +63,7 @@ class CompactionPicker {
       uint32_t output_path_id, uint32_t max_subcompactions,
       const InternalKey* begin, const InternalKey* end,
       InternalKey** compaction_end, bool* manual_conflict,
-      const std::unordered_set<uint64_t>* files_being_compact,
-      bool enable_lazy_compaction);
+      const std::unordered_set<uint64_t>* files_being_compact);
 
   // The maximum allowed output level.  Default value is NumberLevels() - 1.
   virtual int MaxOutputLevel() const { return NumberLevels() - 1; }
@@ -210,8 +202,6 @@ class CompactionPicker {
   }
 
  protected:
-  TableCache* table_cache_;
-  const EnvOptions& env_options_;
   const ImmutableCFOptions& ioptions_;
 
 // A helper function to SanitizeCompactionInputFiles() that
@@ -235,10 +225,9 @@ class CompactionPicker {
 
 class LevelCompactionPicker : public CompactionPicker {
  public:
-  LevelCompactionPicker(TableCache* table_cache, const EnvOptions& env_options,
-                        const ImmutableCFOptions& ioptions,
+  LevelCompactionPicker(const ImmutableCFOptions& ioptions,
                         const InternalKeyComparator* icmp)
-      : CompactionPicker(table_cache, env_options, ioptions, icmp) {}
+      : CompactionPicker(ioptions, icmp) {}
   virtual Compaction* PickCompaction(const std::string& cf_name,
                                      const MutableCFOptions& mutable_cf_options,
                                      VersionStorageInfo* vstorage,
@@ -251,10 +240,9 @@ class LevelCompactionPicker : public CompactionPicker {
 #ifndef ROCKSDB_LITE
 class FIFOCompactionPicker : public CompactionPicker {
  public:
-  FIFOCompactionPicker(TableCache* table_cache, const EnvOptions& env_options,
-                       const ImmutableCFOptions& ioptions,
+  FIFOCompactionPicker(const ImmutableCFOptions& ioptions,
                        const InternalKeyComparator* icmp)
-      : CompactionPicker(table_cache, env_options, ioptions, icmp) {}
+      : CompactionPicker(ioptions, icmp) {}
 
   virtual Compaction* PickCompaction(const std::string& cf_name,
                                      const MutableCFOptions& mutable_cf_options,
@@ -267,8 +255,7 @@ class FIFOCompactionPicker : public CompactionPicker {
       uint32_t output_path_id, uint32_t max_subcompactions,
       const InternalKey* begin, const InternalKey* end,
       InternalKey** compaction_end, bool* manual_conflict,
-      const std::unordered_set<uint64_t>* files_being_compact,
-      bool enable_lazy_compaction) override;
+      const std::unordered_set<uint64_t>* files_being_compact) override;
 
   // The maximum allowed output level.  Always returns 0.
   virtual int MaxOutputLevel() const override { return 0; }
@@ -290,10 +277,9 @@ class FIFOCompactionPicker : public CompactionPicker {
 
 class NullCompactionPicker : public CompactionPicker {
  public:
-  NullCompactionPicker(TableCache* table_cache, const EnvOptions& env_options,
-                       const ImmutableCFOptions& ioptions,
+  NullCompactionPicker(const ImmutableCFOptions& ioptions,
                        const InternalKeyComparator* icmp)
-      : CompactionPicker(table_cache, env_options, ioptions, icmp) {}
+      : CompactionPicker(ioptions, icmp) {}
   virtual ~NullCompactionPicker() {}
 
   // Always return "nullptr"
@@ -305,16 +291,17 @@ class NullCompactionPicker : public CompactionPicker {
   }
 
   // Always return "nullptr"
-  Compaction* CompactRange(
-      const std::string& /*cf_name*/,
-      const MutableCFOptions& /*mutable_cf_options*/,
-      VersionStorageInfo* /*vstorage*/, int /*input_level*/,
-      int /*output_level*/, uint32_t /*output_path_id*/,
-      uint32_t /*max_subcompactions*/, const InternalKey* /*begin*/,
-      const InternalKey* /*end*/, InternalKey** /*compaction_end*/,
-      bool* /*manual_conflict*/,
-      const std::unordered_set<uint64_t>* /*files_being_compact*/,
-      bool /*enable_lazy_compaction*/) override {
+  Compaction* CompactRange(const std::string& /*cf_name*/,
+                           const MutableCFOptions& /*mutable_cf_options*/,
+                           VersionStorageInfo* /*vstorage*/,
+                           int /*input_level*/, int /*output_level*/,
+                           uint32_t /*output_path_id*/,
+                           uint32_t /*max_subcompactions*/,
+                           const InternalKey* /*begin*/,
+                           const InternalKey* /*end*/,
+                           InternalKey** /*compaction_end*/,
+                           bool* /*manual_conflict*/,
+      const std::unordered_set<uint64_t>* /*files_being_compact*/) override {
     return nullptr;
   }
 

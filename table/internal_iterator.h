@@ -48,6 +48,9 @@ struct IteratorSource {
 
 class InternalIterator : public Cleanable {
  public:
+  InternalIterator(const IteratorSource& _source)
+      : source_(_source) {
+  }
   InternalIterator() {}
   virtual ~InternalIterator() {}
 
@@ -102,6 +105,7 @@ class InternalIterator : public Cleanable {
 
   // Return source of current key value
   virtual IteratorSource source() const { return IteratorSource(this); }
+  void SetSource(const IteratorSource& _source) { source_ = _source; }
 
   // Pass the PinnedIteratorsManager to the Iterator, most Iterators dont
   // communicate with PinnedIteratorsManager so default implementation is no-op
@@ -144,29 +148,15 @@ class InternalIterator : public Cleanable {
   // No copying allowed
   InternalIterator(const InternalIterator&) = delete;
   InternalIterator& operator=(const InternalIterator&) = delete;
-};
-
-class SourceInternalIterator : public InternalIterator {
- public:
-  SourceInternalIterator()
-      : source_(InternalIterator::source()) {
-  }
-  SourceInternalIterator(const IteratorSource& _source)
-      : source_(_source) {
-  }
-
-  virtual IteratorSource source() const override { return source_; }
-
-  void SetSource(const IteratorSource& _source) { source_ = _source; }
 
  private:
   IteratorSource source_;
 };
 
 // Return an empty iterator (yields nothing).
-extern SourceInternalIterator* NewEmptyInternalIterator();
+extern InternalIterator* NewEmptyInternalIterator();
 
 // Return an empty iterator with the specified status.
-extern SourceInternalIterator* NewErrorInternalIterator(const Status& status);
+extern InternalIterator* NewErrorInternalIterator(const Status& status);
 
 }  // namespace rocksdb

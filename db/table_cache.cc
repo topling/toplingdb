@@ -265,7 +265,7 @@ InternalIterator* TableCache::NewIterator(
         !options.table_filter(*table_reader->GetTableProperties())) {
       result = NewEmptyInternalIterator(arena);
     } else {
-      SourceInternalIterator* source_iter =
+      InternalIterator* source_iter =
           table_reader->NewIterator(options, arena, skip_filters);
       source_iter->SetSource(IteratorSource(IteratorSource::kSST,
                                             (uintptr_t)&meta));

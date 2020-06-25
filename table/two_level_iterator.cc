@@ -19,7 +19,7 @@ namespace rocksdb {
 
 namespace {
 
-class TwoLevelIterator : public SourceInternalIterator {
+class TwoLevelIterator : public InternalIterator {
  public:
   explicit TwoLevelIterator(TwoLevelIteratorState* state,
                             InternalIterator* first_level_iter,
@@ -250,7 +250,7 @@ void TwoLevelIterator::InitDataBlock() {
 
 }  // namespace
 
-SourceInternalIterator* NewTwoLevelIterator(TwoLevelIteratorState* state,
+InternalIterator* NewTwoLevelIterator(TwoLevelIteratorState* state,
                                       InternalIterator* first_level_iter,
                                       Arena* arena,
                                       bool need_free_iter_and_state) {

@@ -292,7 +292,7 @@ class EmptyIterator : public Iterator {
   Status status_;
 };
 
-class EmptyInternalIterator : public SourceInternalIterator {
+class EmptyInternalIterator : public InternalIterator {
  public:
   explicit EmptyInternalIterator(const Status& s) : status_(s) {}
   virtual bool Valid() const override { return false; }
@@ -337,11 +337,11 @@ InternalIterator* NewRangeWrappedInternalIterator(
   }
 }
 
-SourceInternalIterator* NewEmptyInternalIterator() {
+InternalIterator* NewEmptyInternalIterator() {
   return new EmptyInternalIterator(Status::OK());
 }
 
-SourceInternalIterator* NewEmptyInternalIterator(Arena* arena) {
+InternalIterator* NewEmptyInternalIterator(Arena* arena) {
   if (arena == nullptr) {
     return NewEmptyInternalIterator();
   } else {
@@ -350,11 +350,11 @@ SourceInternalIterator* NewEmptyInternalIterator(Arena* arena) {
   }
 }
 
-SourceInternalIterator* NewErrorInternalIterator(const Status& status) {
+InternalIterator* NewErrorInternalIterator(const Status& status) {
   return new EmptyInternalIterator(status);
 }
 
-SourceInternalIterator* NewErrorInternalIterator(const Status& status,
+InternalIterator* NewErrorInternalIterator(const Status& status,
                                                  Arena* arena) {
   if (arena == nullptr) {
     return NewErrorInternalIterator(status);

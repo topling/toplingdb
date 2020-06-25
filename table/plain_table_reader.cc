@@ -51,7 +51,7 @@ inline uint32_t GetFixed32Element(const char* base, size_t offset) {
 }  // namespace
 
 // Iterator to iterate IndexedTable
-class PlainTableIterator : public SourceInternalIterator {
+class PlainTableIterator : public InternalIterator {
  public:
   explicit PlainTableIterator(PlainTableReader* table, bool use_prefix_seek);
   ~PlainTableIterator();
@@ -189,7 +189,7 @@ Status PlainTableReader::Open(const ImmutableCFOptions& ioptions,
 void PlainTableReader::SetupForCompaction() {
 }
 
-SourceInternalIterator*
+InternalIterator*
 PlainTableReader::NewIterator(const ReadOptions& options,
                               Arena* arena,
                               bool skip_filters) {

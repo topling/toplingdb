@@ -96,8 +96,6 @@ const char* GetCompactionReasonString(CompactionReason compaction_reason) {
       return "Flush";
     case CompactionReason::kExternalSstIngestion:
       return "ExternalSstIngestion";
-    case CompactionReason::kCompositeAmplification:
-      return "CompositeAmplification";
     case CompactionReason::kTrivialMoveLevel:
       return "TrivialMoveLevel";
     case CompactionReason::kNumOfReasons:
@@ -1503,9 +1501,7 @@ void CompactionJob::RecordCompactionIOStats() {
 }
 
 Status CompactionJob::OpenCompactionOutputFile(
-    SubcompactionState* sub_compact,
-    std::vector<std::unique_ptr<IntTblPropCollectorFactory>>*
-        replace_collector_factorys) {
+    SubcompactionState* sub_compact) {
   assert(sub_compact != nullptr);
   assert(sub_compact->builder == nullptr);
   // no need to lock because VersionSet::next_file_number_ is atomic
@@ -1581,13 +1577,9 @@ Status CompactionJob::OpenCompactionOutputFile(
     output_file_creation_time = static_cast<uint64_t>(_current_time);
   }
 
-  auto collectors = cfd->int_tbl_prop_collector_factories();
-  if (replace_collector_factorys != nullptr) {
-    collectors = replace_collector_factorys;
-  }
   sub_compact->builder.reset(NewTableBuilder(
       *cfd->ioptions(), *(sub_compact->compaction->mutable_cf_options()),
-      cfd->internal_comparator(), collectors,
+      cfd->internal_comparator(), cfd->int_tbl_prop_collector_factories(),
       cfd->GetID(), cfd->GetName(), sub_compact->outfile.get(),
       sub_compact->compaction->output_compression(),
       sub_compact->compaction->output_compression_opts(),

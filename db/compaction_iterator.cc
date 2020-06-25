@@ -64,9 +64,8 @@ void CompactionIteratorToInternalIterator::Seek(const Slice& target) {
 }
 
 CompactionIterator::CompactionIterator(
-    InternalIterator* input, const Slice* end, const Comparator* cmp,
-    MergeHelper* merge_helper, SequenceNumber last_sequence,
-    std::vector<SequenceNumber>* snapshots,
+    InternalIterator* input, const Slice* end, const Comparator* cmp, MergeHelper* merge_helper,
+    SequenceNumber last_sequence, std::vector<SequenceNumber>* snapshots,
     SequenceNumber earliest_write_conflict_snapshot,
     const SnapshotChecker* snapshot_checker, Env* env,
     bool report_detailed_time, bool expect_valid_internal_key,
@@ -83,9 +82,8 @@ CompactionIterator::CompactionIterator(
           compaction_filter, shutting_down, preserve_deletes_seqnum) {}
 
 CompactionIterator::CompactionIterator(
-    InternalIterator* input, const Slice* end, const Comparator* cmp,
-    MergeHelper* merge_helper, SequenceNumber /*last_sequence*/,
-    std::vector<SequenceNumber>* snapshots,
+    InternalIterator* input, const Slice* end, const Comparator* cmp, MergeHelper* merge_helper,
+    SequenceNumber /*last_sequence*/, std::vector<SequenceNumber>* snapshots,
     SequenceNumber earliest_write_conflict_snapshot,
     const SnapshotChecker* snapshot_checker, Env* env,
     bool report_detailed_time, bool expect_valid_internal_key,

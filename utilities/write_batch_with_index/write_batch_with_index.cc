@@ -302,10 +302,11 @@ class WBWIIteratorImpl : public WBWIIterator {
  public:
   WBWIIteratorImpl(uint32_t column_family_id,
                    WriteBatchEntryIndex* entry_index,
-                   const ReadableWriteBatch* write_batch)
+                   const ReadableWriteBatch* write_batch,
+                   bool ephemeral)
     : column_family_id_(column_family_id),
       write_batch_(write_batch) {
-    entry_index->NewIterator(iter_);
+    entry_index->NewIterator(iter_, ephemeral);
   }
 
   virtual ~WBWIIteratorImpl() {}
@@ -371,7 +372,7 @@ class WBWIIteratorImpl : public WBWIIterator {
 struct WriteBatchWithIndex::Rep {
   explicit Rep(const Comparator* index_comparator, size_t reserved_bytes = 0,
                size_t max_bytes = 0, bool _overwrite_key = false,
-               const WriteBatchEntryIndexFactory *_index_factory = nullptr)
+               const WriteBatchEntryIndexFactory* _index_factory = nullptr)
       : write_batch(reserved_bytes, max_bytes),
         default_comparator(index_comparator),
         index_factory(_index_factory == nullptr
@@ -379,16 +380,30 @@ struct WriteBatchWithIndex::Rep {
                           : _index_factory),
         overwrite_key(_overwrite_key),
         free_entry(nullptr),
-        last_entry_offset(0) {}
+        last_entry_offset(0) {
+    factory_context = index_factory->NewContext(&arena);
+  }
+  ~Rep() {
+    for (auto& pair : entry_indices) {
+      if (pair.index != nullptr) {
+        pair.index->~WriteBatchEntryIndex();
+      }
+    }
+    if (factory_context != nullptr) {
+      factory_context->~WriteBatchEntryIndexContext();
+    }
+  }
+
   ReadableWriteBatch write_batch;
   const Comparator* default_comparator;
   struct ComparatorIndexPair {
-    const Comparator* comparator;
-    std::unique_ptr<WriteBatchEntryIndex> index;
+    const Comparator* comparator = nullptr;
+    WriteBatchEntryIndex* index = nullptr;
   };
   std::vector<ComparatorIndexPair> entry_indices;
   Arena arena;
   const WriteBatchEntryIndexFactory* index_factory;
+  WriteBatchEntryIndexContext* factory_context;
   bool overwrite_key;
   WriteBatchIndexEntry* free_entry;
   size_t last_entry_offset;
@@ -468,16 +483,16 @@ WriteBatchEntryIndex* WriteBatchWithIndex::Rep::GetEntryIndex(
   if (cf_id >= entry_indices.size()) {
     entry_indices.resize(cf_id + 1);
   }
-  auto index = entry_indices[cf_id].index.get();
+  auto index = entry_indices[cf_id].index;
   if (index == nullptr) {
     const auto* cf_cmp = GetColumnFamilyUserComparator(column_family);
     if (cf_cmp == nullptr) {
       cf_cmp = default_comparator;
     }
     entry_indices[cf_id].comparator = cf_cmp;
-    entry_indices[cf_id].index.reset(
-        index = index_factory->New(WriteBatchKeyExtractor(&write_batch),
-                                   cf_cmp, &arena, overwrite_key));
+    entry_indices[cf_id].index = index =
+        index_factory->New(factory_context, WriteBatchKeyExtractor(&write_batch),
+                           cf_cmp, &arena, overwrite_key);
   }
   return index;
 }
@@ -485,13 +500,13 @@ WriteBatchEntryIndex* WriteBatchWithIndex::Rep::GetEntryIndex(
 WriteBatchEntryIndex* WriteBatchWithIndex::Rep::GetEntryIndexWithCfId(
     uint32_t column_family_id) {
   assert(column_family_id < entry_indices.size());
-  auto index = entry_indices[column_family_id].index.get();
+  auto index = entry_indices[column_family_id].index;
   if (index == nullptr) {
     const auto* cf_cmp = entry_indices[column_family_id].comparator;
     assert(cf_cmp != nullptr);
-    entry_indices[column_family_id].index.reset(
-        index = index_factory->New(WriteBatchKeyExtractor(&write_batch),
-                                   cf_cmp, &arena, overwrite_key));
+    entry_indices[column_family_id].index = index =
+        index_factory->New(factory_context, WriteBatchKeyExtractor(&write_batch),
+                           cf_cmp, &arena, overwrite_key);
   }
   return index;
 }
@@ -512,10 +527,18 @@ void WriteBatchWithIndex::Rep::Clear() {
 
 void WriteBatchWithIndex::Rep::ClearIndex() {
   for (auto& pair : entry_indices) {
-    pair.index.reset();
+    if (pair.index != nullptr) {
+      pair.index->~WriteBatchEntryIndex();
+      pair.index = nullptr;
+    }
+
+  }
+  if (factory_context != nullptr) {
+    factory_context->~WriteBatchEntryIndexContext();
   }
   arena.~Arena();
   new (&arena) Arena();
+  factory_context = index_factory->NewContext(&arena);
   last_entry_offset = 0;
   free_entry = nullptr;
 }
@@ -656,23 +679,25 @@ bool WriteBatchWithIndex::Collapse() {
 
 WBWIIterator* WriteBatchWithIndex::NewIterator() {
   return new WBWIIteratorImpl(0, rep->GetEntryIndex(nullptr),
-                              &rep->write_batch);
+                              &rep->write_batch, false);
 }
 
 WBWIIterator* WriteBatchWithIndex::NewIterator(
     ColumnFamilyHandle* column_family) {
   auto cf_id = GetColumnFamilyID(column_family);
   return new WBWIIteratorImpl(cf_id, rep->GetEntryIndex(column_family),
-                              &rep->write_batch);
+                              &rep->write_batch, false);
 }
 
 void WriteBatchWithIndex::NewIterator(ColumnFamilyHandle* column_family,
-                                      WBWIIterator::IteratorStorage& storage) {
+                                      WBWIIterator::IteratorStorage& storage,
+                                      bool ephemeral) {
   static_assert(sizeof(WBWIIteratorImpl) <= sizeof storage.buffer,
                 "Need larger buffer for WBWIIteratorImpl");
   storage.iter = new (storage.buffer)
       WBWIIteratorImpl(GetColumnFamilyID(column_family),
-                       rep->GetEntryIndex(column_family), &rep->write_batch);
+                       rep->GetEntryIndex(column_family), &rep->write_batch,
+                       ephemeral);
 }
 Iterator* WriteBatchWithIndex::NewIteratorWithBase(
     ColumnFamilyHandle* column_family, Iterator* base_iterator) {

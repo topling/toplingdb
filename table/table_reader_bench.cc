@@ -327,7 +327,7 @@ int main(int argc, char** argv) {
       rocksdb::TerarkZipTableOptions opt;
       std::shared_ptr<rocksdb::TableFactory> block_based_factory(rocksdb::NewBlockBasedTableFactory());
       rocksdb::TableFactory* factory = rocksdb::NewTerarkZipTableFactory(opt,
-          rocksdb::NewAdaptiveTableFactory(block_based_factory));
+          std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewAdaptiveTableFactory(block_based_factory)));
       tf.reset(factory);
     } else {
       fprintf(stderr, "ERROR: TableFactory arg is terark_zip, but libterark_zip_rocksdb.so is not loaded\n");

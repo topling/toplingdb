@@ -178,7 +178,8 @@ class WriteBatchWithIndex : public WriteBatchBase {
   // The returned iterator should be deleted by the caller.
   WBWIIterator* NewIterator(ColumnFamilyHandle* column_family);
   void NewIterator(ColumnFamilyHandle* column_family,
-                   WBWIIterator::IteratorStorage& storage);
+                   WBWIIterator::IteratorStorage& storage,
+                   bool ephemeral = false);
   // Create an iterator of the default column family.
   WBWIIterator* NewIterator();
 

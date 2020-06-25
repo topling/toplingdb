@@ -269,6 +269,11 @@ class MergingIterator : public InternalIterator {
     return s;
   }
 
+  virtual IteratorSource source() const override {
+    assert(Valid());
+    return current_->source();
+  }
+
   virtual void SetPinnedItersMgr(
       PinnedIteratorsManager* pinned_iters_mgr) override {
     pinned_iters_mgr_ = pinned_iters_mgr;

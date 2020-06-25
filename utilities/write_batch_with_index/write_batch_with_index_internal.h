@@ -84,7 +84,6 @@ class WriteBatchKeyExtractor {
   }
 
   Slice operator()(const WriteBatchIndexEntry* entry) const;
-  size_t Offset(const WriteBatchIndexEntry* entry) const;
 
  private:
   const ReadableWriteBatch* write_batch_;
@@ -111,17 +110,31 @@ class WriteBatchEntryIndex {
   virtual Iterator* NewIterator() = 0;
   // sizeof(iterator) size must less or equal than 24
   // INCLUDE virtual table pointer
-  virtual void NewIterator(IteratorStorage& storage) = 0;
+  virtual void NewIterator(IteratorStorage& storage, bool ephemeral) = 0;
   // return true if insert success
   // assign key->offset to exists entry's offset otherwise
   virtual bool Upsert(WriteBatchIndexEntry* key) = 0;
 };
 
+class WriteBatchEntryIndexContext {
+ public:
+  virtual ~WriteBatchEntryIndexContext(){};
+};
+
 class WriteBatchEntryIndexFactory {
  public:
-  virtual WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
+  // object MUST allocated from arena, allow return nullptr
+  // context will not delete, only call destruct func
+  virtual WriteBatchEntryIndexContext* NewContext(Arena* a) const {
+    return nullptr;
+  }
+  // object MUST allocated from arena
+  // index will not delete, only call destruct func
+  virtual WriteBatchEntryIndex* New(WriteBatchEntryIndexContext* ctx,
+                                    WriteBatchKeyExtractor e,
                                     const Comparator* c, Arena* a,
                                     bool overwrite_key) const = 0;
+  virtual ~WriteBatchEntryIndexFactory() {}
 };
 
 }  // namespace rocksdb

@@ -156,6 +156,12 @@ struct FileMetaData {
   // partial remove will not worked on lv0 -> lv0 compact
   uint8_t compact_to_level;
 
+  // If non-zero , this sst is meta sst
+  // meta_level
+  // all sst which meta_level is 0 must be managered by a meta sst
+  // we support infinity levels , here we use max 2
+  uint8_t meta_level;
+
   FileMetaData()
       : smallest_seqno(kMaxSequenceNumber),
         largest_seqno(0),
@@ -170,7 +176,8 @@ struct FileMetaData {
         init_stats_from_file(false),
         marked_for_compaction(false),
         partial_removed(0),
-        compact_to_level(0) {
+        compact_to_level(0),
+        meta_level(0) {
     range_set.resize(2);
   }
 
@@ -261,7 +268,7 @@ class VersionEdit {
                const SequenceNumber& smallest_seqno,
                const SequenceNumber& largest_seqno,
                bool marked_for_compaction, uint8_t partial_removed,
-               uint8_t compact_to_level) {
+               uint8_t compact_to_level, uint8_t meta_level) {
     assert(smallest_seqno <= largest_seqno);
     FileMetaData f;
     f.fd = FileDescriptor(file, file_path_id, file_size);
@@ -271,6 +278,7 @@ class VersionEdit {
     f.marked_for_compaction = marked_for_compaction;
     f.partial_removed = partial_removed;
     f.compact_to_level = compact_to_level;
+    f.meta_level = meta_level;
     new_files_.emplace_back(level, std::move(f));
   }
 

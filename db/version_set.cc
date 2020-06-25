@@ -3556,7 +3556,7 @@ Status VersionSet::WriteSnapshot(log::Writer* log) {
                        f->fd.GetFileSize(), f->range_set,
                        f->smallest_seqno, f->largest_seqno,
                        f->marked_for_compaction, f->partial_removed,
-                       f->compact_to_level);
+                       f->compact_to_level, f->meta_level);
         }
       }
       edit.SetLogNumber(cfd->GetLogNumber());

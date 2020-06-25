@@ -19,7 +19,7 @@
 namespace rocksdb {
 
 void RangeEraseSet::push(const InternalKey& smallest, const InternalKey& largest,
-                    bool smallest_open, bool largest_open) {
+                         bool smallest_open, bool largest_open) {
   erase.emplace_back(smallest);
   erase.emplace_back(largest);
   open.push_back(smallest_open);
@@ -452,6 +452,7 @@ const char* VersionEdit::DecodeNewFile4From(Slice* input) {
           if (!f.range_set.back().Valid()) {
             return "range_set field invalid internal key";
           }
+          break;
         default:
           if ((custom_tag & kCustomTagNonSafeIgnoreMask) != 0) {
             // Should not proceed if cannot understand it

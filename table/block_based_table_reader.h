@@ -100,7 +100,7 @@ class BlockBasedTable : public TableReader {
   // The result of NewIterator() is initially invalid (caller must
   // call one of the Seek methods on the iterator before using it).
   // @param skip_filters Disables loading/accessing the filter block
-  InternalIterator* NewIterator(
+  SourceInternalIterator* NewIterator(
       const ReadOptions&, Arena* arena = nullptr,
       bool skip_filters = false) override;
 

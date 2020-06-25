@@ -21,6 +21,7 @@
 #include <random>
 #include <set>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -69,6 +70,53 @@ struct PartialRemoveInfo {
   InternalKey largest;
   bool active = false;
 };
+
+double EstimateWorstSizeAmp(const std::vector<FileMetaData*>& sst_vec,
+                            ColumnFamilyData* cfd,
+                            const EnvOptions& env_opt) {
+  struct TableReaderHolder {
+    struct Item {
+      Cache::Handle* handle;
+      TableReader* reader;
+      FileMetaData* sst;
+    };
+
+    TableCache* cache;
+    std::vector<Item> vec;
+
+    ~TableReaderHolder() {
+      for (auto& h : vec) {
+        cache->ReleaseHandle(h.handle);
+      }
+    }
+  } sst_holder;
+  sst_holder.cache = cfd->table_cache();
+  sst_holder.vec.reserve(sst_vec.size());
+  auto& icmp = cfd->internal_comparator();
+  for (auto sst : sst_vec) {
+    TableReaderHolder::Item item;
+    if (sst->fd.table_reader != nullptr) {
+      item.handle = nullptr;
+      item.reader = sst->fd.table_reader;
+    } else {
+      auto s = sst_holder.cache->FindTable(env_opt, icmp, sst->fd,
+                                           &item.handle, &item.reader);
+      if (!s.ok()) {
+        return 0;
+      }
+    }
+    item.sst = sst;
+    sst_holder.vec.emplace_back(item);
+  }
+
+  std::sort(sst_holder.vec.begin(), sst_holder.vec.end(),
+            [&icmp](const TableReaderHolder::Item& l,
+                    const TableReaderHolder::Item& r) {
+              return icmp.Compare(l.sst->smallest(), r.sst->smallest()) < 0;
+            });
+  std::unordered_set<TableReaderHolder::Item*> sst_set;
+  return 0;
+}
 
 // Maintains state for each sub-compaction
 struct CompactionJob::SubcompactionState {
@@ -608,7 +656,7 @@ Status CompactionJob::Run() {
     }
     ColumnFamilyData* cfd = compact_->compaction->column_family_data();
     std::atomic<size_t> next_file_meta_idx(0);
-    auto verify_table = [&](Status& status) {
+    auto verify_table = [&](Status& out_status) {
       while (true) {
         size_t file_idx = next_file_meta_idx.fetch_add(1);
         if (file_idx >= files_meta.size()) {
@@ -637,7 +685,7 @@ Status CompactionJob::Run() {
         delete iter;
 
         if (!s.ok()) {
-          status = s;
+          out_status = s;
           break;
         }
       }

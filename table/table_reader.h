@@ -38,9 +38,9 @@ class TableReader {
   //        all the states but those allocated in arena.
   // skip_filters: disables checking the bloom filters even if they exist. This
   //               option is effective only for block-based table format.
-  virtual InternalIterator* NewIterator(const ReadOptions&,
-                                        Arena* arena = nullptr,
-                                        bool skip_filters = false) = 0;
+  virtual SourceInternalIterator* NewIterator(const ReadOptions&,
+                                              Arena* arena = nullptr,
+                                              bool skip_filters = false) = 0;
 
   virtual InternalIterator* NewRangeTombstoneIterator(
       const ReadOptions& read_options) {
@@ -80,6 +80,18 @@ class TableReader {
   //               option is effective only for block-based table format.
   virtual Status Get(const ReadOptions& readOptions, const Slice& key,
                      GetContext* get_context, bool skip_filters = false) = 0;
+
+  // Logic same as for(it->Seek(begin); it->Valid() && callback(*it); ++it) {}
+  // Specialization for performance
+  virtual void RangeScan(const Slice* begin, void* arg,
+                         bool (*callback_func)(void* arg, const Slice& ikey,
+                                               const Slice& value)) {
+    std::unique_ptr<SourceInternalIterator> iter(NewIterator(ReadOptions()));
+    for (begin == nullptr ? iter->SeekToFirst() : iter->Seek(*begin);
+         iter->Valid() && callback_func(arg, iter->key(), iter->value());
+         iter->Next()) {
+    }
+  }
 
   // Prefetch data corresponding to a give range of keys
   // Typically this functionality is required for table implementations that

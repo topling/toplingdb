@@ -110,7 +110,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
   }
 
   WBWIIterator::IteratorStorage iter;
-  batch->NewIterator(column_family, iter);
+  batch->NewIterator(column_family, iter, true);
 
   // We want to iterate in the reverse order that the writes were added to the
   // batch.  Since we don't have a reverse iterator, we must seek past the end.
@@ -125,7 +125,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
     iter->Next();
   }
 
-  if (!(*s).ok()) {
+  if (!s->ok()) {
     return WriteBatchWithIndexInternal::Result::kError;
   }
 
@@ -167,8 +167,8 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
       }
       default: {
         result = WriteBatchWithIndexInternal::Result::kError;
-        (*s) = Status::Corruption("Unexpected entry in WriteBatchWithIndex:",
-                                  ToString(entry.type));
+        *s = Status::Corruption("Unexpected entry in WriteBatchWithIndex:",
+                                ToString(entry.type));
         break;
       }
     }
@@ -189,7 +189,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
     iter->Prev();
   }
 
-  if ((*s).ok()) {
+  if (s->ok()) {
     if (result == WriteBatchWithIndexInternal::Result::kFound ||
         result == WriteBatchWithIndexInternal::Result::kDeleted) {
       // Found a Put or Delete.  Merge if necessary.
@@ -215,7 +215,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
         } else {
           *s = Status::InvalidArgument("Options::merge_operator must be set");
         }
-        if ((*s).ok()) {
+        if (s->ok()) {
           result = WriteBatchWithIndexInternal::Result::kFound;
         } else {
           result = WriteBatchWithIndexInternal::Result::kError;
@@ -241,10 +241,6 @@ Slice WriteBatchKeyExtractor::operator()(
   }
 }
 
-size_t WriteBatchKeyExtractor::Offset(const WriteBatchIndexEntry* entry) const {
-  return entry->offset;
-}
-
 template<bool OverwriteKey>
 struct WriteBatchEntryComparator {
   int operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
@@ -253,10 +249,10 @@ struct WriteBatchEntryComparator {
     if (OverwriteKey || cmp != 0) {
       return cmp;
     }
-    if (extractor.Offset(l) > extractor.Offset(r)) {
+    if (l->offset > r->offset) {
       return 1;
     }
-    if (extractor.Offset(l) < extractor.Offset(r)) {
+    if (l->offset < r->offset) {
       return -1;
     }
     return 0;
@@ -316,19 +312,19 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
   virtual Iterator* NewIterator() override {
     return new SkipListIterator(&index_);
   }
-  virtual void NewIterator(IteratorStorage& storage) override {
+  virtual void NewIterator(IteratorStorage& storage, bool ephemeral) override {
     static_assert(sizeof(SkipListIterator) <= sizeof storage.buffer,
                   "Need larger buffer for SkipListIterator");
     storage.iter = new (storage.buffer) SkipListIterator(&index_);
   }
   virtual bool Upsert(WriteBatchIndexEntry* key) override {
     if (OverwriteKey) {
-      Slice search_key = comparator_.extractor(key);
-      WriteBatchIndexEntry search_entry(&search_key, key->column_family);
+      Slice sraech_key = comparator_.extractor(key);
+      WriteBatchIndexEntry search_entry(&sraech_key, key->column_family);
       typename Index::Iterator iter(&index_);
       iter.Seek(&search_entry);
       if (iter.Valid() &&
-          comparator_.c->Compare(search_key,
+          comparator_.c->Compare(sraech_key,
                                  comparator_.extractor(iter.key())) == 0) {
         // found , replace
         std::swap(iter.key()->offset, key->offset);
@@ -343,13 +339,16 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
 const WriteBatchEntryIndexFactory* WriteBatchEntrySkipListIndexFactory() {
   class SkipListIndexFactory : public WriteBatchEntryIndexFactory {
    public:
-    WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
+    WriteBatchEntryIndex* New(WriteBatchEntryIndexContext* ctx,
+                              WriteBatchKeyExtractor e,
                               const Comparator* c, Arena* a,
                               bool overwrite_key) const override {
       if (overwrite_key) {
-        return new WriteBatchEntrySkipListIndex<true>(e, c, a);
+        typedef WriteBatchEntrySkipListIndex<true> index_t;
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
       } else {
-        return new WriteBatchEntrySkipListIndex<false>(e, c, a);
+        typedef WriteBatchEntrySkipListIndex<false> index_t;
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
       }
     }
   };
@@ -418,7 +417,7 @@ class WriteBatchEntryRBTreeIndex : public WriteBatchEntryIndex {
   virtual Iterator* NewIterator() override {
     return new RBTreeIterator(&index_);
   }
-  virtual void NewIterator(IteratorStorage& storage) override {
+  virtual void NewIterator(IteratorStorage& storage, bool ephemeral) override {
     static_assert(sizeof(RBTreeIterator) <= sizeof storage.buffer,
                   "Need larger buffer for RBTreeIterator");
     storage.iter = new (storage.buffer) RBTreeIterator(&index_);
@@ -448,13 +447,16 @@ class WriteBatchEntryRBTreeIndex : public WriteBatchEntryIndex {
 const WriteBatchEntryIndexFactory* WriteBatchEntryRBTreeIndexFactory() {
   class RBTreeIndexFactory : public WriteBatchEntryIndexFactory {
    public:
-    WriteBatchEntryIndex* New(WriteBatchKeyExtractor e,
+    WriteBatchEntryIndex* New(WriteBatchEntryIndexContext* ctx,
+                              WriteBatchKeyExtractor e,
                               const Comparator* c, Arena* a,
                               bool overwrite_key) const override {
       if (overwrite_key) {
-        return new WriteBatchEntryRBTreeIndex<true>(e, c, a);
+        typedef WriteBatchEntryRBTreeIndex<true> index_t;
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
       } else {
-        return new WriteBatchEntryRBTreeIndex<false>(e, c, a);
+        typedef WriteBatchEntryRBTreeIndex<false> index_t;
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
       }
     }
   };

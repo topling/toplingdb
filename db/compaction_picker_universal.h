@@ -23,14 +23,6 @@ class UniversalCompactionPicker : public CompactionPicker {
                                      VersionStorageInfo* vstorage,
                                      LogBuffer* log_buffer) override;
 
-  virtual Compaction* CompactRange(
-      const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
-      VersionStorageInfo* vstorage, int input_level, int output_level,
-      uint32_t output_path_id, uint32_t max_subcompactions,
-      const InternalKey* begin, const InternalKey* end,
-      InternalKey** compaction_end, bool* manual_conflict,
-      const std::unordered_set<uint64_t>* files_being_compact) override;
-
   virtual int MaxOutputLevel() const override { return NumberLevels() - 1; }
 
   virtual bool NeedsCompaction(

@@ -68,6 +68,24 @@ uint64_t TotalFileSize(const std::vector<FileMetaData*>& files) {
   return sum;
 }
 
+CompactionParams::CompactionParams(
+    VersionStorageInfo* vstorage, int _output_level,
+    const ImmutableCFOptions& ioptions,
+    const MutableCFOptions& _mutable_cf_options)
+: input_version(vstorage),
+  immutable_cf_options(ioptions),
+  mutable_cf_options(_mutable_cf_options)
+{
+  output_level = _output_level;
+  compression = GetCompressionType(ioptions_, vstorage, mutable_cf_options,
+                     output_level, 1);
+  compression_opts = GetCompressionOptions(ioptions, vstorage, _output_level);
+  target_file_size = MaxFileSizeForLevel(_mutable_cf_options, _output_level,
+                      ioptions.compaction_style);
+  max_compaction_bytes = _mutable_cf_options.max_compaction_bytes;
+  max_subcompactions = compact_options.max_subcompactions;
+}
+
 void Compaction::SetInputVersion(Version* _input_version) {
   input_version_ = _input_version;
   cfd_ = input_version_->cfd();
@@ -207,34 +225,42 @@ bool Compaction::IsFullCompaction(
   return num_files_in_compaction == total_num_files;
 }
 
-Compaction::Compaction(CompactionParams&& params)
-    : input_vstorage_(params.input_version),
-      start_level_(params.inputs[0].level),
-      output_level_(params.output_level),
-      max_output_file_size_(params.target_file_size),
-      max_compaction_bytes_(params.max_compaction_bytes),
-      max_subcompactions_(params.max_subcompactions),
-      immutable_cf_options_(params.immutable_cf_options),
-      mutable_cf_options_(params.mutable_cf_options),
+Compaction::Compaction(VersionStorageInfo* vstorage,
+                       const ImmutableCFOptions& _immutable_cf_options,
+                       const MutableCFOptions& _mutable_cf_options,
+                       std::vector<CompactionInputFiles> _inputs,
+                       int _output_level, uint64_t _target_file_size,
+                       uint64_t _max_compaction_bytes, uint32_t _output_path_id,
+                       CompressionType _compression,
+                       CompressionOptions _compression_opts,
+                       uint32_t _max_subcompactions,
+                       std::vector<FileMetaData*> _grandparents,
+                       bool _manual_compaction, double _score,
+                       bool _deletion_compaction,
+                       CompactionReason _compaction_reason)
+    : input_vstorage_(vstorage),
+      start_level_(_inputs[0].level),
+      output_level_(_output_level),
+      max_output_file_size_(_target_file_size),
+      max_compaction_bytes_(_max_compaction_bytes),
+      max_subcompactions_(_max_subcompactions),
+      immutable_cf_options_(_immutable_cf_options),
+      mutable_cf_options_(_mutable_cf_options),
       input_version_(nullptr),
-      number_levels_(params.input_version->num_levels()),
+      number_levels_(vstorage->num_levels()),
       cfd_(nullptr),
-      output_path_id_(params.output_path_id),
-      output_compression_(params.compression),
-      output_compression_opts_(params.compression_opts),
-      deletion_compaction_(params.deletion_compaction),
-      partial_compaction_(params.partial_compaction),
-      input_range_(std::move(params.input_range)),
-      inputs_(PopulateWithAtomicBoundaries(params.input_version,
-                                           std::move(params.inputs))),
-      grandparents_(std::move(params.grandparents)),
-      score_(params.score),
-      bottommost_level_(
-          IsBottommostLevel(output_level_, params.input_version, inputs_)),
-      is_full_compaction_(IsFullCompaction(params.input_version, inputs_)),
-      is_manual_compaction_(params.manual_compaction),
+      output_path_id_(_output_path_id),
+      output_compression_(_compression),
+      output_compression_opts_(_compression_opts),
+      deletion_compaction_(_deletion_compaction),
+      inputs_(PopulateWithAtomicBoundaries(vstorage, std::move(_inputs))),
+      grandparents_(std::move(_grandparents)),
+      score_(_score),
+      bottommost_level_(IsBottommostLevel(output_level_, vstorage, inputs_)),
+      is_full_compaction_(IsFullCompaction(vstorage, inputs_)),
+      is_manual_compaction_(_manual_compaction),
       is_trivial_move_(false),
-      compaction_reason_(params.compaction_reason) {
+      compaction_reason_(_compaction_reason) {
   MarkFilesBeingCompacted(true);
   if (is_manual_compaction_) {
     compaction_reason_ = CompactionReason::kManualCompaction;
@@ -258,8 +284,7 @@ Compaction::Compaction(CompactionParams&& params)
     }
   }
 
-  GetBoundaryKeys(params.input_version, inputs_, &smallest_user_key_,
-                  &largest_user_key_);
+  GetBoundaryKeys(vstorage, inputs_, &smallest_user_key_, &largest_user_key_);
 }
 
 Compaction::~Compaction() {

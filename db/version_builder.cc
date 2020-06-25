@@ -198,8 +198,8 @@ class VersionBuilder::Rep {
           if (vstorage->InternalComparator()->Compare(f1->largest,
                                                       f2->smallest) >= 0) {
             fprintf(stderr, "L%d have overlapping ranges %s vs. %s\n", level,
-                    f1->largest.DebugString(true).c_str(),
-                    f2->smallest.DebugString(true).c_str());
+                    (f1->largest).DebugString(true).c_str(),
+                    (f2->smallest).DebugString(true).c_str());
             abort();
           }
         }

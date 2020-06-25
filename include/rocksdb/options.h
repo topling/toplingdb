@@ -6,7 +6,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#pragma once
+#ifndef STORAGE_ROCKSDB_INCLUDE_OPTIONS_H_
+#define STORAGE_ROCKSDB_INCLUDE_OPTIONS_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -912,9 +913,6 @@ struct DBOptions {
   // relies on manual invocation of FlushWAL to write the WAL buffer to its
   // file.
   bool manual_wal_flush = false;
-
-  // Add this field to make rocksdb 5.9.0 compatible to 5.9.2
-  bool seq_per_batch = false;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)
@@ -1236,3 +1234,4 @@ struct IngestExternalFileOptions {
 
 }  // namespace rocksdb
 
+#endif  // STORAGE_ROCKSDB_INCLUDE_OPTIONS_H_

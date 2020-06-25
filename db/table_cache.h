@@ -145,5 +145,4 @@ class TableCache {
   std::string row_cache_id_;
 };
 
-
 }  // namespace rocksdb

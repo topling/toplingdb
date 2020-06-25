@@ -53,7 +53,11 @@ class SstFileReader {
 
   // Helper function to call the factory with settings specific to the
   // factory implementation
-  Status NewTableReader(uint64_t file_size);
+  Status NewTableReader(const ImmutableCFOptions& ioptions,
+                        const EnvOptions& soptions,
+                        const InternalKeyComparator& internal_comparator,
+                        uint64_t file_size,
+                        unique_ptr<TableReader>* table_reader);
 
   std::string file_name_;
   uint64_t read_num_;
@@ -69,7 +73,7 @@ class SstFileReader {
   unique_ptr<TableReader> table_reader_;
   unique_ptr<RandomAccessFileReader> file_;
 
-  ImmutableCFOptions ioptions_;
+  const ImmutableCFOptions ioptions_;
   InternalKeyComparator internal_comparator_;
   unique_ptr<TableProperties> table_properties_;
 };

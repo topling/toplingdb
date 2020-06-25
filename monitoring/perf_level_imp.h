@@ -9,10 +9,10 @@
 
 namespace rocksdb {
 
-#if defined(IOS_CROSS_COMPILE)
-extern PerfLevel perf_level;
-#else
+#ifdef ROCKSDB_SUPPORT_THREAD_LOCAL
 extern __thread PerfLevel perf_level;
+#else
+extern PerfLevel perf_level;
 #endif
 
 }  // namespace rocksdb

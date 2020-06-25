@@ -334,14 +334,16 @@ class VectorRepFactory : public MemTableRepFactory {
   const size_t count_;
 
  public:
-  explicit VectorRepFactory(size_t count = 0) : count_(count) {}
+  explicit VectorRepFactory(size_t count = 0) : count_(count) { }
 
   using MemTableRepFactory::CreateMemTableRep;
   virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
                                          Allocator*, const SliceTransform*,
                                          Logger* logger) override;
 
-  virtual const char* Name() const override { return "VectorRepFactory"; }
+  virtual const char* Name() const override {
+    return "VectorRepFactory";
+  }
 };
 
 // This class contains a fixed array of buckets, each
@@ -352,7 +354,8 @@ class VectorRepFactory : public MemTableRepFactory {
 //                            link lists in the skiplist
 extern MemTableRepFactory* NewHashSkipListRepFactory(
     size_t bucket_count = 1000000, int32_t skiplist_height = 4,
-    int32_t skiplist_branching_factor = 4);
+    int32_t skiplist_branching_factor = 4
+);
 
 // The factory is to create memtables based on a hash table:
 // it contains a fixed array of buckets, each pointing to either a linked list

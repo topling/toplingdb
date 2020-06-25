@@ -190,13 +190,6 @@ template InternalIteratorBase<Slice>* NewErrorInternalIterator(
     const Status& status, Arena* arena);
 
 template <class TValue>
-InternalIteratorBase<TValue>* NewEmptyInternalIterator() {
-  return new EmptyInternalIterator<TValue>(Status::OK());
-}
-template InternalIteratorBase<BlockHandle>* NewEmptyInternalIterator();
-template InternalIteratorBase<Slice>* NewEmptyInternalIterator();
-
-template <class TValue>
 InternalIteratorBase<TValue>* NewEmptyInternalIterator(Arena* arena) {
   if (arena == nullptr) {
     return NewEmptyInternalIterator<TValue>();

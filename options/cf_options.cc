@@ -107,7 +107,7 @@ uint64_t MaxFileSizeForLevel(const MutableCFOptions& cf_options,
   }
 }
 
-void MutableCFOptions::RefreshDerivedOptions(int num_levels) {
+void MutableCFOptions::RefreshDerivedOptions(int num_levels, CompactionStyle compaction_style) {
   max_file_size.resize(num_levels);
   max_file_size[0] = 0; // unlimited
   if (num_levels > 1) {

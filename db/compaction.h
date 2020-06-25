@@ -306,14 +306,6 @@ class Compaction {
     output_table_properties_ = std::move(tp);
   }
 
-  bool IsNewOutputTable(uint64_t file_number) {
-    return new_output_tables_.count(file_number) > 0;
-  }
-
-  void AddOutputTableFileNumber(uint64_t file_number) {
-    new_output_tables_.emplace(file_number);
-  }
-
   Slice GetSmallestUserKey() const { return smallest_user_key_; }
 
   Slice GetLargestUserKey() const { return largest_user_key_; }
@@ -378,7 +370,7 @@ class Compaction {
   // If true, then the comaction can be done by simply deleting input files.
   const bool deletion_compaction_;
   // If true, then enable partial compaction
-  const bool partial_compaction_;
+  bool partial_compaction_ = false;
 
   // Range limit for inputs
   const std::vector<RangeStorage> input_range_;
@@ -411,9 +403,6 @@ class Compaction {
 
   // table properties of output files
   TablePropertiesCollection output_table_properties_;
-
-  // new output tables
-  std::unordered_set<uint64_t> new_output_tables_;
 
   // smallest user keys in compaction
   Slice smallest_user_key_;

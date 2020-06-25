@@ -37,6 +37,7 @@
 
 #include <memory>
 #include <stdexcept>
+#include <unordered_map>
 #include <stdint.h>
 #include <stdlib.h>
 #include <rocksdb/slice.h>

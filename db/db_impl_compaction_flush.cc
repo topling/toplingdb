@@ -1041,9 +1041,6 @@ void DBImpl::NotifyOnCompactionCompleted(
       }
     }
     for (const auto newf : c->edit()->GetNewFiles()) {
-      if (!c->IsNewOutputTable(newf.second.fd.GetNumber())) {
-        continue;
-      }
       info.output_files.push_back(TableFileName(
           c->immutable_cf_options()->cf_paths, newf.second.fd.GetNumber(),
           newf.second.fd.GetPathId()));

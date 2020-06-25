@@ -208,7 +208,6 @@ class CuckooTableIterator : public InternalIterator {
   Slice key() const override;
   Slice value() const override;
   Status status() const override { return Status::OK(); }
-  uint64_t FileNumber() const override;
   void InitIfNeeded();
 
  private:

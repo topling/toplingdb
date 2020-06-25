@@ -77,13 +77,12 @@ CompactionParams::CompactionParams(
   mutable_cf_options(_mutable_cf_options)
 {
   output_level = _output_level;
-  compression = GetCompressionType(ioptions_, vstorage, mutable_cf_options,
+  compression = GetCompressionType(ioptions, vstorage, mutable_cf_options,
                      output_level, 1);
   compression_opts = GetCompressionOptions(ioptions, vstorage, _output_level);
   target_file_size = MaxFileSizeForLevel(_mutable_cf_options, _output_level,
                       ioptions.compaction_style);
   max_compaction_bytes = _mutable_cf_options.max_compaction_bytes;
-  max_subcompactions = compact_options.max_subcompactions;
 }
 
 void Compaction::SetInputVersion(Version* _input_version) {

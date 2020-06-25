@@ -127,7 +127,7 @@ using InternalIterator = InternalIteratorBase<Slice>;
 
 // Return an empty iterator (yields nothing).
 template <class TValue = Slice>
-extern InternalIteratorBase<TValue>* NewEmptyInternalIterator();
+extern InternalIteratorBase<TValue>* NewEmptyInternalIterator(Arena* arena = nullptr);
 
 // Return an empty iterator with the specified status.
 template <class TValue = Slice>

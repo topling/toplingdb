@@ -334,6 +334,7 @@ EOF
           -ltcmalloc 2>/dev/null; then
             #PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -ltcmalloc"
             #JAVA_LDFLAGS="$JAVA_LDFLAGS -ltcmalloc"
+			aaaaaaaaaaaaaaaaa=0
         fi
     fi
 

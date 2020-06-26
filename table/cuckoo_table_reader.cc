@@ -361,7 +361,7 @@ Slice CuckooTableIterator::value() const {
 }
 
 extern InternalIterator* NewErrorInternalIterator(const Status& status,
-                                                        Arena* arena);
+                                                  Arena* arena);
 
 InternalIterator* CuckooTableReader::NewIterator(
     const ReadOptions& read_options, Arena* arena, bool skip_filters) {

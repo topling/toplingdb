@@ -354,8 +354,7 @@ InternalIterator* NewErrorInternalIterator(const Status& status) {
   return new EmptyInternalIterator(status);
 }
 
-InternalIterator* NewErrorInternalIterator(const Status& status,
-                                                 Arena* arena) {
+InternalIterator* NewErrorInternalIterator(const Status& status, Arena* arena) {
   if (arena == nullptr) {
     return NewErrorInternalIterator(status);
   } else {

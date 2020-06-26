@@ -115,6 +115,6 @@ extern InternalIterator* NewEmptyInternalIterator(Arena* arena);
 
 // Return an empty iterator with the specified status, allocated arena.
 extern InternalIterator* NewErrorInternalIterator(const Status& status,
-                                                        Arena* arena);
+                                                  Arena* arena);
 
 }  // namespace rocksdb

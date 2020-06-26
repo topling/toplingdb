@@ -268,8 +268,9 @@ DEFINE_bool(through_db, false, "If enable, a DB instance will be created and "
             "a table reader.");
 DEFINE_bool(mmap_read, true, "Whether use mmap read");
 DEFINE_string(table_factory, "block_based",
-              "Table factory to use: `block_based` (default), `plain_table`, "
-              "`cuckoo_hash` or `terark_zip`.");
+              "Table factory to use: `block_based` (default), `plain_table` or "
+              "or `terark_zip`"
+              "`cuckoo_hash`.");
 DEFINE_string(time_unit, "microsecond",
               "The time unit used for measuring performance. User can specify "
               "`microsecond` (default) or `nanosecond`");

@@ -732,7 +732,7 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
 
   std::unordered_map<uint64_t, int> file_remove;
   if (status.ok()) {
-    status = InstallCompactionResults(mutable_cf_options, file_remove);
+    status = InstallCompactionResults(file_remove, mutable_cf_options);
   }
   // Finish up all book-keeping to unify the subcompaction results
   AggregateStatistics();
@@ -1571,8 +1571,8 @@ bool CompactionJob::IsCoverAnyInputSST(SubcompactionState* sub_compact) {
 }
 
 Status CompactionJob::InstallCompactionResults(
-    const MutableCFOptions& mutable_cf_options,
-    std::unordered_map<uint64_t, int>& file_remove) {
+    std::unordered_map<uint64_t, int>& file_remove,
+    const MutableCFOptions& mutable_cf_options) {
   db_mutex_->AssertHeld();
 
   auto* compaction = compact_->compaction;
@@ -1791,14 +1791,16 @@ void CompactionJob::UpdateCompactionStats(
        ++input_level) {
     if (compaction->level(input_level) != compaction->output_level()) {
       UpdateCompactionInputStatsHelper(
+          file_remove,
           &compaction_stats_.num_input_files_in_non_output_levels,
           &compaction_stats_.bytes_read_non_output_levels,
-          input_level, file_remove);
+          input_level);
     } else {
       UpdateCompactionInputStatsHelper(
+          file_remove
           &compaction_stats_.num_input_files_in_output_level,
           &compaction_stats_.bytes_read_output_level,
-          input_level, file_remove);
+          input_level);
     }
   }
 
@@ -1822,8 +1824,8 @@ void CompactionJob::UpdateCompactionStats(
 }
 
 void CompactionJob::UpdateCompactionInputStatsHelper(
-    int* num_files, uint64_t* bytes_read, int input_level,
-    const std::unordered_map<uint64_t, int>& file_remove) {
+    const std::unordered_map<uint64_t, int>& file_remove,
+    int* num_files, uint64_t* bytes_read, int input_level) {
   const Compaction* compaction = compact_->compaction;
   auto num_input_files = compaction->num_input_files(input_level);
 

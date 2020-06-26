@@ -189,10 +189,9 @@ Status PlainTableReader::Open(const ImmutableCFOptions& ioptions,
 void PlainTableReader::SetupForCompaction() {
 }
 
-InternalIterator*
-PlainTableReader::NewIterator(const ReadOptions& options,
-                              Arena* arena,
-                              bool skip_filters) {
+InternalIterator* PlainTableReader::NewIterator(const ReadOptions& options,
+                                                Arena* arena,
+                                                bool skip_filters) {
   bool use_prefix_seek = !IsTotalOrderMode() && !options.total_order_seek;
   if (arena == nullptr) {
     return new PlainTableIterator(this, use_prefix_seek);

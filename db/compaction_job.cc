@@ -112,7 +112,7 @@ double EstimateWorstSizeAmp(const std::vector<FileMetaData*>& sst_vec,
   std::sort(sst_holder.vec.begin(), sst_holder.vec.end(),
             [&icmp](const TableReaderHolder::Item& l,
                     const TableReaderHolder::Item& r) {
-              return icmp.Compare(l.sst->smallest, r.sst->smallest) < 0;
+              return icmp.Compare(l.sst->smallest(), r.sst->smallest()) < 0;
             });
   std::unordered_set<TableReaderHolder::Item*> sst_set;
   return 0;
@@ -231,15 +231,15 @@ struct CompactionJob::SubcompactionState {
     // Scan to find earliest grandparent file that contains key.
     while (grandparent_index < grandparents.size() &&
            icmp->Compare(internal_key,
-                         grandparents[grandparent_index]->largest.Encode()) >
+                         grandparents[grandparent_index]->largest().Encode()) >
                0) {
       if (seen_key) {
         overlapped_bytes += grandparents[grandparent_index]->fd.GetFileSize();
       }
       assert(grandparent_index + 1 >= grandparents.size() ||
              icmp->Compare(
-                 grandparents[grandparent_index]->largest.Encode(),
-                 grandparents[grandparent_index + 1]->smallest.Encode()) <= 0);
+                 grandparents[grandparent_index]->largest().Encode(),
+                 grandparents[grandparent_index + 1]->smallest().Encode()) <= 0);
       grandparent_index++;
     }
     seen_key = true;
@@ -286,7 +286,7 @@ struct CompactionJob::CompactionState {
     for (const auto& sub_compact_state : sub_compact_states) {
       if (!sub_compact_state.outputs.empty() &&
           sub_compact_state.outputs[0].finished) {
-        return sub_compact_state.outputs[0].meta.smallest.user_key();
+        return sub_compact_state.outputs[0].meta.smallest().user_key();
       }
     }
     // If there is no finished output, return an empty slice.
@@ -298,7 +298,7 @@ struct CompactionJob::CompactionState {
          ++it) {
       if (!it->outputs.empty() && it->current_output()->finished) {
         assert(it->current_output() != nullptr);
-        return it->current_output()->meta.largest.user_key();
+        return it->current_output()->meta.largest().user_key();
       }
     }
     // If there is no finished output, return an empty slice.
@@ -1206,7 +1206,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       if (sub_compact->compaction->enable_partial_remove()) {
         if (next_key != nullptr &&
             ExtractUserKey(*next_key) !=
-                sub_compact->outputs.back().meta.largest.user_key()) {
+                sub_compact->outputs.back().meta.largest().user_key()) {
           sub_compact->partial_remove_info.largest.Clear();
           sub_compact->partial_remove_info.largest.SetMinPossibleForUserKey(
               ExtractUserKey(*next_key));
@@ -1371,11 +1371,11 @@ Status CompactionJob::FinishCompactionOutputFile(
       // For the first output table, include range tombstones before the min key
       // but after the subcompaction boundary.
       lower_bound = sub_compact->start;
-    } else if (meta->smallest.size() > 0) {
+    } else if (meta->smallest().size() > 0) {
       // For subsequent output tables, only include range tombstones from min
       // key onwards since the previous file was extended to contain range
       // tombstones falling before min key.
-      smallest_user_key = meta->smallest.user_key().ToString(false /*hex*/);
+      smallest_user_key = meta->smallest().user_key().ToString(false /*hex*/);
       lower_bound_guard = Slice(smallest_user_key);
       lower_bound = &lower_bound_guard;
     } else {
@@ -1515,8 +1515,8 @@ bool CompactionJob::IsCoveredBySingleSST(SubcompactionState* sub_compact) {
     auto overlap = FindLevelOverlap(level.files, ic, &smallest, &largest);
     if (overlap.first == overlap.second) {
       auto file = level.files[overlap.first];
-      if (ic.Compare(smallest, file->smallest) > 0 &&
-          ic.Compare(largest, file->largest) < 0) {
+      if (ic.Compare(smallest, file->smallest()) > 0 &&
+          ic.Compare(largest, file->largest()) < 0) {
         return true;
       }
     }
@@ -1548,17 +1548,17 @@ bool CompactionJob::IsCoverAnyInputSST(SubcompactionState* sub_compact) {
     else if (level.level == output_level && overlap.first == overlap.second) {
       // Make sure current output not full covered by single optput level sst
       auto file = level.files[overlap.first];
-      if (ic.Compare(smallest, file->smallest) > 0 &&
-          ic.Compare(largest, file->largest) < 0) {
+      if (ic.Compare(smallest, file->smallest()) > 0 &&
+          ic.Compare(largest, file->largest()) < 0) {
         // output sst can't partial remove in middle ...
         return false;
       }
     }
-    if (ic.Compare(level.files[overlap.first]->smallest, smallest) < 0) {
+    if (ic.Compare(level.files[overlap.first]->smallest(), smallest) < 0) {
       // can't cover left
       ++overlap.first;
     }
-    if (ic.Compare(level.files[overlap.second]->largest, largest) > 0) {
+    if (ic.Compare(level.files[overlap.second]->largest(), largest) > 0) {
       // can't cover right
       --overlap.second;
     }

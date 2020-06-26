@@ -104,26 +104,10 @@ struct PartialRemovedMetaData {
 
 struct FileMetaData {
   FileDescriptor fd;
-  InternalKey& get_smallest() {
-    assert(range_set.size() >= 2);
-    return range_set.front();
-  }
-  InternalKey& get_largest() {
-    assert(range_set.size() >= 2);
-    return range_set.back();
-  }
-  void put_smallest(const InternalKey& x) {
-    assert(range_set.size() >= 2);
-    range_set.front() = x;
-  }
-  void put_largest(const InternalKey& x) {
-    assert(range_set.size() >= 2);
-    range_set.back() = x;
-  }
-  __declspec(property(get=get_smallest, put=put_smallest))
-  InternalKey smallest;            // Smallest internal key served by table
-  __declspec(property(get=get_largest, put=put_largest))
-  InternalKey largest;             // Largest internal key served by table
+  InternalKey& smallest() { return range_set.front(); }
+  InternalKey& largest() { return range_set.back(); }
+  const InternalKey& smallest() const { return range_set.front(); }
+  const InternalKey& largest() const { return range_set.back(); }
   std::vector<InternalKey> range_set = { {}, {} }; // valid range set
   SequenceNumber smallest_seqno;   // The smallest seqno in this file
   SequenceNumber largest_seqno;    // The largest seqno in this file
@@ -185,10 +169,11 @@ struct FileMetaData {
   // REQUIRED: Keys must be given to the function in sorted order (it expects
   // the last key to be the largest).
   void UpdateBoundaries(const Slice& key, SequenceNumber seqno) {
-    if (smallest.size() == 0) {
-      smallest.DecodeFrom(key);
+    assert(range_set.size() >= 2);
+    if (smallest().size() == 0) {
+      smallest().DecodeFrom(key);
     }
-    largest.DecodeFrom(key);
+    largest().DecodeFrom(key);
     smallest_seqno = std::min(smallest_seqno, seqno);
     largest_seqno = std::max(largest_seqno, seqno);
   }
@@ -272,8 +257,8 @@ class VersionEdit {
     assert(smallest_seqno <= largest_seqno);
     FileMetaData f;
     f.fd = FileDescriptor(file, file_path_id, file_size);
-    f.smallest = smallest;
-    f.largest = largest;
+    f.smallest() = smallest;
+    f.largest() = largest;
     f.smallest_seqno = smallest_seqno;
     f.largest_seqno = largest_seqno;
     f.marked_for_compaction = marked_for_compaction;

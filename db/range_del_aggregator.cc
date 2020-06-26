@@ -463,9 +463,9 @@ void RangeDelAggregator::AddToBuilder(
           // key.
           smallest_candidate = InternalKey(*lower_bound, 0, kTypeRangeDeletion);
         }
-        if (meta->smallest.size() == 0 ||
-            icmp_.Compare(smallest_candidate, meta->smallest) < 0) {
-          meta->smallest = std::move(smallest_candidate);
+        if (meta->smallest().size() == 0 ||
+            icmp_.Compare(smallest_candidate, meta->smallest()) < 0) {
+          meta->smallest() = std::move(smallest_candidate);
         }
       }
       InternalKey largest_candidate = tombstone.SerializeEndKey();
@@ -489,9 +489,9 @@ void RangeDelAggregator::AddToBuilder(
         largest_candidate = InternalKey(*upper_bound, kMaxSequenceNumber,
                                         kTypeRangeDeletion);
       }
-      if (meta->largest.size() == 0 ||
-          icmp_.Compare(meta->largest, largest_candidate) < 0) {
-        meta->largest = std::move(largest_candidate);
+      if (meta->largest().size() == 0 ||
+          icmp_.Compare(meta->largest(), largest_candidate) < 0) {
+        meta->largest() = std::move(largest_candidate);
       }
       meta->smallest_seqno = std::min(meta->smallest_seqno, tombstone.seq_);
       meta->largest_seqno = std::max(meta->largest_seqno, tombstone.seq_);

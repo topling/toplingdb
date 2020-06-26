@@ -352,8 +352,8 @@ void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
   file_level->files = new (mem)FdWithKeyRange[num];
 
   for (size_t i = 0; i < num; i++) {
-    Slice smallest_key = files[i]->smallest.Encode();
-    Slice largest_key = files[i]->largest.Encode();
+    Slice smallest_key = files[i]->smallest().Encode();
+    Slice largest_key = files[i]->largest().Encode();
 
     // Copy key slice to sequential memory
     size_t smallest_size = smallest_key.size();
@@ -743,8 +743,8 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
       files.emplace_back(
           MakeTableFileName("", file->fd.GetNumber()), file_path,
           file->fd.GetFileSize(), file->smallest_seqno, file->largest_seqno,
-          file->smallest.user_key().ToString(),
-          file->largest.user_key().ToString(),
+          file->smallest().user_key().ToString(),
+          file->largest().user_key().ToString(),
           file->stats.num_reads_sampled.load(std::memory_order_relaxed),
           file->being_compacted);
       level_size += file->fd.GetFileSize();
@@ -1535,16 +1535,16 @@ void VersionStorageInfo::AddFile(int level, FileMetaData* f, Logger* info_log) {
 #ifndef NDEBUG
   if (level > 0 && !level_files->empty() &&
       internal_comparator_->Compare(
-          (*level_files)[level_files->size() - 1]->largest, f->smallest) >= 0) {
+          (*level_files)[level_files->size() - 1]->largest(), f->smallest()) >= 0) {
     auto* f2 = (*level_files)[level_files->size() - 1];
     if (info_log != nullptr) {
       Error(info_log, "Adding new file %" PRIu64
                       " range (%s, %s) to level %d but overlapping "
                       "with existing file %" PRIu64 " %s %s",
-            f->fd.GetNumber(), f->smallest.DebugString(true).c_str(),
-            f->largest.DebugString(true).c_str(), level, f2->fd.GetNumber(),
-            f2->smallest.DebugString(true).c_str(),
-            f2->largest.DebugString(true).c_str());
+            f->fd.GetNumber(), f->smallest().DebugString(true).c_str(),
+            f->largest().DebugString(true).c_str(), level, f2->fd.GetNumber(),
+            f2->smallest().DebugString(true).c_str(),
+            f2->largest().DebugString(true).c_str());
       LogFlush(info_log);
     }
     assert(false);
@@ -1624,15 +1624,15 @@ void SortFileByOverlappingRatio(
     uint64_t overlapping_bytes = 0;
     // Skip files in next level that is smaller than current file
     while (next_level_it != next_level_files.end() &&
-           icmp.Compare((*next_level_it)->largest, file->smallest) < 0) {
+           icmp.Compare((*next_level_it)->largest(), file->smallest()) < 0) {
       next_level_it++;
     }
 
     while (next_level_it != next_level_files.end() &&
-           icmp.Compare((*next_level_it)->smallest, file->largest) < 0) {
+           icmp.Compare((*next_level_it)->smallest(), file->largest()) < 0) {
       overlapping_bytes += (*next_level_it)->fd.file_size;
 
-      if (icmp.Compare((*next_level_it)->largest, file->largest) > 0) {
+      if (icmp.Compare((*next_level_it)->largest(), file->largest()) > 0) {
         // next level file cross large boundary of current file.
         break;
       }
@@ -2178,7 +2178,7 @@ int64_t VersionStorageInfo::MaxNextLevelOverlappingBytes() {
   std::vector<FileMetaData*> overlaps;
   for (int level = 1; level < num_levels() - 1; level++) {
     for (const auto& f : files_[level]) {
-      GetOverlappingInputs(level + 1, &f->smallest, &f->largest, &overlaps);
+      GetOverlappingInputs(level + 1, &f->smallest(), &f->largest(), &overlaps);
       const uint64_t sum = TotalFileSize(overlaps);
       if (sum > result) {
         result = sum;
@@ -2338,11 +2338,11 @@ uint64_t VersionStorageInfo::EstimateLiveDataSize() const {
       // (if the level is not 0) into the map without checking again because
       // the elements in the level are sorted and non-overlapping.
       auto lb = (found_end && l != 0) ?
-        ranges.end() : ranges.lower_bound(&file->smallest);
+        ranges.end() : ranges.lower_bound(&file->smallest());
       found_end = (lb == ranges.end());
       if (found_end || internal_comparator_->Compare(
-            file->largest, (*lb).second->smallest) < 0) {
-          ranges.emplace_hint(lb, &file->largest, file);
+            file->largest(), (*lb).second->smallest()) < 0) {
+          ranges.emplace_hint(lb, &file->largest(), file);
           size += file->fd.file_size;
       }
     }
@@ -2412,9 +2412,9 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
       r.push_back(':');
       AppendNumberTo(&r, files[i]->fd.GetFileSize());
       r.append("[");
-      r.append(files[i]->smallest.DebugString(hex));
+      r.append(files[i]->smallest().DebugString(hex));
       r.append(" .. ");
-      r.append(files[i]->largest.DebugString(hex));
+      r.append(files[i]->largest().DebugString(hex));
       r.append("]");
       if (print_stats) {
         r.append("(");
@@ -3882,8 +3882,8 @@ void VersionSet::GetLiveFilesMetaData(std::vector<LiveFileMetaData>* metadata) {
         filemetadata.name = MakeTableFileName("", file->fd.GetNumber());
         filemetadata.level = level;
         filemetadata.size = file->fd.GetFileSize();
-        filemetadata.smallestkey = file->smallest.user_key().ToString();
-        filemetadata.largestkey = file->largest.user_key().ToString();
+        filemetadata.smallestkey = file->smallest().user_key().ToString();
+        filemetadata.largestkey = file->largest().user_key().ToString();
         filemetadata.smallest_seqno = file->smallest_seqno;
         filemetadata.largest_seqno = file->largest_seqno;
         metadata->push_back(filemetadata);

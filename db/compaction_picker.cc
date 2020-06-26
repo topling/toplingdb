@@ -136,20 +136,20 @@ void CompactionPicker::GetRange(const CompactionInputFiles& inputs,
     for (size_t i = 0; i < inputs.size(); i++) {
       FileMetaData* f = inputs[i];
       if (i == 0) {
-        *smallest = f->smallest;
-        *largest = f->largest;
+        *smallest = f->smallest();
+        *largest = f->largest();
       } else {
-        if (icmp_->Compare(f->smallest, *smallest) < 0) {
-          *smallest = f->smallest;
+        if (icmp_->Compare(f->smallest(), *smallest) < 0) {
+          *smallest = f->smallest();
         }
-        if (icmp_->Compare(f->largest, *largest) > 0) {
-          *largest = f->largest;
+        if (icmp_->Compare(f->largest(), *largest) > 0) {
+          *largest = f->largest();
         }
       }
     }
   } else {
-    *smallest = inputs[0]->smallest;
-    *largest = inputs[inputs.size() - 1]->largest;
+    *smallest = inputs[0]->smallest();
+    *largest = inputs[inputs.size() - 1]->largest();
   }
 }
 
@@ -631,7 +631,7 @@ Compaction* CompactionPicker::CompactRange(
       uint64_t s = inputs[i]->compensated_file_size;
       total += s;
       if (total >= limit) {
-        **compaction_end = inputs[i + 1]->smallest;
+        **compaction_end = inputs[i + 1]->smallest();
         covering_the_whole_range = false;
         inputs.files.resize(i + 1);
         break;
@@ -1263,29 +1263,29 @@ bool LevelCompactionBuilder::SetupOtherInputsIfNeeded() {
         for (size_t i = 0; i < start_level_inputs.files.size(); i++) {
           FileMetaData* f = start_level_inputs[i];
           if (i == 0) {
-            range.smallest = &f->smallest;
-            range.largest = &f->largest;
+            range.smallest = &f->smallest();
+            range.largest = &f->largest();
           }
           else {
-            if (icmp.Compare(f->smallest, *range.smallest) < 0) {
-              range.smallest = &f->smallest;
+            if (icmp.Compare(f->smallest(), *range.smallest) < 0) {
+              range.smallest = &f->smallest();
             }
-            if (icmp.Compare(f->largest, *range.largest) > 0) {
-              range.largest = &f->largest;
+            if (icmp.Compare(f->largest(), *range.largest) > 0) {
+              range.largest = &f->largest();
             }
           }
         }
       } else {
-        range.smallest = &start_level_inputs.files.front()->smallest;
-        range.largest = &start_level_inputs.files.back()->largest;
+        range.smallest = &start_level_inputs.files.front()->smallest();
+        range.largest = &start_level_inputs.files.back()->largest();
       }
       // make sure output file not covered by single sst
       auto overlap = FindLevelOverlap(output_level_inputs.files, icmp,
                                       range.smallest, range.largest);
       if (overlap.first == overlap.second) {
         auto file = output_level_inputs.files[overlap.first];
-        if (icmp.Compare(*range.smallest, file->smallest) <= 0 ||
-            icmp.Compare(*range.largest, file->largest) >= 0) {
+        if (icmp.Compare(*range.smallest, file->smallest()) <= 0 ||
+            icmp.Compare(*range.largest, file->largest()) >= 0) {
           input_range_.emplace_back(std::move(range));
         }
       }

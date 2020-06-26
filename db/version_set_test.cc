@@ -33,8 +33,8 @@ class GenerateLevelFilesBriefTest : public testing::Test {
            SequenceNumber largest_seq = 100) {
     FileMetaData* f = new FileMetaData;
     f->fd = FileDescriptor(files_.size() + 1, 0, 0);
-    f->smallest = InternalKey(smallest, smallest_seq, kTypeValue);
-    f->largest = InternalKey(largest, largest_seq, kTypeValue);
+    f->smallest() = InternalKey(smallest, smallest_seq, kTypeValue);
+    f->largest() = InternalKey(largest, largest_seq, kTypeValue);
     files_.push_back(f);
   }
 
@@ -127,8 +127,8 @@ class VersionStorageInfoTest : public testing::Test {
     assert(level < vstorage_.num_levels());
     FileMetaData* f = new FileMetaData;
     f->fd = FileDescriptor(file_number, 0, file_size);
-    f->smallest = GetInternalKey(smallest, 0);
-    f->largest = GetInternalKey(largest, 0);
+    f->smallest() = GetInternalKey(smallest, 0);
+    f->largest() = GetInternalKey(largest, 0);
     f->compensated_file_size = file_size;
     f->refs = 0;
     f->num_entries = 0;

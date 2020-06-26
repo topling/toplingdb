@@ -896,7 +896,7 @@ Status DBImpl::RunManualCompaction(ColumnFamilyData* cfd, int input_level,
     assert(HasPendingManualCompaction());
     manual_conflict = false;
     Compaction* compaction = nullptr;
-    if (ShouldntRunManualCompaction(&manual) || manual.in_progress ||
+    if (ShouldntRunManualCompaction(&manual) || (manual.in_progress == true) ||
         scheduled ||
         (((manual.manual_end = &manual.tmp_storage1) != nullptr) &&
              ((compaction = manual.cfd->CompactRange(

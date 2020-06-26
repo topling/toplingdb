@@ -21,8 +21,12 @@
 namespace rocksdb {
 
 class VersionSet;
+class InternalIterator;
+struct FileMetaData;
+class ColumnFamilyData;
 
 const uint64_t kFileNumberMask = 0x3FFFFFFFFFFFFFFF;
+const uint8_t kPartialRemovedMax = 100;
 
 extern uint64_t PackFileNumberAndPathId(uint64_t number, uint64_t path_id);
 
@@ -43,13 +47,6 @@ struct FileDescriptor {
       : table_reader(nullptr),
         packed_number_and_path_id(PackFileNumberAndPathId(number, path_id)),
         file_size(_file_size) {}
-
-  FileDescriptor& operator=(const FileDescriptor& fd) {
-    table_reader = fd.table_reader;
-    packed_number_and_path_id = fd.packed_number_and_path_id;
-    file_size = fd.file_size;
-    return *this;
-  }
 
   uint64_t GetNumber() const {
     return packed_number_and_path_id & kFileNumberMask;
@@ -73,10 +70,45 @@ struct FileSampledStats {
   mutable std::atomic<uint64_t> num_reads_sampled;
 };
 
+struct RangeEraseSet {
+  // smallest_open : If true, exclude the smallest key
+  // largest_open : If true, exclude the largest key
+  void push(const InternalKey& smallest, const InternalKey& largest,
+            bool smallest_open = false, bool largest_open = false);
+  std::vector<InternalKey> erase;
+  std::vector<bool> open;
+};
+
+void MergeRangeSet(const std::vector<InternalKey>& range_set,
+                   const RangeEraseSet& erase_set,
+                   std::vector<InternalKey>& output,
+                   const InternalKeyComparator& ic,
+                   InternalIterator* iter);
+
+struct PartialRemovedMetaData {
+  std::vector<InternalKey> range_set;
+  FileMetaData* meta;
+  uint8_t partial_removed = 0;
+  uint8_t compact_to_level = 0;
+
+  // return changed
+  // if output_level non-zero , this sst is reclaim from compact
+  bool InitFrom(FileMetaData* file,
+                const RangeEraseSet& erase_set,
+                uint8_t output_level,
+                ColumnFamilyData* cfd,
+                const EnvOptions& env_opt);
+
+  FileMetaData Get();
+};
+
 struct FileMetaData {
   FileDescriptor fd;
-  InternalKey smallest;            // Smallest internal key served by table
-  InternalKey largest;             // Largest internal key served by table
+  InternalKey& smallest() { return range_set.front(); }
+  InternalKey& largest() { return range_set.back(); }
+  const InternalKey& smallest() const { return range_set.front(); }
+  const InternalKey& largest() const { return range_set.back(); }
+  std::vector<InternalKey> range_set = { {}, {} }; // valid range set
   SequenceNumber smallest_seqno;   // The smallest seqno in this file
   SequenceNumber largest_seqno;    // The largest seqno in this file
 
@@ -107,6 +139,19 @@ struct FileMetaData {
   bool marked_for_compaction;  // True if client asked us nicely to compact this
                                // file.
 
+  uint8_t partial_removed = 0;     // iterator need wrapper if non zero
+
+  // If non-zero , this sst reclaim from compaction job with partial remove
+  //   or compaction inout range .
+  // partial remove will not worked on lv0 -> lv0 compact
+  uint8_t compact_to_level = 0;
+
+  // If non-zero , this sst is meta sst
+  // meta_level
+  // all sst which meta_level is 0 must be managered by a meta sst
+  // we support infinity levels , here we use max 2
+  uint8_t meta_level = 0;
+
   FileMetaData()
       : smallest_seqno(kMaxSequenceNumber),
         largest_seqno(0),
@@ -124,10 +169,11 @@ struct FileMetaData {
   // REQUIRED: Keys must be given to the function in sorted order (it expects
   // the last key to be the largest).
   void UpdateBoundaries(const Slice& key, SequenceNumber seqno) {
-    if (smallest.size() == 0) {
-      smallest.DecodeFrom(key);
+    assert(range_set.size() >= 2);
+    if (smallest().size() == 0) {
+      smallest().DecodeFrom(key);
     }
-    largest.DecodeFrom(key);
+    largest().DecodeFrom(key);
     smallest_seqno = std::min(smallest_seqno, seqno);
     largest_seqno = std::max(largest_seqno, seqno);
   }
@@ -144,6 +190,7 @@ struct FdWithKeyRange {
 
   FdWithKeyRange()
       : fd(),
+        file_metadata(nullptr),
         smallest_key(),
         largest_key() {
   }
@@ -210,11 +257,40 @@ class VersionEdit {
     assert(smallest_seqno <= largest_seqno);
     FileMetaData f;
     f.fd = FileDescriptor(file, file_path_id, file_size);
-    f.smallest = smallest;
-    f.largest = largest;
+    f.smallest() = smallest;
+    f.largest() = largest;
     f.smallest_seqno = smallest_seqno;
     f.largest_seqno = largest_seqno;
     f.marked_for_compaction = marked_for_compaction;
+    f.partial_removed = 0;
+    f.compact_to_level = 0;
+    f.meta_level = 0;
+    assert(smallest.size() >= 8);
+    assert(largest.size() >= 8);
+    new_files_.emplace_back(level, std::move(f));
+  }
+  void AddFile(int level, uint64_t file, uint32_t file_path_id,
+               uint64_t file_size, const std::vector<InternalKey>& range_set,
+               const SequenceNumber& smallest_seqno,
+               const SequenceNumber& largest_seqno,
+               bool marked_for_compaction, uint8_t partial_removed,
+               uint8_t compact_to_level, uint8_t meta_level) {
+    assert(smallest_seqno <= largest_seqno);
+    assert(range_set.size() >= 2);
+   #if !defined(NDEBUG)
+    for (size_t i = 0; i < range_set.size(); ++i) {
+      assert(range_set[i].size() >= 8);
+    }
+   #endif
+    FileMetaData f;
+    f.fd = FileDescriptor(file, file_path_id, file_size);
+    f.range_set = range_set;
+    f.smallest_seqno = smallest_seqno;
+    f.largest_seqno = largest_seqno;
+    f.marked_for_compaction = marked_for_compaction;
+    f.partial_removed = partial_removed;
+    f.compact_to_level = compact_to_level;
+    f.meta_level = meta_level;
     new_files_.emplace_back(level, std::move(f));
   }
 
@@ -272,6 +348,24 @@ class VersionEdit {
   std::string DebugString(bool hex_key = false) const;
   std::string DebugJSON(int edit_num, bool hex_key = false) const;
 
+  bool is_has_comparator();
+  bool is_has_log_number();
+  bool is_has_prev_log_number();
+  bool is_has_next_file_number();
+  bool is_has_last_sequence();
+  bool is_has_max_column_family();
+  bool is_column_family_drop();
+  bool is_column_family_add();
+  std::string get_comparator();
+  uint64_t get_log_number();
+  uint64_t get_prev_log_number();
+  uint64_t get_next_file_number();
+  SequenceNumber get_last_sequence();
+  uint32_t get_max_column_family();
+  std::string get_column_family_name();
+  uint32_t get_column_family();
+  DeletedFileSet get_deleted_files();
+  std::vector<std::pair<int, FileMetaData>> get_new_files();
  private:
   friend class VersionSet;
   friend class Version;

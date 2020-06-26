@@ -193,12 +193,6 @@ char* Arena::AllocateAligned(size_t bytes, size_t huge_page_size,
 }
 
 char* Arena::AllocateNewBlock(size_t block_bytes) {
-  // already reserve space in blocks_ before allocating memory via new.
-  // this way the insertion into the vector below will not throw and we
-  // won't leak the allocated memory in that case. if reserve() throws,
-  // we won't leak either
-  blocks_.reserve(blocks_.size() + 1);
-
   char* block = new char[block_bytes];
   size_t allocated_size;
 #ifdef ROCKSDB_MALLOC_USABLE_SIZE

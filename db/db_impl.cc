@@ -95,6 +95,11 @@
 #include "util/string_util.h"
 #include "util/sync_point.h"
 
+#ifndef _MSC_VER
+# include <table/terark_zip_weak_function.h>
+# include <sys/unistd.h>
+#endif
+
 namespace rocksdb {
 const std::string kDefaultColumnFamilyName("default");
 void DumpRocksDBBuildVersion(Logger * log);
@@ -153,9 +158,11 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
       log_dir_synced_(false),
       log_empty_(true),
       default_cf_handle_(nullptr),
+      default_cf_internal_stats_(nullptr),
       log_sync_cv_(&mutex_),
       total_log_size_(0),
       max_total_in_memory_state_(0),
+      single_column_family_mode_(false),
       is_snapshot_supported_(true),
       write_buffer_manager_(immutable_db_options_.write_buffer_manager.get()),
       write_thread_(immutable_db_options_),
@@ -1185,6 +1192,26 @@ Status DBImpl::CreateColumnFamily(const ColumnFamilyOptions& cf_options,
                                   const std::string& column_family,
                                   ColumnFamilyHandle** handle) {
   assert(handle != nullptr);
+#ifndef _MSC_VER
+  const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terarkdb_localTempDir) {
+    if (TerarkZipCFOptionsFromEnv && TerarkZipIsBlackListCF) {
+      if (::access(terarkdb_localTempDir, R_OK|W_OK) != 0) {
+        return Status::InvalidArgument(
+                "Must exists, and Permission ReadWrite is required on "
+                        "env TerarkZipTable_localTempDir",
+                terarkdb_localTempDir);
+      }
+      if (!TerarkZipIsBlackListCF(column_family)) {
+        TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf_options));
+      }
+    } else {
+      return Status::InvalidArgument(
+              "env TerarkZipTable_localTempDir is defined, "
+                      "but dynamic libterark-zip-rocksdb is not loaded");
+    }
+  }
+#endif
   Status s = CreateColumnFamilyImpl(cf_options, column_family, handle);
   if (s.ok()) {
     s = WriteOptionsFile(true /*need_mutex_lock*/,
@@ -1972,8 +1999,8 @@ void DBImpl::GetApproximateMemTableStats(ColumnFamilyHandle* column_family,
 void DBImpl::GetApproximateSizes(ColumnFamilyHandle* column_family,
                                  const Range* range, int n, uint64_t* sizes,
                                  uint8_t include_flags) {
-  assert(include_flags & DB::SizeApproximationFlags::INCLUDE_FILES ||
-         include_flags & DB::SizeApproximationFlags::INCLUDE_MEMTABLES);
+  assert((include_flags & DB::SizeApproximationFlags::INCLUDE_FILES) ||
+         (include_flags & DB::SizeApproximationFlags::INCLUDE_MEMTABLES));
   Version* v;
   auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
   auto cfd = cfh->cfd();
@@ -2045,8 +2072,7 @@ Status DBImpl::DeleteFile(std::string name) {
                       name.c_str());
       return Status::NotSupported("Delete only supported for archived logs");
     }
-    status =
-        env_->DeleteFile(immutable_db_options_.wal_dir + "/" + name.c_str());
+    status = env_->DeleteFile(immutable_db_options_.wal_dir + "/" + name);
     if (!status.ok()) {
       ROCKS_LOG_ERROR(immutable_db_options_.info_log,
                       "DeleteFile %s failed -- %s.\n", name.c_str(),
@@ -2103,6 +2129,10 @@ Status DBImpl::DeleteFile(std::string name) {
       job_context.Clean();
       return Status::InvalidArgument("File in level 0, but not oldest");
     }
+
+    // treat this DeleteFile being a <<Compaction>>
+    metadata->being_compacted = true; // prevent real CompactionPicker
+
     edit.SetColumnFamily(cfd->GetID());
     edit.DeleteFile(level, number);
     status = versions_->LogAndApply(cfd, *cfd->GetLatestMutableCFOptions(),
@@ -2136,13 +2166,11 @@ Status DBImpl::DeleteFilesInRange(ColumnFamilyHandle* column_family,
   {
     InstrumentedMutexLock l(&mutex_);
     Version* input_version = cfd->current();
+    edit.SetColumnFamily(cfd->GetID());
 
     auto* vstorage = input_version->storage_info();
-    for (int i = 1; i < cfd->NumberLevels(); i++) {
-      if (vstorage->LevelFiles(i).empty() ||
-          !vstorage->OverlapInLevel(i, begin, end)) {
-        continue;
-      }
+    bool is_delete = false;
+    for (int i = 0; i < cfd->NumberLevels(); i++) {
       std::vector<FileMetaData*> level_files;
       InternalKey begin_storage, end_storage, *begin_key, *end_key;
       if (begin == nullptr) {
@@ -2158,22 +2186,265 @@ Status DBImpl::DeleteFilesInRange(ColumnFamilyHandle* column_family,
         end_key = &end_storage;
       }
 
-      vstorage->GetCleanInputsWithinInterval(i, begin_key, end_key,
-                                             &level_files, -1 /* hint_index */,
-                                             nullptr /* file_index */);
-      FileMetaData* level_file;
-      for (uint32_t j = 0; j < level_files.size(); j++) {
-        level_file = level_files[j];
-        if (level_file->being_compacted) {
+      if (cfd->ioptions()->enable_partial_remove) {
+        vstorage->GetOverlappingInputs(i, begin_key, end_key,
+                                       &level_files, -1 /* hint_index */,
+                                       nullptr /* file_index */);
+        if (!level_files.empty()) {
+          RangeEraseSet erase_set;
+          erase_set.push(begin_key == nullptr ?
+                             level_files.front()->smallest() : *begin_key,
+                         end_key == nullptr ?
+                             level_files.back()->largest() : *end_key);
+          FileMetaData* level_file;
+          for (uint32_t j = 0; j < level_files.size(); j++) {
+            level_file = level_files[j];
+            if (level_file->being_compacted) {
+              continue;
+            }
+            PartialRemovedMetaData meta;
+            if (!meta.InitFrom(level_file, erase_set, 0, cfd, env_options_)) {
+              continue;
+            }
+            is_delete = true;
+            edit.DeleteFile(i, level_file->fd.GetNumber());
+            deleted_files.push_back(level_file);
+            level_file->being_compacted = true;
+            if (!meta.range_set.empty()) {
+              edit.AddFile(i, meta.Get());
+            }
+          }
+        }
+      } else {
+        if (i == 0 || vstorage->LevelFiles(i).empty() ||
+            !vstorage->OverlapInLevel(i, begin, end)) {
           continue;
         }
-        edit.SetColumnFamily(cfd->GetID());
-        edit.DeleteFile(i, level_file->fd.GetNumber());
-        deleted_files.push_back(level_file);
-        level_file->being_compacted = true;
+        vstorage->GetCleanInputsWithinInterval(i, begin_key, end_key,
+                                               &level_files, -1 /* hint_index */,
+                                               nullptr /* file_index */);
+        FileMetaData* level_file;
+        for (uint32_t j = 0; j < level_files.size(); j++) {
+          level_file = level_files[j];
+          if (level_file->being_compacted) {
+            continue;
+          }
+          is_delete = true;
+          edit.DeleteFile(i, level_file->fd.GetNumber());
+          deleted_files.push_back(level_file);
+          level_file->being_compacted = true;
+        }
       }
     }
-    if (edit.GetDeletedFiles().empty()) {
+    if (!is_delete) {
+      job_context.Clean();
+      return Status::OK();
+    }
+    input_version->Ref();
+    status = versions_->LogAndApply(cfd, *cfd->GetLatestMutableCFOptions(),
+                                    &edit, &mutex_, directories_.GetDbDir());
+    if (status.ok()) {
+      InstallSuperVersionAndScheduleWork(
+          cfd, &job_context.superversion_context,
+          *cfd->GetLatestMutableCFOptions());
+    }
+    for (auto* deleted_file : deleted_files) {
+      deleted_file->being_compacted = false;
+    }
+    input_version->Unref();
+    FindObsoleteFiles(&job_context, false);
+  }  // lock released here
+
+  LogFlush(immutable_db_options_.info_log);
+  // remove files outside the db-lock
+  if (job_context.HaveSomethingToDelete()) {
+    // Call PurgeObsoleteFiles() without holding mutex.
+    PurgeObsoleteFiles(job_context);
+  }
+  job_context.Clean();
+  return status;
+
+}
+
+Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
+                                   const RangePtr* ranges, size_t n,
+                                   bool include_end) {
+  Status status;
+  auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
+  ColumnFamilyData* cfd = cfh->cfd();
+  VersionEdit edit;
+  std::set<FileMetaData*> deleted_files;
+  JobContext job_context(next_job_id_.fetch_add(1), true);
+  {
+    InstrumentedMutexLock l(&mutex_);
+    Version* input_version = cfd->current();
+    edit.SetColumnFamily(cfd->GetID());
+
+    auto* vstorage = input_version->storage_info();
+    bool is_delete = false;
+    if (cfd->ioptions()->enable_partial_remove) {
+      const InternalKeyComparator& ic = cfd->ioptions()->internal_comparator;
+      const Comparator* uc = cfd->ioptions()->user_comparator;
+
+      // deref nullptr of start/limit
+      InternalKey* nullptr_start = nullptr;
+      InternalKey* nullptr_limit = nullptr;
+      for (int level = 0; level < cfd->NumberLevels(); level++) {
+        auto& level_files = vstorage->LevelFiles(level);
+        if (level == 0) {
+          for (size_t i = 0; i < level_files.size(); ++i) {
+            auto& f = level_files[i];
+            if (nullptr_start == nullptr ||
+                ic.Compare(f->smallest(), *nullptr_start) < 0) {
+              nullptr_start = &f->smallest();
+            }
+            if (nullptr_limit == nullptr ||
+                ic.Compare(f->largest(), *nullptr_limit) > 0) {
+              nullptr_limit = &f->largest();
+            }
+          }
+        }
+        else if (!level_files.empty()) {
+          auto& f0 = level_files.front();
+          auto& fn = level_files.back();
+          if (nullptr_start == nullptr ||
+              ic.Compare(f0->smallest(), *nullptr_start) < 0) {
+            nullptr_start = &f0->smallest();
+          }
+          if (nullptr_limit == nullptr ||
+            ic.Compare(fn->largest(), *nullptr_limit) > 0) {
+            nullptr_limit = &fn->largest();
+          }
+        }
+      }
+      if (nullptr_start == nullptr || nullptr_limit == nullptr) {
+        // empty vstorage ...
+        job_context.Clean();
+        return Status::OK();
+      }
+      // sort ranges
+      bool is_limit_nullptr = false;
+      std::vector<Range> ranges_copy;
+      ranges_copy.resize(n);
+      for (size_t i = 0; i < n; ++i) {
+        ranges_copy[i].start =
+            ranges[i].start == nullptr ? nullptr_start->user_key() : *ranges[i].start;
+        if (ranges[i].limit == nullptr) {
+          is_limit_nullptr = true;
+          ranges_copy[i].limit = nullptr_limit->user_key();
+        } else {
+          ranges_copy[i].limit = *ranges[i].limit;
+        }
+      }
+      std::sort(ranges_copy.begin(), ranges_copy.end(),
+                [uc](const Range& rl, const Range& rr) {
+                    return uc->Compare(rl.start, rr.start) < 0;
+                });
+      // union ranges
+      size_t c = 0;
+      for (size_t i = 1; i < n; ++i) {
+        if (uc->Compare(ranges_copy[c].limit,
+                        ranges_copy[i].start) >= 0) {
+          if (uc->Compare(ranges_copy[c].limit, ranges_copy[i].limit) < 0) {
+            ranges_copy[c].limit = ranges_copy[i].limit;
+          }
+        } else {
+          ++c;
+        }
+      }
+      ranges_copy.resize(c + 1);
+      RangeEraseSet erase_set;
+      for (size_t i = 0; i < ranges_copy.size(); ++i) {
+        InternalKey smallest, largest;
+        smallest.SetMinPossibleForUserKey(ranges_copy[i].start);
+        largest.SetMaxPossibleForUserKey(ranges_copy[i].limit);
+        erase_set.push(smallest, largest, false, !include_end);
+      }
+      // limit is nullptr , force include end (set open interval)
+      if (is_limit_nullptr) {
+        assert(erase_set.erase.back().user_key() == nullptr_limit->user_key());
+        erase_set.open.back() = false;
+      }
+      InternalKey *begin_key, *end_key;
+      begin_key = &erase_set.erase.front();
+      end_key = &erase_set.erase.back();
+      for (int i = 0; i < cfd->NumberLevels(); i++) {
+        std::vector<FileMetaData*> level_files;
+
+        if (cfd->ioptions()->enable_partial_remove) {
+          vstorage->GetOverlappingInputs(i, begin_key, end_key,
+                                         &level_files, -1 /* hint_index */,
+                                         nullptr /* file_index */);
+          if (!level_files.empty()) {
+            FileMetaData* level_file;
+            for (uint32_t j = 0; j < level_files.size(); j++) {
+              level_file = level_files[j];
+              if (level_file->being_compacted) {
+                continue;
+              }
+              PartialRemovedMetaData meta;
+              if (!meta.InitFrom(level_file, erase_set, 0, cfd, env_options_)) {
+                continue;
+              }
+              is_delete = true;
+              edit.DeleteFile(i, level_file->fd.GetNumber());
+              deleted_files.insert(level_file);
+              level_file->being_compacted = true;
+              if (!meta.range_set.empty()) {
+                edit.AddFile(i, meta.Get());
+              }
+            }
+          }
+        }
+      }
+    } else {
+      for (size_t r = 0; r < n; r++) {
+        auto begin = ranges[r].start, end = ranges[r].limit;
+        for (int i = 1; i < cfd->NumberLevels(); i++) {
+          if (vstorage->LevelFiles(i).empty() ||
+              !vstorage->OverlapInLevel(i, begin, end)) {
+            continue;
+          }
+          std::vector<FileMetaData*> level_files;
+          InternalKey begin_storage, end_storage, *begin_key, *end_key;
+          if (begin == nullptr) {
+            begin_key = nullptr;
+          } else {
+            begin_storage.SetMinPossibleForUserKey(*begin);
+            begin_key = &begin_storage;
+          }
+          if (end == nullptr) {
+            end_key = nullptr;
+          } else {
+            end_storage.SetMaxPossibleForUserKey(*end);
+            end_key = &end_storage;
+          }
+
+          vstorage->GetCleanInputsWithinInterval(i, begin_key, end_key,
+                                                 &level_files, -1 /* hint_index */,
+                                                 nullptr /* file_index */);
+          FileMetaData* level_file;
+          for (uint32_t j = 0; j < level_files.size(); j++) {
+            level_file = level_files[j];
+            if (level_file->being_compacted) {
+              continue;
+            }
+            if (deleted_files.find(level_file) != deleted_files.end()) {
+              continue;
+            }
+            if (!include_end && end != nullptr &&
+                cfd->user_comparator()->Compare(level_file->largest().user_key(), *end) == 0) {
+              continue;
+            }
+            is_delete = true;
+            edit.DeleteFile(i, level_file->fd.GetNumber());
+            deleted_files.insert(level_file);
+            level_file->being_compacted = true;
+          }
+        }
+      }
+    }
+    if (!is_delete) {
       job_context.Clean();
       return Status::OK();
     }
@@ -2777,10 +3048,12 @@ Status DBImpl::IngestExternalFile(
       bool need_flush = false;
       status = ingestion_job.NeedsFlush(&need_flush);
       TEST_SYNC_POINT_CALLBACK("DBImpl::IngestExternalFile:NeedFlush",
-                               &need_flush);
+                                &need_flush);
       if (status.ok() && need_flush) {
         mutex_.Unlock();
-        status = FlushMemTable(cfd, FlushOptions(), true /* writes_stopped */);
+        status = FlushMemTable(cfd, FlushOptions(),
+                               true /* writes_stopped */,
+                               two_write_queues_ /* nonmem_writes_stopped */);
         mutex_.Lock();
       }
     }

@@ -44,6 +44,15 @@ class CompactionPicker {
                                      VersionStorageInfo* vstorage,
                                      LogBuffer* log_buffer) = 0;
 
+  // Used for continue an compaction bread by partial remove
+  // If continue_output_level == 0 , ignore
+  virtual Compaction* PickCompactionConitnue(
+      const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
+      VersionStorageInfo* vstorage, LogBuffer* log_buffer,
+      int continue_output_level) {
+    return nullptr;
+  }
+
   // Return a compaction object for compacting the range [begin,end] in
   // the specified level.  Returns nullptr if there is nothing in that
   // level that overlaps the specified range.  Caller should delete

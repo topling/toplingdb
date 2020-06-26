@@ -177,6 +177,7 @@ ColumnFamilyOptions BuildColumnFamilyOptions(
   cf_opts.compression = mutable_cf_options.compression;
 
   cf_opts.table_factory = options.table_factory;
+  cf_opts.memtable_factory = mutable_cf_options.memtable_factory;
   // TODO(yhchiang): find some way to handle the following derived options
   // * max_file_size
 
@@ -643,6 +644,11 @@ bool SerializeSingleOptionHelper(const char* opt_address,
   return true;
 }
 
+Status ParseColumnFamilyOption(const std::string& name,
+                               const std::string& org_value,
+                               ColumnFamilyOptions* new_options,
+                               bool input_strings_escaped = false);
+
 Status GetMutableOptionsFromStrings(
     const MutableCFOptions& base_options,
     const std::unordered_map<std::string, std::string>& options_map,
@@ -651,6 +657,16 @@ Status GetMutableOptionsFromStrings(
   *new_options = base_options;
   for (const auto& o : options_map) {
     try {
+      if ("memtable" == o.first) {
+        ColumnFamilyOptions cfo;
+        Status s = ParseColumnFamilyOption(o.first, o.second, &cfo);
+        if (s.ok()) {
+          new_options->memtable_factory = cfo.memtable_factory;
+          continue;
+        } else {
+          return s;
+        }
+      }
       auto iter = cf_options_type_info.find(o.first);
       if (iter == cf_options_type_info.end()) {
         return Status::InvalidArgument("Unrecognized option: " + o.first);
@@ -782,7 +798,7 @@ Status StringToMap(const std::string& opts_str,
 Status ParseColumnFamilyOption(const std::string& name,
                                const std::string& org_value,
                                ColumnFamilyOptions* new_options,
-                               bool input_strings_escaped = false) {
+                               bool input_strings_escaped) {
   const std::string& value =
       input_strings_escaped ? UnescapeOptionString(org_value) : org_value;
   try {

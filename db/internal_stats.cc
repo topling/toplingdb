@@ -27,6 +27,12 @@ namespace rocksdb {
 
 #ifndef ROCKSDB_LITE
 
+void ForEachInternalStatsKeys(std::function<void(std::string const&)> const& callback) {
+    for (auto& pair : InternalStats::ppt_name_to_info) {
+        callback(pair.first);
+    }
+}
+
 const std::map<LevelStatType, LevelStat> InternalStats::compaction_level_stats =
     {
         {LevelStatType::NUM_FILES, LevelStat{"NumFiles", "Files"}},
@@ -63,7 +69,7 @@ void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name) {
   };
   int line_size = snprintf(
       buf + written_size, len - written_size,
-      "Level    %s   %s     %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
+      "Level    %s    %s     %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
       // Note that we skip COMPACTED_FILES and merge it with Files column
       hdr(LevelStatType::NUM_FILES), hdr(LevelStatType::SIZE_BYTES),
       hdr(LevelStatType::SCORE), hdr(LevelStatType::READ_GB),
@@ -87,7 +93,8 @@ void PrepareLevelStats(std::map<LevelStatType, double>* level_stats,
   uint64_t bytes_read =
       stats.bytes_read_non_output_levels + stats.bytes_read_output_level;
   int64_t bytes_new =
-      stats.bytes_written - stats.bytes_read_output_level;
+      std::max(stats.bytes_written, stats.bytes_read_output_level) -
+      stats.bytes_read_output_level;
   double elapsed = (stats.micros + 1) / kMicrosInSec;
 
   (*level_stats)[LevelStatType::NUM_FILES] = num_files;
@@ -120,7 +127,7 @@ void PrintLevelStats(char* buf, size_t len, const std::string& name,
   snprintf(buf, len,
            "%4s "      /*  Level */
            "%6d/%-3d " /*  Files */
-           "%8s "      /*  Size */
+           "%9s "      /*  Size */
            "%5.1f "    /*  Score */
            "%8.1f "    /*  Read(GB) */
            "%7.1f "    /*  Rn(GB) */
@@ -755,7 +762,7 @@ bool InternalStats::HandleEstimateTableReadersMem(uint64_t* value, DBImpl* db,
 
 bool InternalStats::HandleEstimateLiveDataSize(uint64_t* value, DBImpl* db,
                                                Version* version) {
-  const auto* vstorage = cfd_->current()->storage_info();
+  const auto* vstorage = version->storage_info();
   *value = vstorage->EstimateLiveDataSize();
   return true;
 }

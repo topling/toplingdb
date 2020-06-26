@@ -90,10 +90,16 @@ class Cache {
   //
   // When the inserted entry is no longer needed, the key and
   // value will be passed to "deleter".
+  //
+  // If accept_existing is nullptr, existing value will be replaced,
+  // this is the default behavior.
+  // If accept_existing is not nullptr, input @param value will keep
+  // intact, and the existing value will be put on *accept_existing
   virtual Status Insert(const Slice& key, void* value, size_t charge,
                         void (*deleter)(const Slice& key, void* value),
                         Handle** handle = nullptr,
-                        Priority priority = Priority::LOW) = 0;
+                        Priority priority = Priority::LOW,
+                        void** accept_existing = nullptr) = 0;
 
   // If the cache has no mapping for "key", returns nullptr.
   //

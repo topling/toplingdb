@@ -131,11 +131,21 @@ Status BuildTable(
                       ioptions.merge_operator, nullptr, ioptions.info_log,
                       true /* internal key corruption is not ok */,
                       snapshots.empty() ? 0 : snapshots.back());
+    MergeHelper merge2(env, internal_comparator.user_comparator(),
+                      ioptions.merge_operator, nullptr, ioptions.info_log,
+                      true /* internal key corruption is not ok */,
+                      snapshots.empty() ? 0 : snapshots.back());
 
     CompactionIterator c_iter(
         iter, internal_comparator.user_comparator(), &merge, kMaxSequenceNumber,
         &snapshots, earliest_write_conflict_snapshot, snapshot_checker, env,
         true /* internal key corruption is not ok */, range_del_agg.get());
+    CompactionIterator c_iter2(
+        iter, internal_comparator.user_comparator(), &merge2, kMaxSequenceNumber,
+        &snapshots, earliest_write_conflict_snapshot, snapshot_checker, env,
+        true /* internal key corruption is not ok */, range_del_agg.get());
+    auto second_pass_iter = c_iter2.AdaptToInternalIterator();
+    builder->SetSecondPassIterator(second_pass_iter.get());
     c_iter.SeekToFirst();
     for (; c_iter.Valid(); c_iter.Next()) {
       const Slice& key = c_iter.key();
@@ -192,7 +202,7 @@ Status BuildTable(
       // we will regrad this verification as user reads since the goal is
       // to cache it here for further user reads
       std::unique_ptr<InternalIterator> it(table_cache->NewIterator(
-          ReadOptions(), env_options, internal_comparator, meta->fd,
+          ReadOptions(), env_options, internal_comparator, *meta,
           nullptr /* range_del_agg */, nullptr,
           (internal_stats == nullptr) ? nullptr
                                       : internal_stats->GetFileReadHist(0),

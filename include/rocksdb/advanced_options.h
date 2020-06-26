@@ -178,6 +178,11 @@ struct AdvancedColumnFamilyOptions {
   // Default: false.
   bool inplace_update_support = false;
 
+  // Enable sst file partial remove makes compaction finish earlier
+  // for removing unneeded input files as soon as possible, thus
+  // reduce space amplification (esp. for universal compaction)
+  bool enable_partial_remove = false;
+
   // Number of locks used for inplace update
   // Default: 10000, if inplace_update_support = true, else 0.
   //
@@ -555,7 +560,7 @@ struct AdvancedColumnFamilyOptions {
 
   // NOT SUPPORTED ANYMORE
   // This does not do anything anymore.
-  int max_mem_compaction_level;
+  int max_mem_compaction_level = 0;
 
   // NOT SUPPORTED ANYMORE -- this options is no longer used
   // Puts are delayed to options.delayed_write_rate when any level has a

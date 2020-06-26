@@ -96,6 +96,8 @@ struct EnvOptions {
   // WAL writes
   bool fallocate_with_keep_size = true;
 
+  bool use_mmap_populate = false;
+
   // See DBOptions doc
   size_t compaction_readahead_size;
 
@@ -563,6 +565,8 @@ class RandomAccessFile {
   virtual Status InvalidateCache(size_t offset, size_t length) {
     return Status::NotSupported("InvalidateCache not supported.");
   }
+
+  virtual intptr_t FileDescriptor() const { assert(0); return -1; }
 };
 
 // A file abstraction for sequential writing.  The implementation

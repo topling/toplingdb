@@ -27,7 +27,8 @@ class CacheShard {
   virtual Status Insert(const Slice& key, uint32_t hash, void* value,
                         size_t charge,
                         void (*deleter)(const Slice& key, void* value),
-                        Cache::Handle** handle, Cache::Priority priority) = 0;
+                        Cache::Handle** handle, Cache::Priority priority,
+                        void** accept_existing) = 0;
   virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash) = 0;
   virtual bool Ref(Cache::Handle* handle) = 0;
   virtual bool Release(Cache::Handle* handle, bool force_erase = false) = 0;
@@ -62,7 +63,8 @@ class ShardedCache : public Cache {
 
   virtual Status Insert(const Slice& key, void* value, size_t charge,
                         void (*deleter)(const Slice& key, void* value),
-                        Handle** handle, Priority priority) override;
+                        Handle** handle, Priority priority,
+                        void** accept_existing) override;
   virtual Handle* Lookup(const Slice& key, Statistics* stats) override;
   virtual bool Ref(Handle* handle) override;
   virtual bool Release(Handle* handle, bool force_erase = false) override;

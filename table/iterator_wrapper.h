@@ -10,6 +10,7 @@
 #pragma once
 
 #include <set>
+#include <vector>
 
 #include "table/internal_iterator.h"
 
@@ -58,6 +59,10 @@ class IteratorWrapper {
   Slice value() const       { assert(Valid()); return iter_->value(); }
   // Methods below require iter() != nullptr
   Status status() const     { assert(iter_); return iter_->status(); }
+  IteratorSource source() const {
+    assert(iter_);
+    return iter_->source();
+  }
   void Next()               { assert(iter_); iter_->Next();        Update(); }
   void Prev()               { assert(iter_); iter_->Prev();        Update(); }
   void Seek(const Slice& k) { assert(iter_); iter_->Seek(k);       Update(); }
@@ -96,6 +101,15 @@ class IteratorWrapper {
 };
 
 class Arena;
+class InternalKey;
+class InternalKeyComparator;
+
+// Return a range wrapped InternalIterator
+// range_set not owned
+extern InternalIterator* NewRangeWrappedInternalIterator(
+    InternalIterator* iter, const InternalKeyComparator& internal_key_comp,
+    const std::vector<InternalKey>* range_set, Arena* arena);
+
 // Return an empty iterator (yields nothing) allocated from arena.
 extern InternalIterator* NewEmptyInternalIterator(Arena* arena);
 

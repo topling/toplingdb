@@ -41,6 +41,10 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../terark-zip-rocksdb/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../terark/boost-include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../terark/src)
+
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
 if(MSVC)
   include(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty.inc)
@@ -415,6 +419,7 @@ set(SOURCES
         memtable/hash_skiplist_rep.cc
         memtable/skiplistrep.cc
         memtable/vectorrep.cc
+        memtable/trbtreerep.cc
         memtable/write_buffer_manager.cc
         monitoring/histogram.cc
         monitoring/histogram_windowing.cc
@@ -589,6 +594,17 @@ else()
     env/env_posix.cc
     env/io_posix.cc)
 endif()
+
+#[[
+file(GLOB_RECURSE TERARK_SRC
+        LIST_DIRECTORIES false
+        ${CMAKE_CURRENT_SOURCE_DIR}/../terark/src/*.cpp)
+file(GLOB_RECURSE TERARK_ZIP_ROCKSDB_SRC
+        LIST_DIRECTORIES false
+        ${CMAKE_CURRENT_SOURCE_DIR}/../terark-zip-rocksdb/src/*.cc)
+list(APPEND SOURCES ${TERARK_SRC})
+list(APPEND SOURCES ${TERARK_ZIP_ROCKSDB_SRC})
+]]
 
 set(ROCKSDB_STATIC_LIB rocksdb${ARTIFACT_SUFFIX})
 set(ROCKSDB_SHARED_LIB rocksdb-shared${ARTIFACT_SUFFIX})

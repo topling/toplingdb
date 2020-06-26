@@ -218,7 +218,8 @@ inline bool operator!=(const Slice& x, const Slice& y) {
 }
 
 inline int Slice::compare(const Slice& b) const {
-  assert(data_ != nullptr && b.data_ != nullptr);
+  assert(0 == size_ || data_ != nullptr);
+  assert(0 == b.size_ || b.data_ != nullptr);
   const size_t min_len = (size_ < b.size_) ? size_ : b.size_;
   int r = memcmp(data_, b.data_, min_len);
   if (r == 0) {

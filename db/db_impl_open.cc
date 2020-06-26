@@ -21,6 +21,11 @@
 #include "util/sst_file_manager_impl.h"
 #include "util/sync_point.h"
 
+#ifndef _MSC_VER
+# include <table/terark_zip_weak_function.h>
+# include <sys/unistd.h>
+#endif
+
 namespace rocksdb {
 Options SanitizeOptions(const std::string& dbname,
                         const Options& src) {
@@ -930,10 +935,16 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
   // should not be added to the manifest.
   int level = 0;
   if (s.ok() && meta.fd.GetFileSize() > 0) {
+    assert(meta.partial_removed == 0);
+    assert(meta.compact_to_level == 0);
+    assert(meta.meta_level == 0);
+    assert(meta.range_set.size() >= 2);
+    assert(meta.smallest().size() >= 8);
+    assert(meta.largest().size() >= 8);
     edit->AddFile(level, meta.fd.GetNumber(), meta.fd.GetPathId(),
-                  meta.fd.GetFileSize(), meta.smallest, meta.largest,
+                  meta.fd.GetFileSize(), meta.range_set,
                   meta.smallest_seqno, meta.largest_seqno,
-                  meta.marked_for_compaction);
+                  meta.marked_for_compaction, 0, 0, 0);
   }
 
   InternalStats::CompactionStats stats(1);
@@ -990,7 +1001,25 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   handles->clear();
 
   size_t max_write_buffer_size = 0;
-  for (auto cf : column_families) {
+#ifndef _MSC_VER
+  const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terarkdb_localTempDir) {
+    if (TerarkZipMultiCFOptionsFromEnv) {
+      if (::access(terarkdb_localTempDir, R_OK|W_OK) != 0) {
+        return Status::InvalidArgument(
+            "Must exists, and Permission ReadWrite is required on "
+            "env TerarkZipTable_localTempDir",
+            terarkdb_localTempDir);
+      }
+      TerarkZipMultiCFOptionsFromEnv(db_options, column_families);
+    } else {
+      return Status::InvalidArgument(
+          "env TerarkZipTable_localTempDir is defined, "
+          "but dynamic libterark-zip-rocksdb is not loaded");
+    }
+  }
+#endif
+  for (auto& cf : column_families) {
     max_write_buffer_size =
         std::max(max_write_buffer_size, cf.options.write_buffer_size);
   }

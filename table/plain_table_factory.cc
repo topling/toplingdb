@@ -155,6 +155,8 @@ Status GetMemTableRepFactoryFromString(
       return Status::InvalidArgument("Can't parse memtable_factory option ",
                                      opts_str);
     }
+  } else if (opts_list[0] == "rbtree") {
+    mem_factory = NewThreadedRBTreeRepFactory();
   } else {
     return Status::InvalidArgument("Unrecognized memtable_factory option ",
                                    opts_str);

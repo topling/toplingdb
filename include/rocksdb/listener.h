@@ -44,9 +44,9 @@ struct TableFileCreationBriefInfo {
 };
 
 struct TableFileCreationInfo : public TableFileCreationBriefInfo {
-  TableFileCreationInfo() = default;
+  TableFileCreationInfo() : file_size(uint64_t(-1)) {}
   explicit TableFileCreationInfo(TableProperties&& prop)
-      : table_properties(prop) {}
+      : file_size(uint64_t(-1)), table_properties(prop) {}
   // the size of the file.
   uint64_t file_size;
   // Detailed properties of the created file.
@@ -80,6 +80,10 @@ enum class CompactionReason {
   // [Level] Automatic compaction within bottommost level to cleanup duplicate
   // versions of same user key, usually due to a released snapshot.
   kBottommostFiles,
+  // [Universal] continue compact ( interrupted by partial remove )
+  kUniversalContinue,
+  // [Universal] trivial move files
+  kUniversalTrivialMove,
 };
 
 enum class BackgroundErrorReason {
@@ -146,9 +150,16 @@ struct FlushJobInfo {
 };
 
 struct CompactionJobInfo {
-  CompactionJobInfo() = default;
+private:
+  void init();
+public:
+  CompactionJobInfo() {
+    init();
+  }
   explicit CompactionJobInfo(const CompactionJobStats& _stats) :
-      stats(_stats) {}
+      stats(_stats) {
+    init();
+  }
 
   // the name of the column family where the compaction happened.
   std::string cf_name;

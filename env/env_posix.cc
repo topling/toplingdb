@@ -231,15 +231,21 @@ class PosixEnv : public Env {
       uint64_t size;
       s = GetFileSize(fname, &size);
       if (s.ok()) {
-        void* base = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
+        flags = MAP_SHARED;
+#if defined(OS_LINUX)
+        if (options.use_mmap_populate) {
+          flags |= MAP_POPULATE;
+        }
+#endif
+        void* base = mmap(nullptr, size, PROT_READ, flags, fd, 0);
         if (base != MAP_FAILED) {
           result->reset(new PosixMmapReadableFile(fd, fname, base,
                                                   size, options));
         } else {
           s = IOError("while mmap file for read", fname, errno);
+          close(fd);
         }
       }
-      close(fd);
     } else {
       if (options.use_direct_reads && !options.use_mmap_reads) {
 #ifdef OS_MACOSX

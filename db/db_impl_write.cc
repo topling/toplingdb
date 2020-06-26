@@ -1002,6 +1002,7 @@ Status DBImpl::DelayWrite(uint64_t num_bytes,
   {
     StopWatch sw(env_, stats_, WRITE_STALL, &time_delayed);
     uint64_t delay = write_controller_.GetDelay(env_, num_bytes);
+    delay = std::min<uint64_t>(delay, 1000000); // pls don't death sleep
     if (delay > 0) {
       if (write_options.no_slowdown) {
         return Status::Incomplete();
@@ -1106,10 +1107,12 @@ void DBImpl::NotifyOnMemTableSealed(ColumnFamilyData* cfd,
 
 // REQUIRES: mutex_ is held
 // REQUIRES: this thread is currently at the front of the writer queue
-Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
+Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context,
+                              bool nonmem_writes_stopped) {
   mutex_.AssertHeld();
   WriteThread::Writer nonmem_w;
-  if (two_write_queues_) {
+  bool twq_check_required = two_write_queues_ && !nonmem_writes_stopped;
+  if (twq_check_required) {
     // SwitchMemtable is a rare event. To simply the reasoning, we make sure
     // that there is no concurrent thread writing to WAL.
     nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
@@ -1135,11 +1138,11 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
   // Attempt to switch to a new memtable and trigger flush of old.
   // Do this without holding the dbmutex lock.
   assert(versions_->prev_log_number() == 0);
-  if (two_write_queues_) {
+  if (twq_check_required) {
     log_write_mutex_.Lock();
   }
   bool creating_new_log = !log_empty_;
-  if (two_write_queues_) {
+  if (twq_check_required) {
     log_write_mutex_.Unlock();
   }
   uint64_t recycle_log_number = 0;
@@ -1224,7 +1227,7 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
     assert(creating_new_log);
     assert(!new_mem);
     assert(!new_log);
-    if (two_write_queues_) {
+    if (twq_check_required) {
       nonmem_write_thread_.ExitUnbatched(&nonmem_w);
     }
     return s;
@@ -1264,7 +1267,7 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
   cfd->SetMemtable(new_mem);
   InstallSuperVersionAndScheduleWork(cfd, &context->superversion_context,
                                      mutable_cf_options);
-  if (two_write_queues_) {
+  if (twq_check_required) {
     nonmem_write_thread_.ExitUnbatched(&nonmem_w);
   }
   return s;

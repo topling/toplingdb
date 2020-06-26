@@ -280,6 +280,8 @@ class VersionEdit {
     f.partial_removed = 0;
     f.compact_to_level = 0;
     f.meta_level = 0;
+    assert(smallest.size() >= 8);
+    assert(largest.size() >= 8);
     new_files_.emplace_back(level, std::move(f));
   }
   void AddFile(int level, uint64_t file, uint32_t file_path_id,
@@ -289,6 +291,12 @@ class VersionEdit {
                bool marked_for_compaction, uint8_t partial_removed,
                uint8_t compact_to_level, uint8_t meta_level) {
     assert(smallest_seqno <= largest_seqno);
+    assert(range_set.size() >= 2);
+   #if !defined(NDEBUG)
+    for (size_t i = 0; i < range_set.size(); ++i) {
+      assert(range_set[i].size() >= 8);
+    }
+   #endif
     FileMetaData f;
     f.fd = FileDescriptor(file, file_path_id, file_size);
     f.range_set = range_set;

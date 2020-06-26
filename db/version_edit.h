@@ -256,6 +256,25 @@ class VersionEdit {
   // REQUIRES: This version has not been saved (see VersionSet::SaveTo)
   // REQUIRES: "smallest" and "largest" are smallest and largest keys in file
   void AddFile(int level, uint64_t file, uint32_t file_path_id,
+               uint64_t file_size, const InternalKey& smallest,
+               const InternalKey& largest, const SequenceNumber& smallest_seqno,
+               const SequenceNumber& largest_seqno,
+               bool marked_for_compaction) {
+    assert(smallest_seqno <= largest_seqno);
+    FileMetaData f;
+    f.fd = FileDescriptor(file, file_path_id, file_size);
+    f.smallest = smallest;
+    f.largest = largest;
+    f.smallest_seqno = smallest_seqno;
+    f.largest_seqno = largest_seqno;
+    f.marked_for_compaction = marked_for_compaction;
+    f.range_set = {smallest, largest};
+    f.partial_removed = 0;
+    f.compact_to_level = 0;
+    f.meta_level = 0;
+    new_files_.emplace_back(level, std::move(f));
+  }
+  void AddFile(int level, uint64_t file, uint32_t file_path_id,
                uint64_t file_size, const std::vector<InternalKey>& range_set,
                const SequenceNumber& smallest_seqno,
                const SequenceNumber& largest_seqno,

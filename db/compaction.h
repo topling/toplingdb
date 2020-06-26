@@ -56,7 +56,8 @@ class Compaction {
              uint32_t output_path_id, CompressionType compression,
              std::vector<FileMetaData*> grandparents,
              bool manual_compaction = false, double score = -1,
-             bool deletion_compaction = false, bool disable_subcompaction = false,
+             bool deletion_compaction = false,
+             bool disable_subcompaction = false,
              bool enable_partial_remove = false,
              const std::vector<CompactionInputFilesRange>& input_range = {},
              CompactionReason compaction_reason = CompactionReason::kUnknown);

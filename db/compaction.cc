@@ -160,7 +160,8 @@ Compaction::Compaction(VersionStorageInfo* vstorage,
                        CompressionType _compression,
                        std::vector<FileMetaData*> _grandparents,
                        bool _manual_compaction, double _score,
-                       bool _deletion_compaction, bool _disable_subcompaction,
+                       bool _deletion_compaction,
+                       bool _disable_subcompaction,
                        bool _enable_partial_remove,
                        const std::vector<CompactionInputFilesRange>& _input_range,
                        CompactionReason _compaction_reason)
@@ -351,9 +352,10 @@ bool Compaction::KeyNotExistsBeyondOutputLevel(
 
 // Mark (or clear) each file that is being compacted
 void Compaction::MarkFilesBeingCompacted(bool mark_as_compacted) {
-  for (size_t i = 0; i < inputs_.size(); i++) {
+  for (size_t i = 0; i < num_input_levels(); i++) {
     for (size_t j = 0; j < inputs_[i].size(); j++) {
-      assert(mark_as_compacted ^ inputs_[i][j]->being_compacted);
+      assert(mark_as_compacted ? !inputs_[i][j]->being_compacted
+                               : inputs_[i][j]->being_compacted);
       inputs_[i][j]->being_compacted = mark_as_compacted;
     }
   }

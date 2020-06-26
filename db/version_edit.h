@@ -104,7 +104,25 @@ struct PartialRemovedMetaData {
 
 struct FileMetaData {
   FileDescriptor fd;
+  InternalKey& get_smallest() {
+    assert(range_set.size() >= 2);
+    return range_set.front();
+  }
+  InternalKey& get_largest() {
+    assert(range_set.size() >= 2);
+    return range_set.back();
+  }
+  void put_smallest(const InternalKey& x) {
+    assert(range_set.size() >= 2);
+    range_set.front() = x;
+  }
+  void put_largest(const InternalKey& x) {
+    assert(range_set.size() >= 2);
+    range_set.back() = x;
+  }
+  __declspec(property(get=get_smallest, put=put_smallest))
   InternalKey smallest;            // Smallest internal key served by table
+  __declspec(property(get=get_largest, put=put_largest))
   InternalKey largest;             // Largest internal key served by table
   std::vector<InternalKey> range_set; // valid range set
   SequenceNumber smallest_seqno;   // The smallest seqno in this file
@@ -178,10 +196,6 @@ struct FileMetaData {
     largest.DecodeFrom(key);
     smallest_seqno = std::min(smallest_seqno, seqno);
     largest_seqno = std::max(largest_seqno, seqno);
-    // range_set and smallest/largest are keep synced
-    // do not change smallest/largest to functions is to keep min diff with upstream
-    range_set.front() = smallest;
-    range_set.back() = largest;
   }
 };
 
@@ -268,7 +282,6 @@ class VersionEdit {
     f.smallest_seqno = smallest_seqno;
     f.largest_seqno = largest_seqno;
     f.marked_for_compaction = marked_for_compaction;
-    f.range_set = {smallest, largest};
     f.partial_removed = 0;
     f.compact_to_level = 0;
     f.meta_level = 0;
@@ -284,8 +297,6 @@ class VersionEdit {
     FileMetaData f;
     f.fd = FileDescriptor(file, file_path_id, file_size);
     f.range_set = range_set;
-    f.smallest = range_set.front();
-    f.largest = range_set.back();
     f.smallest_seqno = smallest_seqno;
     f.largest_seqno = largest_seqno;
     f.marked_for_compaction = marked_for_compaction;

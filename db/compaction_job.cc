@@ -1067,7 +1067,6 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   c_iter->SeekToFirst();
   auto c_iter2 = makeCompactionIterator(input2.get(), merge2,
       range_del_agg2.get(), nullptr);
-  c_iter2->SetFilterSampleInterval(0);
   auto second_pass_iter = c_iter2->AdaptToInternalIterator();
   if (c_iter->Valid() &&
       sub_compact->compaction->output_level() != 0) {

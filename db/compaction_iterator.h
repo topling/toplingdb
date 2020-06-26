@@ -113,7 +113,6 @@ class CompactionIterator {
   bool Valid() const { return valid_; }
   const Slice& user_key() const { return current_user_key_; }
   const CompactionIterationStats& iter_stats() const { return iter_stats_; }
-  void SetFilterSampleInterval(size_t filter_sample_interval);
 
  private:
   // Processes the input stream to find the next output

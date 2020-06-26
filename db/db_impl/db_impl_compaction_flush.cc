@@ -1913,7 +1913,7 @@ Status DBImpl::WaitForFlushMemTables(
     if (num_dropped + num_finished == num) {
       break;
     }
-    bg_cv_.Wait();
+    bg_cv_.TimedWait(kWaitIntervalUS);
   }
   Status s;
   // If not resuming from bg error, and an error has caused the DB to stop,
@@ -2908,33 +2908,33 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
       m->status = status;
       m->done = true;
     }
-    // For universal compaction:
+    if (m->cfd->ioptions()->compaction_style == kCompactionStyleUniversal) {
     //   Because universal compaction always happens at level 0, so one
     //   compaction will pick up all overlapped files. No files will be
     //   filtered out due to size limit and left for a successive compaction.
     //   So we can safely conclude the current compaction.
     //
-    //   Also note that, if we don't stop here, then the current compaction
-    //   writes a new file back to level 0, which will be used in successive
-    //   compaction. Hence the manual compaction will never finish.
-    //
+      // manual compaction need continue ?
+      auto vstorage = m->cfd->current()->storage_info();
+      m->incomplete = vstorage->need_continue_compaction(m->output_level);
+      m->done = !m->incomplete;
+    } else {
+      if (m->manual_end == nullptr) {
     // Stop the compaction if manual_end points to nullptr -- this means
     // that we compacted the whole range. manual_end should always point
     // to nullptr in case of universal compaction
-    if (m->manual_end == nullptr) {
       m->done = true;
     }
     if (!m->done) {
       // We only compacted part of the requested range.  Update *m
       // to the range that is left to be compacted.
-      // Universal and FIFO compactions should always compact the whole range
-      assert(m->cfd->ioptions()->compaction_style !=
-                 kCompactionStyleUniversal ||
-             m->cfd->ioptions()->num_levels > 1);
+        // FIFO compactions should always compact the whole range
+        assert(m->cfd->ioptions()->num_levels > 1);
       assert(m->cfd->ioptions()->compaction_style != kCompactionStyleFIFO);
       m->tmp_storage = *m->manual_end;
       m->begin = &m->tmp_storage;
       m->incomplete = true;
+    }
     }
     m->in_progress = false;  // not being processed anymore
   }

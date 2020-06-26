@@ -800,8 +800,8 @@ void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
   file_level->files = new (mem)FdWithKeyRange[num];
 
   for (size_t i = 0; i < num; i++) {
-    Slice smallest_key = files[i]->smallest.Encode();
-    Slice largest_key = files[i]->largest.Encode();
+    Slice smallest_key = files[i]->smallest().Encode();
+    Slice largest_key = files[i]->largest().Encode();
 
     // Copy key slice to sequential memory
     size_t smallest_size = smallest_key.size();
@@ -1723,6 +1723,7 @@ VersionStorageInfo::VersionStorageInfo(
       current_num_samples_(0),
       estimated_compaction_needed_bytes_(0),
       finalized_(false),
+      is_pick_fail_(false),
       force_consistency_checks_(_force_consistency_checks) {
   if (ref_vstorage != nullptr) {
     accumulated_file_size_ = ref_vstorage->accumulated_file_size_;
@@ -2275,6 +2276,11 @@ void VersionStorageInfo::ComputeCompensatedSizes() {
               (file_meta->num_deletions * 2 - file_meta->num_entries) *
               average_value_size * kDeletionWeightOnCompaction;
         }
+        if (file_meta->partial_removed) {
+          file_meta->compensated_file_size =
+              file_meta->compensated_file_size *
+              (kPartialRemovedMax - file_meta->partial_removed) / kPartialRemovedMax;
+        }
       }
     }
   }
@@ -2423,13 +2429,23 @@ void VersionStorageInfo::ComputeCompactionScore(
       // overwrites/deletions).
       int num_sorted_runs = 0;
       uint64_t total_size = 0;
-      for (auto* f : files_[level]) {
-        if (!f->being_compacted) {
-          total_size += f->compensated_file_size;
-          num_sorted_runs++;
-        }
-      }
+
       if (compaction_style_ == kCompactionStyleUniversal) {
+        int sorted_runs_in_row = 0;
+        auto push_sorted_run = [&](bool inc) {
+          if (inc) {
+            ++sorted_runs_in_row;
+          } else {
+            num_sorted_runs = std::max(sorted_runs_in_row, num_sorted_runs);
+            sorted_runs_in_row = 0;
+          }
+        };
+        for (auto* f : files_[level]) {
+          push_sorted_run(!f->being_compacted);
+          if (!f->being_compacted) {
+            total_size += f->compensated_file_size;
+          }
+        }
         // For universal compaction, we use level0 score to indicate
         // compaction score for the whole DB. Adding other levels as if
         // they are L0 files.
@@ -2502,6 +2518,7 @@ void VersionStorageInfo::ComputeCompactionScore(
       }
     }
   }
+  is_pick_fail_ = false;
   ComputeFilesMarkedForCompaction();
   ComputeBottommostFilesMarkedForCompaction();
   if (mutable_cf_options.ttl > 0) {
@@ -2516,6 +2533,7 @@ void VersionStorageInfo::ComputeCompactionScore(
 
 void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
   files_marked_for_compaction_.clear();
+  need_continue_compaction_.clear();
   int last_qualify_level = 0;
 
   // Do not include files from the last level with data
@@ -2523,6 +2541,11 @@ void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
   // we should not move it to a new level.
   for (int level = num_levels() - 1; level >= 1; level--) {
     if (!files_[level].empty()) {
+      for (auto* f : files_[level]) {
+        if (f->compact_to_level) {
+          need_continue_compaction_.emplace(level, f->compact_to_level);
+        }
+      }
       last_qualify_level = level - 1;
       break;
     }
@@ -2532,6 +2555,9 @@ void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
     for (auto* f : files_[level]) {
       if (!f->being_compacted && f->marked_for_compaction) {
         files_marked_for_compaction_.emplace_back(level, f);
+      }
+      if (f->compact_to_level) {
+        need_continue_compaction_.emplace(level, f->compact_to_level);
       }
     }
   }
@@ -2642,16 +2668,16 @@ void VersionStorageInfo::AddFile(int level, FileMetaData* f, Logger* info_log) {
 #ifndef NDEBUG
   if (level > 0 && !level_files->empty() &&
       internal_comparator_->Compare(
-          (*level_files)[level_files->size() - 1]->largest, f->smallest) >= 0) {
+          (*level_files)[level_files->size() - 1]->largest(), f->smallest()) >= 0) {
     auto* f2 = (*level_files)[level_files->size() - 1];
     if (info_log != nullptr) {
       Error(info_log, "Adding new file %" PRIu64
                       " range (%s, %s) to level %d but overlapping "
                       "with existing file %" PRIu64 " %s %s",
-            f->fd.GetNumber(), f->smallest.DebugString(true).c_str(),
-            f->largest.DebugString(true).c_str(), level, f2->fd.GetNumber(),
-            f2->smallest.DebugString(true).c_str(),
-            f2->largest.DebugString(true).c_str());
+            f->fd.GetNumber(), f->smallest().DebugString(true).c_str(),
+            f->largest().DebugString(true).c_str(), level, f2->fd.GetNumber(),
+            f2->smallest().DebugString(true).c_str(),
+            f2->largest().DebugString(true).c_str());
       LogFlush(info_log);
     }
     assert(false);
@@ -2752,15 +2778,15 @@ void SortFileByOverlappingRatio(
     uint64_t overlapping_bytes = 0;
     // Skip files in next level that is smaller than current file
     while (next_level_it != next_level_files.end() &&
-           icmp.Compare((*next_level_it)->largest, file->smallest) < 0) {
+           icmp.Compare((*next_level_it)->largest(), file->smallest()) < 0) {
       next_level_it++;
     }
 
     while (next_level_it != next_level_files.end() &&
-           icmp.Compare((*next_level_it)->smallest, file->largest) < 0) {
+           icmp.Compare((*next_level_it)->smallest(), file->largest()) < 0) {
       overlapping_bytes += (*next_level_it)->fd.file_size;
 
-      if (icmp.Compare((*next_level_it)->largest, file->largest) > 0) {
+      if (icmp.Compare((*next_level_it)->largest(), file->largest()) > 0) {
         // next level file cross large boundary of current file.
         break;
       }
@@ -3240,7 +3266,7 @@ int64_t VersionStorageInfo::MaxNextLevelOverlappingBytes() {
   std::vector<FileMetaData*> overlaps;
   for (int level = 1; level < num_levels() - 1; level++) {
     for (const auto& f : files_[level]) {
-      GetOverlappingInputs(level + 1, &f->smallest, &f->largest, &overlaps);
+      GetOverlappingInputs(level + 1, &f->smallest(), &f->largest(), &overlaps);
       const uint64_t sum = TotalFileSize(overlaps);
       if (sum > result) {
         result = sum;
@@ -3428,11 +3454,11 @@ uint64_t VersionStorageInfo::EstimateLiveDataSize() const {
       // (if the level is not 0) into the map without checking again because
       // the elements in the level are sorted and non-overlapping.
       auto lb = (found_end && l != 0) ?
-        ranges.end() : ranges.lower_bound(&file->smallest);
+        ranges.end() : ranges.lower_bound(&file->smallest());
       found_end = (lb == ranges.end());
       if (found_end || internal_comparator_->Compare(
-            file->largest, (*lb).second->smallest) < 0) {
-          ranges.emplace_hint(lb, &file->largest, file);
+            file->largest(), (*lb).second->smallest()) < 0) {
+          ranges.emplace_hint(lb, &file->largest(), file);
           size += file->fd.file_size;
       }
     }
@@ -3523,7 +3549,7 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
       r.append("[");
       r.append(files[i]->smallest.DebugString(hex));
       r.append(" .. ");
-      r.append(files[i]->largest.DebugString(hex));
+      r.append(files[i]->largest().DebugString(hex));
       r.append("]");
       if (files[i]->oldest_blob_file_number != kInvalidBlobFileNumber) {
         r.append(" blob_file:");
@@ -5357,6 +5383,7 @@ Status VersionSet::WriteCurrentStateToManifest(
       for (int level = 0; level < cfd->NumberLevels(); level++) {
         for (const auto& f :
              cfd->current()->storage_info()->LevelFiles(level)) {
+          assert(f->range_set.size() >= 2);
           edit.AddFile(level, f->fd.GetNumber(), f->fd.GetPathId(),
                        f->fd.GetFileSize(), f->smallest, f->largest,
                        f->fd.smallest_seqno, f->fd.largest_seqno,
@@ -5772,6 +5799,11 @@ bool VersionSet::VerifyCompactionFileConsistency(Compaction* c) {
         }
       }
       if (!found) {
+        ROCKS_LOG_WARN(
+            db_options_->info_log,
+            "[%s] compaction input file: %06lld.sst does not exist",
+            c->column_family_data()->GetName().c_str(),
+            (long long)number);
         return false;  // input files non existent in current version
       }
     }

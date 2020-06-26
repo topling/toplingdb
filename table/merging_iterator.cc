@@ -73,7 +73,6 @@ class MergingIterator : public InternalIterator {
     if (new_wrapper.Valid()) {
       current_ = CurrentForward();
     }
-  }
 
   ~MergingIterator() override {
     for (auto& child : children_) {

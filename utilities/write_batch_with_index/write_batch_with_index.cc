@@ -339,17 +339,16 @@ class BaseDeltaIterator : public Iterator {
   const Slice* iterate_upper_bound_;
 };
 
-typedef SkipList<WriteBatchIndexEntry*, const WriteBatchEntryComparator&>
-    WriteBatchEntrySkipList;
-
 class WBWIIteratorImpl : public WBWIIterator {
  public:
   WBWIIteratorImpl(uint32_t column_family_id,
-                   WriteBatchEntrySkipList* skip_list,
-                   const ReadableWriteBatch* write_batch)
+                   WriteBatchEntryIndex* entry_index,
+                   const ReadableWriteBatch* write_batch,
+                   bool ephemeral)
       : column_family_id_(column_family_id),
-        skip_list_iter_(skip_list),
-        write_batch_(write_batch) {}
+      write_batch_(write_batch) {
+    entry_index->NewIterator(iter_, ephemeral);
+  }
 
   ~WBWIIteratorImpl() override {}
 
@@ -402,7 +401,7 @@ class WBWIIteratorImpl : public WBWIIterator {
   WriteEntry Entry() const override {
     WriteEntry ret;
     Slice blob, xid;
-    const WriteBatchIndexEntry* iter_entry = skip_list_iter_.key();
+    const WriteBatchIndexEntry* iter_entry = iter_->key();
     // this is guaranteed with Valid()
     assert(iter_entry != nullptr &&
            iter_entry->column_family == column_family_id_);
@@ -422,30 +421,40 @@ class WBWIIteratorImpl : public WBWIIterator {
   }
 
   const WriteBatchIndexEntry* GetRawEntry() const {
-    return skip_list_iter_.key();
+    return iter_->key();
   }
 
  private:
   uint32_t column_family_id_;
-  WriteBatchEntrySkipList::Iterator skip_list_iter_;
+  WBIteratorStorage<WriteBatchEntryIndex::Iterator, 24> iter_;
   const ReadableWriteBatch* write_batch_;
 };
 
 struct WriteBatchWithIndex::Rep {
   explicit Rep(const Comparator* index_comparator, size_t reserved_bytes = 0,
-               size_t max_bytes = 0, bool _overwrite_key = false)
+               size_t max_bytes = 0, bool _overwrite_key = false,
+               const WriteBatchEntryIndexFactory* _index_factory = nullptr)
       : write_batch(reserved_bytes, max_bytes),
-        comparator(index_comparator, &write_batch),
-        skip_list(comparator, &arena),
+        default_comparator(index_comparator),
+        index_factory(_index_factory == nullptr
+                          ? WriteBatchEntryRBTreeIndexFactory()
+                          : _index_factory),
         overwrite_key(_overwrite_key),
         last_entry_offset(0),
         last_sub_batch_offset(0),
         sub_batch_cnt(1) {}
   ReadableWriteBatch write_batch;
-  WriteBatchEntryComparator comparator;
+  const Comparator* default_comparator;
+  struct ComparatorIndexPair {
+    const Comparator* comparator = nullptr;
+    WriteBatchEntryIndex* index = nullptr;
+  };
+  std::vector<ComparatorIndexPair> entry_indices;
   Arena arena;
-  WriteBatchEntrySkipList skip_list;
+  const WriteBatchEntryIndexFactory* index_factory;
+  WriteBatchEntryIndexContext* factory_context;
   bool overwrite_key;
+  WriteBatchIndexEntry* free_entry;
   size_t last_entry_offset;
   // The starting offset of the last sub-batch. A sub-batch starts right before
   // inserting a key that is a duplicate of a key in the last sub-batch. Zero,
@@ -458,20 +467,20 @@ struct WriteBatchWithIndex::Rep {
   // the starting offset of the next record.
   void SetLastEntryOffset() { last_entry_offset = write_batch.GetDataSize(); }
 
-  // In overwrite mode, find the existing entry for the same key and update it
-  // to point to the current entry.
-  // Return true if the key is found and updated.
-  bool UpdateExistingEntry(ColumnFamilyHandle* column_family, const Slice& key);
-  bool UpdateExistingEntryWithCfId(uint32_t column_family_id, const Slice& key);
-
   // Add the recent entry to the update.
   // In overwrite mode, if key already exists in the index, update it.
-  void AddOrUpdateIndex(ColumnFamilyHandle* column_family, const Slice& key);
-  void AddOrUpdateIndex(const Slice& key);
+  void AddOrUpdateIndex(ColumnFamilyHandle* column_family);
+  void AddOrUpdateIndex(uint32_t column_family_id);
+  void AddOrUpdateIndex();
+  void AddOrUpdateIndex(uint32_t column_family_id,
+                        WriteBatchEntryIndex* entry_index);
 
-  // Allocate an index entry pointing to the last entry in the write batch and
-  // put it to skip list.
-  void AddNewEntry(uint32_t column_family_id);
+  // Get entry_index, create if missing
+  WriteBatchEntryIndex* GetEntryIndex(ColumnFamilyHandle* column_family);
+  WriteBatchEntryIndex* GetEntryIndexWithCfId(uint32_t column_family_id);
+
+  // Get comparator, nullptr if missing
+  const Comparator* GetComparator(ColumnFamilyHandle* column_family);
 
   // Clear all updates buffered in this batch.
   void Clear();
@@ -482,16 +491,12 @@ struct WriteBatchWithIndex::Rep {
   Status ReBuildIndex();
 };
 
-bool WriteBatchWithIndex::Rep::UpdateExistingEntry(
-    ColumnFamilyHandle* column_family, const Slice& key) {
-  uint32_t cf_id = GetColumnFamilyID(column_family);
-  return UpdateExistingEntryWithCfId(cf_id, key);
+void WriteBatchWithIndex::Rep::AddOrUpdateIndex(ColumnFamilyHandle* column_family) {
+  AddOrUpdateIndex(GetColumnFamilyID(column_family), GetEntryIndex(column_family));
 }
 
-bool WriteBatchWithIndex::Rep::UpdateExistingEntryWithCfId(
-    uint32_t column_family_id, const Slice& key) {
-  if (!overwrite_key) {
-    return false;
+void WriteBatchWithIndex::Rep::AddOrUpdateIndex(uint32_t column_family_id) {
+  AddOrUpdateIndex(column_family_id, GetEntryIndexWithCfId(column_family_id));
   }
 
   WBWIIteratorImpl iter(column_family_id, &skip_list, &write_batch);
@@ -530,22 +535,75 @@ void WriteBatchWithIndex::Rep::AddOrUpdateIndex(const Slice& key) {
   }
 }
 
-void WriteBatchWithIndex::Rep::AddNewEntry(uint32_t column_family_id) {
+void WriteBatchWithIndex::Rep::AddOrUpdateIndex(uint32_t column_family_id,
+                                                WriteBatchEntryIndex* entry_index) {
+  assert(entry_index == GetEntryIndexWithCfId(column_family_id));
   const std::string& wb_data = write_batch.Data();
   Slice entry_ptr = Slice(wb_data.data() + last_entry_offset,
                           wb_data.size() - last_entry_offset);
   // Extract key
   Slice key;
   bool success __attribute__((__unused__));
-  success =
-      ReadKeyFromWriteBatchEntry(&entry_ptr, &key, column_family_id != 0);
+  success = ReadKeyFromWriteBatchEntry(&entry_ptr, &key, column_family_id != 0);
   assert(success);
 
-  auto* mem = arena.Allocate(sizeof(WriteBatchIndexEntry));
+  void* mem = free_entry;
+  if (mem == nullptr) {
+    mem = arena.Allocate(sizeof(WriteBatchIndexEntry));
+  }
   auto* index_entry =
       new (mem) WriteBatchIndexEntry(last_entry_offset, column_family_id,
                                       key.data() - wb_data.data(), key.size());
-  skip_list.Insert(index_entry);
+  if (!entry_index->Upsert(index_entry)) {
+    // overwrite key
+    obsolete_offsets.push_back(index_entry->offset);
+    free_entry = index_entry;
+  } else {
+    free_entry = nullptr;
+  }
+}
+
+WriteBatchEntryIndex* WriteBatchWithIndex::Rep::GetEntryIndex(
+    ColumnFamilyHandle* column_family) {
+  uint32_t cf_id = GetColumnFamilyID(column_family);
+  if (cf_id >= entry_indices.size()) {
+    entry_indices.resize(cf_id + 1);
+  }
+  auto index = entry_indices[cf_id].index;
+  if (index == nullptr) {
+    const auto* cf_cmp = GetColumnFamilyUserComparator(column_family);
+    if (cf_cmp == nullptr) {
+      cf_cmp = default_comparator;
+    }
+    entry_indices[cf_id].comparator = cf_cmp;
+    entry_indices[cf_id].index = index =
+        index_factory->New(factory_context, WriteBatchKeyExtractor(&write_batch),
+                           cf_cmp, &arena, overwrite_key);
+  }
+  return index;
+}
+
+WriteBatchEntryIndex* WriteBatchWithIndex::Rep::GetEntryIndexWithCfId(
+    uint32_t column_family_id) {
+  assert(column_family_id < entry_indices.size());
+  auto index = entry_indices[column_family_id].index;
+  if (index == nullptr) {
+    const auto* cf_cmp = entry_indices[column_family_id].comparator;
+    assert(cf_cmp != nullptr);
+    entry_indices[column_family_id].index = index =
+        index_factory->New(factory_context, WriteBatchKeyExtractor(&write_batch),
+                           cf_cmp, &arena, overwrite_key);
+  }
+  return index;
+}
+
+const Comparator* WriteBatchWithIndex::Rep::GetComparator(
+    ColumnFamilyHandle* column_family) {
+  uint32_t cf_id = GetColumnFamilyID(column_family);
+  if (cf_id >= entry_indices.size()) {
+    return nullptr;
+  }
+  return entry_indices[cf_id].comparator;
 }
 
 void WriteBatchWithIndex::Rep::Clear() {
@@ -554,10 +612,19 @@ void WriteBatchWithIndex::Rep::Clear() {
 }
 
 void WriteBatchWithIndex::Rep::ClearIndex() {
-  skip_list.~WriteBatchEntrySkipList();
+  for (auto& pair : entry_indices) {
+    if (pair.index != nullptr) {
+      pair.index->~WriteBatchEntryIndex();
+      pair.index = nullptr;
+    }
+
+  }
+  if (factory_context != nullptr) {
+    factory_context->~WriteBatchEntryIndexContext();
+  }
   arena.~Arena();
   new (&arena) Arena();
-  new (&skip_list) WriteBatchEntrySkipList(comparator, &arena);
+  factory_context = index_factory->NewContext(&arena);
   last_entry_offset = 0;
   last_sub_batch_offset = 0;
   sub_batch_cnt = 1;
@@ -604,9 +671,7 @@ Status WriteBatchWithIndex::Rep::ReBuildIndex() {
       case kTypeColumnFamilyMerge:
       case kTypeMerge:
         found++;
-        if (!UpdateExistingEntryWithCfId(column_family_id, key)) {
-          AddNewEntry(column_family_id);
-        }
+        AddOrUpdateIndex(column_family_id);
         break;
       case kTypeLogData:
       case kTypeBeginPrepareXID:
@@ -632,9 +697,10 @@ Status WriteBatchWithIndex::Rep::ReBuildIndex() {
 
 WriteBatchWithIndex::WriteBatchWithIndex(
     const Comparator* default_index_comparator, size_t reserved_bytes,
-    bool overwrite_key, size_t max_bytes)
+    bool overwrite_key, size_t max_bytes,
+    const WriteBatchEntryIndexFactory* index_factory)
     : rep(new Rep(default_index_comparator, reserved_bytes, max_bytes,
-                  overwrite_key)) {}
+                  overwrite_key, index_factory)) {}
 
 WriteBatchWithIndex::~WriteBatchWithIndex() {}
 
@@ -648,15 +714,27 @@ WriteBatch* WriteBatchWithIndex::GetWriteBatch() { return &rep->write_batch; }
 size_t WriteBatchWithIndex::SubBatchCnt() { return rep->sub_batch_cnt; }
 
 WBWIIterator* WriteBatchWithIndex::NewIterator() {
-  return new WBWIIteratorImpl(0, &(rep->skip_list), &rep->write_batch);
+  return new WBWIIteratorImpl(0, rep->GetEntryIndex(nullptr),
+                              &rep->write_batch, false);
 }
 
 WBWIIterator* WriteBatchWithIndex::NewIterator(
     ColumnFamilyHandle* column_family) {
-  return new WBWIIteratorImpl(GetColumnFamilyID(column_family),
-                              &(rep->skip_list), &rep->write_batch);
+  auto cf_id = GetColumnFamilyID(column_family);
+  return new WBWIIteratorImpl(cf_id, rep->GetEntryIndex(column_family),
+                              &rep->write_batch, false);
 }
 
+void WriteBatchWithIndex::NewIterator(ColumnFamilyHandle* column_family,
+                                      WBWIIterator::IteratorStorage& storage,
+                                      bool ephemeral) {
+  static_assert(sizeof(WBWIIteratorImpl) <= sizeof storage.buffer,
+                "Need larger buffer for WBWIIteratorImpl");
+  storage.iter = new (storage.buffer)
+      WBWIIteratorImpl(GetColumnFamilyID(column_family),
+                       rep->GetEntryIndex(column_family), &rep->write_batch,
+                       ephemeral);
+}
 Iterator* WriteBatchWithIndex::NewIteratorWithBase(
     ColumnFamilyHandle* column_family, Iterator* base_iterator,
     const ReadOptions* read_options) {
@@ -676,7 +754,7 @@ Iterator* WriteBatchWithIndex::NewIteratorWithBase(Iterator* base_iterator) {
   }
   // default column family's comparator
   return new BaseDeltaIterator(base_iterator, NewIterator(),
-                               rep->comparator.default_comparator());
+                               rep->default_comparator);
 }
 
 Status WriteBatchWithIndex::Put(ColumnFamilyHandle* column_family,
@@ -684,7 +762,7 @@ Status WriteBatchWithIndex::Put(ColumnFamilyHandle* column_family,
   rep->SetLastEntryOffset();
   auto s = rep->write_batch.Put(column_family, key, value);
   if (s.ok()) {
-    rep->AddOrUpdateIndex(column_family, key);
+    rep->AddOrUpdateIndex(column_family);
   }
   return s;
 }
@@ -693,7 +771,7 @@ Status WriteBatchWithIndex::Put(const Slice& key, const Slice& value) {
   rep->SetLastEntryOffset();
   auto s = rep->write_batch.Put(key, value);
   if (s.ok()) {
-    rep->AddOrUpdateIndex(key);
+    rep->AddOrUpdateIndex();
   }
   return s;
 }
@@ -703,7 +781,7 @@ Status WriteBatchWithIndex::Delete(ColumnFamilyHandle* column_family,
   rep->SetLastEntryOffset();
   auto s = rep->write_batch.Delete(column_family, key);
   if (s.ok()) {
-    rep->AddOrUpdateIndex(column_family, key);
+    rep->AddOrUpdateIndex(column_family);
   }
   return s;
 }
@@ -712,7 +790,7 @@ Status WriteBatchWithIndex::Delete(const Slice& key) {
   rep->SetLastEntryOffset();
   auto s = rep->write_batch.Delete(key);
   if (s.ok()) {
-    rep->AddOrUpdateIndex(key);
+    rep->AddOrUpdateIndex();
   }
   return s;
 }
@@ -722,7 +800,7 @@ Status WriteBatchWithIndex::SingleDelete(ColumnFamilyHandle* column_family,
   rep->SetLastEntryOffset();
   auto s = rep->write_batch.SingleDelete(column_family, key);
   if (s.ok()) {
-    rep->AddOrUpdateIndex(column_family, key);
+    rep->AddOrUpdateIndex(column_family);
   }
   return s;
 }
@@ -731,7 +809,7 @@ Status WriteBatchWithIndex::SingleDelete(const Slice& key) {
   rep->SetLastEntryOffset();
   auto s = rep->write_batch.SingleDelete(key);
   if (s.ok()) {
-    rep->AddOrUpdateIndex(key);
+    rep->AddOrUpdateIndex();
   }
   return s;
 }
@@ -771,7 +849,7 @@ Status WriteBatchWithIndex::GetFromBatch(ColumnFamilyHandle* column_family,
   WriteBatchWithIndexInternal::Result result =
       WriteBatchWithIndexInternal::GetFromBatch(
           immuable_db_options, this, column_family, key, &merge_context,
-          &rep->comparator, value, rep->overwrite_key, &s);
+          rep->GetComparator(column_family), value, rep->overwrite_key, &s);
 
   switch (result) {
     case WriteBatchWithIndexInternal::Result::kFound:
@@ -855,7 +933,7 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(
   WriteBatchWithIndexInternal::Result result =
       WriteBatchWithIndexInternal::GetFromBatch(
           immuable_db_options, this, column_family, key, &merge_context,
-          &rep->comparator, &batch_value, rep->overwrite_key, &s);
+          rep->GetComparator(column_family), &batch_value, rep->overwrite_key, &s);
 
   if (result == WriteBatchWithIndexInternal::Result::kFound) {
     pinnable_val->PinSelf();

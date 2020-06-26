@@ -488,6 +488,8 @@ class BlobDBImpl : public BlobDB {
   int disable_file_deletions_ = 0;
 
   uint32_t debug_level_;
+
+  std::atomic<bool> oldest_file_evicted_;
 };
 
 }  // namespace blob_db

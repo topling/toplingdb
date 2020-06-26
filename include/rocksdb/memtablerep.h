@@ -45,9 +45,13 @@ namespace ROCKSDB_NAMESPACE {
 
 class Arena;
 class Allocator;
+class InternalKeyComparator;
 class LookupKey;
 class SliceTransform;
 class Logger;
+
+struct ImmutableCFOptions;
+struct MutableCFOptions;
 
 typedef void* KeyHandle;
 
@@ -75,10 +79,28 @@ class MemTableRep {
     virtual int operator()(const char* prefix_len_key,
                            const Slice& key) const = 0;
 
+    virtual const InternalKeyComparator* icomparator() const = 0;
+
     virtual ~KeyComparator() {}
   };
 
+  static size_t EncodeKeyValueSize(const Slice& key, const Slice& value);
+  static void EncodeKeyValue(const Slice& key, const Slice& value, char* buf);
+
   explicit MemTableRep(Allocator* allocator) : allocator_(allocator) {}
+
+  // Insert(handler) key value impl
+  virtual void InsertKeyValue(const Slice& internal_key, const Slice& value);
+
+
+  // InsertWithHint(handler, hint) key value impl
+  virtual void InsertKeyValueWithHint(const Slice& internal_key,
+                                      const Slice& value,
+                                      void** hint);
+
+  // InsertConcurrently(handler) key value impl
+  virtual void InsertKeyValueConcurrently(const Slice& internal_key,
+                                          const Slice& value);
 
   // Allocate a buf of len size for storing key. The idea is that a
   // specific memtable representation knows its underlying data structure
@@ -158,7 +180,7 @@ class MemTableRep {
   }
 
   // Returns true iff an entry that compares equal to key is in the collection.
-  virtual bool Contains(const char* key) const = 0;
+  virtual bool Contains(const Slice& internal_key) const = 0;
 
   // Notify this table rep that it will no longer be added to. By default,
   // does nothing.  After MarkReadOnly() is called, this table rep will
@@ -187,7 +209,7 @@ class MemTableRep {
   // Get() function with a default value of dynamically construct an iterator,
   // seek and call the call back function.
   virtual void Get(const LookupKey& k, void* callback_args,
-                   bool (*callback_func)(void* arg, const char* entry));
+                   bool (*callback_func)(void* arg, const KeyValuePair* kv));
 
   virtual uint64_t ApproximateNumEntries(const Slice& /*start_ikey*/,
                                          const Slice& /*end_key*/) {
@@ -201,7 +223,7 @@ class MemTableRep {
   virtual ~MemTableRep() {}
 
   // Iteration over the contents of a skip collection
-  class Iterator {
+  class Iterator : public KeyValuePair {
    public:
     // Initialize an iterator over the specified collection.
     // The returned iterator is not valid.
@@ -214,6 +236,18 @@ class MemTableRep {
     // Returns the key at the current position.
     // REQUIRES: Valid()
     virtual const char* key() const = 0;
+
+    // Returns the key at the current position.
+    // REQUIRES: Valid()
+    virtual Slice GetKey() const override;
+
+    // Returns the value at the current position.
+    // REQUIRES: Valid()
+    virtual Slice GetValue() const override;
+
+    // Returns the key & value at the current position.
+    // REQUIRES: Valid()
+    virtual std::pair<Slice, Slice> GetKeyValue() const override;
 
     // Advances to the next position.
     // REQUIRES: Valid()
@@ -237,6 +271,11 @@ class MemTableRep {
     // Position at the last entry in collection.
     // Final state of iterator is Valid() iff collection is not empty.
     virtual void SeekToLast() = 0;
+
+    // If true, this means that the Slice returned by GetKey() is always valid
+    virtual bool IsKeyPinned() const { return true;  }
+
+    virtual bool IsSeekForPrevSupported() const { return false; }
   };
 
   // Return an iterator over the keys in this representation.
@@ -287,6 +326,11 @@ class MemTableRepFactory {
       uint32_t /* column_family_id */) {
     return CreateMemTableRep(key_cmp, allocator, slice_transform, logger);
   }
+  virtual MemTableRep* CreateMemTableRep(
+      const MemTableRep::KeyComparator& key_cmp, Allocator* allocator,
+      const ImmutableCFOptions& ioptions,
+      const MutableCFOptions& /* mutable_cf_options */,
+      uint32_t /* column_family_id */);
 
   virtual const char* Name() const = 0;
 

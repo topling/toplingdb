@@ -35,12 +35,7 @@ LRUHandle* LRUHandleTable::Lookup(const Slice& key, uint32_t hash) {
   return *FindPointer(key, hash);
 }
 
-LRUHandle* LRUHandleTable::Insert(LRUHandle* h) {
-  LRUHandle** ptr = FindPointer(h->key(), h->hash);
-  LRUHandle* old = *ptr;
-  h->next_hash = (old == nullptr ? nullptr : old->next_hash);
-  *ptr = h;
-  if (old == nullptr) {
+void LRUHandleTable::IncSize() {
     ++elems_;
     if (elems_ > length_) {
       // Since each cache entry is fairly large, we aim for a small
@@ -48,8 +43,6 @@ LRUHandle* LRUHandleTable::Insert(LRUHandle* h) {
       Resize();
     }
   }
-  return old;
-}
 
 LRUHandle* LRUHandleTable::Remove(const Slice& key, uint32_t hash) {
   LRUHandle** ptr = FindPointer(key, hash);
@@ -339,7 +332,8 @@ bool LRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
 Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
                              size_t charge,
                              void (*deleter)(const Slice& key, void* value),
-                             Cache::Handle** handle, Cache::Priority priority) {
+                             Cache::Handle** handle, Cache::Priority priority,
+                             void** accept_existing) {
   // Allocate the memory here outside of the mutex
   // If the cache is full, we'll have to release it
   // It shouldn't happen very often though.
@@ -363,6 +357,18 @@ Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
 
   {
     MutexLock l(&mutex_);
+    LRUHandle** ptr = table_.FindPointer(key, hash);
+    LRUHandle*  old = *ptr;
+    if (old && accept_existing) {
+      assert(nullptr != old->value);
+      delete e;
+      if (1 == old->refs++) {
+        LRU_Remove(old);
+      }
+      *handle = reinterpret_cast<Cache::Handle*>(old);
+      *accept_existing = old->value;
+      return s;
+    }
 
     // Free the space following strict LRU policy until enough space
     // is freed or the lru list is empty
@@ -399,6 +405,11 @@ Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
           last_reference_list.push_back(old);
         }
       }
+      else {
+        e->next_hash = nullptr;
+        table_.IncSize();
+      }
+
       if (handle == nullptr) {
         LRU_Insert(e);
       } else {

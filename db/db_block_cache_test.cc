@@ -451,7 +451,8 @@ class MockCache : public LRUCache {
     } else {
       high_pri_insert_count++;
     }
-    return LRUCache::Insert(key, value, charge, deleter, handle, priority);
+    return LRUCache::Insert(key, value, charge, deleter, handle, priority,
+                            accept_existing);
   }
 };
 

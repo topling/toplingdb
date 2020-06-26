@@ -33,6 +33,13 @@ namespace ROCKSDB_NAMESPACE {
 
 namespace {
 
+struct TableReaderPtrHolder {
+  std::unique_ptr<TableReader> ptr;
+  std::mutex  mtx;
+  std::condition_variable cond;
+  Status open_status = Status::OK();
+};
+
 template <class T>
 static void DeleteEntry(const Slice& /*key*/, void* value) {
   T* typed_value = reinterpret_cast<T*>(value);
@@ -83,8 +90,11 @@ TableCache::TableCache(const ImmutableCFOptions& ioptions,
 TableCache::~TableCache() {
 }
 
-TableReader* TableCache::GetTableReaderFromHandle(Cache::Handle* handle) {
-  return reinterpret_cast<TableReader*>(cache_->Value(handle));
+void TableCache::CloseTables(void* ptr, size_t) {
+  TableReaderPtrHolder *holder = reinterpret_cast<TableReaderPtrHolder *>(ptr);
+  if (holder->ptr) {
+    holder->ptr->Close();
+  }
 }
 
 void TableCache::ReleaseHandle(Cache::Handle* handle) {
@@ -156,7 +166,9 @@ Status TableCache::FindTable(const FileOptions& file_options,
   *handle = cache_->Lookup(key);
   TEST_SYNC_POINT_CALLBACK("TableCache::FindTable:0",
                            const_cast<bool*>(&no_io));
-
+  assert(nullptr != pp_table);
+  *pp_table = nullptr;
+  TableReaderPtrHolder* existing = nullptr;
   if (*handle == nullptr) {
     if (no_io) {  // Don't do IO and return a not-found status
       return Status::Incomplete("Table not found in table_cache, no_io is set");
@@ -175,18 +187,34 @@ Status TableCache::FindTable(const FileOptions& file_options,
                        skip_filters, level, prefetch_index_and_filter_in_cache,
                        max_file_size_for_l0_meta_pin);
     if (!s.ok()) {
-      assert(table_reader == nullptr);
+      assert(nullptr == holder->ptr);
       RecordTick(ioptions_.statistics, NO_FILE_ERRORS);
       // We do not cache error results so that if the error is transient,
       // or somebody repairs the file, we recover automatically.
-    } else {
-      s = cache_->Insert(key, table_reader.get(), 1, &DeleteEntry<TableReader>,
-                         handle);
-      if (s.ok()) {
+      holder->open_status = s;
+    }
+    *pp_table = holder->ptr.get();
+    holder->cond.notify_all();
         // Release ownership of table reader.
-        table_reader.release();
+    holder.release();
+      }
+  else {
+    existing = reinterpret_cast<TableReaderPtrHolder*>(cache_->Value(*handle));
+    assert(nullptr != existing);
+  HasExisting:
+    if (!existing->ptr) { // double check
+      std::unique_lock<std::mutex> lock(existing->mtx);
+      while (!existing->ptr) {
+        if (!existing->open_status.ok()) {
+          s = existing->open_status;
+          cache_->Release(*handle);
+          *handle = NULL; // holder will also be destroyed
+          return s;
+    }
+        existing->cond.wait(lock);
       }
     }
+    *pp_table = existing->ptr.get();
   }
   return s;
 }
@@ -202,6 +230,7 @@ InternalIterator* TableCache::NewIterator(
     const InternalKey* largest_compaction_key, bool allow_unprepared_value) {
   PERF_TIMER_GUARD(new_table_iterator_nanos);
 
+  auto& fd = meta.fd;
   Status s;
   TableReader* table_reader = nullptr;
   Cache::Handle* handle = nullptr;
@@ -596,10 +625,9 @@ Status TableCache::GetTableProperties(
   if (!s.ok()) {
     return s;
   }
-  assert(table_handle);
-  auto table = GetTableReaderFromHandle(table_handle);
+  assert(handle);
   *properties = table->GetTableProperties();
-  ReleaseHandle(table_handle);
+  ReleaseHandle(handle);
   return s;
 }
 
@@ -620,10 +648,9 @@ size_t TableCache::GetMemoryUsageByTableReader(
   if (!s.ok()) {
     return 0;
   }
-  assert(table_handle);
-  auto table = GetTableReaderFromHandle(table_handle);
+  assert(handle);
   auto ret = table->ApproximateMemoryUsage();
-  ReleaseHandle(table_handle);
+  ReleaseHandle(handle);
   return ret;
 }
 

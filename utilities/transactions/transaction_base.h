@@ -27,7 +27,9 @@ namespace ROCKSDB_NAMESPACE {
 
 class TransactionBaseImpl : public Transaction {
  public:
-  TransactionBaseImpl(DB* db, const WriteOptions& write_options);
+  TransactionBaseImpl(
+      DB* db, const WriteOptions& write_options,
+      const rocksdb::WriteBatchEntryIndexFactory* index_factory = nullptr);
 
   virtual ~TransactionBaseImpl();
 

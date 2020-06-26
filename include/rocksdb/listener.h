@@ -48,9 +48,9 @@ struct TableFileCreationBriefInfo {
 };
 
 struct TableFileCreationInfo : public TableFileCreationBriefInfo {
-  TableFileCreationInfo() = default;
+  TableFileCreationInfo() : file_size(uint64_t(-1)) {}
   explicit TableFileCreationInfo(TableProperties&& prop)
-      : table_properties(prop) {}
+      : file_size(uint64_t(-1)), table_properties(prop) {}
   // the size of the file.
   uint64_t file_size;
   // Detailed properties of the created file.

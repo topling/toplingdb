@@ -2367,6 +2367,26 @@ Status DBImpl::CreateColumnFamily(const ColumnFamilyOptions& cf_options,
                                   const std::string& column_family,
                                   ColumnFamilyHandle** handle) {
   assert(handle != nullptr);
+#ifndef _MSC_VER
+  const char* terarkdb_localTempDir = getenv("TerarkZipTable_localTempDir");
+  if (terarkdb_localTempDir) {
+    if (TerarkZipCFOptionsFromEnv && TerarkZipIsBlackListCF) {
+      if (::access(terarkdb_localTempDir, R_OK|W_OK) != 0) {
+        return Status::InvalidArgument(
+                "Must exists, and Permission ReadWrite is required on "
+                        "env TerarkZipTable_localTempDir",
+                terarkdb_localTempDir);
+      }
+      if (!TerarkZipIsBlackListCF(column_family)) {
+        TerarkZipCFOptionsFromEnv(const_cast<ColumnFamilyOptions&>(cf_options));
+      }
+    } else {
+      return Status::InvalidArgument(
+              "env TerarkZipTable_localTempDir is defined, "
+                      "but dynamic libterark-zip-rocksdb is not loaded");
+    }
+  }
+#endif
   Status s = CreateColumnFamilyImpl(cf_options, column_family, handle);
   if (s.ok()) {
     s = WriteOptionsFile(true /*need_mutex_lock*/,
@@ -3386,6 +3406,10 @@ Status DBImpl::DeleteFile(std::string name) {
       job_context.Clean();
       return Status::InvalidArgument("File in level 0, but not oldest");
     }
+
+    // treat this DeleteFile being a <<Compaction>>
+    metadata->being_compacted = true; // prevent real CompactionPicker
+
     edit.SetColumnFamily(cfd->GetID());
     edit.DeleteFile(level, number);
     status = versions_->LogAndApply(cfd, *cfd->GetLatestMutableCFOptions(),
@@ -3420,6 +3444,7 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
   {
     InstrumentedMutexLock l(&mutex_);
     Version* input_version = cfd->current();
+    edit.SetColumnFamily(cfd->GetID());
 
     auto* vstorage = input_version->storage_info();
     for (size_t r = 0; r < n; r++) {
@@ -3468,7 +3493,8 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
         }
       }
     }
-    if (edit.GetDeletedFiles().empty()) {
+    }
+    if (!is_delete) {
       job_context.Clean();
       return Status::OK();
     }

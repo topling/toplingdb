@@ -590,6 +590,8 @@ DEFINE_bool(show_table_properties, false,
 
 DEFINE_string(db, "", "Use the db with the following name.");
 
+DEFINE_string(terarktempdir, "/tmp", "Use the localtempdir with the following name.");
+
 // Read cache flags
 
 DEFINE_string(read_cache_path, "",
@@ -1293,6 +1295,7 @@ static enum RepFactory StringToRepFactory(const char* ctype) {
 static enum RepFactory FLAGS_rep_factory;
 DEFINE_string(memtablerep, "skip_list", "");
 DEFINE_int64(hash_bucket_count, 1024 * 1024, "hash bucket count");
+DEFINE_bool(use_terarkzip_table, true, "if use terarkzip table");
 DEFINE_bool(use_plain_table, false, "if use plain table "
             "instead of block-based table format");
 DEFINE_bool(use_cuckoo_table, false, "if use cuckoo table format");
@@ -3727,7 +3730,22 @@ class Benchmark {
         exit(1);
 #endif  // ROCKSDB_LITE
     }
-    if (FLAGS_use_plain_table) {
+    if (FLAGS_use_terarkzip_table) {
+      std::cout << "use_terarkzip_table, set mmap_read = true" << std::endl;
+      options.allow_mmap_reads = FLAGS_mmap_read = true;
+      if (NewTerarkZipTableFactory) {
+        TerarkZipTableOptions opt;
+        opt.localTempDir = FLAGS_terarktempdir;
+        std::shared_ptr<TableFactory> block_based_factory(NewBlockBasedTableFactory());
+        //TableFactory* factory = NewTerarkZipTableFactory(opt, rocksdb::NewAdaptiveTableFactory(block_based_factory));
+        TableFactory* factory = NewTerarkZipTableFactory(opt, nullptr);
+        options.table_factory.reset(factory);
+      } else {
+        fprintf(stderr, "ERROR: use_terarkzip_table, but libterark_zip_rocksdb.so is not loaded\n");
+        exit(1);
+      }
+    } else if (FLAGS_use_plain_table) {
+      std::cout << "use_plain_table" << std::endl;
 #ifndef ROCKSDB_LITE
       if (FLAGS_rep_factory != kPrefixHash &&
           FLAGS_rep_factory != kHashLinkedList) {
@@ -3750,6 +3768,7 @@ class Benchmark {
       exit(1);
 #endif  // ROCKSDB_LITE
     } else if (FLAGS_use_cuckoo_table) {
+      std::cout << "cuckoo_table" << std::endl;
 #ifndef ROCKSDB_LITE
       if (FLAGS_cuckoo_hash_ratio > 1 || FLAGS_cuckoo_hash_ratio < 0) {
         fprintf(stderr, "Invalid cuckoo_hash_ratio\n");
@@ -3771,6 +3790,7 @@ class Benchmark {
       exit(1);
 #endif  // ROCKSDB_LITE
     } else {
+      std::cout << "block_based_table" << std::endl;
       BlockBasedTableOptions block_based_options;
       if (FLAGS_use_hash_search) {
         if (FLAGS_prefix_size == 0) {

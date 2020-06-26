@@ -30,6 +30,53 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+class CompactionIteratorToInternalIterator : public InternalIterator {
+  CompactionIterator* c_iter_;
+public:
+  CompactionIteratorToInternalIterator(CompactionIterator* i) : c_iter_(i) {}
+  virtual bool Valid() const override { return c_iter_->Valid(); }
+  virtual void SeekToFirst() override { c_iter_->SeekToFirst(); }
+  virtual void SeekToLast() override { abort(); }  // do not support
+  virtual void SeekForPrev(const rocksdb::Slice&) override {
+    abort();
+  }  // do not support
+  virtual void Seek(const Slice& target) override;
+  virtual void Next() override { c_iter_->Next(); }
+  virtual void Prev() override { abort(); }  // do not support
+  virtual Slice key() const override { return c_iter_->key(); }
+  virtual Slice value() const override { return c_iter_->value(); }
+  virtual Status status() const override {
+    auto ci = c_iter_;
+    if (ci->IsShuttingDown()) {
+      return Status::ShutdownInProgress();
+    }
+    return ci->status();
+  }
+};
+
+void CompactionIteratorToInternalIterator::Seek(const Slice& target) {
+  c_iter_->merge_out_iter_ = MergeOutputIterator(c_iter_->merge_helper_);
+  c_iter_->current_key_committed_ = false;
+  c_iter_->current_user_key_snapshot_ = 0;
+  c_iter_->current_user_key_sequence_ = 0;
+  c_iter_->valid_ = false;
+  c_iter_->has_current_user_key_ = false;
+  c_iter_->at_next_ = false;
+  c_iter_->has_outputted_key_ = false;
+  c_iter_->clear_and_output_next_key_ = false;
+
+  IterKey key_for_seek;
+  key_for_seek.SetInternalKey(ExtractUserKey(target), kMaxSequenceNumber,
+                              kValueTypeForSeek);
+  c_iter_->input_->Seek(key_for_seek.GetInternalKey());
+  c_iter_->SeekToFirst();
+  InternalKeyComparator ic(c_iter_->cmp_);
+  while (c_iter_->Valid() &&
+         ic.Compare(c_iter_->key(), target) < 0) {
+    c_iter_->Next();
+  }
+}
+
 CompactionIterator::CompactionIterator(
     InternalIterator* input, const Comparator* cmp, MergeHelper* merge_helper,
     SequenceNumber last_sequence, std::vector<SequenceNumber>* snapshots,
@@ -125,6 +172,12 @@ void CompactionIterator::ResetRecordCounts() {
   iter_stats_.num_record_drop_range_del = 0;
   iter_stats_.num_range_del_drop_obsolete = 0;
   iter_stats_.num_optimized_del_drop_obsolete = 0;
+}
+
+std::unique_ptr<InternalIterator>
+CompactionIterator::AdaptToInternalIterator() {
+  return std::unique_ptr<InternalIterator>(
+      new CompactionIteratorToInternalIterator(this));
 }
 
 void CompactionIterator::SeekToFirst() {

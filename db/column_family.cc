@@ -305,6 +305,20 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
                    result.level0_file_num_compaction_trigger);
   }
 
+  if (result.level0_file_num_compaction_trigger <=
+      (int)result.compaction_options_universal.min_merge_width) {
+    ROCKS_LOG_WARN(db_options.info_log.get(),
+         "compaction_options_universal.min_merge_width = %u, "
+         " must < level0_file_num_compaction_trigger = %d",
+         result.compaction_options_universal.min_merge_width,
+         result.level0_file_num_compaction_trigger);
+    result.compaction_options_universal.min_merge_width =
+        result.level0_file_num_compaction_trigger * 2 / 3;
+    ROCKS_LOG_WARN(db_options.info_log.get(),
+         "Adjust compaction_options_universal.min_merge_width to %u",
+          result.compaction_options_universal.min_merge_width);
+  }
+
   if (result.soft_pending_compaction_bytes_limit == 0) {
     result.soft_pending_compaction_bytes_limit =
         result.hard_pending_compaction_bytes_limit;
@@ -1042,7 +1056,8 @@ void ColumnFamilyData::CreateNewMemtable(
 }
 
 bool ColumnFamilyData::NeedsCompaction() const {
-  return compaction_picker_->NeedsCompaction(current_->storage_info());
+  return !current_->storage_info()->IsPickFail() &&
+         compaction_picker_->NeedsCompaction(current_->storage_info());
 }
 
 Compaction* ColumnFamilyData::PickCompaction(
@@ -1055,6 +1070,8 @@ Compaction* ColumnFamilyData::PickCompaction(
       earliest_mem_seqno);
   if (result != nullptr) {
     result->SetInputVersion(current_);
+  } else {
+    current_->storage_info()->SetPickFail();
   }
   return result;
 }

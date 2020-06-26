@@ -5,7 +5,18 @@
 # Inherit some settings from environment variables, if available
 
 #-----------------------------------------------
+BMI2 ?= 0
+USE_RTTI = 1
 
+COMPILER=$(shell t=`mktemp --suffix=.exe`; ${CXX} terark-tools/detect-compiler.cpp -o $$t && $$t && rm -f $$t)
+UNAME_MachineSystem=$(shell uname -m -s | sed 's:[ /]:-:g')
+TERARK_ZIP_ROCKSDB_HOME ?= ../terark-zip-rocksdb
+TerarkDir := ${TERARK_ZIP_ROCKSDB_HOME}/pkg/terark-zip-rocksdb-${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
+BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${BMI2}
+BUILD_ROOT := build/${BUILD_NAME}
+export LD_LIBRARY_PATH:=${TerarkDir}/lib:${LD_LIBRARY_PATH}
+
+EXTRA_CXXFLAGS += -I${TERARK_ZIP_ROCKSDB_HOME}/src -fPIC
 BASH_EXISTS := $(shell which bash)
 SHELL := $(shell which bash)
 # Default to python3. Some distros like CentOS 8 do not have `python`.
@@ -180,7 +191,7 @@ endif
 #-----------------------------------------------
 include src.mk
 
-AM_DEFAULT_VERBOSITY = 0
+AM_DEFAULT_VERBOSITY = 1
 
 AM_V_GEN = $(am__v_GEN_$(V))
 am__v_GEN_ = $(am__v_GEN_$(AM_DEFAULT_VERBOSITY))
@@ -459,7 +470,7 @@ VALGRIND_VER := $(join $(VALGRIND_VER),valgrind)
 
 VALGRIND_OPTS = --error-exitcode=$(VALGRIND_ERROR) --leak-check=full
 
-BENCHTOOLOBJECTS = $(BENCH_LIB_SOURCES:.cc=.o) $(LIBOBJECTS) $(TESTUTIL)
+BENCHTOOLOBJECTS = $(BENCH_LIB_SOURCES:.cc=.o) $(LIBNAME).so $(TESTUTIL)
 
 ANALYZETOOLOBJECTS = $(ANALYZER_LIB_SOURCES:.cc=.o)
 
@@ -799,13 +810,15 @@ SHARED3 = $(SHARED1).$(SHARED_MAJOR).$(SHARED_MINOR)
 SHARED4 = $(SHARED1).$(SHARED_MAJOR).$(SHARED_MINOR).$(SHARED_PATCH)
 endif
 SHARED = $(SHARED1) $(SHARED2) $(SHARED3) $(SHARED4)
+  xdir:=${BUILD_ROOT}/shared_lib/dbg-${DEBUG_LEVEL}
+
 $(SHARED1): $(SHARED4)
 	ln -fs $(SHARED4) $(SHARED1)
 $(SHARED2): $(SHARED4)
 	ln -fs $(SHARED4) $(SHARED2)
 $(SHARED3): $(SHARED4)
 	ln -fs $(SHARED4) $(SHARED3)
-endif
+
 ifeq ($(HAVE_POWER8),1)
 SHARED_C_OBJECTS = $(LIB_SOURCES_C:.c=.o)
 SHARED_ASM_OBJECTS = $(LIB_SOURCES_ASM:.S=.o)
@@ -836,6 +849,29 @@ shared_all_libobjects = $(shared_libobjects) $(shared-ppc-objects)
 endif
 $(SHARED4): $(shared_all_libobjects)
 	$(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(shared_all_libobjects) $(LDFLAGS) -o $@
+
+${xdir}/$(SHARED1): ${xdir}/$(SHARED4)
+	cd  $(dir $@) ; ln -fs $(notdir $<) $(notdir $@)
+${xdir}/$(SHARED2): ${xdir}/$(SHARED4)
+	cd  $(dir $@) ; ln -fs $(notdir $<) $(notdir $@)
+${xdir}/$(SHARED3): ${xdir}/$(SHARED4)
+	cd  $(dir $@) ; ln -fs $(notdir $<) $(notdir $@)
+
+endif # PLATFORM_SHARED_VERSIONED
+
+$(SHARED4): ${xdir}/$(SHARED4) \
+			${xdir}/$(SHARED3) \
+			${xdir}/$(SHARED2) \
+			${xdir}/$(SHARED1)
+	ln -fs  $< $@
+
+${xdir}/$(SHARED4): $(addprefix ${xdir}/, $(subst .cc,.o,$(strip $(LIB_SOURCES) $(TOOL_LIB_SOURCES))))
+	$(CXX) $^ $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) \
+		      $(PLATFORM_SHARED_CFLAGS) $(LDFLAGS) $(LINK_STATIC_TERARK) -o $@
+
+${xdir}/%.o: %.cc
+	@mkdir -p $(dir $@)
+	$(CXX) -c $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(LDFLAGS) -o $@ $<
 
 endif  # PLATFORM_SHARED_EXT
 
@@ -1550,10 +1586,10 @@ table_reader_bench: table/table_reader_bench.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK) $(PROFILING_FLAGS)
 
 perf_context_test: db/perf_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
+	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerarkLDFLAGS)
 
 prefix_test: db/prefix_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
+	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerarkLDFLAGS)
 
 backupable_db_test: utilities/backupable/backupable_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
@@ -1794,7 +1830,7 @@ memtable_list_test: db/memtable_list_test.o $(LIBOBJECTS) $(TESTHARNESS)
 write_callback_test: db/write_callback_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-heap_test: util/heap_test.o $(GTEST)
+heap_test: util/heap_test.o $(GTEST) ${LIBNAME}.so
 	$(AM_LINK)
 
 transaction_lock_mgr_test: utilities/transactions/transaction_lock_mgr_test.o $(LIBOBJECTS) $(TESTHARNESS)
@@ -1818,14 +1854,14 @@ blob_dump: tools/blob_dump.o $(LIBOBJECTS)
 repair_test: db/repair_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-ldb_cmd_test: tools/ldb_cmd_test.o $(LIBOBJECTS) $(TESTHARNESS)
+ldb_cmd_test: tools/ldb_cmd_test.o $(LIBOBJECTS) $(TESTHARNESS) ${LIBNAME}.so
 	$(AM_LINK)
 
-ldb: tools/ldb.o $(LIBOBJECTS)
+ldb: tools/ldb.o $(LIBOBJECTS) ${LIBNAME}.so
 	$(AM_LINK)
 
 iostats_context_test: monitoring/iostats_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
+	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(TerarkLDFLAGS)
 
 persistent_cache_test: utilities/persistent_cache/persistent_cache_test.o  db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)

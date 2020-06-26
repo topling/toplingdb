@@ -22,6 +22,10 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+// Terark Zip Table Support
+bool useTerarkZipTable = false;
+TableFactory* terarkZipFactory = nullptr;
+
 class SanityTest {
  public:
   explicit SanityTest(const std::string& path)
@@ -88,6 +92,10 @@ class SanityTestBasic : public SanityTest {
   virtual Options GetOptions() const override {
     Options options;
     options.create_if_missing = true;
+    if(terarkZipFactory != nullptr) {
+      options.table_factory.reset(terarkZipFactory);
+      options.allow_mmap_reads = true;
+    }
     return options;
   }
   virtual std::string Name() const override { return "Basic"; }
@@ -277,7 +285,7 @@ bool RunSanityTests(const std::string& command, const std::string& path) {
 
 int main(int argc, char** argv) {
   std::string path, command;
-  bool ok = (argc == 3);
+  bool ok = (argc >= 3);
   if (ok) {
     path = std::string(argv[1]);
     command = std::string(argv[2]);
@@ -289,6 +297,18 @@ int main(int argc, char** argv) {
   }
   if (path.back() != '/') {
     path += "/";
+  }
+  if(argc == 5) {
+    rocksdb::useTerarkZipTable = (std::string(argv[3]) == "useTerarkZipTable");
+  }
+  if(rocksdb::useTerarkZipTable) {
+    if (!rocksdb::NewTerarkZipTableFactory) {
+      fprintf(stderr, "ERROR: libterark-zip-rocksdb.so is not loaded\n");
+      exit(1);
+    }
+    rocksdb::TerarkZipTableOptions opt;
+    opt.localTempDir = std::string(argv[4]);
+    rocksdb::terarkZipFactory = rocksdb::NewTerarkZipTableFactory(opt, NULL);
   }
 
   bool sanity_ok = ROCKSDB_NAMESPACE::RunSanityTests(command, path);

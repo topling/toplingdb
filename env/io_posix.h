@@ -210,6 +210,7 @@ class PosixRandomAccessFile : public FSRandomAccessFile {
   virtual size_t GetRequiredBufferAlignment() const override {
     return logical_sector_size_;
   }
+  virtual intptr_t FileDescriptor() const override;
 };
 
 class PosixWritableFile : public FSWritableFile {

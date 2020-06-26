@@ -30,6 +30,7 @@ namespace ROCKSDB_NAMESPACE {
 class Env;
 class Arena;
 struct FileDescriptor;
+struct FileMetaData;
 class GetContext;
 class HistogramImpl;
 
@@ -52,6 +53,8 @@ class TableCache {
              const FileOptions& storage_options, Cache* cache,
              BlockCacheTracer* const block_cache_tracer);
   ~TableCache();
+
+  static void CloseTables(void* ptr, size_t);
 
   // Return an iterator for the specified file number (the corresponding
   // file length must be exactly "file_size" bytes).  If "table_reader_ptr"
@@ -138,9 +141,6 @@ class TableCache {
                    bool skip_filters = false, int level = -1,
                    bool prefetch_index_and_filter_in_cache = true,
                    size_t max_file_size_for_l0_meta_pin = 0);
-
-  // Get TableReader from a cache handle.
-  TableReader* GetTableReaderFromHandle(Cache::Handle* handle);
 
   // Get the table properties of a given table.
   // @no_io: indicates if we should load table to the cache if it is not present

@@ -156,6 +156,12 @@ Status BuildTable(
         &snapshots, earliest_write_conflict_snapshot, snapshot_checker, env,
         ShouldReportDetailedTime(env, ioptions.statistics),
         true /* internal key corruption is not ok */, range_del_agg.get());
+    CompactionIterator c_iter2(
+        iter, internal_comparator.user_comparator(), &merge2, kMaxSequenceNumber,
+        &snapshots, earliest_write_conflict_snapshot, snapshot_checker, env,
+        true /* internal key corruption is not ok */, range_del_agg.get());
+    auto second_pass_iter = c_iter2.AdaptToInternalIterator();
+    builder->SetSecondPassIterator(second_pass_iter.get());
     c_iter.SeekToFirst();
     for (; c_iter.Valid(); c_iter.Next()) {
       const Slice& key = c_iter.key();

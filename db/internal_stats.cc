@@ -26,6 +26,12 @@ namespace ROCKSDB_NAMESPACE {
 
 #ifndef ROCKSDB_LITE
 
+void ForEachInternalStatsKeys(std::function<void(std::string const&)> const& callback) {
+    for (auto& pair : InternalStats::ppt_name_to_info) {
+        callback(pair.first);
+    }
+}
+
 const std::map<LevelStatType, LevelStat> InternalStats::compaction_level_stats =
     {
         {LevelStatType::NUM_FILES, LevelStat{"NumFiles", "Files"}},
@@ -124,7 +130,7 @@ void PrintLevelStats(char* buf, size_t len, const std::string& name,
       buf, len,
       "%4s "      /*  Level */
       "%6d/%-3d " /*  Files */
-      "%8s "      /*  Size */
+           "%9s "      /*  Size */
       "%5.1f "    /*  Score */
       "%8.1f "    /*  Read(GB) */
       "%7.1f "    /*  Rn(GB) */

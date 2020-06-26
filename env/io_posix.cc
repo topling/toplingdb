@@ -823,6 +823,10 @@ IOStatus PosixRandomAccessFile::InvalidateCache(size_t offset, size_t length) {
 #endif
 }
 
+intptr_t PosixRandomAccessFile::FileDescriptor() const {
+  return this->fd_;
+}
+
 /*
  * PosixMmapReadableFile
  *
@@ -883,6 +887,10 @@ IOStatus PosixMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
                      " len" + ToString(length),
                  filename_, errno);
 #endif
+}
+
+intptr_t PosixMmapReadableFile::FileDescriptor() const {
+  return this->fd_;
 }
 
 /*

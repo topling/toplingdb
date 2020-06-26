@@ -315,6 +315,47 @@ TEST_P(DBWriteTest, ConcurrentlyDisabledWAL) {
     ASSERT_LE(bytes_num, 1024 * 100);
 }
 
+TEST_P(DBWriteTest, IOErrorOnWALWritePropagateToWriteThreadFollower) {
+  constexpr int kNumThreads = 5;
+  std::unique_ptr<FaultInjectionTestEnv> mock_env(
+      new FaultInjectionTestEnv(Env::Default()));
+  Options options = GetOptions();
+  options.env = mock_env.get();
+  Reopen(options);
+  std::atomic<int> ready_count{0};
+  std::atomic<int> leader_count{0};
+  std::vector<port::Thread> threads;
+  mock_env->SetFilesystemActive(false);
+  // Wait until all threads linked to write threads, to make sure
+  // all threads join the same batch group.
+  SyncPoint::GetInstance()->SetCallBack(
+      "WriteThread::JoinBatchGroup:Wait", [&](void* arg) {
+        ready_count++;
+        auto* w = reinterpret_cast<WriteThread::Writer*>(arg);
+        if (w->state == WriteThread::STATE_GROUP_LEADER) {
+          leader_count++;
+          while (ready_count < kNumThreads) {
+            // busy waiting
+          }
+        }
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.push_back(port::Thread(
+        [&](int index) {
+          // All threads should fail.
+          ASSERT_FALSE(Put("key" + ToString(index), "value").ok());
+        },
+        i));
+  }
+  for (int i = 0; i < kNumThreads; i++) {
+    threads[i].join();
+  }
+  ASSERT_EQ(1, leader_count);
+  // Close before mock_env destruct.
+  Close();
+}
+
 INSTANTIATE_TEST_CASE_P(DBWriteTestInstance, DBWriteTest,
                         testing::Values(DBTestBase::kDefault,
                                         DBTestBase::kConcurrentWALWrites,

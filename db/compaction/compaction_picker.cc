@@ -176,20 +176,20 @@ void CompactionPicker::GetRange(const CompactionInputFiles& inputs,
     for (size_t i = 0; i < inputs.size(); i++) {
       FileMetaData* f = inputs[i];
       if (i == 0) {
-        *smallest = f->smallest;
-        *largest = f->largest;
+        *smallest = f->smallest();
+        *largest = f->largest();
       } else {
-        if (icmp_->Compare(f->smallest, *smallest) < 0) {
-          *smallest = f->smallest;
+        if (icmp_->Compare(f->smallest(), *smallest) < 0) {
+          *smallest = f->smallest();
         }
-        if (icmp_->Compare(f->largest, *largest) > 0) {
-          *largest = f->largest;
+        if (icmp_->Compare(f->largest(), *largest) > 0) {
+          *largest = f->largest();
         }
       }
     }
   } else {
-    *smallest = inputs[0]->smallest;
-    *largest = inputs[inputs.size() - 1]->largest;
+    *smallest = inputs[0]->smallest();
+    *largest = inputs[inputs.size() - 1]->largest();
   }
 }
 
@@ -585,7 +585,23 @@ Compaction* CompactionPicker::CompactRange(
     // DBImpl::RunManualCompaction will make full range for universal compaction
     assert(begin == nullptr);
     assert(end == nullptr);
-    *compaction_end = nullptr;
+    assert(compaction_end != nullptr);
+
+    if ((*compaction_end)->size() != 0) {
+      // need continue ...
+      if (vstorage->need_continue_compaction(output_level)) {
+        auto c = PickCompactionConitnue(cf_name, mutable_cf_options, vstorage,
+                                        nullptr, output_level);
+        if (c == nullptr) {
+          // some bg compaction picked ... just wait
+          *manual_conflict = true;
+        }
+        return c;
+      } else {
+        // finished ~
+        return nullptr;
+      }
+    }
 
     int start_level = 0;
     for (; start_level < vstorage->num_levels() &&
@@ -624,6 +640,10 @@ Compaction* CompactionPicker::CompactRange(
       *manual_conflict = true;
       return nullptr;
     }
+
+    // save something into compaction_end , make compaction_end.size() != 0
+    // need continue on next call of CompactRange
+    (*compaction_end)->SetMaxPossibleForUserKey(Slice());
 
     Compaction* c = new Compaction(
         vstorage, ioptions_, mutable_cf_options, std::move(inputs),
@@ -1037,6 +1057,7 @@ void CompactionPicker::RegisterCompaction(Compaction* c) {
   }
   assert(ioptions_.compaction_style != kCompactionStyleLevel ||
          c->output_level() == 0 ||
+         !c->input_range().empty() ||
          !FilesRangeOverlapWithCompaction(*c->inputs(), c->output_level()));
   if (c->start_level() == 0 ||
       ioptions_.compaction_style == kCompactionStyleUniversal) {

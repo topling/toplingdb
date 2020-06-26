@@ -35,6 +35,9 @@
 #include "util/string_util.h"
 #include "utilities/merge_operators.h"
 #include "utilities/ttl/db_ttl_impl.h"
+#ifndef _MSC_VER
+# include <table/terark_zip_weak_function.h>
+#endif
 
 #include <cstdlib>
 #include <ctime>
@@ -533,6 +536,7 @@ std::vector<std::string> LDBCommand::BuildCmdLineOptions(
                                   ARG_TRY_LOAD_OPTIONS,
                                   ARG_DISABLE_CONSISTENCY_CHECKS,
                                   ARG_IGNORE_UNKNOWN_OPTIONS,
+                                  "use_terarkdb",
                                   ARG_CF_NAME};
   ret.insert(ret.end(), options.begin(), options.end());
   return ret;

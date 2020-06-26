@@ -349,7 +349,9 @@ Status ExternalSstFileIngestionJob::Run() {
   // The levels that the files will be ingested into
 
   for (IngestedFileInfo& f : files_to_ingest_) {
+    const SequenceNumber last_seqno = versions_->LastSequence();
     SequenceNumber assigned_seqno = 0;
+    bool consumed_seqno = false;
     if (ingestion_options_.ingest_behind) {
       status = CheckLevelForIngestedBehindFile(&f);
     } else {
@@ -701,6 +703,12 @@ Status ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile(
       if (compaction_style == kCompactionStyleUniversal && lvl != 0) {
         const std::vector<FileMetaData*>& level_files =
             vstorage->LevelFiles(lvl);
+        if (std::find_if(level_files.begin(), level_files.end(),
+                         [](FileMetaData* f) {
+                           return f->being_compacted || f->compact_to_level > 0;
+                         }) != level_files.end()) {
+          continue;
+        }
         const SequenceNumber level_largest_seqno =
             (*max_element(level_files.begin(), level_files.end(),
                           [](FileMetaData* f1, FileMetaData* f2) {
@@ -736,7 +744,8 @@ Status ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile(
       "ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile",
       &overlap_with_db);
   file_to_ingest->picked_level = target_level;
-  if (overlap_with_db && *assigned_seqno == 0) {
+  if (target_level == 0 ||
+      (overlap_with_db && *assigned_seqno == 0)) {
     *assigned_seqno = last_seqno + 1;
   }
   return status;

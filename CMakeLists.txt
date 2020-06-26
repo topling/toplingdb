@@ -61,6 +61,10 @@ if(CCACHE_FOUND)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
 endif(CCACHE_FOUND)
 
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../terark-zip-rocksdb/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../terark/boost-include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../terark/src)
+
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
 option(WITH_SNAPPY "build with SNAPPY" OFF)
 option(WITH_LZ4 "build with lz4" OFF)
@@ -630,6 +634,7 @@ set(SOURCES
         memtable/hash_skiplist_rep.cc
         memtable/skiplistrep.cc
         memtable/vectorrep.cc
+        memtable/trbtreerep.cc
         memtable/write_buffer_manager.cc
         monitoring/histogram.cc
         monitoring/histogram_windowing.cc

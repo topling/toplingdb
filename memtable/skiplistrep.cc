@@ -80,6 +80,7 @@ public:
  void Get(const LookupKey& k, void* callback_args,
           bool (*callback_func)(void* arg, const char* entry)) override {
    SkipListRep::Iterator iter(&skip_list_);
+    EncodedKeyValuePair pair;
    Slice dummy_slice;
    for (iter.Seek(dummy_slice, k.memtable_key().data());
         iter.Valid() && callback_func(callback_args, iter.key()); iter.Next()) {
@@ -245,6 +246,8 @@ public:
       iter_.SeekToLast();
       prev_ = iter_;
     }
+
+    virtual bool IsSeekForPrevSupported() const override { return true; }
 
    protected:
     std::string tmp_;       // For passing to EncodeKey

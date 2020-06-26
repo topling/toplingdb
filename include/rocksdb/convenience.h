@@ -476,6 +476,9 @@ Status DeleteFilesInRanges(DB* db, ColumnFamilyHandle* column_family,
                            const RangePtr* ranges, size_t n,
                            bool include_end = true);
 
+Status DeleteFilesInRanges(DB* db, ColumnFamilyHandle* column_family,
+                           const RangePtr* ranges, size_t n, bool include_end);
+
 // Verify the checksum of file
 Status VerifySstFileChecksum(const Options& options,
                              const EnvOptions& env_options,

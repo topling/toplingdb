@@ -93,35 +93,6 @@ class ReadableWriteBatch : public WriteBatch {
                                 Slice* value, Slice* blob, Slice* xid) const;
 };
 
-class WriteBatchEntryComparator {
- public:
-  WriteBatchEntryComparator(const Comparator* _default_comparator,
-                            const ReadableWriteBatch* write_batch)
-      : default_comparator_(_default_comparator), write_batch_(write_batch) {}
-  // Compare a and b. Return a negative value if a is less than b, 0 if they
-  // are equal, and a positive value if a is greater than b
-  int operator()(const WriteBatchIndexEntry* entry1,
-                 const WriteBatchIndexEntry* entry2) const;
-
-  int CompareKey(uint32_t column_family, const Slice& key1,
-                 const Slice& key2) const;
-
-  void SetComparatorForCF(uint32_t column_family_id,
-                          const Comparator* comparator) {
-    if (column_family_id >= cf_comparators_.size()) {
-      cf_comparators_.resize(column_family_id + 1, nullptr);
-    }
-    cf_comparators_[column_family_id] = comparator;
-  }
-
-  const Comparator* default_comparator() { return default_comparator_; }
-
- private:
-  const Comparator* default_comparator_;
-  std::vector<const Comparator*> cf_comparators_;
-  const ReadableWriteBatch* write_batch_;
-};
-
 class WriteBatchWithIndexInternal {
  public:
   enum Result { kFound, kDeleted, kNotFound, kMergeInProgress, kError };
@@ -137,7 +108,7 @@ class WriteBatchWithIndexInternal {
   static WriteBatchWithIndexInternal::Result GetFromBatch(
       const ImmutableDBOptions& ioptions, WriteBatchWithIndex* batch,
       ColumnFamilyHandle* column_family, const Slice& key,
-      MergeContext* merge_context, WriteBatchEntryComparator* cmp,
+      MergeContext* merge_context, const Comparator* cmp,
       std::string* value, bool overwrite_key, Status* s);
 };
 

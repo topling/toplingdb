@@ -23,6 +23,7 @@
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/table.h"
 #include "rocksdb/types.h"
+#include "port/port.h"
 #include "util/coding.h"
 #include "util/user_comparator_wrapper.h"
 
@@ -263,7 +264,7 @@ class InternalKey {
   }
 
   Slice user_key() const { return ExtractUserKey(rep_); }
-  size_t size() { return rep_.size(); }
+  size_t size() const { return rep_.size(); }
 
   void Set(const Slice& _user_key, SequenceNumber s, ValueType t) {
     SetFrom(ParsedInternalKey(_user_key, s, t));
@@ -605,7 +606,7 @@ struct RangeTombstone {
   Slice start_key_;
   Slice end_key_;
   SequenceNumber seq_;
-  RangeTombstone() = default;
+  RangeTombstone() : seq_(SequenceNumber(-1)) {}
   RangeTombstone(Slice sk, Slice ek, SequenceNumber sn)
       : start_key_(sk), end_key_(ek), seq_(sn) {}
 

@@ -23,6 +23,8 @@ namespace ROCKSDB_NAMESPACE {
 
 class CompactionIterator {
  public:
+    friend class CompactionIteratorToInternalIterator;
+
   // A wrapper around Compaction. Has a much smaller interface, only what
   // CompactionIterator uses. Tests can override it.
   class CompactionProxy {
@@ -53,7 +55,7 @@ class CompactionIterator {
     }
 
    protected:
-    CompactionProxy() = default;
+    CompactionProxy() : compaction_(nullptr) {}
 
    private:
     const Compaction* compaction_;
@@ -91,6 +93,8 @@ class CompactionIterator {
   ~CompactionIterator();
 
   void ResetRecordCounts();
+
+  std::unique_ptr<InternalIterator> AdaptToInternalIterator();
 
   // Seek to the beginning of the compaction iterator output.
   //
@@ -226,6 +230,7 @@ class CompactionIterator {
   bool current_key_committed_;
   std::shared_ptr<Logger> info_log_;
 
+ public:
   bool IsShuttingDown() {
     // This is a best-effort facility, so memory_order_relaxed is sufficient.
     return shutting_down_ && shutting_down_->load(std::memory_order_relaxed);

@@ -24,6 +24,9 @@
 namespace ROCKSDB_NAMESPACE {
 
 class VersionSet;
+class InternalIterator;
+struct FileMetaData;
+class ColumnFamilyData;
 
 constexpr uint64_t kFileNumberMask = 0x3FFFFFFFFFFFFFFF;
 constexpr uint64_t kUnknownOldestAncesterTime = 0;
@@ -88,6 +91,38 @@ struct FileSampledStats {
 
   // number of user reads to this file.
   mutable std::atomic<uint64_t> num_reads_sampled;
+};
+
+struct RangeEraseSet {
+  // smallest_open : If true, exclude the smallest key
+  // largest_open : If true, exclude the largest key
+  void push(const InternalKey& smallest, const InternalKey& largest,
+            bool smallest_open = false, bool largest_open = false);
+  std::vector<InternalKey> erase;
+  std::vector<bool> open;
+};
+
+void MergeRangeSet(const std::vector<InternalKey>& range_set,
+                   const RangeEraseSet& erase_set,
+                   std::vector<InternalKey>& output,
+                   const InternalKeyComparator& ic,
+                   InternalIterator* iter);
+
+struct PartialRemovedMetaData {
+  std::vector<InternalKey> range_set;
+  FileMetaData* meta;
+  uint8_t partial_removed = 0;
+  uint8_t compact_to_level = 0;
+
+  // return changed
+  // if output_level non-zero , this sst is reclaim from compact
+  bool InitFrom(FileMetaData* file,
+                const RangeEraseSet& erase_set,
+                uint8_t output_level,
+                ColumnFamilyData* cfd,
+                const EnvOptions& env_opt);
+
+  FileMetaData Get();
 };
 
 struct FileMetaData {
@@ -420,6 +455,24 @@ class VersionEdit {
   std::string DebugString(bool hex_key = false) const;
   std::string DebugJSON(int edit_num, bool hex_key = false) const;
 
+  bool is_has_comparator();
+  bool is_has_log_number();
+  bool is_has_prev_log_number();
+  bool is_has_next_file_number();
+  bool is_has_last_sequence();
+  bool is_has_max_column_family();
+  bool is_column_family_drop();
+  bool is_column_family_add();
+  std::string get_comparator();
+  uint64_t get_log_number();
+  uint64_t get_prev_log_number();
+  uint64_t get_next_file_number();
+  SequenceNumber get_last_sequence();
+  uint32_t get_max_column_family();
+  std::string get_column_family_name();
+  uint32_t get_column_family();
+  DeletedFileSet get_deleted_files();
+  std::vector<std::pair<int, FileMetaData>> get_new_files();
  private:
   friend class ReactiveVersionSet;
   friend class VersionEditHandler;

@@ -216,6 +216,7 @@ ColumnFamilyOptions BuildColumnFamilyOptions(
   cf_opts.sample_for_compression = mutable_cf_options.sample_for_compression;
 
   cf_opts.table_factory = options.table_factory;
+  cf_opts.memtable_factory = mutable_cf_options.memtable_factory;
   // TODO(yhchiang): find some way to handle the following derived options
   // * max_file_size
 
@@ -544,6 +545,11 @@ bool SerializeSingleOptionHelper(const char* opt_address,
   }
   return true;
 }
+
+Status ParseColumnFamilyOption(const std::string& name,
+                               const std::string& org_value,
+                               ColumnFamilyOptions* new_options,
+                               bool input_strings_escaped = false);
 
 Status GetMutableOptionsFromStrings(
     const MutableCFOptions& base_options,

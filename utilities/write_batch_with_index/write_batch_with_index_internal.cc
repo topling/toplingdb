@@ -7,20 +7,34 @@
 
 #include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 
+#include <unordered_map>
 #include "db/column_family.h"
 #include "db/merge_context.h"
 #include "db/merge_helper.h"
+#include "memtable/skiplist.h"
 #include "rocksdb/comparator.h"
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/write_batch_with_index.h"
 #include "util/coding.h"
 #include "util/string_util.h"
+#include "util/threaded_rbtree.h"
 
 namespace ROCKSDB_NAMESPACE {
 
 class Env;
 class Logger;
 class Statistics;
+
+const std::string kWriteBatchEntrySkipListFactoryName = "skiplist";
+const std::string kWriteBatchEntryRBTreeFactoryName = "rbtree";
+
+static std::unordered_map<std::string, const WriteBatchEntryIndexFactory*>
+    write_batch_entry_index_factory_info = {
+        {kWriteBatchEntrySkipListFactoryName,
+         WriteBatchEntrySkipListIndexFactory()},
+        {kWriteBatchEntryRBTreeFactoryName,
+         WriteBatchEntryRBTreeIndexFactory()},
+    };
 
 Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
                                                   WriteType* type, Slice* Key,
@@ -154,15 +168,18 @@ int WriteBatchEntryComparator::CompareKey(uint32_t column_family,
 WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
     const ImmutableDBOptions& immuable_db_options, WriteBatchWithIndex* batch,
     ColumnFamilyHandle* column_family, const Slice& key,
-    MergeContext* merge_context, WriteBatchEntryComparator* cmp,
+    MergeContext* merge_context, const Comparator* cmp,
     std::string* value, bool overwrite_key, Status* s) {
-  uint32_t cf_id = GetColumnFamilyID(column_family);
   *s = Status::OK();
   WriteBatchWithIndexInternal::Result result =
       WriteBatchWithIndexInternal::Result::kNotFound;
 
-  std::unique_ptr<WBWIIterator> iter =
-      std::unique_ptr<WBWIIterator>(batch->NewIterator(column_family));
+  if (cmp == nullptr) {
+    return result;
+  }
+
+  WBWIIterator::IteratorStorage iter;
+  batch->NewIterator(column_family, iter, true);
 
   // We want to iterate in the reverse order that the writes were added to the
   // batch.  Since we don't have a reverse iterator, we must seek past the end.
@@ -170,14 +187,14 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
   iter->Seek(key);
   while (iter->Valid()) {
     const WriteEntry entry = iter->Entry();
-    if (cmp->CompareKey(cf_id, entry.key, key) != 0) {
+    if (cmp->Compare(entry.key, key) != 0) {
       break;
     }
 
     iter->Next();
   }
 
-  if (!(*s).ok()) {
+  if (!s->ok()) {
     return WriteBatchWithIndexInternal::Result::kError;
   }
 
@@ -191,7 +208,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
   Slice entry_value;
   while (iter->Valid()) {
     const WriteEntry entry = iter->Entry();
-    if (cmp->CompareKey(cf_id, entry.key, key) != 0) {
+    if (cmp->Compare(entry.key, key) != 0) {
       // Unexpected error or we've reached a different next key
       break;
     }
@@ -219,7 +236,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
       }
       default: {
         result = WriteBatchWithIndexInternal::Result::kError;
-        (*s) = Status::Corruption("Unexpected entry in WriteBatchWithIndex:",
+        *s = Status::Corruption("Unexpected entry in WriteBatchWithIndex:",
                                   ToString(entry.type));
         break;
       }
@@ -241,7 +258,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
     iter->Prev();
   }
 
-  if ((*s).ok()) {
+  if (s->ok()) {
     if (result == WriteBatchWithIndexInternal::Result::kFound ||
         result == WriteBatchWithIndexInternal::Result::kDeleted) {
       // Found a Put or Delete.  Merge if necessary.
@@ -267,7 +284,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
         } else {
           *s = Status::InvalidArgument("Options::merge_operator must be set");
         }
-        if ((*s).ok()) {
+        if (s->ok()) {
           result = WriteBatchWithIndexInternal::Result::kFound;
         } else {
           result = WriteBatchWithIndexInternal::Result::kError;

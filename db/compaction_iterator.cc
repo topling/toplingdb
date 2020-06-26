@@ -251,19 +251,13 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
     CompactionFilter::ValueType value_type =
         ikey_.type == kTypeValue ? CompactionFilter::ValueType::kValue
                                  : CompactionFilter::ValueType::kBlobIndex;
-    auto doFilter = [&]() {
+    {
+      StopWatchNano timer(env_, true);
       filter = compaction_filter_->FilterV2(
           compaction_->level(), ikey_.user_key, value_type, value_,
           &compaction_filter_value_, compaction_filter_skip_until_.rep());
-    };
-    auto sample = filter_sample_interval_;
-    if (env_ && sample && (filter_hit_count_ & (sample-1)) == 0) {
-      StopWatchNano timer(env_, true);
-      doFilter();
-      iter_stats_.total_filter_time += timer.ElapsedNanos() * sample;
-    }
-    else {
-      doFilter();
+      iter_stats_.total_filter_time +=
+          env_ != nullptr ? timer.ElapsedNanos() : 0;
     }
 
     if (filter == CompactionFilter::Decision::kRemoveAndSkipUntil &&
@@ -273,7 +267,6 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       // Keep the key as per FilterV2 documentation.
       filter = CompactionFilter::Decision::kKeep;
     }
-    ++filter_hit_count_;
 
     if (filter == CompactionFilter::Decision::kRemove) {
       // convert the current key to a delete; key_ is pointing into
@@ -292,11 +285,6 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       *skip_until = compaction_filter_skip_until_.Encode();
     }
   }
-}
-
-void CompactionIterator::SetFilterSampleInterval(size_t sample_interval) {
-  assert((sample_interval&(sample_interval-1)) == 0); // must be power of 2
-  filter_sample_interval_ = sample_interval;
 }
 
 void CompactionIterator::NextFromInput() {

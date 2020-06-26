@@ -217,8 +217,6 @@ class CompactionIterator {
   bool current_key_committed_;
 
  public:
-  size_t filter_sample_interval_ = 64;
-  size_t filter_hit_count_ = 0;
   bool IsShuttingDown() {
     // This is a best-effort facility, so memory_order_relaxed is sufficient.
     return shutting_down_ && shutting_down_->load(std::memory_order_relaxed);

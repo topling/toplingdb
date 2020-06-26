@@ -938,6 +938,9 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
     assert(meta.partial_removed == 0);
     assert(meta.compact_to_level == 0);
     assert(meta.meta_level == 0);
+    assert(meta.range_set.size() >= 2);
+    assert(meta.smallest.size() >= 8);
+    assert(meta.largest.size() >= 8);
     edit->AddFile(level, meta.fd.GetNumber(), meta.fd.GetPathId(),
                   meta.fd.GetFileSize(), meta.range_set,
                   meta.smallest_seqno, meta.largest_seqno,

@@ -3552,6 +3552,7 @@ Status VersionSet::WriteSnapshot(log::Writer* log) {
       for (int level = 0; level < cfd->NumberLevels(); level++) {
         for (const auto& f :
              cfd->current()->storage_info()->LevelFiles(level)) {
+          assert(f->range_set.size() >= 2);
           edit.AddFile(level, f->fd.GetNumber(), f->fd.GetPathId(),
                        f->fd.GetFileSize(), f->range_set,
                        f->smallest_seqno, f->largest_seqno,

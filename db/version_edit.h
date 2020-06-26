@@ -124,7 +124,7 @@ struct FileMetaData {
   InternalKey smallest;            // Smallest internal key served by table
   __declspec(property(get=get_largest, put=put_largest))
   InternalKey largest;             // Largest internal key served by table
-  std::vector<InternalKey> range_set; // valid range set
+  std::vector<InternalKey> range_set = { {}, {} }; // valid range set
   SequenceNumber smallest_seqno;   // The smallest seqno in this file
   SequenceNumber largest_seqno;    // The largest seqno in this file
 
@@ -155,18 +155,18 @@ struct FileMetaData {
   bool marked_for_compaction;  // True if client asked us nicely to compact this
                                // file.
 
-  uint8_t partial_removed;     // iterator need wrapper if non zero
+  uint8_t partial_removed = 0;     // iterator need wrapper if non zero
 
   // If non-zero , this sst reclaim from compaction job with partial remove
   //   or compaction inout range .
   // partial remove will not worked on lv0 -> lv0 compact
-  uint8_t compact_to_level;
+  uint8_t compact_to_level = 0;
 
   // If non-zero , this sst is meta sst
   // meta_level
   // all sst which meta_level is 0 must be managered by a meta sst
   // we support infinity levels , here we use max 2
-  uint8_t meta_level;
+  uint8_t meta_level = 0;
 
   FileMetaData()
       : smallest_seqno(kMaxSequenceNumber),
@@ -180,12 +180,7 @@ struct FileMetaData {
         refs(0),
         being_compacted(false),
         init_stats_from_file(false),
-        marked_for_compaction(false),
-        partial_removed(0),
-        compact_to_level(0),
-        meta_level(0) {
-    range_set.resize(2);
-  }
+        marked_for_compaction(false) {}
 
   // REQUIRED: Keys must be given to the function in sorted order (it expects
   // the last key to be the largest).

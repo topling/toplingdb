@@ -1797,7 +1797,7 @@ void CompactionJob::UpdateCompactionStats(
           input_level);
     } else {
       UpdateCompactionInputStatsHelper(
-          file_remove
+          file_remove,
           &compaction_stats_.num_input_files_in_output_level,
           &compaction_stats_.bytes_read_output_level,
           input_level);

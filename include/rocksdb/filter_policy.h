@@ -28,6 +28,7 @@
 
 #include "rocksdb/advanced_options.h"
 #include "rocksdb/status.h"
+#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -124,7 +125,7 @@ struct FilterBuildingContext {
 // RocksDB would first try using functions in Set 2. if they return nullptr,
 // it would use Set 1 instead.
 // You can choose filter type in NewBloomFilterPolicy
-class FilterPolicy {
+class FilterPolicy : public Factoryable<FilterPolicy*>{
  public:
   virtual ~FilterPolicy();
 

@@ -25,7 +25,8 @@ class FlushBlockPolicy {
   virtual ~FlushBlockPolicy() {}
 };
 
-class FlushBlockPolicyFactory {
+class FlushBlockPolicyFactory
+    : public Factoryable<std::shared_ptr<FlushBlockPolicyFactory> > {
  public:
   // Return the name of the flush block policy.
   virtual const char* Name() const = 0;

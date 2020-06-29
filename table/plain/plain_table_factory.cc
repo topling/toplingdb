@@ -17,6 +17,7 @@
 #include "table/plain/plain_table_builder.h"
 #include "table/plain/plain_table_reader.h"
 #include "util/string_util.h"
+#include "util/json.h"
 
 namespace ROCKSDB_NAMESPACE {
 static std::unordered_map<std::string, OptionTypeInfo> plain_table_type_info = {
@@ -273,6 +274,33 @@ Status GetPlainTableOptionsFromMap(
 extern TableFactory* NewPlainTableFactory(const PlainTableOptions& options) {
   return new PlainTableFactory(options);
 }
+
+Status PlainTableOptions::InitFromJson(const json& js) {
+  try {
+    JSON_GET_PROP(user_key_len);
+    JSON_GET_PROP(bloom_bits_per_key);
+    JSON_GET_PROP(hash_table_ratio);
+    JSON_GET_PROP(index_sparseness);
+    JSON_GET_ENUM(encoding_type);
+    JSON_GET_PROP(full_scan_mode);
+    JSON_GET_PROP(store_index_in_file);
+    return Status::OK();
+  }
+  catch (const std::exception& ex) {
+    return Status::InvalidArgument("PlainTableOptions::InitFromJson", ex.what());
+  }
+}
+
+static TableFactory* NewPlainTableFactoryFromJson(const json& j, Status* s) {
+  PlainTableOptions options;
+  *s = options.InitFromJson(j);
+  if (s->ok())
+    return new PlainTableFactory(options);
+  else
+    return nullptr;
+}
+
+ROCKSDB_FACTORY_AUTO_REG(TableFactory, NewPlainTableFactoryFromJson);
 
 const std::string PlainTablePropertyNames::kEncodingType =
     "rocksdb.plain.table.encoding.type";

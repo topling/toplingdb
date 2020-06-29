@@ -15,6 +15,7 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
+#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -22,7 +23,8 @@ namespace ROCKSDB_NAMESPACE {
 //
 // Persistent cache interface for caching IO pages on a persistent medium. The
 // cache interface is specifically designed for persistent read cache.
-class PersistentCache {
+class PersistentCache
+    : public Factoryable<std::shared_ptr<PersistentCache>, const json&> {
  public:
   typedef std::vector<std::map<std::string, double>> StatsType;
 

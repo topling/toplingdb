@@ -26,6 +26,7 @@ LIB_SOURCES =                                                   \
   db/db_filesnapshot.cc                                         \
   db/db_impl/db_impl.cc                                         \
   db/db_impl/db_impl_compaction_flush.cc                        \
+  db/db_impl/db_impl_config_repo.cc                             \
   db/db_impl/db_impl_debug.cc                                   \
   db/db_impl/db_impl_experimental.cc                            \
   db/db_impl/db_impl_files.cc                                   \

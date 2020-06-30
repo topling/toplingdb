@@ -5,7 +5,9 @@
 #include "rocksdb/slice.h"
 #include <type_traits>
 
-ROCKSDB_NAMESPACE::Slice var_symbol(const char* s);
+namespace ROCKSDB_NAMESPACE {
+  Slice var_symbol(const char* s);
+}
 
 template<class Enum>
 class EnumValueInit {
@@ -111,7 +113,7 @@ std::string enum_str_all_namevalues() {
 }
 
 
-#define ROCKSDB_PP_SYMBOL(ctx, arg) var_symbol(#arg)
+#define ROCKSDB_PP_SYMBOL(ctx, arg) ROCKSDB_NAMESPACE::var_symbol(#arg)
 
 ///@param Inline can be 'inline' or 'friend'
 ///@param ... enum values

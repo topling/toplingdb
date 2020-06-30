@@ -240,11 +240,10 @@ PinnableSlice& PinnableSlice::operator=(PinnableSlice&& other) {
   return *this;
 }
 
-}  // namespace ROCKSDB_NAMESPACE
-
-ROCKSDB_NAMESPACE::Slice var_symbol(const char* s) {
+Slice var_symbol(const char* s) {
   const char* e = s;
   while (*e && ('_' == *e || isalnum((unsigned char)*e))) e++;
-  return ROCKSDB_NAMESPACE::Slice(s, e-s);
+  return Slice(s, e-s);
 }
 
+}  // namespace ROCKSDB_NAMESPACE

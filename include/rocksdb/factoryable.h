@@ -182,7 +182,7 @@ using FactoryableSP = Factoryable<std::shared_ptr<Instance> >;
       const std::string& __inst_id = js.get<std::string>(); \
       prop = clazz::GetRepoInstance(__inst_id); \
       if (!prop) { \
-        return Status::NotFound(ROCKSDB_FUNC, "reference id" + __inst_id); \
+        return Status::NotFound(ROCKSDB_FUNC, "inst_id = " + __inst_id); \
       } \
     } else { \
       Status __status; \

@@ -277,13 +277,13 @@ extern TableFactory* NewPlainTableFactory(const PlainTableOptions& options) {
 
 Status PlainTableOptions::InitFromJson(const json& js) {
   try {
-    JSON_GET_PROP(user_key_len);
-    JSON_GET_PROP(bloom_bits_per_key);
-    JSON_GET_PROP(hash_table_ratio);
-    JSON_GET_PROP(index_sparseness);
-    JSON_GET_ENUM(encoding_type);
-    JSON_GET_PROP(full_scan_mode);
-    JSON_GET_PROP(store_index_in_file);
+    ROCKSDB_JSON_GET_PROP(js, user_key_len);
+    ROCKSDB_JSON_GET_PROP(js, bloom_bits_per_key);
+    ROCKSDB_JSON_GET_PROP(js, hash_table_ratio);
+    ROCKSDB_JSON_GET_PROP(js, index_sparseness);
+    ROCKSDB_JSON_GET_ENUM(js, encoding_type);
+    ROCKSDB_JSON_GET_PROP(js, full_scan_mode);
+    ROCKSDB_JSON_GET_PROP(js, store_index_in_file);
     return Status::OK();
   }
   catch (const std::exception& ex) {
@@ -291,16 +291,18 @@ Status PlainTableOptions::InitFromJson(const json& js) {
   }
 }
 
-static TableFactory* NewPlainTableFactoryFromJson(const json& j, Status* s) {
+static std::shared_ptr<TableFactory>
+NewPlainTableFactoryFromJson(const json& j, Status* s) {
   PlainTableOptions options;
   *s = options.InitFromJson(j);
   if (s->ok())
-    return new PlainTableFactory(options);
+    return std::make_shared<PlainTableFactory>(options);
   else
     return nullptr;
 }
 
-ROCKSDB_FACTORY_AUTO_REG(TableFactory, NewPlainTableFactoryFromJson);
+ROCKSDB_FACTORY_AUTO_REG_EX("PlainTable",
+    TableFactory, NewPlainTableFactoryFromJson);
 
 const std::string PlainTablePropertyNames::kEncodingType =
     "rocksdb.plain.table.encoding.type";

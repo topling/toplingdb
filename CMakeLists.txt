@@ -567,6 +567,7 @@ set(SOURCES
         db/db_impl/db_impl.cc
         db/db_impl/db_impl_write.cc
         db/db_impl/db_impl_compaction_flush.cc
+        db/db_impl/db_impl_config_repo.cc
         db/db_impl/db_impl_files.cc
         db/db_impl/db_impl_open.cc
         db/db_impl/db_impl_debug.cc

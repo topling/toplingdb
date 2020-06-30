@@ -133,7 +133,7 @@ extern std::shared_ptr<Cache> NewClockCache(
     bool strict_capacity_limit = false,
     CacheMetadataChargePolicy metadata_charge_policy =
         kDefaultCacheMetadataChargePolicy);
-class Cache : public Factoryable<std::shared_ptr<Cache>, const json&> {
+class Cache : public FactoryableSP<Cache> {
  public:
   // Depending on implementation, cache entries with high priority could be less
   // likely to get evicted than low priority entries.

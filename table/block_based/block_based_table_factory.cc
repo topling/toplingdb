@@ -373,56 +373,37 @@ static std::unordered_map<std::string, OptionTypeInfo>
 
 Status BlockBasedTableOptions::InitFromJson(const json& js) {
   try {
-    flush_block_policy_factory = FlushBlockPolicyFactory::GetOrNewInstance(
-        js.at("flush_block_policy_factory").get<std::string>());
-    JSON_GET_PROP(cache_index_and_filter_blocks);
-    JSON_GET_PROP(cache_index_and_filter_blocks_with_high_priority);
-    JSON_GET_PROP(pin_l0_filter_and_index_blocks_in_cache);
-    JSON_GET_PROP(pin_top_level_index_and_filter);
-    JSON_GET_PROP(pin_l0_filter_and_index_blocks_in_cache);
-    JSON_GET_ENUM(index_type);
-    JSON_GET_ENUM(data_block_index_type);
-    JSON_GET_ENUM(index_shortening);
-    JSON_GET_ENUM(data_block_index_type);
-    JSON_GET_PROP(data_block_hash_table_util_ratio);
-    JSON_GET_PROP(hash_index_allow_collision);
-    JSON_GET_ENUM(checksum);
-    JSON_GET_PROP(no_block_cache);
-    JSON_GET_PROP(block_size);
-    JSON_GET_PROP(block_size_deviation);
-    JSON_GET_PROP(block_restart_interval);
-    JSON_GET_PROP(index_block_restart_interval);
-    JSON_GET_PROP(metadata_block_size);
-    JSON_GET_PROP(partition_filters);
-    JSON_GET_PROP(use_delta_encoding);
-    JSON_GET_PROP(read_amp_bytes_per_bit);
-    JSON_GET_PROP(whole_key_filtering);
-    JSON_GET_PROP(verify_compression);
-    JSON_GET_PROP(format_version);
-    JSON_GET_PROP(enable_index_compression);
-    JSON_GET_PROP(block_align);
-    auto iter = js.find("block_cache");
-    if (js.end() != iter) {
-      const std::string& clazz = iter.value().at("class").get<std::string>();
-      auto bc = Cache::GetOrNewInstance(clazz, iter.value().at("options"));
-      block_cache_compressed = bc;
-    }
-    iter = js.find("block_cache_compressed");
-    if (js.end() != iter) {
-      const std::string& clazz = iter.value().at("class").get<std::string>();
-      auto bc = Cache::GetOrNewInstance(clazz, iter.value().at("options"));
-      block_cache_compressed = bc;
-    }
-    iter = js.find("persistent_cache");
-    if (js.end() != iter) {
-      persistent_cache = PersistentCache::GetOrNewInstance("PersistentCache", iter.value());
-    }
-    iter = js.find("filter_policy");
-    if (js.end() != iter) {
-      const std::string& bc_class = iter.value().get<std::string>();
-      auto bc = FilterPolicy::GetOrNewInstance(bc_class);
-      filter_policy.reset(bc);
-    }
+    ROCKSDB_JSON_GET_NEST(js, flush_block_policy_factory);
+    ROCKSDB_JSON_GET_PROP(js, cache_index_and_filter_blocks);
+    ROCKSDB_JSON_GET_PROP(js, cache_index_and_filter_blocks_with_high_priority);
+    ROCKSDB_JSON_GET_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
+    ROCKSDB_JSON_GET_PROP(js, pin_top_level_index_and_filter);
+    ROCKSDB_JSON_GET_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
+    ROCKSDB_JSON_GET_ENUM(js, index_type);
+    ROCKSDB_JSON_GET_ENUM(js, data_block_index_type);
+    ROCKSDB_JSON_GET_ENUM(js, index_shortening);
+    ROCKSDB_JSON_GET_ENUM(js, data_block_index_type);
+    ROCKSDB_JSON_GET_PROP(js, data_block_hash_table_util_ratio);
+    ROCKSDB_JSON_GET_PROP(js, hash_index_allow_collision);
+    ROCKSDB_JSON_GET_ENUM(js, checksum);
+    ROCKSDB_JSON_GET_PROP(js, no_block_cache);
+    ROCKSDB_JSON_GET_PROP(js, block_size);
+    ROCKSDB_JSON_GET_PROP(js, block_size_deviation);
+    ROCKSDB_JSON_GET_PROP(js, block_restart_interval);
+    ROCKSDB_JSON_GET_PROP(js, index_block_restart_interval);
+    ROCKSDB_JSON_GET_PROP(js, metadata_block_size);
+    ROCKSDB_JSON_GET_PROP(js, partition_filters);
+    ROCKSDB_JSON_GET_PROP(js, use_delta_encoding);
+    ROCKSDB_JSON_GET_PROP(js, read_amp_bytes_per_bit);
+    ROCKSDB_JSON_GET_PROP(js, whole_key_filtering);
+    ROCKSDB_JSON_GET_PROP(js, verify_compression);
+    ROCKSDB_JSON_GET_PROP(js, format_version);
+    ROCKSDB_JSON_GET_PROP(js, enable_index_compression);
+    ROCKSDB_JSON_GET_PROP(js, block_align);
+    ROCKSDB_JSON_GET_NEST(js, block_cache);
+    ROCKSDB_JSON_GET_NEST(js, block_cache_compressed);
+    ROCKSDB_JSON_GET_NEST(js, persistent_cache);
+    ROCKSDB_JSON_GET_NEST(js, filter_policy);
     return Status::OK();
   }
   catch (const std::exception& ex) {
@@ -977,16 +958,18 @@ TableFactory* NewBlockBasedTableFactory(
   return new BlockBasedTableFactory(_table_options);
 }
 
-static TableFactory* NewBlockBasedTableFactoryFromJson(const json& j, Status* s) {
+static std::shared_ptr<TableFactory>
+NewBlockBasedTableFactoryFromJson(const json& j, Status* s) {
   BlockBasedTableOptions _table_options;
   *s = _table_options.InitFromJson(j);
   if (s->ok())
-    return new BlockBasedTableFactory(_table_options);
+    return std::make_shared<BlockBasedTableFactory>(_table_options);
   else
     return nullptr;
 }
 
-ROCKSDB_FACTORY_AUTO_REG(TableFactory, NewBlockBasedTableFactoryFromJson);
+ROCKSDB_FACTORY_AUTO_REG_EX("BlockBasedTable",
+    TableFactory, NewBlockBasedTableFactoryFromJson);
 
 const std::string BlockBasedTableFactory::kName = "BlockBasedTable";
 const std::string BlockBasedTablePropertyNames::kIndexType =

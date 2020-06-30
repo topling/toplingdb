@@ -528,8 +528,7 @@ extern TableFactory* NewCuckooTableFactory(
 class RandomAccessFileReader;
 
 // A base class for table factories.
-class TableFactory : public Factoryable<TableFactory*,
-    const json&, Status*> {
+class TableFactory : public FactoryableSP<TableFactory> {
  public:
   virtual ~TableFactory() {}
 

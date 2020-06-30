@@ -23,8 +23,7 @@ namespace ROCKSDB_NAMESPACE {
 //
 // Persistent cache interface for caching IO pages on a persistent medium. The
 // cache interface is specifically designed for persistent read cache.
-class PersistentCache
-    : public Factoryable<std::shared_ptr<PersistentCache>, const json&> {
+class PersistentCache : public FactoryableSP<PersistentCache> {
  public:
   typedef std::vector<std::map<std::string, double>> StatsType;
 

@@ -125,7 +125,9 @@ struct FilterBuildingContext {
 // RocksDB would first try using functions in Set 2. if they return nullptr,
 // it would use Set 1 instead.
 // You can choose filter type in NewBloomFilterPolicy
-class FilterPolicy : public Factoryable<FilterPolicy*>{
+class FilterPolicy :
+    public FactoryableSP<FilterPolicy>,
+    public std::enable_shared_from_this<FilterPolicy> {
  public:
   virtual ~FilterPolicy();
 

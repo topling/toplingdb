@@ -14,9 +14,9 @@
 namespace ROCKSDB_NAMESPACE {
 
 template<class T>
-static Status InitRepo(const json& main_js, const char* name) {
-  auto iter = main_js.find(name);
-  if (main_js.end() != iter) {
+static Status InitRepo(const json& repo_js, const char* name) {
+  auto iter = repo_js.find(name);
+  if (repo_js.end() != iter) {
     for (auto& one : iter.value().items()) {
       const std::string& inst_id = one.key();
       const json& js = one.value();
@@ -32,12 +32,30 @@ static Status InitRepo(const json& main_js, const char* name) {
 Status DB::InitConfigRepo(const std::string& json_text) try {
   json main_js(json_text);
   Status s;
-#define INIT_REPO(T, name) \
-  s = InitRepo<T>(main_js, name); if (!s.ok()) return s
-  INIT_REPO(Cache, "cache");
-  INIT_REPO(PersistentCache, "persistent_cache");
-  INIT_REPO(FilterPolicy, "filter_policy");
-  INIT_REPO(TableFactory, "table_factory");
+#define INIT_REPO(js, T, name) \
+  s = InitRepo<T>(js, name); if (!s.ok()) return s
+  auto iter = main_js.find("global");
+  if (main_js.end() != iter) {
+    auto& global_js = iter.value();
+    iter = global_js.find("DBOptions");
+    if (global_js.end() != iter) {
+      // TODO:
+    }
+    INIT_REPO(global_js, Cache, "cache");
+    INIT_REPO(global_js, PersistentCache, "persistent_cache");
+    INIT_REPO(global_js, FilterPolicy, "filter_policy");
+    INIT_REPO(global_js, TableFactory, "table_factory");
+  }
+/* TODO:
+  iter = main_js.find("column_family");
+  if (main_js.end() != iter) {
+    auto& cfset_js = iter.value();
+    for (auto& cf : cfset_js.items()) {
+      const std::string& cf_name = cf.key();
+      // TODO:
+    }
+  }
+*/
   return Status::OK();
 }
 catch (const std::exception& ex) {

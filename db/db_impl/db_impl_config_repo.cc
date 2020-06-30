@@ -28,9 +28,15 @@ static Status InitRepo(const json& repo_js, const char* name) {
   return Status::OK();
 }
 
-
 Status DB::InitConfigRepo(const std::string& json_text) try {
   json main_js(json_text);
+  return InitConfigRepo(main_js);
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+
+Status DB::InitConfigRepo(const json& main_js) try {
   Status s;
 #define INIT_REPO(js, T, name) \
   s = InitRepo<T>(js, name); if (!s.ok()) return s
@@ -56,7 +62,7 @@ Status DB::InitConfigRepo(const std::string& json_text) try {
     }
   }
 */
-  return Status::OK();
+  return s;
 }
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());

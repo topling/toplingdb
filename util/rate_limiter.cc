@@ -13,6 +13,7 @@
 #include "rocksdb/env.h"
 #include "test_util/sync_point.h"
 #include "util/aligned_buffer.h"
+#include "util/json.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -335,5 +336,38 @@ RateLimiter* NewGenericRateLimiter(
   return new GenericRateLimiter(rate_bytes_per_sec, refill_period_us, fairness,
                                 mode, Env::Default(), auto_tuned);
 }
+
+std::shared_ptr<RateLimiter>
+GenericRateLimiterFromJson(const json& js, Status* s) {
+    int64_t rate_bytes_per_sec = 0;
+    int64_t refill_period_us = 100 * 1000;
+    int32_t fairness = 10;
+    RateLimiter::Mode mode = RateLimiter::Mode::kWritesOnly;
+    bool auto_tuned = false;
+  ROCKSDB_JSON_GET_PROP(js, rate_bytes_per_sec);
+  ROCKSDB_JSON_GET_PROP(js, refill_period_us);
+  ROCKSDB_JSON_GET_PROP(js, fairness);
+  ROCKSDB_JSON_GET_ENUM(js, mode);
+  ROCKSDB_JSON_GET_PROP(js, auto_tuned);
+  if (rate_bytes_per_sec <= 0) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "rate_bytes_per_sec must > 0");
+    return nullptr;
+  }
+  if (refill_period_us <= 0) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "refill_period_us must > 0");
+    return nullptr;
+  }
+  if (fairness <= 0) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "fairness must > 0");
+    return nullptr;
+  }
+  *s = Status::OK();
+  Env* env = Env::Default();
+  return std::make_shared<GenericRateLimiter>(
+      rate_bytes_per_sec, refill_period_us, fairness,
+      mode, env, auto_tuned);
+}
+
+ROCKSDB_FACTORY_AUTO_REG(GenericRateLimiter, GenericRateLimiterFromJson);
 
 }  // namespace ROCKSDB_NAMESPACE

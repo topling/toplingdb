@@ -11,22 +11,23 @@
 
 #include "rocksdb/env.h"
 #include "rocksdb/statistics.h"
+#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
-class RateLimiter {
+class RateLimiter : public FactoryableSP<RateLimiter> {
  public:
-  enum class OpType {
+  ROCKSDB_ENUM_CLASS_INCLASS(OpType, int,
     // Limitation: we currently only invoke Request() with OpType::kRead for
     // compactions when DBOptions::new_table_reader_for_compaction_inputs is set
     kRead,
-    kWrite,
-  };
-  enum class Mode {
+    kWrite
+  );
+  ROCKSDB_ENUM_CLASS_INCLASS(Mode, int,
     kReadsOnly,
     kWritesOnly,
-    kAllIo,
-  };
+    kAllIo
+  );
 
   // For API compatibility, default to rate-limiting writes only.
   explicit RateLimiter(Mode mode = Mode::kWritesOnly) : mode_(mode) {}

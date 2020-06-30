@@ -240,6 +240,7 @@ class DB {
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr);
 
   static Status InitConfigRepo(const std::string& json_text);
+  static Status InitConfigRepo(const json&);
 
   virtual Status Resume() { return Status::NotSupported(); }
 

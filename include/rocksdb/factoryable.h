@@ -12,6 +12,7 @@
 #include "status.h"
 #include "json_fwd.h"
 #include "preproc.h"
+#include "enum.h"
 
 namespace ROCKSDB_NAMESPACE {
 

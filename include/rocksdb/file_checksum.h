@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "rocksdb/status.h"
+#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -54,7 +55,7 @@ class FileChecksumGenerator {
 };
 
 // Create the FileChecksumGenerator object for each SST file.
-class FileChecksumGenFactory {
+class FileChecksumGenFactory : public FactoryableSP<FileChecksumGenFactory> {
  public:
   virtual ~FileChecksumGenFactory() {}
 

@@ -25,6 +25,7 @@
 #include <vector>
 #include "rocksdb/status.h"
 #include "rocksdb/thread_status.h"
+#include "rocksdb/factoryable.h"
 
 #ifdef _WIN32
 // Windows API macro interference
@@ -138,7 +139,7 @@ struct EnvOptions {
   RateLimiter* rate_limiter = nullptr;
 };
 
-class Env {
+class Env : public Factoryable<Env*> {
  public:
   struct FileAttributes {
     // File name
@@ -1006,18 +1007,18 @@ class Directory {
   // DirectoryWrapper too.
 };
 
-enum InfoLogLevel : unsigned char {
+ROCKSDB_ENUM_PLAIN(InfoLogLevel, unsigned char,
   DEBUG_LEVEL = 0,
   INFO_LEVEL,
   WARN_LEVEL,
   ERROR_LEVEL,
   FATAL_LEVEL,
   HEADER_LEVEL,
-  NUM_INFO_LOG_LEVELS,
-};
+  NUM_INFO_LOG_LEVELS
+);
 
 // An interface for writing log messages.
-class Logger {
+class Logger : public FactoryableSP<Logger> {
  public:
   size_t kDoNotSupportGetLogFileSize = (std::numeric_limits<size_t>::max)();
 

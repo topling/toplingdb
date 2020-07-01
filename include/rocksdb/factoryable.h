@@ -167,8 +167,17 @@ const json& jsonRefType();
       if (!enum_value(val, &prop)) \
         throw std::invalid_argument("bad " #prop "=" + val); \
   }} while (0)
+#define ROCKSDB_JSON_OPT_NEST(js, prop) \
+  do try { \
+    auto __iter = js.find(#prop); \
+    if (js.end() != __iter) \
+      prop = decltype(NestForBase(prop))(__iter.value()); \
+  } catch (const std::exception& ex) { \
+    return Status::InvalidArgument(ROCKSDB_FUNC, \
+       #prop ": " + std::string(ex.what())); \
+  } while (0)
 
-#define ROCKSDB_JSON_OPT_NEST_IMPL(js, prop, clazz) do { \
+#define ROCKSDB_JSON_OPT_FACT_IMPL(js, prop, clazz) do { \
     if (js.is_string()) { \
       const std::string& __inst_id = js.get<std::string>(); \
       prop = clazz::GetRepoInstance(__inst_id); \
@@ -184,13 +193,13 @@ const json& jsonRefType();
       assert(!!prop); \
     }} while (0)
 
-#define ROCKSDB_JSON_OPT_NEST_EX(js, prop, clazz) do { \
+#define ROCKSDB_JSON_OPT_FACT_EX(js, prop, clazz) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) { \
-      ROCKSDB_JSON_OPT_NEST_IMPL(__iter.value(), prop, clazz); \
+      ROCKSDB_JSON_OPT_FACT_IMPL(__iter.value(), prop, clazz); \
   }} while (0)
-#define ROCKSDB_JSON_OPT_NEST(js, prop) \
-    ROCKSDB_JSON_OPT_NEST_EX(js, prop, ExtractInstanceType<decltype(prop)>::type)
+#define ROCKSDB_JSON_OPT_FACT(js, prop) \
+    ROCKSDB_JSON_OPT_FACT_EX(js, prop, ExtractInstanceType<decltype(prop)>::type)
 
 
 }

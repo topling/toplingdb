@@ -373,7 +373,7 @@ static std::unordered_map<std::string, OptionTypeInfo>
 
 Status BlockBasedTableOptions::UpdateFromJson(const json& js) {
   try {
-    ROCKSDB_JSON_OPT_NEST(js, flush_block_policy_factory);
+    ROCKSDB_JSON_OPT_FACT(js, flush_block_policy_factory);
     ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks);
     ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks_with_high_priority);
     ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
@@ -400,10 +400,10 @@ Status BlockBasedTableOptions::UpdateFromJson(const json& js) {
     ROCKSDB_JSON_OPT_PROP(js, format_version);
     ROCKSDB_JSON_OPT_PROP(js, enable_index_compression);
     ROCKSDB_JSON_OPT_PROP(js, block_align);
-    ROCKSDB_JSON_OPT_NEST(js, block_cache);
-    ROCKSDB_JSON_OPT_NEST(js, block_cache_compressed);
-    ROCKSDB_JSON_OPT_NEST(js, persistent_cache);
-    ROCKSDB_JSON_OPT_NEST(js, filter_policy);
+    ROCKSDB_JSON_OPT_FACT(js, block_cache);
+    ROCKSDB_JSON_OPT_FACT(js, block_cache_compressed);
+    ROCKSDB_JSON_OPT_FACT(js, persistent_cache);
+    ROCKSDB_JSON_OPT_FACT(js, filter_policy);
     return Status::OK();
   }
   catch (const std::exception& ex) {

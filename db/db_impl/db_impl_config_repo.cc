@@ -21,7 +21,7 @@ static Status InitRepo(const json& repo_js, const char* name) {
       const std::string& inst_id = one.key();
       const json& js = one.value();
       std::shared_ptr<T> obj;
-      ROCKSDB_JSON_OPT_NEST_IMPL(js, obj, T);
+      ROCKSDB_JSON_OPT_FACT_IMPL(js, obj, T);
       T::InsertRepoInstance(inst_id, obj);
     }
   }

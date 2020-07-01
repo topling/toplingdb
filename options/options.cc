@@ -372,7 +372,7 @@ Status ColumnFamilyOptions::UpdateFromJson(const json& js) try {
   }
   catch (const std::exception& ex) {
     return Status::InvalidArgument(ROCKSDB_FUNC,
-       "table_properties_collector_factories: " + std::string(ex.what()));
+        std::string("table_properties_collector_factories: ") + ex.what());
   }
   ROCKSDB_JSON_OPT_PROP(js, max_successive_merges);
   ROCKSDB_JSON_OPT_PROP(js, optimize_filters_for_hits);

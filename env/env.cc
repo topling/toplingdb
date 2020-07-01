@@ -478,4 +478,9 @@ std::unique_ptr<Env> NewCompositeEnv(std::shared_ptr<FileSystem> fs) {
 }
 #endif
 
+static Env* DefaultEnv(const json&, Status*) {
+  return Env::Default();
+}
+ROCKSDB_FACTORY_REG("default", DefaultEnv);
+
 }  // namespace ROCKSDB_NAMESPACE

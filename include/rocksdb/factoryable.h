@@ -7,7 +7,6 @@
 #include <functional>
 #include <unordered_map>
 #include <memory>
-#include "rocksdb_namespace.h"
 #include "slice.h"
 #include "status.h"
 #include "json_fwd.h"
@@ -150,11 +149,18 @@ const json& jsonRefType();
 
 //////////////////////////////////////////////////////////////////////////////
 
-#define ROCKSDB_JSON_GET_PROP(js, prop) do { \
+// _REQ_ means 'required'
+// _OPT_ means 'optional'
+#define ROCKSDB_JSON_REQ_PROP(js, prop) do { \
+    auto __iter = js.find(#prop); \
+    if (js.end() != __iter) prop = __iter.value().get<decltype(prop)>(); \
+    else throw std::invalid_argument("#prop" "is required"); \
+  } while (0)
+#define ROCKSDB_JSON_OPT_PROP(js, prop) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) prop = __iter.value().get<decltype(prop)>(); \
   } while (0)
-#define ROCKSDB_JSON_GET_ENUM(js, prop) do { \
+#define ROCKSDB_JSON_OPT_ENUM(js, prop) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) { \
       const std::string& val = __iter.value().get<std::string>(); \
@@ -162,7 +168,7 @@ const json& jsonRefType();
         throw std::invalid_argument("bad " #prop "=" + val); \
   }} while (0)
 
-#define ROCKSDB_JSON_GET_NEST_IMPL(js, prop, clazz) do { \
+#define ROCKSDB_JSON_OPT_NEST_IMPL(js, prop, clazz) do { \
     if (js.is_string()) { \
       const std::string& __inst_id = js.get<std::string>(); \
       prop = clazz::GetRepoInstance(__inst_id); \
@@ -175,15 +181,16 @@ const json& jsonRefType();
       const json& __options = js.at("options"); \
       prop = clazz::CreateInstance(__clazz_name, __options, &__status); \
       if (!__status.ok()) return __status; \
+      assert(!!prop); \
     }} while (0)
 
-#define ROCKSDB_JSON_GET_NEST_EX(js, prop, clazz) do { \
+#define ROCKSDB_JSON_OPT_NEST_EX(js, prop, clazz) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) { \
-      ROCKSDB_JSON_GET_NEST_IMPL(__iter.value(), prop, clazz); \
+      ROCKSDB_JSON_OPT_NEST_IMPL(__iter.value(), prop, clazz); \
   }} while (0)
-#define ROCKSDB_JSON_GET_NEST(js, prop) \
-    ROCKSDB_JSON_GET_NEST_EX(js, prop, ExtractInstanceType<decltype(prop)>::type)
+#define ROCKSDB_JSON_OPT_NEST(js, prop) \
+    ROCKSDB_JSON_OPT_NEST_EX(js, prop, ExtractInstanceType<decltype(prop)>::type)
 
 
 }

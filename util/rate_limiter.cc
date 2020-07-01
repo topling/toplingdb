@@ -344,11 +344,11 @@ NewGenericRateLimiterFromJson(const json& js, Status* s) {
     int32_t fairness = 10;
     RateLimiter::Mode mode = RateLimiter::Mode::kWritesOnly;
     bool auto_tuned = false;
-  ROCKSDB_JSON_GET_PROP(js, rate_bytes_per_sec);
-  ROCKSDB_JSON_GET_PROP(js, refill_period_us);
-  ROCKSDB_JSON_GET_PROP(js, fairness);
-  ROCKSDB_JSON_GET_ENUM(js, mode);
-  ROCKSDB_JSON_GET_PROP(js, auto_tuned);
+  ROCKSDB_JSON_OPT_PROP(js, rate_bytes_per_sec);
+  ROCKSDB_JSON_OPT_PROP(js, refill_period_us);
+  ROCKSDB_JSON_OPT_PROP(js, fairness);
+  ROCKSDB_JSON_OPT_ENUM(js, mode);
+  ROCKSDB_JSON_OPT_PROP(js, auto_tuned);
   if (rate_bytes_per_sec <= 0) {
     *s = Status::InvalidArgument(ROCKSDB_FUNC, "rate_bytes_per_sec must > 0");
     return nullptr;

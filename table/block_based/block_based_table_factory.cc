@@ -373,37 +373,37 @@ static std::unordered_map<std::string, OptionTypeInfo>
 
 Status BlockBasedTableOptions::UpdateFromJson(const json& js) {
   try {
-    ROCKSDB_JSON_GET_NEST(js, flush_block_policy_factory);
-    ROCKSDB_JSON_GET_PROP(js, cache_index_and_filter_blocks);
-    ROCKSDB_JSON_GET_PROP(js, cache_index_and_filter_blocks_with_high_priority);
-    ROCKSDB_JSON_GET_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
-    ROCKSDB_JSON_GET_PROP(js, pin_top_level_index_and_filter);
-    ROCKSDB_JSON_GET_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
-    ROCKSDB_JSON_GET_ENUM(js, index_type);
-    ROCKSDB_JSON_GET_ENUM(js, data_block_index_type);
-    ROCKSDB_JSON_GET_ENUM(js, index_shortening);
-    ROCKSDB_JSON_GET_ENUM(js, data_block_index_type);
-    ROCKSDB_JSON_GET_PROP(js, data_block_hash_table_util_ratio);
-    ROCKSDB_JSON_GET_PROP(js, hash_index_allow_collision);
-    ROCKSDB_JSON_GET_ENUM(js, checksum);
-    ROCKSDB_JSON_GET_PROP(js, no_block_cache);
-    ROCKSDB_JSON_GET_PROP(js, block_size);
-    ROCKSDB_JSON_GET_PROP(js, block_size_deviation);
-    ROCKSDB_JSON_GET_PROP(js, block_restart_interval);
-    ROCKSDB_JSON_GET_PROP(js, index_block_restart_interval);
-    ROCKSDB_JSON_GET_PROP(js, metadata_block_size);
-    ROCKSDB_JSON_GET_PROP(js, partition_filters);
-    ROCKSDB_JSON_GET_PROP(js, use_delta_encoding);
-    ROCKSDB_JSON_GET_PROP(js, read_amp_bytes_per_bit);
-    ROCKSDB_JSON_GET_PROP(js, whole_key_filtering);
-    ROCKSDB_JSON_GET_PROP(js, verify_compression);
-    ROCKSDB_JSON_GET_PROP(js, format_version);
-    ROCKSDB_JSON_GET_PROP(js, enable_index_compression);
-    ROCKSDB_JSON_GET_PROP(js, block_align);
-    ROCKSDB_JSON_GET_NEST(js, block_cache);
-    ROCKSDB_JSON_GET_NEST(js, block_cache_compressed);
-    ROCKSDB_JSON_GET_NEST(js, persistent_cache);
-    ROCKSDB_JSON_GET_NEST(js, filter_policy);
+    ROCKSDB_JSON_OPT_NEST(js, flush_block_policy_factory);
+    ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks);
+    ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks_with_high_priority);
+    ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
+    ROCKSDB_JSON_OPT_PROP(js, pin_top_level_index_and_filter);
+    ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
+    ROCKSDB_JSON_OPT_ENUM(js, index_type);
+    ROCKSDB_JSON_OPT_ENUM(js, data_block_index_type);
+    ROCKSDB_JSON_OPT_ENUM(js, index_shortening);
+    ROCKSDB_JSON_OPT_ENUM(js, data_block_index_type);
+    ROCKSDB_JSON_OPT_PROP(js, data_block_hash_table_util_ratio);
+    ROCKSDB_JSON_OPT_PROP(js, hash_index_allow_collision);
+    ROCKSDB_JSON_OPT_ENUM(js, checksum);
+    ROCKSDB_JSON_OPT_PROP(js, no_block_cache);
+    ROCKSDB_JSON_OPT_PROP(js, block_size);
+    ROCKSDB_JSON_OPT_PROP(js, block_size_deviation);
+    ROCKSDB_JSON_OPT_PROP(js, block_restart_interval);
+    ROCKSDB_JSON_OPT_PROP(js, index_block_restart_interval);
+    ROCKSDB_JSON_OPT_PROP(js, metadata_block_size);
+    ROCKSDB_JSON_OPT_PROP(js, partition_filters);
+    ROCKSDB_JSON_OPT_PROP(js, use_delta_encoding);
+    ROCKSDB_JSON_OPT_PROP(js, read_amp_bytes_per_bit);
+    ROCKSDB_JSON_OPT_PROP(js, whole_key_filtering);
+    ROCKSDB_JSON_OPT_PROP(js, verify_compression);
+    ROCKSDB_JSON_OPT_PROP(js, format_version);
+    ROCKSDB_JSON_OPT_PROP(js, enable_index_compression);
+    ROCKSDB_JSON_OPT_PROP(js, block_align);
+    ROCKSDB_JSON_OPT_NEST(js, block_cache);
+    ROCKSDB_JSON_OPT_NEST(js, block_cache_compressed);
+    ROCKSDB_JSON_OPT_NEST(js, persistent_cache);
+    ROCKSDB_JSON_OPT_NEST(js, filter_policy);
     return Status::OK();
   }
   catch (const std::exception& ex) {

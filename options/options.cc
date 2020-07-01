@@ -18,6 +18,7 @@
 #include "rocksdb/cache.h"
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/comparator.h"
+#include "rocksdb/concurrent_task_limiter.h"
 #include "rocksdb/env.h"
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/merge_operator.h"
@@ -144,13 +145,13 @@ static Status Json_EventListenerVec(const json& js,
   listeners.clear();
   if (js.is_string()) {
     std::shared_ptr<EventListener> el;
-    ROCKSDB_JSON_GET_NEST_IMPL(js, el, EventListener);
+    ROCKSDB_JSON_OPT_NEST_IMPL(js, el, EventListener);
     listeners.emplace_back(el);
   }
   else if (js.is_array()) {
     for (auto& one : js.items()) {
       std::shared_ptr<EventListener> el;
-      ROCKSDB_JSON_GET_NEST_IMPL(one.value(), el, EventListener);
+      ROCKSDB_JSON_OPT_NEST_IMPL(one.value(), el, EventListener);
       listeners.emplace_back(el);
     }
   }
@@ -158,108 +159,108 @@ static Status Json_EventListenerVec(const json& js,
 }
 
 Status DBOptions::UpdateFromJson(const json& js) try {
-  ROCKSDB_JSON_GET_PROP(js, paranoid_checks);
-  ROCKSDB_JSON_GET_NEST(js, env);
-  ROCKSDB_JSON_GET_NEST(js, rate_limiter);
-  ROCKSDB_JSON_GET_NEST(js, sst_file_manager);
-  ROCKSDB_JSON_GET_NEST(js, info_log);
-  ROCKSDB_JSON_GET_ENUM(js, info_log_level);
-  ROCKSDB_JSON_GET_PROP(js, max_open_files);
-  ROCKSDB_JSON_GET_PROP(js, max_file_opening_threads);
-  ROCKSDB_JSON_GET_PROP(js, max_total_wal_size);
-  ROCKSDB_JSON_GET_NEST(js, statistics);
-  ROCKSDB_JSON_GET_PROP(js, use_fsync);
+  ROCKSDB_JSON_OPT_PROP(js, paranoid_checks);
+  ROCKSDB_JSON_OPT_NEST(js, env);
+  ROCKSDB_JSON_OPT_NEST(js, rate_limiter);
+  ROCKSDB_JSON_OPT_NEST(js, sst_file_manager);
+  ROCKSDB_JSON_OPT_NEST(js, info_log);
+  ROCKSDB_JSON_OPT_ENUM(js, info_log_level);
+  ROCKSDB_JSON_OPT_PROP(js, max_open_files);
+  ROCKSDB_JSON_OPT_PROP(js, max_file_opening_threads);
+  ROCKSDB_JSON_OPT_PROP(js, max_total_wal_size);
+  ROCKSDB_JSON_OPT_NEST(js, statistics);
+  ROCKSDB_JSON_OPT_PROP(js, use_fsync);
   {
     auto iter = js.find("db_paths");
     if (js.end() != iter)
       Json_DbPathVec(js, db_paths);
   }
-  //ROCKSDB_JSON_GET_PROP(js, db_paths);
-  ROCKSDB_JSON_GET_PROP(js, db_log_dir);
-  ROCKSDB_JSON_GET_PROP(js, wal_dir);
-  ROCKSDB_JSON_GET_PROP(js, delete_obsolete_files_period_micros);
-  ROCKSDB_JSON_GET_PROP(js, max_background_jobs);
-  ROCKSDB_JSON_GET_PROP(js, base_background_compactions);
-  ROCKSDB_JSON_GET_PROP(js, max_background_compactions);
-  ROCKSDB_JSON_GET_PROP(js, max_subcompactions);
-  ROCKSDB_JSON_GET_PROP(js, max_background_flushes);
-  ROCKSDB_JSON_GET_PROP(js, max_log_file_size);
-  ROCKSDB_JSON_GET_PROP(js, log_file_time_to_roll);
-  ROCKSDB_JSON_GET_PROP(js, keep_log_file_num);
-  ROCKSDB_JSON_GET_PROP(js, recycle_log_file_num);
-  ROCKSDB_JSON_GET_PROP(js, max_manifest_file_size);
-  ROCKSDB_JSON_GET_PROP(js, table_cache_numshardbits);
-  ROCKSDB_JSON_GET_PROP(js, WAL_ttl_seconds);
-  ROCKSDB_JSON_GET_PROP(js, WAL_size_limit_MB);
-  ROCKSDB_JSON_GET_PROP(js, manifest_preallocation_size);
-  ROCKSDB_JSON_GET_PROP(js, allow_mmap_reads);
-  ROCKSDB_JSON_GET_PROP(js, allow_mmap_writes);
-  ROCKSDB_JSON_GET_PROP(js, use_direct_reads);
-  ROCKSDB_JSON_GET_PROP(js, use_direct_io_for_flush_and_compaction);
-  ROCKSDB_JSON_GET_PROP(js, allow_fallocate);
-  ROCKSDB_JSON_GET_PROP(js, is_fd_close_on_exec);
-  ROCKSDB_JSON_GET_PROP(js, skip_log_error_on_recovery);
-  ROCKSDB_JSON_GET_PROP(js, stats_dump_period_sec);
-  ROCKSDB_JSON_GET_PROP(js, stats_persist_period_sec);
-  ROCKSDB_JSON_GET_PROP(js, persist_stats_to_disk);
-  ROCKSDB_JSON_GET_PROP(js, stats_history_buffer_size);
-  ROCKSDB_JSON_GET_PROP(js, advise_random_on_open);
-  ROCKSDB_JSON_GET_PROP(js, db_write_buffer_size);
+  //ROCKSDB_JSON_OPT_PROP(js, db_paths);
+  ROCKSDB_JSON_OPT_PROP(js, db_log_dir);
+  ROCKSDB_JSON_OPT_PROP(js, wal_dir);
+  ROCKSDB_JSON_OPT_PROP(js, delete_obsolete_files_period_micros);
+  ROCKSDB_JSON_OPT_PROP(js, max_background_jobs);
+  ROCKSDB_JSON_OPT_PROP(js, base_background_compactions);
+  ROCKSDB_JSON_OPT_PROP(js, max_background_compactions);
+  ROCKSDB_JSON_OPT_PROP(js, max_subcompactions);
+  ROCKSDB_JSON_OPT_PROP(js, max_background_flushes);
+  ROCKSDB_JSON_OPT_PROP(js, max_log_file_size);
+  ROCKSDB_JSON_OPT_PROP(js, log_file_time_to_roll);
+  ROCKSDB_JSON_OPT_PROP(js, keep_log_file_num);
+  ROCKSDB_JSON_OPT_PROP(js, recycle_log_file_num);
+  ROCKSDB_JSON_OPT_PROP(js, max_manifest_file_size);
+  ROCKSDB_JSON_OPT_PROP(js, table_cache_numshardbits);
+  ROCKSDB_JSON_OPT_PROP(js, WAL_ttl_seconds);
+  ROCKSDB_JSON_OPT_PROP(js, WAL_size_limit_MB);
+  ROCKSDB_JSON_OPT_PROP(js, manifest_preallocation_size);
+  ROCKSDB_JSON_OPT_PROP(js, allow_mmap_reads);
+  ROCKSDB_JSON_OPT_PROP(js, allow_mmap_writes);
+  ROCKSDB_JSON_OPT_PROP(js, use_direct_reads);
+  ROCKSDB_JSON_OPT_PROP(js, use_direct_io_for_flush_and_compaction);
+  ROCKSDB_JSON_OPT_PROP(js, allow_fallocate);
+  ROCKSDB_JSON_OPT_PROP(js, is_fd_close_on_exec);
+  ROCKSDB_JSON_OPT_PROP(js, skip_log_error_on_recovery);
+  ROCKSDB_JSON_OPT_PROP(js, stats_dump_period_sec);
+  ROCKSDB_JSON_OPT_PROP(js, stats_persist_period_sec);
+  ROCKSDB_JSON_OPT_PROP(js, persist_stats_to_disk);
+  ROCKSDB_JSON_OPT_PROP(js, stats_history_buffer_size);
+  ROCKSDB_JSON_OPT_PROP(js, advise_random_on_open);
+  ROCKSDB_JSON_OPT_PROP(js, db_write_buffer_size);
   {
     auto iter = js.find("write_buffer_manager");
     if (js.end() != iter) {
       auto& wbm = iter.value();
       size_t buffer_size = db_write_buffer_size;
       std::shared_ptr<Cache> cache;
-      ROCKSDB_JSON_GET_NEST(wbm, cache);
-      ROCKSDB_JSON_GET_PROP(wbm, buffer_size);
+      ROCKSDB_JSON_OPT_NEST(wbm, cache);
+      ROCKSDB_JSON_OPT_PROP(wbm, buffer_size);
       write_buffer_manager = std::make_shared<WriteBufferManager>(
           buffer_size, cache);
     }
   }
-  ROCKSDB_JSON_GET_ENUM(js, access_hint_on_compaction_start);
-  ROCKSDB_JSON_GET_PROP(js, new_table_reader_for_compaction_inputs);
-  ROCKSDB_JSON_GET_PROP(js, compaction_readahead_size);
-  ROCKSDB_JSON_GET_PROP(js, random_access_max_buffer_size);
-  ROCKSDB_JSON_GET_PROP(js, writable_file_max_buffer_size);
-  ROCKSDB_JSON_GET_PROP(js, use_adaptive_mutex);
-  ROCKSDB_JSON_GET_PROP(js, bytes_per_sync);
-  ROCKSDB_JSON_GET_PROP(js, wal_bytes_per_sync);
-  ROCKSDB_JSON_GET_PROP(js, strict_bytes_per_sync);
+  ROCKSDB_JSON_OPT_ENUM(js, access_hint_on_compaction_start);
+  ROCKSDB_JSON_OPT_PROP(js, new_table_reader_for_compaction_inputs);
+  ROCKSDB_JSON_OPT_PROP(js, compaction_readahead_size);
+  ROCKSDB_JSON_OPT_PROP(js, random_access_max_buffer_size);
+  ROCKSDB_JSON_OPT_PROP(js, writable_file_max_buffer_size);
+  ROCKSDB_JSON_OPT_PROP(js, use_adaptive_mutex);
+  ROCKSDB_JSON_OPT_PROP(js, bytes_per_sync);
+  ROCKSDB_JSON_OPT_PROP(js, wal_bytes_per_sync);
+  ROCKSDB_JSON_OPT_PROP(js, strict_bytes_per_sync);
   {
     auto iter = js.find("listeners");
     if (js.end() != iter)
       Json_EventListenerVec(js, listeners);
   }
-  ROCKSDB_JSON_GET_PROP(js, enable_thread_tracking);
-  ROCKSDB_JSON_GET_PROP(js, delayed_write_rate);
-  ROCKSDB_JSON_GET_PROP(js, enable_pipelined_write);
-  ROCKSDB_JSON_GET_PROP(js, unordered_write);
-  ROCKSDB_JSON_GET_PROP(js, allow_concurrent_memtable_write);
-  ROCKSDB_JSON_GET_PROP(js, enable_write_thread_adaptive_yield);
-  ROCKSDB_JSON_GET_PROP(js, max_write_batch_group_size_bytes);
-  ROCKSDB_JSON_GET_PROP(js, write_thread_max_yield_usec);
-  ROCKSDB_JSON_GET_PROP(js, write_thread_slow_yield_usec);
-  ROCKSDB_JSON_GET_PROP(js, skip_stats_update_on_db_open);
-  ROCKSDB_JSON_GET_PROP(js, skip_checking_sst_file_sizes_on_db_open);
-  ROCKSDB_JSON_GET_ENUM(js, wal_recovery_mode);
-  ROCKSDB_JSON_GET_PROP(js, allow_2pc);
-  ROCKSDB_JSON_GET_NEST(js, row_cache);
-  //ROCKSDB_JSON_GET_NEST(js, wal_filter);
-  ROCKSDB_JSON_GET_PROP(js, fail_if_options_file_error);
-  ROCKSDB_JSON_GET_PROP(js, dump_malloc_stats);
-  ROCKSDB_JSON_GET_PROP(js, avoid_flush_during_recovery);
-  ROCKSDB_JSON_GET_PROP(js, avoid_flush_during_shutdown);
-  ROCKSDB_JSON_GET_PROP(js, allow_ingest_behind);
-  ROCKSDB_JSON_GET_PROP(js, preserve_deletes);
-  ROCKSDB_JSON_GET_PROP(js, two_write_queues);
-  ROCKSDB_JSON_GET_PROP(js, manual_wal_flush);
-  ROCKSDB_JSON_GET_PROP(js, atomic_flush);
-  ROCKSDB_JSON_GET_PROP(js, avoid_unnecessary_blocking_io);
-  ROCKSDB_JSON_GET_PROP(js, write_dbid_to_manifest);
-  ROCKSDB_JSON_GET_PROP(js, log_readahead_size);
-  ROCKSDB_JSON_GET_NEST(js, file_checksum_gen_factory);
-  ROCKSDB_JSON_GET_PROP(js, best_efforts_recovery);
+  ROCKSDB_JSON_OPT_PROP(js, enable_thread_tracking);
+  ROCKSDB_JSON_OPT_PROP(js, delayed_write_rate);
+  ROCKSDB_JSON_OPT_PROP(js, enable_pipelined_write);
+  ROCKSDB_JSON_OPT_PROP(js, unordered_write);
+  ROCKSDB_JSON_OPT_PROP(js, allow_concurrent_memtable_write);
+  ROCKSDB_JSON_OPT_PROP(js, enable_write_thread_adaptive_yield);
+  ROCKSDB_JSON_OPT_PROP(js, max_write_batch_group_size_bytes);
+  ROCKSDB_JSON_OPT_PROP(js, write_thread_max_yield_usec);
+  ROCKSDB_JSON_OPT_PROP(js, write_thread_slow_yield_usec);
+  ROCKSDB_JSON_OPT_PROP(js, skip_stats_update_on_db_open);
+  ROCKSDB_JSON_OPT_PROP(js, skip_checking_sst_file_sizes_on_db_open);
+  ROCKSDB_JSON_OPT_ENUM(js, wal_recovery_mode);
+  ROCKSDB_JSON_OPT_PROP(js, allow_2pc);
+  ROCKSDB_JSON_OPT_NEST(js, row_cache);
+  //ROCKSDB_JSON_OPT_NEST(js, wal_filter);
+  ROCKSDB_JSON_OPT_PROP(js, fail_if_options_file_error);
+  ROCKSDB_JSON_OPT_PROP(js, dump_malloc_stats);
+  ROCKSDB_JSON_OPT_PROP(js, avoid_flush_during_recovery);
+  ROCKSDB_JSON_OPT_PROP(js, avoid_flush_during_shutdown);
+  ROCKSDB_JSON_OPT_PROP(js, allow_ingest_behind);
+  ROCKSDB_JSON_OPT_PROP(js, preserve_deletes);
+  ROCKSDB_JSON_OPT_PROP(js, two_write_queues);
+  ROCKSDB_JSON_OPT_PROP(js, manual_wal_flush);
+  ROCKSDB_JSON_OPT_PROP(js, atomic_flush);
+  ROCKSDB_JSON_OPT_PROP(js, avoid_unnecessary_blocking_io);
+  ROCKSDB_JSON_OPT_PROP(js, write_dbid_to_manifest);
+  ROCKSDB_JSON_OPT_PROP(js, log_readahead_size);
+  ROCKSDB_JSON_OPT_NEST(js, file_checksum_gen_factory);
+  ROCKSDB_JSON_OPT_PROP(js, best_efforts_recovery);
   return Status::OK();
 }
 catch (const std::exception& ex) {
@@ -281,38 +282,38 @@ bool Init_vec(const json& js, Vec& vec) {
 
 struct CompressionOptions_Impl : CompressionOptions {
   explicit CompressionOptions_Impl(const json& js) {
-    ROCKSDB_JSON_GET_PROP(js, window_bits);
-    ROCKSDB_JSON_GET_PROP(js, level);
-    ROCKSDB_JSON_GET_PROP(js, strategy);
-    ROCKSDB_JSON_GET_PROP(js, max_dict_bytes);
-    ROCKSDB_JSON_GET_PROP(js, zstd_max_train_bytes);
-    ROCKSDB_JSON_GET_PROP(js, parallel_threads);
-    ROCKSDB_JSON_GET_PROP(js, enabled);
+    ROCKSDB_JSON_OPT_PROP(js, window_bits);
+    ROCKSDB_JSON_OPT_PROP(js, level);
+    ROCKSDB_JSON_OPT_PROP(js, strategy);
+    ROCKSDB_JSON_OPT_PROP(js, max_dict_bytes);
+    ROCKSDB_JSON_OPT_PROP(js, zstd_max_train_bytes);
+    ROCKSDB_JSON_OPT_PROP(js, parallel_threads);
+    ROCKSDB_JSON_OPT_PROP(js, enabled);
   }
 };
 
 Status ColumnFamilyOptions::UpdateFromJson(const json& js) try {
-  ROCKSDB_JSON_GET_PROP(js, max_write_buffer_number);
-  ROCKSDB_JSON_GET_PROP(js, min_write_buffer_number_to_merge);
-  ROCKSDB_JSON_GET_PROP(js, max_write_buffer_number_to_maintain);
-  ROCKSDB_JSON_GET_PROP(js, max_write_buffer_size_to_maintain);
-  ROCKSDB_JSON_GET_PROP(js, inplace_update_support);
-  ROCKSDB_JSON_GET_ENUM(js, inplace_update_num_locks);
-  //ROCKSDB_JSON_GET_PROP(js, inplace_callback); // not need update
-  ROCKSDB_JSON_GET_PROP(js, memtable_prefix_bloom_size_ratio);
-  ROCKSDB_JSON_GET_PROP(js, memtable_whole_key_filtering);
-  ROCKSDB_JSON_GET_PROP(js, memtable_huge_page_size);
-  //ROCKSDB_JSON_GET_NEST(js, memtable_insert_with_hint_prefix_extractor);
-  ROCKSDB_JSON_GET_PROP(js, bloom_locality);
-  ROCKSDB_JSON_GET_PROP(js, arena_block_size);
-  ROCKSDB_JSON_GET_ENUM(js, compression_per_level);
-  ROCKSDB_JSON_GET_PROP(js, num_levels);
-  ROCKSDB_JSON_GET_PROP(js, level0_slowdown_writes_trigger);
-  ROCKSDB_JSON_GET_PROP(js, level0_stop_writes_trigger);
-  ROCKSDB_JSON_GET_PROP(js, target_file_size_base);
-  ROCKSDB_JSON_GET_PROP(js, target_file_size_multiplier);
-  ROCKSDB_JSON_GET_PROP(js, level_compaction_dynamic_level_bytes);
-  ROCKSDB_JSON_GET_PROP(js, max_bytes_for_level_multiplier);
+  ROCKSDB_JSON_OPT_PROP(js, max_write_buffer_number);
+  ROCKSDB_JSON_OPT_PROP(js, min_write_buffer_number_to_merge);
+  ROCKSDB_JSON_OPT_PROP(js, max_write_buffer_number_to_maintain);
+  ROCKSDB_JSON_OPT_PROP(js, max_write_buffer_size_to_maintain);
+  ROCKSDB_JSON_OPT_PROP(js, inplace_update_support);
+  ROCKSDB_JSON_OPT_ENUM(js, inplace_update_num_locks);
+  //ROCKSDB_JSON_OPT_PROP(js, inplace_callback); // not need update
+  ROCKSDB_JSON_OPT_PROP(js, memtable_prefix_bloom_size_ratio);
+  ROCKSDB_JSON_OPT_PROP(js, memtable_whole_key_filtering);
+  ROCKSDB_JSON_OPT_PROP(js, memtable_huge_page_size);
+  //ROCKSDB_JSON_OPT_NEST(js, memtable_insert_with_hint_prefix_extractor);
+  ROCKSDB_JSON_OPT_PROP(js, bloom_locality);
+  ROCKSDB_JSON_OPT_PROP(js, arena_block_size);
+  ROCKSDB_JSON_OPT_ENUM(js, compression_per_level);
+  ROCKSDB_JSON_OPT_PROP(js, num_levels);
+  ROCKSDB_JSON_OPT_PROP(js, level0_slowdown_writes_trigger);
+  ROCKSDB_JSON_OPT_PROP(js, level0_stop_writes_trigger);
+  ROCKSDB_JSON_OPT_PROP(js, target_file_size_base);
+  ROCKSDB_JSON_OPT_PROP(js, target_file_size_multiplier);
+  ROCKSDB_JSON_OPT_PROP(js, level_compaction_dynamic_level_bytes);
+  ROCKSDB_JSON_OPT_PROP(js, max_bytes_for_level_multiplier);
   try {
     auto iter = js.find("max_bytes_for_level_multiplier_additional");
     if (js.end() != iter)
@@ -324,37 +325,56 @@ Status ColumnFamilyOptions::UpdateFromJson(const json& js) try {
   "max_bytes_for_level_multiplier_additional must be a int vector, "
         "details: " + std::string(ex.what()));
   }
-  ROCKSDB_JSON_GET_PROP(js, max_compaction_bytes);
-  ROCKSDB_JSON_GET_PROP(js, soft_pending_compaction_bytes_limit);
-  ROCKSDB_JSON_GET_PROP(js, hard_pending_compaction_bytes_limit);
-  ROCKSDB_JSON_GET_ENUM(js, compaction_style);
-  ROCKSDB_JSON_GET_PROP(js, compaction_pri);
-  //ROCKSDB_JSON_GET_PROP(js, compaction_options_universal);
-  //ROCKSDB_JSON_GET_PROP(js, compaction_options_fifo);
-  ROCKSDB_JSON_GET_PROP(js, max_sequential_skip_in_iterations);
-  ROCKSDB_JSON_GET_NEST(js, memtable_factory);
-  //ROCKSDB_JSON_GET_PROP(js, table_properties_collector_factories);
-  ROCKSDB_JSON_GET_PROP(js, max_successive_merges);
-  ROCKSDB_JSON_GET_PROP(js, optimize_filters_for_hits);
-  ROCKSDB_JSON_GET_PROP(js, paranoid_file_checks);
-  ROCKSDB_JSON_GET_PROP(js, force_consistency_checks);
-  ROCKSDB_JSON_GET_PROP(js, report_bg_io_stats);
-  ROCKSDB_JSON_GET_PROP(js, ttl);
-  ROCKSDB_JSON_GET_PROP(js, periodic_compaction_seconds);
-  ROCKSDB_JSON_GET_PROP(js, sample_for_compression);
-  ROCKSDB_JSON_GET_PROP(js, max_mem_compaction_level);
-  ROCKSDB_JSON_GET_PROP(js, soft_rate_limit);
-  ROCKSDB_JSON_GET_PROP(js, hard_rate_limit);
-  ROCKSDB_JSON_GET_PROP(js, rate_limit_delay_max_milliseconds);
-  ROCKSDB_JSON_GET_PROP(js, purge_redundant_kvs_while_flush);
+  ROCKSDB_JSON_OPT_PROP(js, max_compaction_bytes);
+  ROCKSDB_JSON_OPT_PROP(js, soft_pending_compaction_bytes_limit);
+  ROCKSDB_JSON_OPT_PROP(js, hard_pending_compaction_bytes_limit);
+  ROCKSDB_JSON_OPT_ENUM(js, compaction_style);
+  ROCKSDB_JSON_OPT_PROP(js, compaction_pri);
+  //ROCKSDB_JSON_OPT_PROP(js, compaction_options_universal);
+  //ROCKSDB_JSON_OPT_PROP(js, compaction_options_fifo);
+  ROCKSDB_JSON_OPT_PROP(js, max_sequential_skip_in_iterations);
+  ROCKSDB_JSON_OPT_NEST(js, memtable_factory);
+  try {
+    auto iter = js.find("table_properties_collector_factories");
+    if (js.end() != iter) {
+      if (!iter.value().is_array()) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+         "table_properties_collector_factories must be an array");
+      }
+      decltype(table_properties_collector_factories) vec;
+      for (auto& item : iter.value().items()) {
+        decltype(vec)::value_type p;
+        ROCKSDB_JSON_OPT_NEST_IMPL(js, p, TablePropertiesCollectorFactory);
+        vec.push_back(p);
+      }
+      table_properties_collector_factories.swap(vec);
+    }
+  }
+  catch (const std::exception& ex) {
+    return Status::InvalidArgument(ROCKSDB_FUNC,
+       "table_properties_collector_factories: " + std::string(ex.what()));
+  }
+  ROCKSDB_JSON_OPT_PROP(js, max_successive_merges);
+  ROCKSDB_JSON_OPT_PROP(js, optimize_filters_for_hits);
+  ROCKSDB_JSON_OPT_PROP(js, paranoid_file_checks);
+  ROCKSDB_JSON_OPT_PROP(js, force_consistency_checks);
+  ROCKSDB_JSON_OPT_PROP(js, report_bg_io_stats);
+  ROCKSDB_JSON_OPT_PROP(js, ttl);
+  ROCKSDB_JSON_OPT_PROP(js, periodic_compaction_seconds);
+  ROCKSDB_JSON_OPT_PROP(js, sample_for_compression);
+  ROCKSDB_JSON_OPT_PROP(js, max_mem_compaction_level);
+  ROCKSDB_JSON_OPT_PROP(js, soft_rate_limit);
+  ROCKSDB_JSON_OPT_PROP(js, hard_rate_limit);
+  ROCKSDB_JSON_OPT_PROP(js, rate_limit_delay_max_milliseconds);
+  ROCKSDB_JSON_OPT_PROP(js, purge_redundant_kvs_while_flush);
   // ------- ColumnFamilyOptions specific --------------------------
-  ROCKSDB_JSON_GET_NEST(js, comparator);
-  ROCKSDB_JSON_GET_NEST(js, merge_operator);
-  //ROCKSDB_JSON_GET_NEST(js, compaction_filter);
-  ROCKSDB_JSON_GET_NEST(js, compaction_filter_factory);
-  ROCKSDB_JSON_GET_PROP(js, write_buffer_size);
-  ROCKSDB_JSON_GET_ENUM(js, compression);
-  ROCKSDB_JSON_GET_ENUM(js, bottommost_compression);
+  ROCKSDB_JSON_OPT_NEST(js, comparator);
+  ROCKSDB_JSON_OPT_NEST(js, merge_operator);
+  //ROCKSDB_JSON_OPT_NEST(js, compaction_filter);
+  ROCKSDB_JSON_OPT_NEST(js, compaction_filter_factory);
+  ROCKSDB_JSON_OPT_PROP(js, write_buffer_size);
+  ROCKSDB_JSON_OPT_ENUM(js, compression);
+  ROCKSDB_JSON_OPT_ENUM(js, bottommost_compression);
   try {
     auto iter = js.find("bottommost_compression_opts");
     if (js.end() != iter)
@@ -373,17 +393,17 @@ Status ColumnFamilyOptions::UpdateFromJson(const json& js) try {
     return Status::InvalidArgument(ROCKSDB_FUNC,
         "compression_opts: " + std::string(ex.what()));
   }
-  ROCKSDB_JSON_GET_PROP(js, level0_file_num_compaction_trigger);
-  ROCKSDB_JSON_GET_NEST(js, prefix_extractor);
-  ROCKSDB_JSON_GET_PROP(js, max_bytes_for_level_base);
-  ROCKSDB_JSON_GET_PROP(js, snap_refresh_nanos);
-  ROCKSDB_JSON_GET_PROP(js, disable_auto_compactions);
-  ROCKSDB_JSON_GET_NEST(js, table_factory);
+  ROCKSDB_JSON_OPT_PROP(js, level0_file_num_compaction_trigger);
+  ROCKSDB_JSON_OPT_NEST(js, prefix_extractor);
+  ROCKSDB_JSON_OPT_PROP(js, max_bytes_for_level_base);
+  ROCKSDB_JSON_OPT_PROP(js, snap_refresh_nanos);
+  ROCKSDB_JSON_OPT_PROP(js, disable_auto_compactions);
+  ROCKSDB_JSON_OPT_NEST(js, table_factory);
   {
     auto iter = js.find("cf_paths");
     if (js.end() != iter) Json_DbPathVec(js, cf_paths);
   }
-  ROCKSDB_JSON_GET_NEST(js, compaction_thread_limiter);
+  ROCKSDB_JSON_OPT_NEST(js, compaction_thread_limiter);
   return Status::OK();
 }
 catch (const std::exception& ex) {

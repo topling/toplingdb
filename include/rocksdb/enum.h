@@ -7,7 +7,6 @@
 
 namespace ROCKSDB_NAMESPACE {
   Slice var_symbol(const char* s);
-}
 
 template<class Enum>
 class EnumValueInit {
@@ -221,3 +220,5 @@ std::string enum_str_all_namevalues() {
 
 #define ROCKSDB_BIG_ENUM_CLASS_INCLASS(EnumType, IntRep, ...) \
   ROCKSDB_BIG_ENUM_IMPL(friend,class,EnumType,IntRep,EnumType::,__VA_ARGS__)
+
+} // ROCKSDB_NAMESPACE

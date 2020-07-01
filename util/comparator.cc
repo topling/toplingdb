@@ -217,4 +217,15 @@ const Comparator* ReverseBytewiseComparator() {
   return &rbytewise;
 }
 
+static const Comparator* BytewiseComp(const json&, Status*) {
+  return BytewiseComparator();
+}
+static const Comparator* RevBytewiseComp(const json&, Status*) {
+  return ReverseBytewiseComparator();
+}
+ROCKSDB_FACTORY_REG(        "BytewiseComparator", BytewiseComp);
+ROCKSDB_FACTORY_REG("leveldb.BytewiseComparator", BytewiseComp);
+ROCKSDB_FACTORY_REG(        "ReverseBytewiseComparator", RevBytewiseComp);
+ROCKSDB_FACTORY_REG("leveldb.ReverseBytewiseComparator", RevBytewiseComp);
+
 }  // namespace ROCKSDB_NAMESPACE

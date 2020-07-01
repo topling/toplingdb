@@ -277,13 +277,13 @@ extern TableFactory* NewPlainTableFactory(const PlainTableOptions& options) {
 
 Status PlainTableOptions::UpdateFromJson(const json& js) {
   try {
-    ROCKSDB_JSON_GET_PROP(js, user_key_len);
-    ROCKSDB_JSON_GET_PROP(js, bloom_bits_per_key);
-    ROCKSDB_JSON_GET_PROP(js, hash_table_ratio);
-    ROCKSDB_JSON_GET_PROP(js, index_sparseness);
-    ROCKSDB_JSON_GET_ENUM(js, encoding_type);
-    ROCKSDB_JSON_GET_PROP(js, full_scan_mode);
-    ROCKSDB_JSON_GET_PROP(js, store_index_in_file);
+    ROCKSDB_JSON_OPT_PROP(js, user_key_len);
+    ROCKSDB_JSON_OPT_PROP(js, bloom_bits_per_key);
+    ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
+    ROCKSDB_JSON_OPT_PROP(js, index_sparseness);
+    ROCKSDB_JSON_OPT_ENUM(js, encoding_type);
+    ROCKSDB_JSON_OPT_PROP(js, full_scan_mode);
+    ROCKSDB_JSON_OPT_PROP(js, store_index_in_file);
     return Status::OK();
   }
   catch (const std::exception& ex) {

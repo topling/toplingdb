@@ -3,54 +3,52 @@
 //
 #include "table/block_based/block_based_table_factory.h"
 #include "table/plain/plain_table_factory.h"
-#include <memory>
-#include <string>
-#include "rocksdb/cache.h"
 #include "rocksdb/persistent_cache.h"
-#include "rocksdb/flush_block_policy.h"
-#include "util/json.h"
+#include "json.h"
+#include "factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
-Status BlockBasedTableOptions::UpdateFromJson(const json& js) {
-  try {
-    ROCKSDB_JSON_OPT_FACT(js, flush_block_policy_factory);
-    ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks);
-    ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks_with_high_priority);
-    ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
-    ROCKSDB_JSON_OPT_PROP(js, pin_top_level_index_and_filter);
-    ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
-    ROCKSDB_JSON_OPT_ENUM(js, index_type);
-    ROCKSDB_JSON_OPT_ENUM(js, data_block_index_type);
-    ROCKSDB_JSON_OPT_ENUM(js, index_shortening);
-    ROCKSDB_JSON_OPT_ENUM(js, data_block_index_type);
-    ROCKSDB_JSON_OPT_PROP(js, data_block_hash_table_util_ratio);
-    ROCKSDB_JSON_OPT_PROP(js, hash_index_allow_collision);
-    ROCKSDB_JSON_OPT_ENUM(js, checksum);
-    ROCKSDB_JSON_OPT_PROP(js, no_block_cache);
-    ROCKSDB_JSON_OPT_PROP(js, block_size);
-    ROCKSDB_JSON_OPT_PROP(js, block_size_deviation);
-    ROCKSDB_JSON_OPT_PROP(js, block_restart_interval);
-    ROCKSDB_JSON_OPT_PROP(js, index_block_restart_interval);
-    ROCKSDB_JSON_OPT_PROP(js, metadata_block_size);
-    ROCKSDB_JSON_OPT_PROP(js, partition_filters);
-    ROCKSDB_JSON_OPT_PROP(js, use_delta_encoding);
-    ROCKSDB_JSON_OPT_PROP(js, read_amp_bytes_per_bit);
-    ROCKSDB_JSON_OPT_PROP(js, whole_key_filtering);
-    ROCKSDB_JSON_OPT_PROP(js, verify_compression);
-    ROCKSDB_JSON_OPT_PROP(js, format_version);
-    ROCKSDB_JSON_OPT_PROP(js, enable_index_compression);
-    ROCKSDB_JSON_OPT_PROP(js, block_align);
-    ROCKSDB_JSON_OPT_FACT(js, block_cache);
-    ROCKSDB_JSON_OPT_FACT(js, block_cache_compressed);
-    ROCKSDB_JSON_OPT_FACT(js, persistent_cache);
-    ROCKSDB_JSON_OPT_FACT(js, filter_policy);
-    return Status::OK();
+struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
+  Status UpdateFromJson(const json& js) {
+    try {
+      ROCKSDB_JSON_OPT_FACT(js, flush_block_policy_factory);
+      ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks);
+      ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks_with_high_priority);
+      ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
+      ROCKSDB_JSON_OPT_PROP(js, pin_top_level_index_and_filter);
+      ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
+      ROCKSDB_JSON_OPT_ENUM(js, index_type);
+      ROCKSDB_JSON_OPT_ENUM(js, data_block_index_type);
+      ROCKSDB_JSON_OPT_ENUM(js, index_shortening);
+      ROCKSDB_JSON_OPT_ENUM(js, data_block_index_type);
+      ROCKSDB_JSON_OPT_PROP(js, data_block_hash_table_util_ratio);
+      ROCKSDB_JSON_OPT_PROP(js, hash_index_allow_collision);
+      ROCKSDB_JSON_OPT_ENUM(js, checksum);
+      ROCKSDB_JSON_OPT_PROP(js, no_block_cache);
+      ROCKSDB_JSON_OPT_PROP(js, block_size);
+      ROCKSDB_JSON_OPT_PROP(js, block_size_deviation);
+      ROCKSDB_JSON_OPT_PROP(js, block_restart_interval);
+      ROCKSDB_JSON_OPT_PROP(js, index_block_restart_interval);
+      ROCKSDB_JSON_OPT_PROP(js, metadata_block_size);
+      ROCKSDB_JSON_OPT_PROP(js, partition_filters);
+      ROCKSDB_JSON_OPT_PROP(js, use_delta_encoding);
+      ROCKSDB_JSON_OPT_PROP(js, read_amp_bytes_per_bit);
+      ROCKSDB_JSON_OPT_PROP(js, whole_key_filtering);
+      ROCKSDB_JSON_OPT_PROP(js, verify_compression);
+      ROCKSDB_JSON_OPT_PROP(js, format_version);
+      ROCKSDB_JSON_OPT_PROP(js, enable_index_compression);
+      ROCKSDB_JSON_OPT_PROP(js, block_align);
+      ROCKSDB_JSON_OPT_FACT(js, block_cache);
+      ROCKSDB_JSON_OPT_FACT(js, block_cache_compressed);
+      ROCKSDB_JSON_OPT_FACT(js, persistent_cache);
+      ROCKSDB_JSON_OPT_FACT(js, filter_policy);
+      return Status::OK();
+    } catch (const std::exception& ex) {
+      return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+    }
   }
-  catch (const std::exception& ex) {
-    return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-  }
-}
+};
 
 #if 0
 std::string BlockBasedTableFactory::GetOptionJson() const {
@@ -185,7 +183,7 @@ std::string BlockBasedTableFactory::GetOptionJson() const {
 
 static std::shared_ptr<TableFactory>
 NewBlockBasedTableFactoryFromJson(const json& j, Status* s) {
-  BlockBasedTableOptions _table_options;
+  BlockBasedTableOptions_Json _table_options;
   *s = _table_options.UpdateFromJson(j);
   if (s->ok())
     return std::make_shared<BlockBasedTableFactory>(_table_options);
@@ -196,25 +194,26 @@ NewBlockBasedTableFactoryFromJson(const json& j, Status* s) {
 ROCKSDB_FACTORY_REG("BlockBasedTable", NewBlockBasedTableFactoryFromJson);
 
 ////////////////////////////////////////////////////////////////////////////
-Status PlainTableOptions::UpdateFromJson(const json& js) {
-  try {
-    ROCKSDB_JSON_OPT_PROP(js, user_key_len);
-    ROCKSDB_JSON_OPT_PROP(js, bloom_bits_per_key);
-    ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
-    ROCKSDB_JSON_OPT_PROP(js, index_sparseness);
-    ROCKSDB_JSON_OPT_ENUM(js, encoding_type);
-    ROCKSDB_JSON_OPT_PROP(js, full_scan_mode);
-    ROCKSDB_JSON_OPT_PROP(js, store_index_in_file);
-    return Status::OK();
+struct PlainTableOptions_Json : PlainTableOptions {
+  Status UpdateFromJson(const json& js) {
+    try {
+      ROCKSDB_JSON_OPT_PROP(js, user_key_len);
+      ROCKSDB_JSON_OPT_PROP(js, bloom_bits_per_key);
+      ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
+      ROCKSDB_JSON_OPT_PROP(js, index_sparseness);
+      ROCKSDB_JSON_OPT_ENUM(js, encoding_type);
+      ROCKSDB_JSON_OPT_PROP(js, full_scan_mode);
+      ROCKSDB_JSON_OPT_PROP(js, store_index_in_file);
+      return Status::OK();
+    } catch (const std::exception& ex) {
+      return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+    }
   }
-  catch (const std::exception& ex) {
-    return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-  }
-}
+};
 
 static std::shared_ptr<TableFactory>
 NewPlainTableFactoryFromJson(const json& j, Status* s) {
-  PlainTableOptions options;
+  PlainTableOptions_Json options;
   *s = options.UpdateFromJson(j);
   if (s->ok())
     return std::make_shared<PlainTableFactory>(options);

@@ -141,9 +141,9 @@ using FactoryForSP = FactoryFor<std::shared_ptr<Instance> >;
 const json& jsonRefType();
 
 ///@param Name     string of factory reg_name
-///@param Creator  creator function
+///@param Creator  must return base class ptr
 #define ROCKSDB_FACTORY_REG(Name, Creator) \
-  ExtractInstanceType<decltype(Creator(jsonRefType(),(Status*)0))>::type:: \
+  FactoryFor<decltype(Creator(jsonRefType(),(Status*)0))>:: \
   AutoReg ROCKSDB_PP_CAT_3(g_reg_factory_,Creator,__LINE__)(Name,Creator)
 
 //////////////////////////////////////////////////////////////////////////////
@@ -176,10 +176,10 @@ const json& jsonRefType();
        std::string(#prop ": ") + ex.what()); \
   } while (0)
 
-#define ROCKSDB_JSON_OPT_FACT_IMPL(js, prop, clazz) do { \
+#define ROCKSDB_JSON_OPT_FACT_IMPL(js, prop) do { \
     if (js.is_string()) { \
       const std::string& __inst_id = js.get<std::string>(); \
-      prop = clazz::GetRepoInstance(__inst_id); \
+      prop = FactoryFor<decltype(prop)>::GetRepoInstance(__inst_id); \
       if (!prop) { \
         return Status::NotFound(ROCKSDB_FUNC, "inst_id = " + __inst_id); \
       } \
@@ -187,18 +187,17 @@ const json& jsonRefType();
       Status __status; \
       const std::string& __clazz_name = js.at("class").get<std::string>(); \
       const json& __options = js.at("options"); \
-      prop = clazz::CreateInstance(__clazz_name, __options, &__status); \
+      prop = FactoryFor<decltype(prop)>::CreateInstance( \
+                 __clazz_name, __options, &__status); \
       if (!__status.ok()) return __status; \
       assert(!!prop); \
     }} while (0)
 
-#define ROCKSDB_JSON_OPT_FACT_EX(js, prop, clazz) do { \
+#define ROCKSDB_JSON_OPT_FACT(js, prop) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) { \
-      ROCKSDB_JSON_OPT_FACT_IMPL(__iter.value(), prop, clazz); \
+      ROCKSDB_JSON_OPT_FACT_IMPL(__iter.value(), prop); \
   }} while (0)
-#define ROCKSDB_JSON_OPT_FACT(js, prop) \
-    ROCKSDB_JSON_OPT_FACT_EX(js, prop, ExtractInstanceType<decltype(prop)>::type)
 
 
 }

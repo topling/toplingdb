@@ -82,7 +82,6 @@ struct Options;
 struct DbPath;
 
 struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
-  Status UpdateFromJson(const json&);
   // The function recovers options to a previous version. Only 4.6 or later
   // versions are supported.
   ColumnFamilyOptions* OldDefaults(int rocksdb_major_version = 4,
@@ -349,8 +348,6 @@ struct DbPath {
 };
 
 struct DBOptions {
-  Status UpdateFromJson(const json&);
-
   // The function recovers options to the option as in version 4.6.
   DBOptions* OldDefaults(int rocksdb_major_version = 4,
                          int rocksdb_minor_version = 6);

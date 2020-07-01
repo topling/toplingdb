@@ -14,7 +14,6 @@
 #include "rocksdb/compaction_job_stats.h"
 #include "rocksdb/status.h"
 #include "rocksdb/table_properties.h"
-#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -312,7 +311,7 @@ struct ExternalFileIngestionInfo {
 // the current thread holding any DB mutex. This is to prevent potential
 // deadlock and performance issue when using EventListener callback
 // in a complex way.
-class EventListener : public FactoryableSP<EventListener> {
+class EventListener {
  public:
   // A callback function to RocksDB which will be called whenever a
   // registered RocksDB flushes a file.  The default implementation is

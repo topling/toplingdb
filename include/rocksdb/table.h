@@ -27,7 +27,7 @@
 #include "rocksdb/iterator.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
-#include "rocksdb/factoryable.h"
+#include "rocksdb/enum.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -348,8 +348,6 @@ struct BlockBasedTableOptions {
 
   IndexShorteningMode index_shortening =
       IndexShorteningMode::kShortenSeparators;
-
-  Status UpdateFromJson(const json&);
 };
 
 // Table Properties that are specific to block-based table properties.
@@ -444,8 +442,6 @@ struct PlainTableOptions {
   //                       file building and store it in file. When reading
   //                       file, index will be mmaped instead of recomputation.
   bool store_index_in_file = false;
-
-  Status UpdateFromJson(const json&);
 };
 
 // -- Plain Table with prefix-only seek
@@ -527,7 +523,7 @@ extern TableFactory* NewCuckooTableFactory(
 class RandomAccessFileReader;
 
 // A base class for table factories.
-class TableFactory : public FactoryableSP<TableFactory> {
+class TableFactory {
  public:
   virtual ~TableFactory() {}
 
@@ -601,8 +597,6 @@ class TableFactory : public FactoryableSP<TableFactory> {
     return Status::NotSupported(
         "The table factory doesn't implement GetOptionString().");
   }
-
-  virtual std::string GetOptionJson() const { return ""; }
 
   // Returns the raw pointer of the table options that is used by this
   // TableFactory, or nullptr if this function is not supported.

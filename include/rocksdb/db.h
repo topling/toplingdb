@@ -239,9 +239,6 @@ class DB {
                      const std::vector<ColumnFamilyDescriptor>& column_families,
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr);
 
-  static Status InitConfigRepo(const std::string& json_text);
-  static Status InitConfigRepo(const json&);
-
   virtual Status Resume() { return Status::NotSupported(); }
 
   // Close the DB by releasing resources, closing files etc. This should be

@@ -29,7 +29,7 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
-#include "rocksdb/factoryable.h"
+#include "rocksdb/enum.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -132,7 +132,7 @@ extern std::shared_ptr<Cache> NewClockCache(
     bool strict_capacity_limit = false,
     CacheMetadataChargePolicy metadata_charge_policy =
         kDefaultCacheMetadataChargePolicy);
-class Cache : public FactoryableSP<Cache> {
+class Cache {
  public:
   // Depending on implementation, cache entries with high priority could be less
   // likely to get evicted than low priority entries.

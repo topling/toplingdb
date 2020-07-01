@@ -11,7 +11,7 @@
 
 #include "rocksdb/env.h"
 #include "rocksdb/statistics.h"
-#include "rocksdb/factoryable.h"
+#include "rocksdb/enum.h"
 
 namespace ROCKSDB_NAMESPACE {
 

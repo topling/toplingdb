@@ -9,7 +9,6 @@
 #include <string>
 #include "rocksdb/status.h"
 #include "rocksdb/types.h"
-#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -125,8 +124,7 @@ class TablePropertiesCollector {
 
 // Constructs TablePropertiesCollector. Internals create a new
 // TablePropertiesCollector for each new table
-class TablePropertiesCollectorFactory :
-    public FactoryableSP<TablePropertiesCollectorFactory> {
+class TablePropertiesCollectorFactory {
  public:
   struct Context {
     uint32_t column_family_id;

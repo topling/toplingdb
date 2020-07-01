@@ -37,6 +37,27 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+FactoryableSP<CompactionFilterFactory>;
+Factoryable<const Comparator*>;
+FactoryableSP<ConcurrentTaskLimiter>;
+Factoryable<Env*>;
+FactoryableSP<Logger>;
+: public FactoryableSP<FileChecksumGenFactory>;
+
+FilterPolicy;
+FlushBlockPolicyFactory;
+EventListener;
+MemTableRepFactory;
+MergeOperator;
+PersistentCache;
+SliceTransform;
+SstFileManager;
+Statistics;
+TableFactory;
+TablePropertiesCollectorFactory;
+
+Status UpdateFromJson(const json&);
+
 static DbPath DbPathFromJson(const json& js) {
   DbPath x;
   if (js.is_string()) {
@@ -336,7 +357,6 @@ catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
 
-
 //////////////////////////////////////////////////////////////////////////////
 
 //////////////////////////////////////////////////////////////////////////////
@@ -420,5 +440,10 @@ static Env* DefaultEnv(const json&, Status*) {
   return Env::Default();
 }
 ROCKSDB_FACTORY_REG("default", DefaultEnv);
+
+//////////////////////////////////////////////////////////////////////////////
+
+static Status InitConfigRepo(const std::string& json_text);
+static Status InitConfigRepo(const json&);
 
 }

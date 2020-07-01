@@ -66,7 +66,6 @@ class BlockBasedTableFactory : public TableFactory {
 
   Status GetOptionString(const ConfigOptions& config_options,
                          std::string* opt_string) const override;
-  std::string GetOptionJson() const override;
 
   const BlockBasedTableOptions& table_options() const;
 

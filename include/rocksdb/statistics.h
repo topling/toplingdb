@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "rocksdb/status.h"
-#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -506,7 +505,7 @@ enum StatsLevel : uint8_t {
 //  options.statistics->getTickerCount(NUMBER_BLOCK_COMPRESSED);
 //  HistogramData hist;
 //  options.statistics->histogramData(FLUSH_TIME, &hist);
-class Statistics : public FactoryableSP<Statistics> {
+class Statistics {
  public:
   virtual ~Statistics() {}
   static const char* Type() { return "Statistics"; }

@@ -25,7 +25,7 @@ class FlushBlockPolicy {
   virtual ~FlushBlockPolicy() {}
 };
 
-class FlushBlockPolicyFactory : public FactoryableSP<FlushBlockPolicyFactory> {
+class FlushBlockPolicyFactory {
  public:
   // Return the name of the flush block policy.
   virtual const char* Name() const = 0;

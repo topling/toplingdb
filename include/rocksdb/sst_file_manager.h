@@ -13,7 +13,6 @@
 #include "rocksdb/file_system.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
-#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -24,7 +23,7 @@ class Logger;
 // deletion rate.
 // All SstFileManager public functions are thread-safe.
 // SstFileManager is not extensible.
-class SstFileManager : public FactoryableSP<SstFileManager> {
+class SstFileManager {
  public:
   virtual ~SstFileManager() {}
 

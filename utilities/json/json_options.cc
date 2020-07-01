@@ -33,17 +33,18 @@
 #include "util/compression.h"
 
 #include "util/rate_limiter.h"
-#include "util/json.h"
+#include "json.h"
+#include "factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
-FactoryableSP<CompactionFilterFactory>;
-Factoryable<const Comparator*>;
-FactoryableSP<ConcurrentTaskLimiter>;
-Factoryable<Env*>;
-FactoryableSP<Logger>;
-: public FactoryableSP<FileChecksumGenFactory>;
-
+FactoryForSP<CompactionFilterFactory>;
+FactoryFor<const Comparator*>;
+FactoryForSP<ConcurrentTaskLimiter>;
+FactoryFor<Env*>;
+FactoryForSP<Logger>;
+: public FactoryForSP<FileChecksumGenFactory>;
+RateLimiter;
 FilterPolicy;
 FlushBlockPolicyFactory;
 EventListener;

@@ -15,7 +15,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-class RateLimiter : public FactoryableSP<RateLimiter> {
+class RateLimiter {
  public:
   ROCKSDB_ENUM_CLASS_INCLASS(OpType, int,
     // Limitation: we currently only invoke Request() with OpType::kRead for

@@ -7,11 +7,10 @@
 #include <functional>
 #include <unordered_map>
 #include <memory>
-#include "slice.h"
-#include "status.h"
+#include "rocksdb/status.h"
+#include "rocksdb/preproc.h"
+#include "rocksdb/enum.h"
 #include "json_fwd.h"
-#include "preproc.h"
-#include "enum.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -19,14 +18,14 @@ using nlohmann::json;
 
 ///@note on principle, the factory itself is stateless, but its product
 /// can has states, sometimes we need factory of factory, in this case,
-/// just let the factory being Factoryable:
-/// class SomeClass : public Factoryable<SomeClass*> {
+/// just let the factory being FactoryFor:
+/// class SomeClass : public FactoryFor<SomeClass*> {
 ///    ...
 /// };
 template<class InstancePtr>
-class Factoryable {
+class FactoryFor {
 public:
-  virtual ~Factoryable() {}
+  virtual ~FactoryFor() {}
   static InstancePtr CreateInstance(const std::string& reg_name, const json&, Status*);
   static InstancePtr GetRepoInstance(const std::string& inst_id);
   static void DeleteRepoInstance(const std::string& inst_id);
@@ -48,14 +47,14 @@ public:
 };
 
 template<class InstancePtr>
-struct Factoryable<InstancePtr>::AutoReg::Impl {
+struct FactoryFor<InstancePtr>::AutoReg::Impl {
   NameToFuncMap func_map;
   std::unordered_map<std::string, InstancePtr> inst_map;
   static Impl& s_singleton() { static Impl imp; return imp; }
 };
 
 template<class InstancePtr>
-Factoryable<InstancePtr>::
+FactoryFor<InstancePtr>::
 AutoReg::AutoReg(Slice reg_name, CreatorFunc creator) {
   auto& imp = Impl::s_singleton();
   auto ib = imp.func_map.insert(std::make_pair(reg_name.ToString(), std::move(creator)));
@@ -68,7 +67,7 @@ AutoReg::AutoReg(Slice reg_name, CreatorFunc creator) {
 }
 
 template<class InstancePtr>
-Factoryable<InstancePtr>::
+FactoryFor<InstancePtr>::
 AutoReg::~AutoReg() {
   auto& imp = Impl::s_singleton();
   imp.func_map.erase(ipos);
@@ -76,7 +75,7 @@ AutoReg::~AutoReg() {
 
 template<class InstancePtr>
 InstancePtr
-Factoryable<InstancePtr>::
+FactoryFor<InstancePtr>::
 CreateInstance(const std::string& reg_name, const json& js, Status* st) {
   auto& imp = AutoReg::Impl::s_singleton();
   auto iter = imp.func_map.find(reg_name);
@@ -90,7 +89,7 @@ CreateInstance(const std::string& reg_name, const json& js, Status* st) {
 
 template<class InstancePtr>
 InstancePtr
-Factoryable<InstancePtr>::
+FactoryFor<InstancePtr>::
 GetRepoInstance(const std::string& inst_id) {
   auto& imp = AutoReg::Impl::s_singleton();
   auto __iter = imp.inst_map.find(inst_id);
@@ -104,7 +103,7 @@ GetRepoInstance(const std::string& inst_id) {
 
 template<class InstancePtr>
 void
-Factoryable<InstancePtr>::
+FactoryFor<InstancePtr>::
 DeleteRepoInstance(const std::string& inst_id) {
   auto& imp = AutoReg::Impl::s_singleton();
   imp.inst_map.erase(inst_id);
@@ -112,7 +111,7 @@ DeleteRepoInstance(const std::string& inst_id) {
 
 template<class InstancePtr>
 bool
-Factoryable<InstancePtr>::
+FactoryFor<InstancePtr>::
 InsertRepoInstance(const std::string& inst_id, InstancePtr inst) {
   auto& imp = AutoReg::Impl::s_singleton();
   auto ib = imp.inst_map.insert(std::make_pair(inst_id, inst));
@@ -121,7 +120,7 @@ InsertRepoInstance(const std::string& inst_id, InstancePtr inst) {
 
 template<class InstancePtr>
 void
-Factoryable<InstancePtr>::
+FactoryFor<InstancePtr>::
 UpsertRepoInstance(const std::string& inst_id, InstancePtr inst) {
   auto& imp = AutoReg::Impl::s_singleton();
   auto ib = imp.inst_map.insert(std::make_pair(inst_id, inst));
@@ -137,7 +136,7 @@ template<class T>
 struct ExtractInstanceType<std::shared_ptr<T> > { typedef T type; };
 
 template<class Instance>
-using FactoryableSP = Factoryable<std::shared_ptr<Instance> >;
+using FactoryForSP = FactoryFor<std::shared_ptr<Instance> >;
 
 const json& jsonRefType();
 

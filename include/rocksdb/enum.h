@@ -23,7 +23,7 @@ public:
 };
 
 template<class Enum>
-ROCKSDB_NAMESPACE::Slice enum_name(Enum v, const char* unkown = "") {
+Slice enum_name(Enum v, const char* unkown = "") {
   auto names  = enum_all_names ((Enum*)0);
   auto values = enum_all_values((Enum*)0);
   for (size_t i = 0; i < names.second; ++i) {

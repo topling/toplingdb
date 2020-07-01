@@ -280,8 +280,25 @@ bool Init_vec(const json& js, Vec& vec) {
   }
 }
 
-struct CompressionOptions_Impl : CompressionOptions {
-  explicit CompressionOptions_Impl(const json& js) {
+struct CompactionOptionsFIFO_Json : CompactionOptionsFIFO {
+  explicit CompactionOptionsFIFO_Json(const json& js) {
+    ROCKSDB_JSON_OPT_PROP(js, max_table_files_size);
+    ROCKSDB_JSON_OPT_PROP(js, allow_compaction);
+  }
+};
+struct CompactionOptionsUniversal_Json : CompactionOptionsUniversal {
+  explicit CompactionOptionsUniversal_Json(const json& js) {
+    ROCKSDB_JSON_OPT_PROP(js, size_ratio);
+    ROCKSDB_JSON_OPT_PROP(js, min_merge_width);
+    ROCKSDB_JSON_OPT_PROP(js, max_merge_width);
+    ROCKSDB_JSON_OPT_PROP(js, max_size_amplification_percent);
+    ROCKSDB_JSON_OPT_PROP(js, compression_size_percent);
+    ROCKSDB_JSON_OPT_ENUM(js, stop_style);
+    ROCKSDB_JSON_OPT_PROP(js, allow_trivial_move);
+  }
+};
+struct CompressionOptions_Json : CompressionOptions {
+  explicit CompressionOptions_Json(const json& js) {
     ROCKSDB_JSON_OPT_PROP(js, window_bits);
     ROCKSDB_JSON_OPT_PROP(js, level);
     ROCKSDB_JSON_OPT_PROP(js, strategy);
@@ -291,6 +308,16 @@ struct CompressionOptions_Impl : CompressionOptions {
     ROCKSDB_JSON_OPT_PROP(js, enabled);
   }
 };
+
+#define ROCKSDB_JSON_OPT_JSON(js, prop, type) \
+  do try { \
+    auto __iter = js.find(#prop); \
+    if (js.end() != __iter) \
+      prop = type##_Json(__iter.value()); \
+  } catch (const std::exception& ex) { \
+    return Status::InvalidArgument(ROCKSDB_FUNC, \
+       #prop ": " + std::string(ex.what())); \
+  } while (0)
 
 Status ColumnFamilyOptions::UpdateFromJson(const json& js) try {
   ROCKSDB_JSON_OPT_PROP(js, max_write_buffer_number);
@@ -330,8 +357,8 @@ Status ColumnFamilyOptions::UpdateFromJson(const json& js) try {
   ROCKSDB_JSON_OPT_PROP(js, hard_pending_compaction_bytes_limit);
   ROCKSDB_JSON_OPT_ENUM(js, compaction_style);
   ROCKSDB_JSON_OPT_PROP(js, compaction_pri);
-  //ROCKSDB_JSON_OPT_PROP(js, compaction_options_universal);
-  //ROCKSDB_JSON_OPT_PROP(js, compaction_options_fifo);
+  ROCKSDB_JSON_OPT_JSON(js, compaction_options_universal, CompactionOptionsUniversal);
+  ROCKSDB_JSON_OPT_JSON(js, compaction_options_fifo, CompactionOptionsFIFO);
   ROCKSDB_JSON_OPT_PROP(js, max_sequential_skip_in_iterations);
   ROCKSDB_JSON_OPT_NEST(js, memtable_factory);
   try {
@@ -375,24 +402,8 @@ Status ColumnFamilyOptions::UpdateFromJson(const json& js) try {
   ROCKSDB_JSON_OPT_PROP(js, write_buffer_size);
   ROCKSDB_JSON_OPT_ENUM(js, compression);
   ROCKSDB_JSON_OPT_ENUM(js, bottommost_compression);
-  try {
-    auto iter = js.find("bottommost_compression_opts");
-    if (js.end() != iter)
-      bottommost_compression_opts = CompressionOptions_Impl(iter.value());
-  }
-  catch (const std::exception& ex) {
-    return Status::InvalidArgument(ROCKSDB_FUNC,
-        "bottommost_compression_opts: " + std::string(ex.what()));
-  }
-  try {
-    auto iter = js.find("compression_opts");
-    if (js.end() != iter)
-      compression_opts = CompressionOptions_Impl(iter.value());
-  }
-  catch (const std::exception& ex) {
-    return Status::InvalidArgument(ROCKSDB_FUNC,
-        "compression_opts: " + std::string(ex.what()));
-  }
+  ROCKSDB_JSON_OPT_JSON(js, bottommost_compression_opts, CompressionOptions);
+  ROCKSDB_JSON_OPT_JSON(js, compression_opts, CompressionOptions);
   ROCKSDB_JSON_OPT_PROP(js, level0_file_num_compaction_trigger);
   ROCKSDB_JSON_OPT_NEST(js, prefix_extractor);
   ROCKSDB_JSON_OPT_PROP(js, max_bytes_for_level_base);

@@ -1,3 +1,4 @@
+#include <sys/cdefs.h>
 //
 // Created by leipeng on 2020/7/1.
 //
@@ -9,18 +10,13 @@
 #include <cinttypes>
 #include <limits>
 
-#include "rocksdb/comparator.h"
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
-
 #include "monitoring/statistics.h"
 #include "options/db_options.h"
-#include "options/options_helper.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/compaction_filter.h"
-#include "rocksdb/comparator.h"
 #include "rocksdb/concurrent_task_limiter.h"
-#include "rocksdb/env.h"
 #include "rocksdb/listener.h"
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/merge_operator.h"
@@ -60,8 +56,6 @@ Statistics;
 TableFactory;
 TablePropertiesCollectorFactory;
 */
-
-Status UpdateFromJson(const json&);
 
 static DbPath DbPathFromJson(const json& js) {
   DbPath x;

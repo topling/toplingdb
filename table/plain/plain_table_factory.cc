@@ -275,7 +275,7 @@ extern TableFactory* NewPlainTableFactory(const PlainTableOptions& options) {
   return new PlainTableFactory(options);
 }
 
-Status PlainTableOptions::InitFromJson(const json& js) {
+Status PlainTableOptions::UpdateFromJson(const json& js) {
   try {
     ROCKSDB_JSON_GET_PROP(js, user_key_len);
     ROCKSDB_JSON_GET_PROP(js, bloom_bits_per_key);
@@ -287,22 +287,21 @@ Status PlainTableOptions::InitFromJson(const json& js) {
     return Status::OK();
   }
   catch (const std::exception& ex) {
-    return Status::InvalidArgument("PlainTableOptions::InitFromJson", ex.what());
+    return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
   }
 }
 
 static std::shared_ptr<TableFactory>
 NewPlainTableFactoryFromJson(const json& j, Status* s) {
   PlainTableOptions options;
-  *s = options.InitFromJson(j);
+  *s = options.UpdateFromJson(j);
   if (s->ok())
     return std::make_shared<PlainTableFactory>(options);
   else
     return nullptr;
 }
 
-ROCKSDB_FACTORY_AUTO_REG_EX("PlainTable",
-    TableFactory, NewPlainTableFactoryFromJson);
+ROCKSDB_FACTORY_REG("PlainTable", NewPlainTableFactoryFromJson);
 
 const std::string PlainTablePropertyNames::kEncodingType =
     "rocksdb.plain.table.encoding.type";

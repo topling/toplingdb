@@ -371,7 +371,7 @@ static std::unordered_map<std::string, OptionTypeInfo>
 };
 #endif  // ROCKSDB_LITE
 
-Status BlockBasedTableOptions::InitFromJson(const json& js) {
+Status BlockBasedTableOptions::UpdateFromJson(const json& js) {
   try {
     ROCKSDB_JSON_GET_NEST(js, flush_block_policy_factory);
     ROCKSDB_JSON_GET_PROP(js, cache_index_and_filter_blocks);
@@ -407,7 +407,7 @@ Status BlockBasedTableOptions::InitFromJson(const json& js) {
     return Status::OK();
   }
   catch (const std::exception& ex) {
-    return Status::InvalidArgument("BlockBasedTableOptions::InitFromJson", ex.what());
+    return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
   }
 }
 
@@ -961,15 +961,14 @@ TableFactory* NewBlockBasedTableFactory(
 static std::shared_ptr<TableFactory>
 NewBlockBasedTableFactoryFromJson(const json& j, Status* s) {
   BlockBasedTableOptions _table_options;
-  *s = _table_options.InitFromJson(j);
+  *s = _table_options.UpdateFromJson(j);
   if (s->ok())
     return std::make_shared<BlockBasedTableFactory>(_table_options);
   else
     return nullptr;
 }
 
-ROCKSDB_FACTORY_AUTO_REG_EX("BlockBasedTable",
-    TableFactory, NewBlockBasedTableFactoryFromJson);
+ROCKSDB_FACTORY_REG("BlockBasedTable", NewBlockBasedTableFactoryFromJson);
 
 const std::string BlockBasedTableFactory::kName = "BlockBasedTable";
 const std::string BlockBasedTablePropertyNames::kIndexType =

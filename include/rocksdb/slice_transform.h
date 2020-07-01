@@ -17,6 +17,7 @@
 #include <string>
 
 #include "rocksdb/rocksdb_namespace.h"
+#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -28,7 +29,7 @@ class Slice;
  * to store prefix blooms by setting prefix_extractor in
  * ColumnFamilyOptions.
  */
-class SliceTransform {
+class SliceTransform : public FactoryableSP<const SliceTransform> {
  public:
   virtual ~SliceTransform(){};
 

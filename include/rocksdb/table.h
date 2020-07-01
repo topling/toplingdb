@@ -350,7 +350,7 @@ struct BlockBasedTableOptions {
   IndexShorteningMode index_shortening =
       IndexShorteningMode::kShortenSeparators;
 
-  Status InitFromJson(const json&);
+  Status UpdateFromJson(const json&);
 };
 
 // Table Properties that are specific to block-based table properties.
@@ -446,7 +446,7 @@ struct PlainTableOptions {
   //                       file, index will be mmaped instead of recomputation.
   bool store_index_in_file = false;
 
-  Status InitFromJson(const json&);
+  Status UpdateFromJson(const json&);
 };
 
 // -- Plain Table with prefix-only seek

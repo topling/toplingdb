@@ -14,7 +14,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-class ConcurrentTaskLimiter {
+class ConcurrentTaskLimiter : public FactoryableSP<ConcurrentTaskLimiter> {
  public:
   virtual ~ConcurrentTaskLimiter() {}
 

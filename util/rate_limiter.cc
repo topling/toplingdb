@@ -338,7 +338,7 @@ RateLimiter* NewGenericRateLimiter(
 }
 
 std::shared_ptr<RateLimiter>
-GenericRateLimiterFromJson(const json& js, Status* s) {
+NewGenericRateLimiterFromJson(const json& js, Status* s) {
     int64_t rate_bytes_per_sec = 0;
     int64_t refill_period_us = 100 * 1000;
     int32_t fairness = 10;
@@ -368,6 +368,6 @@ GenericRateLimiterFromJson(const json& js, Status* s) {
       mode, env, auto_tuned);
 }
 
-ROCKSDB_FACTORY_AUTO_REG(GenericRateLimiter, GenericRateLimiterFromJson);
+ROCKSDB_FACTORY_REG("GenericRateLimiter", NewGenericRateLimiterFromJson);
 
 }  // namespace ROCKSDB_NAMESPACE

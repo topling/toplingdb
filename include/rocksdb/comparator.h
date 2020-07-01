@@ -11,6 +11,7 @@
 #include <string>
 
 #include "rocksdb/rocksdb_namespace.h"
+#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -20,7 +21,7 @@ class Slice;
 // used as keys in an sstable or a database.  A Comparator implementation
 // must be thread-safe since rocksdb may invoke its methods concurrently
 // from multiple threads.
-class Comparator {
+class Comparator : public Factoryable<const Comparator*> {
  public:
   Comparator() : timestamp_size_(0) {}
 

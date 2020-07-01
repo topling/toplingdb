@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "rocksdb/slice.h"
+#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -43,7 +44,7 @@ class Logger;
 //
 // Refer to rocksdb-merge wiki for more details and example implementations.
 //
-class MergeOperator {
+class MergeOperator : public FactoryableSP<MergeOperator> {
  public:
   virtual ~MergeOperator() {}
   static const char* Type() { return "MergeOperator"; }

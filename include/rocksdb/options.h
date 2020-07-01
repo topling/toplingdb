@@ -55,7 +55,7 @@ class FileSystem;
 // sequence of key,value pairs.  Each block may be compressed before
 // being stored in a file.  The following enum describes which
 // compression method (if any) is used to compress a block.
-enum CompressionType : unsigned char {
+ROCKSDB_ENUM_PLAIN(CompressionType, unsigned char,
   // NOTE: do not change the values of existing entries, as these are
   // part of the persistent format on disk.
   kNoCompression = 0x0,
@@ -75,13 +75,14 @@ enum CompressionType : unsigned char {
   kZSTDNotFinalCompression = 0x40,
 
   // kDisableCompressionOption is used to disable some compression options.
-  kDisableCompressionOption = 0xff,
-};
+  kDisableCompressionOption = 0xff
+);
 
 struct Options;
 struct DbPath;
 
 struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
+  Status UpdateFromJson(const json&);
   // The function recovers options to a previous version. Only 4.6 or later
   // versions are supported.
   ColumnFamilyOptions* OldDefaults(int rocksdb_major_version = 4,
@@ -345,11 +346,10 @@ struct DbPath {
 
   DbPath() : target_size(0) {}
   DbPath(const std::string& p, uint64_t t) : path(p), target_size(t) {}
-  DbPath(const json& js);
 };
 
 struct DBOptions {
-  Status InitFromJson(const json&);
+  Status UpdateFromJson(const json&);
 
   // The function recovers options to the option as in version 4.6.
   DBOptions* OldDefaults(int rocksdb_major_version = 4,

@@ -36,6 +36,7 @@
 #pragma once
 
 #include <rocksdb/slice.h>
+#include <rocksdb/factoryable.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <memory>
@@ -274,7 +275,7 @@ class MemTableRep {
 
 // This is the base class for all factories that are used by RocksDB to create
 // new MemTableRep objects
-class MemTableRepFactory {
+class MemTableRepFactory : public FactoryableSP<MemTableRepFactory> {
  public:
   virtual ~MemTableRepFactory() {}
 

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "rocksdb/rocksdb_namespace.h"
+#include "rocksdb/factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -198,7 +199,7 @@ class CompactionFilter {
 
 // Each compaction will create a new CompactionFilter allowing the
 // application to know about different compactions
-class CompactionFilterFactory {
+class CompactionFilterFactory : public FactoryableSP<CompactionFilterFactory> {
  public:
   virtual ~CompactionFilterFactory() {}
 

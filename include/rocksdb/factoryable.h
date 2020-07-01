@@ -140,37 +140,21 @@ struct ExtractInstanceType<std::shared_ptr<T> > { typedef T type; };
 template<class Instance>
 using FactoryableSP = Factoryable<std::shared_ptr<Instance> >;
 
+const json& jsonRefType();
+
 ///@param Name     string of factory reg_name
 ///@param Creator  creator function
-///@param Class    class
-#define ROCKSDB_FACTORY_AUTO_REG_EX(Name, Class, Creator) \
-  Class::AutoReg ROCKSDB_PP_CAT_3(g_reg_factory_,Class,__LINE__)(Name,Creator)
-
-#define ROCKSDB_FACTORY_AUTO_REG(Class, Creator) \
-        ROCKSDB_FACTORY_AUTO_REG_EX(#Class, Class, Creator)
+#define ROCKSDB_FACTORY_REG(Name, Creator) \
+  ExtractInstanceType<decltype(Creator(jsonRefType(),(Status*)0))>::type:: \
+  AutoReg ROCKSDB_PP_CAT_3(g_reg_factory_,Creator,__LINE__)(Name,Creator)
 
 //////////////////////////////////////////////////////////////////////////////
 
-#define ROCKSDB_JSON_GET_PROP_3(js, prop, Default) do { \
-    auto __iter = js.find(#prop); \
-    if (js.end() != __iter) prop = __iter.value().get<decltype(prop)>(); \
-    else prop = Default; \
-  } while (0)
-#define ROCKSDB_JSON_GET_ENUM_3(js, prop, Default) do { \
-    auto __iter = js.find(#prop); \
-    if (js.end() != __iter) { \
-      const std::string& val = __iter.value().get<std::string>(); \
-      if (!enum_value(val, &prop)) \
-        throw std::invalid_argument("bad " #prop "=" + val); \
-    } else \
-       prop = Default; \
-  } while (0)
-
-#define ROCKSDB_JSON_GET_PROP_2(js, prop) do { \
+#define ROCKSDB_JSON_GET_PROP(js, prop) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) prop = __iter.value().get<decltype(prop)>(); \
   } while (0)
-#define ROCKSDB_JSON_GET_ENUM_2(js, prop) do { \
+#define ROCKSDB_JSON_GET_ENUM(js, prop) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) { \
       const std::string& val = __iter.value().get<std::string>(); \
@@ -200,12 +184,6 @@ using FactoryableSP = Factoryable<std::shared_ptr<Instance> >;
   }} while (0)
 #define ROCKSDB_JSON_GET_NEST(js, prop) \
     ROCKSDB_JSON_GET_NEST_EX(js, prop, ExtractInstanceType<decltype(prop)>::type)
-
-#define ROCKSDB_JSON_GET_PROP(...) \
-  ROCKSDB_PP_VA_NAME(ROCKSDB_JSON_GET_PROP_, __VA_ARGS__)(__VA_ARGS__)
-
-#define ROCKSDB_JSON_GET_ENUM(...) \
-  ROCKSDB_PP_VA_NAME(ROCKSDB_JSON_GET_ENUM_, __VA_ARGS__)(__VA_ARGS__)
 
 
 }

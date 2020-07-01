@@ -517,4 +517,9 @@ std::unique_ptr<Env> NewCompositeEnv(std::shared_ptr<FileSystem> fs) {
   return std::unique_ptr<Env>(new PosixEnv(default_env, fs));
 }
 
+static Env* DefaultEnvFromJson(const json&, Status*) {
+  return Env::Default();
+}
+ROCKSDB_FACTORY_REG("default", DefaultEnvFromJson);
+
 }  // namespace ROCKSDB_NAMESPACE

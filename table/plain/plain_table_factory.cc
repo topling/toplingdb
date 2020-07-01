@@ -17,7 +17,6 @@
 #include "table/plain/plain_table_builder.h"
 #include "table/plain/plain_table_reader.h"
 #include "util/string_util.h"
-#include "util/json.h"
 
 namespace ROCKSDB_NAMESPACE {
 static std::unordered_map<std::string, OptionTypeInfo> plain_table_type_info = {
@@ -274,34 +273,6 @@ Status GetPlainTableOptionsFromMap(
 extern TableFactory* NewPlainTableFactory(const PlainTableOptions& options) {
   return new PlainTableFactory(options);
 }
-
-Status PlainTableOptions::UpdateFromJson(const json& js) {
-  try {
-    ROCKSDB_JSON_OPT_PROP(js, user_key_len);
-    ROCKSDB_JSON_OPT_PROP(js, bloom_bits_per_key);
-    ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
-    ROCKSDB_JSON_OPT_PROP(js, index_sparseness);
-    ROCKSDB_JSON_OPT_ENUM(js, encoding_type);
-    ROCKSDB_JSON_OPT_PROP(js, full_scan_mode);
-    ROCKSDB_JSON_OPT_PROP(js, store_index_in_file);
-    return Status::OK();
-  }
-  catch (const std::exception& ex) {
-    return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-  }
-}
-
-static std::shared_ptr<TableFactory>
-NewPlainTableFactoryFromJson(const json& j, Status* s) {
-  PlainTableOptions options;
-  *s = options.UpdateFromJson(j);
-  if (s->ok())
-    return std::make_shared<PlainTableFactory>(options);
-  else
-    return nullptr;
-}
-
-ROCKSDB_FACTORY_REG("PlainTable", NewPlainTableFactoryFromJson);
 
 const std::string PlainTablePropertyNames::kEncodingType =
     "rocksdb.plain.table.encoding.type";

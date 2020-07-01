@@ -9,7 +9,6 @@
 #include <memory>
 #include <sstream>
 #include "rocksdb/utilities/table_properties_collectors.h"
-#include "util/json.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -119,25 +118,5 @@ NewCompactOnDeletionCollectorFactory(size_t sliding_window_size,
       new CompactOnDeletionCollectorFactory(sliding_window_size,
                                             deletion_trigger, deletion_ratio));
 }
-
-static std::shared_ptr<TablePropertiesCollectorFactory>
-NewCompactOnDeletionCollectorFactoryForJson(const json& js, Status* s) try {
-  size_t sliding_window_size = 0;
-  size_t deletion_trigger = 0;
-  double deletion_ratio = 0;
-  ROCKSDB_JSON_REQ_PROP(js, sliding_window_size);
-  ROCKSDB_JSON_REQ_PROP(js, deletion_trigger);
-  ROCKSDB_JSON_OPT_PROP(js, deletion_ratio); // this is optional
-  *s = Status::OK();
-  return NewCompactOnDeletionCollectorFactory(
-      sliding_window_size, deletion_trigger, deletion_ratio);
-}
-catch (const std::exception& ex) {
-  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-  return nullptr;
-}
-ROCKSDB_FACTORY_REG("CompactOnDeletionCollector",
-                    NewCompactOnDeletionCollectorFactoryForJson);
-
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // !ROCKSDB_LITE

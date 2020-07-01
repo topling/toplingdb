@@ -1173,7 +1173,7 @@ if(WITH_TESTS)
       test_util/fault_injection_test_env.cc
       test_util/fault_injection_test_fs.cc
       utilities/cassandra/test_utils.cc
-  )
+          utilities/json/json_options.cc utilities/json/json_table_factory.cc)
   enable_testing()
   add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
   set(TESTUTILLIB testutillib${ARTIFACT_SUFFIX})

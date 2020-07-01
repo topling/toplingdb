@@ -174,7 +174,7 @@ const json& jsonRefType();
       prop = decltype(NestForBase(prop))(__iter.value()); \
   } catch (const std::exception& ex) { \
     return Status::InvalidArgument(ROCKSDB_FUNC, \
-       #prop ": " + std::string(ex.what())); \
+       std::string(#prop ": ") + ex.what()); \
   } while (0)
 
 #define ROCKSDB_JSON_OPT_FACT_IMPL(js, prop, clazz) do { \

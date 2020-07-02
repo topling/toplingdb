@@ -269,7 +269,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_OPT_PROP(js, max_write_buffer_number_to_maintain);
     ROCKSDB_JSON_OPT_PROP(js, max_write_buffer_size_to_maintain);
     ROCKSDB_JSON_OPT_PROP(js, inplace_update_support);
-    ROCKSDB_JSON_OPT_ENUM(js, inplace_update_num_locks);
+    ROCKSDB_JSON_OPT_PROP(js, inplace_update_num_locks);
     // ROCKSDB_JSON_OPT_PROP(js, inplace_callback); // not need update
     ROCKSDB_JSON_OPT_PROP(js, memtable_prefix_bloom_size_ratio);
     ROCKSDB_JSON_OPT_PROP(js, memtable_whole_key_filtering);
@@ -317,7 +317,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
         decltype(table_properties_collector_factories) vec;
         for (auto& item : iter.value().items()) {
           decltype(vec)::value_type p;
-          ROCKSDB_JSON_OPT_FACT_IMPL(js, p);
+          ROCKSDB_JSON_OPT_FACT_IMPL(item.value(), p);
           vec.push_back(p);
         }
         table_properties_collector_factories.swap(vec);
@@ -601,14 +601,16 @@ catch (const std::exception& ex) {
 }
 
 Status JsonOptionsRepo::Export(nlohmann::json* js) const {
-
+  assert(NULL != js);
+  return Status::OK();
 }
 
 Status JsonOptionsRepo::Export(std::string* json_str, bool pretty) const {
+  assert(NULL != json_str);
   nlohmann::json js;
   Status s = Export(&js);
   if (s.ok()) {
-    js.dump(pretty ? 4 : -1);
+    *json_str = js.dump(pretty ? 4 : -1);
   }
   return s;
 }

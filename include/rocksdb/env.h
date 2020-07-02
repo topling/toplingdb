@@ -25,6 +25,7 @@
 #include <vector>
 #include "rocksdb/status.h"
 #include "rocksdb/thread_status.h"
+#include "rocksdb/enum_reflection.h"
 
 #ifdef _WIN32
 // Windows API macro interference

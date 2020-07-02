@@ -1,4 +1,3 @@
-#include <sys/cdefs.h>
 //
 // Created by leipeng on 2020/7/1.
 //
@@ -6,28 +5,21 @@
 #include "utilities/table_properties_collectors/compact_on_deletion_collector.h"
 
 #include <memory>
-#include <sstream>
 #include <cinttypes>
-#include <limits>
 
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
-#include "monitoring/statistics.h"
 #include "options/db_options.h"
-#include "rocksdb/cache.h"
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/concurrent_task_limiter.h"
-#include "rocksdb/listener.h"
-#include "rocksdb/memtablerep.h"
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/sst_file_manager.h"
+#include "rocksdb/statistics.h"
 #include "rocksdb/table.h"
-#include "db/table_properties_collector.h"
 #include "rocksdb/wal_filter.h"
 #include "util/compression.h"
-
 #include "util/rate_limiter.h"
 #include "json.h"
 #include "factoryable.h"

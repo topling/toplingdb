@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "json_fwd.h"
+#include "json_options_repo.h"
 #include "rocksdb/enum_reflection.h"
 #include "rocksdb/preproc.h"
 #include "rocksdb/status.h"
@@ -15,6 +16,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 using nlohmann::json;
+class JsonOptionsRepo;
 
 ///@note on principle, the factory itself is stateless, but its product
 /// can has states, sometimes we need factory of factory, in this case,
@@ -26,20 +28,22 @@ template<class InstancePtr>
 class FactoryFor {
 public:
   virtual ~FactoryFor() {}
-  static InstancePtr CreateInstance(const std::string& reg_name, const json&, Status*);
-  static InstancePtr GetRepoInstance(const std::string& inst_id);
-  static void DeleteRepoInstance(const std::string& inst_id);
-  static bool InsertRepoInstance(const std::string& inst_id, InstancePtr);
-  static void UpsertRepoInstance(const std::string& inst_id, InstancePtr);
+  static InstancePtr CreateInstance(const std::string& class_name, const json&,
+                                    const JsonOptionsRepo&, Status*);
+  static InstancePtr GetOrNewInstance(const char* varname, const char* func_name,
+                                      const json&, const JsonOptionsRepo&, Status*);
+
+  static InstancePtr GetInstance(const char* varname, const char* func_name,
+                                 const json&, const JsonOptionsRepo&, Status*);
 
   struct AutoReg {
     AutoReg(const AutoReg&) = delete;
     AutoReg(AutoReg&&) = delete;
     AutoReg& operator=(AutoReg&&) = delete;
     AutoReg& operator=(const AutoReg&) = delete;
-    typedef InstancePtr (*CreatorFunc)(const json&, Status*);
+    typedef InstancePtr (*CreatorFunc)(const json&,const JsonOptionsRepo&,Status*);
     using NameToFuncMap = std::unordered_map<std::string, CreatorFunc>;
-    AutoReg(Slice reg_name, CreatorFunc creator);
+    AutoReg(Slice class_name, CreatorFunc creator);
     ~AutoReg();
     typename NameToFuncMap::iterator ipos;
     struct Impl;
@@ -55,12 +59,12 @@ struct FactoryFor<InstancePtr>::AutoReg::Impl {
 
 template<class InstancePtr>
 FactoryFor<InstancePtr>::
-AutoReg::AutoReg(Slice reg_name, CreatorFunc creator) {
+AutoReg::AutoReg(Slice class_name, CreatorFunc creator) {
   auto& imp = Impl::s_singleton();
-  auto ib = imp.func_map.insert(std::make_pair(reg_name.ToString(), creator));
+  auto ib = imp.func_map.insert(std::make_pair(class_name.ToString(), creator));
   if (!ib.second) {
-    fprintf(stderr, "FATAL: %s:%d: %s: duplicate reg_name = %s\n"
-        , __FILE__, __LINE__, ROCKSDB_FUNC, reg_name.data());
+    fprintf(stderr, "FATAL: %s:%d: %s: duplicate class_name = %s\n"
+        , __FILE__, __LINE__, ROCKSDB_FUNC, class_name.data());
     abort();
   }
   this->ipos = ib.first;
@@ -75,11 +79,12 @@ FactoryFor<InstancePtr>::AutoReg::~AutoReg() {
 template<class InstancePtr>
 InstancePtr
 FactoryFor<InstancePtr>::
-CreateInstance(const std::string& reg_name, const json& js, Status* st) {
+CreateInstance(const std::string& class_name, const json& js,
+               const JsonOptionsRepo& repo, Status* st) {
   auto& imp = AutoReg::Impl::s_singleton();
-  auto iter = imp.func_map.find(reg_name);
+  auto iter = imp.func_map.find(class_name);
   if (imp.func_map.end() != iter) {
-    return iter->second(js, st);
+    return iter->second(js, repo, st);
   }
   else {
     return InstancePtr(nullptr);
@@ -88,41 +93,75 @@ CreateInstance(const std::string& reg_name, const json& js, Status* st) {
 
 template<class InstancePtr>
 InstancePtr
-FactoryFor<InstancePtr>::GetRepoInstance(const std::string& inst_id) {
-  auto& imp = AutoReg::Impl::s_singleton();
-  auto iter = imp.inst_map.find(inst_id);
-  if (imp.inst_map.end() != iter) {
-    return iter->second;
+FactoryFor<InstancePtr>::
+GetInstance(const char* varname, const char* func_name,
+            const json& js, const JsonOptionsRepo& repo, Status* s) {
+  if (js.is_string()) {
+    const std::string& str_val = js.get<std::string>();
+    if (str_val.empty()) {
+      return Status::NotFound(
+          func_name, std::string(varname) + " inst_id/class_name is empty");
+    }
+    InstancePtr p(nullptr);
+    if ('$' == str_val[0]) {
+      if (str_val.size() < 3) {
+        *s = Status::NotFound(func_name,
+                              std::string(varname) + " inst_id is too short");
+        return InstancePtr(nullptr);
+      }
+      const auto inst_id = '{' == str_val[1]
+                         ? str_val.substr(2, str_val.size() - 3)
+                         : str_val.substr(1, str_val.size() - 1);
+      repo.Get(inst_id, &p);
+    } else {
+      repo.Get(str_val, &p); // the whole str_val is inst_id
+    }
+    *s = Status::NotFound(func_name,
+                          std::string(varname) + "inst_id = " + str_val);
+    return p;
   }
   else {
-    return InstancePtr(nullptr);
+    return Status::InvalidArgument(func_name,
+      std::string(varname) + " must be a string for reference to object");
   }
 }
 
 template<class InstancePtr>
-void
-FactoryFor<InstancePtr>::DeleteRepoInstance(const std::string& inst_id) {
-  auto& imp = AutoReg::Impl::s_singleton();
-  imp.inst_map.erase(inst_id);
-}
-
-template<class InstancePtr>
-bool
+InstancePtr
 FactoryFor<InstancePtr>::
-InsertRepoInstance(const std::string& inst_id, InstancePtr inst) {
-  auto& imp = AutoReg::Impl::s_singleton();
-  auto ib = imp.inst_map.insert(std::make_pair(inst_id, inst));
-  return ib.second;
-}
-
-template<class InstancePtr>
-void
-FactoryFor<InstancePtr>::
-UpsertRepoInstance(const std::string& inst_id, InstancePtr inst) {
-  auto& imp = AutoReg::Impl::s_singleton();
-  auto ib = imp.inst_map.insert(std::make_pair(inst_id, inst));
-  if (!ib.second) {
-    ib.first->second = inst;
+GetOrNewInstance(const char* varname, const char* func_name,
+                 const json& js, const JsonOptionsRepo& repo, Status* s) {
+  if (js.is_string()) {
+    const std::string& str_val = js.get<std::string>();
+    if (str_val.empty()) {
+      return Status::NotFound(
+          func_name, std::string(varname) + " inst_id/class_name is empty");
+    }
+    if ('$' == str_val[0]) {
+      if (str_val.size() < 3) {
+        *s = Status::NotFound(func_name,
+                                std::string(varname) + " inst_id is too short");
+        return InstancePtr(nullptr);
+      }
+      const auto inst_id = '{' == str_val[1]
+                         ? str_val.substr(2, str_val.size() - 3)
+                         : str_val.substr(1, str_val.size() - 1);
+      InstancePtr p;
+      if (!repo.Get(inst_id, &p)) {
+        *s = Status::NotFound(func_name,
+                              std::string(varname) + "inst_id = " + inst_id);
+        return p;
+      } else {
+        return Status::OK();
+      }
+    } else { // CreateInstance with empty json options
+      const std::string& clazz_name = str_val;
+      return CreateInstance(clazz_name, json{}, repo, &s);
+    }
+  } else {
+    const std::string& clazz_name = js.at("class").get<std::string>();
+    const json& options = js.at("options");
+    return CreateInstance(clazz_name, options, repo, s);
   }
 }
 
@@ -130,11 +169,12 @@ template<class Instance>
 using FactoryForSP = FactoryFor<std::shared_ptr<Instance> >;
 
 const json& jsonRefType();
+const JsonOptionsRepo& repoRefType();
 
-///@param Name     string of factory reg_name
+///@param Name     string of factory class_name
 ///@param Creator  must return base class ptr
 #define ROCKSDB_FACTORY_REG(Name, Creator) \
-  FactoryFor<decltype(Creator(jsonRefType(),(Status*)0))>:: \
+  FactoryFor<decltype(Creator(jsonRefType(),repoRefType(),(Status*)0))>:: \
   AutoReg ROCKSDB_PP_CAT_3(g_reg_factory_,Creator,__LINE__)(Name,Creator)
 
 //////////////////////////////////////////////////////////////////////////////
@@ -168,21 +208,11 @@ const json& jsonRefType();
   } while (0)
 
 #define ROCKSDB_JSON_OPT_FACT_IMPL(js, prop) do { \
-    if (js.is_string()) { \
-      const std::string& __inst_id = js.get<std::string>(); \
-      prop = FactoryFor<decltype(prop)>::GetRepoInstance(__inst_id); \
-      if (!prop) { \
-        return Status::NotFound(ROCKSDB_FUNC, "inst_id = " + __inst_id); \
-      } \
-    } else { \
-      Status __status; \
-      const std::string& __clazz_name = js.at("class").get<std::string>(); \
-      const json& __options = js.at("options"); \
-      prop = FactoryFor<decltype(prop)>::CreateInstance( \
-                 __clazz_name, __options, &__status); \
-      if (!__status.ok()) return __status; \
-      assert(!!prop); \
-    }} while (0)
+    Status __status; \
+    prop = FactoryFor<decltype(prop)>:: \
+        GetOrNewInstance(#prop, ROCKSDB_FUNC, js, repo, &__status); \
+    if (!__status.ok()) return __status; \
+  } while (0)
 
 #define ROCKSDB_JSON_OPT_FACT(js, prop) do { \
     auto __iter = js.find(#prop); \

@@ -98,6 +98,9 @@ class JsonOptionsRepo {
   bool Get(const std::string& name, std::shared_ptr<TableFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<TablePropertiesCollectorFactory>*) const;
 
+  void GetMap(std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<TableFactory>>>*) const;
+  void GetMap(std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<MemTableRepFactory>>>*) const;
+
  protected:
   struct Impl;
   std::shared_ptr<Impl> m_impl;

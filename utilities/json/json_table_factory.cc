@@ -3,6 +3,8 @@
 //
 #include "table/block_based/block_based_table_factory.h"
 #include "table/plain/plain_table_factory.h"
+#include "table/table_builder.h"
+#include "table/format.h"
 #include "rocksdb/persistent_cache.h"
 #include "json.h"
 #include "factoryable.h"
@@ -10,7 +12,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
-  Status UpdateFromJson(const json& js) {
+  Status UpdateFromJson(const json& js, const JsonOptionsRepo& repo) {
     try {
       ROCKSDB_JSON_OPT_FACT(js, flush_block_policy_factory);
       ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks);
@@ -182,9 +184,9 @@ std::string BlockBasedTableFactory::GetOptionJson() const {
 #endif
 
 static std::shared_ptr<TableFactory>
-NewBlockBasedTableFactoryFromJson(const json& j, Status* s) {
+NewBlockBasedTableFactoryFromJson(const json& j, const JsonOptionsRepo& repo, Status* s) {
   BlockBasedTableOptions_Json _table_options;
-  *s = _table_options.UpdateFromJson(j);
+  *s = _table_options.UpdateFromJson(j, repo);
   if (s->ok())
     return std::make_shared<BlockBasedTableFactory>(_table_options);
   else
@@ -212,7 +214,7 @@ struct PlainTableOptions_Json : PlainTableOptions {
 };
 
 static std::shared_ptr<TableFactory>
-NewPlainTableFactoryFromJson(const json& j, Status* s) {
+NewPlainTableFactoryFromJson(const json& j, const JsonOptionsRepo& repo, Status* s) {
   PlainTableOptions_Json options;
   *s = options.UpdateFromJson(j);
   if (s->ok())
@@ -223,5 +225,184 @@ NewPlainTableFactoryFromJson(const json& j, Status* s) {
 
 ROCKSDB_FACTORY_REG("PlainTable", NewPlainTableFactoryFromJson);
 
+////////////////////////////////////////////////////////////////////////////
+struct CuckooTableOptions_Json : CuckooTableOptions {
+  Status UpdateFromJson(const json& js) {
+    try {
+      ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
+      ROCKSDB_JSON_OPT_PROP(js, max_search_depth);
+      ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
+      ROCKSDB_JSON_OPT_PROP(js, cuckoo_block_size);
+      ROCKSDB_JSON_OPT_ENUM(js, identity_as_first_hash);
+      ROCKSDB_JSON_OPT_PROP(js, use_module_hash);
+      return Status::OK();
+    } catch (const std::exception& ex) {
+      return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+    }
+  }
+};
+
+static std::shared_ptr<TableFactory>
+NewCuckooTableFactoryJson(const json& j, const JsonOptionsRepo& repo, Status* s) {
+  CuckooTableOptions_Json options;
+  *s = options.UpdateFromJson(j);
+  if (s->ok())
+    return std::shared_ptr<TableFactory>(NewCuckooTableFactory(options));
+  else
+    return nullptr;
+}
+
+ROCKSDB_FACTORY_REG("CuckooTable", NewCuckooTableFactoryJson);
+
+////////////////////////////////////////////////////////////////////////////
+
+extern const uint64_t kPlainTableMagicNumber;
+extern const uint64_t kLegacyPlainTableMagicNumber;
+extern const uint64_t kBlockBasedTableMagicNumber;
+extern const uint64_t kLegacyBlockBasedTableMagicNumber;
+extern const uint64_t kCuckooTableMagicNumber;
+
+std::unordered_map<uint64_t, std::string>&
+GetDispatherTableMagicNumberMap() {
+  static std::unordered_map<uint64_t, std::string> map {
+      {kPlainTableMagicNumber, "PlainTable"},
+      {kLegacyPlainTableMagicNumber, "PlainTable"},
+      {kBlockBasedTableMagicNumber, "BlockBasedTable"},
+      {kLegacyBlockBasedTableMagicNumber, "BlockBasedTable"},
+      {kCuckooTableMagicNumber, "CuckooTable"},
+  };
+  return map;
+}
+
+class DispatherTableFactory : public TableFactory {
+ public:
+  ~DispatherTableFactory() {}
+
+  DispatherTableFactory(const json& js, const JsonOptionsRepo& repo) {
+    std::vector<std::string> level_writer_names;
+    if (!js.is_object()) {
+      throw std::invalid_argument("DispatherTableFactory options must be object");
+    }
+    auto iter = js.find("default");
+    Status s;
+    if (js.end() != iter) {
+      auto& options = iter.value();
+      m_default_writer = FactoryFor<std::shared_ptr<TableFactory>>::
+          GetOrNewInstance("default", ROCKSDB_FUNC, options, repo, &s);
+      if (!m_default_writer)
+        fprintf(stderr,
+                "Warning: get default writer = (%s) failed, try global default\n",
+                options.dump().c_str());
+    }
+    if (!m_default_writer) {
+      if (!repo.Get("default", &m_default_writer)) {
+        fprintf(stderr,
+          "Warning: get global default failed, use default BlockBasedTable\n");
+        m_default_writer.reset(NewBlockBasedTableFactory());
+      }
+    }
+    iter = js.find("level_writers");
+    if (js.end() != iter) {
+      if (!iter.value().is_array()) {
+        throw std::invalid_argument(
+            "DispatherTableFactory level_writers must be array");
+      }
+      for (auto& item : js.items()) {
+        auto& options = item.value();
+        auto p = FactoryFor<std::shared_ptr<TableFactory>>::
+            GetOrNewInstance("default", ROCKSDB_FUNC, options, repo, &s);
+        if (!p) {
+          throw s;
+        }
+        m_level_writers.push_back(p);
+      }
+    }
+    m_json_str = js.dump();
+    repo.GetMap(&m_all);
+  }
+
+  const char* Name() const override { return "DispatherTableFactory"; }
+
+  Status NewTableReader(
+      const TableReaderOptions& table_reader_options,
+      std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
+      std::unique_ptr<TableReader>* table,
+      bool prefetch_index_and_filter_in_cache) const override {
+    Footer footer;
+    auto s = ReadFooterFromFile(file.get(), nullptr /* prefetch_buffer */,
+                                file_size, &footer);
+    if (!s.ok()) {
+      return s;
+    }
+    auto& map = GetDispatherTableMagicNumberMap();
+    auto iter = map.find(footer.table_magic_number());
+    if (map.end() != iter) {
+      const std::string& factory_name = iter->second;
+      auto fp_iter = m_all->find(factory_name);
+      if (m_all->end() != fp_iter) {
+        const std::shared_ptr<TableFactory>& factory = fp_iter->second;
+        return factory->NewTableReader(table_reader_options,
+                                       std::move(file), file_size, table);
+      }
+    } else {
+      return Status::NotSupported("Unidentified table format");
+    }
+  }
+
+  TableBuilder* NewTableBuilder(
+      const TableBuilderOptions& table_builder_options,
+      uint32_t column_family_id, WritableFileWriter* file)
+  const override {
+    int level = table_builder_options.level;
+    if (size_t(level) < m_level_writers.size()) {
+      return m_level_writers[level]->NewTableBuilder(
+          table_builder_options, column_family_id, file);
+    }
+    else {
+      return m_default_writer->NewTableBuilder(
+          table_builder_options, column_family_id, file);
+    }
+  }
+
+  // Sanitizes the specified DB Options.
+  Status SanitizeOptions(const DBOptions&, const ColumnFamilyOptions&)
+  const override {
+    return Status::OK();
+  }
+
+  std::string GetPrintableTableOptions() const override {
+    return m_json_str;
+  }
+
+  Status GetOptionString(const ConfigOptions&,
+                         std::string* opt_string) const override {
+      *opt_string = m_json_str;
+      return Status::OK();
+  }
+
+  std::vector<std::shared_ptr<TableFactory> > m_level_writers;
+  std::shared_ptr<TableFactory> m_default_writer;
+  std::shared_ptr<std::unordered_map<std::string,
+                                     std::shared_ptr<TableFactory>>> m_all;
+  std::string m_json_str;
+};
+
+static std::shared_ptr<TableFactory>
+NewDispatcherTableFactoryJson(const json& js,
+                              const JsonOptionsRepo& repo, Status* s)
+try {
+  return std::make_shared<DispatherTableFactory>(js, repo);
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("Dispath", NewDispatcherTableFactoryJson);
+ROCKSDB_FACTORY_REG("Dispather", NewDispatcherTableFactoryJson);
+ROCKSDB_FACTORY_REG("DispatherTable", NewDispatcherTableFactoryJson);
 
 }

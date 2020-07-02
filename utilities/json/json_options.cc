@@ -3,6 +3,7 @@
 //
 
 #include "utilities/table_properties_collectors/compact_on_deletion_collector.h"
+//#include "utilities/ttl/db_ttl_impl.h"
 
 #include <memory>
 #include <cinttypes>
@@ -12,6 +13,7 @@
 #include "options/db_options.h"
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/concurrent_task_limiter.h"
+#include "rocksdb/flush_block_policy.h"
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/slice_transform.h"
@@ -73,7 +75,7 @@ static void Json_DbPathVec(const json& js,
   }
 }
 
-static Status Json_EventListenerVec(const json& js,
+static Status Json_EventListenerVec(const json& js, const JsonOptionsRepo& repo,
     std::vector<std::shared_ptr<EventListener>>& listeners) {
   listeners.clear();
   if (js.is_string()) {
@@ -92,7 +94,7 @@ static Status Json_EventListenerVec(const json& js,
 }
 
 struct DBOptions_Json : DBOptions {
-  Status UpdateFromJson(const json& js) try {
+  Status UpdateFromJson(const json& js, const JsonOptionsRepo& repo) try {
     ROCKSDB_JSON_OPT_PROP(js, paranoid_checks);
     ROCKSDB_JSON_OPT_FACT(js, env);
     ROCKSDB_JSON_OPT_FACT(js, rate_limiter);
@@ -164,7 +166,7 @@ struct DBOptions_Json : DBOptions {
     {
       auto iter = js.find("listeners");
       if (js.end() != iter)
-        Json_EventListenerVec(js, listeners);
+        Json_EventListenerVec(js, repo, listeners);
     }
     ROCKSDB_JSON_OPT_PROP(js, enable_thread_tracking);
     ROCKSDB_JSON_OPT_PROP(js, delayed_write_rate);
@@ -254,7 +256,7 @@ struct CompressionOptions_Json : CompressionOptions {
 CompressionOptions_Json NestForBase(CompressionOptions&);
 
 struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
-  Status UpdateFromJson(const json& js) try {
+  Status UpdateFromJson(const json& js, const JsonOptionsRepo& repo) try {
     ROCKSDB_JSON_OPT_PROP(js, max_write_buffer_number);
     ROCKSDB_JSON_OPT_PROP(js, min_write_buffer_number_to_merge);
     ROCKSDB_JSON_OPT_PROP(js, max_write_buffer_number_to_maintain);
@@ -381,7 +383,9 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
 //////////////////////////////////////////////////////////////////////////////
 
 static std::shared_ptr<TablePropertiesCollectorFactory>
-NewCompactOnDeletionCollectorFactoryForJson(const json& js, Status* s) try {
+NewCompactOnDeletionCollectorFactoryForJson(
+    const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
   size_t sliding_window_size = 0;
   size_t deletion_trigger = 0;
   double deletion_ratio = 0;
@@ -401,7 +405,7 @@ ROCKSDB_FACTORY_REG("CompactOnDeletionCollector",
 //////////////////////////////////////////////////////////////////////////////
 
 std::shared_ptr<RateLimiter>
-NewGenericRateLimiterFromJson(const json& js, Status* s) {
+NewGenericRateLimiterFromJson(const json& js, const JsonOptionsRepo& repo, Status* s) {
   int64_t rate_bytes_per_sec = 0;
   int64_t refill_period_us = 100 * 1000;
   int32_t fairness = 10;
@@ -424,8 +428,15 @@ NewGenericRateLimiterFromJson(const json& js, Status* s) {
     *s = Status::InvalidArgument(ROCKSDB_FUNC, "fairness must > 0");
     return nullptr;
   }
-  *s = Status::OK();
   Env* env = Env::Default();
+  auto iter = js.find("env");
+  if (js.end() != iter) {
+    const auto& env_js = iter.value();
+    env = FactoryFor<Env*>::GetInstance("env", ROCKSDB_FUNC, env_js, repo, s);
+    if (!env)
+      return nullptr;
+  }
+  *s = Status::OK();
   return std::make_shared<GenericRateLimiter>(
       rate_bytes_per_sec, refill_period_us, fairness,
       mode, env, auto_tuned);
@@ -433,12 +444,13 @@ NewGenericRateLimiterFromJson(const json& js, Status* s) {
 
 ROCKSDB_FACTORY_REG("GenericRateLimiter", NewGenericRateLimiterFromJson);
 
-
 //////////////////////////////////////////////////////////////////////////////
-static const Comparator* BytewiseComp(const json&, Status*) {
+static const Comparator*
+BytewiseComp(const json&, const JsonOptionsRepo&, Status*) {
   return BytewiseComparator();
 }
-static const Comparator* RevBytewiseComp(const json&, Status*) {
+static const Comparator*
+RevBytewiseComp(const json&, const JsonOptionsRepo&, Status*) {
   return ReverseBytewiseComparator();
 }
 ROCKSDB_FACTORY_REG(        "BytewiseComparator", BytewiseComp);
@@ -447,70 +459,110 @@ ROCKSDB_FACTORY_REG(        "ReverseBytewiseComparator", RevBytewiseComp);
 ROCKSDB_FACTORY_REG("leveldb.ReverseBytewiseComparator", RevBytewiseComp);
 
 //////////////////////////////////////////////////////////////////////////////
-static Env* DefaultEnv(const json&, Status*) {
+static Env* DefaultEnv(const json&, const JsonOptionsRepo&, Status*) {
   return Env::Default();
 }
 ROCKSDB_FACTORY_REG("default", DefaultEnv);
 
-//////////////////////////////////////////////////////////////////////////////
-
-template<class T>
-static Status InitRepo(const json& repo_js, const char* name) {
-  auto iter = repo_js.find(name);
-  if (repo_js.end() != iter) {
-    for (auto& one : iter.value().items()) {
-      const std::string& inst_id = one.key();
-      const json& js = one.value();
-      std::shared_ptr<T> obj;
-      ROCKSDB_JSON_OPT_FACT_IMPL(js, obj);
-      FactoryFor<std::shared_ptr<T> >::InsertRepoInstance(inst_id, obj);
-    }
-  }
-  return Status::OK();
+/////////////////////////////////////////////////////////////////////////////
+static std::shared_ptr<FlushBlockBySizePolicyFactory>
+NewFlushBlockBySizePolicyFactoryFactoryJson(const json&,
+                                    const JsonOptionsRepo&, Status*) {
+  return std::make_shared<FlushBlockBySizePolicyFactory>();
 }
-
-Status InitConfigRepo(const json& main_js) try {
-  Status s;
-#define INIT_REPO(js, T, name) \
-  s = InitRepo<T>(js, name); if (!s.ok()) return s
-
-  auto iter = main_js.find("global");
-  if (main_js.end() != iter) {
-    auto& global_js = iter.value();
-    iter = global_js.find("DBOptions");
-    if (global_js.end() != iter) {
-      // TODO:
-    }
-    INIT_REPO(global_js, Cache, "cache");
-    INIT_REPO(global_js, PersistentCache, "persistent_cache");
-    INIT_REPO(global_js, FilterPolicy, "filter_policy");
-    INIT_REPO(global_js, TableFactory, "table_factory");
-  }
-/* TODO:
-  iter = main_js.find("column_family");
-  if (main_js.end() != iter) {
-    auto& cfset_js = iter.value();
-    for (auto& cf : cfset_js.items()) {
-      const std::string& cf_name = cf.key();
-      // TODO:
-    }
-  }
-*/
-  return s;
-}
-catch (const std::exception& ex) {
-  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-}
-
-Status InitConfigRepo(const std::string& json_text) try {
-  json main_js(json_text);
-  return InitConfigRepo(main_js);
-}
-catch (const std::exception& ex) {
-  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-}
+ROCKSDB_FACTORY_REG("FlushBlockBySize",
+                    NewFlushBlockBySizePolicyFactoryFactoryJson);
 
 /////////////////////////////////////////////////////////////////////////////
+static std::shared_ptr<FileChecksumGenFactory>
+GetFileChecksumGenCrc32cFactoryJson(const json&,
+                                    const JsonOptionsRepo&, Status*) {
+  return GetFileChecksumGenCrc32cFactory();
+}
+ROCKSDB_FACTORY_REG("Crc32c", GetFileChecksumGenCrc32cFactoryJson);
+ROCKSDB_FACTORY_REG("crc32c", GetFileChecksumGenCrc32cFactoryJson);
+
+/////////////////////////////////////////////////////////////////////////////
+static std::shared_ptr<MemTableRepFactory>
+NewSkipListMemTableRepFactoryJson(const json& js,
+                                  const JsonOptionsRepo&, Status* s)
+try {
+  size_t lookahead = 0;
+  ROCKSDB_JSON_OPT_PROP(js, lookahead);
+  return std::make_shared<SkipListFactory>(lookahead);
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("SkipListRep", NewSkipListMemTableRepFactoryJson);
+ROCKSDB_FACTORY_REG("SkipList", NewSkipListMemTableRepFactoryJson);
+
+static std::shared_ptr<MemTableRepFactory>
+NewVectorMemTableRepFactoryJson(const json& js,
+                                const JsonOptionsRepo&, Status* s)
+try {
+  size_t count = 0;
+  ROCKSDB_JSON_OPT_PROP(js, count);
+  return std::make_shared<VectorRepFactory>(count);
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("VectorRep", NewVectorMemTableRepFactoryJson);
+ROCKSDB_FACTORY_REG("Vector", NewVectorMemTableRepFactoryJson);
+
+static std::shared_ptr<MemTableRepFactory>
+NewHashSkipListMemTableRepFactoryJson(const json& js,
+                                      const JsonOptionsRepo&, Status* s)
+try {
+  size_t bucket_count = 1000000;
+  int32_t height = 4;
+  int32_t branching_factor = 4;
+  ROCKSDB_JSON_OPT_PROP(js, bucket_count);
+  ROCKSDB_JSON_OPT_PROP(js, height);
+  ROCKSDB_JSON_OPT_PROP(js, branching_factor);
+  return std::shared_ptr<MemTableRepFactory>(
+      NewHashSkipListRepFactory(bucket_count, height, branching_factor));
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("HashSkipListRep", NewHashSkipListMemTableRepFactoryJson);
+ROCKSDB_FACTORY_REG("HashSkipList", NewHashSkipListMemTableRepFactoryJson);
+
+static std::shared_ptr<MemTableRepFactory>
+NewHashLinkListMemTableRepFactoryJson(const json& js,
+                                      const JsonOptionsRepo&, Status* s)
+try {
+  size_t bucket_count = 50000;
+  size_t huge_page_tlb_size = 0;
+  int bucket_entries_logging_threshold = 4096;
+  bool if_log_bucket_dist_when_flash = true;
+  uint32_t threshold_use_skiplist = 256;
+  ROCKSDB_JSON_OPT_PROP(js, bucket_count);
+  ROCKSDB_JSON_OPT_PROP(js, huge_page_tlb_size);
+  ROCKSDB_JSON_OPT_PROP(js, bucket_entries_logging_threshold);
+  ROCKSDB_JSON_OPT_PROP(js, if_log_bucket_dist_when_flash);
+  ROCKSDB_JSON_OPT_PROP(js, threshold_use_skiplist);
+  return std::shared_ptr<MemTableRepFactory>(
+      NewHashLinkListRepFactory(bucket_count,
+                                huge_page_tlb_size,
+                                bucket_entries_logging_threshold,
+                                if_log_bucket_dist_when_flash,
+                                threshold_use_skiplist));
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("HashLinkListRep", NewHashLinkListMemTableRepFactoryJson);
+ROCKSDB_FACTORY_REG("HashLinkList", NewHashLinkListMemTableRepFactoryJson);
+
+/////////////////////////////////////////////////////////////////////////////
+
 struct JsonOptionsRepo::Impl {
   template<class T>
   using ObjRepo = std::unordered_map<std::string, std::shared_ptr<T> >;
@@ -537,7 +589,6 @@ struct JsonOptionsRepo::Impl {
   ObjRepo<MemTableRepFactory> mem_table_rep_factory;
   ObjRepo<MergeOperator> merge_operator;
   ObjRepo<RateLimiter> rate_limiter;
-  ObjRepo<SliceTransform> slice_ransform;
   ObjRepo<SstFileManager> sst_file_manager;
   ObjRepo<Statistics> statistics;
   ObjRepo<TableFactory> table_factory;
@@ -566,6 +617,7 @@ Status JsonOptionsRepo::Import(const std::string& json_str) {
 #define SHARED_PTR_TYPE(field) decltype(Impl::RepoPtrType(((Impl*)0)->field))
 
 Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
+  const auto& repo = *this;
 #define JSON_PARSE_REPO(field) \
   do { \
     auto iter = main_js.find(#field); \
@@ -584,26 +636,26 @@ Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
     } \
   } while (0)
 
+  JSON_PARSE_REPO(comparator);
+  JSON_PARSE_REPO(env);
+  JSON_PARSE_REPO(logger);
+  JSON_PARSE_REPO(slice_transform);
   JSON_PARSE_REPO(cache);
   JSON_PARSE_REPO(persistent_cache);
   JSON_PARSE_REPO(compaction_filter_factory);
-  JSON_PARSE_REPO(comparator);
   JSON_PARSE_REPO(concurrent_task_limiter);
-  JSON_PARSE_REPO(env);
   JSON_PARSE_REPO(event_listener);
   JSON_PARSE_REPO(file_checksum_gen_factory);
   JSON_PARSE_REPO(filter_policy);
   JSON_PARSE_REPO(flush_block_policy_factory);
-  JSON_PARSE_REPO(logger);
-  JSON_PARSE_REPO(mem_table_rep_factory);
   JSON_PARSE_REPO(merge_operator);
   JSON_PARSE_REPO(rate_limiter);
-  JSON_PARSE_REPO(slice_ransform);
   JSON_PARSE_REPO(sst_file_manager);
   JSON_PARSE_REPO(statistics);
-  JSON_PARSE_REPO(table_factory);
   JSON_PARSE_REPO(table_properties_collector_factory);
-  JSON_PARSE_REPO(slice_transform);
+
+  JSON_PARSE_REPO(mem_table_rep_factory);
+  JSON_PARSE_REPO(table_factory);
 
   return Status::OK();
 }
@@ -629,14 +681,15 @@ Status JsonOptionsRepo::Export(std::string* json_str, bool pretty) const {
 #define JSON_REPO_TYPE_IMPL(field) \
 void JsonOptionsRepo::Add(const std::string& name, \
                           decltype((Impl::RepoPtrCref(((Impl*)0)->field))) p) { \
-  auto ib = m_impl->field.emplace(name, p); \
+  auto ib = m_impl->field->emplace(name, p); \
   if (ib.second) \
     ib.first->second = p; \
 } \
 bool JsonOptionsRepo::Get(const std::string& name, \
                           SHARED_PTR_TYPE(field)* pp) const { \
-  auto iter = m_impl->field.find(name); \
-  if (m_impl->field.end() != iter) { \
+  auto __map = *m_impl->field; \
+  auto iter = __map.find(name); \
+  if (__map.end() != iter) { \
     *pp = iter->second; \
     return true; \
   } \
@@ -667,5 +720,12 @@ JSON_REPO_TYPE_IMPL(options)
 JSON_REPO_TYPE_IMPL(db_options)
 JSON_REPO_TYPE_IMPL(cf_options)
 
+void JsonOptionsRepo::GetMap(std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<TableFactory>>>* pp) const {
+  *pp = table_factory;
+}
+
+void JsonOptionsRepo::GetMap(std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<MemTableRepFactory>>>*) const {
+  *pp = mem_table_rep_factory;
+}
 
 }

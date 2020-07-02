@@ -67,8 +67,7 @@ AutoReg::AutoReg(Slice reg_name, CreatorFunc creator) {
 }
 
 template<class InstancePtr>
-FactoryFor<InstancePtr>::
-AutoReg::~AutoReg() {
+FactoryFor<InstancePtr>::AutoReg::~AutoReg() {
   auto& imp = Impl::s_singleton();
   imp.func_map.erase(ipos);
 }
@@ -89,8 +88,7 @@ CreateInstance(const std::string& reg_name, const json& js, Status* st) {
 
 template<class InstancePtr>
 InstancePtr
-FactoryFor<InstancePtr>::
-GetRepoInstance(const std::string& inst_id) {
+FactoryFor<InstancePtr>::GetRepoInstance(const std::string& inst_id) {
   auto& imp = AutoReg::Impl::s_singleton();
   auto iter = imp.inst_map.find(inst_id);
   if (imp.inst_map.end() != iter) {
@@ -103,8 +101,7 @@ GetRepoInstance(const std::string& inst_id) {
 
 template<class InstancePtr>
 void
-FactoryFor<InstancePtr>::
-DeleteRepoInstance(const std::string& inst_id) {
+FactoryFor<InstancePtr>::DeleteRepoInstance(const std::string& inst_id) {
   auto& imp = AutoReg::Impl::s_singleton();
   imp.inst_map.erase(inst_id);
 }

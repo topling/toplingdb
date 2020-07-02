@@ -21,11 +21,9 @@
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/rate_limiter.h"
-#include "rocksdb/slice.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/sst_file_manager.h"
 #include "rocksdb/table.h"
-#include "rocksdb/table_properties.h"
 #include "db/table_properties_collector.h"
 #include "rocksdb/wal_filter.h"
 #include "util/compression.h"
@@ -33,28 +31,30 @@
 #include "util/rate_limiter.h"
 #include "json.h"
 #include "factoryable.h"
+#include "json_options_repo.h"
 
 namespace ROCKSDB_NAMESPACE {
 
-//FactoryForSP<CompactionFilterFactory>;
-//FactoryFor  <const Comparator*>;
-//FactoryForSP<ConcurrentTaskLimiter>;
-//FactoryFor<Env*>;
-//FactoryForSP<Logger>;
-//FactoryForSP<FileChecksumGenFactory>;
 /*
-RateLimiter;
-FilterPolicy;
-FlushBlockPolicyFactory;
-EventListener;
-MemTableRepFactory;
-MergeOperator;
-PersistentCache;
-SliceTransform;
-SstFileManager;
-Statistics;
-TableFactory;
-TablePropertiesCollectorFactory;
+class Cache;
+class CompactionFilterFactory;
+class Comparator;
+class ConcurrentTaskLimiter;
+class Env;
+class EventListener;
+class FileChecksumGenFactory;
+class FilterPolicy;
+class FlushBlockPolicyFactory;
+class Logger;
+class MemTableRepFactory;
+class MergeOperator;
+class PersistentCache;
+class RateLimiter;
+class SliceTransform;
+class SstFileManager;
+class Statistics;
+class TableFactory;
+class TablePropertiesCollectorFactory;
 */
 
 static DbPath DbPathFromJson(const json& js) {
@@ -83,7 +83,7 @@ static void Json_DbPathVec(const json& js,
 }
 
 static Status Json_EventListenerVec(const json& js,
-                                    std::vector<std::shared_ptr<EventListener>>& listeners) {
+    std::vector<std::shared_ptr<EventListener>>& listeners) {
   listeners.clear();
   if (js.is_string()) {
     std::shared_ptr<EventListener> el;
@@ -224,6 +224,10 @@ bool Init_vec(const json& js, Vec& vec) {
   }
 }
 
+//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CompactionOptionsFIFO,
+//                                   max_table_files_size,
+//                                   allow_compaction);
+
 struct CompactionOptionsFIFO_Json : CompactionOptionsFIFO {
 friend CompactionOptionsFIFO_Json NestForBase(CompactionOptionsFIFO&);
   explicit CompactionOptionsFIFO_Json(const json& js) {
@@ -268,7 +272,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_OPT_PROP(js, memtable_prefix_bloom_size_ratio);
     ROCKSDB_JSON_OPT_PROP(js, memtable_whole_key_filtering);
     ROCKSDB_JSON_OPT_PROP(js, memtable_huge_page_size);
-    // ROCKSDB_JSON_OPT_FACT(js, memtable_insert_with_hint_prefix_extractor);
+    ROCKSDB_JSON_OPT_FACT(js, memtable_insert_with_hint_prefix_extractor);
     ROCKSDB_JSON_OPT_PROP(js, bloom_locality);
     ROCKSDB_JSON_OPT_PROP(js, arena_block_size);
     ROCKSDB_JSON_OPT_ENUM(js, compression_per_level);
@@ -492,6 +496,156 @@ Status InitConfigRepo(const std::string& json_text) try {
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
+
+/////////////////////////////////////////////////////////////////////////////
+struct JsonOptionsRepo::Impl {
+  template<class T>
+  using ObjRepo = std::unordered_map<std::string, std::shared_ptr<T> >;
+  template<class T> // just for type deduction
+  static std::shared_ptr<T> SharedptrType(ObjRepo<T>&);
+
+  ObjRepo<Cache> cache;
+  ObjRepo<PersistentCache> persistent_cache;
+  ObjRepo<CompactionFilterFactory> compaction_filter_factory;
+  ObjRepo<Comparator> comparator;
+  ObjRepo<ConcurrentTaskLimiter> concurrent_task_limiter;
+  ObjRepo<Env> env;
+  ObjRepo<EventListener> event_listener;
+  ObjRepo<FileChecksumGenFactory> file_checksum_gen_factory;
+  ObjRepo<FilterPolicy> filter_policy;
+  ObjRepo<FlushBlockPolicyFactory> flush_block_policy_factory;
+  ObjRepo<Logger> logger;
+  ObjRepo<MemTableRepFactory> mem_table_rep_factory;
+  ObjRepo<MergeOperator> merge_operator;
+  ObjRepo<RateLimiter> rate_limiter;
+  ObjRepo<SliceTransform> slice_ransform;
+  ObjRepo<SstFileManager> sst_file_manager;
+  ObjRepo<Statistics> statistics;
+  ObjRepo<TableFactory> table_factory;
+  ObjRepo<TablePropertiesCollectorFactory> table_properties_collector_factory;
+  ObjRepo<SliceTransform> slice_transform;
+
+  ObjRepo<Options> options;
+  ObjRepo<DBOptions> db_options;
+  ObjRepo<ColumnFamilyOptions> cf_options;
+};
+
+JsonOptionsRepo::JsonOptionsRepo() noexcept {
+  m_impl.reset(new Impl);
+}
+JsonOptionsRepo::~JsonOptionsRepo() = default;
+JsonOptionsRepo::JsonOptionsRepo(const JsonOptionsRepo&) noexcept = default;
+JsonOptionsRepo::JsonOptionsRepo(JsonOptionsRepo&&) noexcept = default;
+JsonOptionsRepo& JsonOptionsRepo::operator=(const JsonOptionsRepo&) noexcept = default;
+JsonOptionsRepo& JsonOptionsRepo::operator=(JsonOptionsRepo&&) noexcept = default;
+
+Status JsonOptionsRepo::Import(const std::string& json_str) {
+  json js(json_str);
+  return Import(js);
+}
+
+#define SHARED_PTR_TYPE(field) decltype(Impl::SharedptrType(((Impl*)0)->field))
+
+Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
+#define JSON_PARSE_REPO(field) \
+  do { \
+    auto iter = main_js.find(#field); \
+    if (main_js.end() != iter) { \
+      if (!iter.value().is_object()) { \
+        return Status::InvalidArgument(ROCKSDB_FUNC, \
+        #field " must be an object with class and options sub object"); \
+      } \
+      for (auto& item : iter.value().items()) { \
+        const std::string& name = item.key(); \
+        const auto& value = item.value(); \
+        SHARED_PTR_TYPE(field); \
+        ROCKSDB_JSON_OPT_FACT(value, field); \
+        m_impl->field.emplace(name, field); \
+      } \
+    } \
+  } while (0)
+
+  JSON_PARSE_REPO(cache);
+  JSON_PARSE_REPO(persistent_cache);
+  JSON_PARSE_REPO(compaction_filter_factory);
+  JSON_PARSE_REPO(comparator);
+  JSON_PARSE_REPO(concurrent_task_limiter);
+  JSON_PARSE_REPO(env);
+  JSON_PARSE_REPO(event_listener);
+  JSON_PARSE_REPO(file_checksum_gen_factory);
+  JSON_PARSE_REPO(filter_policy);
+  JSON_PARSE_REPO(flush_block_policy_factory);
+  JSON_PARSE_REPO(logger);
+  JSON_PARSE_REPO(mem_table_rep_factory);
+  JSON_PARSE_REPO(merge_operator);
+  JSON_PARSE_REPO(rate_limiter);
+  JSON_PARSE_REPO(slice_ransform);
+  JSON_PARSE_REPO(sst_file_manager);
+  JSON_PARSE_REPO(statistics);
+  JSON_PARSE_REPO(table_factory);
+  JSON_PARSE_REPO(table_properties_collector_factory);
+  JSON_PARSE_REPO(slice_transform);
+
+  return Status::OK();
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+
+Status JsonOptionsRepo::Export(nlohmann::json* js) const {
+
+}
+
+Status JsonOptionsRepo::Export(std::string* json_str, bool pretty) const {
+  nlohmann::json js;
+  Status s = Export(&js);
+  if (s.ok()) {
+    js.dump(pretty ? 4 : -1);
+  }
+  return s;
+}
+
+#define JSON_REPO_TYPE_IMPL(field) \
+void JsonOptionsRepo::Add(const std::string& name, \
+                          const SHARED_PTR_TYPE(field)& p) { \
+  auto ib = m_impl->field.emplace(name, p); \
+  if (ib.second) \
+    ib.first->second = p; \
+} \
+bool JsonOptionsRepo::Get(const std::string& name, \
+                          SHARED_PTR_TYPE(field)* pp) { \
+  auto iter = m_impl->field.find(name); \
+  if (m_impl->field.end() != iter) { \
+    *pp = iter->second; \
+    return true; \
+  } \
+  return false; \
+}
+
+JSON_REPO_TYPE_IMPL(cache)
+JSON_REPO_TYPE_IMPL(persistent_cache)
+JSON_REPO_TYPE_IMPL(compaction_filter_factory)
+JSON_REPO_TYPE_IMPL(comparator)
+JSON_REPO_TYPE_IMPL(concurrent_task_limiter)
+JSON_REPO_TYPE_IMPL(env)
+JSON_REPO_TYPE_IMPL(event_listener)
+JSON_REPO_TYPE_IMPL(file_checksum_gen_factory)
+JSON_REPO_TYPE_IMPL(filter_policy)
+JSON_REPO_TYPE_IMPL(flush_block_policy_factory)
+JSON_REPO_TYPE_IMPL(logger)
+JSON_REPO_TYPE_IMPL(mem_table_rep_factory)
+JSON_REPO_TYPE_IMPL(merge_operator)
+JSON_REPO_TYPE_IMPL(rate_limiter)
+JSON_REPO_TYPE_IMPL(slice_ransform)
+JSON_REPO_TYPE_IMPL(sst_file_manager)
+JSON_REPO_TYPE_IMPL(statistics)
+JSON_REPO_TYPE_IMPL(table_factory)
+JSON_REPO_TYPE_IMPL(table_properties_collector_factory)
+JSON_REPO_TYPE_IMPL(slice_transform)
+
+JSON_REPO_TYPE_IMPL(options)
+JSON_REPO_TYPE_IMPL(db_options)
+JSON_REPO_TYPE_IMPL(cf_options)
 
 
 }

@@ -53,36 +53,36 @@ class JsonOptionsRepo {
   void Add(const std::string& name, const std::shared_ptr<DBOptions>&);
   void Add(const std::string& name, const std::shared_ptr<ColumnFamilyOptions>&);
 
-  void Add(const std::string& name, const std::shared_ptr<Cache>&) const;
-  void Add(const std::string& name, const std::shared_ptr<CompactionFilterFactory>&) const;
-  void Add(const std::string& name, const std::shared_ptr<Comparator>&) const;
-  void Add(const std::string& name, const std::shared_ptr<ConcurrentTaskLimiter>&) const;
-  void Add(const std::string& name, const std::shared_ptr<Env>&) const;
-  void Add(const std::string& name, const std::shared_ptr<EventListener>&) const;
-  void Add(const std::string& name, const std::shared_ptr<FileChecksumGenFactory>&) const;
-  void Add(const std::string& name, const std::shared_ptr<FilterPolicy>&) const;
-  void Add(const std::string& name, const std::shared_ptr<FlushBlockPolicyFactory>&) const;
-  void Add(const std::string& name, const std::shared_ptr<Logger>&) const;
-  void Add(const std::string& name, const std::shared_ptr<MemTableRepFactory>&) const;
-  void Add(const std::string& name, const std::shared_ptr<MergeOperator>&) const;
-  void Add(const std::string& name, const std::shared_ptr<PersistentCache>&) const;
-  void Add(const std::string& name, const std::shared_ptr<RateLimiter>&) const;
-  void Add(const std::string& name, const std::shared_ptr<SliceTransform>&) const;
-  void Add(const std::string& name, const std::shared_ptr<SstFileManager>&) const;
-  void Add(const std::string& name, const std::shared_ptr<Statistics>&) const;
-  void Add(const std::string& name, const std::shared_ptr<TableFactory>&) const;
-  void Add(const std::string& name, const std::shared_ptr<TablePropertiesCollectorFactory>&) const;
+  void Add(const std::string& name, const std::shared_ptr<Cache>&);
+  void Add(const std::string& name, const std::shared_ptr<CompactionFilterFactory>&);
+  void Add(const std::string& name, const Comparator*);
+  void Add(const std::string& name, const std::shared_ptr<ConcurrentTaskLimiter>&);
+  void Add(const std::string& name, Env*);
+  void Add(const std::string& name, const std::shared_ptr<EventListener>&);
+  void Add(const std::string& name, const std::shared_ptr<FileChecksumGenFactory>&);
+  void Add(const std::string& name, const std::shared_ptr<FilterPolicy>&);
+  void Add(const std::string& name, const std::shared_ptr<FlushBlockPolicyFactory>&);
+  void Add(const std::string& name, const std::shared_ptr<Logger>&);
+  void Add(const std::string& name, const std::shared_ptr<MemTableRepFactory>&);
+  void Add(const std::string& name, const std::shared_ptr<MergeOperator>&);
+  void Add(const std::string& name, const std::shared_ptr<PersistentCache>&);
+  void Add(const std::string& name, const std::shared_ptr<RateLimiter>&);
+  void Add(const std::string& name, const std::shared_ptr<SliceTransform>&);
+  void Add(const std::string& name, const std::shared_ptr<SstFileManager>&);
+  void Add(const std::string& name, const std::shared_ptr<Statistics>&);
+  void Add(const std::string& name, const std::shared_ptr<TableFactory>&);
+  void Add(const std::string& name, const std::shared_ptr<TablePropertiesCollectorFactory>&);
   ///@}
 
-  bool Get(const std::string& name,  std::shared_ptr<Options>*);
-  bool Get(const std::string& name,  std::shared_ptr<DBOptions>*);
-  bool Get(const std::string& name,  std::shared_ptr<ColumnFamilyOptions>*);
-  
+  bool Get(const std::string& name, std::shared_ptr<Options>*) const;
+  bool Get(const std::string& name, std::shared_ptr<DBOptions>*) const;
+  bool Get(const std::string& name, std::shared_ptr<ColumnFamilyOptions>*) const;
+
   bool Get(const std::string& name, std::shared_ptr<Cache>*) const;
   bool Get(const std::string& name, std::shared_ptr<CompactionFilterFactory>*) const;
-  bool Get(const std::string& name, std::shared_ptr<Comparator>*) const;
+  bool Get(const std::string& name, const Comparator**) const;
   bool Get(const std::string& name, std::shared_ptr<ConcurrentTaskLimiter>*) const;
-  bool Get(const std::string& name, std::shared_ptr<Env>*) const;
+  bool Get(const std::string& name, Env**) const;
   bool Get(const std::string& name, std::shared_ptr<EventListener>*) const;
   bool Get(const std::string& name, std::shared_ptr<FileChecksumGenFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<FilterPolicy>*) const;

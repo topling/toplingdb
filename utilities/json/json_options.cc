@@ -229,14 +229,14 @@ bool Init_vec(const json& js, Vec& vec) {
 //                                   allow_compaction);
 
 struct CompactionOptionsFIFO_Json : CompactionOptionsFIFO {
-friend CompactionOptionsFIFO_Json NestForBase(CompactionOptionsFIFO&);
   explicit CompactionOptionsFIFO_Json(const json& js) {
     ROCKSDB_JSON_OPT_PROP(js, max_table_files_size);
     ROCKSDB_JSON_OPT_PROP(js, allow_compaction);
   }
 };
+CompactionOptionsFIFO_Json NestForBase(CompactionOptionsFIFO&);
+
 struct CompactionOptionsUniversal_Json : CompactionOptionsUniversal {
-friend CompactionOptionsUniversal_Json NestForBase(CompactionOptionsUniversal&);
   explicit CompactionOptionsUniversal_Json(const json& js) {
     ROCKSDB_JSON_OPT_PROP(js, size_ratio);
     ROCKSDB_JSON_OPT_PROP(js, min_merge_width);
@@ -247,8 +247,9 @@ friend CompactionOptionsUniversal_Json NestForBase(CompactionOptionsUniversal&);
     ROCKSDB_JSON_OPT_PROP(js, allow_trivial_move);
   }
 };
+CompactionOptionsUniversal_Json NestForBase(CompactionOptionsUniversal&);
+
 struct CompressionOptions_Json : CompressionOptions {
-friend CompressionOptions_Json NestForBase(CompressionOptions&);
   explicit CompressionOptions_Json(const json& js) {
     ROCKSDB_JSON_OPT_PROP(js, window_bits);
     ROCKSDB_JSON_OPT_PROP(js, level);
@@ -259,6 +260,7 @@ friend CompressionOptions_Json NestForBase(CompressionOptions&);
     ROCKSDB_JSON_OPT_PROP(js, enabled);
   }
 };
+CompressionOptions_Json NestForBase(CompressionOptions&);
 
 struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
   Status UpdateFromJson(const json& js) try {
@@ -502,14 +504,20 @@ struct JsonOptionsRepo::Impl {
   template<class T>
   using ObjRepo = std::unordered_map<std::string, std::shared_ptr<T> >;
   template<class T> // just for type deduction
-  static std::shared_ptr<T> SharedptrType(ObjRepo<T>&);
+  static std::shared_ptr<T> RepoPtrType(ObjRepo<T>&);
+  template<class T> // just for type deduction
+  static const std::shared_ptr<T>& RepoPtrCref(ObjRepo<T>&);
+  template<class T> // just for type deduction
+  static T* RepoPtrCref(std::unordered_map<std::string, T*>&);
+  template<class T> // just for type deduction
+  static T* RepoPtrType(std::unordered_map<std::string, T*>&);
 
   ObjRepo<Cache> cache;
   ObjRepo<PersistentCache> persistent_cache;
   ObjRepo<CompactionFilterFactory> compaction_filter_factory;
-  ObjRepo<Comparator> comparator;
+  std::unordered_map<std::string, const Comparator*> comparator;
   ObjRepo<ConcurrentTaskLimiter> concurrent_task_limiter;
-  ObjRepo<Env> env;
+  std::unordered_map<std::string, Env*> env;
   ObjRepo<EventListener> event_listener;
   ObjRepo<FileChecksumGenFactory> file_checksum_gen_factory;
   ObjRepo<FilterPolicy> filter_policy;
@@ -544,7 +552,7 @@ Status JsonOptionsRepo::Import(const std::string& json_str) {
   return Import(js);
 }
 
-#define SHARED_PTR_TYPE(field) decltype(Impl::SharedptrType(((Impl*)0)->field))
+#define SHARED_PTR_TYPE(field) decltype(Impl::RepoPtrType(((Impl*)0)->field))
 
 Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
 #define JSON_PARSE_REPO(field) \
@@ -558,7 +566,7 @@ Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
       for (auto& item : iter.value().items()) { \
         const std::string& name = item.key(); \
         const auto& value = item.value(); \
-        SHARED_PTR_TYPE(field); \
+        SHARED_PTR_TYPE(field) field; \
         ROCKSDB_JSON_OPT_FACT(value, field); \
         m_impl->field.emplace(name, field); \
       } \
@@ -607,13 +615,13 @@ Status JsonOptionsRepo::Export(std::string* json_str, bool pretty) const {
 
 #define JSON_REPO_TYPE_IMPL(field) \
 void JsonOptionsRepo::Add(const std::string& name, \
-                          const SHARED_PTR_TYPE(field)& p) { \
+                          decltype((Impl::RepoPtrCref(((Impl*)0)->field))) p) { \
   auto ib = m_impl->field.emplace(name, p); \
   if (ib.second) \
     ib.first->second = p; \
 } \
 bool JsonOptionsRepo::Get(const std::string& name, \
-                          SHARED_PTR_TYPE(field)* pp) { \
+                          SHARED_PTR_TYPE(field)* pp) const { \
   auto iter = m_impl->field.find(name); \
   if (m_impl->field.end() != iter) { \
     *pp = iter->second; \
@@ -636,7 +644,6 @@ JSON_REPO_TYPE_IMPL(logger)
 JSON_REPO_TYPE_IMPL(mem_table_rep_factory)
 JSON_REPO_TYPE_IMPL(merge_operator)
 JSON_REPO_TYPE_IMPL(rate_limiter)
-JSON_REPO_TYPE_IMPL(slice_ransform)
 JSON_REPO_TYPE_IMPL(sst_file_manager)
 JSON_REPO_TYPE_IMPL(statistics)
 JSON_REPO_TYPE_IMPL(table_factory)

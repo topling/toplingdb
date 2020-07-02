@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <climits>
 #include <vector>
-#include "rocksdb/enum.h"
+#include "rocksdb/enum_reflection.h"
 
 namespace ROCKSDB_NAMESPACE {
 

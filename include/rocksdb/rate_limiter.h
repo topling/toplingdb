@@ -9,9 +9,9 @@
 
 #pragma once
 
+#include "rocksdb/enum_reflection.h"
 #include "rocksdb/env.h"
 #include "rocksdb/statistics.h"
-#include "rocksdb/enum.h"
 
 namespace ROCKSDB_NAMESPACE {
 

@@ -25,11 +25,11 @@
 #include <stdint.h>
 #include <memory>
 #include <string>
+#include "rocksdb/enum_reflection.h"
 #include "rocksdb/memory_allocator.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
-#include "rocksdb/enum.h"
 
 namespace ROCKSDB_NAMESPACE {
 

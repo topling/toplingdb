@@ -23,11 +23,11 @@
 #include <unordered_map>
 
 #include "rocksdb/cache.h"
+#include "rocksdb/enum_reflection.h"
 #include "rocksdb/env.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
-#include "rocksdb/enum.h"
 
 namespace ROCKSDB_NAMESPACE {
 

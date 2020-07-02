@@ -4,12 +4,13 @@
 
 #pragma once
 
-#include <unordered_map>
 #include <memory>
-#include "rocksdb/status.h"
-#include "rocksdb/preproc.h"
-#include "rocksdb/enum.h"
+#include <unordered_map>
+
 #include "json_fwd.h"
+#include "rocksdb/enum_reflection.h"
+#include "rocksdb/preproc.h"
+#include "rocksdb/status.h"
 
 namespace ROCKSDB_NAMESPACE {
 

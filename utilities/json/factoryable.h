@@ -136,8 +136,9 @@ GetOrNewInstance(const char* varname, const char* func_name,
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
-      return Status::NotFound(
+      *s = Status::NotFound(
           func_name, std::string(varname) + " inst_id/class_name is empty");
+      return InstancePtr(nullptr);
     }
     if ('$' == str_val[0]) {
       if (str_val.size() < 3) {

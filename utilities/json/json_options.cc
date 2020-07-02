@@ -28,6 +28,11 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+using std::shared_ptr;
+using std:: unordered_map;
+using std:: vector;
+using std:: string;
+
 /*
 class Cache;
 class CompactionFilterFactory;
@@ -76,16 +81,16 @@ static void Json_DbPathVec(const json& js,
 }
 
 static Status Json_EventListenerVec(const json& js, const JsonOptionsRepo& repo,
-    std::vector<std::shared_ptr<EventListener>>& listeners) {
+    std::vector<shared_ptr<EventListener>>& listeners) {
   listeners.clear();
   if (js.is_string()) {
-    std::shared_ptr<EventListener> el;
+    shared_ptr<EventListener> el;
     ROCKSDB_JSON_OPT_FACT_IMPL(js, el);
     listeners.emplace_back(el);
   }
   else if (js.is_array()) {
     for (auto& one : js.items()) {
-      std::shared_ptr<EventListener> el;
+      shared_ptr<EventListener> el;
       ROCKSDB_JSON_OPT_FACT_IMPL(one.value(), el);
       listeners.emplace_back(el);
     }
@@ -147,7 +152,7 @@ struct DBOptions_Json : DBOptions {
       if (js.end() != iter) {
         auto& wbm = iter.value();
         size_t buffer_size = db_write_buffer_size;
-        std::shared_ptr<Cache> cache;
+        shared_ptr<Cache> cache;
         ROCKSDB_JSON_OPT_FACT(wbm, cache);
         ROCKSDB_JSON_OPT_PROP(wbm, buffer_size);
         write_buffer_manager = std::make_shared<WriteBufferManager>(
@@ -382,7 +387,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
 
 //////////////////////////////////////////////////////////////////////////////
 
-static std::shared_ptr<TablePropertiesCollectorFactory>
+static shared_ptr<TablePropertiesCollectorFactory>
 NewCompactOnDeletionCollectorFactoryForJson(
     const json& js, const JsonOptionsRepo& repo, Status* s)
 try {
@@ -404,7 +409,7 @@ ROCKSDB_FACTORY_REG("CompactOnDeletionCollector",
 
 //////////////////////////////////////////////////////////////////////////////
 
-std::shared_ptr<RateLimiter>
+shared_ptr<RateLimiter>
 NewGenericRateLimiterFromJson(const json& js, const JsonOptionsRepo& repo, Status* s) {
   int64_t rate_bytes_per_sec = 0;
   int64_t refill_period_us = 100 * 1000;
@@ -465,7 +470,7 @@ static Env* DefaultEnv(const json&, const JsonOptionsRepo&, Status*) {
 ROCKSDB_FACTORY_REG("default", DefaultEnv);
 
 /////////////////////////////////////////////////////////////////////////////
-static std::shared_ptr<FlushBlockBySizePolicyFactory>
+static shared_ptr<FlushBlockBySizePolicyFactory>
 NewFlushBlockBySizePolicyFactoryFactoryJson(const json&,
                                     const JsonOptionsRepo&, Status*) {
   return std::make_shared<FlushBlockBySizePolicyFactory>();
@@ -474,7 +479,7 @@ ROCKSDB_FACTORY_REG("FlushBlockBySize",
                     NewFlushBlockBySizePolicyFactoryFactoryJson);
 
 /////////////////////////////////////////////////////////////////////////////
-static std::shared_ptr<FileChecksumGenFactory>
+static shared_ptr<FileChecksumGenFactory>
 GetFileChecksumGenCrc32cFactoryJson(const json&,
                                     const JsonOptionsRepo&, Status*) {
   return GetFileChecksumGenCrc32cFactory();
@@ -483,7 +488,7 @@ ROCKSDB_FACTORY_REG("Crc32c", GetFileChecksumGenCrc32cFactoryJson);
 ROCKSDB_FACTORY_REG("crc32c", GetFileChecksumGenCrc32cFactoryJson);
 
 /////////////////////////////////////////////////////////////////////////////
-static std::shared_ptr<MemTableRepFactory>
+static shared_ptr<MemTableRepFactory>
 NewSkipListMemTableRepFactoryJson(const json& js,
                                   const JsonOptionsRepo&, Status* s)
 try {
@@ -498,7 +503,7 @@ catch (const std::exception& ex) {
 ROCKSDB_FACTORY_REG("SkipListRep", NewSkipListMemTableRepFactoryJson);
 ROCKSDB_FACTORY_REG("SkipList", NewSkipListMemTableRepFactoryJson);
 
-static std::shared_ptr<MemTableRepFactory>
+static shared_ptr<MemTableRepFactory>
 NewVectorMemTableRepFactoryJson(const json& js,
                                 const JsonOptionsRepo&, Status* s)
 try {
@@ -513,7 +518,7 @@ catch (const std::exception& ex) {
 ROCKSDB_FACTORY_REG("VectorRep", NewVectorMemTableRepFactoryJson);
 ROCKSDB_FACTORY_REG("Vector", NewVectorMemTableRepFactoryJson);
 
-static std::shared_ptr<MemTableRepFactory>
+static shared_ptr<MemTableRepFactory>
 NewHashSkipListMemTableRepFactoryJson(const json& js,
                                       const JsonOptionsRepo&, Status* s)
 try {
@@ -523,7 +528,7 @@ try {
   ROCKSDB_JSON_OPT_PROP(js, bucket_count);
   ROCKSDB_JSON_OPT_PROP(js, height);
   ROCKSDB_JSON_OPT_PROP(js, branching_factor);
-  return std::shared_ptr<MemTableRepFactory>(
+  return shared_ptr<MemTableRepFactory>(
       NewHashSkipListRepFactory(bucket_count, height, branching_factor));
 }
 catch (const std::exception& ex) {
@@ -533,7 +538,7 @@ catch (const std::exception& ex) {
 ROCKSDB_FACTORY_REG("HashSkipListRep", NewHashSkipListMemTableRepFactoryJson);
 ROCKSDB_FACTORY_REG("HashSkipList", NewHashSkipListMemTableRepFactoryJson);
 
-static std::shared_ptr<MemTableRepFactory>
+static shared_ptr<MemTableRepFactory>
 NewHashLinkListMemTableRepFactoryJson(const json& js,
                                       const JsonOptionsRepo&, Status* s)
 try {
@@ -547,7 +552,7 @@ try {
   ROCKSDB_JSON_OPT_PROP(js, bucket_entries_logging_threshold);
   ROCKSDB_JSON_OPT_PROP(js, if_log_bucket_dist_when_flash);
   ROCKSDB_JSON_OPT_PROP(js, threshold_use_skiplist);
-  return std::shared_ptr<MemTableRepFactory>(
+  return shared_ptr<MemTableRepFactory>(
       NewHashLinkListRepFactory(bucket_count,
                                 huge_page_tlb_size,
                                 bucket_entries_logging_threshold,
@@ -565,22 +570,22 @@ ROCKSDB_FACTORY_REG("HashLinkList", NewHashLinkListMemTableRepFactoryJson);
 
 struct JsonOptionsRepo::Impl {
   template<class T>
-  using ObjRepo = std::unordered_map<std::string, std::shared_ptr<T> >;
+  using ObjRepo = shared_ptr<unordered_map<std::string, shared_ptr<T>>>;
   template<class T> // just for type deduction
-  static std::shared_ptr<T> RepoPtrType(ObjRepo<T>&);
+  static shared_ptr<T> RepoPtrType(ObjRepo<T>&);
   template<class T> // just for type deduction
-  static const std::shared_ptr<T>& RepoPtrCref(ObjRepo<T>&);
+  static const shared_ptr<T>& RepoPtrCref(ObjRepo<T>&);
   template<class T> // just for type deduction
-  static T* RepoPtrCref(std::unordered_map<std::string, T*>&);
+  static T* RepoPtrCref(shared_ptr<unordered_map<std::string, T*>>&);
   template<class T> // just for type deduction
-  static T* RepoPtrType(std::unordered_map<std::string, T*>&);
+  static T* RepoPtrType(shared_ptr<unordered_map<std::string, T*>>&);
 
   ObjRepo<Cache> cache;
   ObjRepo<PersistentCache> persistent_cache;
   ObjRepo<CompactionFilterFactory> compaction_filter_factory;
-  std::unordered_map<std::string, const Comparator*> comparator;
+  shared_ptr<unordered_map<std::string, const Comparator*>>comparator;
   ObjRepo<ConcurrentTaskLimiter> concurrent_task_limiter;
-  std::unordered_map<std::string, Env*> env;
+  shared_ptr<unordered_map<std::string, Env*>> env;
   ObjRepo<EventListener> event_listener;
   ObjRepo<FileChecksumGenFactory> file_checksum_gen_factory;
   ObjRepo<FilterPolicy> filter_policy;
@@ -631,7 +636,7 @@ Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
         const auto& value = item.value(); \
         SHARED_PTR_TYPE(field) field; \
         ROCKSDB_JSON_OPT_FACT(value, field); \
-        m_impl->field.emplace(name, field); \
+        m_impl->field->emplace(name, field); \
       } \
     } \
   } while (0)
@@ -687,7 +692,7 @@ void JsonOptionsRepo::Add(const std::string& name, \
 } \
 bool JsonOptionsRepo::Get(const std::string& name, \
                           SHARED_PTR_TYPE(field)* pp) const { \
-  auto __map = *m_impl->field; \
+  auto& __map = *m_impl->field; \
   auto iter = __map.find(name); \
   if (__map.end() != iter) { \
     *pp = iter->second; \
@@ -720,12 +725,16 @@ JSON_REPO_TYPE_IMPL(options)
 JSON_REPO_TYPE_IMPL(db_options)
 JSON_REPO_TYPE_IMPL(cf_options)
 
-void JsonOptionsRepo::GetMap(std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<TableFactory>>>* pp) const {
-  *pp = table_factory;
+void JsonOptionsRepo::GetMap(
+    shared_ptr<unordered_map<std::string,
+                             shared_ptr<TableFactory>>>* pp) const {
+  *pp = m_impl->table_factory;
 }
 
-void JsonOptionsRepo::GetMap(std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<MemTableRepFactory>>>*) const {
-  *pp = mem_table_rep_factory;
+void JsonOptionsRepo::GetMap(
+    shared_ptr<unordered_map<std::string,
+                             shared_ptr<MemTableRepFactory>>>* pp) const {
+  *pp = m_impl->mem_table_rep_factory;
 }
 
 }

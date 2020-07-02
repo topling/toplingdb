@@ -277,7 +277,27 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_OPT_FACT(js, memtable_insert_with_hint_prefix_extractor);
     ROCKSDB_JSON_OPT_PROP(js, bloom_locality);
     ROCKSDB_JSON_OPT_PROP(js, arena_block_size);
-    ROCKSDB_JSON_OPT_ENUM(js, compression_per_level);
+    try { // compression_per_level is an enum array
+      auto iter = js.find("compression_per_level");
+      if (js.end() != iter) {
+        if (!iter.value().is_array()) {
+          return Status::InvalidArgument(ROCKSDB_FUNC,
+              "compression_per_level must be an array");
+        }
+        for (auto& item : iter.value().items()) {
+          const std::string& val = item.value().get<std::string>();
+          CompressionType compressionType;
+          if (!enum_value(val, &compressionType)) {
+            return Status::InvalidArgument(ROCKSDB_FUNC,
+                std::string("compression_per_level: invalid enum: ") + val);
+          }
+          compression_per_level.push_back(compressionType);
+        }
+      }
+    } catch (const std::exception& ex) {
+      return Status::InvalidArgument(ROCKSDB_FUNC,
+          std::string("compression_per_level: ") + ex.what());
+    }
     ROCKSDB_JSON_OPT_PROP(js, num_levels);
     ROCKSDB_JSON_OPT_PROP(js, level0_slowdown_writes_trigger);
     ROCKSDB_JSON_OPT_PROP(js, level0_stop_writes_trigger);

@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include <functional>
 #include <unordered_map>
 #include <memory>
 #include "rocksdb/status.h"
@@ -37,7 +36,7 @@ public:
     AutoReg(AutoReg&&) = delete;
     AutoReg& operator=(AutoReg&&) = delete;
     AutoReg& operator=(const AutoReg&) = delete;
-    using CreatorFunc = std::function<InstancePtr(const json&, Status*)>;
+    typedef InstancePtr (*CreatorFunc)(const json&, Status*);
     using NameToFuncMap = std::unordered_map<std::string, CreatorFunc>;
     AutoReg(Slice reg_name, CreatorFunc creator);
     ~AutoReg();
@@ -57,10 +56,10 @@ template<class InstancePtr>
 FactoryFor<InstancePtr>::
 AutoReg::AutoReg(Slice reg_name, CreatorFunc creator) {
   auto& imp = Impl::s_singleton();
-  auto ib = imp.func_map.insert(std::make_pair(reg_name.ToString(), std::move(creator)));
+  auto ib = imp.func_map.insert(std::make_pair(reg_name.ToString(), creator));
   if (!ib.second) {
     fprintf(stderr, "FATAL: %s:%d: %s: duplicate reg_name = %s\n"
-        , __FILE__, __LINE__, __PRETTY_FUNCTION__, reg_name.data());
+        , __FILE__, __LINE__, ROCKSDB_FUNC, reg_name.data());
     abort();
   }
   this->ipos = ib.first;
@@ -92,9 +91,9 @@ InstancePtr
 FactoryFor<InstancePtr>::
 GetRepoInstance(const std::string& inst_id) {
   auto& imp = AutoReg::Impl::s_singleton();
-  auto __iter = imp.inst_map.find(inst_id);
-  if (imp.inst_map.end() != __iter) {
-    return __iter->second;
+  auto iter = imp.inst_map.find(inst_id);
+  if (imp.inst_map.end() != iter) {
+    return iter->second;
   }
   else {
     return InstancePtr(nullptr);
@@ -128,12 +127,6 @@ UpsertRepoInstance(const std::string& inst_id, InstancePtr inst) {
     ib.first->second = inst;
   }
 }
-
-template<class Ptr> struct ExtractInstanceType;
-template<class T>
-struct ExtractInstanceType<T*> { typedef T type; };
-template<class T>
-struct ExtractInstanceType<std::shared_ptr<T> > { typedef T type; };
 
 template<class Instance>
 using FactoryForSP = FactoryFor<std::shared_ptr<Instance> >;

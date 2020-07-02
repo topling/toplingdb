@@ -99,8 +99,9 @@ GetInstance(const char* varname, const char* func_name,
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
-      return Status::NotFound(
+      *s = Status::NotFound(
           func_name, std::string(varname) + " inst_id/class_name is empty");
+	  return InstancePtr(nullptr);
     }
     InstancePtr p(nullptr);
     if ('$' == str_val[0]) {
@@ -121,8 +122,9 @@ GetInstance(const char* varname, const char* func_name,
     return p;
   }
   else {
-    return Status::InvalidArgument(func_name,
+    *s = Status::InvalidArgument(func_name,
       std::string(varname) + " must be a string for reference to object");
+	return InstancePtr(nullptr);
   }
 }
 
@@ -150,13 +152,11 @@ GetOrNewInstance(const char* varname, const char* func_name,
       if (!repo.Get(inst_id, &p)) {
         *s = Status::NotFound(func_name,
                               std::string(varname) + "inst_id = " + inst_id);
-        return p;
-      } else {
-        return Status::OK();
       }
+      return p;
     } else { // CreateInstance with empty json options
       const std::string& clazz_name = str_val;
-      return CreateInstance(clazz_name, json{}, repo, &s);
+      return CreateInstance(clazz_name, json{}, repo, s);
     }
   } else {
     const std::string& clazz_name = js.at("class").get<std::string>();

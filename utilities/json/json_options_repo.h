@@ -67,7 +67,7 @@ class JsonOptionsRepo {
   void Add(const std::string& name, const std::shared_ptr<MergeOperator>&);
   void Add(const std::string& name, const std::shared_ptr<PersistentCache>&);
   void Add(const std::string& name, const std::shared_ptr<RateLimiter>&);
-  void Add(const std::string& name, const std::shared_ptr<SliceTransform>&);
+  void Add(const std::string& name, const std::shared_ptr<const SliceTransform>&);
   void Add(const std::string& name, const std::shared_ptr<SstFileManager>&);
   void Add(const std::string& name, const std::shared_ptr<Statistics>&);
   void Add(const std::string& name, const std::shared_ptr<TableFactory>&);
@@ -92,7 +92,7 @@ class JsonOptionsRepo {
   bool Get(const std::string& name, std::shared_ptr<MergeOperator>*) const;
   bool Get(const std::string& name, std::shared_ptr<PersistentCache>*) const;
   bool Get(const std::string& name, std::shared_ptr<RateLimiter>*) const;
-  bool Get(const std::string& name, std::shared_ptr<SliceTransform>*) const;
+  bool Get(const std::string& name, std::shared_ptr<const SliceTransform>*) const;
   bool Get(const std::string& name, std::shared_ptr<SstFileManager>*) const;
   bool Get(const std::string& name, std::shared_ptr<Statistics>*) const;
   bool Get(const std::string& name, std::shared_ptr<TableFactory>*) const;

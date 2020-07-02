@@ -598,7 +598,7 @@ struct JsonOptionsRepo::Impl {
   ObjRepo<Statistics> statistics;
   ObjRepo<TableFactory> table_factory;
   ObjRepo<TablePropertiesCollectorFactory> table_properties_collector_factory;
-  ObjRepo<SliceTransform> slice_transform;
+  ObjRepo<const SliceTransform> slice_transform;
 
   ObjRepo<Options> options;
   ObjRepo<DBOptions> db_options;

@@ -233,7 +233,7 @@ struct CuckooTableOptions_Json : CuckooTableOptions {
       ROCKSDB_JSON_OPT_PROP(js, max_search_depth);
       ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
       ROCKSDB_JSON_OPT_PROP(js, cuckoo_block_size);
-      ROCKSDB_JSON_OPT_ENUM(js, identity_as_first_hash);
+      ROCKSDB_JSON_OPT_PROP(js, identity_as_first_hash);
       ROCKSDB_JSON_OPT_PROP(js, use_module_hash);
       return Status::OK();
     } catch (const std::exception& ex) {
@@ -342,7 +342,8 @@ class DispatherTableFactory : public TableFactory {
       if (m_all->end() != fp_iter) {
         const std::shared_ptr<TableFactory>& factory = fp_iter->second;
         return factory->NewTableReader(table_reader_options,
-                                       std::move(file), file_size, table);
+                                       std::move(file), file_size, table,
+                                       prefetch_index_and_filter_in_cache);
       }
     } else {
       return Status::NotSupported("Unidentified table format");

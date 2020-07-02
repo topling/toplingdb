@@ -588,7 +588,7 @@ struct JsonOptionsRepo::Impl {
   shared_ptr<unordered_map<std::string, Env*> > env;
   ObjRepo<EventListener> event_listener;
   ObjRepo<FileChecksumGenFactory> file_checksum_gen_factory;
-  ObjRepo<FilterPolicy> filter_policy;
+  ObjRepo<const FilterPolicy> filter_policy;
   ObjRepo<FlushBlockPolicyFactory> flush_block_policy_factory;
   ObjRepo<Logger> logger;
   ObjRepo<MemTableRepFactory> mem_table_rep_factory;

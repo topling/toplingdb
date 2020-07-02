@@ -572,20 +572,20 @@ struct JsonOptionsRepo::Impl {
   template<class T>
   using ObjRepo = shared_ptr<unordered_map<std::string, shared_ptr<T>>>;
   template<class T> // just for type deduction
-  static shared_ptr<T> RepoPtrType(ObjRepo<T>&);
+  static shared_ptr<T> RepoPtrType(const ObjRepo<T>&);
   template<class T> // just for type deduction
-  static const shared_ptr<T>& RepoPtrCref(ObjRepo<T>&);
+  static const shared_ptr<T>& RepoPtrCref(const ObjRepo<T>&);
   template<class T> // just for type deduction
-  static T* RepoPtrCref(shared_ptr<unordered_map<std::string, T*>>&);
+  static T* RepoPtrCref(const shared_ptr<unordered_map<std::string, T*>>&);
   template<class T> // just for type deduction
-  static T* RepoPtrType(shared_ptr<unordered_map<std::string, T*>>&);
+  static T* RepoPtrType(const shared_ptr<unordered_map<std::string, T*>>&);
 
   ObjRepo<Cache> cache;
   ObjRepo<PersistentCache> persistent_cache;
   ObjRepo<CompactionFilterFactory> compaction_filter_factory;
-  shared_ptr<unordered_map<std::string, const Comparator*>>comparator;
+  shared_ptr<unordered_map<std::string, const Comparator*> > comparator;
   ObjRepo<ConcurrentTaskLimiter> concurrent_task_limiter;
-  shared_ptr<unordered_map<std::string, Env*>> env;
+  shared_ptr<unordered_map<std::string, Env*> > env;
   ObjRepo<EventListener> event_listener;
   ObjRepo<FileChecksumGenFactory> file_checksum_gen_factory;
   ObjRepo<FilterPolicy> filter_policy;

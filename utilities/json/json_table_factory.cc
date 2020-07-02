@@ -345,9 +345,8 @@ class DispatherTableFactory : public TableFactory {
                                        std::move(file), file_size, table,
                                        prefetch_index_and_filter_in_cache);
       }
-    } else {
-      return Status::NotSupported("Unidentified table format");
     }
+    return Status::NotSupported("Unidentified table format");
   }
 
   TableBuilder* NewTableBuilder(

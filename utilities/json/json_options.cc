@@ -389,7 +389,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
 
 static shared_ptr<TablePropertiesCollectorFactory>
 NewCompactOnDeletionCollectorFactoryForJson(
-    const json& js, const JsonOptionsRepo& repo, Status* s)
+    const json& js, const JsonOptionsRepo&, Status* s)
 try {
   size_t sliding_window_size = 0;
   size_t deletion_trigger = 0;

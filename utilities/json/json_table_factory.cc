@@ -214,7 +214,7 @@ struct PlainTableOptions_Json : PlainTableOptions {
 };
 
 static std::shared_ptr<TableFactory>
-NewPlainTableFactoryFromJson(const json& j, const JsonOptionsRepo& repo, Status* s) {
+NewPlainTableFactoryFromJson(const json& j, const JsonOptionsRepo&, Status* s) {
   PlainTableOptions_Json options;
   *s = options.UpdateFromJson(j);
   if (s->ok())
@@ -243,7 +243,7 @@ struct CuckooTableOptions_Json : CuckooTableOptions {
 };
 
 static std::shared_ptr<TableFactory>
-NewCuckooTableFactoryJson(const json& j, const JsonOptionsRepo& repo, Status* s) {
+NewCuckooTableFactoryJson(const json& j, const JsonOptionsRepo&, Status* s) {
   CuckooTableOptions_Json options;
   *s = options.UpdateFromJson(j);
   if (s->ok())

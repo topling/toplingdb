@@ -281,46 +281,9 @@ class DispatherTableFactory : public TableFactory {
   ~DispatherTableFactory() {}
 
   DispatherTableFactory(const json& js, const JsonOptionsRepo& repo) {
-    std::vector<std::string> level_writer_names;
-    if (!js.is_object()) {
-      throw std::invalid_argument("DispatherTableFactory options must be object");
-    }
-    auto iter = js.find("default");
-    Status s;
-    if (js.end() != iter) {
-      auto& options = iter.value();
-      m_default_writer = FactoryFor<std::shared_ptr<TableFactory>>::
-          GetOrNewInstance("default", ROCKSDB_FUNC, options, repo, &s);
-      if (!m_default_writer)
-        fprintf(stderr,
-                "Warning: get default writer = (%s) failed, try global default\n",
-                options.dump().c_str());
-    }
-    if (!m_default_writer) {
-      if (!repo.Get("default", &m_default_writer)) {
-        fprintf(stderr,
-          "Warning: get global default failed, use default BlockBasedTable\n");
-        m_default_writer.reset(NewBlockBasedTableFactory());
-      }
-    }
-    iter = js.find("level_writers");
-    if (js.end() != iter) {
-      if (!iter.value().is_array()) {
-        throw std::invalid_argument(
-            "DispatherTableFactory level_writers must be array");
-      }
-      for (auto& item : js.items()) {
-        auto& options = item.value();
-        auto p = FactoryFor<std::shared_ptr<TableFactory>>::
-            GetOrNewInstance("default", ROCKSDB_FUNC, options, repo, &s);
-        if (!p) {
-          throw s;
-        }
-        m_level_writers.push_back(p);
-      }
-    }
+    m_json_obj = js; // backup
     m_json_str = js.dump();
-    repo.GetMap(&m_all);
+    m_repo.reset(new JsonOptionsRepo(repo)); // backup
   }
 
   const char* Name() const override { return "DispatherTableFactory"; }
@@ -330,6 +293,11 @@ class DispatherTableFactory : public TableFactory {
       std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
       std::unique_ptr<TableReader>* table,
       bool prefetch_index_and_filter_in_cache) const override {
+    assert(m_repo.get() == nullptr);
+    if (m_repo) {
+      return Status::InvalidArgument(
+          ROCKSDB_FUNC, "SanitizeOptions() was not called");
+    }
     Footer footer;
     auto s = ReadFooterFromFile(file.get(), nullptr /* prefetch_buffer */,
                                 file_size, &footer);
@@ -346,6 +314,17 @@ class DispatherTableFactory : public TableFactory {
         return factory->NewTableReader(table_reader_options,
                                        std::move(file), file_size, table,
                                        prefetch_index_and_filter_in_cache);
+      } else {
+        std::string msg;
+        msg += "MagicNumber = ";
+        msg += Slice((char*)&iter->first, 8).ToString(true);
+        msg += " -> Factory inst_id = " + factory_name;
+        msg += " is defined but this inst_id is not defined,"
+            " this should was check in SanitizeOptions(),"
+            " but is seems SanitizeOptions() was not called,"
+            " or new MagicNumber was registered after SanitizeOptions()"
+            " but the inst_id was not registered";
+        return Status::Corruption(ROCKSDB_FUNC, msg);
       }
     }
     return Status::NotSupported("Unidentified table format");
@@ -355,6 +334,13 @@ class DispatherTableFactory : public TableFactory {
       const TableBuilderOptions& table_builder_options,
       uint32_t column_family_id, WritableFileWriter* file)
   const override {
+    assert(m_repo.get() == nullptr);
+    if (m_repo) {
+      fprintf(stderr, "FATAL: %s:%d: %s: %s\n",
+              __FILE__, __LINE__, ROCKSDB_FUNC,
+              "SanitizeOptions() was not called");
+      abort();
+    }
     int level = table_builder_options.level;
     if (size_t(level) < m_level_writers.size()) {
       return m_level_writers[level]->NewTableBuilder(
@@ -369,7 +355,74 @@ class DispatherTableFactory : public TableFactory {
   // Sanitizes the specified DB Options.
   Status SanitizeOptions(const DBOptions&, const ColumnFamilyOptions&)
   const override {
-    return Status::OK();
+    Status s;
+    if (m_repo) {
+      // m_repo is non-null indicate BackPatch was not called
+      s = BackPatch();
+    }
+    return s;
+  }
+  Status BackPatch() const try {
+    m_repo->GetMap(&m_all);
+    auto& js = m_json_obj;
+    if (!js.is_object()) {
+      return Status::InvalidArgument(ROCKSDB_FUNC,
+          "DispatherTableFactory options must be object");
+    }
+    auto iter = js.find("default");
+    Status s;
+    if (js.end() != iter) {
+      auto& options = iter.value();
+      m_default_writer = FactoryFor<std::shared_ptr<TableFactory>>::
+        GetOrNewInstance("default", ROCKSDB_FUNC, options, *m_repo, &s);
+      if (!m_default_writer) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "fail get defined default writer = " + options.dump());
+      }
+    } else {
+      auto iter2 = m_all->find("default");
+      if (m_all->end() != iter2) {
+        m_default_writer = iter2->second;
+      } else {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "fail get global default Factory");
+      }
+    }
+    iter = js.find("level_writers");
+    if (js.end() != iter) {
+      if (!iter.value().is_array()) {
+        throw std::invalid_argument(
+            "DispatherTableFactory level_writers must be array");
+      }
+      for (auto& item : js.items()) {
+        auto& options = item.value();
+        auto p = FactoryFor<std::shared_ptr<TableFactory>>::
+        GetOrNewInstance("default", ROCKSDB_FUNC, options, *m_repo, &s);
+        if (!p) {
+          assert(!s.ok());
+          return s;
+        }
+        m_level_writers.push_back(p);
+      }
+    }
+    for (auto& kv : GetDispatherTableMagicNumberMap()) {
+      const std::string& factory_name = kv.second;
+      auto fp_iter = m_all->find(factory_name);
+      if (m_all->end() == fp_iter) {
+        std::string msg;
+        msg += "MagicNumber = ";
+        msg += Slice((char*)&kv.first, 8).ToString(true);
+        msg += " -> Factory inst_id = " + factory_name;
+        msg += " is defined but this inst_id is not defined";
+        return Status::InvalidArgument(ROCKSDB_FUNC, msg);
+      }
+    }
+    m_repo.reset();
+    m_json_obj = json{}; // reset
+    return s;
+  }
+  catch (const std::exception& ex) {
+    return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
   }
 
   std::string GetPrintableTableOptions() const override {
@@ -382,11 +435,13 @@ class DispatherTableFactory : public TableFactory {
       return Status::OK();
   }
 
-  std::vector<std::shared_ptr<TableFactory> > m_level_writers;
-  std::shared_ptr<TableFactory> m_default_writer;
-  std::shared_ptr<std::unordered_map<std::string,
+  mutable std::vector<std::shared_ptr<TableFactory> > m_level_writers;
+  mutable std::shared_ptr<TableFactory> m_default_writer;
+  mutable std::shared_ptr<std::unordered_map<std::string,
                                      std::shared_ptr<TableFactory>>> m_all;
-  std::string m_json_str;
+  mutable std::string m_json_str;
+  mutable json m_json_obj{}; // reset to null after back patched
+  mutable std::unique_ptr<JsonOptionsRepo> m_repo; // for back patch
 };
 
 static std::shared_ptr<TableFactory>

@@ -687,6 +687,17 @@ Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
   JSON_PARSE_REPO(mem_table_rep_factory);
   JSON_PARSE_REPO(table_factory);
 
+  for (auto& kv : *m_impl->table_factory) {
+    if (Slice(kv.second->Name()) == "DispatherTableFactory") {
+      // db_options and cf_options will not be used in
+      // DispatherTableFactory::SanitizeOptions()
+      const DBOptions* db_options = nullptr;
+      const ColumnFamilyOptions* cf_options = nullptr;
+      Status s = kv.second->SanitizeOptions(*db_options, *cf_options);
+      if (!s.ok()) return s;
+    }
+  }
+
   return Status::OK();
 }
 catch (const std::exception& ex) {

@@ -4,12 +4,21 @@
 #include "table/block_based/block_based_table_factory.h"
 #include "table/plain/plain_table_factory.h"
 #include "table/table_builder.h"
-#include "table/format.h"
-#include "rocksdb/persistent_cache.h"
 #include "json.h"
 #include "factoryable.h"
 
 namespace ROCKSDB_NAMESPACE {
+
+static std::shared_ptr<const FilterPolicy>
+NewBloomFilterPolicyJson(const json& js, const JsonOptionsRepo&, Status*) {
+  double bits_per_key = 10;
+  bool use_block_based_builder = false;
+  ROCKSDB_JSON_OPT_PROP(js, bits_per_key);
+  ROCKSDB_JSON_OPT_PROP(js, use_block_based_builder);
+  return std::shared_ptr<const FilterPolicy>(
+      NewBloomFilterPolicy(bits_per_key, use_block_based_builder));
+}
+ROCKSDB_FACTORY_REG("BloomFilter", NewBloomFilterPolicyJson);
 
 struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
   Status UpdateFromJson(const json& js, const JsonOptionsRepo& repo) {

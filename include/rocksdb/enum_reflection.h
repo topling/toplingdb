@@ -34,6 +34,19 @@ Slice enum_name(Enum v, const char* unkown = "") {
 }
 
 template<class Enum>
+std::string enum_stdstr(Enum v) {
+  auto names  = enum_all_names ((Enum*)0);
+  auto values = enum_all_values((Enum*)0);
+  for (size_t i = 0; i < names.second; ++i) {
+    if (v == values[i])
+      return names.first[i].ToString();
+  }
+  return "unkown:" + (sizeof(Enum) <= sizeof(int)
+                          ? std::to_string((int)v)
+                          : std::to_string((long)v));
+}
+
+template<class Enum>
 const char* enum_cstr(Enum v, const char* unkown = "") {
   auto names  = enum_all_names ((Enum*)0);
   auto values = enum_all_values((Enum*)0);

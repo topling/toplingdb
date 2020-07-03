@@ -262,6 +262,8 @@ extern const uint64_t kBlockBasedTableMagicNumber;
 extern const uint64_t kLegacyBlockBasedTableMagicNumber;
 extern const uint64_t kCuckooTableMagicNumber;
 
+// plugin TableFactory can using this function to register
+// its TableMagicNumber
 std::unordered_map<uint64_t, std::string>&
 GetDispatherTableMagicNumberMap() {
   static std::unordered_map<uint64_t, std::string> map {

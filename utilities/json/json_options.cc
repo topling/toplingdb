@@ -603,6 +603,28 @@ struct JsonOptionsRepo::Impl {
   ObjRepo<Options> options;
   ObjRepo<DBOptions> db_options;
   ObjRepo<ColumnFamilyOptions> cf_options;
+
+  template<class Ptr>
+  static void Import(unordered_map<string, Ptr>* field,
+      const char* name, const char* func,
+      const json& main_js, const JsonOptionsRepo& repo) {
+    auto iter = main_js.find(name);
+    if (main_js.end() != iter) {
+      if (!iter.value().is_object()) {
+        throw Status::InvalidArgument(func,
+            string(name) + " must be an object with class and options");
+      }
+      for (auto& item : iter.value().items()) {
+        const string& inst_id = item.key();
+        const auto& value = item.value();
+        Status s;
+        // name and func are just for error report in this call
+        Ptr p = FactoryFor<Ptr>::GetOrNewInstance(name, func, value, repo, &s);
+        if (!s.ok()) throw s;
+        field->emplace(inst_id, p);
+      }
+    }
+  }
 };
 
 JsonOptionsRepo::JsonOptionsRepo() noexcept {
@@ -624,6 +646,9 @@ Status JsonOptionsRepo::Import(const std::string& json_str) {
 Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
   const auto& repo = *this;
 #define JSON_PARSE_REPO(field) \
+  Impl::Import(m_impl->field.get(), #field, ROCKSDB_FUNC, main_js, repo)
+/*
+#define JSON_PARSE_REPO(field) \
   do { \
     auto iter = main_js.find(#field); \
     if (main_js.end() != iter) { \
@@ -640,7 +665,7 @@ Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
       } \
     } \
   } while (0)
-
+*/
   JSON_PARSE_REPO(comparator);
   JSON_PARSE_REPO(env);
   JSON_PARSE_REPO(logger);
@@ -666,6 +691,9 @@ Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
 }
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+catch (const Status& s) {
+  return s;
 }
 
 Status JsonOptionsRepo::Export(nlohmann::json* js) const {

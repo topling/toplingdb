@@ -128,6 +128,8 @@ GetInstance(const char* varname, const char* func_name,
   }
 }
 
+///@param varname just for error report
+///@param func_name just for error report
 template<class InstancePtr>
 InstancePtr
 FactoryFor<InstancePtr>::

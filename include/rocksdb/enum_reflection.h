@@ -139,12 +139,12 @@ std::string enum_str_all_namevalues() {
       " { " #__VA_ARGS__ " }"; \
   } \
   Inline std::pair<const ROCKSDB_NAMESPACE::Slice*, size_t> \
-  enum_all_names(EnumType*) { \
+  enum_all_names(const EnumType*) { \
     static const ROCKSDB_NAMESPACE::Slice s_names[] = { \
       ROCKSDB_PP_MAP(ROCKSDB_PP_SYMBOL, ~, __VA_ARGS__) }; \
     return std::make_pair(s_names, ROCKSDB_PP_EXTENT(s_names)); \
   } \
-  Inline const EnumType* enum_all_values(EnumType*) { \
+  Inline const EnumType* enum_all_values(const EnumType*) { \
     static const EnumType s_values[] = { \
       ROCKSDB_PP_MAP(ROCKSDB_PP_PREPEND, \
                     EnumValueInit<EnumType>() - EnumScope, \
@@ -205,12 +205,12 @@ std::string enum_str_all_namevalues() {
              ROCKSDB_PP_STR_FLATTEN(__VA_ARGS__))) "}"; \
   } \
   Inline std::pair<const ROCKSDB_NAMESPACE::Slice*, size_t> \
-  enum_all_names(EnumType*) { \
+  enum_all_names(const EnumType*) { \
     static const ROCKSDB_NAMESPACE::Slice s_names[] = { \
       ROCKSDB_PP_BIG_MAP(ROCKSDB_PP_SYMBOL, ~, __VA_ARGS__) }; \
     return std::make_pair(s_names, ROCKSDB_PP_EXTENT(s_names)); \
   } \
-  Inline const EnumType* enum_all_values(EnumType*) { \
+  Inline const EnumType* enum_all_values(const EnumType*) { \
     static const EnumType s_values[] = { \
       ROCKSDB_PP_BIG_MAP(ROCKSDB_PP_PREPEND, \
                         EnumValueInit<EnumType>() - EnumScope, \

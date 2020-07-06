@@ -751,7 +751,7 @@ set(SOURCES
         utilities/debug.cc
         utilities/env_mirror.cc
         utilities/env_timed.cc
-        utilities/json/json_options.cc
+        utilities/json/json_plugin_factory.cc
         utilities/json/json_table_factory.cc
         utilities/leveldb_options/leveldb_options.cc
         utilities/memory/memory_util.cc
@@ -1174,7 +1174,7 @@ if(WITH_TESTS)
       test_util/fault_injection_test_env.cc
       test_util/fault_injection_test_fs.cc
       utilities/cassandra/test_utils.cc
-      utilities/json/json_options.cc utilities/json/json_table_factory.cc utilities/json/json_options_repo.h)
+      utilities/json/json_plugin_factory.cc utilities/json/json_table_factory.cc utilities/json/json_plugin_repo.h)
   enable_testing()
   add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
   set(TESTUTILLIB testutillib${ARTIFACT_SUFFIX})

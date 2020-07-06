@@ -22,7 +22,7 @@
 #include "util/compression.h"
 #include "util/rate_limiter.h"
 #include "json.h"
-#include "factoryable.h"
+#include "json_plugin_factory.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -265,7 +265,7 @@ struct DBOptions_Json : DBOptions {
   catch (const std::exception& ex) {
     return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
   }
-  
+
   void SaveToJson(json& js, const JsonOptionsRepo& repo) const {
     ROCKSDB_JSON_SET_PROP(js, paranoid_checks);
     ROCKSDB_JSON_SET_FACT(js, env);
@@ -867,28 +867,29 @@ Status JsonOptionsRepo::Import(const string& json_str) {
 
 Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
   const auto& repo = *this;
-#define JSON_PARSE_REPO(field) \
-  Impl_Import(m_impl->field, #field, ROCKSDB_FUNC, main_js, repo)
-  JSON_PARSE_REPO(comparator);
-  JSON_PARSE_REPO(env);
-  JSON_PARSE_REPO(info_log);
-  JSON_PARSE_REPO(slice_transform);
-  JSON_PARSE_REPO(cache);
-  JSON_PARSE_REPO(persistent_cache);
-  JSON_PARSE_REPO(compaction_filter_factory);
-  JSON_PARSE_REPO(compaction_thread_limiter);
-  JSON_PARSE_REPO(event_listener);
-  JSON_PARSE_REPO(file_checksum_gen_factory);
-  JSON_PARSE_REPO(filter_policy);
-  JSON_PARSE_REPO(flush_block_policy_factory);
-  JSON_PARSE_REPO(merge_operator);
-  JSON_PARSE_REPO(rate_limiter);
-  JSON_PARSE_REPO(sst_file_manager);
-  JSON_PARSE_REPO(statistics);
-  JSON_PARSE_REPO(table_properties_collector_factory);
+#define JSON_PARSE_REPO(Clazz, field) \
+  Impl_Import(m_impl->field, #Clazz, ROCKSDB_FUNC, main_js, repo)
+  JSON_PARSE_REPO(Comparator              , comparator);
+  JSON_PARSE_REPO(Env                     , env);
+  JSON_PARSE_REPO(Logger                  , info_log);
+  JSON_PARSE_REPO(SliceTransform          , slice_transform);
+  JSON_PARSE_REPO(Cache                   , cache);
+  JSON_PARSE_REPO(PersistentCache         , persistent_cache);
+  JSON_PARSE_REPO(CompactionFilterFactory , compaction_filter_factory);
+  JSON_PARSE_REPO(ConcurrentTaskLimiter   , compaction_thread_limiter);
+  JSON_PARSE_REPO(EventListener           , event_listener);
+  JSON_PARSE_REPO(FileChecksumGenFactory  , file_checksum_gen_factory);
+  JSON_PARSE_REPO(FilterPolicy            , filter_policy);
+  JSON_PARSE_REPO(FlushBlockPolicyFactory , flush_block_policy_factory);
+  JSON_PARSE_REPO(MergeOperator           , merge_operator);
+  JSON_PARSE_REPO(RateLimiter             , rate_limiter);
+  JSON_PARSE_REPO(SstFileManager          , sst_file_manager);
+  JSON_PARSE_REPO(Statistics              , statistics);
+  JSON_PARSE_REPO(TablePropertiesCollectorFactory,
+                  table_properties_collector_factory);
 
-  JSON_PARSE_REPO(mem_table_rep_factory);
-  JSON_PARSE_REPO(table_factory);
+  JSON_PARSE_REPO(MemTableRepFactory      , mem_table_rep_factory);
+  JSON_PARSE_REPO(TableFactory            , table_factory);
 
   for (auto& kv : *m_impl->table_factory.name2p) {
     if (Slice(kv.second->Name()) == "DispatherTableFactory") {

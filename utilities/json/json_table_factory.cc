@@ -5,7 +5,7 @@
 #include "table/plain/plain_table_factory.h"
 #include "table/table_builder.h"
 #include "json.h"
-#include "factoryable.h"
+#include "json_plugin_factory.h"
 
 namespace ROCKSDB_NAMESPACE {
 

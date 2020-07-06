@@ -1,6 +1,9 @@
 //
 // Created by leipeng on 2020/7/2.
 //
+// json_plugin_repo.h    is mostly for plugin users
+// json_plugin_factory.h is mostly for plugin developers
+//
 #pragma once
 
 #include "json_fwd.h"

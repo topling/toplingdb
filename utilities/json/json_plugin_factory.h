@@ -1,14 +1,16 @@
 //
 // Created by leipeng on 2020-06-29.
 //
-
+// json_plugin_repo.h    is mostly for plugin users
+// json_plugin_factory.h is mostly for plugin developers
+//
 #pragma once
 
 #include <memory>
 #include <unordered_map>
 
 #include "json_fwd.h"
-#include "json_options_repo.h"
+#include "json_plugin_repo.h"
 #include "rocksdb/enum_reflection.h"
 #include "rocksdb/preproc.h"
 #include "rocksdb/status.h"

@@ -34,8 +34,7 @@ using std::string;
 struct JsonOptionsRepo::Impl {
   struct ObjInfo {
     string name;
-    //string clazz;
-    json options;
+    json params; // { class : "class_name", options : "options..." }
   };
   template<class Ptr>
   struct ObjMap {
@@ -94,7 +93,7 @@ struct JsonOptionsRepo::Impl {
   auto __iter = p2name.find(prop); \
   if (p2name.end() != __iter) { \
     if (__iter->second.name.empty()) \
-      inner = __iter->second.options; \
+      inner = __iter->second.params; \
     else \
       inner = "${" + __iter->second.name + "}"; \
   } else { \
@@ -828,20 +827,21 @@ ROCKSDB_FACTORY_REG("HashLinkList", NewHashLinkListMemTableRepFactoryJson);
 /////////////////////////////////////////////////////////////////////////////
 template<class Ptr>
 static void Impl_Import(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
-                   const char* name, const char* func,
+                   const char* name,
                    const json& main_js, const JsonOptionsRepo& repo) {
   auto iter = main_js.find(name);
   if (main_js.end() != iter) {
     if (!iter.value().is_object()) {
-      throw Status::InvalidArgument(func,
-                                    string(name) + " must be an object with class and options");
+      throw Status::InvalidArgument(ROCKSDB_FUNC,
+          string(name) + " must be an object with class and options");
     }
     for (auto& item : iter.value().items()) {
       const string& inst_id = item.key();
       const json& value = item.value();
       Status s;
       // name and func are just for error report in this call
-      Ptr p = FactoryFor<Ptr>::GetOrNewInstance(name, func, value, repo, &s);
+      Ptr p = FactoryFor<Ptr>::GetOrNewInstance(
+                name, ROCKSDB_FUNC, value, repo, &s);
       if (!s.ok()) throw s;
       field.name2p->emplace(inst_id, p);
       field.p2name.emplace(p, JsonOptionsRepo::Impl::ObjInfo{inst_id, value});
@@ -867,29 +867,29 @@ Status JsonOptionsRepo::Import(const string& json_str) {
 
 Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
   const auto& repo = *this;
-#define JSON_PARSE_REPO(Clazz, field) \
-  Impl_Import(m_impl->field, #Clazz, ROCKSDB_FUNC, main_js, repo)
-  JSON_PARSE_REPO(Comparator              , comparator);
-  JSON_PARSE_REPO(Env                     , env);
-  JSON_PARSE_REPO(Logger                  , info_log);
-  JSON_PARSE_REPO(SliceTransform          , slice_transform);
-  JSON_PARSE_REPO(Cache                   , cache);
-  JSON_PARSE_REPO(PersistentCache         , persistent_cache);
-  JSON_PARSE_REPO(CompactionFilterFactory , compaction_filter_factory);
-  JSON_PARSE_REPO(ConcurrentTaskLimiter   , compaction_thread_limiter);
-  JSON_PARSE_REPO(EventListener           , event_listener);
-  JSON_PARSE_REPO(FileChecksumGenFactory  , file_checksum_gen_factory);
-  JSON_PARSE_REPO(FilterPolicy            , filter_policy);
-  JSON_PARSE_REPO(FlushBlockPolicyFactory , flush_block_policy_factory);
-  JSON_PARSE_REPO(MergeOperator           , merge_operator);
-  JSON_PARSE_REPO(RateLimiter             , rate_limiter);
-  JSON_PARSE_REPO(SstFileManager          , sst_file_manager);
-  JSON_PARSE_REPO(Statistics              , statistics);
-  JSON_PARSE_REPO(TablePropertiesCollectorFactory,
-                  table_properties_collector_factory);
+#define JSON_IMPORT_REPO(Clazz, field) \
+  Impl_Import(m_impl->field, #Clazz, main_js, repo)
+  JSON_IMPORT_REPO(Comparator              , comparator);
+  JSON_IMPORT_REPO(Env                     , env);
+  JSON_IMPORT_REPO(Logger                  , info_log);
+  JSON_IMPORT_REPO(SliceTransform          , slice_transform);
+  JSON_IMPORT_REPO(Cache                   , cache);
+  JSON_IMPORT_REPO(PersistentCache         , persistent_cache);
+  JSON_IMPORT_REPO(CompactionFilterFactory , compaction_filter_factory);
+  JSON_IMPORT_REPO(ConcurrentTaskLimiter   , compaction_thread_limiter);
+  JSON_IMPORT_REPO(EventListener           , event_listener);
+  JSON_IMPORT_REPO(FileChecksumGenFactory  , file_checksum_gen_factory);
+  JSON_IMPORT_REPO(FilterPolicy            , filter_policy);
+  JSON_IMPORT_REPO(FlushBlockPolicyFactory , flush_block_policy_factory);
+  JSON_IMPORT_REPO(MergeOperator           , merge_operator);
+  JSON_IMPORT_REPO(RateLimiter             , rate_limiter);
+  JSON_IMPORT_REPO(SstFileManager          , sst_file_manager);
+  JSON_IMPORT_REPO(Statistics              , statistics);
+  JSON_IMPORT_REPO(TablePropertiesCollectorFactory,
+                   table_properties_collector_factory);
 
-  JSON_PARSE_REPO(MemTableRepFactory      , mem_table_rep_factory);
-  JSON_PARSE_REPO(TableFactory            , table_factory);
+  JSON_IMPORT_REPO(MemTableRepFactory      , mem_table_rep_factory);
+  JSON_IMPORT_REPO(TableFactory            , table_factory);
 
   for (auto& kv : *m_impl->table_factory.name2p) {
     if (Slice(kv.second->Name()) == "DispatherTableFactory") {
@@ -911,8 +911,40 @@ catch (const Status& s) {
   return s;
 }
 
-Status JsonOptionsRepo::Export(nlohmann::json* js) const {
+template<class Ptr>
+static void Impl_Export(const JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
+                   const char* name, json& main_js) {
+  auto& field_js = main_js[name];
+  for (auto& kv: field.p2name) {
+    auto& params_js = field_js[kv.second.name];
+    params_js = kv.second.params;
+  }
+}
+Status JsonOptionsRepo::Export(nlohmann::json* main_js) const {
   assert(NULL != js);
+#define JSON_EXPORT_REPO(Clazz, field) \
+  Impl_Export(m_impl->field, #Clazz, *main_js)
+  JSON_EXPORT_REPO(Comparator              , comparator);
+  JSON_EXPORT_REPO(Env                     , env);
+  JSON_EXPORT_REPO(Logger                  , info_log);
+  JSON_EXPORT_REPO(SliceTransform          , slice_transform);
+  JSON_EXPORT_REPO(Cache                   , cache);
+  JSON_EXPORT_REPO(PersistentCache         , persistent_cache);
+  JSON_EXPORT_REPO(CompactionFilterFactory , compaction_filter_factory);
+  JSON_EXPORT_REPO(ConcurrentTaskLimiter   , compaction_thread_limiter);
+  JSON_EXPORT_REPO(EventListener           , event_listener);
+  JSON_EXPORT_REPO(FileChecksumGenFactory  , file_checksum_gen_factory);
+  JSON_EXPORT_REPO(FilterPolicy            , filter_policy);
+  JSON_EXPORT_REPO(FlushBlockPolicyFactory , flush_block_policy_factory);
+  JSON_EXPORT_REPO(MergeOperator           , merge_operator);
+  JSON_EXPORT_REPO(RateLimiter             , rate_limiter);
+  JSON_EXPORT_REPO(SstFileManager          , sst_file_manager);
+  JSON_EXPORT_REPO(Statistics              , statistics);
+  JSON_EXPORT_REPO(TablePropertiesCollectorFactory,
+                   table_properties_collector_factory);
+
+  JSON_EXPORT_REPO(MemTableRepFactory      , mem_table_rep_factory);
+  JSON_EXPORT_REPO(TableFactory            , table_factory);
   return Status::OK();
 }
 

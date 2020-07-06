@@ -298,6 +298,7 @@ class DispatherTableFactory : public TableFactory {
   const char* Name() const override { return "DispatherTableFactory"; }
 
   Status NewTableReader(
+      const ReadOptions& ro,
       const TableReaderOptions& table_reader_options,
       std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
       std::unique_ptr<TableReader>* table,
@@ -308,7 +309,8 @@ class DispatherTableFactory : public TableFactory {
           ROCKSDB_FUNC, "SanitizeOptions() was not called");
     }
     Footer footer;
-    auto s = ReadFooterFromFile(file.get(), nullptr /* prefetch_buffer */,
+    auto s = ReadFooterFromFile(IOOptions(),
+                                file.get(), nullptr /* prefetch_buffer */,
                                 file_size, &footer);
     if (!s.ok()) {
       return s;
@@ -320,7 +322,7 @@ class DispatherTableFactory : public TableFactory {
       auto fp_iter = m_all->find(factory_name);
       if (m_all->end() != fp_iter) {
         const std::shared_ptr<TableFactory>& factory = fp_iter->second;
-        return factory->NewTableReader(table_reader_options,
+        return factory->NewTableReader(ro, table_reader_options,
                                        std::move(file), file_size, table,
                                        prefetch_index_and_filter_in_cache);
       } else {

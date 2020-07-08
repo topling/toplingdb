@@ -53,15 +53,19 @@ public:
     struct Impl;
   };
 };
+template<class Object>
+using PluginFactorySP = PluginFactory<std::shared_ptr<Object> >;
 
 // use SerDeFunc as plugin, register SerDeFunc as plugin
 template<class Object>
 class SerDeFunc {
  public:
   virtual ~SerDeFunc() {}
-  virtual void Serialize(const Object&, std::string* output) const = 0;
-  virtual void DeSerialize(Object*, const Slice& input) const = 0;
+  virtual Status Serialize(const Object&, std::string* output) const = 0;
+  virtual Status DeSerialize(Object*, const Slice& input) const = 0;
 };
+template<class Object>
+using SerDeFactory = PluginFactory<const SerDeFunc<Object>*>;
 
 template<class PluginPtr>
 struct PluginFactory<PluginPtr>::AutoReg::Impl {

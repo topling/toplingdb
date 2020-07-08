@@ -22,28 +22,27 @@ class JsonOptionsRepo;
 
 ///@note on principle, the factory itself is stateless, but its product
 /// can has states, sometimes we need factory of factory, in this case,
-/// just let the factory being FactoryFor:
-/// class SomeClass : public FactoryFor<SomeClass*> {
-///    ...
-/// };
-template<class InstancePtr>
-class FactoryFor {
+/// just let the factory being PluginFactory:
+/// class SomeClass : public PluginFactory<SomeClass*> {...};
+/// class SomeClass : public PluginFactory<shared_ptr<SomeClass> > {...};
+template<class PluginPtr>
+class PluginFactory {
 public:
-  virtual ~FactoryFor() {}
-  static InstancePtr CreateInstance(const std::string& class_name, const json&,
-                                    const JsonOptionsRepo&, Status*);
-  static InstancePtr GetOrNewInstance(const char* varname, const char* func_name,
-                                      const json&, const JsonOptionsRepo&, Status*);
+  virtual ~PluginFactory() {}
+  static PluginPtr CreatePlugin(const std::string& class_name, const json&,
+                                const JsonOptionsRepo&, Status*);
+  static PluginPtr GetOrNewPlugin(const char* varname, const char* func_name,
+                                  const json&, const JsonOptionsRepo&, Status*);
 
-  static InstancePtr GetInstance(const char* varname, const char* func_name,
-                                 const json&, const JsonOptionsRepo&, Status*);
+  static PluginPtr GetPlugin(const char* varname, const char* func_name,
+                             const json&, const JsonOptionsRepo&, Status*);
 
   struct AutoReg {
     AutoReg(const AutoReg&) = delete;
     AutoReg(AutoReg&&) = delete;
     AutoReg& operator=(AutoReg&&) = delete;
     AutoReg& operator=(const AutoReg&) = delete;
-    typedef InstancePtr (*CreatorFunc)(const json&,const JsonOptionsRepo&,Status*);
+    typedef PluginPtr (*CreatorFunc)(const json&,const JsonOptionsRepo&,Status*);
     using NameToFuncMap = std::unordered_map<std::string, CreatorFunc>;
     AutoReg(Slice class_name, CreatorFunc creator);
     ~AutoReg();
@@ -52,15 +51,24 @@ public:
   };
 };
 
-template<class InstancePtr>
-struct FactoryFor<InstancePtr>::AutoReg::Impl {
+// use SerDeFunc as plugin, register SerDeFunc as plugin
+template<class Object>
+class SerDeFunc {
+ public:
+  virtual ~SerDeFunc() {}
+  virtual void Serialize(const Object&, std::string* output) const = 0;
+  virtual void DeSerialize(Object*, const Slice& input) const = 0;
+};
+
+template<class PluginPtr>
+struct PluginFactory<PluginPtr>::AutoReg::Impl {
   NameToFuncMap func_map;
-  std::unordered_map<std::string, InstancePtr> inst_map;
+  std::unordered_map<std::string, PluginPtr> inst_map;
   static Impl& s_singleton() { static Impl imp; return imp; }
 };
 
-template<class InstancePtr>
-FactoryFor<InstancePtr>::
+template<class PluginPtr>
+PluginFactory<PluginPtr>::
 AutoReg::AutoReg(Slice class_name, CreatorFunc creator) {
   auto& imp = Impl::s_singleton();
   auto ib = imp.func_map.insert(std::make_pair(class_name.ToString(), creator));
@@ -72,45 +80,45 @@ AutoReg::AutoReg(Slice class_name, CreatorFunc creator) {
   this->ipos = ib.first;
 }
 
-template<class InstancePtr>
-FactoryFor<InstancePtr>::AutoReg::~AutoReg() {
+template<class PluginPtr>
+PluginFactory<PluginPtr>::AutoReg::~AutoReg() {
   auto& imp = Impl::s_singleton();
   imp.func_map.erase(ipos);
 }
 
-template<class InstancePtr>
-InstancePtr
-FactoryFor<InstancePtr>::
-CreateInstance(const std::string& class_name, const json& js,
-               const JsonOptionsRepo& repo, Status* st) {
+template<class PluginPtr>
+PluginPtr
+PluginFactory<PluginPtr>::
+CreatePlugin(const std::string& class_name, const json& js,
+             const JsonOptionsRepo& repo, Status* st) {
   auto& imp = AutoReg::Impl::s_singleton();
   auto iter = imp.func_map.find(class_name);
   if (imp.func_map.end() != iter) {
     return iter->second(js, repo, st);
   }
   else {
-    return InstancePtr(nullptr);
+    return PluginPtr(nullptr);
   }
 }
 
-template<class InstancePtr>
-InstancePtr
-FactoryFor<InstancePtr>::
-GetInstance(const char* varname, const char* func_name,
-            const json& js, const JsonOptionsRepo& repo, Status* s) {
+template<class PluginPtr>
+PluginPtr
+PluginFactory<PluginPtr>::
+GetPlugin(const char* varname, const char* func_name,
+          const json& js, const JsonOptionsRepo& repo, Status* s) {
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
       *s = Status::NotFound(
           func_name, std::string(varname) + " inst_id/class_name is empty");
-	  return InstancePtr(nullptr);
+	  return PluginPtr(nullptr);
     }
-    InstancePtr p(nullptr);
+    PluginPtr p(nullptr);
     if ('$' == str_val[0]) {
       if (str_val.size() < 3) {
         *s = Status::NotFound(func_name,
                               std::string(varname) + " inst_id is too short");
-        return InstancePtr(nullptr);
+        return PluginPtr(nullptr);
       }
       const auto inst_id = '{' == str_val[1]
                          ? str_val.substr(2, str_val.size() - 3)
@@ -126,52 +134,49 @@ GetInstance(const char* varname, const char* func_name,
   else {
     *s = Status::InvalidArgument(func_name,
       std::string(varname) + " must be a string for reference to object");
-	return InstancePtr(nullptr);
+	return PluginPtr(nullptr);
   }
 }
 
 ///@param varname just for error report
 ///@param func_name just for error report
-template<class InstancePtr>
-InstancePtr
-FactoryFor<InstancePtr>::
-GetOrNewInstance(const char* varname, const char* func_name,
-                 const json& js, const JsonOptionsRepo& repo, Status* s) {
+template<class PluginPtr>
+PluginPtr
+PluginFactory<PluginPtr>::
+GetOrNewPlugin(const char* varname, const char* func_name,
+               const json& js, const JsonOptionsRepo& repo, Status* s) {
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
       *s = Status::NotFound(
           func_name, std::string(varname) + " inst_id/class_name is empty");
-      return InstancePtr(nullptr);
+      return PluginPtr(nullptr);
     }
     if ('$' == str_val[0]) {
       if (str_val.size() < 3) {
         *s = Status::NotFound(func_name,
                                 std::string(varname) + " inst_id is too short");
-        return InstancePtr(nullptr);
+        return PluginPtr(nullptr);
       }
       const auto inst_id = '{' == str_val[1]
                          ? str_val.substr(2, str_val.size() - 3)
                          : str_val.substr(1, str_val.size() - 1);
-      InstancePtr p;
+      PluginPtr p;
       if (!repo.Get(inst_id, &p)) {
         *s = Status::NotFound(func_name,
                               std::string(varname) + "inst_id = " + inst_id);
       }
       return p;
-    } else { // CreateInstance with empty json options
+    } else { // CreatePlugin with empty json options
       const std::string& clazz_name = str_val;
-      return CreateInstance(clazz_name, json{}, repo, s);
+      return CreatePlugin(clazz_name, json{}, repo, s);
     }
   } else {
     const std::string& clazz_name = js.at("class").get<std::string>();
     const json& options = js.at("options");
-    return CreateInstance(clazz_name, options, repo, s);
+    return CreatePlugin(clazz_name, options, repo, s);
   }
 }
-
-template<class Instance>
-using FactoryForSP = FactoryFor<std::shared_ptr<Instance> >;
 
 const json& jsonRefType();
 const JsonOptionsRepo& repoRefType();
@@ -179,7 +184,7 @@ const JsonOptionsRepo& repoRefType();
 ///@param Name     string of factory class_name
 ///@param Creator  must return base class ptr
 #define ROCKSDB_FACTORY_REG(Name, Creator) \
-  FactoryFor<decltype(Creator(jsonRefType(),repoRefType(),(Status*)0))>:: \
+  PluginFactory<decltype(Creator(jsonRefType(),repoRefType(),(Status*)0))>:: \
   AutoReg ROCKSDB_PP_CAT_3(g_reg_factory_,Creator,__LINE__)(Name,Creator)
 
 //////////////////////////////////////////////////////////////////////////////
@@ -214,8 +219,8 @@ const JsonOptionsRepo& repoRefType();
 
 #define ROCKSDB_JSON_OPT_FACT_IMPL(js, prop) do { \
     Status __status; \
-    prop = FactoryFor<decltype(prop)>:: \
-        GetOrNewInstance(#prop, ROCKSDB_FUNC, js, repo, &__status); \
+    prop = PluginFactory<decltype(prop)>:: \
+        GetOrNewPlugin(#prop, ROCKSDB_FUNC, js, repo, &__status); \
     if (!__status.ok()) return __status; \
   } while (0)
 
@@ -225,5 +230,4 @@ const JsonOptionsRepo& repoRefType();
       ROCKSDB_JSON_OPT_FACT_IMPL(__iter.value(), prop); \
   }} while (0)
 
-
-}
+} // ROCKSDB_NAMESPACE

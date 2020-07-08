@@ -384,7 +384,7 @@ class DispatherTableFactory : public TableFactory {
     Status s;
     if (js.end() != iter) {
       auto& options = iter.value();
-      m_default_writer = FactoryFor<std::shared_ptr<TableFactory>>::
+      m_default_writer = PluginFactory<std::shared_ptr<TableFactory>>::
         GetOrNewInstance("default", ROCKSDB_FUNC, options, *m_repo, &s);
       if (!m_default_writer) {
         return Status::InvalidArgument(ROCKSDB_FUNC,
@@ -407,7 +407,7 @@ class DispatherTableFactory : public TableFactory {
       }
       for (auto& item : js.items()) {
         auto& options = item.value();
-        auto p = FactoryFor<std::shared_ptr<TableFactory>>::
+        auto p = PluginFactory<std::shared_ptr<TableFactory>>::
         GetOrNewInstance("default", ROCKSDB_FUNC, options, *m_repo, &s);
         if (!p) {
           assert(!s.ok());

@@ -695,7 +695,7 @@ NewGenericRateLimiterFromJson(const json& js, const JsonOptionsRepo& repo, Statu
   auto iter = js.find("env");
   if (js.end() != iter) {
     const auto& env_js = iter.value();
-    env = FactoryFor<Env*>::GetInstance("env", ROCKSDB_FUNC, env_js, repo, s);
+    env = PluginFactory<Env*>::GetInstance("env", ROCKSDB_FUNC, env_js, repo, s);
     if (!env)
       return nullptr;
   }
@@ -840,7 +840,7 @@ static void Impl_Import(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
       const json& value = item.value();
       Status s;
       // name and func are just for error report in this call
-      Ptr p = FactoryFor<Ptr>::GetOrNewInstance(
+      Ptr p = PluginFactory<Ptr>::GetOrNewInstance(
                 name, ROCKSDB_FUNC, value, repo, &s);
       if (!s.ok()) throw s;
       field.name2p->emplace(inst_id, p);

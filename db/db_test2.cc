@@ -144,6 +144,37 @@ INSTANTIATE_TEST_CASE_P(TestReadOnlyWithCompressedCache,
                         TestReadOnlyWithCompressedCache,
                         ::testing::Combine(::testing::Values(-1, 100),
                                            ::testing::Bool()));
+class PartitionedIndexTestListener : public EventListener {
+ public:
+  void OnFlushCompleted(DB* /*db*/, const FlushJobInfo& info) override {
+    ASSERT_GT(info.table_properties.index_partitions, 1);
+    ASSERT_EQ(info.table_properties.index_key_is_user_key, 0);
+  }
+};
+
+TEST_F(DBTest2, PartitionedIndexUserToInternalKey) {
+  BlockBasedTableOptions table_options;
+  Options options = CurrentOptions();
+  table_options.index_type = BlockBasedTableOptions::kTwoLevelIndexSearch;
+  PartitionedIndexTestListener* listener = new PartitionedIndexTestListener();
+  options.table_factory.reset(NewBlockBasedTableFactory(table_options));
+  options.listeners.emplace_back(listener);
+  std::vector<const Snapshot*> snapshots;
+  Reopen(options);
+  Random rnd(301);
+
+  for (int i = 0; i < 3000; i++) {
+    int j = i % 30;
+    std::string value = RandomString(&rnd, 10500);
+    ASSERT_OK(Put("keykey_" + std::to_string(j), value));
+    snapshots.push_back(db_->GetSnapshot());
+  }
+  Flush();
+  for (auto s : snapshots) {
+    db_->ReleaseSnapshot(s);
+  }
+}
+
 #endif  // ROCKSDB_LITE
 
 class PrefixFullBloomWithReverseComparator
@@ -1725,7 +1756,7 @@ TEST_F(DBTest2, DuplicateSnapshot) {
   Options options;
   options = CurrentOptions(options);
   std::vector<const Snapshot*> snapshots;
-  DBImpl* dbi = reinterpret_cast<DBImpl*>(db_);
+  DBImpl* dbi = static_cast_with_check<DBImpl>(db_);
   SequenceNumber oldest_ww_snap, first_ww_snap;
 
   Put("k", "v");  // inc seq
@@ -2068,6 +2099,10 @@ class MockPersistentCache : public PersistentCache {
     return PersistentCache::StatsType();
   }
 
+  uint64_t NewId() override {
+    return last_id_.fetch_add(1, std::memory_order_relaxed);
+  }
+
   Status Insert(const Slice& page_key, const char* data,
                 const size_t size) override {
     MutexLock _(&lock_);
@@ -2108,6 +2143,7 @@ class MockPersistentCache : public PersistentCache {
   const bool is_compressed_ = true;
   size_t size_ = 0;
   const size_t max_size_ = 10 * 1024;  // 10KiB
+  std::atomic<uint64_t> last_id_{1};
 };
 
 #ifdef OS_LINUX
@@ -2231,10 +2267,7 @@ TEST_F(DBTest2, TestPerfContextIterCpuTime) {
 }
 #endif  // OS_LINUX
 
-// GetUniqueIdFromFile is not implemented on these platforms. Persistent cache
-// breaks when that function is not implemented and no regular block cache is
-// provided.
-#if !defined(OS_SOLARIS) && !defined(OS_WIN)
+#if !defined OS_SOLARIS
 TEST_F(DBTest2, PersistentCache) {
   int num_iter = 80;
 
@@ -2298,7 +2331,7 @@ TEST_F(DBTest2, PersistentCache) {
     }
   }
 }
-#endif  // !defined(OS_SOLARIS) && !defined(OS_WIN)
+#endif  // !defined OS_SOLARIS
 
 namespace {
 void CountSyncPoint() {
@@ -3564,7 +3597,7 @@ TEST_F(DBTest2, TraceAndReplay) {
 
   // Open another db, replay, and verify the data
   std::string value;
-  std::string dbname2 = test::TmpDir(env_) + "/db_replay";
+  std::string dbname2 = test::PerThreadDBPath(env_, "/db_replay");
   ASSERT_OK(DestroyDB(dbname2, options));
 
   // Using a different name than db2, to pacify infer's use-after-lifetime
@@ -3638,7 +3671,7 @@ TEST_F(DBTest2, TraceWithLimit) {
   ASSERT_OK(Put(0, "c", "1"));
   ASSERT_OK(db_->EndTrace());
 
-  std::string dbname2 = test::TmpDir(env_) + "/db_replay2";
+  std::string dbname2 = test::PerThreadDBPath(env_, "/db_replay2");
   std::string value;
   ASSERT_OK(DestroyDB(dbname2, options));
 
@@ -3707,7 +3740,7 @@ TEST_F(DBTest2, TraceWithSampling) {
   ASSERT_OK(Put(0, "e", "5"));
   ASSERT_OK(db_->EndTrace());
 
-  std::string dbname2 = test::TmpDir(env_) + "/db_replay_sampling";
+  std::string dbname2 = test::PerThreadDBPath(env_, "/db_replay_sampling");
   std::string value;
   ASSERT_OK(DestroyDB(dbname2, options));
 
@@ -4174,7 +4207,7 @@ TEST_F(DBTest2, TestGetColumnFamilyHandleUnlocked) {
   CreateColumnFamilies({"test1", "test2"}, Options());
   ASSERT_EQ(handles_.size(), 2);
 
-  DBImpl* dbi = reinterpret_cast<DBImpl*>(db_);
+  DBImpl* dbi = static_cast_with_check<DBImpl>(db_);
   port::Thread user_thread1([&]() {
     auto cfh = dbi->GetColumnFamilyHandleUnlocked(handles_[0]->GetID());
     ASSERT_EQ(cfh->GetID(), handles_[0]->GetID());

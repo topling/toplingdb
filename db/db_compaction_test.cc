@@ -3223,7 +3223,6 @@ TEST_P(DBCompactionTestWithParam, IntraL0Compaction) {
       ASSERT_OK(Put(Key(i + 1), value));
     }
     ASSERT_OK(Flush());
-    ASSERT_EQ(i + 1, TestGetTickerCount(options, BLOCK_CACHE_INDEX_MISS));
   }
   dbfull()->TEST_WaitForCompact();
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
@@ -5276,7 +5275,6 @@ TEST_P(DBCompactionTestWithParam,
   // Put one key, to make biggest log sequence number in this memtable is bigger
   // than sst which would be ingested in next step.
   ASSERT_OK(Put(Key(2), "b"));
-  ASSERT_EQ(10, NumTableFilesAtLevel(0));
   dbfull()->TEST_WaitForCompact();
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
   std::vector<std::vector<FileMetaData>> level_to_files;

@@ -662,7 +662,7 @@ Status GetStringFromStruct(
     std::string* opt_string) {
   assert(opt_string);
   opt_string->clear();
-  for (const auto iter : type_info) {
+  for (const auto& iter : type_info) {
     const auto& opt_info = iter.second;
     // If the option is no longer used in rocksdb and marked as deprecated,
     // we skip it in the serialization.
@@ -936,7 +936,7 @@ Status GetTableFactoryFromMap(
     const std::unordered_map<std::string, std::string>& opt_map,
     std::shared_ptr<TableFactory>* table_factory) {
   Status s;
-  if (factory_name == BlockBasedTableFactory().Name()) {
+  if (factory_name == BlockBasedTableFactory::kName) {
     BlockBasedTableOptions bbt_opt;
     s = GetBlockBasedTableOptionsFromMap(
         config_options, BlockBasedTableOptions(), opt_map, &bbt_opt);
@@ -945,7 +945,7 @@ Status GetTableFactoryFromMap(
     }
     table_factory->reset(new BlockBasedTableFactory(bbt_opt));
     return s;
-  } else if (factory_name == PlainTableFactory().Name()) {
+  } else if (factory_name == PlainTableFactory::kName) {
     PlainTableOptions pt_opt;
     s = GetPlainTableOptionsFromMap(config_options, PlainTableOptions(),
                                     opt_map, &pt_opt);

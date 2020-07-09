@@ -11,10 +11,12 @@
 #include <atomic>
 #include <sstream>
 #include <string>
+
 #include "port/port.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
 #include "rocksdb/listener.h"
+#include "rocksdb/options.h"
 #include "rocksdb/rate_limiter.h"
 #include "util/aligned_buffer.h"
 
@@ -37,10 +39,10 @@ class RandomAccessFileReader {
                               const FileOperationInfo::TimePoint& start_ts,
                               const FileOperationInfo::TimePoint& finish_ts,
                               const Status& status) const {
-    FileOperationInfo info(file_name_, start_ts, finish_ts);
+    FileOperationInfo info(FileOperationType::kRead, file_name_, start_ts,
+                           finish_ts, status);
     info.offset = offset;
     info.length = length;
-    info.status = status;
 
     for (auto& listener : listeners_) {
       listener->OnFileReadFinish(info);
@@ -132,7 +134,7 @@ class RandomAccessFileReader {
 
   FSRandomAccessFile* file() { return file_.get(); }
 
-  std::string file_name() const { return file_name_; }
+  const std::string& file_name() const { return file_name_; }
 
   bool use_direct_io() const { return file_->use_direct_io(); }
 

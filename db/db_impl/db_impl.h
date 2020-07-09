@@ -350,11 +350,19 @@ class DBImpl : public DB {
 
   virtual Status GetDbIdentityFromIdentityFile(std::string* identity) const;
 
+  virtual Status GetDbSessionId(std::string& session_id) const override;
+
   ColumnFamilyHandle* DefaultColumnFamily() const override;
 
   ColumnFamilyHandle* PersistentStatsColumnFamily() const;
 
   virtual Status Close() override;
+
+  virtual Status DisableFileDeletions() override;
+
+  virtual Status EnableFileDeletions(bool force) override;
+
+  virtual bool IsFileDeletionsEnabled() const;
 
   Status GetStatsHistory(
       uint64_t start_time, uint64_t end_time,
@@ -363,9 +371,6 @@ class DBImpl : public DB {
 #ifndef ROCKSDB_LITE
   using DB::ResetStats;
   virtual Status ResetStats() override;
-  virtual Status DisableFileDeletions() override;
-  virtual Status EnableFileDeletions(bool force) override;
-  virtual int IsFileDeletionsEnabled() const;
   // All the returned filenames start with "/"
   virtual Status GetLiveFiles(std::vector<std::string>&,
                               uint64_t* manifest_file_size,
@@ -392,6 +397,9 @@ class DBImpl : public DB {
 
   virtual void GetLiveFilesMetaData(
       std::vector<LiveFileMetaData>* metadata) override;
+
+  virtual Status GetLiveFilesChecksumInfo(
+      FileChecksumList* checksum_list) override;
 
   // Obtains the meta data of the specified column family of the DB.
   // Status::NotFound() will be returned if the current DB does not have
@@ -986,6 +994,9 @@ class DBImpl : public DB {
  protected:
   const std::string dbname_;
   std::string db_id_;
+  // db_session_id_ is an identifier that gets reset
+  // every time the DB is opened
+  std::string db_session_id_;
   std::unique_ptr<VersionSet> versions_;
   // Flag to check whether we allocated and own the info log file
   bool own_info_log_;
@@ -1167,6 +1178,10 @@ class DBImpl : public DB {
   // bump up the version set's next_file_number_ to be 1 + largest_file_number.
   Status FinishBestEffortsRecovery();
 
+  // SetDbSessionId() should be called in the constuctor DBImpl()
+  // to ensure that db_session_id_ gets updated every time the DB is opened
+  void SetDbSessionId();
+
  private:
   friend class DB;
   friend class ErrorHandler;
@@ -1192,7 +1207,7 @@ class DBImpl : public DB {
   friend class StatsHistoryTest_PersistentStatsCreateColumnFamilies_Test;
 #ifndef NDEBUG
   friend class DBTest2_ReadCallbackTest_Test;
-  friend class WriteCallbackTest_WriteWithCallbackTest_Test;
+  friend class WriteCallbackPTest_WriteWithCallbackTest_Test;
   friend class XFTransactionWriteHandler;
   friend class DBBlobIndexTest;
   friend class WriteUnpreparedTransactionTest_RecoveryTest_Test;
@@ -1784,6 +1799,8 @@ class DBImpl : public DB {
       autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE>* sorted_keys,
       SuperVersion* sv, SequenceNumber snap_seqnum, ReadCallback* callback,
       bool* is_blob_index);
+
+  Status DisableFileDeletionsWithLock();
 
   // table_cache_ provides its own synchronization
   std::shared_ptr<Cache> table_cache_;

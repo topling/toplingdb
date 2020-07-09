@@ -1,4 +1,3 @@
-
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -6,10 +5,9 @@
 //
 #ifndef ROCKSDB_LITE
 
-#include "tools/sst_dump_tool_imp.h"
+#include "rocksdb/sst_dump_tool.h"
 
 #include <cinttypes>
-#include <chrono>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -42,33 +40,10 @@
 # include <table/terark_zip_weak_function.h>
 #endif
 #include "port/port.h"
+#include "rocksdb/utilities/ldb_cmd.h"
+#include "table/sst_file_dumper.h"
 
 namespace ROCKSDB_NAMESPACE {
-
-SstFileDumper::SstFileDumper(const Options& options,
-                             const std::string& file_path,
-                             size_t readahead_size, bool verify_checksum,
-                             bool output_hex, bool decode_blob_index)
-    : file_name_(file_path),
-      read_num_(0),
-      output_hex_(output_hex),
-      decode_blob_index_(decode_blob_index),
-      options_(options),
-      ioptions_(options_),
-      moptions_(ColumnFamilyOptions(options_)),
-      read_options_(verify_checksum, false),
-      internal_comparator_(BytewiseComparator()) {
-  read_options_.readahead_size = readahead_size;
-  fprintf(stdout, "Process %s\n", file_path.c_str());
-  init_result_ = GetTableReader(file_name_);
-}
-
-extern const uint64_t kBlockBasedTableMagicNumber;
-extern const uint64_t kLegacyBlockBasedTableMagicNumber;
-extern const uint64_t kPlainTableMagicNumber;
-extern const uint64_t kLegacyPlainTableMagicNumber;
-
-const char* testFileName = "test_file_name";
 
 static const std::vector<std::pair<CompressionType, const char*>>
     kCompressions = {
@@ -81,6 +56,7 @@ static const std::vector<std::pair<CompressionType, const char*>>
         {CompressionType::kXpressCompression, "kXpressCompression"},
         {CompressionType::kZSTD, "kZSTD"}};
 
+<<<<<<< HEAD
 Status SstFileDumper::GetTableReader(const std::string& file_path) {
   // Warning about 'magic_number' being uninitialized shows up only in UBsan
   // builds. Though access is guarded by 's.ok()' checks, fix the issue to
@@ -495,6 +471,8 @@ Status SstFileDumper::ReadTableProperties(
   return init_result_;
 }
 
+=======
+>>>>>>> fb-master
 namespace {
 
 void print_help(bool to_stderr) {

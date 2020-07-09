@@ -3433,22 +3433,23 @@ void VersionStorageInfo::CalculateBaseBytes(const ImmutableCFOptions& ioptions,
 }
 
 uint64_t VersionStorageInfo::EstimateLiveDataSize() const {
-  // Estimate the live data size by adding up the size of the last level for all
-  // key ranges. Note: Estimate depends on the ordering of files in level 0
-  // because files in level 0 can be overlapping.
+  // Estimate the live data size by adding up the size of a maximal set of
+  // sst files with no range overlap in same or higher level. The less
+  // compacted, the more optimistic (smaller) this estimate is. Also,
+  // for multiple sorted runs within a level, file order will matter.
   uint64_t size = 0;
 
   auto ikey_lt = [this](InternalKey* x, InternalKey* y) {
     return internal_comparator_->Compare(*x, *y) < 0;
   };
-  // (Ordered) map of largest keys in non-overlapping files
+  // (Ordered) map of largest keys in files being included in size estimate
   std::map<InternalKey*, FileMetaData*, decltype(ikey_lt)> ranges(ikey_lt);
 
   for (int l = num_levels_ - 1; l >= 0; l--) {
     bool found_end = false;
     for (auto file : files_[l]) {
-      // Find the first file where the largest key is larger than the smallest
-      // key of the current file. If this file does not overlap with the
+      // Find the first file already included with largest key is larger than
+      // the smallest key of `file`. If that file does not overlap with the
       // current file, none of the files in the map does. If there is
       // no potential overlap, we can safely insert the rest of this level
       // (if the level is not 0) into the map without checking again because
@@ -3904,10 +3905,6 @@ Status VersionSet::ProcessManifestWrites(
   }
 #endif  // NDEBUG
 
-  uint64_t new_manifest_file_size = 0;
-  Status s;
-  IOStatus io_s;
-
   assert(pending_manifest_file_number_ == 0);
   if (!descriptor_log_ ||
       manifest_file_size_ > db_options_->max_manifest_file_size) {
@@ -3937,6 +3934,9 @@ Status VersionSet::ProcessManifestWrites(
     }
   }
 
+  uint64_t new_manifest_file_size = 0;
+  Status s;
+  IOStatus io_s;
   {
     FileOptions opt_file_opts = fs_->OptimizeForManifestWrite(file_options_);
     mu->Unlock();
@@ -3973,9 +3973,9 @@ Status VersionSet::ProcessManifestWrites(
       std::string descriptor_fname =
           DescriptorFileName(dbname_, pending_manifest_file_number_);
       std::unique_ptr<FSWritableFile> descriptor_file;
-      s = NewWritableFile(fs_, descriptor_fname, &descriptor_file,
-                          opt_file_opts);
-      if (s.ok()) {
+      io_s = NewWritableFile(fs_, descriptor_fname, &descriptor_file,
+                             opt_file_opts);
+      if (io_s.ok()) {
         descriptor_file->SetPreallocationBlockSize(
             db_options_->manifest_preallocation_size);
 
@@ -3984,7 +3984,10 @@ Status VersionSet::ProcessManifestWrites(
             nullptr, db_options_->listeners));
         descriptor_log_.reset(
             new log::Writer(std::move(file_writer), 0, false));
-        s = WriteCurrentStateToManifest(curr_state, descriptor_log_.get());
+        s = WriteCurrentStateToManifest(curr_state, descriptor_log_.get(),
+                                        io_s);
+      } else {
+        s = io_s;
       }
     }
 
@@ -4020,16 +4023,16 @@ Status VersionSet::ProcessManifestWrites(
 #endif /* !NDEBUG */
         io_s = descriptor_log_->AddRecord(record);
         if (!io_s.ok()) {
-          io_status_ = io_s;
           s = io_s;
           break;
         }
       }
       if (s.ok()) {
         io_s = SyncManifest(env_, db_options_, descriptor_log_->file());
+        TEST_SYNC_POINT_CALLBACK(
+            "VersionSet::ProcessManifestWrites:AfterSyncManifest", &io_s);
       }
       if (!io_s.ok()) {
-        io_status_ = io_s;
         s = io_s;
         ROCKS_LOG_ERROR(db_options_->info_log, "MANIFEST write %s\n",
                         s.ToString().c_str());
@@ -4042,7 +4045,6 @@ Status VersionSet::ProcessManifestWrites(
       io_s = SetCurrentFile(fs_, dbname_, pending_manifest_file_number_,
                             db_directory);
       if (!io_s.ok()) {
-        io_status_ = io_s;
         s = io_s;
       }
       TEST_SYNC_POINT("VersionSet::ProcessManifestWrites:AfterNewManifest");
@@ -4062,6 +4064,14 @@ Status VersionSet::ProcessManifestWrites(
     LogFlush(db_options_->info_log);
     TEST_SYNC_POINT("VersionSet::LogAndApply:WriteManifestDone");
     mu->Lock();
+  }
+
+  if (!io_s.ok()) {
+    if (io_status_.ok()) {
+      io_status_ = io_s;
+    }
+  } else if (!io_status_.ok()) {
+    io_status_ = io_s;
   }
 
   // Append the old manifest file to the obsolete_manifest_ list to be deleted
@@ -5317,7 +5327,7 @@ void VersionSet::MarkMinLogNumberToKeep2PC(uint64_t number) {
 
 Status VersionSet::WriteCurrentStateToManifest(
     const std::unordered_map<uint32_t, MutableCFState>& curr_state,
-    log::Writer* log) {
+    log::Writer* log, IOStatus& io_s) {
   // TODO: Break up into multiple records to reduce memory usage on recovery?
 
   // WARNING: This method doesn't hold a mutex!!
@@ -5326,6 +5336,7 @@ Status VersionSet::WriteCurrentStateToManifest(
   // LogAndApply. Column family manipulations can only happen within LogAndApply
   // (the same single thread), so we're safe to iterate.
 
+  assert(io_s.ok());
   if (db_options_->write_dbid_to_manifest) {
     VersionEdit edit_for_db_id;
     assert(!db_id_.empty());
@@ -5335,10 +5346,9 @@ Status VersionSet::WriteCurrentStateToManifest(
       return Status::Corruption("Unable to Encode VersionEdit:" +
                                 edit_for_db_id.DebugString(true));
     }
-    IOStatus io_s = log->AddRecord(db_id_record);
+    io_s = log->AddRecord(db_id_record);
     if (!io_s.ok()) {
-      io_status_ = io_s;
-      return std::move(io_s);
+      return io_s;
     }
   }
 
@@ -5365,10 +5375,9 @@ Status VersionSet::WriteCurrentStateToManifest(
         return Status::Corruption(
             "Unable to Encode VersionEdit:" + edit.DebugString(true));
       }
-      IOStatus io_s = log->AddRecord(record);
+      io_s = log->AddRecord(record);
       if (!io_s.ok()) {
-        io_status_ = io_s;
-        return std::move(io_s);
+        return io_s;
       }
     }
 
@@ -5419,10 +5428,9 @@ Status VersionSet::WriteCurrentStateToManifest(
         return Status::Corruption(
             "Unable to Encode VersionEdit:" + edit.DebugString(true));
       }
-      IOStatus io_s = log->AddRecord(record);
+      io_s = log->AddRecord(record);
       if (!io_s.ok()) {
-        io_status_ = io_s;
-        return std::move(io_s);
+        return io_s;
       }
     }
   }

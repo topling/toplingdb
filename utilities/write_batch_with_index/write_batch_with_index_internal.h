@@ -112,5 +112,65 @@ class WriteBatchWithIndexInternal {
       std::string* value, bool overwrite_key, Status* s);
 };
 
+class WriteBatchKeyExtractor {
+ public:
+  WriteBatchKeyExtractor(const ReadableWriteBatch* write_batch)
+      : write_batch_(write_batch) {
+  }
+
+  Slice operator()(const WriteBatchIndexEntry* entry) const;
+
+ private:
+  const ReadableWriteBatch* write_batch_;
+};
+
+class WriteBatchEntryIndex {
+ public:
+  virtual ~WriteBatchEntryIndex() {}
+
+  class Iterator {
+   public:
+    virtual ~Iterator() {}
+    virtual bool Valid() const = 0;
+    virtual void SeekToFirst() = 0;
+    virtual void SeekToLast() = 0;
+    virtual void Seek(WriteBatchIndexEntry* target) = 0;
+    virtual void SeekForPrev(WriteBatchIndexEntry* target) = 0;
+    virtual void Next() = 0;
+    virtual void Prev() = 0;
+    virtual WriteBatchIndexEntry* key() const = 0;
+  };
+  typedef WBIteratorStorage<Iterator, 24> IteratorStorage;
+
+  virtual Iterator* NewIterator() = 0;
+  // sizeof(iterator) size must less or equal than 24
+  // INCLUDE virtual table pointer
+  virtual void NewIterator(IteratorStorage& storage, bool ephemeral) = 0;
+  // return true if insert success
+  // assign key->offset to exists entry's offset otherwise
+  virtual bool Upsert(WriteBatchIndexEntry* key) = 0;
+};
+
+class WriteBatchEntryIndexContext {
+ public:
+  virtual ~WriteBatchEntryIndexContext(){};
+};
+
+class WriteBatchEntryIndexFactory {
+ public:
+  // object MUST allocated from arena, allow return nullptr
+  // context will not delete, only call destruct func
+  virtual WriteBatchEntryIndexContext* NewContext(Arena* a) const {
+    return nullptr;
+  }
+  // object MUST allocated from arena
+  // index will not delete, only call destruct func
+  virtual WriteBatchEntryIndex* New(WriteBatchEntryIndexContext* ctx,
+                                    WriteBatchKeyExtractor e,
+                                    const Comparator* c, Arena* a,
+                                    bool overwrite_key) const = 0;
+  virtual ~WriteBatchEntryIndexFactory() {}
+};
+
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // !ROCKSDB_LITE

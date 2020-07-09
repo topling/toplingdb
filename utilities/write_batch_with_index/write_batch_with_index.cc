@@ -803,7 +803,7 @@ Status WriteBatchWithIndex::Merge(ColumnFamilyHandle* column_family,
   rep->SetLastEntryOffset();
   auto s = rep->write_batch.Merge(column_family, key, value);
   if (s.ok()) {
-    rep->AddOrUpdateIndex(column_family, key);
+    rep->AddOrUpdateIndex(column_family);
   }
   return s;
 }
@@ -812,7 +812,7 @@ Status WriteBatchWithIndex::Merge(const Slice& key, const Slice& value) {
   rep->SetLastEntryOffset();
   auto s = rep->write_batch.Merge(key, value);
   if (s.ok()) {
-    rep->AddOrUpdateIndex(key);
+    rep->AddOrUpdateIndex();
   }
   return s;
 }

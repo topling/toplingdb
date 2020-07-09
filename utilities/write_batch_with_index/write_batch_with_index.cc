@@ -353,10 +353,10 @@ class WBWIIteratorImpl : public WBWIIterator {
   ~WBWIIteratorImpl() override {}
 
   bool Valid() const override {
-    if (!skip_list_iter_.Valid()) {
+    if (!iter_->Valid()) {
       return false;
     }
-    const WriteBatchIndexEntry* iter_entry = skip_list_iter_.key();
+    const WriteBatchIndexEntry* iter_entry = iter_->key();
     return (iter_entry != nullptr &&
             iter_entry->column_family == column_family_id_);
   }
@@ -365,18 +365,18 @@ class WBWIIteratorImpl : public WBWIIterator {
     WriteBatchIndexEntry search_entry(
         nullptr /* search_key */, column_family_id_,
         true /* is_forward_direction */, true /* is_seek_to_first */);
-    skip_list_iter_.Seek(&search_entry);
+    iter_->Seek(&search_entry);
   }
 
   void SeekToLast() override {
     WriteBatchIndexEntry search_entry(
         nullptr /* search_key */, column_family_id_ + 1,
         true /* is_forward_direction */, true /* is_seek_to_first */);
-    skip_list_iter_.Seek(&search_entry);
-    if (!skip_list_iter_.Valid()) {
-      skip_list_iter_.SeekToLast();
+    iter_->Seek(&search_entry);
+    if (!iter_->Valid()) {
+      iter_->SeekToLast();
     } else {
-      skip_list_iter_.Prev();
+      iter_->Prev();
     }
   }
 
@@ -384,19 +384,19 @@ class WBWIIteratorImpl : public WBWIIterator {
     WriteBatchIndexEntry search_entry(&key, column_family_id_,
                                       true /* is_forward_direction */,
                                       false /* is_seek_to_first */);
-    skip_list_iter_.Seek(&search_entry);
+    iter_->Seek(&search_entry);
   }
 
   void SeekForPrev(const Slice& key) override {
     WriteBatchIndexEntry search_entry(&key, column_family_id_,
                                       false /* is_forward_direction */,
                                       false /* is_seek_to_first */);
-    skip_list_iter_.SeekForPrev(&search_entry);
+    iter_->SeekForPrev(&search_entry);
   }
 
-  void Next() override { skip_list_iter_.Next(); }
+  void Next() override { iter_->Next(); }
 
-  void Prev() override { skip_list_iter_.Prev(); }
+  void Prev() override { iter_->Prev(); }
 
   WriteEntry Entry() const override {
     WriteEntry ret;

@@ -26,15 +26,6 @@ class Logger;
 class Statistics;
 
 const std::string kWriteBatchEntrySkipListFactoryName = "skiplist";
-const std::string kWriteBatchEntryRBTreeFactoryName = "rbtree";
-
-static std::unordered_map<std::string, const WriteBatchEntryIndexFactory*>
-    write_batch_entry_index_factory_info = {
-        {kWriteBatchEntrySkipListFactoryName,
-         WriteBatchEntrySkipListIndexFactory()},
-        {kWriteBatchEntryRBTreeFactoryName,
-         WriteBatchEntryRBTreeIndexFactory()},
-    };
 
 Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
                                                   WriteType* type, Slice* Key,
@@ -97,72 +88,6 @@ Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
                                 ToString(static_cast<unsigned int>(tag)));
   }
   return Status::OK();
-}
-
-// If both of `entry1` and `entry2` point to real entry in write batch, we
-// compare the entries as following:
-// 1. first compare the column family, the one with larger CF will be larger;
-// 2. Inside the same CF, we first decode the entry to find the key of the entry
-//    and the entry with larger key will be larger;
-// 3. If two entries are of the same CF and offset, the one with larger offset
-//    will be larger.
-// Some times either `entry1` or `entry2` is dummy entry, which is actually
-// a search key. In this case, in step 2, we don't go ahead and decode the
-// entry but use the value in WriteBatchIndexEntry::search_key.
-// One special case is WriteBatchIndexEntry::key_size is kFlagMinInCf.
-// This indicate that we are going to seek to the first of the column family.
-// Once we see this, this entry will be smaller than all the real entries of
-// the column family.
-int WriteBatchEntryComparator::operator()(
-    const WriteBatchIndexEntry* entry1,
-    const WriteBatchIndexEntry* entry2) const {
-  if (entry1->column_family > entry2->column_family) {
-    return 1;
-  } else if (entry1->column_family < entry2->column_family) {
-    return -1;
-  }
-
-  // Deal with special case of seeking to the beginning of a column family
-  if (entry1->is_min_in_cf()) {
-    return -1;
-  } else if (entry2->is_min_in_cf()) {
-    return 1;
-  }
-
-  Slice key1, key2;
-  if (entry1->search_key == nullptr) {
-    key1 = Slice(write_batch_->Data().data() + entry1->key_offset,
-                 entry1->key_size);
-  } else {
-    key1 = *(entry1->search_key);
-  }
-  if (entry2->search_key == nullptr) {
-    key2 = Slice(write_batch_->Data().data() + entry2->key_offset,
-                 entry2->key_size);
-  } else {
-    key2 = *(entry2->search_key);
-  }
-
-  int cmp = CompareKey(entry1->column_family, key1, key2);
-  if (cmp != 0) {
-    return cmp;
-  } else if (entry1->offset > entry2->offset) {
-    return 1;
-  } else if (entry1->offset < entry2->offset) {
-    return -1;
-  }
-  return 0;
-}
-
-int WriteBatchEntryComparator::CompareKey(uint32_t column_family,
-                                          const Slice& key1,
-                                          const Slice& key2) const {
-  if (column_family < cf_comparators_.size() &&
-      cf_comparators_[column_family] != nullptr) {
-    return cf_comparators_[column_family]->Compare(key1, key2);
-  } else {
-    return default_comparator_->Compare(key1, key2);
-  }
 }
 
 WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(

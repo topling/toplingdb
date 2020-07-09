@@ -736,6 +736,17 @@ class RandomAccessFile {
         "RandomAccessFile::InvalidateCache not supported.");
   }
 
+  // read (distributed) filesystem by fs api, for example:
+  //   glusterfs support fuse, glfs_pread is faster than fuse pread when
+  //   cache miss, but fuse support mmap, we can read a glusterfs file by
+  //   both mmap and glfs_pread
+  virtual Status FsRead(uint64_t offset, size_t len, void* buf) const;
+
+  virtual intptr_t FileDescriptor() const {
+    assert(false);
+    return -1;
+  }
+
   // If you're adding methods here, remember to add them to
   // RandomAccessFileWrapper too.
 };

@@ -537,10 +537,12 @@ void WriteBatchWithIndex::Rep::AddOrUpdateIndex(uint32_t column_family_id,
                                      key.data() - wb_data.data(), key.size());
   if (!entry_index->Upsert(index_entry)) {
     // overwrite key
+	/*
     if (LIKELY(last_sub_batch_offset <= non_const_entry->offset)) {
       last_sub_batch_offset = last_entry_offset;
       sub_batch_cnt++;
     }
+	*/
     free_entry = index_entry;
   } else {
     free_entry = nullptr;
@@ -1018,7 +1020,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     WriteBatchWithIndexInternal::Result result =
         WriteBatchWithIndexInternal::GetFromBatch(
             immuable_db_options, this, column_family, keys[i], &merge_context,
-            &rep->GetComparator(column_family), &batch_value, rep->overwrite_key, s);
+            rep->GetComparator(column_family), &batch_value, rep->overwrite_key, s);
 
     if (result == WriteBatchWithIndexInternal::Result::kFound) {
       pinnable_val->PinSelf();

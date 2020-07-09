@@ -537,7 +537,10 @@ void WriteBatchWithIndex::Rep::AddOrUpdateIndex(uint32_t column_family_id,
                                      key.data() - wb_data.data(), key.size());
   if (!entry_index->Upsert(index_entry)) {
     // overwrite key
-    obsolete_offsets.push_back(index_entry->offset);
+    if (LIKELY(last_sub_batch_offset <= non_const_entry->offset)) {
+      last_sub_batch_offset = last_entry_offset;
+      sub_batch_cnt++;
+    }
     free_entry = index_entry;
   } else {
     free_entry = nullptr;

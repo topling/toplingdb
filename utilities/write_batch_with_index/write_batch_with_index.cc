@@ -1022,7 +1022,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     WriteBatchWithIndexInternal::Result result =
         WriteBatchWithIndexInternal::GetFromBatch(
             immuable_db_options, this, column_family, keys[i], &merge_context,
-            &rep->comparator, &batch_value, rep->overwrite_key, s);
+            &rep->GetComparator(column_family), &batch_value, rep->overwrite_key, s);
 
     if (result == WriteBatchWithIndexInternal::Result::kFound) {
       pinnable_val->PinSelf();

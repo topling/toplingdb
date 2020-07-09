@@ -18,6 +18,16 @@ if test ${BUILD_TYPE}A = A; then
 	BUILD_TYPE="rls dbg afr"
 fi
 
+#TERARK_PLUGINS_SRC="`echo ../terark-zip-rocksdb/src/table/*.cc`" \
+TERARK_PLUGINS_SRC="\
+ ../terark-zip-rocksdb/src/table/terark_zip_common.cc \
+ ../terark-zip-rocksdb/src/table/terark_zip_config.cc \
+ ../terark-zip-rocksdb/src/table/terark_zip_index.cc \
+ ../terark-zip-rocksdb/src/table/terark_zip_table_builder.cc \
+ ../terark-zip-rocksdb/src/table/terark_zip_table.cc \
+ ../terark-zip-rocksdb/src/table/terark_zip_table_reader.cc \
+"
+
 afr_sig=a
 dbg_sig=d
 rls_sig=r
@@ -26,9 +36,10 @@ for type in $BUILD_TYPE; do
 	sig=`eval 'echo $'${type}_sig`
 	libs=`echo -lterark-{zbs,fsa,core}-${COMPILER}-$sig`
 	env CXX=$CXX \
-		LIB_SOURCES="`echo ../terark-zip-rocksdb/src/table/*.cc`" \
+		DISABLE_WARNING_AS_ERROR=1 \
+		LIB_SOURCES="$TERARK_PLUGINS_SRC" \
 		OBJ_DIR=${BUILD_ROOT}/$type \
-		EXTRA_CXXFLAGS='-I../terark/src -I../terark/boost-include' \
+		EXTRA_CXXFLAGS='-I../terark/src -I../terark/boost-include -I../terark/3rdparty/zstd -Wno-shadow' \
 		EXTRA_LDFLAGS="-L../terark/$BUILD_ROOT/lib_shared $libs" \
 	  make $@
 done

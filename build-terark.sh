@@ -39,7 +39,7 @@ for type in $BUILD_TYPE; do
 		DISABLE_WARNING_AS_ERROR=1 \
 		LIB_SOURCES="$TERARK_PLUGINS_SRC" \
 		OBJ_DIR=${BUILD_ROOT}/$type \
-		EXTRA_CXXFLAGS='-I../terark/src -I../terark/boost-include -I../terark/3rdparty/zstd -Wno-shadow' \
+		EXTRA_CXXFLAGS='-I../terark/src -I../terark/boost-include -I../terark/3rdparty/zstd' \
 		EXTRA_LDFLAGS="-L../terark/$BUILD_ROOT/lib_shared $libs" \
-	  make $@
+	  make WARNING_FLAGS='-Wall -Wno-shadow' $@
 done

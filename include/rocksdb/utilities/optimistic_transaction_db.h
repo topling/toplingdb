@@ -16,6 +16,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 class Transaction;
+class WriteBatchEntryIndexFactory;
 
 // Database with Transaction support.
 //
@@ -31,7 +32,7 @@ struct OptimisticTransactionOptions {
   const Comparator* cmp = BytewiseComparator();
 
   // Set index factory for WriteBatchWithIndex
-  const rocksdb::WriteBatchEntryIndexFactory* index_type = nullptr;
+  const WriteBatchEntryIndexFactory* index_type = nullptr;
 };
 
 enum class OccValidationPolicy {

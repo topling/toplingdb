@@ -18,7 +18,6 @@
 #include "util/cast_util.h"
 #include "util/coding.h"
 #include "util/string_util.h"
-#include "util/threaded_rbtree.h"
 
 namespace ROCKSDB_NAMESPACE {
 

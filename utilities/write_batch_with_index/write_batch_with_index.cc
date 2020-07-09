@@ -442,7 +442,20 @@ struct WriteBatchWithIndex::Rep {
         overwrite_key(_overwrite_key),
         last_entry_offset(0),
         last_sub_batch_offset(0),
-        sub_batch_cnt(1) {}
+        sub_batch_cnt(1) {
+        factory_context = index_factory->NewContext(&arena);
+  }
+  ~Rep() {
+    for (auto& pair : entry_indices) {
+      if (pair.index != nullptr) {
+        pair.index->~WriteBatchEntryIndex();
+      }
+    }
+    if (factory_context != nullptr) {
+      factory_context->~WriteBatchEntryIndexContext();
+    }
+  }
+
   ReadableWriteBatch write_batch;
   const Comparator* default_comparator;
   struct ComparatorIndexPair {
@@ -466,12 +479,6 @@ struct WriteBatchWithIndex::Rep {
   // Remember current offset of internal write batch, which is used as
   // the starting offset of the next record.
   void SetLastEntryOffset() { last_entry_offset = write_batch.GetDataSize(); }
-
-  // In overwrite mode, find the existing entry for the same key and update it
-  // to point to the current entry.
-  // Return true if the key is found and updated.
-  bool UpdateExistingEntry(ColumnFamilyHandle* column_family, const Slice& key);
-  bool UpdateExistingEntryWithCfId(uint32_t column_family_id, const Slice& key);
 
   // Add the recent entry to the update.
   // In overwrite mode, if key already exists in the index, update it.
@@ -505,22 +512,8 @@ void WriteBatchWithIndex::Rep::AddOrUpdateIndex(uint32_t column_family_id) {
   AddOrUpdateIndex(column_family_id, GetEntryIndexWithCfId(column_family_id));
 }
 
-void WriteBatchWithIndex::Rep::AddOrUpdateIndex(
-    ColumnFamilyHandle* column_family, const Slice& key) {
-  if (!UpdateExistingEntry(column_family, key)) {
-    uint32_t cf_id = GetColumnFamilyID(column_family);
-    const auto* cf_cmp = GetColumnFamilyUserComparator(column_family);
-    if (cf_cmp != nullptr) {
-      comparator.SetComparatorForCF(cf_id, cf_cmp);
-    }
-    AddNewEntry(cf_id);
-  }
-}
-
-void WriteBatchWithIndex::Rep::AddOrUpdateIndex(const Slice& key) {
-  if (!UpdateExistingEntryWithCfId(0, key)) {
-    AddNewEntry(0);
-  }
+void WriteBatchWithIndex::Rep::AddOrUpdateIndex() {
+  AddOrUpdateIndex(0, GetEntryIndex(nullptr));
 }
 
 void WriteBatchWithIndex::Rep::AddOrUpdateIndex(uint32_t column_family_id,
@@ -541,7 +534,7 @@ void WriteBatchWithIndex::Rep::AddOrUpdateIndex(uint32_t column_family_id,
   }
   auto* index_entry =
       new (mem) WriteBatchIndexEntry(last_entry_offset, column_family_id,
-                                      key.data() - wb_data.data(), key.size());
+                                     key.data() - wb_data.data(), key.size());
   if (!entry_index->Upsert(index_entry)) {
     // overwrite key
     obsolete_offsets.push_back(index_entry->offset);

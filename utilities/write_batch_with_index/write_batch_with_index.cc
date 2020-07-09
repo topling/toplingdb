@@ -437,7 +437,7 @@ struct WriteBatchWithIndex::Rep {
       : write_batch(reserved_bytes, max_bytes),
         default_comparator(index_comparator),
         index_factory(_index_factory == nullptr
-                          ? WriteBatchEntryRBTreeIndexFactory()
+                          ? WriteBatchEntrySkipListIndexFactory()
                           : _index_factory),
         overwrite_key(_overwrite_key),
         last_entry_offset(0),
@@ -466,6 +466,12 @@ struct WriteBatchWithIndex::Rep {
   // Remember current offset of internal write batch, which is used as
   // the starting offset of the next record.
   void SetLastEntryOffset() { last_entry_offset = write_batch.GetDataSize(); }
+
+  // In overwrite mode, find the existing entry for the same key and update it
+  // to point to the current entry.
+  // Return true if the key is found and updated.
+  bool UpdateExistingEntry(ColumnFamilyHandle* column_family, const Slice& key);
+  bool UpdateExistingEntryWithCfId(uint32_t column_family_id, const Slice& key);
 
   // Add the recent entry to the update.
   // In overwrite mode, if key already exists in the index, update it.
@@ -497,24 +503,6 @@ void WriteBatchWithIndex::Rep::AddOrUpdateIndex(ColumnFamilyHandle* column_famil
 
 void WriteBatchWithIndex::Rep::AddOrUpdateIndex(uint32_t column_family_id) {
   AddOrUpdateIndex(column_family_id, GetEntryIndexWithCfId(column_family_id));
-  }
-
-  WBWIIteratorImpl iter(column_family_id, &skip_list, &write_batch);
-  iter.Seek(key);
-  if (!iter.Valid()) {
-    return false;
-  }
-  if (comparator.CompareKey(column_family_id, key, iter.Entry().key) != 0) {
-    return false;
-  }
-  WriteBatchIndexEntry* non_const_entry =
-      const_cast<WriteBatchIndexEntry*>(iter.GetRawEntry());
-  if (LIKELY(last_sub_batch_offset <= non_const_entry->offset)) {
-    last_sub_batch_offset = last_entry_offset;
-    sub_batch_cnt++;
-  }
-  non_const_entry->offset = last_entry_offset;
-  return true;
 }
 
 void WriteBatchWithIndex::Rep::AddOrUpdateIndex(

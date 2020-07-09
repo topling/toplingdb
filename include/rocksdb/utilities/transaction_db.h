@@ -14,7 +14,6 @@
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/stackable_db.h"
 #include "rocksdb/utilities/transaction.h"
-#include "rocksdb/utilities/write_batch_with_index.h"
 
 // Database with Transaction support.
 //

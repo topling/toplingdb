@@ -13,13 +13,9 @@ UNAME_MachineSystem=`uname -m -s | sed 's:[ /]:-:g'`
 BUILD_NAME=${UNAME_MachineSystem}-${COMPILER}-bmi2-${WITH_BMI2}
 BUILD_ROOT=build/${BUILD_NAME}
 
-BUILD_TYPE=all
-
-if test $# -le 1; then
-	# BUILD_TYPE should be a list, such as "afr rls dbg" or "rls"
-	BUILD_TYPE=$1
-	echo BUILD_TYPE = $BUILD_TYPE
-	shift
+# BUILD_TYPE should be a list, such as "afr rls dbg" or "rls"
+if test ${BUILD_TYPE}A = A; then
+	BUILD_TYPE="rls dbg afr"
 fi
 
 afr_sig=a

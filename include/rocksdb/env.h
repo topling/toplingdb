@@ -593,7 +593,7 @@ class RandomAccessFile {
   virtual size_t GetUniqueId(char* /*id*/, size_t /*max_size*/) const {
     return 0; // Default implementation to prevent issues with backwards
               // compatibility.
-  };
+  }
 
   enum AccessPattern { NORMAL, RANDOM, SEQUENTIAL, WILLNEED, DONTNEED };
 
@@ -613,8 +613,18 @@ class RandomAccessFile {
   virtual Status InvalidateCache(size_t /*offset*/, size_t /*length*/) {
     return Status::NotSupported("InvalidateCache not supported.");
   }
-};
 
+  // read (distributed) filesystem by fs api, for example:
+  //   glusterfs support fuse, glfs_pread is faster than fuse pread when
+  //   cache miss, but fuse support mmap, we can read a glusterfs file by
+  //   both mmap and glfs_pread
+  virtual Status FsRead(uint64_t offset, size_t len, void* buf) const;
+
+  virtual intptr_t FileDescriptor() const {
+    assert(false);
+    return -1;
+  }
+};
 // A file abstraction for sequential writing.  The implementation
 // must provide buffering since callers may append small fragments
 // at a time to the file.

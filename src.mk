@@ -1,5 +1,5 @@
 # These are the sources from which librocksdb.a is built:
-LIB_SOURCES =                                                   \
+LIB_SOURCES +=                                                  \
   cache/cache.cc                                                \
   cache/clock_cache.cc                                          \
   cache/lru_cache.cc                                            \

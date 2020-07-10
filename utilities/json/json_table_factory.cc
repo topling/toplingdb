@@ -296,7 +296,8 @@ class DispatherTableFactory : public TableFactory {
   }
 
   const char* Name() const override { return "DispatherTableFactory"; }
-
+  
+  using TableFactory::NewTableReader;
   Status NewTableReader(
       const ReadOptions& ro,
       const TableReaderOptions& table_reader_options,
@@ -385,7 +386,7 @@ class DispatherTableFactory : public TableFactory {
     if (js.end() != iter) {
       auto& options = iter.value();
       m_default_writer = PluginFactory<std::shared_ptr<TableFactory>>::
-        GetOrNewInstance("default", ROCKSDB_FUNC, options, *m_repo, &s);
+        ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo, &s);
       if (!m_default_writer) {
         return Status::InvalidArgument(ROCKSDB_FUNC,
             "fail get defined default writer = " + options.dump());
@@ -408,7 +409,7 @@ class DispatherTableFactory : public TableFactory {
       for (auto& item : js.items()) {
         auto& options = item.value();
         auto p = PluginFactory<std::shared_ptr<TableFactory>>::
-        GetOrNewInstance("default", ROCKSDB_FUNC, options, *m_repo, &s);
+        ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo, &s);
         if (!p) {
           assert(!s.ok());
           return s;

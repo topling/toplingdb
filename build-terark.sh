@@ -6,6 +6,7 @@ if test ${CXX}A = A; then
 	CXX=g++
 fi
 
+WITH_BMI2=`bash ../terark/cpu_has_bmi2.sh`
 tmpfile=`mktemp -u compiler-XXXXXX`
 COMPILER=`${CXX} ../terark/tools/configure/compiler.cpp -o ${tmpfile}.exe && ./${tmpfile}.exe`
 rm -f ${tmpfile}*
@@ -18,28 +19,36 @@ if test ${BUILD_TYPE}A = A; then
 	BUILD_TYPE="rls dbg afr"
 fi
 
-#TERARK_PLUGINS_SRC="`echo ../terark-zip-rocksdb/src/table/*.cc`" \
+TERARK_PLUGINS_DIR=`cd ../terark-zip-rocksdb; pwd`
+#TERARK_PLUGINS_SRC="`echo ${TERARK_PLUGINS_DIR}/src/table/*.cc`" \
 TERARK_PLUGINS_SRC="\
- ../terark-zip-rocksdb/src/table/terark_zip_common.cc \
- ../terark-zip-rocksdb/src/table/terark_zip_config.cc \
- ../terark-zip-rocksdb/src/table/terark_zip_index.cc \
- ../terark-zip-rocksdb/src/table/terark_zip_table_builder.cc \
- ../terark-zip-rocksdb/src/table/terark_zip_table.cc \
- ../terark-zip-rocksdb/src/table/terark_zip_table_reader.cc \
+ ${TERARK_PLUGINS_DIR}/src/table/terark_zip_common.cc \
+ ${TERARK_PLUGINS_DIR}/src/table/terark_zip_config.cc \
+ ${TERARK_PLUGINS_DIR}/src/table/terark_zip_index.cc \
+ ${TERARK_PLUGINS_DIR}/src/table/terark_zip_table_builder.cc \
+ ${TERARK_PLUGINS_DIR}/src/table/terark_zip_table.cc \
+ ${TERARK_PLUGINS_DIR}/src/table/terark_zip_table_reader.cc \
 "
 
 afr_sig=a
 dbg_sig=d
 rls_sig=r
 
+afr_level="1"
+dbg_level="2"
+rls_level="0"
+
 for type in $BUILD_TYPE; do
 	sig=`eval 'echo $'${type}_sig`
 	libs=`echo -lterark-{zbs,fsa,core}-${COMPILER}-$sig`
+	DEBUG_LEVEL=`eval 'echo $'${type}_level`
 	env CXX=$CXX \
 		DISABLE_WARNING_AS_ERROR=1 \
 		LIB_SOURCES="$TERARK_PLUGINS_SRC" \
 		OBJ_DIR=${BUILD_ROOT}/$type \
-		EXTRA_CXXFLAGS='-I../terark/src -I../terark/boost-include -I../terark/3rdparty/zstd' \
+		EXTRA_CXXFLAGS='-I../terark/src -I../terark/boost-include -I../terark/3rdparty/zstd -fPIC' \
 		EXTRA_LDFLAGS="-L../terark/$BUILD_ROOT/lib_shared $libs" \
-	  make WARNING_FLAGS='-Wall -Wno-shadow' $@
+		USE_RTTI=1 \
+		DEBUG_LEVEL=$DEBUG_LEVEL \
+	  make WARNING_FLAGS='-Wall -Wno-shadow -Wno-class-memaccess' $@
 done

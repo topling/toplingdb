@@ -733,7 +733,7 @@ NewGenericRateLimiterFromJson(const json& js, const JsonOptionsRepo& repo, Statu
   auto iter = js.find("env");
   if (js.end() != iter) {
     const auto& env_js = iter.value();
-    env = PluginFactory<Env*>::GetInstance("env", ROCKSDB_FUNC, env_js, repo, s);
+    env = PluginFactory<Env*>::GetPlugin("env", ROCKSDB_FUNC, env_js, repo, s);
     if (!env)
       return nullptr;
   }
@@ -878,7 +878,7 @@ static void Impl_Import(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
       const json& value = item.value();
       Status s;
       // name and func are just for error report in this call
-      Ptr p = PluginFactory<Ptr>::GetOrNewInstance(
+      Ptr p = PluginFactory<Ptr>::ObtainPlugin(
                 name, ROCKSDB_FUNC, value, repo, &s);
       if (!s.ok()) throw s;
       field.name2p->emplace(inst_id, p);
@@ -959,7 +959,7 @@ static void Impl_Export(const JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
   }
 }
 Status JsonOptionsRepo::Export(nlohmann::json* main_js) const {
-  assert(NULL != js);
+  assert(NULL != main_js);
 #define JSON_EXPORT_REPO(Clazz, field) \
   Impl_Export(m_impl->field, #Clazz, *main_js)
   JSON_EXPORT_REPO(Comparator              , comparator);

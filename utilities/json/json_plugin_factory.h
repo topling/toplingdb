@@ -9,8 +9,8 @@
 #include <memory>
 #include <unordered_map>
 
-#include "json_fwd.h"
 #include "json_plugin_repo.h"
+#include "json.h"
 #include "rocksdb/enum_reflection.h"
 #include "rocksdb/preproc.h"
 #include "rocksdb/status.h"
@@ -18,7 +18,45 @@
 namespace ROCKSDB_NAMESPACE {
 
 using nlohmann::json;
-class JsonOptionsRepo;
+
+struct JsonOptionsRepo::Impl {
+  struct ObjInfo {
+    std::string name;
+    json params; // { class : "class_name", params : "params..." }
+  };
+  template<class Ptr>
+  struct ObjMap {
+    std::unordered_map<Ptr, ObjInfo> p2name;
+    std::shared_ptr<std::unordered_map<std::string, Ptr>> name2p;
+  };
+  template<class T>
+  using ObjRepo = ObjMap<std::shared_ptr<T> >;
+
+  ObjRepo<Cache> cache;
+  ObjRepo<PersistentCache> persistent_cache;
+  ObjRepo<CompactionFilterFactory> compaction_filter_factory;
+  ObjMap<const Comparator*> comparator;
+  ObjRepo<ConcurrentTaskLimiter> compaction_thread_limiter;
+  ObjMap<Env*> env;
+  ObjRepo<EventListener> event_listener;
+  ObjRepo<FileChecksumGenFactory> file_checksum_gen_factory;
+  ObjRepo<FileSystem> file_system;
+  ObjRepo<const FilterPolicy> filter_policy;
+  ObjRepo<FlushBlockPolicyFactory> flush_block_policy_factory;
+  ObjRepo<Logger> info_log;
+  ObjRepo<MemTableRepFactory> mem_table_rep_factory;
+  ObjRepo<MergeOperator> merge_operator;
+  ObjRepo<RateLimiter> rate_limiter;
+  ObjRepo<SstFileManager> sst_file_manager;
+  ObjRepo<Statistics> statistics;
+  ObjRepo<TableFactory> table_factory;
+  ObjRepo<TablePropertiesCollectorFactory> table_properties_collector_factory;
+  ObjRepo<const SliceTransform> slice_transform;
+
+  ObjRepo<Options> options;
+  ObjRepo<DBOptions> db_options;
+  ObjRepo<ColumnFamilyOptions> cf_options;
+};
 
 ///@note on principle, the factory itself is stateless, but its product
 /// can has states, sometimes we need factory of factory, in this case,
@@ -243,7 +281,6 @@ const JsonOptionsRepo& repoRefType();
        std::string(#prop ": ") + ex.what()); \
   } while (0)
 
-
 #define ROCKSDB_JSON_OPT_FACT_INNER_IMPL(js, prop) \
     Status __status; \
     prop = PluginFactory<decltype(prop)>:: \
@@ -257,5 +294,34 @@ const JsonOptionsRepo& repoRefType();
     if (js.end() != __iter) { \
       ROCKSDB_JSON_OPT_FACT_INNER_IMPL(__iter.value(), prop); \
   }} while (0)
+
+#define ROCKSDB_JSON_SET_PROP(js, prop) js[#prop] = prop
+#define ROCKSDB_JSON_SET_ENUM(js, prop) js[#prop] = enum_stdstr(prop)
+#define ROCKSDB_JSON_SET_NEST(js, prop) \
+  static_cast<const decltype(NestForBase(prop))&>(prop).SaveToJson(js[#prop])
+
+/// for which prop and repo_field with different name
+#define ROCKSDB_JSON_SET_FACX(js, prop, repo_field) \
+        ROCKSDB_JSON_SET_FACT_INNER(js[#prop], prop, repo_field)
+
+/// this Option and repo has same name prop
+#define ROCKSDB_JSON_SET_FACT(js, prop) \
+        ROCKSDB_JSON_SET_FACT_INNER(js[#prop], prop, prop)
+
+#define ROCKSDB_JSON_SET_FACT_INNER(inner, prop, repo_field) do { \
+  auto& p2name = repo.m_impl->repo_field.p2name; \
+  auto __iter = p2name.find(prop); \
+  if (p2name.end() != __iter) { \
+    if (__iter->second.name.empty()) \
+      inner = __iter->second.params; \
+    else \
+      inner = "${" + __iter->second.name + "}"; \
+  } else { \
+    fprintf(stderr, \
+            "FATAL: %s: can not find name of %s(of %s) by ptr\n", \
+            ROCKSDB_FUNC, #prop, #repo_field); \
+    abort(); \
+  } } while (0)
+
 
 } // ROCKSDB_NAMESPACE

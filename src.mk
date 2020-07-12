@@ -212,6 +212,7 @@ LIB_SOURCES =                                                   \
   utilities/debug.cc                                            \
   utilities/env_mirror.cc                                       \
   utilities/env_timed.cc                                        \
+  utilities/json/json_builtin_plugin.cc                         \
   utilities/json/json_plugin_factory.cc                         \
   utilities/json/json_table_factory.cc                          \
   utilities/leveldb_options/leveldb_options.cc                  \

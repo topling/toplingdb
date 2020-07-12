@@ -375,20 +375,19 @@ class DispatherTableFactory : public TableFactory {
   }
   Status BackPatch() const try {
     m_repo->GetMap(&m_all);
-    auto& js = m_json_obj;
-    if (!js.is_object()) {
+    if (!m_json_obj.is_object()) {
       return Status::InvalidArgument(ROCKSDB_FUNC,
           "DispatherTableFactory options must be object");
     }
-    auto iter = js.find("default");
+    auto iter = m_json_obj.find("default");
     Status s;
-    if (js.end() != iter) {
-      auto& options = iter.value();
+    if (m_json_obj.end() != iter) {
+      auto& subjs = iter.value();
       m_default_writer = PluginFactory<std::shared_ptr<TableFactory>>::
-        GetOrNewInstance("default", ROCKSDB_FUNC, options, *m_repo, &s);
+        ObtainPlugin("default", ROCKSDB_FUNC, subjs, *m_repo, &s);
       if (!m_default_writer) {
         return Status::InvalidArgument(ROCKSDB_FUNC,
-            "fail get defined default writer = " + options.dump());
+            "fail get defined default writer = " + subjs.dump());
       }
     } else {
       auto iter2 = m_all->find("default");
@@ -399,16 +398,16 @@ class DispatherTableFactory : public TableFactory {
             "fail get global default Factory");
       }
     }
-    iter = js.find("level_writers");
-    if (js.end() != iter) {
+    iter = m_json_obj.find("level_writers");
+    if (m_json_obj.end() != iter) {
       if (!iter.value().is_array()) {
         throw std::invalid_argument(
             "DispatherTableFactory level_writers must be array");
       }
-      for (auto& item : js.items()) {
+      for (auto& item : m_json_obj.items()) {
         auto& options = item.value();
         auto p = PluginFactory<std::shared_ptr<TableFactory>>::
-        GetOrNewInstance("default", ROCKSDB_FUNC, options, *m_repo, &s);
+        ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo, &s);
         if (!p) {
           assert(!s.ok());
           return s;

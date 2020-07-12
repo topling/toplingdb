@@ -678,11 +678,13 @@ ROCKSDB_FACTORY_REG("CompactOnDeletionCollector",
 //----------------------------------------------------------------------------
 // SerDe example for TablePropertiesCollector
 struct MySerDe : SerDeFunc<TablePropertiesCollector> {
-  Status Serialize(const TablePropertiesCollector&, std::string* output) const {
+  Status Serialize(const TablePropertiesCollector&, std::string* /*output*/)
+  const override {
     // do serialize
     return Status::OK();
   }
-  Status DeSerialize(TablePropertiesCollector*, const Slice& input) const {
+  Status DeSerialize(TablePropertiesCollector*, const Slice& /*input*/)
+  const override {
     // do deserialize
     return Status::OK();
   }
@@ -743,7 +745,7 @@ NewGenericRateLimiterFromJson(const json& js, const JsonOptionsRepo& repo, Statu
   auto iter = js.find("env");
   if (js.end() != iter) {
     const auto& env_js = iter.value();
-    env = PluginFactory<Env*>::GetInstance("env", ROCKSDB_FUNC, env_js, repo, s);
+    env = PluginFactory<Env*>::GetPlugin("env", ROCKSDB_FUNC, env_js, repo, s);
     if (!env)
       return nullptr;
   }
@@ -752,7 +754,6 @@ NewGenericRateLimiterFromJson(const json& js, const JsonOptionsRepo& repo, Statu
       rate_bytes_per_sec, refill_period_us, fairness,
       mode, env, auto_tuned);
 }
-
 ROCKSDB_FACTORY_REG("GenericRateLimiter", NewGenericRateLimiterFromJson);
 
 //////////////////////////////////////////////////////////////////////////////

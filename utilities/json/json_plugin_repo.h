@@ -23,6 +23,7 @@ class ConcurrentTaskLimiter;
 class Env;
 class EventListener;
 class FileChecksumGenFactory;
+class FileSystem;
 class FilterPolicy;
 class FlushBlockPolicyFactory;
 class Logger;
@@ -63,6 +64,7 @@ class JsonOptionsRepo {
   void Add(const std::string& name, Env*);
   void Add(const std::string& name, const std::shared_ptr<EventListener>&);
   void Add(const std::string& name, const std::shared_ptr<FileChecksumGenFactory>&);
+  void Add(const std::string& name, const std::shared_ptr<FileSystem>&);
   void Add(const std::string& name, const std::shared_ptr<const FilterPolicy>&);
   void Add(const std::string& name, const std::shared_ptr<FlushBlockPolicyFactory>&);
   void Add(const std::string& name, const std::shared_ptr<Logger>&);
@@ -88,6 +90,7 @@ class JsonOptionsRepo {
   bool Get(const std::string& name, Env**) const;
   bool Get(const std::string& name, std::shared_ptr<EventListener>*) const;
   bool Get(const std::string& name, std::shared_ptr<FileChecksumGenFactory>*) const;
+  bool Get(const std::string& name, std::shared_ptr<FileSystem>*) const;
   bool Get(const std::string& name, std::shared_ptr<const FilterPolicy>*) const;
   bool Get(const std::string& name, std::shared_ptr<FlushBlockPolicyFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<Logger>*) const;

@@ -45,9 +45,9 @@ public:
     AutoReg(AutoReg&&) = delete;
     AutoReg& operator=(AutoReg&&) = delete;
     AutoReg& operator=(const AutoReg&) = delete;
-    typedef PluginPtr (*CreatorFunc)(const json&,const JsonOptionsRepo&,Status*);
-    using NameToFuncMap = std::unordered_map<std::string, CreatorFunc>;
-    AutoReg(Slice class_name, CreatorFunc creator);
+    typedef PluginPtr (*AcqFunc)(const json&,const JsonOptionsRepo&,Status*);
+    using NameToFuncMap = std::unordered_map<std::string, AcqFunc>;
+    AutoReg(Slice class_name, AcqFunc acq);
     ~AutoReg();
     typename NameToFuncMap::iterator ipos;
     struct Impl;
@@ -76,9 +76,9 @@ struct PluginFactory<PluginPtr>::AutoReg::Impl {
 
 template<class PluginPtr>
 PluginFactory<PluginPtr>::
-AutoReg::AutoReg(Slice class_name, CreatorFunc creator) {
+AutoReg::AutoReg(Slice class_name, AcqFunc acq) {
   auto& imp = Impl::s_singleton();
-  auto ib = imp.func_map.insert(std::make_pair(class_name.ToString(), creator));
+  auto ib = imp.func_map.insert(std::make_pair(class_name.ToString(), acq));
   if (!ib.second) {
     fprintf(stderr, "FATAL: %s:%d: %s: duplicate class_name = %s\n"
         , __FILE__, __LINE__, ROCKSDB_FUNC, class_name.data());
@@ -208,10 +208,10 @@ const json& jsonRefType();
 const JsonOptionsRepo& repoRefType();
 
 ///@param Name     string of factory class_name
-///@param Creator  must return base class ptr
-#define ROCKSDB_FACTORY_REG(Name, Creator) \
-  PluginFactory<decltype(Creator(jsonRefType(),repoRefType(),(Status*)0))>:: \
-  AutoReg ROCKSDB_PP_CAT_3(g_reg_factory_,Creator,__LINE__)(Name,Creator)
+///@param Acquire  must return base class ptr
+#define ROCKSDB_FACTORY_REG(Name, Acquire) \
+  PluginFactory<decltype(Acquire(jsonRefType(),repoRefType(),(Status*)0))>:: \
+  AutoReg ROCKSDB_PP_CAT_3(g_reg_factory_,Acquire,__LINE__)(Name,Acquire)
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -243,17 +243,19 @@ const JsonOptionsRepo& repoRefType();
        std::string(#prop ": ") + ex.what()); \
   } while (0)
 
-#define ROCKSDB_JSON_OPT_FACT_IMPL(js, prop) do { \
+
+#define ROCKSDB_JSON_OPT_FACT_INNER_IMPL(js, prop) \
     Status __status; \
     prop = PluginFactory<decltype(prop)>:: \
         ObtainPlugin(#prop, ROCKSDB_FUNC, js, repo, &__status); \
-    if (!__status.ok()) return __status; \
+    if (!__status.ok()) return __status
+#define ROCKSDB_JSON_OPT_FACT_INNER(js, prop) do {  \
+        ROCKSDB_JSON_OPT_FACT_INNER_IMPL(js, prop); \
   } while (0)
-
 #define ROCKSDB_JSON_OPT_FACT(js, prop) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) { \
-      ROCKSDB_JSON_OPT_FACT_IMPL(__iter.value(), prop); \
+      ROCKSDB_JSON_OPT_FACT_INNER_IMPL(__iter.value(), prop); \
   }} while (0)
 
 } // ROCKSDB_NAMESPACE

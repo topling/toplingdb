@@ -751,6 +751,7 @@ set(SOURCES
         utilities/debug.cc
         utilities/env_mirror.cc
         utilities/env_timed.cc
+        utilities/json/json_db_open.cc
         utilities/json/json_builtin_plugin.cc
         utilities/json/json_plugin_repo.cc
         utilities/json/json_table_factory.cc

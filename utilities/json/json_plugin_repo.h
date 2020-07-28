@@ -14,12 +14,15 @@ namespace ROCKSDB_NAMESPACE {
 
 struct Options;
 struct DBOptions;
+struct ColumnFamilyDescriptor;
 struct ColumnFamilyOptions;
 
 class Cache;
+class ColumnFamilyHandle;
 class CompactionFilterFactory;
 class Comparator;
 class ConcurrentTaskLimiter;
+class DB;
 class Env;
 class EventListener;
 class FileChecksumGenFactory;
@@ -37,6 +40,12 @@ class Statistics;
 class TableFactory;
 class TablePropertiesCollectorFactory;
 
+struct DB_MultiCF {
+  DB* db;
+  std::vector<ColumnFamilyDescriptor> cf_descriptors;
+  std::vector<ColumnFamilyHandle*> cf_handles;
+};
+
 class JsonOptionsRepo {
  public:
   JsonOptionsRepo() noexcept;
@@ -46,10 +55,20 @@ class JsonOptionsRepo {
   JsonOptionsRepo& operator=(const JsonOptionsRepo&) noexcept;
   JsonOptionsRepo& operator=(JsonOptionsRepo&&) noexcept;
 
+  Status ImportJsonFile(const Slice& fname);
   Status Import(const std::string& json_str);
   Status Import(const nlohmann::json&);
   Status Export(nlohmann::json*) const;
   Status Export(std::string*, bool pretty = false) const;
+
+  Status OpenDB(const nlohmann::json&, DB**);
+  Status OpenDB(const nlohmann::json&, DB_MultiCF**);
+
+  const std::vector<ColumnFamilyHandle*>& CFHandles() const;
+  std::vector<ColumnFamilyHandle*>& CFHandles();
+
+  const std::vector<ColumnFamilyDescriptor>& CFDescriptors() const;
+  std::vector<ColumnFamilyDescriptor>& CFDescriptors();
 
   ///@{
   /// the semantic is overwrite
@@ -111,6 +130,9 @@ class JsonOptionsRepo {
 // also public
   struct Impl;
   std::shared_ptr<Impl> m_impl;
+ private:
+  template<class DBType>
+  Status OpenDB_tpl(const nlohmann::json&, DBType**);
 };
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -56,6 +56,8 @@ struct JsonOptionsRepo::Impl {
   ObjRepo<Options> options;
   ObjRepo<DBOptions> db_options;
   ObjRepo<ColumnFamilyOptions> cf_options;
+
+  json db_js; // not evaluated during import
 };
 
 ///@note on principle, the factory itself is stateless, but its product
@@ -142,9 +144,12 @@ AcquirePlugin(const std::string& class_name, const json& js,
     return iter->second(js, repo, st);
   }
   else {
+    *st = Status::NotFound("plugin is not registered", class_name);
     return PluginPtr(nullptr);
   }
 }
+
+std::string PluginParseInstID(const std::string& str_val);
 
 template<class PluginPtr>
 PluginPtr
@@ -166,9 +171,7 @@ GetPlugin(const char* varname, const char* func_name,
                    std::string(varname) + " inst_id is too short");
         return PluginPtr(nullptr);
       }
-      const auto inst_id = '{' == str_val[1]
-                         ? str_val.substr(2, str_val.size() - 3)
-                         : str_val.substr(1, str_val.size() - 1);
+      const auto inst_id = PluginParseInstID(str_val);
       ret = repo.Get(inst_id, &p);
     } else {
       ret = repo.Get(str_val, &p); // the whole str_val is inst_id
@@ -206,7 +209,7 @@ try {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
       *s = Status::InvalidArgument(func_name, std::string(varname) +
-               " inst_id/class_name = \"" + str_val + "\" is empty");
+               " inst_id/class_name is empty");
       return PluginPtr(nullptr);
     }
     if ('$' == str_val[0]) {
@@ -215,10 +218,7 @@ try {
                  " inst_id = \"" + str_val + "\" is too short");
         return PluginPtr(nullptr);
       }
-      // ${inst_id} or $inst_id
-      const auto inst_id = '{' == str_val[1]
-                         ? str_val.substr(2, str_val.size() - 3)
-                         : str_val.substr(1, str_val.size() - 1);
+      const auto inst_id = PluginParseInstID(str_val);
       PluginPtr p(nullptr);
       if (!repo.Get(inst_id, &p)) {
         *s = Status::NotFound(func_name,

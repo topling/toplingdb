@@ -2,6 +2,8 @@
 // Created by leipeng on 2020/7/1.
 //
 #include <cinttypes>
+#include <fstream>
+#include <sstream>
 
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
@@ -67,6 +69,20 @@ JsonOptionsRepo::JsonOptionsRepo(JsonOptionsRepo&&) noexcept = default;
 JsonOptionsRepo& JsonOptionsRepo::operator=(const JsonOptionsRepo&) noexcept = default;
 JsonOptionsRepo& JsonOptionsRepo::operator=(JsonOptionsRepo&&) noexcept = default;
 
+Status JsonOptionsRepo::ImportJsonFile(const Slice& fname) {
+  std::string json_str;
+  {
+    std::fstream ifs(fname.data());
+    if (!ifs.is_open()) {
+      return Status::InvalidArgument("open json file fail", fname);
+    }
+    std::stringstream ss;
+    ss << ifs.rdbuf();
+    json_str = ss.str();
+  }
+  return Import(json_str);
+}
+
 Status JsonOptionsRepo::Import(const string& json_str) {
   json js(json_str);
   return Import(js);
@@ -109,6 +125,9 @@ Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
       if (!s.ok()) return s;
     }
   }
+
+  JSON_IMPORT_REPO(DBOptions            , db_options);
+  JSON_IMPORT_REPO(ColumnFamilyOptions  , cf_options);
 
   return Status::OK();
 }
@@ -220,6 +239,103 @@ void JsonOptionsRepo::GetMap(
     shared_ptr<unordered_map<string,
                              shared_ptr<MemTableRepFactory>>>* pp) const {
   *pp = m_impl->mem_table_rep_factory.name2p;
+}
+
+/**
+ * @param js may be:
+ *  1. string name ref to a db defined in 'this' repo
+ *  2. { "DB::Open": { options: {...} } }
+ *  3. { "SomeStackableDB::Open": { } } }
+ *  4. string name ref target in repo looks like:
+ *     db : {
+ *       dbname1 : {
+ *         method : "DB::Open",
+ *         params : {
+ *           name : "some-name",
+ *           options: { ... }
+ *         }
+ *       },
+ *       dbname2 : {
+ *         method : "SomeStackableDB::Open",
+ *         params : {
+ *           name : "some-name",
+ *           options: { ... }
+ *         }
+ *       }
+ *       dbname3 : {
+ *         method : "DB::OpenReadOnly",
+ *         params : {
+ *           name : "some-name",
+ *           options: { ... }
+ *         }
+ *       }
+ *     }
+ */
+Status JsonOptionsRepo::OpenDB(const nlohmann::json& js, DB** dbp) {
+  return OpenDB_tpl<DB>(js, dbp);
+}
+Status JsonOptionsRepo::OpenDB(const nlohmann::json& js, DB_MultiCF** dbp) {
+  return OpenDB_tpl<DB_MultiCF>(js, dbp);
+}
+
+template<class DBT>
+Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
+  *dbp = nullptr;
+  auto open_impl = [&](const std::string& dbname, const json& db_open_js) {
+      auto iter = db_open_js.find("method");
+      if (db_open_js.end() == iter) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "dbname = \"" + dbname + "\", param \"method\" is missing");
+      }
+      const std::string& method = iter.value().get<string>();
+      iter = db_open_js.find("params");
+      if (db_open_js.end() == iter) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "dbname = \"" + dbname + "\", param \"params\" is missing");
+      }
+      const auto& params_js = iter.value();
+      Status s;
+      *dbp = PluginFactory<DBT*>::AcquirePlugin(method, params_js, *this, &s);
+      return s;
+  };
+  auto open_db = [&](const std::string& dbname) {
+      auto iter = m_impl->db_js.find(dbname);
+      if (m_impl->db_js.end() == iter) {
+        return Status::NotFound(ROCKSDB_FUNC,
+            "dbname = \"" + dbname + "\" is not found");
+      }
+      return open_impl(dbname, iter.value());
+  };
+  if (js.is_string()) {
+    const std::string& str_val = js.get<std::string>();
+    if (str_val.empty()) {
+      return Status::InvalidArgument(ROCKSDB_FUNC,
+        "open method = \"" + str_val + "\" is empty");
+    }
+    if ('$' == str_val[0]) {
+      if (str_val.size() < 3) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "dbname = \"" + str_val + "\" is too short");
+      }
+      return open_db(PluginParseInstID(str_val));
+    } else {
+      // string which does not like ${dbname} or $dbname
+      return open_db(str_val); // str_val is dbname
+    }
+  } else {
+    return open_impl("<inline-defined>", js);
+  }
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+
+std::string PluginParseInstID(const std::string& str_val) {
+  // ${inst_id} or $inst_id
+  if ('{' == str_val[1])
+    return str_val.substr(2, str_val.size() - 3);
+  else
+    return str_val.substr(1, str_val.size() - 1);
 }
 
 }

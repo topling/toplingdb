@@ -9,6 +9,7 @@
 #include <memory>
 #include <cinttypes>
 
+#include "rocksdb/db.h"
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
 #include "options/db_options.h"
@@ -304,6 +305,14 @@ struct DBOptions_Json : DBOptions {
   }
 };
 
+static shared_ptr<DBOptions>
+NewDBOptionsJS(const json& js, const JsonOptionsRepo& repo, Status* s) {
+  auto p = std::make_shared<DBOptions_Json>();
+  *s = p->UpdateFromJson(js, repo);
+  return p;
+}
+ROCKSDB_FACTORY_REG("DBOptions", NewDBOptionsJS);
+
 template<class Vec>
 bool Init_vec(const json& js, Vec& vec) {
   if (js.is_array()) {
@@ -580,6 +589,14 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_FACT(js, compaction_thread_limiter);
   }
 };
+static shared_ptr<ColumnFamilyOptions>
+NewCFOptionsJS(const json& js, const JsonOptionsRepo& repo, Status* s) {
+  auto p = std::make_shared<ColumnFamilyOptions_Json>();
+  *s = p->UpdateFromJson(js, repo);
+  return p;
+}
+ROCKSDB_FACTORY_REG("ColumnFamilyOptions", NewCFOptionsJS);
+ROCKSDB_FACTORY_REG("CFOptions", NewCFOptionsJS);
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -807,5 +824,198 @@ catch (const std::exception& ex) {
 }
 ROCKSDB_FACTORY_REG("HashLinkListRep", NewHashLinkListMemTableRepFactoryJson);
 ROCKSDB_FACTORY_REG("HashLinkList", NewHashLinkListMemTableRepFactoryJson);
+
+/////////////////////////////////////////////////////////////////////////////
+static
+DB* JS_DB_Open(const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  if (!js.is_object()) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
+    return nullptr;
+  }
+  auto iter = js.find("name");
+  if (js.end() == iter) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
+    return nullptr;
+  }
+  std::string name = iter.value().get<std::string>();
+  iter = js.find("options");
+  if (js.end() == iter) {
+    iter = js.find("db_options");
+    if (js.end() == iter) {
+      *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"db_options\"");
+      return nullptr;
+    }
+    auto& db_options_js = iter.value();
+    iter = js.find("cf_options");
+    if (js.end() == iter) {
+      *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"cf_options\"");
+      return nullptr;
+    }
+    auto& cf_options_js = iter.value();
+    auto db_options = PluginFactorySP<DBOptions>::ObtainPlugin(
+        "db_options", ROCKSDB_FUNC, db_options_js, repo, s);
+    if (!db_options) {
+      *s = Status::InvalidArgument(ROCKSDB_FUNC, "bad \"db_options\" = " + db_options_js.dump());
+      return nullptr;
+    }
+    auto cf_options = PluginFactorySP<ColumnFamilyOptions>::ObtainPlugin(
+        "cf_options", ROCKSDB_FUNC, db_options_js, repo, s);
+    if (!cf_options) {
+      *s = Status::InvalidArgument(ROCKSDB_FUNC, "bad \"cf_options\" = " + cf_options_js.dump());
+      return nullptr;
+    }
+    Options options(*db_options, *cf_options);
+    DB* db = nullptr;
+    *s = DB::Open(options, name, &db);
+    return db;
+  }
+  auto& js_options = iter.value();
+  DBOptions_Json db_options;
+  *s = db_options.UpdateFromJson(js_options, repo);
+  if (!s->ok()) {
+    return nullptr;
+  }
+  ColumnFamilyOptions_Json cf_options;
+  *s = cf_options.UpdateFromJson(js_options, repo);
+  if (!s->ok()) {
+    return nullptr;
+  }
+  Options options(db_options, cf_options);
+  DB* db = nullptr;
+  *s = DB::Open(options, name, &db);
+  return db;
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("DB::Open", JS_DB_Open);
+
+static
+DB* JS_DB_OpenForReadOnly(const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  if (!js.is_object()) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
+    return nullptr;
+  }
+  bool error_if_log_file_exist = false; // default
+  ROCKSDB_JSON_OPT_PROP(js, error_if_log_file_exist);
+  auto iter = js.find("name");
+  if (js.end() == iter) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
+    return nullptr;
+  }
+  std::string name = iter.value().get<std::string>();
+  iter = js.find("options");
+  if (js.end() == iter) {
+    iter = js.find("db_options");
+    if (js.end() == iter) {
+      *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"db_options\"");
+      return nullptr;
+    }
+    auto& db_options_js = iter.value();
+    iter = js.find("cf_options");
+    if (js.end() == iter) {
+      *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"cf_options\"");
+      return nullptr;
+    }
+    auto& cf_options_js = iter.value();
+    auto db_options = PluginFactorySP<DBOptions>::ObtainPlugin(
+        "db_options", ROCKSDB_FUNC, db_options_js, repo, s);
+    if (!db_options) {
+      *s = Status::InvalidArgument(ROCKSDB_FUNC, "bad \"db_options\" = " + db_options_js.dump());
+      return nullptr;
+    }
+    auto cf_options = PluginFactorySP<ColumnFamilyOptions>::ObtainPlugin(
+        "cf_options", ROCKSDB_FUNC, db_options_js, repo, s);
+    if (!cf_options) {
+      *s = Status::InvalidArgument(ROCKSDB_FUNC, "bad \"cf_options\" = " + cf_options_js.dump());
+      return nullptr;
+    }
+    Options options(*db_options, *cf_options);
+    DB* db = nullptr;
+    *s = DB::OpenForReadOnly(options, name, &db, error_if_log_file_exist);
+    return db;
+  }
+  auto& js_options = iter.value();
+  DBOptions_Json db_options;
+  *s = db_options.UpdateFromJson(js_options, repo);
+  if (!s->ok()) {
+    return nullptr;
+  }
+  ColumnFamilyOptions_Json cf_options;
+  *s = cf_options.UpdateFromJson(js_options, repo);
+  if (!s->ok()) {
+    return nullptr;
+  }
+  Options options(db_options, cf_options);
+  DB* db = nullptr;
+  *s = DB::OpenForReadOnly(options, name, &db, error_if_log_file_exist);
+  return db;
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_OpenForReadOnly);
+
+static
+DB_MultiCF* JS_DB_MultiCF_Open(const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  if (!js.is_object()) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
+    return nullptr;
+  }
+  auto iter = js.find("name");
+  if (js.end() == iter) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
+    return nullptr;
+  }
+  std::string name = iter.value().get<std::string>();
+  DBOptions_Json db_options;
+  iter = js.find("db_options");
+  if (js.end() == iter) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"db_options\"");
+    return nullptr;
+  }
+  auto& js_db_options = iter.value();
+  *s = db_options.UpdateFromJson(js_db_options, repo);
+  if (!s->ok()) {
+    return nullptr;
+  }
+  iter = js.find("column_families");
+  if (js.end() == iter) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"column_families\"");
+    return nullptr;
+  }
+  std::unique_ptr<DB_MultiCF> db(new DB_MultiCF);
+  auto& js_cf_desc = iter.value();
+  for (auto& kv : js_cf_desc.items()) {
+    const std::string& cf_name = kv.key();
+    if (!kv.value().is_object()) {
+      *s = Status::InvalidArgument(ROCKSDB_FUNC, cf_name + ": must be an object");
+      return nullptr;
+    }
+    db->cf_descriptors.emplace_back();
+    auto& cfd = db->cf_descriptors.back();
+    *s = static_cast<ColumnFamilyOptions_Json&>(cfd.options).UpdateFromJson(kv.value(), repo);
+    if (!s->ok()) {
+      return nullptr;
+    }
+    cfd.name = cf_name;
+  }
+  if (db->cf_descriptors.empty()) {
+    *s = Status::InvalidArgument(ROCKSDB_FUNC, "param \"column_families\" is empty");
+    return nullptr;
+  }
+  *s = DB::Open(db_options, name, db->cf_descriptors, &db->cf_handles, &db->db);
+  return db.release();
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("DB::Open", JS_DB_MultiCF_Open);
 
 }

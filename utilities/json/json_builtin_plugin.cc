@@ -4,7 +4,6 @@
 
 
 #include "utilities/table_properties_collectors/compact_on_deletion_collector.h"
-//#include "utilities/ttl/db_ttl_impl.h"
 
 #include <memory>
 #include <cinttypes>
@@ -15,6 +14,8 @@
 #include "options/db_options.h"
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/concurrent_task_limiter.h"
+#include "rocksdb/utilities/db_ttl.h"
+#include "rocksdb/utilities/transaction_db.h"
 #include "rocksdb/flush_block_policy.h"
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/rate_limiter.h"
@@ -23,6 +24,7 @@
 #include "rocksdb/wal_filter.h"
 #include "util/compression.h"
 #include "util/rate_limiter.h"
+#include "utilities/blob_db/blob_db.h"
 #include "json.h"
 #include "json_plugin_factory.h"
 
@@ -945,7 +947,8 @@ ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_OpenAsSecondary);
 std::unique_ptr<DB_MultiCF>
 JS_DB_MultiCF_Options(const json& js, const JsonOptionsRepo& repo,
                       std::shared_ptr<DBOptions>* db_options,
-                      std::string* name) {
+                      std::string* name,
+                      std::function<void(const json&)> parse_extra = nullptr) {
   if (!js.is_object()) {
     throw Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
   }
@@ -976,10 +979,14 @@ JS_DB_MultiCF_Options(const json& js, const JsonOptionsRepo& repo,
     if (!kv.value().is_object()) {
       throw Status::InvalidArgument(ROCKSDB_FUNC, cf_name + ": must be an object");
     }
+    auto& cf_js = kv.value();
     auto cf_options = PluginFactorySP<ColumnFamilyOptions>::ObtainPlugin(
-        cf_name.c_str(), ROCKSDB_FUNC, kv.value(), repo, &s);
+        cf_name.c_str(), ROCKSDB_FUNC, cf_js, repo, &s);
     if (!cf_options) {
       throw s;
+    }
+    if (parse_extra) {
+      parse_extra(cf_js);
     }
     db->cf_descriptors.push_back({cf_name, *cf_options});
   }
@@ -1053,5 +1060,213 @@ catch (const Status& es) {
   return nullptr;
 }
 ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_MultiCF_OpenAsSecondary);
+
+/////////////////////////////////////////////////////////////////////////////
+// DBWithTTL::Open
+
+static
+DB*
+JS_DBWithTTL_Open(const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  std::string name;
+  Options options(JS_Options(js, repo, &name));
+  int32_t ttl = 0; // default 0
+  bool read_only = false; // default false
+  ROCKSDB_JSON_OPT_PROP(js, ttl);
+  ROCKSDB_JSON_OPT_PROP(js, read_only);
+  DBWithTTL* db = nullptr;
+  *s = DBWithTTL::Open(options, name, &db, ttl, read_only);
+  return db;
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DBWithTTL_Open);
+
+static
+DB_MultiCF* JS_DBWithTTL_MultiCF_Open(
+        const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  shared_ptr<DBOptions> db_opt;
+  std::string name;
+  std::vector<int32_t> ttls;
+  bool read_only = false;
+  ROCKSDB_JSON_OPT_PROP(js, read_only);
+  auto parse_ttl = [&ttls](const json& cf_js) {
+    int32_t ttl = 0;
+    ROCKSDB_JSON_REQ_PROP(cf_js, ttl);
+    ttls.push_back(ttl);
+  };
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name, parse_ttl);
+  DBWithTTL* dbptr = nullptr;
+  *s = DBWithTTL::Open(*db_opt, name, db->cf_descriptors,
+                       &db->cf_handles, &dbptr, ttls, read_only);
+  db->db = dbptr;
+  return db.release();
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DBWithTTL_MultiCF_Open);
+
+/////////////////////////////////////////////////////////////////////////////
+// TransactionDB::Open
+
+struct TransactionDBOptions_Json : TransactionDBOptions {
+  TransactionDBOptions_Json(const json& js, const JsonOptionsRepo& repo) {
+    ROCKSDB_JSON_OPT_PROP(js, max_num_locks);
+    ROCKSDB_JSON_OPT_PROP(js, max_num_deadlocks);
+    ROCKSDB_JSON_OPT_PROP(js, num_stripes);
+    ROCKSDB_JSON_OPT_PROP(js, transaction_lock_timeout);
+    ROCKSDB_JSON_OPT_PROP(js, default_lock_timeout);
+    //ROCKSDB_JSON_OPT_FACT(js, custom_mutex_factory);
+    ROCKSDB_JSON_OPT_ENUM(js, write_policy);
+    ROCKSDB_JSON_OPT_PROP(js, rollback_merge_operands);
+    ROCKSDB_JSON_OPT_PROP(js, skip_concurrency_control);
+    ROCKSDB_JSON_OPT_PROP(js, default_write_batch_flush_threshold);
+  }
+};
+
+TransactionDBOptions
+JS_TransactionDBOptions(const json& js, const JsonOptionsRepo& repo) {
+  auto iter = js.find("txn_db_options");
+  if (js.end() == iter) {
+    auto submsg = "missing required param \"txn_db_options\"";
+    throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
+  }
+  return TransactionDBOptions_Json(iter.value(), repo);
+}
+
+static
+DB*
+JS_TransactionDB_Open(const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  std::string name;
+  Options options(JS_Options(js, repo, &name));
+  TransactionDBOptions trx_db_options(JS_TransactionDBOptions(js, repo));
+  TransactionDB* db = nullptr;
+  *s = TransactionDB::Open(options, trx_db_options, name, &db);
+  return db;
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_TransactionDB_Open);
+
+static
+DB_MultiCF* JS_TransactionDB_MultiCF_Open(
+        const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  shared_ptr<DBOptions> db_opt;
+  std::string name;
+  TransactionDBOptions trx_db_options(JS_TransactionDBOptions(js, repo));
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  TransactionDB* dbptr = nullptr;
+  *s = TransactionDB::Open(*db_opt, trx_db_options, name, db->cf_descriptors,
+                           &db->cf_handles, &dbptr);
+  db->db = dbptr;
+  return db.release();
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_TransactionDB_MultiCF_Open);
+
+/////////////////////////////////////////////////////////////////////////////
+// BlobDB::Open
+namespace blob_db {
+
+struct BlobDBOptions_Json : BlobDBOptions {
+  BlobDBOptions_Json(const json& js, const JsonOptionsRepo& repo) {
+    ROCKSDB_JSON_OPT_PROP(js, blob_dir);
+    ROCKSDB_JSON_OPT_PROP(js, path_relative);
+    ROCKSDB_JSON_OPT_PROP(js, is_fifo);
+    ROCKSDB_JSON_OPT_PROP(js, max_db_size);
+    ROCKSDB_JSON_OPT_PROP(js, ttl_range_secs);
+    ROCKSDB_JSON_OPT_ENUM(js, min_blob_size);
+    ROCKSDB_JSON_OPT_PROP(js, bytes_per_sync);
+    ROCKSDB_JSON_OPT_PROP(js, blob_file_size);
+    ROCKSDB_JSON_OPT_ENUM(js, compression);
+    ROCKSDB_JSON_OPT_PROP(js, enable_garbage_collection);
+    ROCKSDB_JSON_OPT_PROP(js, garbage_collection_cutoff);
+    ROCKSDB_JSON_OPT_PROP(js, disable_background_tasks);
+  }
+};
+
+BlobDBOptions
+JS_BlobDBOptions(const json& js, const JsonOptionsRepo& repo) {
+  auto iter = js.find("bdb_options");
+  if (js.end() == iter) {
+    auto submsg = "missing required param \"bdb_options\"";
+    throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
+  }
+  return BlobDBOptions_Json(iter.value(), repo);
+}
+
+static
+DB* JS_BlobDB_Open(const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  std::string name;
+  Options options(JS_Options(js, repo, &name));
+  BlobDBOptions bdb_options(JS_BlobDBOptions(js, repo));
+  BlobDB* db = nullptr;
+  *s = BlobDB::Open(options, bdb_options, name, &db);
+  return db;
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("BlobDB::Open", JS_BlobDB_Open);
+
+static
+DB_MultiCF* JS_BlobDB_MultiCF_Open(
+        const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  shared_ptr<DBOptions> db_opt;
+  std::string name;
+  BlobDBOptions bdb_options(JS_BlobDBOptions(js, repo));
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  BlobDB* dbptr = nullptr;
+  *s = BlobDB::Open(*db_opt, bdb_options, name, db->cf_descriptors,
+                    &db->cf_handles, &dbptr);
+  db->db = dbptr;
+  return db.release();
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("BlobDB::Open", JS_BlobDB_MultiCF_Open);
+
+} // namespace blob_db
 
 }

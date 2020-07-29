@@ -1203,7 +1203,7 @@ struct BlobDBOptions_Json : BlobDBOptions {
     ROCKSDB_JSON_OPT_PROP(js, is_fifo);
     ROCKSDB_JSON_OPT_PROP(js, max_db_size);
     ROCKSDB_JSON_OPT_PROP(js, ttl_range_secs);
-    ROCKSDB_JSON_OPT_ENUM(js, min_blob_size);
+    ROCKSDB_JSON_OPT_PROP(js, min_blob_size);
     ROCKSDB_JSON_OPT_PROP(js, bytes_per_sync);
     ROCKSDB_JSON_OPT_PROP(js, blob_file_size);
     ROCKSDB_JSON_OPT_ENUM(js, compression);

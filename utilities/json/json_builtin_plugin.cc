@@ -826,62 +826,65 @@ ROCKSDB_FACTORY_REG("HashLinkListRep", NewHashLinkListMemTableRepFactoryJson);
 ROCKSDB_FACTORY_REG("HashLinkList", NewHashLinkListMemTableRepFactoryJson);
 
 /////////////////////////////////////////////////////////////////////////////
-static
-DB* JS_DB_Open(const json& js, const JsonOptionsRepo& repo, Status* s)
-try {
+// OpenDB implementations
+//
+Options JS_Options(const json& js, const JsonOptionsRepo& repo, string* name) {
   if (!js.is_object()) {
-    *s = Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
-    return nullptr;
+    throw Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
   }
   auto iter = js.find("name");
   if (js.end() == iter) {
-    *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
-    return nullptr;
+    throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
   }
-  std::string name = iter.value().get<std::string>();
+  *name = iter.value().get<std::string>();
   iter = js.find("options");
   if (js.end() == iter) {
     iter = js.find("db_options");
     if (js.end() == iter) {
-      *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"db_options\"");
-      return nullptr;
+      auto submsg = "missing param \"db_options\"";
+      throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
     }
     auto& db_options_js = iter.value();
     iter = js.find("cf_options");
     if (js.end() == iter) {
-      *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"cf_options\"");
-      return nullptr;
+      auto submsg = "missing param \"cf_options\"";
+      throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
+    }
+    Status s;
+    auto db_options = PluginFactorySP<DBOptions>::ObtainPlugin(
+        "db_options", ROCKSDB_FUNC, db_options_js, repo, &s);
+    if (!db_options) {
+      auto submsg = "bad \"db_options\" = " + db_options_js.dump();
+      throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
     }
     auto& cf_options_js = iter.value();
-    auto db_options = PluginFactorySP<DBOptions>::ObtainPlugin(
-        "db_options", ROCKSDB_FUNC, db_options_js, repo, s);
-    if (!db_options) {
-      *s = Status::InvalidArgument(ROCKSDB_FUNC, "bad \"db_options\" = " + db_options_js.dump());
-      return nullptr;
-    }
     auto cf_options = PluginFactorySP<ColumnFamilyOptions>::ObtainPlugin(
-        "cf_options", ROCKSDB_FUNC, db_options_js, repo, s);
+        "cf_options", ROCKSDB_FUNC, cf_options_js, repo, &s);
     if (!cf_options) {
-      *s = Status::InvalidArgument(ROCKSDB_FUNC, "bad \"cf_options\" = " + cf_options_js.dump());
-      return nullptr;
+      auto submsg = "bad \"cf_options\" = " + cf_options_js.dump();
+      throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
     }
-    Options options(*db_options, *cf_options);
-    DB* db = nullptr;
-    *s = DB::Open(options, name, &db);
-    return db;
+    return Options(*db_options, *cf_options);
   }
   auto& js_options = iter.value();
   DBOptions_Json db_options;
-  *s = db_options.UpdateFromJson(js_options, repo);
-  if (!s->ok()) {
-    return nullptr;
+  Status s = db_options.UpdateFromJson(js_options, repo);
+  if (!s.ok()) {
+    throw s;
   }
   ColumnFamilyOptions_Json cf_options;
-  *s = cf_options.UpdateFromJson(js_options, repo);
-  if (!s->ok()) {
-    return nullptr;
+  s = cf_options.UpdateFromJson(js_options, repo);
+  if (!s.ok()) {
+    throw s;
   }
-  Options options(db_options, cf_options);
+  return Options(db_options, cf_options);
+}
+
+static
+DB* JS_DB_Open(const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  std::string name;
+  Options options(JS_Options(js, repo, &name));
   DB* db = nullptr;
   *s = DB::Open(options, name, &db);
   return db;
@@ -890,66 +893,20 @@ catch (const std::exception& ex) {
   *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
   return nullptr;
 }
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
 ROCKSDB_FACTORY_REG("DB::Open", JS_DB_Open);
 
 static
-DB* JS_DB_OpenForReadOnly(const json& js, const JsonOptionsRepo& repo, Status* s)
+DB*
+JS_DB_OpenForReadOnly(const json& js, const JsonOptionsRepo& repo, Status* s)
 try {
-  if (!js.is_object()) {
-    *s = Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
-    return nullptr;
-  }
+  std::string name;
+  Options options(JS_Options(js, repo, &name));
   bool error_if_log_file_exist = false; // default
   ROCKSDB_JSON_OPT_PROP(js, error_if_log_file_exist);
-  auto iter = js.find("name");
-  if (js.end() == iter) {
-    *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
-    return nullptr;
-  }
-  std::string name = iter.value().get<std::string>();
-  iter = js.find("options");
-  if (js.end() == iter) {
-    iter = js.find("db_options");
-    if (js.end() == iter) {
-      *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"db_options\"");
-      return nullptr;
-    }
-    auto& db_options_js = iter.value();
-    iter = js.find("cf_options");
-    if (js.end() == iter) {
-      *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"cf_options\"");
-      return nullptr;
-    }
-    auto& cf_options_js = iter.value();
-    auto db_options = PluginFactorySP<DBOptions>::ObtainPlugin(
-        "db_options", ROCKSDB_FUNC, db_options_js, repo, s);
-    if (!db_options) {
-      *s = Status::InvalidArgument(ROCKSDB_FUNC, "bad \"db_options\" = " + db_options_js.dump());
-      return nullptr;
-    }
-    auto cf_options = PluginFactorySP<ColumnFamilyOptions>::ObtainPlugin(
-        "cf_options", ROCKSDB_FUNC, db_options_js, repo, s);
-    if (!cf_options) {
-      *s = Status::InvalidArgument(ROCKSDB_FUNC, "bad \"cf_options\" = " + cf_options_js.dump());
-      return nullptr;
-    }
-    Options options(*db_options, *cf_options);
-    DB* db = nullptr;
-    *s = DB::OpenForReadOnly(options, name, &db, error_if_log_file_exist);
-    return db;
-  }
-  auto& js_options = iter.value();
-  DBOptions_Json db_options;
-  *s = db_options.UpdateFromJson(js_options, repo);
-  if (!s->ok()) {
-    return nullptr;
-  }
-  ColumnFamilyOptions_Json cf_options;
-  *s = cf_options.UpdateFromJson(js_options, repo);
-  if (!s->ok()) {
-    return nullptr;
-  }
-  Options options(db_options, cf_options);
   DB* db = nullptr;
   *s = DB::OpenForReadOnly(options, name, &db, error_if_log_file_exist);
   return db;
@@ -958,64 +915,143 @@ catch (const std::exception& ex) {
   *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
   return nullptr;
 }
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
 ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_OpenForReadOnly);
 
 static
-DB_MultiCF* JS_DB_MultiCF_Open(const json& js, const JsonOptionsRepo& repo, Status* s)
+DB*
+JS_DB_OpenAsSecondary(const json& js, const JsonOptionsRepo& repo, Status* s)
 try {
+  std::string name, secondary_path;
+  ROCKSDB_JSON_REQ_PROP(js, secondary_path);
+  Options options(JS_Options(js, repo, &name));
+  DB* db = nullptr;
+  *s = DB::OpenAsSecondary(options, name, secondary_path, &db);
+  return db;
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_OpenAsSecondary);
+
+std::unique_ptr<DB_MultiCF>
+JS_DB_MultiCF_Options(const json& js, const JsonOptionsRepo& repo,
+                      std::shared_ptr<DBOptions>* db_options,
+                      std::string* name) {
   if (!js.is_object()) {
-    *s = Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
-    return nullptr;
+    throw Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
   }
   auto iter = js.find("name");
   if (js.end() == iter) {
-    *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
-    return nullptr;
+    throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
   }
-  std::string name = iter.value().get<std::string>();
-  DBOptions_Json db_options;
-  iter = js.find("db_options");
-  if (js.end() == iter) {
-    *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"db_options\"");
-    return nullptr;
-  }
-  auto& js_db_options = iter.value();
-  *s = db_options.UpdateFromJson(js_db_options, repo);
-  if (!s->ok()) {
-    return nullptr;
-  }
+  *name = iter.value().get<std::string>();
   iter = js.find("column_families");
   if (js.end() == iter) {
-    *s = Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"column_families\"");
-    return nullptr;
+    throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"column_families\"");
+  }
+  auto& js_cf_desc = iter.value();
+  iter = js.find("db_options");
+  if (js.end() == iter) {
+    throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"db_options\"");
+  }
+  auto& db_options_js = iter.value();
+  Status s;
+  *db_options = PluginFactorySP<DBOptions>::ObtainPlugin(
+      "db_options", ROCKSDB_FUNC, db_options_js, repo, &s);
+  if (!db_options) {
+    throw s;
   }
   std::unique_ptr<DB_MultiCF> db(new DB_MultiCF);
-  auto& js_cf_desc = iter.value();
   for (auto& kv : js_cf_desc.items()) {
     const std::string& cf_name = kv.key();
     if (!kv.value().is_object()) {
-      *s = Status::InvalidArgument(ROCKSDB_FUNC, cf_name + ": must be an object");
-      return nullptr;
+      throw Status::InvalidArgument(ROCKSDB_FUNC, cf_name + ": must be an object");
     }
-    db->cf_descriptors.emplace_back();
-    auto& cfd = db->cf_descriptors.back();
-    *s = static_cast<ColumnFamilyOptions_Json&>(cfd.options).UpdateFromJson(kv.value(), repo);
-    if (!s->ok()) {
-      return nullptr;
+    auto cf_options = PluginFactorySP<ColumnFamilyOptions>::ObtainPlugin(
+        cf_name.c_str(), ROCKSDB_FUNC, kv.value(), repo, &s);
+    if (!cf_options) {
+      throw s;
     }
-    cfd.name = cf_name;
+    db->cf_descriptors.push_back({cf_name, *cf_options});
   }
   if (db->cf_descriptors.empty()) {
-    *s = Status::InvalidArgument(ROCKSDB_FUNC, "param \"column_families\" is empty");
-    return nullptr;
+    throw Status::InvalidArgument(ROCKSDB_FUNC, "param \"column_families\" is empty");
   }
-  *s = DB::Open(db_options, name, db->cf_descriptors, &db->cf_handles, &db->db);
+  return db;
+}
+
+static
+DB_MultiCF*
+JS_DB_MultiCF_Open(const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  shared_ptr<DBOptions> db_opt;
+  string name;
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  *s = DB::Open(*db_opt, name, db->cf_descriptors, &db->cf_handles, &db->db);
   return db.release();
 }
 catch (const std::exception& ex) {
   *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
   return nullptr;
 }
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
 ROCKSDB_FACTORY_REG("DB::Open", JS_DB_MultiCF_Open);
+
+static
+DB_MultiCF* JS_DB_MultiCF_OpenForReadOnly(
+        const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  shared_ptr<DBOptions> db_opt;
+  string name;
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  bool error_if_log_file_exist = false; // default is false
+  ROCKSDB_JSON_OPT_PROP(js, error_if_log_file_exist);
+  *s = DB::OpenForReadOnly(*db_opt, name, db->cf_descriptors, &db->cf_handles,
+                           &db->db, error_if_log_file_exist);
+  return db.release();
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_MultiCF_OpenForReadOnly);
+
+static
+DB_MultiCF* JS_DB_MultiCF_OpenAsSecondary(
+        const json& js, const JsonOptionsRepo& repo, Status* s)
+try {
+  shared_ptr<DBOptions> db_opt;
+  std::string name, secondary_path;
+  ROCKSDB_JSON_REQ_PROP(js, secondary_path);
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  *s = DB::OpenAsSecondary(*db_opt, name, secondary_path, db->cf_descriptors,
+                           &db->cf_handles, &db->db);
+  return db.release();
+}
+catch (const std::exception& ex) {
+  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return nullptr;
+}
+catch (const Status& es) {
+  *s = es;
+  return nullptr;
+}
+ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_MultiCF_OpenAsSecondary);
 
 }

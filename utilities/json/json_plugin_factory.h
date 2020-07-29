@@ -258,7 +258,7 @@ const JsonOptionsRepo& repoRefType();
 #define ROCKSDB_JSON_REQ_PROP(js, prop) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) prop = __iter.value().get<decltype(prop)>(); \
-    else throw std::invalid_argument("#prop" "is required"); \
+    else throw std::invalid_argument("missing required param \"" #prop "\""); \
   } while (0)
 #define ROCKSDB_JSON_OPT_PROP(js, prop) do { \
     auto __iter = js.find(#prop); \

@@ -38,9 +38,5 @@ using std::string;
 
 */
 
-Status JsonOptionsRepo::OpenDB(DB** dbp) {
-
-}
-
 
 } // namespace ROCKSDB_NAMESPACE

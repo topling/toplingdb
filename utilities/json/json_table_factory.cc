@@ -297,6 +297,7 @@ class DispatherTableFactory : public TableFactory {
 
   const char* Name() const override { return "DispatherTableFactory"; }
 
+  using TableFactory::NewTableReader;
   Status NewTableReader(
       const ReadOptions& ro,
       const TableReaderOptions& table_reader_options,

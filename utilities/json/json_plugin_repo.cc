@@ -148,7 +148,7 @@ static void Impl_Export(const JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
   }
 }
 Status JsonOptionsRepo::Export(nlohmann::json* main_js) const {
-  assert(NULL != js);
+  assert(NULL != main_js);
 #define JSON_EXPORT_REPO(Clazz, field) \
   Impl_Export(m_impl->field, #Clazz, *main_js)
   JSON_EXPORT_REPO(Comparator              , comparator);

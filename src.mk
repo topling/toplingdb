@@ -217,7 +217,7 @@ LIB_SOURCES =                                                   \
   utilities/fault_injection_env.cc                              \
   utilities/fault_injection_fs.cc                               \
   utilities/json/json_builtin_plugin.cc                         \
-  utilities/json/json_plugin_factory.cc                         \
+  utilities/json/json_plugin_repo.cc                            \
   utilities/json/json_table_factory.cc                          \
   utilities/leveldb_options/leveldb_options.cc                  \
   utilities/memory/memory_util.cc                               \

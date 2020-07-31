@@ -88,7 +88,27 @@ Status JsonOptionsRepo::Import(const string& json_str) {
   return Import(js);
 }
 
+static
+void MergeSubObject(json* target, const json& patch, const string& subname) {
+  auto iter = patch.find(subname);
+  if (patch.end() != iter) {
+    auto& sub_js = iter.value();
+    if (!sub_js.is_object()) {
+      throw Status::InvalidArgument(
+          ROCKSDB_FUNC,
+          "\"" + subname + "\" must be an object");
+    }
+    if (!target->is_null() && !target->is_object()) {
+      throw Status::Corruption(
+          ROCKSDB_FUNC,
+          "\"target\" must be an object or null, subname = " + subname);
+    }
+    target->merge_patch(sub_js);
+  }
+}
+
 Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
+  MergeSubObject(&m_impl->db_js, main_js, "databases");
   const auto& repo = *this;
 #define JSON_IMPORT_REPO(Clazz, field) \
   Impl_Import(m_impl->field, #Clazz, main_js, repo)
@@ -147,7 +167,7 @@ static void Impl_Export(const JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
     params_js = kv.second.params;
   }
 }
-Status JsonOptionsRepo::Export(nlohmann::json* main_js) const {
+Status JsonOptionsRepo::Export(nlohmann::json* main_js) const try {
   assert(NULL != main_js);
 #define JSON_EXPORT_REPO(Clazz, field) \
   Impl_Export(m_impl->field, #Clazz, *main_js)
@@ -174,6 +194,9 @@ Status JsonOptionsRepo::Export(nlohmann::json* main_js) const {
   JSON_EXPORT_REPO(MemTableRepFactory      , mem_table_rep_factory);
   JSON_EXPORT_REPO(TableFactory            , table_factory);
   return Status::OK();
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
 
 Status JsonOptionsRepo::Export(string* json_str, bool pretty) const {
@@ -298,7 +321,7 @@ Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
       *dbp = PluginFactory<DBT*>::AcquirePlugin(method, params_js, *this, &s);
       return s;
   };
-  auto open_db = [&](const std::string& dbname) {
+  auto open_defined_db = [&](const std::string& dbname) {
       auto iter = m_impl->db_js.find(dbname);
       if (m_impl->db_js.end() == iter) {
         return Status::NotFound(ROCKSDB_FUNC,
@@ -317,10 +340,10 @@ Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
         return Status::InvalidArgument(ROCKSDB_FUNC,
             "dbname = \"" + str_val + "\" is too short");
       }
-      return open_db(PluginParseInstID(str_val));
+      return open_defined_db(PluginParseInstID(str_val));
     } else {
       // string which does not like ${dbname} or $dbname
-      return open_db(str_val); // str_val is dbname
+      return open_defined_db(str_val); // str_val is dbname
     }
   } else {
     return open_impl("<inline-defined>", js);

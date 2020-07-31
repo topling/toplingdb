@@ -45,7 +45,7 @@ for type in $BUILD_TYPE; do
 	DEBUG_LEVEL=`eval 'echo $'${type}_level`
 	env CXX=$CXX \
 		DISABLE_WARNING_AS_ERROR=1 \
-		LIB_SOURCES="$TERARK_PLUGINS_SRC" \
+		EXTRA_LIB_SOURCES="$TERARK_PLUGINS_SRC" \
 		OBJ_DIR=${BUILD_ROOT}/$type \
 		EXTRA_CXXFLAGS="-I${TERARK_CORE_DIR}/src -I${TERARK_CORE_DIR}/boost-include -I${TERARK_CORE_DIR}/3rdparty/zstd -fPIC" \
 		EXTRA_LDFLAGS="-L${TERARK_CORE_DIR}/$BUILD_ROOT/lib_shared $libs" \

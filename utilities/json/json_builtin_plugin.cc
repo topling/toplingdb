@@ -1123,7 +1123,7 @@ ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DBWithTTL_MultiCF_Open);
 // TransactionDB::Open
 
 struct TransactionDBOptions_Json : TransactionDBOptions {
-  TransactionDBOptions_Json(const json& js, const JsonOptionsRepo& repo) {
+  TransactionDBOptions_Json(const json& js, const JsonOptionsRepo&) {
     ROCKSDB_JSON_OPT_PROP(js, max_num_locks);
     ROCKSDB_JSON_OPT_PROP(js, max_num_deadlocks);
     ROCKSDB_JSON_OPT_PROP(js, num_stripes);
@@ -1197,7 +1197,7 @@ ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_TransactionDB_MultiCF_Open);
 namespace blob_db {
 
 struct BlobDBOptions_Json : BlobDBOptions {
-  BlobDBOptions_Json(const json& js, const JsonOptionsRepo& repo) {
+  BlobDBOptions_Json(const json& js, const JsonOptionsRepo&) {
     ROCKSDB_JSON_OPT_PROP(js, blob_dir);
     ROCKSDB_JSON_OPT_PROP(js, path_relative);
     ROCKSDB_JSON_OPT_PROP(js, is_fifo);

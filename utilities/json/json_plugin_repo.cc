@@ -16,6 +16,8 @@
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/sst_file_manager.h"
 #include "rocksdb/wal_filter.h"
+#include "util/string_util.h"
+
 #include "json.h"
 #include "json_plugin_factory.h"
 
@@ -359,6 +361,67 @@ std::string PluginParseInstID(const std::string& str_val) {
     return str_val.substr(2, str_val.size() - 3);
   else
     return str_val.substr(1, str_val.size() - 1);
+}
+
+ParseSizeXiB::ParseSizeXiB(const char* s) {
+  if ('-' == s[0])
+    m_val = ParseInt64(s);
+  else
+    m_val = ParseUint64(s);
+}
+ParseSizeXiB::ParseSizeXiB(const std::string& s) {
+  if ('-' == s[0])
+    m_val = ParseInt64(s);
+  else
+    m_val = ParseUint64(s);
+}
+ParseSizeXiB::ParseSizeXiB(const nlohmann::json& js) {
+  if (js.is_number_integer())
+    m_val = js.get<long long>();
+  else if (js.is_number_unsigned())
+    m_val = js.get<unsigned long long>();
+  else if (js.is_string())
+    *this = ParseSizeXiB(js.get<std::string>());
+  else
+    throw std::invalid_argument("bad json = " + js.dump());
+}
+ParseSizeXiB::ParseSizeXiB(const nlohmann::json& js, const char* key) {
+    auto iter = js.find(key);
+    if (js.end() != iter) {
+      *this = ParseSizeXiB(iter.value());
+    }
+    else {
+      throw std::invalid_argument(
+          std::string(ROCKSDB_FUNC) + ": not found key: " + key);
+    }
+}
+
+ParseSizeXiB::operator int() const {
+  if (m_val < INT_MIN || m_val > INT_MAX)
+    throw std::domain_error(std::string(ROCKSDB_FUNC) + ": out of range<int>");
+  return (int)m_val;
+}
+
+ParseSizeXiB::operator long() const {
+  if (sizeof(long) != sizeof(long long) && (m_val < LONG_MIN || m_val > LONG_MAX))
+    throw std::domain_error(std::string(ROCKSDB_FUNC) + ": out of range<long>");
+  return (long)m_val;
+}
+ParseSizeXiB::operator long long() const {
+  return m_val;
+}
+ParseSizeXiB::operator unsigned int() const {
+  if (m_val > UINT_MAX)
+    throw std::domain_error(std::string(ROCKSDB_FUNC) + ": out of range<uint>");
+  return (unsigned int)m_val;
+}
+ParseSizeXiB::operator unsigned long() const {
+  if (sizeof(long) != sizeof(long long) && (unsigned long long)m_val > ULONG_MAX)
+    throw std::domain_error(std::string(ROCKSDB_FUNC) + ": out of range<ulong>");
+  return (unsigned long)m_val;
+}
+ParseSizeXiB::operator unsigned long long() const {
+  return (unsigned long long)m_val;
 }
 
 }

@@ -135,4 +135,20 @@ class JsonOptionsRepo {
   Status OpenDB_tpl(const nlohmann::json&, DBType**);
 };
 
+class ParseSizeXiB {
+  long long m_val;
+public:
+  explicit ParseSizeXiB(const char* s);
+  explicit ParseSizeXiB(const std::string& s);
+  explicit ParseSizeXiB(const nlohmann::json&);
+  explicit ParseSizeXiB(const nlohmann::json&, const char* key);
+  operator int() const;
+  operator long() const;
+  operator long long() const;
+  operator unsigned int() const;
+  operator unsigned long() const;
+  operator unsigned long long() const;
+};
+
+
 }  // namespace ROCKSDB_NAMESPACE

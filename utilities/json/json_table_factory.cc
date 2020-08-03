@@ -37,11 +37,11 @@ struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
       ROCKSDB_JSON_OPT_PROP(js, hash_index_allow_collision);
       ROCKSDB_JSON_OPT_ENUM(js, checksum);
       ROCKSDB_JSON_OPT_PROP(js, no_block_cache);
-      ROCKSDB_JSON_OPT_PROP(js, block_size);
+      ROCKSDB_JSON_OPT_SIZE(js, block_size);
       ROCKSDB_JSON_OPT_PROP(js, block_size_deviation);
       ROCKSDB_JSON_OPT_PROP(js, block_restart_interval);
       ROCKSDB_JSON_OPT_PROP(js, index_block_restart_interval);
-      ROCKSDB_JSON_OPT_PROP(js, metadata_block_size);
+      ROCKSDB_JSON_OPT_SIZE(js, metadata_block_size);
       ROCKSDB_JSON_OPT_PROP(js, partition_filters);
       ROCKSDB_JSON_OPT_PROP(js, use_delta_encoding);
       ROCKSDB_JSON_OPT_PROP(js, read_amp_bytes_per_bit);

@@ -264,6 +264,10 @@ const JsonOptionsRepo& repoRefType();
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) prop = __iter.value().get<decltype(prop)>(); \
   } while (0)
+#define ROCKSDB_JSON_REQ_SIZE(js, prop) prop = ParseSizeXiB(js, #prop)
+#define ROCKSDB_JSON_OPT_SIZE(js, prop) do try { \
+      prop = ParseSizeXiB(js, #prop); \
+    } catch (const std::exception&) {} while (0)
 #define ROCKSDB_JSON_OPT_ENUM(js, prop) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) { \

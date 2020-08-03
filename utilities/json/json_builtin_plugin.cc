@@ -887,8 +887,13 @@ DB* JS_DB_Open(const json& js, const JsonOptionsRepo& repo, Status* s)
 try {
   std::string name;
   Options options(JS_Options(js, repo, &name));
+  bool read_only = false; // default false
+  ROCKSDB_JSON_OPT_PROP(js, read_only);
   DB* db = nullptr;
-  *s = DB::Open(options, name, &db);
+  if (read_only)
+    *s = DB::OpenForReadOnly(options, name, &db);
+  else
+    *s = DB::Open(options, name, &db);
   return db;
 }
 catch (const std::exception& ex) {
@@ -1003,7 +1008,13 @@ try {
   shared_ptr<DBOptions> db_opt;
   string name;
   auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
-  *s = DB::Open(*db_opt, name, db->cf_descriptors, &db->cf_handles, &db->db);
+  bool read_only = false; // default false
+  ROCKSDB_JSON_OPT_PROP(js, read_only);
+  if (read_only)
+    *s = DB::OpenForReadOnly(
+                  *db_opt, name, db->cf_descriptors, &db->cf_handles, &db->db);
+  else
+    *s = DB::Open(*db_opt, name, db->cf_descriptors, &db->cf_handles, &db->db);
   return db.release();
 }
 catch (const std::exception& ex) {

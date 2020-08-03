@@ -41,7 +41,9 @@ class TableFactory;
 class TablePropertiesCollectorFactory;
 
 struct DB_MultiCF {
-  DB* db;
+  DB_MultiCF();
+  ~DB_MultiCF();
+  DB* db = nullptr;
   std::vector<ColumnFamilyDescriptor> cf_descriptors;
   std::vector<ColumnFamilyHandle*> cf_handles;
 };

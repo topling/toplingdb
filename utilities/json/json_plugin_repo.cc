@@ -51,11 +51,9 @@ static void Impl_Import(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
     for (auto& item : iter.value().items()) {
       const string& inst_id = item.key();
       const json& value = item.value();
-      Status s;
       // name and func are just for error report in this call
       Ptr p = PluginFactory<Ptr>::ObtainPlugin(
-                name, ROCKSDB_FUNC, value, repo, &s);
-      if (!s.ok()) throw s;
+                name, ROCKSDB_FUNC, value, repo);
       field.name2p->emplace(inst_id, p);
       field.p2name.emplace(p, JsonOptionsRepo::Impl::ObjInfo{inst_id, value});
     }
@@ -322,27 +320,26 @@ Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
   auto open_impl = [&](const std::string& dbname, const json& db_open_js) {
       auto iter = db_open_js.find("method");
       if (db_open_js.end() == iter) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
+        throw Status::InvalidArgument(ROCKSDB_FUNC,
             "dbname = \"" + dbname + "\", param \"method\" is missing");
       }
       const std::string& method = iter.value().get<string>();
       iter = db_open_js.find("params");
       if (db_open_js.end() == iter) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
+        throw Status::InvalidArgument(ROCKSDB_FUNC,
             "dbname = \"" + dbname + "\", param \"params\" is missing");
       }
       const auto& params_js = iter.value();
-      Status s;
-      *dbp = PluginFactory<DBT*>::AcquirePlugin(method, params_js, *this, &s);
-      return s;
+      *dbp = PluginFactory<DBT*>::AcquirePlugin(method, params_js, *this);
+      assert(nullptr != *dbp);
   };
   auto open_defined_db = [&](const std::string& dbname) {
       auto iter = m_impl->db_js.find(dbname);
       if (m_impl->db_js.end() == iter) {
-        return Status::NotFound(ROCKSDB_FUNC,
+        throw Status::NotFound(ROCKSDB_FUNC,
             "dbname = \"" + dbname + "\" is not found");
       }
-      return open_impl(dbname, iter.value());
+      open_impl(dbname, iter.value());
   };
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
@@ -355,21 +352,25 @@ Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
         return Status::InvalidArgument(ROCKSDB_FUNC,
             "dbname = \"" + str_val + "\" is too short");
       }
-      return open_defined_db(PluginParseInstID(str_val));
+      open_defined_db(PluginParseInstID(str_val));
     } else {
       // string which does not like ${dbname} or $dbname
-      return open_defined_db(str_val); // str_val is dbname
+      open_defined_db(str_val); // str_val is dbname
     }
   } else {
-    return open_impl("<inline-defined>", js);
+    open_impl("<inline-defined>", js);
   }
+  return Status::OK();
 }
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
+catch (const Status& s) {
+  return s;
+}
 
 template<class DBT>
-static Status JS_Str_OpenDB_tpl(const std::string& json_str, DBT** db) {
+static Status JS_Str_OpenDB_tpl(const std::string& json_str, DBT** db) try {
   JsonOptionsRepo repo;
   nlohmann::json json_obj(json_str);
   Status s = repo.Import(json_str);
@@ -382,9 +383,15 @@ static Status JS_Str_OpenDB_tpl(const std::string& json_str, DBT** db) {
   }
   return s;
 }
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+catch (const Status& s) {
+  return s;
+}
 
 template<class DBT>
-static Status JS_File_OpenDB_tpl(const std::string& js_file, DBT** db) {
+static Status JS_File_OpenDB_tpl(const std::string& js_file, DBT** db) try {
   JsonOptionsRepo repo;
   std::string json_str;
   {
@@ -397,6 +404,9 @@ static Status JS_File_OpenDB_tpl(const std::string& js_file, DBT** db) {
     json_str = ss.str();
   }
   return JS_Str_OpenDB_tpl(json_str, db);
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
 
 /**

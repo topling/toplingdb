@@ -10,7 +10,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 static std::shared_ptr<const FilterPolicy>
-NewBloomFilterPolicyJson(const json& js, const JsonOptionsRepo&, Status*) {
+NewBloomFilterPolicyJson(const json& js, const JsonOptionsRepo&) {
   double bits_per_key = 10;
   bool use_block_based_builder = false;
   ROCKSDB_JSON_OPT_PROP(js, bits_per_key);
@@ -21,43 +21,38 @@ NewBloomFilterPolicyJson(const json& js, const JsonOptionsRepo&, Status*) {
 ROCKSDB_FACTORY_REG("BloomFilter", NewBloomFilterPolicyJson);
 
 struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
-  Status UpdateFromJson(const json& js, const JsonOptionsRepo& repo) {
-    try {
-      ROCKSDB_JSON_OPT_FACT(js, flush_block_policy_factory);
-      ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks);
-      ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks_with_high_priority);
-      ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
-      ROCKSDB_JSON_OPT_PROP(js, pin_top_level_index_and_filter);
-      ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
-      ROCKSDB_JSON_OPT_ENUM(js, index_type);
-      ROCKSDB_JSON_OPT_ENUM(js, data_block_index_type);
-      ROCKSDB_JSON_OPT_ENUM(js, index_shortening);
-      ROCKSDB_JSON_OPT_ENUM(js, data_block_index_type);
-      ROCKSDB_JSON_OPT_PROP(js, data_block_hash_table_util_ratio);
-      ROCKSDB_JSON_OPT_PROP(js, hash_index_allow_collision);
-      ROCKSDB_JSON_OPT_ENUM(js, checksum);
-      ROCKSDB_JSON_OPT_PROP(js, no_block_cache);
-      ROCKSDB_JSON_OPT_PROP(js, block_size);
-      ROCKSDB_JSON_OPT_PROP(js, block_size_deviation);
-      ROCKSDB_JSON_OPT_PROP(js, block_restart_interval);
-      ROCKSDB_JSON_OPT_PROP(js, index_block_restart_interval);
-      ROCKSDB_JSON_OPT_PROP(js, metadata_block_size);
-      ROCKSDB_JSON_OPT_PROP(js, partition_filters);
-      ROCKSDB_JSON_OPT_PROP(js, use_delta_encoding);
-      ROCKSDB_JSON_OPT_PROP(js, read_amp_bytes_per_bit);
-      ROCKSDB_JSON_OPT_PROP(js, whole_key_filtering);
-      ROCKSDB_JSON_OPT_PROP(js, verify_compression);
-      ROCKSDB_JSON_OPT_PROP(js, format_version);
-      ROCKSDB_JSON_OPT_PROP(js, enable_index_compression);
-      ROCKSDB_JSON_OPT_PROP(js, block_align);
-      ROCKSDB_JSON_OPT_FACT(js, block_cache);
-      ROCKSDB_JSON_OPT_FACT(js, block_cache_compressed);
-      ROCKSDB_JSON_OPT_FACT(js, persistent_cache);
-      ROCKSDB_JSON_OPT_FACT(js, filter_policy);
-      return Status::OK();
-    } catch (const std::exception& ex) {
-      return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-    }
+  BlockBasedTableOptions_Json(const json& js, const JsonOptionsRepo& repo) {
+    ROCKSDB_JSON_OPT_FACT(js, flush_block_policy_factory);
+    ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks);
+    ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks_with_high_priority);
+    ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
+    ROCKSDB_JSON_OPT_PROP(js, pin_top_level_index_and_filter);
+    ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
+    ROCKSDB_JSON_OPT_ENUM(js, index_type);
+    ROCKSDB_JSON_OPT_ENUM(js, data_block_index_type);
+    ROCKSDB_JSON_OPT_ENUM(js, index_shortening);
+    ROCKSDB_JSON_OPT_ENUM(js, data_block_index_type);
+    ROCKSDB_JSON_OPT_PROP(js, data_block_hash_table_util_ratio);
+    ROCKSDB_JSON_OPT_PROP(js, hash_index_allow_collision);
+    ROCKSDB_JSON_OPT_ENUM(js, checksum);
+    ROCKSDB_JSON_OPT_PROP(js, no_block_cache);
+    ROCKSDB_JSON_OPT_SIZE(js, block_size);
+    ROCKSDB_JSON_OPT_PROP(js, block_size_deviation);
+    ROCKSDB_JSON_OPT_PROP(js, block_restart_interval);
+    ROCKSDB_JSON_OPT_PROP(js, index_block_restart_interval);
+    ROCKSDB_JSON_OPT_SIZE(js, metadata_block_size);
+    ROCKSDB_JSON_OPT_PROP(js, partition_filters);
+    ROCKSDB_JSON_OPT_PROP(js, use_delta_encoding);
+    ROCKSDB_JSON_OPT_PROP(js, read_amp_bytes_per_bit);
+    ROCKSDB_JSON_OPT_PROP(js, whole_key_filtering);
+    ROCKSDB_JSON_OPT_PROP(js, verify_compression);
+    ROCKSDB_JSON_OPT_PROP(js, format_version);
+    ROCKSDB_JSON_OPT_PROP(js, enable_index_compression);
+    ROCKSDB_JSON_OPT_PROP(js, block_align);
+    ROCKSDB_JSON_OPT_FACT(js, block_cache);
+    ROCKSDB_JSON_OPT_FACT(js, block_cache_compressed);
+    ROCKSDB_JSON_OPT_FACT(js, persistent_cache);
+    ROCKSDB_JSON_OPT_FACT(js, filter_policy);
   }
 };
 
@@ -193,74 +188,47 @@ std::string BlockBasedTableFactory::GetOptionJson() const {
 #endif
 
 static std::shared_ptr<TableFactory>
-NewBlockBasedTableFactoryFromJson(const json& j, const JsonOptionsRepo& repo, Status* s) {
-  BlockBasedTableOptions_Json _table_options;
-  *s = _table_options.UpdateFromJson(j, repo);
-  if (s->ok())
-    return std::make_shared<BlockBasedTableFactory>(_table_options);
-  else
-    return nullptr;
+NewBlockBasedTableFactoryFromJson(const json& js, const JsonOptionsRepo& repo) {
+  BlockBasedTableOptions_Json _table_options(js, repo);
+  return std::make_shared<BlockBasedTableFactory>(_table_options);
 }
-
 ROCKSDB_FACTORY_REG("BlockBasedTable", NewBlockBasedTableFactoryFromJson);
 
 ////////////////////////////////////////////////////////////////////////////
 struct PlainTableOptions_Json : PlainTableOptions {
-  Status UpdateFromJson(const json& js) {
-    try {
-      ROCKSDB_JSON_OPT_PROP(js, user_key_len);
-      ROCKSDB_JSON_OPT_PROP(js, bloom_bits_per_key);
-      ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
-      ROCKSDB_JSON_OPT_PROP(js, index_sparseness);
-      ROCKSDB_JSON_OPT_ENUM(js, encoding_type);
-      ROCKSDB_JSON_OPT_PROP(js, full_scan_mode);
-      ROCKSDB_JSON_OPT_PROP(js, store_index_in_file);
-      return Status::OK();
-    } catch (const std::exception& ex) {
-      return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-    }
+  PlainTableOptions_Json(const json& js) {
+    ROCKSDB_JSON_OPT_PROP(js, user_key_len);
+    ROCKSDB_JSON_OPT_PROP(js, bloom_bits_per_key);
+    ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
+    ROCKSDB_JSON_OPT_PROP(js, index_sparseness);
+    ROCKSDB_JSON_OPT_ENUM(js, encoding_type);
+    ROCKSDB_JSON_OPT_PROP(js, full_scan_mode);
+    ROCKSDB_JSON_OPT_PROP(js, store_index_in_file);
   }
 };
-
 static std::shared_ptr<TableFactory>
-NewPlainTableFactoryFromJson(const json& j, const JsonOptionsRepo&, Status* s) {
-  PlainTableOptions_Json options;
-  *s = options.UpdateFromJson(j);
-  if (s->ok())
-    return std::make_shared<PlainTableFactory>(options);
-  else
-    return nullptr;
+NewPlainTableFactoryFromJson(const json& js, const JsonOptionsRepo&) {
+  PlainTableOptions_Json options(js);
+  return std::make_shared<PlainTableFactory>(options);
 }
-
 ROCKSDB_FACTORY_REG("PlainTable", NewPlainTableFactoryFromJson);
 
 ////////////////////////////////////////////////////////////////////////////
 struct CuckooTableOptions_Json : CuckooTableOptions {
-  Status UpdateFromJson(const json& js) {
-    try {
-      ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
-      ROCKSDB_JSON_OPT_PROP(js, max_search_depth);
-      ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
-      ROCKSDB_JSON_OPT_PROP(js, cuckoo_block_size);
-      ROCKSDB_JSON_OPT_PROP(js, identity_as_first_hash);
-      ROCKSDB_JSON_OPT_PROP(js, use_module_hash);
-      return Status::OK();
-    } catch (const std::exception& ex) {
-      return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-    }
+  CuckooTableOptions_Json(const json& js) {
+    ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
+    ROCKSDB_JSON_OPT_PROP(js, max_search_depth);
+    ROCKSDB_JSON_OPT_PROP(js, hash_table_ratio);
+    ROCKSDB_JSON_OPT_PROP(js, cuckoo_block_size);
+    ROCKSDB_JSON_OPT_PROP(js, identity_as_first_hash);
+    ROCKSDB_JSON_OPT_PROP(js, use_module_hash);
   }
 };
-
 static std::shared_ptr<TableFactory>
-NewCuckooTableFactoryJson(const json& j, const JsonOptionsRepo&, Status* s) {
-  CuckooTableOptions_Json options;
-  *s = options.UpdateFromJson(j);
-  if (s->ok())
-    return std::shared_ptr<TableFactory>(NewCuckooTableFactory(options));
-  else
-    return nullptr;
+NewCuckooTableFactoryJson(const json& js, const JsonOptionsRepo&) {
+  CuckooTableOptions_Json options(js);
+  return std::shared_ptr<TableFactory>(NewCuckooTableFactory(options));
 }
-
 ROCKSDB_FACTORY_REG("CuckooTable", NewCuckooTableFactoryJson);
 
 ////////////////////////////////////////////////////////////////////////////
@@ -381,11 +349,10 @@ class DispatherTableFactory : public TableFactory {
           "DispatherTableFactory options must be object");
     }
     auto iter = m_json_obj.find("default");
-    Status s;
     if (m_json_obj.end() != iter) {
       auto& subjs = iter.value();
       m_default_writer = PluginFactory<std::shared_ptr<TableFactory>>::
-        ObtainPlugin("default", ROCKSDB_FUNC, subjs, *m_repo, &s);
+        ObtainPlugin("default", ROCKSDB_FUNC, subjs, *m_repo);
       if (!m_default_writer) {
         return Status::InvalidArgument(ROCKSDB_FUNC,
             "fail get defined default writer = " + subjs.dump());
@@ -408,11 +375,8 @@ class DispatherTableFactory : public TableFactory {
       for (auto& item : m_json_obj.items()) {
         auto& options = item.value();
         auto p = PluginFactory<std::shared_ptr<TableFactory>>::
-        ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo, &s);
-        if (!p) {
-          assert(!s.ok());
-          return s;
-        }
+        ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo);
+        assert(!!p);
         m_level_writers.push_back(p);
       }
     }
@@ -430,10 +394,13 @@ class DispatherTableFactory : public TableFactory {
     }
     m_repo.reset();
     m_json_obj = json{}; // reset
-    return s;
+    return Status::OK();
   }
   catch (const std::exception& ex) {
     return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  }
+  catch (const Status& s) {
+    return s;
   }
 
   std::string GetPrintableTableOptions() const override {
@@ -456,18 +423,8 @@ class DispatherTableFactory : public TableFactory {
 };
 
 static std::shared_ptr<TableFactory>
-NewDispatcherTableFactoryJson(const json& js,
-                              const JsonOptionsRepo& repo, Status* s)
-try {
+NewDispatcherTableFactoryJson(const json& js, const JsonOptionsRepo& repo) {
   return std::make_shared<DispatherTableFactory>(js, repo);
-}
-catch (const std::exception& ex) {
-  *s = Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-  return nullptr;
-}
-catch (const Status& es) {
-  *s = es;
-  return nullptr;
 }
 ROCKSDB_FACTORY_REG("Dispath", NewDispatcherTableFactoryJson);
 ROCKSDB_FACTORY_REG("Dispather", NewDispatcherTableFactoryJson);

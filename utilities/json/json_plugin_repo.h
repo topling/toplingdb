@@ -41,7 +41,9 @@ class TableFactory;
 class TablePropertiesCollectorFactory;
 
 struct DB_MultiCF {
-  DB* db;
+  DB_MultiCF();
+  ~DB_MultiCF();
+  DB* db = nullptr;
   std::vector<ColumnFamilyDescriptor> cf_descriptors;
   std::vector<ColumnFamilyHandle*> cf_handles;
 };
@@ -61,6 +63,8 @@ class JsonOptionsRepo {
   Status Export(nlohmann::json*) const;
   Status Export(std::string*, bool pretty = false) const;
 
+  Status OpenDB(const std::string& js, DB**);
+  Status OpenDB(const std::string& js, DB_MultiCF**);
   Status OpenDB(const nlohmann::json&, DB**);
   Status OpenDB(const nlohmann::json&, DB_MultiCF**);
 
@@ -134,5 +138,27 @@ class JsonOptionsRepo {
   template<class DBType>
   Status OpenDB_tpl(const nlohmann::json&, DBType**);
 };
+
+Status JS_Str_OpenDB(const std::string& js_str, DB**);
+Status JS_Str_OpenDB(const std::string& js_str, DB_MultiCF**);
+
+Status JS_File_OpenDB(const std::string& js_file, DB**);
+Status JS_File_OpenDB(const std::string& js_file, DB_MultiCF**);
+
+class ParseSizeXiB {
+  long long m_val;
+public:
+  explicit ParseSizeXiB(const char* s);
+  explicit ParseSizeXiB(const std::string& s);
+  explicit ParseSizeXiB(const nlohmann::json&);
+  explicit ParseSizeXiB(const nlohmann::json&, const char* key);
+  operator int() const;
+  operator long() const;
+  operator long long() const;
+  operator unsigned int() const;
+  operator unsigned long() const;
+  operator unsigned long long() const;
+};
+
 
 }  // namespace ROCKSDB_NAMESPACE

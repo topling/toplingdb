@@ -72,20 +72,20 @@ public:
   // in some contexts Acquire means 'CreateNew'
   // in some contexts Acquire means 'GetExisting'
   static PluginPtr AcquirePlugin(const std::string& class_name, const json&,
-                                 const JsonOptionsRepo&, Status*);
+                                 const JsonOptionsRepo&);
 
   static PluginPtr ObtainPlugin(const char* varname, const char* func_name,
-                                const json&, const JsonOptionsRepo&, Status*);
+                                const json&, const JsonOptionsRepo&);
 
   static PluginPtr GetPlugin(const char* varname, const char* func_name,
-                             const json&, const JsonOptionsRepo&, Status*);
+                             const json&, const JsonOptionsRepo&);
 
   struct AutoReg {
     AutoReg(const AutoReg&) = delete;
     AutoReg(AutoReg&&) = delete;
     AutoReg& operator=(AutoReg&&) = delete;
     AutoReg& operator=(const AutoReg&) = delete;
-    typedef PluginPtr (*AcqFunc)(const json&,const JsonOptionsRepo&,Status*);
+    typedef PluginPtr (*AcqFunc)(const json&,const JsonOptionsRepo&);
     using NameToFuncMap = std::unordered_map<std::string, AcqFunc>;
     AutoReg(Slice class_name, AcqFunc acq);
     ~AutoReg();
@@ -137,14 +137,15 @@ template<class PluginPtr>
 PluginPtr
 PluginFactory<PluginPtr>::
 AcquirePlugin(const std::string& class_name, const json& js,
-              const JsonOptionsRepo& repo, Status* st) {
+              const JsonOptionsRepo& repo) {
   auto& imp = AutoReg::Impl::s_singleton();
   auto iter = imp.func_map.find(class_name);
   if (imp.func_map.end() != iter) {
-    return iter->second(js, repo, st);
+    PluginPtr ptr = iter->second(js, repo);
+    assert(!!ptr);
+    return ptr;
   }
   else {
-    *st = Status::NotFound("plugin is not registered", class_name);
     return PluginPtr(nullptr);
   }
 }
@@ -155,21 +156,19 @@ template<class PluginPtr>
 PluginPtr
 PluginFactory<PluginPtr>::
 GetPlugin(const char* varname, const char* func_name,
-          const json& js, const JsonOptionsRepo& repo, Status* s) {
+          const json& js, const JsonOptionsRepo& repo) {
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
-      *s = Status::InvalidArgument(
+      throw Status::InvalidArgument(
           func_name, std::string(varname) + " inst_id/class_name is empty");
-      return PluginPtr(nullptr);
     }
     PluginPtr p(nullptr);
     bool ret = false;
     if ('$' == str_val[0]) {
       if (str_val.size() < 3) {
-        *s = Status::InvalidArgument(func_name,
+        throw Status::InvalidArgument(func_name,
                    std::string(varname) + " inst_id is too short");
-        return PluginPtr(nullptr);
       }
       const auto inst_id = PluginParseInstID(str_val);
       ret = repo.Get(inst_id, &p);
@@ -177,15 +176,15 @@ GetPlugin(const char* varname, const char* func_name,
       ret = repo.Get(str_val, &p); // the whole str_val is inst_id
     }
     if (!ret) {
-      *s = Status::NotFound(func_name,
+      throw Status::NotFound(func_name,
             std::string(varname) + "inst_id = " + str_val);
     }
+    assert(!!p);
     return p;
   }
   else {
-    *s = Status::InvalidArgument(func_name,
+    throw Status::InvalidArgument(func_name,
       std::string(varname) + " must be a string for reference to object");
-    return PluginPtr(nullptr);
   }
 }
 
@@ -203,43 +202,37 @@ template<class PluginPtr>
 PluginPtr
 PluginFactory<PluginPtr>::
 ObtainPlugin(const char* varname, const char* func_name,
-             const json& js, const JsonOptionsRepo& repo, Status* s)
-try {
+             const json& js, const JsonOptionsRepo& repo) {
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
-      *s = Status::InvalidArgument(func_name, std::string(varname) +
+      throw Status::InvalidArgument(func_name, std::string(varname) +
                " inst_id/class_name is empty");
-      return PluginPtr(nullptr);
     }
     if ('$' == str_val[0]) {
       if (str_val.size() < 3) {
-        *s = Status::InvalidArgument(func_name, std::string(varname) +
+        throw Status::InvalidArgument(func_name, std::string(varname) +
                  " inst_id = \"" + str_val + "\" is too short");
-        return PluginPtr(nullptr);
       }
       const auto inst_id = PluginParseInstID(str_val);
       PluginPtr p(nullptr);
       if (!repo.Get(inst_id, &p)) {
-        *s = Status::NotFound(func_name,
+        throw Status::NotFound(func_name,
            std::string(varname) + "inst_id = \"" + inst_id + "\"");
       }
+      assert(!!p);
       return p;
     } else {
       // string which does not like ${inst_id} or $inst_id
       // AcquirePlugin with empty json params
       const std::string& clazz_name = str_val;
-      return AcquirePlugin(clazz_name, json{}, repo, s);
+      return AcquirePlugin(clazz_name, json{}, repo);
     }
   } else {
     const std::string& clazz_name = js.at("class").get<std::string>();
     const json& params = js.at("params");
-    return AcquirePlugin(clazz_name, params, repo, s);
+    return AcquirePlugin(clazz_name, params, repo);
   }
-}
-catch (const std::exception& ex) {
-  *s = Status::InvalidArgument(func_name, std::string(varname) + ex.what());
-  return PluginPtr(nullptr);
 }
 
 const json& jsonRefType();
@@ -248,7 +241,7 @@ const JsonOptionsRepo& repoRefType();
 ///@param Name     string of factory class_name
 ///@param Acquire  must return base class ptr
 #define ROCKSDB_FACTORY_REG(Name, Acquire) \
-  PluginFactory<decltype(Acquire(jsonRefType(),repoRefType(),(Status*)0))>:: \
+  PluginFactory<decltype(Acquire(jsonRefType(),repoRefType()))>:: \
   AutoReg ROCKSDB_PP_CAT_3(g_reg_factory_,Acquire,__LINE__)(Name,Acquire)
 
 //////////////////////////////////////////////////////////////////////////////
@@ -264,12 +257,17 @@ const JsonOptionsRepo& repoRefType();
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) prop = __iter.value().get<decltype(prop)>(); \
   } while (0)
+#define ROCKSDB_JSON_REQ_SIZE(js, prop) prop = ParseSizeXiB(js, #prop)
+#define ROCKSDB_JSON_OPT_SIZE(js, prop) do try { \
+      prop = ParseSizeXiB(js, #prop); \
+    } catch (const std::exception&) {} while (0)
 #define ROCKSDB_JSON_OPT_ENUM(js, prop) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) { \
       const std::string& val = __iter.value().get<std::string>(); \
       if (!enum_value(val, &prop)) \
-        throw std::invalid_argument("bad " #prop "=" + val); \
+        throw Status::InvalidArgument( \
+            ROCKSDB_FUNC, "bad " #prop "=" + val); \
   }} while (0)
 #define ROCKSDB_JSON_OPT_NEST(js, prop) \
   do try { \
@@ -277,22 +275,17 @@ const JsonOptionsRepo& repoRefType();
     if (js.end() != __iter) \
       prop = decltype(NestForBase(prop))(__iter.value()); \
   } catch (const std::exception& ex) { \
-    return Status::InvalidArgument(ROCKSDB_FUNC, \
+    throw Status::InvalidArgument(ROCKSDB_FUNC, \
        std::string(#prop ": ") + ex.what()); \
   } while (0)
 
-#define ROCKSDB_JSON_OPT_FACT_INNER_IMPL(js, prop) \
-    Status __status; \
+#define ROCKSDB_JSON_OPT_FACT_INNER(js, prop) \
     prop = PluginFactory<decltype(prop)>:: \
-        ObtainPlugin(#prop, ROCKSDB_FUNC, js, repo, &__status); \
-    if (!__status.ok()) return __status
-#define ROCKSDB_JSON_OPT_FACT_INNER(js, prop) do {  \
-        ROCKSDB_JSON_OPT_FACT_INNER_IMPL(js, prop); \
-  } while (0)
+        ObtainPlugin(#prop, ROCKSDB_FUNC, js, repo)
 #define ROCKSDB_JSON_OPT_FACT(js, prop) do { \
     auto __iter = js.find(#prop); \
     if (js.end() != __iter) { \
-      ROCKSDB_JSON_OPT_FACT_INNER_IMPL(__iter.value(), prop); \
+      ROCKSDB_JSON_OPT_FACT_INNER(__iter.value(), prop); \
   }} while (0)
 
 #define ROCKSDB_JSON_SET_PROP(js, prop) js[#prop] = prop

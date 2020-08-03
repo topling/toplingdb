@@ -16,6 +16,8 @@
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/sst_file_manager.h"
 #include "rocksdb/wal_filter.h"
+#include "util/string_util.h"
+
 #include "json.h"
 #include "json_plugin_factory.h"
 
@@ -49,11 +51,9 @@ static void Impl_Import(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
     for (auto& item : iter.value().items()) {
       const string& inst_id = item.key();
       const json& value = item.value();
-      Status s;
       // name and func are just for error report in this call
       Ptr p = PluginFactory<Ptr>::ObtainPlugin(
-                name, ROCKSDB_FUNC, value, repo, &s);
-      if (!s.ok()) throw s;
+                name, ROCKSDB_FUNC, value, repo);
       field.name2p->emplace(inst_id, p);
       field.p2name.emplace(p, JsonOptionsRepo::Impl::ObjInfo{inst_id, value});
     }
@@ -88,7 +88,27 @@ Status JsonOptionsRepo::Import(const string& json_str) {
   return Import(js);
 }
 
+static
+void MergeSubObject(json* target, const json& patch, const string& subname) {
+  auto iter = patch.find(subname);
+  if (patch.end() != iter) {
+    auto& sub_js = iter.value();
+    if (!sub_js.is_object()) {
+      throw Status::InvalidArgument(
+          ROCKSDB_FUNC,
+          "\"" + subname + "\" must be an object");
+    }
+    if (!target->is_null() && !target->is_object()) {
+      throw Status::Corruption(
+          ROCKSDB_FUNC,
+          "\"target\" must be an object or null, subname = " + subname);
+    }
+    target->merge_patch(sub_js);
+  }
+}
+
 Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
+  MergeSubObject(&m_impl->db_js, main_js, "databases");
   const auto& repo = *this;
 #define JSON_IMPORT_REPO(Clazz, field) \
   Impl_Import(m_impl->field, #Clazz, main_js, repo)
@@ -147,7 +167,7 @@ static void Impl_Export(const JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
     params_js = kv.second.params;
   }
 }
-Status JsonOptionsRepo::Export(nlohmann::json* main_js) const {
+Status JsonOptionsRepo::Export(nlohmann::json* main_js) const try {
   assert(NULL != main_js);
 #define JSON_EXPORT_REPO(Clazz, field) \
   Impl_Export(m_impl->field, #Clazz, *main_js)
@@ -174,6 +194,9 @@ Status JsonOptionsRepo::Export(nlohmann::json* main_js) const {
   JSON_EXPORT_REPO(MemTableRepFactory      , mem_table_rep_factory);
   JSON_EXPORT_REPO(TableFactory            , table_factory);
   return Status::OK();
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
 
 Status JsonOptionsRepo::Export(string* json_str, bool pretty) const {
@@ -278,33 +301,45 @@ Status JsonOptionsRepo::OpenDB(const nlohmann::json& js, DB_MultiCF** dbp) {
   return OpenDB_tpl<DB_MultiCF>(js, dbp);
 }
 
+Status JsonOptionsRepo::OpenDB(const std::string& js, DB** dbp) try {
+  return OpenDB_tpl<DB>(js, dbp);
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, "bad json object");
+}
+Status JsonOptionsRepo::OpenDB(const std::string& js, DB_MultiCF** dbp) try {
+  return OpenDB_tpl<DB_MultiCF>(js, dbp);
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, "bad json object");
+}
+
 template<class DBT>
 Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
   *dbp = nullptr;
   auto open_impl = [&](const std::string& dbname, const json& db_open_js) {
       auto iter = db_open_js.find("method");
       if (db_open_js.end() == iter) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
+        throw Status::InvalidArgument(ROCKSDB_FUNC,
             "dbname = \"" + dbname + "\", param \"method\" is missing");
       }
       const std::string& method = iter.value().get<string>();
       iter = db_open_js.find("params");
       if (db_open_js.end() == iter) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
+        throw Status::InvalidArgument(ROCKSDB_FUNC,
             "dbname = \"" + dbname + "\", param \"params\" is missing");
       }
       const auto& params_js = iter.value();
-      Status s;
-      *dbp = PluginFactory<DBT*>::AcquirePlugin(method, params_js, *this, &s);
-      return s;
+      *dbp = PluginFactory<DBT*>::AcquirePlugin(method, params_js, *this);
+      assert(nullptr != *dbp);
   };
-  auto open_db = [&](const std::string& dbname) {
+  auto open_defined_db = [&](const std::string& dbname) {
       auto iter = m_impl->db_js.find(dbname);
       if (m_impl->db_js.end() == iter) {
-        return Status::NotFound(ROCKSDB_FUNC,
+        throw Status::NotFound(ROCKSDB_FUNC,
             "dbname = \"" + dbname + "\" is not found");
       }
-      return open_impl(dbname, iter.value());
+      open_impl(dbname, iter.value());
   };
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
@@ -317,17 +352,78 @@ Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
         return Status::InvalidArgument(ROCKSDB_FUNC,
             "dbname = \"" + str_val + "\" is too short");
       }
-      return open_db(PluginParseInstID(str_val));
+      open_defined_db(PluginParseInstID(str_val));
     } else {
       // string which does not like ${dbname} or $dbname
-      return open_db(str_val); // str_val is dbname
+      open_defined_db(str_val); // str_val is dbname
     }
   } else {
-    return open_impl("<inline-defined>", js);
+    open_impl("<inline-defined>", js);
   }
+  return Status::OK();
 }
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+catch (const Status& s) {
+  return s;
+}
+
+template<class DBT>
+static Status JS_Str_OpenDB_tpl(const std::string& json_str, DBT** db) try {
+  JsonOptionsRepo repo;
+  nlohmann::json json_obj(json_str);
+  Status s = repo.Import(json_str);
+  if (s.ok()) {
+    auto iter = json_obj.find("open");
+    if (json_obj.end() != iter) {
+      return repo.OpenDB(iter.value(), db);
+    }
+    s = Status::InvalidArgument(ROCKSDB_FUNC, "sub obj \"open\" is required");
+  }
+  return s;
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+catch (const Status& s) {
+  return s;
+}
+
+template<class DBT>
+static Status JS_File_OpenDB_tpl(const std::string& js_file, DBT** db) try {
+  JsonOptionsRepo repo;
+  std::string json_str;
+  {
+    std::fstream ifs(js_file.data());
+    if (!ifs.is_open()) {
+      return Status::InvalidArgument("open json file fail", js_file);
+    }
+    std::stringstream ss;
+    ss << ifs.rdbuf();
+    json_str = ss.str();
+  }
+  return JS_Str_OpenDB_tpl(json_str, db);
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+
+/**
+ * @param json_str sub object "open" is used as json_obj in
+ *                 JsonOptionsRepo::OpenDB
+ */
+Status JS_Str_OpenDB(const std::string& json_str, DB** db) {
+  return JS_Str_OpenDB_tpl(json_str, db);
+}
+Status JS_Str_OpenDB(const std::string& json_str, DB_MultiCF** db) {
+  return JS_Str_OpenDB_tpl(json_str, db);
+}
+Status JS_File_OpenDB(const std::string& js_file, DB** db) {
+  return JS_File_OpenDB_tpl(js_file, db);
+}
+Status JS_File_OpenDB(const std::string& js_file, DB_MultiCF** db) {
+  return JS_File_OpenDB_tpl(js_file, db);
 }
 
 std::string PluginParseInstID(const std::string& str_val) {
@@ -336,6 +432,67 @@ std::string PluginParseInstID(const std::string& str_val) {
     return str_val.substr(2, str_val.size() - 3);
   else
     return str_val.substr(1, str_val.size() - 1);
+}
+
+ParseSizeXiB::ParseSizeXiB(const char* s) {
+  if ('-' == s[0])
+    m_val = ParseInt64(s);
+  else
+    m_val = ParseUint64(s);
+}
+ParseSizeXiB::ParseSizeXiB(const std::string& s) {
+  if ('-' == s[0])
+    m_val = ParseInt64(s);
+  else
+    m_val = ParseUint64(s);
+}
+ParseSizeXiB::ParseSizeXiB(const nlohmann::json& js) {
+  if (js.is_number_integer())
+    m_val = js.get<long long>();
+  else if (js.is_number_unsigned())
+    m_val = js.get<unsigned long long>();
+  else if (js.is_string())
+    *this = ParseSizeXiB(js.get<std::string>());
+  else
+    throw std::invalid_argument("bad json = " + js.dump());
+}
+ParseSizeXiB::ParseSizeXiB(const nlohmann::json& js, const char* key) {
+    auto iter = js.find(key);
+    if (js.end() != iter) {
+      *this = ParseSizeXiB(iter.value());
+    }
+    else {
+      throw std::invalid_argument(
+          std::string(ROCKSDB_FUNC) + ": not found key: " + key);
+    }
+}
+
+ParseSizeXiB::operator int() const {
+  if (m_val < INT_MIN || m_val > INT_MAX)
+    throw std::domain_error(std::string(ROCKSDB_FUNC) + ": out of range<int>");
+  return (int)m_val;
+}
+
+ParseSizeXiB::operator long() const {
+  if (sizeof(long) != sizeof(long long) && (m_val < LONG_MIN || m_val > LONG_MAX))
+    throw std::domain_error(std::string(ROCKSDB_FUNC) + ": out of range<long>");
+  return (long)m_val;
+}
+ParseSizeXiB::operator long long() const {
+  return m_val;
+}
+ParseSizeXiB::operator unsigned int() const {
+  if (m_val > UINT_MAX)
+    throw std::domain_error(std::string(ROCKSDB_FUNC) + ": out of range<uint>");
+  return (unsigned int)m_val;
+}
+ParseSizeXiB::operator unsigned long() const {
+  if (sizeof(long) != sizeof(long long) && (unsigned long long)m_val > ULONG_MAX)
+    throw std::domain_error(std::string(ROCKSDB_FUNC) + ": out of range<ulong>");
+  return (unsigned long)m_val;
+}
+ParseSizeXiB::operator unsigned long long() const {
+  return (unsigned long long)m_val;
 }
 
 }

@@ -303,6 +303,19 @@ Status JsonOptionsRepo::OpenDB(const nlohmann::json& js, DB_MultiCF** dbp) {
   return OpenDB_tpl<DB_MultiCF>(js, dbp);
 }
 
+Status JsonOptionsRepo::OpenDB(const std::string& js, DB** dbp) try {
+  return OpenDB_tpl<DB>(js, dbp);
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, "bad json object");
+}
+Status JsonOptionsRepo::OpenDB(const std::string& js, DB_MultiCF** dbp) try {
+  return OpenDB_tpl<DB_MultiCF>(js, dbp);
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, "bad json object");
+}
+
 template<class DBT>
 Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
   *dbp = nullptr;
@@ -353,6 +366,54 @@ Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
 }
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+
+template<class DBT>
+static Status JS_Str_OpenDB_tpl(const std::string& json_str, DBT** db) {
+  JsonOptionsRepo repo;
+  nlohmann::json json_obj(json_str);
+  Status s = repo.Import(json_str);
+  if (s.ok()) {
+    auto iter = json_obj.find("open");
+    if (json_obj.end() != iter) {
+      return repo.OpenDB(iter.value(), db);
+    }
+    s = Status::InvalidArgument(ROCKSDB_FUNC, "sub obj \"open\" is required");
+  }
+  return s;
+}
+
+template<class DBT>
+static Status JS_File_OpenDB_tpl(const std::string& js_file, DBT** db) {
+  JsonOptionsRepo repo;
+  std::string json_str;
+  {
+    std::fstream ifs(js_file.data());
+    if (!ifs.is_open()) {
+      return Status::InvalidArgument("open json file fail", js_file);
+    }
+    std::stringstream ss;
+    ss << ifs.rdbuf();
+    json_str = ss.str();
+  }
+  return JS_Str_OpenDB_tpl(json_str, db);
+}
+
+/**
+ * @param json_str sub object "open" is used as json_obj in
+ *                 JsonOptionsRepo::OpenDB
+ */
+Status JS_Str_OpenDB(const std::string& json_str, DB** db) {
+  return JS_Str_OpenDB_tpl(json_str, db);
+}
+Status JS_Str_OpenDB(const std::string& json_str, DB_MultiCF** db) {
+  return JS_Str_OpenDB_tpl(json_str, db);
+}
+Status JS_File_OpenDB(const std::string& js_file, DB** db) {
+  return JS_File_OpenDB_tpl(js_file, db);
+}
+Status JS_File_OpenDB(const std::string& js_file, DB_MultiCF** db) {
+  return JS_File_OpenDB_tpl(js_file, db);
 }
 
 std::string PluginParseInstID(const std::string& str_val) {

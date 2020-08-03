@@ -704,6 +704,26 @@ NewGenericRateLimiterFromJson(const json& js, const JsonOptionsRepo& repo, Statu
 ROCKSDB_FACTORY_REG("GenericRateLimiter", NewGenericRateLimiterFromJson);
 
 //////////////////////////////////////////////////////////////////////////////
+std::shared_ptr<const SliceTransform>
+JS_NewFixedPrefixTransform(const json& js, const JsonOptionsRepo&, Status* s) {
+  size_t prefix_len = 0;
+  ROCKSDB_JSON_REQ_PROP(js, prefix_len);
+  return std::shared_ptr<const SliceTransform>(
+      NewFixedPrefixTransform(prefix_len));
+}
+ROCKSDB_FACTORY_REG("FixedPrefixTransform", JS_NewFixedPrefixTransform);
+
+//////////////////////////////////////////////////////////////////////////////
+std::shared_ptr<const SliceTransform>
+JS_NewCappedPrefixTransform(const json& js, const JsonOptionsRepo&, Status* s) {
+  size_t cap_len = 0;
+  ROCKSDB_JSON_REQ_PROP(js, cap_len);
+  return std::shared_ptr<const SliceTransform>(
+      NewCappedPrefixTransform(cap_len));
+}
+ROCKSDB_FACTORY_REG("CappedPrefixTransform", JS_NewCappedPrefixTransform);
+
+//////////////////////////////////////////////////////////////////////////////
 static const Comparator*
 BytewiseComp(const json&, const JsonOptionsRepo&, Status*) {
   return BytewiseComparator();

@@ -677,7 +677,7 @@ ROCKSDB_FACTORY_REG("GenericRateLimiter", NewGenericRateLimiterFromJson);
 //////////////////////////////////////////////////////////////////////////////
 struct LRUCacheOptions_Json : LRUCacheOptions {
   LRUCacheOptions_Json(const json& js, const JsonOptionsRepo& repo) {
-    ROCKSDB_JSON_OPT_SIZE(js, capacity);
+    ROCKSDB_JSON_REQ_SIZE(js, capacity);
     ROCKSDB_JSON_OPT_PROP(js, num_shard_bits);
     ROCKSDB_JSON_OPT_PROP(js, strict_capacity_limit);
     ROCKSDB_JSON_OPT_PROP(js, high_pri_pool_ratio);
@@ -691,6 +691,15 @@ JS_NewLRUCache(const json& js, const JsonOptionsRepo& repo) {
   return NewLRUCache(LRUCacheOptions_Json(js, repo));
 }
 ROCKSDB_FACTORY_REG("LRUCache", JS_NewLRUCache);
+
+//////////////////////////////////////////////////////////////////////////////
+std::shared_ptr<Cache>
+JS_ClockCache(const json& js, const JsonOptionsRepo& repo) {
+  LRUCacheOptions_Json opt(js, repo); // similar with ClockCache param
+  return NewClockCache(opt.capacity, opt.num_shard_bits,
+                       opt.strict_capacity_limit, opt.metadata_charge_policy);
+}
+ROCKSDB_FACTORY_REG("ClockCache", JS_ClockCache);
 
 //////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<const SliceTransform>

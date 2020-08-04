@@ -501,4 +501,17 @@ ParseSizeXiB::operator unsigned long long() const {
   return (unsigned long long)m_val;
 }
 
+static int InitOnceDebugLevel() {
+  const char* env = getenv("JsonOptionsRepo_DebugLevel");
+  if (env) {
+    return atoi(env);
+  }
+  return 0;
+}
+
+int JsonOptionsRepo::DebugLevel() {
+  static int d = InitOnceDebugLevel();
+  return d;
+}
+
 }

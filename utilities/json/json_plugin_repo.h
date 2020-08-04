@@ -130,6 +130,8 @@ class JsonOptionsRepo {
   void GetMap(std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<TableFactory>>>*) const;
   void GetMap(std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<MemTableRepFactory>>>*) const;
 
+  static int DebugLevel();
+
 // protected:
 // also public
   struct Impl;

@@ -1179,14 +1179,8 @@ if(WITH_TESTS)
       db/db_test_util.cc
       monitoring/thread_status_updater_debug.cc
       table/mock_table.cc
-<<<<<<< HEAD
       utilities/cassandra/test_utils.cc
   )
-=======
-      test_util/fault_injection_test_env.cc
-      test_util/fault_injection_test_fs.cc
-      utilities/cassandra/test_utils.cc)
->>>>>>> auto.reg.factory
   enable_testing()
   add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
   set(TESTUTILLIB testutillib${ARTIFACT_SUFFIX})

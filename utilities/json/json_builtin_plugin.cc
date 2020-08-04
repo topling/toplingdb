@@ -16,6 +16,7 @@
 #include "rocksdb/concurrent_task_limiter.h"
 #include "rocksdb/utilities/db_ttl.h"
 #include "rocksdb/utilities/transaction_db.h"
+#include "rocksdb/utilities/optimistic_transaction_db.h"
 #include "rocksdb/flush_block_policy.h"
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/rate_limiter.h"
@@ -1114,6 +1115,50 @@ JS_TransactionDB_MultiCF_Open(const json& js, const JsonOptionsRepo& repo) {
   return db.release();
 }
 ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_TransactionDB_MultiCF_Open);
+
+/////////////////////////////////////////////////////////////////////////////
+struct OptimisticTransactionDBOptions_Json: OptimisticTransactionDBOptions {
+  OptimisticTransactionDBOptions_Json(const json& js, const JsonOptionsRepo&) {
+    ROCKSDB_JSON_OPT_ENUM(js, validate_policy);
+    ROCKSDB_JSON_OPT_PROP(js, occ_lock_buckets);
+  }
+};
+static
+DB* JS_OccTransactionDB_Open(const json& js, const JsonOptionsRepo& repo) {
+  std::string name;
+  Options options(JS_Options(js, repo, &name));
+  OptimisticTransactionDB* db = nullptr;
+  Status s = OptimisticTransactionDB::Open(options, name, &db);
+  if (!s.ok())
+    throw s;
+  return db;
+}
+ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_OccTransactionDB_Open);
+static
+DB_MultiCF*
+JS_OccTransactionDB_MultiCF_Open(const json& js, const JsonOptionsRepo& repo) {
+  shared_ptr<DBOptions> db_opt;
+  std::string name;
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  OptimisticTransactionDB* dbptr = nullptr;
+  auto iter = js.find("occ_options");
+  if (js.end() == iter) {
+    Status s = OptimisticTransactionDB::Open(
+        *db_opt, name, db->cf_descriptors, &db->cf_handles, &dbptr);
+    if (!s.ok())
+      throw s;
+  }
+  else {
+    Status s = OptimisticTransactionDB::Open(
+        *db_opt, OptimisticTransactionDBOptions_Json(iter.value(), repo),
+        name, db->cf_descriptors, &db->cf_handles, &dbptr);
+    if (!s.ok())
+      throw s;
+  }
+  db->db = dbptr;
+  return db.release();
+}
+ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_OccTransactionDB_MultiCF_Open);
 
 /////////////////////////////////////////////////////////////////////////////
 // BlobDB::Open

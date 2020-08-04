@@ -81,6 +81,8 @@
 #include <io.h>  // open/close
 #endif
 
+#include "utilities/json/json_plugin_repo.h"
+
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
 using GFLAGS_NAMESPACE::RegisterFlagValidator;
 using GFLAGS_NAMESPACE::SetUsageMessage;
@@ -127,6 +129,7 @@ DEFINE_string(
     "randomtransaction,"
     "randomreplacekeys,"
     "timeseries,"
+    "json,"
     "getmergeoperands",
 
     "Comma-separated list of operations to run in the specified"
@@ -198,6 +201,7 @@ DEFINE_string(
     "\tsstables    -- Print sstable info\n"
     "\theapprofile -- Dump a heap profile (if supported by this port)\n"
     "\treplay      -- replay the trace file specified with trace_file\n"
+    "\tjson -- Open DB with json config file\n"
     "\tgetmergeoperands -- Insert lots of merge records which are a list of "
     "sorted ints for a key and then compare performance of lookup for another "
     "key "
@@ -869,6 +873,8 @@ DEFINE_int64(
 DEFINE_string(block_cache_trace_file, "", "Block cache trace file path.");
 DEFINE_int32(trace_replay_threads, 1,
              "The number of threads to replay, must >=1.");
+
+DEFINE_string(json, "", "json config file.");
 
 static enum ROCKSDB_NAMESPACE::CompressionType StringToCompressionType(
     const char* ctype) {
@@ -4141,6 +4147,23 @@ class Benchmark {
 
   void OpenDb(Options options, const std::string& db_name,
       DBWithColumnFamilies* db) {
+    if (!FLAGS_json.empty()) {
+      DB_MultiCF* dbmcf = nullptr;
+      Status s = JS_File_OpenDB(FLAGS_json, &dbmcf);
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: JS_File_OpenDB(%s): %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      std::unique_ptr<DB_MultiCF> dbmcf_up(dbmcf);
+      db->cfh = dbmcf->cf_handles;
+      db->db = dbmcf->db;
+      if (auto tdb = dynamic_cast<OptimisticTransactionDB*>(dbmcf->db)) {
+        db->opt_txn_db = tdb;
+        db->db = tdb->GetBaseDB();
+      }
+      return;
+    }
     Status s;
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {

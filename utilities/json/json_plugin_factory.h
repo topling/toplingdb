@@ -125,6 +125,9 @@ AutoReg::AutoReg(Slice class_name, AcqFunc acq) {
         , __FILE__, __LINE__, ROCKSDB_FUNC, class_name.data());
     abort();
   }
+  if (JsonOptionsRepo::DebugLevel() >= 1) {
+    fprintf(stderr, "INFO: %s: class = %s\n", ROCKSDB_FUNC, class_name.data());
+  }
   this->ipos = ib.first;
 }
 

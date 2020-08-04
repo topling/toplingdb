@@ -54,6 +54,12 @@ static void Impl_Import(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
       // name and func are just for error report in this call
       Ptr p = PluginFactory<Ptr>::ObtainPlugin(
                 name, ROCKSDB_FUNC, value, repo);
+      if (!p) {
+        throw Status::InvalidArgument(
+            ROCKSDB_FUNC,
+            string("fail to ObtainPlugin(name=") + name +
+                ", value_js = " + value.dump() + ")");
+      }
       field.name2p->emplace(inst_id, p);
       field.p2name.emplace(p, JsonOptionsRepo::Impl::ObjInfo{inst_id, value});
     }

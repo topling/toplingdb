@@ -84,7 +84,7 @@ Status JsonOptionsRepo::ImportJsonFile(const Slice& fname) {
 }
 
 Status JsonOptionsRepo::Import(const string& json_str) {
-  json js(json_str);
+  json js = json::parse(json_str);
   return Import(js);
 }
 
@@ -372,7 +372,7 @@ catch (const Status& s) {
 template<class DBT>
 static Status JS_Str_OpenDB_tpl(const std::string& json_str, DBT** db) try {
   JsonOptionsRepo repo;
-  nlohmann::json json_obj(json_str);
+  nlohmann::json json_obj = json::parse(json_str);
   Status s = repo.Import(json_str);
   if (s.ok()) {
     auto iter = json_obj.find("open");

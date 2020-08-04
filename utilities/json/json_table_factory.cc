@@ -351,7 +351,7 @@ class DispatherTableFactory : public TableFactory {
     auto iter = m_json_obj.find("default");
     if (m_json_obj.end() != iter) {
       auto& subjs = iter.value();
-      m_default_writer = PluginFactory<std::shared_ptr<TableFactory>>::
+      m_default_writer = PluginFactorySP<TableFactory>::
         ObtainPlugin("default", ROCKSDB_FUNC, subjs, *m_repo);
       if (!m_default_writer) {
         return Status::InvalidArgument(ROCKSDB_FUNC,
@@ -374,7 +374,7 @@ class DispatherTableFactory : public TableFactory {
       }
       for (auto& item : m_json_obj.items()) {
         auto& options = item.value();
-        auto p = PluginFactory<std::shared_ptr<TableFactory>>::
+        auto p = PluginFactorySP<TableFactory>::
         ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo);
         assert(!!p);
         m_level_writers.push_back(p);

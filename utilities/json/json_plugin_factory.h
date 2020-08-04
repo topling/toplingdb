@@ -228,6 +228,8 @@ ObtainPlugin(const char* varname, const char* func_name,
       const std::string& clazz_name = str_val;
       return AcquirePlugin(clazz_name, json{}, repo);
     }
+  } else if (js.is_null()) {
+    return PluginPtr(nullptr);
   } else {
     const std::string& clazz_name = js.at("class").get<std::string>();
     const json& params = js.at("params");

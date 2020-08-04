@@ -22,7 +22,6 @@
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/sst_file_manager.h"
 #include "rocksdb/wal_filter.h"
-#include "util/compression.h"
 #include "util/rate_limiter.h"
 #include "utilities/blob_db/blob_db.h"
 #include "json.h"
@@ -401,15 +400,17 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
       auto iter = js.find("compression_per_level");
       if (js.end() != iter) {
         if (!iter.value().is_array()) {
-          throw Status::InvalidArgument(ROCKSDB_FUNC,
-                                         "compression_per_level must be an array");
+          throw Status::InvalidArgument(
+              ROCKSDB_FUNC,
+              "compression_per_level must be an array");
         }
         for (auto& item : iter.value().items()) {
           const string& val = item.value().get<string>();
           CompressionType compressionType;
           if (!enum_value(val, &compressionType)) {
-            throw Status::InvalidArgument(ROCKSDB_FUNC,
-                                           string("compression_per_level: invalid enum: ") + val);
+            throw Status::InvalidArgument(
+                ROCKSDB_FUNC,
+                string("compression_per_level: invalid enum: ") + val);
           }
           compression_per_level.push_back(compressionType);
         }
@@ -426,8 +427,9 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
       auto iter = js.find("max_bytes_for_level_multiplier_additional");
       if (js.end() != iter)
         if (!Init_vec(iter.value(), max_bytes_for_level_multiplier_additional))
-          throw Status::InvalidArgument(ROCKSDB_FUNC,
-                                         "max_bytes_for_level_multiplier_additional must be a int vector");
+          throw Status::InvalidArgument(
+              ROCKSDB_FUNC,
+              "max_bytes_for_level_multiplier_additional must be an int vector");
     }
     ROCKSDB_JSON_OPT_SIZE(js, max_compaction_bytes);
     ROCKSDB_JSON_OPT_SIZE(js, soft_pending_compaction_bytes_limit);
@@ -671,6 +673,24 @@ NewGenericRateLimiterFromJson(const json& js, const JsonOptionsRepo& repo) {
       mode, env, auto_tuned);
 }
 ROCKSDB_FACTORY_REG("GenericRateLimiter", NewGenericRateLimiterFromJson);
+
+//////////////////////////////////////////////////////////////////////////////
+struct LRUCacheOptions_Json : LRUCacheOptions {
+  LRUCacheOptions_Json(const json& js, const JsonOptionsRepo& repo) {
+    ROCKSDB_JSON_OPT_SIZE(js, capacity);
+    ROCKSDB_JSON_OPT_PROP(js, num_shard_bits);
+    ROCKSDB_JSON_OPT_PROP(js, strict_capacity_limit);
+    ROCKSDB_JSON_OPT_PROP(js, high_pri_pool_ratio);
+    //ROCKSDB_JSON_OPT_FACT(js, memory_allocator);
+    ROCKSDB_JSON_OPT_PROP(js, use_adaptive_mutex);
+    ROCKSDB_JSON_OPT_ENUM(js, metadata_charge_policy);
+  }
+};
+std::shared_ptr<Cache>
+JS_NewLRUCache(const json& js, const JsonOptionsRepo& repo) {
+  return NewLRUCache(LRUCacheOptions_Json(js, repo));
+}
+ROCKSDB_FACTORY_REG("LRUCache", JS_NewLRUCache);
 
 //////////////////////////////////////////////////////////////////////////////
 std::shared_ptr<const SliceTransform>

@@ -501,11 +501,13 @@ ParseSizeXiB::operator unsigned long long() const {
   return (unsigned long long)m_val;
 }
 
+void TableFactoryDummyFuncToPreventGccDeleteSymbols();
 static int InitOnceDebugLevel() {
   const char* env = getenv("JsonOptionsRepo_DebugLevel");
   if (env) {
     return atoi(env);
   }
+  TableFactoryDummyFuncToPreventGccDeleteSymbols();
   return 0;
 }
 

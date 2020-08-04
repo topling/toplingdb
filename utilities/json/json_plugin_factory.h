@@ -27,7 +27,8 @@ struct JsonOptionsRepo::Impl {
   template<class Ptr>
   struct ObjMap {
     std::unordered_map<Ptr, ObjInfo> p2name;
-    std::shared_ptr<std::unordered_map<std::string, Ptr>> name2p;
+    std::shared_ptr<std::unordered_map<std::string, Ptr>> name2p =
+        std::make_shared<std::unordered_map<std::string, Ptr>>();
   };
   template<class T>
   using ObjRepo = ObjMap<std::shared_ptr<T> >;

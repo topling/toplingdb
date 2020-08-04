@@ -147,7 +147,8 @@ AcquirePlugin(const std::string& class_name, const json& js,
     return ptr;
   }
   else {
-    return PluginPtr(nullptr);
+    //return PluginPtr(nullptr);
+    throw Status::NotFound(ROCKSDB_FUNC, class_name);
   }
 }
 

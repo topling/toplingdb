@@ -1,9 +1,29 @@
 {
   "Cache": {
-    "block-cache-default": {
+    "clock-cache-default": {
+      "class": "ClockCache",
+      "params": {
+        "capacity": 0,
+        "num_shard_bits": -1,
+        "strict_capacity_limit": false,
+        "metadata_charge_policy": "kFullChargeCacheMetadata"
+      }
+    },
+    "lru-cache-default": {
       "class": "LRUCache",
       "params": {
         "capacity": 0,
+        "num_shard_bits": -1,
+        "strict_capacity_limit": false,
+        "high_pri_pool_ratio": 0.5,
+        "use_adaptive_mutex": false,
+        "metadata_charge_policy": "kFullChargeCacheMetadata"
+      }
+    },
+    "lru-cache-4G": {
+      "class": "LRUCache",
+      "params": {
+        "capacity": "4G",
         "num_shard_bits": -1,
         "strict_capacity_limit": false,
         "high_pri_pool_ratio": 0.5,
@@ -49,7 +69,7 @@
         "index_block_restart_interval": 1,
         "metadata_block_size": "4K",
         "enable_index_compression": true,
-        "block_cache": "${block-cache-default}",
+        "block_cache": "${lru-cache-default}",
         "block_cache_compressed": null,
         "persistent_cache": null,
         "filter_policy": null

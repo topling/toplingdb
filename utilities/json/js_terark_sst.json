@@ -1,0 +1,99 @@
+{
+  "Cache": {
+    "block-cache-default": {
+      "class": "LRUCache",
+      "params": {
+        "capacity": 0,
+        "num_shard_bits": -1,
+        "strict_capacity_limit": false,
+        "high_pri_pool_ratio": 0.5,
+        "use_adaptive_mutex": false,
+        "metadata_charge_policy": "kFullChargeCacheMetadata"
+      }
+    }
+  },
+  "TableFactory": {
+    "terark-default": {
+      "class": "TerarkZipTable",
+      "params": {
+        "localTempDir": "/tmp",
+        "indexType": "Mixed_XL_256_32_FL",
+        "indexNestLevel": 3,
+        "indexNestScale": 8,
+        "indexTempLevel": 0,
+        "indexCacheRatio": 0.0,
+        "warmUpIndexOnOpen": false,
+        "warmUpValueOnOpen": false,
+        "disableCompressDict": true,
+        "optimizeCpuL3Cache": true,
+        "enableEntropyStore": false,
+        "offsetArrayBlockUnits": 128,
+        "sampleRatio": 0.02,
+        "checksumLevel": 0,
+        "entropyAlgo": "kNoEntropy",
+        "debugLevel": 0,
+        "softZipWorkingMemLimit": "16G",
+        "hardZipWorkingMemLimit": "32G",
+        "smallTaskMemory": "1G",
+        "minDictZipValueSize": "30",
+        "keyPrefixLen": 0,
+        "minPreadLen": 64
+      }
+    },
+    "block-based": {
+      "class": "BlockBasedTable",
+      "params": {
+        "checksum": "kCRC32c",
+        "block_size": "4K",
+        "block_restart_interval": 16,
+        "index_block_restart_interval": 1,
+        "metadata_block_size": "4K",
+        "enable_index_compression": true,
+        "block_cache": "${block-cache-default}",
+        "block_cache_compressed": null,
+        "persistent_cache": null,
+        "filter_policy": null
+      }
+    },
+    "dispatch" : {
+      "class": "DispatherTable",
+      "params": {
+        "default": "terark-default",
+        "level_writers": [
+          "block-based",
+          "block-based",
+          "block-based",
+          "terark-default",
+          "terark-default",
+          "terark-default",
+          "terark-default"
+        ]
+      }
+    }
+  },
+  "databases": {
+    "db1": {
+      "method": "DB::Open",
+      "params": {
+        "options": {
+          "max_background_compactions": 8,
+          "max_subcompactions": 5,
+          "inplace_update_support": false,
+          "WAL_size_limit_MB": 0,
+          "allow_mmap_reads": true,
+          "max_write_buffer_number": 4,
+          "target_file_size_base": "16M",
+          "target_file_size_multiplier": 2,
+          "table_factory": "dispatch"
+        }
+      }
+    }
+  },
+  "db2": {
+    "method": "DB::Open",
+    "params": {
+      "options": {}
+    }
+  },
+  "open": "db1"
+}

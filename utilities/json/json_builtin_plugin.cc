@@ -639,7 +639,7 @@ void ExampleUseMySerDe(const string& clazz) {
 //////////////////////////////////////////////////////////////////////////////
 
 static shared_ptr<RateLimiter>
-NewGenericRateLimiterFromJson(const json& js, const JsonOptionsRepo& repo) {
+JS_NewGenericRateLimiter(const json& js, const JsonOptionsRepo& repo) {
   int64_t rate_bytes_per_sec = 0;
   int64_t refill_period_us = 100 * 1000;
   int32_t fairness = 10;
@@ -672,7 +672,7 @@ NewGenericRateLimiterFromJson(const json& js, const JsonOptionsRepo& repo) {
       rate_bytes_per_sec, refill_period_us, fairness,
       mode, env, auto_tuned);
 }
-ROCKSDB_FACTORY_REG("GenericRateLimiter", NewGenericRateLimiterFromJson);
+ROCKSDB_FACTORY_REG("GenericRateLimiter", JS_NewGenericRateLimiter);
 
 //////////////////////////////////////////////////////////////////////////////
 struct LRUCacheOptions_Json : LRUCacheOptions {
@@ -686,23 +686,23 @@ struct LRUCacheOptions_Json : LRUCacheOptions {
     ROCKSDB_JSON_OPT_ENUM(js, metadata_charge_policy);
   }
 };
-std::shared_ptr<Cache>
+static std::shared_ptr<Cache>
 JS_NewLRUCache(const json& js, const JsonOptionsRepo& repo) {
   return NewLRUCache(LRUCacheOptions_Json(js, repo));
 }
 ROCKSDB_FACTORY_REG("LRUCache", JS_NewLRUCache);
 
 //////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<Cache>
-JS_ClockCache(const json& js, const JsonOptionsRepo& repo) {
+static std::shared_ptr<Cache>
+JS_NewClockCache(const json& js, const JsonOptionsRepo& repo) {
   LRUCacheOptions_Json opt(js, repo); // similar with ClockCache param
   return NewClockCache(opt.capacity, opt.num_shard_bits,
                        opt.strict_capacity_limit, opt.metadata_charge_policy);
 }
-ROCKSDB_FACTORY_REG("ClockCache", JS_ClockCache);
+ROCKSDB_FACTORY_REG("ClockCache", JS_NewClockCache);
 
 //////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<const SliceTransform>
+static std::shared_ptr<const SliceTransform>
 JS_NewFixedPrefixTransform(const json& js, const JsonOptionsRepo&) {
   size_t prefix_len = 0;
   ROCKSDB_JSON_REQ_PROP(js, prefix_len);
@@ -712,7 +712,7 @@ JS_NewFixedPrefixTransform(const json& js, const JsonOptionsRepo&) {
 ROCKSDB_FACTORY_REG("FixedPrefixTransform", JS_NewFixedPrefixTransform);
 
 //////////////////////////////////////////////////////////////////////////////
-std::shared_ptr<const SliceTransform>
+static std::shared_ptr<const SliceTransform>
 JS_NewCappedPrefixTransform(const json& js, const JsonOptionsRepo&) {
   size_t cap_len = 0;
   ROCKSDB_JSON_REQ_PROP(js, cap_len);

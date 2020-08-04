@@ -35,7 +35,7 @@ struct OptimisticTransactionOptions {
   const WriteBatchEntryIndexFactory* index_type = nullptr;
 };
 
-enum class OccValidationPolicy {
+ROCKSDB_ENUM_CLASS(OccValidationPolicy, int,
   // Validate serially at commit stage, AFTER entering the write-group.
   // Isolation validation is processed single-threaded(since in the
   // write-group).
@@ -46,7 +46,7 @@ enum class OccValidationPolicy {
   // reduce mutex contention. Each txn acquires locks for its write-set
   // records in some well-defined order.
   kValidateParallel = 1
-};
+);
 
 struct OptimisticTransactionDBOptions {
   OccValidationPolicy validate_policy = OccValidationPolicy::kValidateParallel;

@@ -430,4 +430,6 @@ ROCKSDB_FACTORY_REG("Dispath", NewDispatcherTableFactoryJson);
 ROCKSDB_FACTORY_REG("Dispather", NewDispatcherTableFactoryJson);
 ROCKSDB_FACTORY_REG("DispatherTable", NewDispatcherTableFactoryJson);
 
+void TableFactoryDummyFuncToPreventGccDeleteSymbols() {}
+
 }

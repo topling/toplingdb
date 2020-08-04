@@ -6,7 +6,7 @@ if test ${CXX}A = A; then
 	CXX=g++
 fi
 
-TERARK_CORE_DIR=`../terark-core`
+TERARK_CORE_DIR=${TERARK_CORE_DIR:-"../terark-core"}
 WITH_BMI2=`bash ${TERARK_CORE_DIR}/cpu_has_bmi2.sh`
 tmpfile=`mktemp -u compiler-XXXXXX`
 COMPILER=`${CXX} ${TERARK_CORE_DIR}/tools/configure/compiler.cpp -o ${tmpfile}.exe && ./${tmpfile}.exe`
@@ -39,6 +39,10 @@ afr_level="1"
 dbg_level="2"
 rls_level="0"
 
+UNAME=`uname`
+WARNING_FLAGS_Darwin='-Wall -Wno-shadow -Wno-shorten-64-to-32'
+WARNING_FLAGS_Linux='-Wall -Wno-shadow -Wno-class-memaccess'
+
 for type in $BUILD_TYPE; do
 	sig=`eval 'echo $'${type}_sig`
 	libs=`echo -lterark-{zbs,fsa,core}-${COMPILER}-$sig`
@@ -51,6 +55,6 @@ for type in $BUILD_TYPE; do
 		EXTRA_LDFLAGS="-L${TERARK_CORE_DIR}/$BUILD_ROOT/lib_shared $libs" \
 		USE_RTTI=1 \
 		DEBUG_LEVEL=$DEBUG_LEVEL \
-	  make WARNING_FLAGS='-Wall -Wno-shadow -Wno-class-memaccess' $@
+	  make WARNING_FLAGS="`eval 'echo $WARNING_FLAGS_'$UNAME`" $@
 done
 

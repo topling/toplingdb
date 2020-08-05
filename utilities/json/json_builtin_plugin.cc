@@ -825,6 +825,31 @@ ROCKSDB_FACTORY_REG("HashLinkList", NewHashLinkListMemTableRepFactoryJson);
 /////////////////////////////////////////////////////////////////////////////
 // OpenDB implementations
 //
+const char* db_options_class = "DBOptions";
+const char* cf_options_class = "CFOptions";
+template<class Ptr>
+Ptr ObtainOPT(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
+              const char* option_class, // "DBOptions" or "CFOptions"
+              const json& option_js, const JsonOptionsRepo& repo) {
+  if (option_js.is_string()) {
+    const std::string& option_name = option_js.get<std::string>();
+    auto iter = field.name2p->find(option_name);
+    if (field.name2p->end() == iter) {
+        throw Status::NotFound(
+                ROCKSDB_FUNC, "option_name = \"" + option_name + "\"");
+    }
+    return iter->second;
+  }
+  if (!option_js.is_object()) {
+    throw Status::InvalidArgument(
+        ROCKSDB_FUNC,
+        "option_js must be string or object, but is: " + option_js.dump());
+  }
+  return PluginFactory<Ptr>::AcquirePlugin(option_class, option_js, repo);
+}
+#define ROCKSDB_OBTAIN_OPT(field, option_js, repo) \
+   ObtainOPT(repo.m_impl->field, field##_class, option_js, repo)
+
 Options JS_Options(const json& js, const JsonOptionsRepo& repo, string* name) {
   if (!js.is_object()) {
     throw Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
@@ -847,19 +872,9 @@ Options JS_Options(const json& js, const JsonOptionsRepo& repo, string* name) {
       auto submsg = "missing param \"cf_options\"";
       throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
     }
-    auto db_options = PluginFactorySP<DBOptions>::ObtainPlugin(
-        "db_options", ROCKSDB_FUNC, db_options_js, repo);
-    if (!db_options) {
-      auto submsg = "bad \"db_options\" = " + db_options_js.dump();
-      throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
-    }
     auto& cf_options_js = iter.value();
-    auto cf_options = PluginFactorySP<ColumnFamilyOptions>::ObtainPlugin(
-        "cf_options", ROCKSDB_FUNC, cf_options_js, repo);
-    if (!cf_options) {
-      auto submsg = "bad \"cf_options\" = " + cf_options_js.dump();
-      throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
-    }
+    auto db_options = ROCKSDB_OBTAIN_OPT(db_options, db_options_js, repo);
+    auto cf_options = ROCKSDB_OBTAIN_OPT(cf_options, cf_options_js, repo);
     return Options(*db_options, *cf_options);
   }
   auto& js_options = iter.value();
@@ -937,23 +952,12 @@ JS_DB_MultiCF_Options(const json& js, const JsonOptionsRepo& repo,
   }
   auto& db_options_js = iter.value();
   Status s;
-  *db_options = PluginFactorySP<DBOptions>::ObtainPlugin(
-      "db_options", ROCKSDB_FUNC, db_options_js, repo);
-  if (!db_options) {
-    throw s;
-  }
+  *db_options = ROCKSDB_OBTAIN_OPT(db_options, db_options_js, repo);
   std::unique_ptr<DB_MultiCF> db(new DB_MultiCF);
   for (auto& kv : js_cf_desc.items()) {
     const std::string& cf_name = kv.key();
-    if (!kv.value().is_object()) {
-      throw Status::InvalidArgument(ROCKSDB_FUNC, cf_name + ": must be an object");
-    }
     auto& cf_js = kv.value();
-    auto cf_options = PluginFactorySP<ColumnFamilyOptions>::ObtainPlugin(
-        cf_name.c_str(), ROCKSDB_FUNC, cf_js, repo);
-    if (!cf_options) {
-      throw s;
-    }
+    auto cf_options = ROCKSDB_OBTAIN_OPT(cf_options, cf_js, repo);
     if (parse_extra) {
       parse_extra(cf_js);
     }

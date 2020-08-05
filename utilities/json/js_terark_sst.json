@@ -96,6 +96,7 @@
       "method": "DB::Open",
       "params": {
         "options": {
+          "create_if_missing": true,
           "max_background_compactions": 8,
           "max_subcompactions": 5,
           "inplace_update_support": false,
@@ -113,9 +114,9 @@
       "method": "DB::Open",
       "params": {
         "options": {
-
+          "create_if_missing": true
         },
-        "name": "db1"
+        "name": "db2"
       }
     },
     "db_mcf": {
@@ -123,6 +124,7 @@
       "params": {
         "db_options": {
           "create_if_missing": true,
+          "create_missing_column_families": true,
           "max_background_compactions": 8,
           "max_subcompactions": 5,
           "inplace_update_support": false,

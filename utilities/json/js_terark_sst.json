@@ -133,14 +133,14 @@
             "max_write_buffer_number": 4,
             "target_file_size_base": "16M",
             "target_file_size_multiplier": 2,
-            "table_factory": "dispatch"
+            "table_factory": "dispatch",
             "ttl": 0
           },
           "custom_cf" : {
             "max_write_buffer_number": 4,
             "target_file_size_base": "16M",
             "target_file_size_multiplier": 2,
-            "table_factory": "dispatch"
+            "table_factory": "dispatch",
             "ttl": 0
           }
         },

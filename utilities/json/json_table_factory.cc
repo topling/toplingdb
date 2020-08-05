@@ -348,10 +348,20 @@ class DispatherTableFactory : public TableFactory {
     }
     int level = table_builder_options.level;
     if (size_t(level) < m_level_writers.size()) {
+      if (JsonOptionsRepo::DebugLevel() >= 3) {
+        fprintf(stderr,
+          "INFO: Dispatch::NewTableBuilder: level = %d, use level factory = %s\n",
+          level, m_level_writers[level]->Name());
+      }
       return m_level_writers[level]->NewTableBuilder(
           table_builder_options, column_family_id, file);
     }
     else {
+      if (JsonOptionsRepo::DebugLevel() >= 3) {
+        fprintf(stderr,
+          "INFO: Dispatch::NewTableBuilder: level = %d, use default factory = %s\n",
+          level, m_default_writer->Name());
+      }
       return m_default_writer->NewTableBuilder(
           table_builder_options, column_family_id, file);
     }

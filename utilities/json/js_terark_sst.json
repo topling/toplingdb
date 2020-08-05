@@ -105,14 +105,18 @@
           "target_file_size_base": "16M",
           "target_file_size_multiplier": 2,
           "table_factory": "dispatch"
-        }
+        },
+        "name": "db1"
       }
     }
   },
   "db2": {
     "method": "DB::Open",
     "params": {
-      "options": {}
+      "options": {
+        
+      },
+      "name": "db1"
     }
   },
   "open": "db1"

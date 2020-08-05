@@ -119,5 +119,40 @@
       "name": "db1"
     }
   },
-  "open": "db1"
+  "db_mcf": {
+    "method": "DB::Open",
+    "params": {
+      "db_options": {
+        "max_background_compactions": 8,
+        "max_subcompactions": 5,
+        "inplace_update_support": false,
+        "WAL_size_limit_MB": 0,
+        "allow_mmap_reads": true
+      },
+      "column_families": {
+        "default": {
+          "class": "CFOptions",
+          "params": {
+            "max_write_buffer_number": 4,
+            "target_file_size_base": "16M",
+            "target_file_size_multiplier": 2,
+            "table_factory": "dispatch"
+          },
+          "ttl": 0
+        },
+        "custom_cf" : {
+          "class": "CFOptions",
+          "params": {
+            "max_write_buffer_number": 4,
+            "target_file_size_base": "16M",
+            "target_file_size_multiplier": 2,
+            "table_factory": "dispatch"
+          },
+          "ttl": 0
+        }
+      },
+      "name": "db_mcf"
+    }
+  },
+  "open": "db_mcf"
 }

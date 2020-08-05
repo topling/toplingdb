@@ -66,6 +66,29 @@ static void Impl_Import(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
   }
 }
 
+template<class Ptr>
+static void Impl_ImportOptions(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
+                   const char* option_class_name,
+                   const json& main_js, const JsonOptionsRepo& repo) {
+  auto iter = main_js.find(option_class_name);
+  if (main_js.end() != iter) {
+    if (!iter.value().is_object()) {
+      throw Status::InvalidArgument(
+        ROCKSDB_FUNC,
+        string(option_class_name) + " must be a json object");
+    }
+    for (auto& item : iter.value().items()) {
+      const string& option_name = item.key();
+      const json& params_js = item.value();
+      // name and func are just for error report in this call
+      Ptr p = PluginFactory<Ptr>::AcquirePlugin(option_class_name, params_js, repo);
+      assert(!!p);
+      field.name2p->emplace(option_name, p);
+      field.p2name.emplace(p, JsonOptionsRepo::Impl::ObjInfo{option_name, params_js});
+    }
+  }
+}
+
 JsonOptionsRepo::JsonOptionsRepo() noexcept {
   m_impl.reset(new Impl);
 }
@@ -152,8 +175,8 @@ Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
     }
   }
 
-  JSON_IMPORT_REPO(DBOptions            , db_options);
-  JSON_IMPORT_REPO(ColumnFamilyOptions  , cf_options);
+  Impl_ImportOptions(m_impl->db_options, "DBOptions", main_js, repo);
+  Impl_ImportOptions(m_impl->cf_options, "CFOptions", main_js, repo);
 
   return Status::OK();
 }

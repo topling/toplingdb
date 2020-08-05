@@ -129,7 +129,6 @@ DEFINE_string(
     "randomtransaction,"
     "randomreplacekeys,"
     "timeseries,"
-    "json,"
     "getmergeoperands",
 
     "Comma-separated list of operations to run in the specified"
@@ -201,7 +200,6 @@ DEFINE_string(
     "\tsstables    -- Print sstable info\n"
     "\theapprofile -- Dump a heap profile (if supported by this port)\n"
     "\treplay      -- replay the trace file specified with trace_file\n"
-    "\tjson -- Open DB with json config file\n"
     "\tgetmergeoperands -- Insert lots of merge records which are a list of "
     "sorted ints for a key and then compare performance of lookup for another "
     "key "

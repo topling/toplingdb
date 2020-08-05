@@ -463,13 +463,27 @@ ParseSizeXiB::ParseSizeXiB(const nlohmann::json& js) {
     throw std::invalid_argument("bad json = " + js.dump());
 }
 ParseSizeXiB::ParseSizeXiB(const nlohmann::json& js, const char* key) {
+    if (!js.is_object()) {
+      throw std::invalid_argument(
+          std::string(ROCKSDB_FUNC) + ": js is not an object, key = " + key);
+    }
     auto iter = js.find(key);
     if (js.end() != iter) {
-      *this = ParseSizeXiB(iter.value());
+      auto& sub_js = iter.value();
+      if (sub_js.is_number_integer())
+        m_val = sub_js.get<long long>();
+      else if (sub_js.is_number_unsigned())
+        m_val = sub_js.get<unsigned long long>();
+      else if (sub_js.is_string())
+        *this = ParseSizeXiB(sub_js.get<std::string>());
+      else
+        throw std::invalid_argument(
+                "bad sub_js = " + sub_js.dump() + ", key = \"" + key + "\"");
     }
     else {
       throw std::invalid_argument(
-          std::string(ROCKSDB_FUNC) + ": not found key: " + key);
+          std::string("ParseSizeXiB : not found key: \"") +
+            key + "\" in js = " + js.dump());
     }
 }
 

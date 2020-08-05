@@ -122,6 +122,7 @@
       "method": "DB::Open",
       "params": {
         "db_options": {
+          "create_if_missing": true,
           "max_background_compactions": 8,
           "max_subcompactions": 5,
           "inplace_update_support": false,

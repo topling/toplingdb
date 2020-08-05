@@ -81,6 +81,8 @@ public:
   static PluginPtr GetPlugin(const char* varname, const char* func_name,
                              const json&, const JsonOptionsRepo&);
 
+  static bool HasPlugin(const std::string& class_name);
+
   struct AutoReg {
     AutoReg(const AutoReg&) = delete;
     AutoReg(AutoReg&&) = delete;
@@ -256,6 +258,12 @@ ObtainPlugin(const char* varname, const char* func_name,
   }
   throw std::invalid_argument(
           std::string(ROCKSDB_FUNC) + ": js must be string, null, or object, but is: " + js.dump());
+}
+
+template<class PluginPtr>
+bool PluginFactory<PluginPtr>::HasPlugin(const std::string& class_name) {
+  auto& imp = AutoReg::Impl::s_singleton();
+  return imp.func_map.count(class_name) != 0;
 }
 
 const json& jsonRefType();

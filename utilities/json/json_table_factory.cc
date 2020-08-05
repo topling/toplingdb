@@ -259,7 +259,7 @@ RegTableFactoryMagicNumber(uint64_t magic, const char* name) {
   if (!ib.second) {
     fprintf(stderr,
         "ERROR: RegTableFactoryMagicNumber: dup: %016llX -> %s\n",
-        magic, name);
+        (long long)magic, name);
     abort();
   }
 }

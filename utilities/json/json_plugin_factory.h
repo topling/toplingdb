@@ -229,6 +229,13 @@ ObtainPlugin(const char* varname, const char* func_name,
       return p;
     } else {
       // string which does not like ${inst_id} or $inst_id
+      // try to treat str_val as inst_id to Get it
+      PluginPtr p(nullptr);
+      if (repo.Get(str_val, &p)) {
+        assert(!!p);
+        return p;
+      }
+      // now treat str_val as class name, try to --
       // AcquirePlugin with empty json params
       const std::string& clazz_name = str_val;
       return AcquirePlugin(clazz_name, json{}, repo);

@@ -235,11 +235,20 @@ ObtainPlugin(const char* varname, const char* func_name,
     }
   } else if (js.is_null()) {
     return PluginPtr(nullptr);
-  } else {
-    const std::string& clazz_name = js.at("class").get<std::string>();
+  } else if (js.is_object()) {
+    auto iter = js.find("class");
+    if (js.end() == iter) {
+        throw std::invalid_argument(std::string(ROCKSDB_FUNC) + ": sub obj class is required");
+    }
+    if (!iter.value().is_string()) {
+        throw std::invalid_argument(std::string(ROCKSDB_FUNC) + ": sub obj class must be string");
+    }
+    const std::string& clazz_name = iter.value().get<std::string>();
     const json& params = js.at("params");
     return AcquirePlugin(clazz_name, params, repo);
   }
+  throw std::invalid_argument(
+          std::string(ROCKSDB_FUNC) + ": js must be string, null, or object");
 }
 
 const json& jsonRefType();
@@ -253,16 +262,24 @@ const JsonOptionsRepo& repoRefType();
 
 //////////////////////////////////////////////////////////////////////////////
 
+#define ROCKSDB_JSON_XXX_PROP(js, prop) \
+    auto __iter = js.find(#prop); \
+    if (js.end() != __iter) try { \
+      prop = __iter.value().get<decltype(prop)>(); \
+    } catch (const std::exception& ex) {     \
+      throw Status::InvalidArgument( \
+        ROCKSDB_FUNC, std::string("\"" #prop "\": ") + ex.what()); \
+    }
+
 // _REQ_ means 'required'
 // _OPT_ means 'optional'
 #define ROCKSDB_JSON_REQ_PROP(js, prop) do { \
-    auto __iter = js.find(#prop); \
-    if (js.end() != __iter) prop = __iter.value().get<decltype(prop)>(); \
-    else throw std::invalid_argument("missing required param \"" #prop "\""); \
+    ROCKSDB_JSON_XXX_PROP(js, prop)          \
+    else throw Status::InvalidArgument(      \
+      ROCKSDB_FUNC, "missing required param \"" #prop "\""); \
   } while (0)
 #define ROCKSDB_JSON_OPT_PROP(js, prop) do { \
-    auto __iter = js.find(#prop); \
-    if (js.end() != __iter) prop = __iter.value().get<decltype(prop)>(); \
+    ROCKSDB_JSON_XXX_PROP(js, prop)          \
   } while (0)
 #define ROCKSDB_JSON_REQ_SIZE(js, prop) prop = ParseSizeXiB(js, #prop)
 #define ROCKSDB_JSON_OPT_SIZE(js, prop) do try { \
@@ -270,7 +287,10 @@ const JsonOptionsRepo& repoRefType();
     } catch (const std::exception&) {} while (0)
 #define ROCKSDB_JSON_OPT_ENUM(js, prop) do { \
     auto __iter = js.find(#prop); \
-    if (js.end() != __iter) { \
+    if (js.end() != __iter) {                \
+      if (!__iter.value().is_string())       \
+        throw Status::InvalidArgument(       \
+          ROCKSDB_FUNC, "enum \"" #prop "\" must be json string"); \
       const std::string& val = __iter.value().get<std::string>(); \
       if (!enum_value(val, &prop)) \
         throw Status::InvalidArgument( \

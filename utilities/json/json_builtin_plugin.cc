@@ -677,7 +677,7 @@ ROCKSDB_FACTORY_REG("GenericRateLimiter", JS_NewGenericRateLimiter);
 
 //////////////////////////////////////////////////////////////////////////////
 struct LRUCacheOptions_Json : LRUCacheOptions {
-  LRUCacheOptions_Json(const json& js, const JsonOptionsRepo& repo) {
+  LRUCacheOptions_Json(const json& js, const JsonOptionsRepo&) {
     ROCKSDB_JSON_REQ_SIZE(js, capacity);
     ROCKSDB_JSON_OPT_PROP(js, num_shard_bits);
     ROCKSDB_JSON_OPT_PROP(js, strict_capacity_limit);

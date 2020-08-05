@@ -255,7 +255,7 @@ ObtainPlugin(const char* varname, const char* func_name,
     return AcquirePlugin(clazz_name, params, repo);
   }
   throw std::invalid_argument(
-          std::string(ROCKSDB_FUNC) + ": js must be string, null, or object");
+          std::string(ROCKSDB_FUNC) + ": js must be string, null, or object, but is: " + js.dump());
 }
 
 const json& jsonRefType();

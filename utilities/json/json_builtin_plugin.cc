@@ -975,7 +975,7 @@ DB_MultiCF* JS_DB_MultiCF_Open(const json& js, const JsonOptionsRepo& repo) {
   Status s;
   if (read_only)
     s = DB::OpenForReadOnly(
-                  *db_opt, name, db->cf_descriptors, &db->cf_handles, &db->db);
+                 *db_opt, name, db->cf_descriptors, &db->cf_handles, &db->db);
   else
     s = DB::Open(*db_opt, name, db->cf_descriptors, &db->cf_handles, &db->db);
   if (!s.ok())

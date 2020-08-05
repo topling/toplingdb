@@ -6,6 +6,7 @@
 #include "table/table_builder.h"
 #include "json.h"
 #include "json_plugin_factory.h"
+#include "json_table_factory.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -252,6 +253,16 @@ GetDispatherTableMagicNumberMap() {
   };
   return map;
 }
+RegTableFactoryMagicNumber::
+RegTableFactoryMagicNumber(uint64_t magic, const char* name) {
+  auto ib = GetDispatherTableMagicNumberMap().emplace(magic, name);
+  if (!ib.second) {
+    fprintf(stderr,
+        "ERROR: RegTableFactoryMagicNumber: dup: %016llX -> %s\n",
+        magic, name);
+    abort();
+  }
+}
 
 class DispatherTableFactory : public TableFactory {
  public:
@@ -294,16 +305,30 @@ class DispatherTableFactory : public TableFactory {
         return factory->NewTableReader(ro, table_reader_options,
                                        std::move(file), file_size, table,
                                        prefetch_index_and_filter_in_cache);
+      } else if (PluginFactorySP<TableFactory>::HasPlugin(factory_name)) {
+        try {
+          json null_js;
+          JsonOptionsRepo empty_repo;
+          auto factory = PluginFactorySP<TableFactory>::
+                AcquirePlugin(factory_name, null_js, empty_repo);
+          return factory->NewTableReader(ro, table_reader_options,
+                                         std::move(file), file_size, table,
+                                         prefetch_index_and_filter_in_cache);
+        }
+        catch (const std::exception& ex) {
+          return Status::Corruption(ROCKSDB_FUNC,
+            "try onfly create TableFactory=\"" + factory_name + "\" failed: " + ex.what());
+        }
+        catch (const Status& es) {
+          return Status::Corruption(ROCKSDB_FUNC,
+            "try onfly create TableFactory=\"" + factory_name + "\" failed: " + es.ToString());
+        }
       } else {
         std::string msg;
         msg += "MagicNumber = ";
         msg += Slice((char*)&iter->first, 8).ToString(true);
-        msg += " -> Factory inst_id = " + factory_name;
-        msg += " is defined but this inst_id is not defined,"
-            " this should was check in SanitizeOptions(),"
-            " but is seems SanitizeOptions() was not called,"
-            " or new MagicNumber was registered after SanitizeOptions()"
-            " but the inst_id was not registered";
+        msg += " -> Factory class = " + factory_name;
+        msg += " is defined in TableMagicNumberMap but not registered as a plugin.";
         return Status::Corruption(ROCKSDB_FUNC, msg);
       }
     }
@@ -379,18 +404,6 @@ class DispatherTableFactory : public TableFactory {
         ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo);
         assert(!!p);
         m_level_writers.push_back(p);
-      }
-    }
-    for (auto& kv : GetDispatherTableMagicNumberMap()) {
-      const std::string& factory_name = kv.second;
-      auto fp_iter = m_all->find(factory_name);
-      if (m_all->end() == fp_iter) {
-        std::string msg;
-        msg += "MagicNumber = ";
-        msg += Slice((char*)&kv.first, 8).ToString(true);
-        msg += " -> Factory inst_id = " + factory_name;
-        msg += " is defined but this inst_id is not defined";
-        return Status::InvalidArgument(ROCKSDB_FUNC, msg);
       }
     }
     m_repo.reset();

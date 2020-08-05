@@ -368,11 +368,12 @@ class DispatherTableFactory : public TableFactory {
     }
     iter = m_json_obj.find("level_writers");
     if (m_json_obj.end() != iter) {
-      if (!iter.value().is_array()) {
+      auto& level_writers_js = iter.value();
+      if (!level_writers_js.is_array()) {
         throw std::invalid_argument(
             "DispatherTableFactory level_writers must be array");
       }
-      for (auto& item : m_json_obj.items()) {
+      for (auto& item : level_writers_js.items()) {
         auto& options = item.value();
         auto p = PluginFactorySP<TableFactory>::
         ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo);

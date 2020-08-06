@@ -382,9 +382,9 @@ const JsonOptionsRepo& repoRefType();
         ROCKSDB_JSON_SET_FACT_INNER(js[#prop], prop, prop)
 
 #define ROCKSDB_JSON_SET_FACT_INNER(inner, prop, repo_field) do { \
-  auto& p2name = repo.m_impl->repo_field.p2name; \
-  auto __iter = p2name.find(prop); \
-  if (p2name.end() != __iter) { \
+  auto& __p2name = repo.m_impl->repo_field.p2name; \
+  auto __iter = __p2name.find(prop); \
+  if (__p2name.end() != __iter) { \
     if (__iter->second.name.empty()) \
       inner = __iter->second.params; \
     else \

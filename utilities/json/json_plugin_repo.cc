@@ -414,11 +414,15 @@ Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
       }
       const std::string& method = iter.value().get<string>();
       iter = db_open_js.find("params");
+      /*
       if (db_open_js.end() == iter) {
         throw Status::InvalidArgument(ROCKSDB_FUNC,
             "dbname = \"" + dbname + "\", param \"params\" is missing");
       }
-      const auto& params_js = iter.value();
+      */
+      // allowing flat "params" inner objects to db_open_js
+      const auto& params_js = db_open_js.end() == iter
+                            ? db_open_js : iter.value();
       *dbp = PluginFactory<DBT*>::AcquirePlugin(method, params_js, *this);
       assert(nullptr != *dbp);
   };

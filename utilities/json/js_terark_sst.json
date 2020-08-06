@@ -94,7 +94,6 @@
   "databases": {
     "db1": {
       "method": "DB::Open",
-      "comment": "params's inner objects can be pushed out to outer object, as in db2",
       "params": {
         "options": {
           "create_if_missing": true,
@@ -113,39 +112,43 @@
     },
     "db2": {
       "method": "DB::Open",
-      "options": {
-        "create_if_missing": true
-      },
-      "name": "db2"
+      "params": {
+        "options": {
+          "create_if_missing": true
+        },
+        "name": "db2"
+      }
     },
     "db_mcf": {
       "method": "DB::Open",
-      "db_options": {
-        "create_if_missing": true,
-        "create_missing_column_families": true,
-        "max_background_compactions": 8,
-        "max_subcompactions": 5,
-        "inplace_update_support": false,
-        "WAL_size_limit_MB": 0,
-        "allow_mmap_reads": true
-      },
-      "column_families": {
-        "default": {
-          "max_write_buffer_number": 4,
-          "target_file_size_base": "16M",
-          "target_file_size_multiplier": 2,
-          "table_factory": "dispatch",
-          "ttl": 0
+      "params": {
+        "db_options": {
+          "create_if_missing": true,
+          "create_missing_column_families": true,
+          "max_background_compactions": 8,
+          "max_subcompactions": 5,
+          "inplace_update_support": false,
+          "WAL_size_limit_MB": 0,
+          "allow_mmap_reads": true
         },
-        "custom_cf" : {
-          "max_write_buffer_number": 4,
-          "target_file_size_base": "16M",
-          "target_file_size_multiplier": 2,
-          "table_factory": "dispatch",
-          "ttl": 0
-        }
-      },
-      "name": "db_mcf"
+        "column_families": {
+          "default": {
+            "max_write_buffer_number": 4,
+            "target_file_size_base": "16M",
+            "target_file_size_multiplier": 2,
+            "table_factory": "dispatch",
+            "ttl": 0
+          },
+          "custom_cf" : {
+            "max_write_buffer_number": 4,
+            "target_file_size_base": "16M",
+            "target_file_size_multiplier": 2,
+            "table_factory": "dispatch",
+            "ttl": 0
+          }
+        },
+        "name": "db_mcf"
+      }
     }
   },
   "open": "db_mcf"

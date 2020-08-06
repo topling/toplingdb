@@ -68,12 +68,6 @@ class JsonOptionsRepo {
   Status OpenDB(const nlohmann::json&, DB**);
   Status OpenDB(const nlohmann::json&, DB_MultiCF**);
 
-  const std::vector<ColumnFamilyHandle*>& CFHandles() const;
-  std::vector<ColumnFamilyHandle*>& CFHandles();
-
-  const std::vector<ColumnFamilyDescriptor>& CFDescriptors() const;
-  std::vector<ColumnFamilyDescriptor>& CFDescriptors();
-
   ///@{
   /// the semantic is overwrite
   void Add(const std::string& name, const std::shared_ptr<Options>&);

@@ -75,6 +75,10 @@ public:
   static PluginPtr AcquirePlugin(const std::string& class_name, const json&,
                                  const JsonOptionsRepo&);
 
+  // json is string class_name or
+  // object{ class: "class_name", params: {...} }
+  static PluginPtr AcquirePlugin(const json&, const JsonOptionsRepo&);
+
   static PluginPtr ObtainPlugin(const char* varname, const char* func_name,
                                 const json&, const JsonOptionsRepo&);
 
@@ -98,6 +102,10 @@ public:
 };
 template<class Object>
 using PluginFactorySP = PluginFactory<std::shared_ptr<Object> >;
+template<class Ptr>
+using PluginUpdaterFunc = std::function<void(const Ptr&, const json&, const JsonOptionsRepo&)>;
+template<class Ptr>
+using PluginUpdater = PluginFactory<PluginUpdaterFunc<Ptr> >;
 
 // use SerDeFunc as plugin, register SerDeFunc as plugin
 template<class Object>
@@ -258,6 +266,37 @@ ObtainPlugin(const char* varname, const char* func_name,
   }
   throw std::invalid_argument(
           std::string(ROCKSDB_FUNC) + ": js must be string, null, or object, but is: " + js.dump());
+}
+
+template<class PluginPtr>
+PluginPtr
+PluginFactory<PluginPtr>::
+AcquirePlugin(const json& js, const JsonOptionsRepo& repo) {
+  if (js.is_string()) {
+    const std::string& str_val = js.get<std::string>();
+    if (str_val.empty()) {
+      throw Status::InvalidArgument(ROCKSDB_FUNC, "jstr class_name is empty");
+    }
+    // now treat js as class name, try to --
+    // AcquirePlugin with empty json params
+    const std::string& clazz_name = str_val;
+    return AcquirePlugin(clazz_name, json{}, repo);
+  } else if (js.is_null()) {
+    return PluginPtr(nullptr);
+  } else if (js.is_object()) {
+    auto iter = js.find("class");
+    if (js.end() == iter) {
+      throw Status::InvalidArgument(ROCKSDB_FUNC, "js[\"class\"] is required");
+    }
+    if (!iter.value().is_string()) {
+      throw Status::InvalidArgument(ROCKSDB_FUNC, "js[\"class\"] must be string");
+    }
+    const std::string& clazz_name = iter.value().get<std::string>();
+    const json& params = js.at("params");
+    return AcquirePlugin(clazz_name, params, repo);
+  }
+  throw Status::InvalidArgument(ROCKSDB_FUNC,
+        "js must be string, null, or object, but is: " + js.dump());
 }
 
 template<class PluginPtr>

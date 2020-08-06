@@ -38,31 +38,76 @@ RepoPtrCref(const JsonOptionsRepo::Impl::ObjMap<shared_ptr<T> >&);
 template<class T> // just for type deduction
 static T* RepoPtrCref(const JsonOptionsRepo::Impl::ObjMap<T*>&);
 
+std::string JsonGetClassName(const char* caller, const json& js) {
+  if (js.is_string()) {
+    return js.get<std::string>();
+  }
+  if (js.is_object()) {
+    auto iter = js.find("class");
+    if (js.end() != iter) {
+      if (!iter.value().is_string())
+        throw Status::InvalidArgument(caller,
+          "json[\"class\"] must be string, but is: " + js.dump());
+      return iter.value().get<std::string>();
+    }
+    throw Status::InvalidArgument(caller,
+      "json missing sub obj \"class\": " + js.dump());
+  }
+  throw Status::InvalidArgument(caller,
+    "json must be string or object, but is: " + js.dump());
+}
+
 template<class Ptr>
 static void Impl_Import(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
                    const char* name,
                    const json& main_js, const JsonOptionsRepo& repo) {
   auto iter = main_js.find(name);
-  if (main_js.end() != iter) {
-    if (!iter.value().is_object()) {
-      throw Status::InvalidArgument(ROCKSDB_FUNC,
-          string(name) + " must be an object with class and options");
-    }
-    for (auto& item : iter.value().items()) {
-      const string& inst_id = item.key();
-      const json& value = item.value();
-      // name and func are just for error report in this call
-      Ptr p = PluginFactory<Ptr>::ObtainPlugin(
-                inst_id.c_str(), ROCKSDB_FUNC, value, repo);
-      if (!p) {
-        throw Status::InvalidArgument(
-            ROCKSDB_FUNC,
-            string("fail to ObtainPlugin(varname=") + inst_id +
-                ", value_js = " + value.dump() + ")");
+  if (main_js.end() == iter) {
+      return;
+  }
+  if (!iter.value().is_object()) {
+    throw Status::InvalidArgument(ROCKSDB_FUNC,
+        string(name) + " must be an object with class and options");
+  }
+  for (auto& item : iter.value().items()) {
+    const string& inst_id = item.key();
+    json value = item.value();
+    auto ib = field.name2p->emplace(inst_id, Ptr(nullptr));
+    auto& existing = ib.first->second;
+    if (!ib.second) { // existed
+      assert(Ptr(nullptr) != existing);
+      auto oi_iter = field.p2name.find(existing);
+      if (field.p2name.end() == oi_iter) {
+        throw Status::Corruption(ROCKSDB_FUNC,
+            "p2name[ptr_of(\"" + inst_id + "\")] is missing");
       }
-      field.name2p->emplace(inst_id, p);
-      field.p2name.emplace(p, JsonOptionsRepo::Impl::ObjInfo{inst_id, value});
+      auto old_clazz = JsonGetClassName(ROCKSDB_FUNC, oi_iter->second.params);
+      auto new_clazz = JsonGetClassName(ROCKSDB_FUNC, value);
+      if (new_clazz == old_clazz) {
+        try {
+          auto update = PluginUpdater<Ptr>::AcquirePlugin(old_clazz, json{}, repo);
+          update(existing, value, repo);
+          oi_iter->second.params.merge_patch(value);
+          continue; // done for current item
+        }
+        catch (const Status& st) {
+          // not found updater, overwrite with merged json
+          oi_iter->second.params.merge_patch(value);
+          value.swap(oi_iter->second.params);
+        }
+      }
+      field.p2name.erase(existing);
     }
+    // do not use ObtainPlugin, to disallow define var2 = var1
+    Ptr p = PluginFactory<Ptr>::AcquirePlugin(value, repo);
+    if (!p) {
+      throw Status::InvalidArgument(
+          ROCKSDB_FUNC,
+            "fail to AcquirePlugin: inst_id = " + inst_id +
+              ", value_js = " + value.dump());
+    }
+    existing = p;
+    field.p2name.emplace(p, JsonOptionsRepo::Impl::ObjInfo{inst_id, std::move(value)});
   }
 }
 
@@ -71,19 +116,34 @@ static void Impl_ImportOptions(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
                    const char* option_class_name,
                    const json& main_js, const JsonOptionsRepo& repo) {
   auto iter = main_js.find(option_class_name);
-  if (main_js.end() != iter) {
-    if (!iter.value().is_object()) {
-      throw Status::InvalidArgument(
-        ROCKSDB_FUNC,
-        string(option_class_name) + " must be a json object");
+  if (main_js.end() == iter) {
+    return;
+  }
+  if (!iter.value().is_object()) {
+    throw Status::InvalidArgument(
+      ROCKSDB_FUNC,
+      string(option_class_name) + " must be a json object");
+  }
+  for (auto& item : iter.value().items()) {
+    const string& option_name = item.key();
+    json params_js = item.value();
+    auto ib = field.name2p->emplace(option_name, Ptr(nullptr));
+    auto& existing = ib.first->second;
+    if (!ib.second) { // existed
+      assert(Ptr(nullptr) != existing);
+      auto oi_iter = field.p2name.find(existing);
+      if (field.p2name.end() == oi_iter) {
+        throw Status::Corruption(ROCKSDB_FUNC,
+            "p2name[ptr_of(\"" + option_name + "\")] is missing");
+      }
+      auto update = PluginUpdater<Ptr>::AcquirePlugin(option_class_name, json{}, repo);
+      update(existing, params_js, repo);
+      oi_iter->second.params.merge_patch(params_js);
     }
-    for (auto& item : iter.value().items()) {
-      const string& option_name = item.key();
-      const json& params_js = item.value();
-      // name and func are just for error report in this call
+    else {
       Ptr p = PluginFactory<Ptr>::AcquirePlugin(option_class_name, params_js, repo);
-      assert(!!p);
-      field.name2p->emplace(option_name, p);
+      assert(Ptr(nullptr) != p);
+      existing = p;
       field.p2name.emplace(p, JsonOptionsRepo::Impl::ObjInfo{option_name, params_js});
     }
   }

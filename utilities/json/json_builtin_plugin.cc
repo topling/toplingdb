@@ -98,6 +98,9 @@ static Status Json_EventListenerVec(const json& js, const JsonOptionsRepo& repo,
 
 struct DBOptions_Json : DBOptions {
   DBOptions_Json(const json& js, const JsonOptionsRepo& repo) {
+    Update(js, repo);
+  }
+  void Update(const json& js, const JsonOptionsRepo& repo) {
     ROCKSDB_JSON_OPT_PROP(js, create_if_missing);
     ROCKSDB_JSON_OPT_PROP(js, create_missing_column_families);
     ROCKSDB_JSON_OPT_PROP(js, paranoid_checks);
@@ -304,13 +307,22 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_PROP(js, best_efforts_recovery);
   }
 };
-
 static shared_ptr<DBOptions>
 NewDBOptionsJS(const json& js, const JsonOptionsRepo& repo) {
   return std::make_shared<DBOptions_Json>(js, repo);
 }
 ROCKSDB_FACTORY_REG("DBOptions", NewDBOptionsJS);
+static void DBOptions_Update(const std::shared_ptr<DBOptions>& p,
+                             const json& js, const JsonOptionsRepo& repo) {
+  static_cast<DBOptions_Json*>(p.get())->Update(js, repo);
+}
+static PluginUpdaterFunc<std::shared_ptr<DBOptions> >
+JS_DBOptionsUpdater(const json&, const JsonOptionsRepo&) {
+  return &DBOptions_Update;
+}
+ROCKSDB_FACTORY_REG("DBOptions", JS_DBOptionsUpdater);
 
+///////////////////////////////////////////////////////////////////////////
 template<class Vec>
 bool Init_vec(const json& js, Vec& vec) {
   if (js.is_array()) {
@@ -386,6 +398,9 @@ CompressionOptions_Json NestForBase(const CompressionOptions&);
 
 struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
   ColumnFamilyOptions_Json(const json& js, const JsonOptionsRepo& repo) {
+    Update(js, repo);
+  }
+  void Update(const json& js, const JsonOptionsRepo& repo) {
     ROCKSDB_JSON_OPT_PROP(js, max_write_buffer_number);
     ROCKSDB_JSON_OPT_PROP(js, min_write_buffer_number_to_merge);
     ROCKSDB_JSON_OPT_PROP(js, max_write_buffer_number_to_maintain);
@@ -581,6 +596,16 @@ NewCFOptionsJS(const json& js, const JsonOptionsRepo& repo) {
 }
 ROCKSDB_FACTORY_REG("ColumnFamilyOptions", NewCFOptionsJS);
 ROCKSDB_FACTORY_REG("CFOptions", NewCFOptionsJS);
+static void CFOptions_Update(const std::shared_ptr<ColumnFamilyOptions>& p,
+                             const json& js, const JsonOptionsRepo& repo) {
+  static_cast<ColumnFamilyOptions_Json*>(p.get())->Update(js, repo);
+}
+static PluginUpdaterFunc<std::shared_ptr<ColumnFamilyOptions> >
+JS_CFOptionsUpdater(const json&, const JsonOptionsRepo&) {
+  return &CFOptions_Update;
+}
+ROCKSDB_FACTORY_REG("ColumnFamilyOptions", JS_CFOptionsUpdater);
+ROCKSDB_FACTORY_REG("CFOptions", JS_CFOptionsUpdater);
 
 //////////////////////////////////////////////////////////////////////////////
 

@@ -66,36 +66,36 @@ struct JsonOptionsRepo::Impl {
 /// just let the factory being PluginFactory:
 /// class SomeClass : public PluginFactory<SomeClass*> {...};
 /// class SomeClass : public PluginFactory<shared_ptr<SomeClass> > {...};
-template<class PluginPtr>
+template<class Ptr>
 class PluginFactory {
 public:
   virtual ~PluginFactory() {}
   // in some contexts Acquire means 'CreateNew'
   // in some contexts Acquire means 'GetExisting'
-  static PluginPtr AcquirePlugin(const std::string& class_name, const json&,
+  static Ptr AcquirePlugin(const std::string& class_name, const json&,
                                  const JsonOptionsRepo&);
 
   // json is string class_name or
   // object{ class: "class_name", params: {...} }
-  static PluginPtr AcquirePlugin(const json&, const JsonOptionsRepo&);
+  static Ptr AcquirePlugin(const json&, const JsonOptionsRepo&);
 
-  static PluginPtr ObtainPlugin(const char* varname, const char* func_name,
+  static Ptr ObtainPlugin(const char* varname, const char* func_name,
                                 const json&, const JsonOptionsRepo&);
 
-  static PluginPtr GetPlugin(const char* varname, const char* func_name,
+  static Ptr GetPlugin(const char* varname, const char* func_name,
                              const json&, const JsonOptionsRepo&);
 
   static bool HasPlugin(const std::string& class_name);
 
-  struct AutoReg {
-    AutoReg(const AutoReg&) = delete;
-    AutoReg(AutoReg&&) = delete;
-    AutoReg& operator=(AutoReg&&) = delete;
-    AutoReg& operator=(const AutoReg&) = delete;
-    typedef PluginPtr (*AcqFunc)(const json&,const JsonOptionsRepo&);
+  struct Reg {
+    Reg(const Reg&) = delete;
+    Reg(Reg&&) = delete;
+    Reg& operator=(Reg&&) = delete;
+    Reg& operator=(const Reg&) = delete;
+    typedef Ptr (*AcqFunc)(const json&,const JsonOptionsRepo&);
     using NameToFuncMap = std::unordered_map<std::string, AcqFunc>;
-    AutoReg(Slice class_name, AcqFunc acq);
-    ~AutoReg();
+    Reg(Slice class_name, AcqFunc acq);
+    ~Reg();
     typename NameToFuncMap::iterator ipos;
     struct Impl;
   };
@@ -118,16 +118,15 @@ class SerDeFunc {
 template<class Object>
 using SerDeFactory = PluginFactory<const SerDeFunc<Object>*>;
 
-template<class PluginPtr>
-struct PluginFactory<PluginPtr>::AutoReg::Impl {
+template<class Ptr>
+struct PluginFactory<Ptr>::Reg::Impl {
   NameToFuncMap func_map;
-  std::unordered_map<std::string, PluginPtr> inst_map;
+  std::unordered_map<std::string, Ptr> inst_map;
   static Impl& s_singleton() { static Impl imp; return imp; }
 };
 
-template<class PluginPtr>
-PluginFactory<PluginPtr>::
-AutoReg::AutoReg(Slice class_name, AcqFunc acq) {
+template<class Ptr>
+PluginFactory<Ptr>::Reg::Reg(Slice class_name, AcqFunc acq) {
   auto& imp = Impl::s_singleton();
   auto ib = imp.func_map.insert(std::make_pair(class_name.ToString(), acq));
   if (!ib.second) {
@@ -141,35 +140,35 @@ AutoReg::AutoReg(Slice class_name, AcqFunc acq) {
   this->ipos = ib.first;
 }
 
-template<class PluginPtr>
-PluginFactory<PluginPtr>::AutoReg::~AutoReg() {
+template<class Ptr>
+PluginFactory<Ptr>::Reg::~Reg() {
   auto& imp = Impl::s_singleton();
   imp.func_map.erase(ipos);
 }
 
-template<class PluginPtr>
-PluginPtr
-PluginFactory<PluginPtr>::
+template<class Ptr>
+Ptr
+PluginFactory<Ptr>::
 AcquirePlugin(const std::string& class_name, const json& js,
               const JsonOptionsRepo& repo) {
-  auto& imp = AutoReg::Impl::s_singleton();
+  auto& imp = Reg::Impl::s_singleton();
   auto iter = imp.func_map.find(class_name);
   if (imp.func_map.end() != iter) {
-    PluginPtr ptr = iter->second(js, repo);
+    Ptr ptr = iter->second(js, repo);
     assert(!!ptr);
     return ptr;
   }
   else {
-    //return PluginPtr(nullptr);
+    //return Ptr(nullptr);
     throw Status::NotFound(ROCKSDB_FUNC, class_name);
   }
 }
 
 std::string PluginParseInstID(const std::string& str_val);
 
-template<class PluginPtr>
-PluginPtr
-PluginFactory<PluginPtr>::
+template<class Ptr>
+Ptr
+PluginFactory<Ptr>::
 GetPlugin(const char* varname, const char* func_name,
           const json& js, const JsonOptionsRepo& repo) {
   if (js.is_string()) {
@@ -178,7 +177,7 @@ GetPlugin(const char* varname, const char* func_name,
       throw Status::InvalidArgument(
           func_name, std::string(varname) + " inst_id/class_name is empty");
     }
-    PluginPtr p(nullptr);
+    Ptr p(nullptr);
     bool ret = false;
     if ('$' == str_val[0]) {
       if (str_val.size() < 3) {
@@ -213,9 +212,9 @@ GetPlugin(const char* varname, const char* func_name,
 // is treated as a class name to create the plugin with empty json params.
 //
 // if json is an object, it should be { class: class_name, params: ... }
-template<class PluginPtr>
-PluginPtr
-PluginFactory<PluginPtr>::
+template<class Ptr>
+Ptr
+PluginFactory<Ptr>::
 ObtainPlugin(const char* varname, const char* func_name,
              const json& js, const JsonOptionsRepo& repo) {
   if (js.is_string()) {
@@ -230,7 +229,7 @@ ObtainPlugin(const char* varname, const char* func_name,
                  " inst_id = \"" + str_val + "\" is too short");
       }
       const auto inst_id = PluginParseInstID(str_val);
-      PluginPtr p(nullptr);
+      Ptr p(nullptr);
       if (!repo.Get(inst_id, &p)) {
         throw Status::NotFound(func_name,
            std::string(varname) + "inst_id = \"" + inst_id + "\"");
@@ -240,7 +239,7 @@ ObtainPlugin(const char* varname, const char* func_name,
     } else {
       // string which does not like ${inst_id} or $inst_id
       // try to treat str_val as inst_id to Get it
-      PluginPtr p(nullptr);
+      Ptr p(nullptr);
       if (repo.Get(str_val, &p)) {
         assert(!!p);
         return p;
@@ -251,7 +250,7 @@ ObtainPlugin(const char* varname, const char* func_name,
       return AcquirePlugin(clazz_name, json{}, repo);
     }
   } else if (js.is_null()) {
-    return PluginPtr(nullptr);
+    return Ptr(nullptr);
   } else if (js.is_object()) {
     auto iter = js.find("class");
     if (js.end() == iter) {
@@ -268,9 +267,9 @@ ObtainPlugin(const char* varname, const char* func_name,
           std::string(ROCKSDB_FUNC) + ": js must be string, null, or object, but is: " + js.dump());
 }
 
-template<class PluginPtr>
-PluginPtr
-PluginFactory<PluginPtr>::
+template<class Ptr>
+Ptr
+PluginFactory<Ptr>::
 AcquirePlugin(const json& js, const JsonOptionsRepo& repo) {
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
@@ -282,7 +281,7 @@ AcquirePlugin(const json& js, const JsonOptionsRepo& repo) {
     const std::string& clazz_name = str_val;
     return AcquirePlugin(clazz_name, json{}, repo);
   } else if (js.is_null()) {
-    return PluginPtr(nullptr);
+    return Ptr(nullptr);
   } else if (js.is_object()) {
     auto iter = js.find("class");
     if (js.end() == iter) {
@@ -299,9 +298,9 @@ AcquirePlugin(const json& js, const JsonOptionsRepo& repo) {
         "js must be string, null, or object, but is: " + js.dump());
 }
 
-template<class PluginPtr>
-bool PluginFactory<PluginPtr>::HasPlugin(const std::string& class_name) {
-  auto& imp = AutoReg::Impl::s_singleton();
+template<class Ptr>
+bool PluginFactory<Ptr>::HasPlugin(const std::string& class_name) {
+  auto& imp = Reg::Impl::s_singleton();
   return imp.func_map.count(class_name) != 0;
 }
 
@@ -312,7 +311,7 @@ const JsonOptionsRepo& repoRefType();
 ///@param Acquire  must return base class ptr
 #define ROCKSDB_FACTORY_REG(Name, Acquire) \
   PluginFactory<decltype(Acquire(jsonRefType(),repoRefType()))>:: \
-  AutoReg ROCKSDB_PP_CAT_3(g_reg_factory_,Acquire,__LINE__)(Name,Acquire)
+  Reg ROCKSDB_PP_CAT_3(g_reg_factory_,Acquire,__LINE__)(Name,Acquire)
 
 //////////////////////////////////////////////////////////////////////////////
 

@@ -29,6 +29,7 @@ TERARK_PLUGINS_SRC="\
  ${TERARK_PLUGINS_DIR}/src/table/terark_zip_table_builder.cc \
  ${TERARK_PLUGINS_DIR}/src/table/terark_zip_table.cc \
  ${TERARK_PLUGINS_DIR}/src/table/terark_zip_table_reader.cc \
+ ${TERARK_PLUGINS_DIR}/src/table/terark_zip_table_json_plugin.cc \
 "
 
 afr_sig=a
@@ -53,6 +54,7 @@ for type in $BUILD_TYPE; do
 		OBJ_DIR=${BUILD_ROOT}/$type \
 		EXTRA_CXXFLAGS="-I${TERARK_CORE_DIR}/src -I${TERARK_CORE_DIR}/boost-include -I${TERARK_CORE_DIR}/3rdparty/zstd -fPIC" \
 		EXTRA_LDFLAGS="-L${TERARK_CORE_DIR}/$BUILD_ROOT/lib_shared $libs" \
+		LIB_MODE=shared \
 		USE_RTTI=1 \
 		DEBUG_LEVEL=$DEBUG_LEVEL \
 	  make WARNING_FLAGS="`eval 'echo $WARNING_FLAGS_'$UNAME`" $@

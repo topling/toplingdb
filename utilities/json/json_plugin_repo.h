@@ -70,30 +70,30 @@ class JsonOptionsRepo {
 
   ///@{
   /// the semantic is overwrite
-  void Add(const std::string& name, const std::shared_ptr<Options>&);
-  void Add(const std::string& name, const std::shared_ptr<DBOptions>&);
-  void Add(const std::string& name, const std::shared_ptr<ColumnFamilyOptions>&);
+  void Put(const std::string& name, const std::shared_ptr<Options>&);
+  void Put(const std::string& name, const std::shared_ptr<DBOptions>&);
+  void Put(const std::string& name, const std::shared_ptr<ColumnFamilyOptions>&);
 
-  void Add(const std::string& name, const std::shared_ptr<Cache>&);
-  void Add(const std::string& name, const std::shared_ptr<CompactionFilterFactory>&);
-  void Add(const std::string& name, const Comparator*);
-  void Add(const std::string& name, const std::shared_ptr<ConcurrentTaskLimiter>&);
-  void Add(const std::string& name, Env*);
-  void Add(const std::string& name, const std::shared_ptr<EventListener>&);
-  void Add(const std::string& name, const std::shared_ptr<FileChecksumGenFactory>&);
-  void Add(const std::string& name, const std::shared_ptr<FileSystem>&);
-  void Add(const std::string& name, const std::shared_ptr<const FilterPolicy>&);
-  void Add(const std::string& name, const std::shared_ptr<FlushBlockPolicyFactory>&);
-  void Add(const std::string& name, const std::shared_ptr<Logger>&);
-  void Add(const std::string& name, const std::shared_ptr<MemTableRepFactory>&);
-  void Add(const std::string& name, const std::shared_ptr<MergeOperator>&);
-  void Add(const std::string& name, const std::shared_ptr<PersistentCache>&);
-  void Add(const std::string& name, const std::shared_ptr<RateLimiter>&);
-  void Add(const std::string& name, const std::shared_ptr<const SliceTransform>&);
-  void Add(const std::string& name, const std::shared_ptr<SstFileManager>&);
-  void Add(const std::string& name, const std::shared_ptr<Statistics>&);
-  void Add(const std::string& name, const std::shared_ptr<TableFactory>&);
-  void Add(const std::string& name, const std::shared_ptr<TablePropertiesCollectorFactory>&);
+  void Put(const std::string& name, const std::shared_ptr<Cache>&);
+  void Put(const std::string& name, const std::shared_ptr<CompactionFilterFactory>&);
+  void Put(const std::string& name, const Comparator*);
+  void Put(const std::string& name, const std::shared_ptr<ConcurrentTaskLimiter>&);
+  void Put(const std::string& name, Env*);
+  void Put(const std::string& name, const std::shared_ptr<EventListener>&);
+  void Put(const std::string& name, const std::shared_ptr<FileChecksumGenFactory>&);
+  void Put(const std::string& name, const std::shared_ptr<FileSystem>&);
+  void Put(const std::string& name, const std::shared_ptr<const FilterPolicy>&);
+  void Put(const std::string& name, const std::shared_ptr<FlushBlockPolicyFactory>&);
+  void Put(const std::string& name, const std::shared_ptr<Logger>&);
+  void Put(const std::string& name, const std::shared_ptr<MemTableRepFactory>&);
+  void Put(const std::string& name, const std::shared_ptr<MergeOperator>&);
+  void Put(const std::string& name, const std::shared_ptr<PersistentCache>&);
+  void Put(const std::string& name, const std::shared_ptr<RateLimiter>&);
+  void Put(const std::string& name, const std::shared_ptr<const SliceTransform>&);
+  void Put(const std::string& name, const std::shared_ptr<SstFileManager>&);
+  void Put(const std::string& name, const std::shared_ptr<Statistics>&);
+  void Put(const std::string& name, const std::shared_ptr<TableFactory>&);
+  void Put(const std::string& name, const std::shared_ptr<TablePropertiesCollectorFactory>&);
   ///@}
 
   bool Get(const std::string& name, std::shared_ptr<Options>*) const;
@@ -120,6 +120,23 @@ class JsonOptionsRepo {
   bool Get(const std::string& name, std::shared_ptr<Statistics>*) const;
   bool Get(const std::string& name, std::shared_ptr<TableFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<TablePropertiesCollectorFactory>*) const;
+  
+  class Auto {
+    friend class JsonOptionsRepo;
+    const JsonOptionsRepo& m_repo;
+    const std::string&     m_name;
+    Auto(const JsonOptionsRepo& repo, const std::string& name)
+        : m_repo(repo), m_name(name) {}
+    Auto(const Auto&) = default;
+    Auto(Auto&&) = default;
+   public:
+    template<class Ptr>
+    operator Ptr() && { Ptr p(nullptr); m_repo.Get(m_name, &p); return p; }
+  };
+  /// sample usage:
+  /// std::shared_ptr<TableFactory> factory = repo["BlockBasedTable"];
+  Auto Get(const std::string& name) const { return Auto(*this, name); }
+  Auto operator[](const std::string& name) const { return Auto(*this, name); }
 
   void GetMap(std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<TableFactory>>>*) const;
   void GetMap(std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<MemTableRepFactory>>>*) const;

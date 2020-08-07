@@ -299,7 +299,7 @@ Status JsonOptionsRepo::Export(string* json_str, bool pretty) const {
 }
 
 #define JSON_REPO_TYPE_IMPL(field) \
-void JsonOptionsRepo::Add(const string& name, \
+void JsonOptionsRepo::Put(const string& name, \
                 decltype((RepoPtrCref(((Impl*)0)->field))) p) { \
   auto ib = m_impl->field.name2p->emplace(name, p); \
   if (ib.second) \

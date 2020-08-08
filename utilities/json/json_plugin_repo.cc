@@ -313,6 +313,7 @@ bool JsonOptionsRepo::Get(const string& name, \
     *pp = iter->second; \
     return true; \
   } \
+  *pp = decltype(RepoPtrType(((Impl*)0)->field))(nullptr); \
   return false; \
 }
 

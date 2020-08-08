@@ -103,7 +103,7 @@ public:
 template<class Object>
 using PluginFactorySP = PluginFactory<std::shared_ptr<Object> >;
 template<class Ptr>
-using PluginUpdaterFunc = std::function<void(const Ptr&, const json&, const JsonOptionsRepo&)>;
+using PluginUpdaterFunc = void(*)(const Ptr&, const json&, const JsonOptionsRepo&);
 template<class Ptr>
 using PluginUpdater = PluginFactory<PluginUpdaterFunc<Ptr> >;
 

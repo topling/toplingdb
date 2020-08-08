@@ -21,7 +21,7 @@ if test ${BUILD_TYPE}A = A; then
 fi
 
 TERARK_PLUGINS_DIR=`cd ../terark-zip-rocksdb; pwd`
-TERARK_PLUGINS_GIT_VER_SRC="${TERARK_PLUGINS_DIR}/${BUILD_ROOT}/git-version-terark_zip_rocksdb.cpp"
+TERARK_PLUGINS_GIT_VER_SRC="${BUILD_ROOT}/git-version-terark_zip_rocksdb.cc"
 #TERARK_PLUGINS_SRC="`echo ${TERARK_PLUGINS_DIR}/src/table/*.cc`" \
 TERARK_PLUGINS_SRC="\
  ${TERARK_PLUGINS_DIR}/src/table/terark_zip_common.cc \
@@ -31,7 +31,7 @@ TERARK_PLUGINS_SRC="\
  ${TERARK_PLUGINS_DIR}/src/table/terark_zip_table.cc \
  ${TERARK_PLUGINS_DIR}/src/table/terark_zip_table_reader.cc \
  ${TERARK_PLUGINS_DIR}/src/table/terark_zip_table_json_plugin.cc \
- ${TERARK_PLUGINS_GIT_VER_SRC} \
+ ${TERARK_PLUGINS_DIR}/${TERARK_PLUGINS_GIT_VER_SRC} \
 "
 
 afr_sig=a

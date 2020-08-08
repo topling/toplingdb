@@ -723,9 +723,20 @@ ROCKSDB_FACTORY_REG("LRUCache", JS_NewLRUCache);
 //////////////////////////////////////////////////////////////////////////////
 static std::shared_ptr<Cache>
 JS_NewClockCache(const json& js, const JsonOptionsRepo& repo) {
+#ifdef SUPPORT_CLOCK_CACHE
   LRUCacheOptions_Json opt(js, repo); // similar with ClockCache param
-  return NewClockCache(opt.capacity, opt.num_shard_bits,
-                       opt.strict_capacity_limit, opt.metadata_charge_policy);
+  auto p = NewClockCache(opt.capacity, opt.num_shard_bits,
+                         opt.strict_capacity_limit, opt.metadata_charge_policy);
+  if (nullptr != p) {
+	throw Status::InvalidArgument(ROCKSDB_FUNC,
+		"SUPPORT_CLOCK_CACHE is defined but NewClockCache returns null");
+  }
+  return p;
+#else
+  throw Status::InvalidArgument(ROCKSDB_FUNC,
+      "SUPPORT_CLOCK_CACHE is not defined, "
+      "need to recompile with -D SUPPORT_CLOCK_CACHE=1");
+#endif
 }
 ROCKSDB_FACTORY_REG("ClockCache", JS_NewClockCache);
 

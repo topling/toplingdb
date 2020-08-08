@@ -1,7 +1,8 @@
 {
   "Cache": {
     "clock-cache-default": {
-      "class": "ClockCache",
+      "class-needs-TBB": "ClockCache",
+      "class": "LRUCache",
       "params": {
         "capacity": 0,
         "num_shard_bits": -1,

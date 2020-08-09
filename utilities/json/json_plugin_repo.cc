@@ -15,6 +15,7 @@
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/sst_file_manager.h"
+#include "rocksdb/utilities/transaction_db_mutex.h"
 #include "rocksdb/wal_filter.h"
 #include "util/string_util.h"
 
@@ -221,8 +222,10 @@ Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
   JSON_IMPORT_REPO(TablePropertiesCollectorFactory,
                    table_properties_collector_factory);
 
+  JSON_IMPORT_REPO(MemoryAllocator         , memory_allocator);
   JSON_IMPORT_REPO(MemTableRepFactory      , mem_table_rep_factory);
   JSON_IMPORT_REPO(TableFactory            , table_factory);
+  JSON_IMPORT_REPO(TransactionDBMutexFactory, txn_db_mutex_factory);
 
   for (auto& kv : *m_impl->table_factory.name2p) {
     if (Slice(kv.second->Name()) == "DispatherTableFactory") {
@@ -280,8 +283,11 @@ Status JsonOptionsRepo::Export(nlohmann::json* main_js) const try {
   JSON_EXPORT_REPO(TablePropertiesCollectorFactory,
                    table_properties_collector_factory);
 
+  JSON_EXPORT_REPO(MemoryAllocator         , memory_allocator);
   JSON_EXPORT_REPO(MemTableRepFactory      , mem_table_rep_factory);
   JSON_EXPORT_REPO(TableFactory            , table_factory);
+  JSON_EXPORT_REPO(TransactionDBMutexFactory, txn_db_mutex_factory);
+
   return Status::OK();
 }
 catch (const std::exception& ex) {
@@ -329,6 +335,7 @@ JSON_REPO_TYPE_IMPL(file_system)
 JSON_REPO_TYPE_IMPL(filter_policy)
 JSON_REPO_TYPE_IMPL(flush_block_policy_factory)
 JSON_REPO_TYPE_IMPL(info_log)
+JSON_REPO_TYPE_IMPL(memory_allocator)
 JSON_REPO_TYPE_IMPL(mem_table_rep_factory)
 JSON_REPO_TYPE_IMPL(merge_operator)
 JSON_REPO_TYPE_IMPL(rate_limiter)
@@ -336,6 +343,7 @@ JSON_REPO_TYPE_IMPL(sst_file_manager)
 JSON_REPO_TYPE_IMPL(statistics)
 JSON_REPO_TYPE_IMPL(table_factory)
 JSON_REPO_TYPE_IMPL(table_properties_collector_factory)
+JSON_REPO_TYPE_IMPL(txn_db_mutex_factory)
 JSON_REPO_TYPE_IMPL(slice_transform)
 
 JSON_REPO_TYPE_IMPL(options)

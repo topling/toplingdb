@@ -30,6 +30,7 @@ class FileSystem;
 class FilterPolicy;
 class FlushBlockPolicyFactory;
 class Logger;
+class MemoryAllocator;
 class MemTableRepFactory;
 class MergeOperator;
 class PersistentCache;
@@ -39,6 +40,7 @@ class SstFileManager;
 class Statistics;
 class TableFactory;
 class TablePropertiesCollectorFactory;
+class TransactionDBMutexFactory;
 
 struct DB_MultiCF {
   DB_MultiCF();
@@ -85,6 +87,7 @@ class JsonOptionsRepo {
   void Put(const std::string& name, const std::shared_ptr<const FilterPolicy>&);
   void Put(const std::string& name, const std::shared_ptr<FlushBlockPolicyFactory>&);
   void Put(const std::string& name, const std::shared_ptr<Logger>&);
+  void Put(const std::string& name, const std::shared_ptr<MemoryAllocator>&);
   void Put(const std::string& name, const std::shared_ptr<MemTableRepFactory>&);
   void Put(const std::string& name, const std::shared_ptr<MergeOperator>&);
   void Put(const std::string& name, const std::shared_ptr<PersistentCache>&);
@@ -94,6 +97,7 @@ class JsonOptionsRepo {
   void Put(const std::string& name, const std::shared_ptr<Statistics>&);
   void Put(const std::string& name, const std::shared_ptr<TableFactory>&);
   void Put(const std::string& name, const std::shared_ptr<TablePropertiesCollectorFactory>&);
+  void Put(const std::string& name, const std::shared_ptr<TransactionDBMutexFactory>&);
   ///@}
 
   bool Get(const std::string& name, std::shared_ptr<Options>*) const;
@@ -111,6 +115,7 @@ class JsonOptionsRepo {
   bool Get(const std::string& name, std::shared_ptr<const FilterPolicy>*) const;
   bool Get(const std::string& name, std::shared_ptr<FlushBlockPolicyFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<Logger>*) const;
+  bool Get(const std::string& name, std::shared_ptr<MemoryAllocator>*) const;
   bool Get(const std::string& name, std::shared_ptr<MemTableRepFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<MergeOperator>*) const;
   bool Get(const std::string& name, std::shared_ptr<PersistentCache>*) const;
@@ -120,7 +125,8 @@ class JsonOptionsRepo {
   bool Get(const std::string& name, std::shared_ptr<Statistics>*) const;
   bool Get(const std::string& name, std::shared_ptr<TableFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<TablePropertiesCollectorFactory>*) const;
-  
+  bool Get(const std::string& name, std::shared_ptr<TransactionDBMutexFactory>*) const;
+
   class Auto {
     friend class JsonOptionsRepo;
     const JsonOptionsRepo& m_repo;

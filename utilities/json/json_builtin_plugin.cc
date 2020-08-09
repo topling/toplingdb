@@ -16,6 +16,7 @@
 #include "rocksdb/concurrent_task_limiter.h"
 #include "rocksdb/utilities/db_ttl.h"
 #include "rocksdb/utilities/transaction_db.h"
+#include "rocksdb/utilities/transaction_db_mutex.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
 #include "rocksdb/flush_block_policy.h"
 #include "rocksdb/merge_operator.h"
@@ -25,8 +26,12 @@
 #include "rocksdb/wal_filter.h"
 #include "util/rate_limiter.h"
 #include "utilities/blob_db/blob_db.h"
+#include "utilities/transactions/transaction_db_mutex_impl.h"
 #include "json.h"
 #include "json_plugin_factory.h"
+#if defined(MEMKIND)
+  #include "memory/memkind_kmem_allocator.h"
+#endif
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -119,7 +124,6 @@ struct DBOptions_Json : DBOptions {
       if (js.end() != iter)
         Json_DbPathVec(js, db_paths);
     }
-    //ROCKSDB_JSON_OPT_PROP(js, db_paths);
     ROCKSDB_JSON_OPT_PROP(js, db_log_dir);
     ROCKSDB_JSON_OPT_PROP(js, wal_dir);
     ROCKSDB_JSON_OPT_PROP(js, delete_obsolete_files_period_micros);
@@ -222,7 +226,6 @@ struct DBOptions_Json : DBOptions {
     for (auto& x : db_paths) {
       js["db_pathes"].push_back(DbPathToJson(x));
     }
-    //ROCKSDB_JSON_SET_PROP(js, db_paths);
     ROCKSDB_JSON_SET_PROP(js, db_log_dir);
     ROCKSDB_JSON_SET_PROP(js, wal_dir);
     ROCKSDB_JSON_SET_PROP(js, delete_obsolete_files_period_micros);
@@ -703,13 +706,39 @@ JS_NewGenericRateLimiter(const json& js, const JsonOptionsRepo& repo) {
 ROCKSDB_FACTORY_REG("GenericRateLimiter", JS_NewGenericRateLimiter);
 
 //////////////////////////////////////////////////////////////////////////////
+struct JemallocAllocatorOptions_Json : JemallocAllocatorOptions {
+  JemallocAllocatorOptions_Json(const json& js, const JsonOptionsRepo&) {
+    ROCKSDB_JSON_OPT_PROP(js, limit_tcache_size);
+    ROCKSDB_JSON_OPT_SIZE(js, tcache_size_lower_bound);
+    ROCKSDB_JSON_OPT_SIZE(js, tcache_size_upper_bound);
+  }
+};
+std::shared_ptr<MemoryAllocator>
+JS_NewJemallocNodumpAllocator(const json& js, const JsonOptionsRepo& repo) {
+  JemallocAllocatorOptions_Json opt(js, repo);
+  std::shared_ptr<MemoryAllocator> p;
+  Status s = NewJemallocNodumpAllocator(opt, &p);
+  if (!s.ok()) {
+    throw s;
+  }
+  return p;
+}
+ROCKSDB_FACTORY_REG("JemallocNodumpAllocator", JS_NewJemallocNodumpAllocator);
+#if defined(MEMKIND)
+std::shared_ptr<MemoryAllocator>
+JS_NewMemkindKmemAllocator(const json&, const JsonOptionsRepo&) {
+  return std::make_shared<MemkindKmemAllocator>();
+}
+ROCKSDB_FACTORY_REG("MemkindKmemAllocator", JS_NewMemkindKmemAllocator);
+#endif
+
 struct LRUCacheOptions_Json : LRUCacheOptions {
-  LRUCacheOptions_Json(const json& js, const JsonOptionsRepo&) {
+  LRUCacheOptions_Json(const json& js, const JsonOptionsRepo& repo) {
     ROCKSDB_JSON_REQ_SIZE(js, capacity);
     ROCKSDB_JSON_OPT_PROP(js, num_shard_bits);
     ROCKSDB_JSON_OPT_PROP(js, strict_capacity_limit);
     ROCKSDB_JSON_OPT_PROP(js, high_pri_pool_ratio);
-    //ROCKSDB_JSON_OPT_FACT(js, memory_allocator);
+    ROCKSDB_JSON_OPT_FACT(js, memory_allocator);
     ROCKSDB_JSON_OPT_PROP(js, use_adaptive_mutex);
     ROCKSDB_JSON_OPT_ENUM(js, metadata_charge_policy);
   }
@@ -733,6 +762,8 @@ JS_NewClockCache(const json& js, const JsonOptionsRepo& repo) {
   }
   return p;
 #else
+  (void)js;
+  (void)repo;
   throw Status::InvalidArgument(ROCKSDB_FUNC,
       "SUPPORT_CLOCK_CACHE is not defined, "
       "need to recompile with -D SUPPORT_CLOCK_CACHE=1");
@@ -1102,15 +1133,21 @@ ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DBWithTTL_MultiCF_Open);
 
 /////////////////////////////////////////////////////////////////////////////
 // TransactionDB::Open
+static std::shared_ptr<TransactionDBMutexFactory>
+JS_NewTransactionDBMutexFactoryImpl(const json&, const JsonOptionsRepo&) {
+  return std::make_shared<TransactionDBMutexFactoryImpl>();
+}
+ROCKSDB_FACTORY_REG("Default", JS_NewTransactionDBMutexFactoryImpl);
+ROCKSDB_FACTORY_REG("TransactionDBMutexFactoryImpl", JS_NewTransactionDBMutexFactoryImpl);
 
 struct TransactionDBOptions_Json : TransactionDBOptions {
-  TransactionDBOptions_Json(const json& js, const JsonOptionsRepo&) {
+  TransactionDBOptions_Json(const json& js, const JsonOptionsRepo& repo) {
     ROCKSDB_JSON_OPT_PROP(js, max_num_locks);
     ROCKSDB_JSON_OPT_PROP(js, max_num_deadlocks);
     ROCKSDB_JSON_OPT_PROP(js, num_stripes);
     ROCKSDB_JSON_OPT_PROP(js, transaction_lock_timeout);
     ROCKSDB_JSON_OPT_PROP(js, default_lock_timeout);
-    //ROCKSDB_JSON_OPT_FACT(js, custom_mutex_factory);
+    ROCKSDB_JSON_OPT_FACT(js, custom_mutex_factory);
     ROCKSDB_JSON_OPT_ENUM(js, write_policy);
     ROCKSDB_JSON_OPT_PROP(js, rollback_merge_operands);
     ROCKSDB_JSON_OPT_PROP(js, skip_concurrency_control);

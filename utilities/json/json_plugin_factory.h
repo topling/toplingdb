@@ -45,6 +45,7 @@ struct JsonOptionsRepo::Impl {
   ObjRepo<const FilterPolicy> filter_policy;
   ObjRepo<FlushBlockPolicyFactory> flush_block_policy_factory;
   ObjRepo<Logger> info_log;
+  ObjRepo<MemoryAllocator> memory_allocator;
   ObjRepo<MemTableRepFactory> mem_table_rep_factory;
   ObjRepo<MergeOperator> merge_operator;
   ObjRepo<RateLimiter> rate_limiter;
@@ -52,6 +53,7 @@ struct JsonOptionsRepo::Impl {
   ObjRepo<Statistics> statistics;
   ObjRepo<TableFactory> table_factory;
   ObjRepo<TablePropertiesCollectorFactory> table_properties_collector_factory;
+  ObjRepo<TransactionDBMutexFactory> txn_db_mutex_factory;
   ObjRepo<const SliceTransform> slice_transform;
 
   ObjRepo<Options> options;

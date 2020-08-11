@@ -295,18 +295,27 @@ class DispatherTableFactory : public TableFactory {
     if (!s.ok()) {
       return s;
     }
+    auto magic = (unsigned long long)footer.table_magic_number();
+    auto fp_iter = m_magic_to_factory.find(magic);
+    if (m_magic_to_factory.end() != fp_iter) {
+      const std::shared_ptr<TableFactory>& factory = fp_iter->second.first;
+      const std::string&                   varname = fp_iter->second.second;
+      if (JsonOptionsRepo::DebugLevel() >= 2) {
+        fprintf(stderr, "INFO: Dispatch::NewTableReader: found factory: %016llX : %s: %s\n", magic, factory->Name(), varname.c_str());
+      }
+      return factory->NewTableReader(ro, table_reader_options,
+                                     std::move(file), file_size, table,
+                                     prefetch_index_and_filter_in_cache);
+    }
     auto& map = GetDispatherTableMagicNumberMap();
-    auto iter = map.find(footer.table_magic_number());
+    auto iter = map.find(magic);
     if (map.end() != iter) {
       const std::string& factory_name = iter->second;
-      auto fp_iter = m_all->find(factory_name);
-      if (m_all->end() != fp_iter) {
-        const std::shared_ptr<TableFactory>& factory = fp_iter->second;
-        return factory->NewTableReader(ro, table_reader_options,
-                                       std::move(file), file_size, table,
-                                       prefetch_index_and_filter_in_cache);
-      } else if (PluginFactorySP<TableFactory>::HasPlugin(factory_name)) {
+      if (PluginFactorySP<TableFactory>::HasPlugin(factory_name)) {
         try {
+          if (JsonOptionsRepo::DebugLevel() >= 2) {
+            fprintf(stderr, "INFO: Dispatch::NewTableReader: not found factory: %016llX : %s: onfly create it.\n", magic, factory_name.c_str());
+          }
           json null_js;
           JsonOptionsRepo empty_repo;
           auto factory = PluginFactorySP<TableFactory>::
@@ -416,6 +425,34 @@ class DispatherTableFactory : public TableFactory {
         m_level_writers.push_back(p);
       }
     }
+    std::unordered_map<std::string, std::vector<uint64_t> > name2magic;
+    for (auto& kv : GetDispatherTableMagicNumberMap()) {
+      name2magic[kv.second].push_back(kv.first);
+      //fprintf(stderr, "DEBG: %016llX : %s\n", (long long)kv.first, kv.second.c_str());
+    }
+    for (auto& kv : *m_all) {
+      auto& varname = kv.first; // factory varname
+      auto& factory = kv.second;
+      auto  facname = factory->Name();
+      if (strcmp(facname, this->Name()) == 0) {
+        continue;
+      }
+      auto it = name2magic.find(facname);
+      if (name2magic.end() != it) {
+        for (uint64_t magic : it->second) {
+          auto ib = m_magic_to_factory.emplace(magic, std::make_pair(factory, varname));
+          if (!ib.second) { // emplace fail
+            const char* varname1 = ib.first->second.second.c_str(); // existed
+            fprintf(stderr, "INFO: Dispatch::BackPatch: dup factory: %016llX : %-20s : %s %s\n", (long long)magic, facname, varname1, varname.c_str());
+          } else if (JsonOptionsRepo::DebugLevel() >= 2) {
+            fprintf(stderr, "INFO: Dispatch::BackPatch: reg factory: %016llX : %-20s : %s\n", (long long)magic, facname, varname.c_str());
+          }
+        }
+      } else {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+                   std::string("not found magic of factory: ") + factory->Name());
+      }
+    }
     m_repo.reset();
     m_json_obj = json{}; // reset
     return Status::OK();
@@ -444,6 +481,7 @@ class DispatherTableFactory : public TableFactory {
   mutable std::string m_json_str;
   mutable json m_json_obj{}; // reset to null after back patched
   mutable std::unique_ptr<JsonOptionsRepo> m_repo; // for back patch
+  mutable std::unordered_map<uint64_t, std::pair<std::shared_ptr<TableFactory>, std::string> > m_magic_to_factory;
 };
 
 static std::shared_ptr<TableFactory>

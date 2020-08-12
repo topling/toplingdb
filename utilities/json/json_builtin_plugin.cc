@@ -108,6 +108,7 @@ struct DBOptions_Json : DBOptions {
   void Update(const json& js, const JsonOptionsRepo& repo) {
     ROCKSDB_JSON_OPT_PROP(js, create_if_missing);
     ROCKSDB_JSON_OPT_PROP(js, create_missing_column_families);
+    ROCKSDB_JSON_OPT_PROP(js, error_if_exists);
     ROCKSDB_JSON_OPT_PROP(js, paranoid_checks);
     ROCKSDB_JSON_OPT_FACT(js, env);
     ROCKSDB_JSON_OPT_FACT(js, rate_limiter);

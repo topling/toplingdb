@@ -88,6 +88,7 @@ public:
                              const json&, const JsonOptionsRepo&);
 
   static bool HasPlugin(const std::string& class_name);
+  static bool SamePlugin(const std::string& clazz1, const std::string& clazz2);
 
   struct Reg {
     Reg(const Reg&) = delete;
@@ -304,6 +305,26 @@ template<class Ptr>
 bool PluginFactory<Ptr>::HasPlugin(const std::string& class_name) {
   auto& imp = Reg::Impl::s_singleton();
   return imp.func_map.count(class_name) != 0;
+}
+
+// plugin can have alias class name, this function check whether the two
+// aliases are defined as a same plugin
+template<class Ptr>
+bool PluginFactory<Ptr>::SamePlugin(const std::string& clazz1,
+                                    const std::string& clazz2) {
+  if (clazz1 == clazz2) {
+    return true;
+  }
+  auto& imp = Reg::Impl::s_singleton();
+  auto i1 = imp.func_map.find(clazz1);
+  auto i2 = imp.func_map.find(clazz2);
+  if (imp.func_map.end() == i1) {
+    throw Status::NotFound(ROCKSDB_FUNC, "clazz1 = " + clazz1);
+  }
+  if (imp.func_map.end() == i2) {
+    throw Status::NotFound(ROCKSDB_FUNC, "clazz2 = " + clazz2);
+  }
+  return i1->second == i2->second;
 }
 
 const json& jsonRefType();

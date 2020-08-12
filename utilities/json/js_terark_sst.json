@@ -79,7 +79,11 @@
     "dispatch" : {
       "class": "DispatherTable",
       "params": {
-        "default": "terark-default",
+        "default": "block-based",
+        "readers": {
+          "TerarkZipTable": "terark-default",
+          "BlockBasedTable": "block-based"
+        },
         "level_writers": [
           "block-based",
           "block-based",

@@ -274,7 +274,7 @@ class DispatherTableFactory : public TableFactory {
     m_repo.reset(new JsonOptionsRepo(repo)); // backup
   }
 
-  const char* Name() const override { return "DispatherTableFactory"; }
+  const char* Name() const final { return "DispatherTableFactory"; }
 
   using TableFactory::NewTableReader;
   Status NewTableReader(
@@ -295,13 +295,16 @@ class DispatherTableFactory : public TableFactory {
     if (!s.ok()) {
       return s;
     }
+    const char* func = "Dispatch::NewTableReader"; // short func name
     auto magic = (unsigned long long)footer.table_magic_number();
     auto fp_iter = m_magic_to_factory.find(magic);
     if (m_magic_to_factory.end() != fp_iter) {
-      const std::shared_ptr<TableFactory>& factory = fp_iter->second.first;
-      const std::string&                   varname = fp_iter->second.second;
+      const std::shared_ptr<TableFactory>& factory = fp_iter->second.factory;
+      const std::string&                   varname = fp_iter->second.varname;
       if (JsonOptionsRepo::DebugLevel() >= 2) {
-        fprintf(stderr, "INFO: Dispatch::NewTableReader: found factory: %016llX : %s: %s\n", magic, factory->Name(), varname.c_str());
+        fprintf(stderr,
+                "INFO: %s: found factory: %016llX : %s: %s\n",
+                func, magic, factory->Name(), varname.c_str());
       }
       return factory->NewTableReader(ro, table_reader_options,
                                      std::move(file), file_size, table,
@@ -310,33 +313,36 @@ class DispatherTableFactory : public TableFactory {
     auto& map = GetDispatherTableMagicNumberMap();
     auto iter = map.find(magic);
     if (map.end() != iter) {
-      const std::string& factory_name = iter->second;
-      if (PluginFactorySP<TableFactory>::HasPlugin(factory_name)) {
+      const std::string& facname = iter->second;
+      if (PluginFactorySP<TableFactory>::HasPlugin(facname)) {
         try {
           if (JsonOptionsRepo::DebugLevel() >= 2) {
-            fprintf(stderr, "INFO: Dispatch::NewTableReader: not found factory: %016llX : %s: onfly create it.\n", magic, factory_name.c_str());
+            fprintf(stderr,
+                    "INFO: %s: not found factory: %016llX : %s, onfly create it.\n",
+                    func, magic, facname.c_str());
           }
           json null_js;
           JsonOptionsRepo empty_repo;
           auto factory = PluginFactorySP<TableFactory>::
-                AcquirePlugin(factory_name, null_js, empty_repo);
+                AcquirePlugin(
+              facname, null_js, empty_repo);
           return factory->NewTableReader(ro, table_reader_options,
                                          std::move(file), file_size, table,
                                          prefetch_index_and_filter_in_cache);
         }
         catch (const std::exception& ex) {
           return Status::Corruption(ROCKSDB_FUNC,
-            "try onfly create TableFactory=\"" + factory_name + "\" failed: " + ex.what());
+            "onfly create factory=\"" + facname + "\" failed: " + ex.what());
         }
         catch (const Status& es) {
           return Status::Corruption(ROCKSDB_FUNC,
-            "try onfly create TableFactory=\"" + factory_name + "\" failed: " + es.ToString());
+            "onfly create factory=\"" + facname + "\" failed: " + es.ToString());
         }
       } else {
         std::string msg;
         msg += "MagicNumber = ";
         msg += Slice((char*)&iter->first, 8).ToString(true);
-        msg += " -> Factory class = " + factory_name;
+        msg += " -> Factory class = " + facname;
         msg += " is defined in TableMagicNumberMap but not registered as a plugin.";
         return Status::Corruption(ROCKSDB_FUNC, msg);
       }
@@ -414,14 +420,17 @@ class DispatherTableFactory : public TableFactory {
     if (m_json_obj.end() != iter) {
       auto& level_writers_js = iter.value();
       if (!level_writers_js.is_array()) {
-        throw std::invalid_argument(
-            "DispatherTableFactory level_writers must be array");
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "level_writers must be a json array");
       }
       for (auto& item : level_writers_js.items()) {
         auto& options = item.value();
         auto p = PluginFactorySP<TableFactory>::
-        ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo);
-        assert(!!p);
+          ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo);
+        if (!p) {
+          return Status::InvalidArgument(ROCKSDB_FUNC,
+              "ObtainPlugin returns null, options = " + options.dump());
+        }
         m_level_writers.push_back(p);
       }
     }
@@ -430,28 +439,74 @@ class DispatherTableFactory : public TableFactory {
       name2magic[kv.second].push_back(kv.first);
       //fprintf(stderr, "DEBG: %016llX : %s\n", (long long)kv.first, kv.second.c_str());
     }
+    auto add_magic = [&](const std::shared_ptr<TableFactory>& factory,
+                         const std::string& varname,
+                         bool is_user_defined) {
+      const char* facname = factory->Name();
+      if (strcmp(facname, this->Name()) == 0) {
+        if (is_user_defined) {
+          throw Status::InvalidArgument(ROCKSDB_FUNC,
+                   "Dispatch factory can not be defined as a reader");
+        }
+        return;
+      }
+      auto it = name2magic.find(facname);
+      if (name2magic.end() == it) {
+        throw Status::InvalidArgument(ROCKSDB_FUNC,
+            std::string("not found magic of factory: ") + facname);
+      }
+      for (uint64_t magic : it->second) {
+        ReaderFactory rf{factory, varname, false};
+        auto ib = m_magic_to_factory.emplace(magic, rf);
+        if (!ib.second) { // emplace fail
+          const char* varname1 = ib.first->second.varname.c_str(); // existed
+          const char* type = ib.first->second.is_user_defined ? "user" : "auto";
+          fprintf(stderr,
+                  "INFO: Dispatch::BackPatch: dup factory: %016llX : %-20s : %s(%s) %s(auto)\n",
+                  (long long)magic, facname, varname1, type, varname.c_str());
+        } else if (JsonOptionsRepo::DebugLevel() >= 2) {
+          fprintf(stderr,
+                  "INFO: Dispatch::BackPatch: reg factory: %016llX : %-20s : %s\n",
+                  (long long)magic, facname, varname.c_str());
+        }
+      }
+    };
+    iter = m_json_obj.find("readers");
+    if (m_json_obj.end() != iter) {
+      auto& readers_js = iter.value();
+      if (!readers_js.is_object()) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+                                       "readers must be a json object");
+      }
+      for (auto& item : readers_js.items()) {
+        auto& facname = item.key();
+        if (!item.value().is_string()) {
+          return Status::InvalidArgument(ROCKSDB_FUNC,
+              "readers[\"" + facname + "\"] must be a json string");
+        }
+        if (!PluginFactorySP<TableFactory>::HasPlugin(facname)) {
+          return Status::InvalidArgument(ROCKSDB_FUNC,
+              "facname = \"" + facname + "\" is not a plugin");
+        }
+        const std::string& varname = item.value().get<std::string>();
+        // facname is the param 'varname' for GetPlugin
+        auto p = PluginFactorySP<TableFactory>::GetPlugin(
+            facname.c_str(), ROCKSDB_FUNC, item.value(), *m_repo);
+        if (!p) {
+          return Status::InvalidArgument(ROCKSDB_FUNC,
+              "undefined varname = " + varname + "(factory = " + facname + ")");
+        }
+        if (!PluginFactorySP<TableFactory>::SamePlugin(p->Name(), facname)) {
+          return Status::InvalidArgument(ROCKSDB_FUNC,
+              "facname = " + facname + " but factory->Name() = " + p->Name());
+        }
+        add_magic(p, varname, true);
+      }
+    }
     for (auto& kv : *m_all) {
       auto& varname = kv.first; // factory varname
       auto& factory = kv.second;
-      auto  facname = factory->Name();
-      if (strcmp(facname, this->Name()) == 0) {
-        continue;
-      }
-      auto it = name2magic.find(facname);
-      if (name2magic.end() != it) {
-        for (uint64_t magic : it->second) {
-          auto ib = m_magic_to_factory.emplace(magic, std::make_pair(factory, varname));
-          if (!ib.second) { // emplace fail
-            const char* varname1 = ib.first->second.second.c_str(); // existed
-            fprintf(stderr, "INFO: Dispatch::BackPatch: dup factory: %016llX : %-20s : %s %s\n", (long long)magic, facname, varname1, varname.c_str());
-          } else if (JsonOptionsRepo::DebugLevel() >= 2) {
-            fprintf(stderr, "INFO: Dispatch::BackPatch: reg factory: %016llX : %-20s : %s\n", (long long)magic, facname, varname.c_str());
-          }
-        }
-      } else {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
-                   std::string("not found magic of factory: ") + factory->Name());
-      }
+      add_magic(factory, varname, false);
     }
     m_repo.reset();
     m_json_obj = json{}; // reset
@@ -481,7 +536,12 @@ class DispatherTableFactory : public TableFactory {
   mutable std::string m_json_str;
   mutable json m_json_obj{}; // reset to null after back patched
   mutable std::unique_ptr<JsonOptionsRepo> m_repo; // for back patch
-  mutable std::unordered_map<uint64_t, std::pair<std::shared_ptr<TableFactory>, std::string> > m_magic_to_factory;
+  struct ReaderFactory {
+    std::shared_ptr<TableFactory> factory;
+    std::string varname;
+    bool is_user_defined;
+  };
+  mutable std::unordered_map<uint64_t, ReaderFactory> m_magic_to_factory;
 };
 
 static std::shared_ptr<TableFactory>

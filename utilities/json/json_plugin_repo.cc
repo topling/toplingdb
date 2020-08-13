@@ -197,7 +197,35 @@ void MergeSubObject(json* target, const json& patch, const string& subname) {
   }
 }
 
+static void JS_setenv(const nlohmann::json& main_js) {
+  auto iter = main_js.find("setenv");
+  if (main_js.end() == iter) {
+    return;
+  }
+  auto& envmap = iter.value();
+  if (!envmap.is_object()) {
+    throw Status::InvalidArgument(
+        ROCKSDB_FUNC, "main_js[\"setenv\"] must be a json object");
+  }
+  for (auto& item : envmap.items()) {
+    const std::string& name = item.key();
+    const json& val = item.value();
+    const std::string& valstr = val.dump();
+    ::setenv(name.c_str(), valstr.c_str(), true);
+    if (val.is_string()) {
+      ::setenv(name.c_str(), val.get<std::string>().c_str(), true);
+    }
+    else if (val.is_boolean()) {
+      ::setenv(name.c_str(), val.get<bool>() ? "1" : "0", true);
+    }
+    else if (val.is_number_float()) {
+
+    }
+  }
+}
+
 Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
+  JS_setenv(main_js);
   MergeSubObject(&m_impl->db_js, main_js, "databases");
   const auto& repo = *this;
 #define JSON_IMPORT_REPO(Clazz, field) \

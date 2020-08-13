@@ -2756,12 +2756,20 @@ class Benchmark {
   }
 
   ~Benchmark() {
+    CloseDB();
+  }
+  void CloseDB() {
     db_.DeleteDBs();
     delete prefix_extractor_;
     if (cache_.get() != nullptr) {
       // this will leak, but we're shutting down so nobody cares
       cache_->DisownData();
     }
+  }
+
+  void exit(int code) {
+    CloseDB();
+    ::exit(code);
   }
 
   Slice AllocateKey(std::unique_ptr<const char[]>* key_guard) {

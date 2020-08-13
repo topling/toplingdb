@@ -288,6 +288,7 @@ class DispatherTableFactory : public TableFactory {
       return Status::InvalidArgument(
           ROCKSDB_FUNC, "SanitizeOptions() was not called");
     }
+    auto info_log = table_reader_options.ioptions.info_log;
     Footer footer;
     auto s = ReadFooterFromFile(IOOptions(),
                                 file.get(), nullptr /* prefetch_buffer */,
@@ -301,11 +302,8 @@ class DispatherTableFactory : public TableFactory {
     if (m_magic_to_factory.end() != fp_iter) {
       const std::shared_ptr<TableFactory>& factory = fp_iter->second.factory;
       const std::string&                   varname = fp_iter->second.varname;
-      if (JsonOptionsRepo::DebugLevel() >= 2) {
-        fprintf(stderr,
-                "INFO: %s: found factory: %016llX : %s: %s\n",
-                func, magic, factory->Name(), varname.c_str());
-      }
+      Info(info_log, "%s: found factory: %016llX : %s: %s\n",
+           func, magic, factory->Name(), varname.c_str());
       return factory->NewTableReader(ro, table_reader_options,
                                      std::move(file), file_size, table,
                                      prefetch_index_and_filter_in_cache);
@@ -316,11 +314,9 @@ class DispatherTableFactory : public TableFactory {
       const std::string& facname = iter->second;
       if (PluginFactorySP<TableFactory>::HasPlugin(facname)) {
         try {
-          if (JsonOptionsRepo::DebugLevel() >= 2) {
-            fprintf(stderr,
-                    "INFO: %s: not found factory: %016llX : %s, onfly create it.\n",
-                    func, magic, facname.c_str());
-          }
+          Warn(info_log,
+              "%s: not found factory: %016llX : %s, onfly create it.\n",
+              func, magic, facname.c_str());
           json null_js;
           JsonOptionsRepo empty_repo;
           auto factory = PluginFactorySP<TableFactory>::
@@ -355,6 +351,7 @@ class DispatherTableFactory : public TableFactory {
       uint32_t column_family_id, WritableFileWriter* file)
   const override {
     assert(m_repo.get() == nullptr);
+    auto info_log = table_builder_options.ioptions.info_log;
     if (m_repo) {
       fprintf(stderr, "FATAL: %s:%d: %s: %s\n",
               __FILE__, __LINE__, ROCKSDB_FUNC,
@@ -364,17 +361,26 @@ class DispatherTableFactory : public TableFactory {
     int level = table_builder_options.level;
     if (size_t(level) < m_level_writers.size()) {
       if (JsonOptionsRepo::DebugLevel() >= 3) {
-        fprintf(stderr,
-          "INFO: Dispatch::NewTableBuilder: level = %d, use level factory = %s\n",
+        Info(info_log,
+          "Dispatch::NewTableBuilder: level = %d, use level factory = %s\n",
           level, m_level_writers[level]->Name());
       }
-      return m_level_writers[level]->NewTableBuilder(
+      auto builder = m_level_writers[level]->NewTableBuilder(
+          table_builder_options, column_family_id, file);
+      if (builder) {
+        return builder;
+      }
+      Warn(info_log,
+        "Dispatch::NewTableBuilder: level = %d, use level factory = %s,"
+        " returns null, try default: %s\n",
+        level, m_level_writers[level]->Name(), m_default_writer->Name());
+      return m_default_writer->NewTableBuilder(
           table_builder_options, column_family_id, file);
     }
     else {
       if (JsonOptionsRepo::DebugLevel() >= 3) {
-        fprintf(stderr,
-          "INFO: Dispatch::NewTableBuilder: level = %d, use default factory = %s\n",
+        Info(info_log,
+          "Dispatch::NewTableBuilder: level = %d, use default factory = %s\n",
           level, m_default_writer->Name());
       }
       return m_default_writer->NewTableBuilder(

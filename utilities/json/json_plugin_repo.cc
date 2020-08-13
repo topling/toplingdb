@@ -210,9 +210,12 @@ static void JS_setenv(const nlohmann::json& main_js) {
   for (auto& item : envmap.items()) {
     const std::string& name = item.key();
     const json& val = item.value();
-    const std::string& valstr = val.dump();
-    ::setenv(name.c_str(), valstr.c_str(), true);
+    if (val.is_object() || val.is_array()) {
+      throw Status::InvalidArgument(
+          ROCKSDB_FUNC, "main_js[\"setenv\"] must not be object or array");
+    }
     if (JsonOptionsRepo::DebugLevel() >= 3) {
+      const std::string& valstr = val.dump();
       fprintf(stderr, "JS_setenv: %s = %s\n", name.c_str(), valstr.c_str());
     }
     if (val.is_string()) {
@@ -221,8 +224,9 @@ static void JS_setenv(const nlohmann::json& main_js) {
     else if (val.is_boolean()) {
       ::setenv(name.c_str(), val.get<bool>() ? "1" : "0", true);
     }
-    else if (val.is_number_float()) {
-
+    else {
+      const std::string& valstr = val.dump();
+      ::setenv(name.c_str(), valstr.c_str(), true);
     }
   }
 }

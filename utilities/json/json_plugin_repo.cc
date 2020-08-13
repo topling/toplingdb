@@ -212,6 +212,9 @@ static void JS_setenv(const nlohmann::json& main_js) {
     const json& val = item.value();
     const std::string& valstr = val.dump();
     ::setenv(name.c_str(), valstr.c_str(), true);
+    if (JsonOptionsRepo::DebugLevel() >= 3) {
+      fprintf(stderr, "JS_setenv: %s = %s\n", name.c_str(), valstr.c_str());
+    }
     if (val.is_string()) {
       ::setenv(name.c_str(), val.get<std::string>().c_str(), true);
     }

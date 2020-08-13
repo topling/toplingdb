@@ -2665,6 +2665,7 @@ class Benchmark {
             false /*strict_capacity_limit*/, FLAGS_cache_high_pri_pool_ratio);
       }
     }
+    return nullptr;
   }
 
  public:

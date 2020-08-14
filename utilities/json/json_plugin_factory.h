@@ -19,7 +19,7 @@ namespace ROCKSDB_NAMESPACE {
 
 using nlohmann::json;
 
-struct JsonOptionsRepo::Impl {
+struct JsonPluginRepo::Impl {
   struct ObjInfo {
     std::string name;
     json params; // { class : "class_name", params : "params..." }
@@ -76,17 +76,17 @@ public:
   // in some contexts Acquire means 'CreateNew'
   // in some contexts Acquire means 'GetExisting'
   static Ptr AcquirePlugin(const std::string& class_name, const json&,
-                                 const JsonOptionsRepo&);
+                                 const JsonPluginRepo&);
 
   // json is string class_name or
   // object{ class: "class_name", params: {...} }
-  static Ptr AcquirePlugin(const json&, const JsonOptionsRepo&);
+  static Ptr AcquirePlugin(const json&, const JsonPluginRepo&);
 
   static Ptr ObtainPlugin(const char* varname, const char* func_name,
-                                const json&, const JsonOptionsRepo&);
+                                const json&, const JsonPluginRepo&);
 
   static Ptr GetPlugin(const char* varname, const char* func_name,
-                             const json&, const JsonOptionsRepo&);
+                             const json&, const JsonPluginRepo&);
 
   static bool HasPlugin(const std::string& class_name);
   static bool SamePlugin(const std::string& clazz1, const std::string& clazz2);
@@ -96,7 +96,7 @@ public:
     Reg(Reg&&) = delete;
     Reg& operator=(Reg&&) = delete;
     Reg& operator=(const Reg&) = delete;
-    typedef Ptr (*AcqFunc)(const json&,const JsonOptionsRepo&);
+    typedef Ptr (*AcqFunc)(const json&,const JsonPluginRepo&);
     using NameToFuncMap = std::unordered_map<std::string, AcqFunc>;
     Reg(Slice class_name, AcqFunc acq);
     ~Reg();
@@ -107,7 +107,7 @@ public:
 template<class Object>
 using PluginFactorySP = PluginFactory<std::shared_ptr<Object> >;
 template<class Ptr>
-using PluginUpdaterFunc = void(*)(const Ptr&, const json&, const JsonOptionsRepo&);
+using PluginUpdaterFunc = void(*)(const Ptr&, const json&, const JsonPluginRepo&);
 template<class Ptr>
 using PluginUpdater = PluginFactory<PluginUpdaterFunc<Ptr> >;
 
@@ -138,7 +138,7 @@ PluginFactory<Ptr>::Reg::Reg(Slice class_name, AcqFunc acq) {
         , __FILE__, __LINE__, ROCKSDB_FUNC, class_name.data());
     abort();
   }
-  if (JsonOptionsRepo::DebugLevel() >= 1) {
+  if (JsonPluginRepo::DebugLevel() >= 1) {
     fprintf(stderr, "INFO: %s: class = %s\n", ROCKSDB_FUNC, class_name.data());
   }
   this->ipos = ib.first;
@@ -154,7 +154,7 @@ template<class Ptr>
 Ptr
 PluginFactory<Ptr>::
 AcquirePlugin(const std::string& class_name, const json& js,
-              const JsonOptionsRepo& repo) {
+              const JsonPluginRepo& repo) {
   auto& imp = Reg::Impl::s_singleton();
   auto iter = imp.func_map.find(class_name);
   if (imp.func_map.end() != iter) {
@@ -174,7 +174,7 @@ template<class Ptr>
 Ptr
 PluginFactory<Ptr>::
 GetPlugin(const char* varname, const char* func_name,
-          const json& js, const JsonOptionsRepo& repo) {
+          const json& js, const JsonPluginRepo& repo) {
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
@@ -220,7 +220,7 @@ template<class Ptr>
 Ptr
 PluginFactory<Ptr>::
 ObtainPlugin(const char* varname, const char* func_name,
-             const json& js, const JsonOptionsRepo& repo) {
+             const json& js, const JsonPluginRepo& repo) {
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
@@ -274,7 +274,7 @@ ObtainPlugin(const char* varname, const char* func_name,
 template<class Ptr>
 Ptr
 PluginFactory<Ptr>::
-AcquirePlugin(const json& js, const JsonOptionsRepo& repo) {
+AcquirePlugin(const json& js, const JsonPluginRepo& repo) {
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
@@ -329,7 +329,7 @@ bool PluginFactory<Ptr>::SamePlugin(const std::string& clazz1,
 }
 
 const json& jsonRefType();
-const JsonOptionsRepo& repoRefType();
+const JsonPluginRepo& repoRefType();
 
 ///@param Name     string of factory class_name
 ///@param Acquire  must return base class ptr

@@ -11,7 +11,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 static std::shared_ptr<const FilterPolicy>
-NewBloomFilterPolicyJson(const json& js, const JsonOptionsRepo&) {
+NewBloomFilterPolicyJson(const json& js, const JsonPluginRepo&) {
   double bits_per_key = 10;
   bool use_block_based_builder = false;
   ROCKSDB_JSON_OPT_PROP(js, bits_per_key);
@@ -22,7 +22,7 @@ NewBloomFilterPolicyJson(const json& js, const JsonOptionsRepo&) {
 ROCKSDB_FACTORY_REG("BloomFilter", NewBloomFilterPolicyJson);
 
 struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
-  BlockBasedTableOptions_Json(const json& js, const JsonOptionsRepo& repo) {
+  BlockBasedTableOptions_Json(const json& js, const JsonPluginRepo& repo) {
     ROCKSDB_JSON_OPT_FACT(js, flush_block_policy_factory);
     ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks);
     ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks_with_high_priority);
@@ -189,7 +189,7 @@ std::string BlockBasedTableFactory::GetOptionJson() const {
 #endif
 
 static std::shared_ptr<TableFactory>
-NewBlockBasedTableFactoryFromJson(const json& js, const JsonOptionsRepo& repo) {
+NewBlockBasedTableFactoryFromJson(const json& js, const JsonPluginRepo& repo) {
   BlockBasedTableOptions_Json _table_options(js, repo);
   return std::make_shared<BlockBasedTableFactory>(_table_options);
 }
@@ -208,7 +208,7 @@ struct PlainTableOptions_Json : PlainTableOptions {
   }
 };
 static std::shared_ptr<TableFactory>
-NewPlainTableFactoryFromJson(const json& js, const JsonOptionsRepo&) {
+NewPlainTableFactoryFromJson(const json& js, const JsonPluginRepo&) {
   PlainTableOptions_Json options(js);
   return std::make_shared<PlainTableFactory>(options);
 }
@@ -226,7 +226,7 @@ struct CuckooTableOptions_Json : CuckooTableOptions {
   }
 };
 static std::shared_ptr<TableFactory>
-NewCuckooTableFactoryJson(const json& js, const JsonOptionsRepo&) {
+NewCuckooTableFactoryJson(const json& js, const JsonPluginRepo&) {
   CuckooTableOptions_Json options(js);
   return std::shared_ptr<TableFactory>(NewCuckooTableFactory(options));
 }
@@ -268,10 +268,10 @@ class DispatherTableFactory : public TableFactory {
  public:
   ~DispatherTableFactory() {}
 
-  DispatherTableFactory(const json& js, const JsonOptionsRepo& repo) {
+  DispatherTableFactory(const json& js, const JsonPluginRepo& repo) {
     m_json_obj = js; // backup
     m_json_str = js.dump();
-    m_repo.reset(new JsonOptionsRepo(repo)); // backup
+    m_repo.reset(new JsonPluginRepo(repo)); // backup
   }
 
   const char* Name() const final { return "DispatherTableFactory"; }
@@ -318,7 +318,7 @@ class DispatherTableFactory : public TableFactory {
               "%s: not found factory: %016llX : %s, onfly create it.\n",
               func, magic, facname.c_str());
           json null_js;
-          JsonOptionsRepo empty_repo;
+          JsonPluginRepo empty_repo;
           auto factory = PluginFactorySP<TableFactory>::
                 AcquirePlugin(
               facname, null_js, empty_repo);
@@ -360,7 +360,7 @@ class DispatherTableFactory : public TableFactory {
     }
     int level = table_builder_options.level;
     if (size_t(level) < m_level_writers.size()) {
-      if (JsonOptionsRepo::DebugLevel() >= 3) {
+      if (JsonPluginRepo::DebugLevel() >= 3) {
         Info(info_log,
           "Dispatch::NewTableBuilder: level = %d, use level factory = %s\n",
           level, m_level_writers[level]->Name());
@@ -378,7 +378,7 @@ class DispatherTableFactory : public TableFactory {
           table_builder_options, column_family_id, file);
     }
     else {
-      if (JsonOptionsRepo::DebugLevel() >= 3) {
+      if (JsonPluginRepo::DebugLevel() >= 3) {
         Info(info_log,
           "Dispatch::NewTableBuilder: level = %d, use default factory = %s\n",
           level, m_default_writer->Name());
@@ -470,7 +470,7 @@ class DispatherTableFactory : public TableFactory {
           fprintf(stderr,
                   "INFO: Dispatch::BackPatch: dup factory: %016llX : %-20s : %s(%s) %s(auto)\n",
                   (long long)magic, facname, varname1, type, varname.c_str());
-        } else if (JsonOptionsRepo::DebugLevel() >= 2) {
+        } else if (JsonPluginRepo::DebugLevel() >= 2) {
           fprintf(stderr,
                   "INFO: Dispatch::BackPatch: reg factory: %016llX : %-20s : %s\n",
                   (long long)magic, facname, varname.c_str());
@@ -541,7 +541,7 @@ class DispatherTableFactory : public TableFactory {
                                      std::shared_ptr<TableFactory>>> m_all;
   mutable std::string m_json_str;
   mutable json m_json_obj{}; // reset to null after back patched
-  mutable std::unique_ptr<JsonOptionsRepo> m_repo; // for back patch
+  mutable std::unique_ptr<JsonPluginRepo> m_repo; // for back patch
   struct ReaderFactory {
     std::shared_ptr<TableFactory> factory;
     std::string varname;
@@ -551,7 +551,7 @@ class DispatherTableFactory : public TableFactory {
 };
 
 static std::shared_ptr<TableFactory>
-NewDispatcherTableFactoryJson(const json& js, const JsonOptionsRepo& repo) {
+NewDispatcherTableFactoryJson(const json& js, const JsonPluginRepo& repo) {
   return std::make_shared<DispatherTableFactory>(js, repo);
 }
 ROCKSDB_FACTORY_REG("Dispath", NewDispatcherTableFactoryJson);

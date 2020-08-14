@@ -31,13 +31,13 @@ using std::string;
 
 /////////////////////////////////////////////////////////////////////////////
 template<class Ptr> // just for type deduction
-static Ptr RepoPtrType(const JsonOptionsRepo::Impl::ObjMap<Ptr>&);
+static Ptr RepoPtrType(const JsonPluginRepo::Impl::ObjMap<Ptr>&);
 template<class T> // just for type deduction
 static const shared_ptr<T>&
-RepoPtrCref(const JsonOptionsRepo::Impl::ObjMap<shared_ptr<T> >&);
+RepoPtrCref(const JsonPluginRepo::Impl::ObjMap<shared_ptr<T> >&);
 
 template<class T> // just for type deduction
-static T* RepoPtrCref(const JsonOptionsRepo::Impl::ObjMap<T*>&);
+static T* RepoPtrCref(const JsonPluginRepo::Impl::ObjMap<T*>&);
 
 std::string JsonGetClassName(const char* caller, const json& js) {
   if (js.is_string()) {
@@ -59,9 +59,9 @@ std::string JsonGetClassName(const char* caller, const json& js) {
 }
 
 template<class Ptr>
-static void Impl_Import(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
+static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
                    const char* name,
-                   const json& main_js, const JsonOptionsRepo& repo) {
+                   const json& main_js, const JsonPluginRepo& repo) {
   auto iter = main_js.find(name);
   if (main_js.end() == iter) {
       return;
@@ -108,14 +108,14 @@ static void Impl_Import(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
               ", value_js = " + value.dump());
     }
     existing = p;
-    field.p2name.emplace(p, JsonOptionsRepo::Impl::ObjInfo{inst_id, std::move(value)});
+    field.p2name.emplace(p, JsonPluginRepo::Impl::ObjInfo{inst_id, std::move(value)});
   }
 }
 
 template<class Ptr>
-static void Impl_ImportOptions(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
+static void Impl_ImportOptions(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
                    const char* option_class_name,
-                   const json& main_js, const JsonOptionsRepo& repo) {
+                   const json& main_js, const JsonPluginRepo& repo) {
   auto iter = main_js.find(option_class_name);
   if (main_js.end() == iter) {
     return;
@@ -145,21 +145,21 @@ static void Impl_ImportOptions(JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
       Ptr p = PluginFactory<Ptr>::AcquirePlugin(option_class_name, params_js, repo);
       assert(Ptr(nullptr) != p);
       existing = p;
-      field.p2name.emplace(p, JsonOptionsRepo::Impl::ObjInfo{option_name, params_js});
+      field.p2name.emplace(p, JsonPluginRepo::Impl::ObjInfo{option_name, params_js});
     }
   }
 }
 
-JsonOptionsRepo::JsonOptionsRepo() noexcept {
+JsonPluginRepo::JsonPluginRepo() noexcept {
   m_impl.reset(new Impl);
 }
-JsonOptionsRepo::~JsonOptionsRepo() = default;
-JsonOptionsRepo::JsonOptionsRepo(const JsonOptionsRepo&) noexcept = default;
-JsonOptionsRepo::JsonOptionsRepo(JsonOptionsRepo&&) noexcept = default;
-JsonOptionsRepo& JsonOptionsRepo::operator=(const JsonOptionsRepo&) noexcept = default;
-JsonOptionsRepo& JsonOptionsRepo::operator=(JsonOptionsRepo&&) noexcept = default;
+JsonPluginRepo::~JsonPluginRepo() = default;
+JsonPluginRepo::JsonPluginRepo(const JsonPluginRepo&) noexcept = default;
+JsonPluginRepo::JsonPluginRepo(JsonPluginRepo&&) noexcept = default;
+JsonPluginRepo& JsonPluginRepo::operator=(const JsonPluginRepo&) noexcept = default;
+JsonPluginRepo& JsonPluginRepo::operator=(JsonPluginRepo&&) noexcept = default;
 
-Status JsonOptionsRepo::ImportJsonFile(const Slice& fname) {
+Status JsonPluginRepo::ImportJsonFile(const Slice& fname) {
   std::string json_str;
   {
     std::fstream ifs(fname.data());
@@ -173,7 +173,7 @@ Status JsonOptionsRepo::ImportJsonFile(const Slice& fname) {
   return Import(json_str);
 }
 
-Status JsonOptionsRepo::Import(const string& json_str) {
+Status JsonPluginRepo::Import(const string& json_str) {
   json js = json::parse(json_str);
   return Import(js);
 }
@@ -214,7 +214,7 @@ static void JS_setenv(const nlohmann::json& main_js) {
       throw Status::InvalidArgument(
           ROCKSDB_FUNC, "main_js[\"setenv\"] must not be object or array");
     }
-    if (JsonOptionsRepo::DebugLevel() >= 3) {
+    if (JsonPluginRepo::DebugLevel() >= 3) {
       const std::string& valstr = val.dump();
       fprintf(stderr, "JS_setenv: %s = %s\n", name.c_str(), valstr.c_str());
     }
@@ -231,7 +231,7 @@ static void JS_setenv(const nlohmann::json& main_js) {
   }
 }
 
-Status JsonOptionsRepo::Import(const nlohmann::json& main_js) try {
+Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
   JS_setenv(main_js);
   MergeSubObject(&m_impl->db_js, main_js, "databases");
   const auto& repo = *this;
@@ -286,7 +286,7 @@ catch (const Status& s) {
 }
 
 template<class Ptr>
-static void Impl_Export(const JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
+static void Impl_Export(const JsonPluginRepo::Impl::ObjMap<Ptr>& field,
                    const char* name, json& main_js) {
   auto& field_js = main_js[name];
   for (auto& kv: field.p2name) {
@@ -294,7 +294,7 @@ static void Impl_Export(const JsonOptionsRepo::Impl::ObjMap<Ptr>& field,
     params_js = kv.second.params;
   }
 }
-Status JsonOptionsRepo::Export(nlohmann::json* main_js) const try {
+Status JsonPluginRepo::Export(nlohmann::json* main_js) const try {
   assert(NULL != main_js);
 #define JSON_EXPORT_REPO(Clazz, field) \
   Impl_Export(m_impl->field, #Clazz, *main_js)
@@ -329,7 +329,7 @@ catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
 
-Status JsonOptionsRepo::Export(string* json_str, bool pretty) const {
+Status JsonPluginRepo::Export(string* json_str, bool pretty) const {
   assert(NULL != json_str);
   nlohmann::json js;
   Status s = Export(&js);
@@ -374,11 +374,11 @@ Impl_Get(const std::string& name, const Map& map, Ptr* pp) {
 }
 
 #define JSON_REPO_TYPE_IMPL(field) \
-void JsonOptionsRepo::Put(const string& name, \
+void JsonPluginRepo::Put(const string& name, \
                 decltype((RepoPtrCref(((Impl*)0)->field))) p) { \
   Impl_Put(name, m_impl->field, p); \
 } \
-bool JsonOptionsRepo::Get(const string& name, \
+bool JsonPluginRepo::Get(const string& name, \
                 decltype(RepoPtrType(((Impl*)0)->field))* pp) const { \
   return Impl_Get(name, m_impl->field, pp); \
 }
@@ -410,13 +410,13 @@ JSON_REPO_TYPE_IMPL(options)
 JSON_REPO_TYPE_IMPL(db_options)
 JSON_REPO_TYPE_IMPL(cf_options)
 
-void JsonOptionsRepo::Put(const std::string& name, DB* db) {
+void JsonPluginRepo::Put(const std::string& name, DB* db) {
   Impl_Put(name, m_impl->db, DB_Ptr(db));
 }
-void JsonOptionsRepo::Put(const std::string& name, DB_MultiCF* db) {
+void JsonPluginRepo::Put(const std::string& name, DB_MultiCF* db) {
   Impl_Put(name, m_impl->db, DB_Ptr(db));
 }
-bool JsonOptionsRepo::Get(const std::string& name, DB** db, Status* s) const {
+bool JsonPluginRepo::Get(const std::string& name, DB** db, Status* s) const {
   DB_Ptr dbp(nullptr);
   if (Impl_Get(name, m_impl->db, &dbp)) {
     if (DB_Ptr::kDB == dbp.type) {
@@ -432,7 +432,7 @@ bool JsonOptionsRepo::Get(const std::string& name, DB** db, Status* s) const {
   }
   return false;
 }
-bool JsonOptionsRepo::Get(const std::string& name, DB_MultiCF** db, Status* s) const {
+bool JsonPluginRepo::Get(const std::string& name, DB_MultiCF** db, Status* s) const {
   DB_Ptr dbp(nullptr);
   if (Impl_Get(name, m_impl->db, &dbp)) {
     if (DB_Ptr::kDB_MultiCF == dbp.type) {
@@ -449,13 +449,13 @@ bool JsonOptionsRepo::Get(const std::string& name, DB_MultiCF** db, Status* s) c
   return false;
 }
 
-void JsonOptionsRepo::GetMap(
+void JsonPluginRepo::GetMap(
     shared_ptr<unordered_map<string,
                              shared_ptr<TableFactory>>>* pp) const {
   *pp = m_impl->table_factory.name2p;
 }
 
-void JsonOptionsRepo::GetMap(
+void JsonPluginRepo::GetMap(
     shared_ptr<unordered_map<string,
                              shared_ptr<MemTableRepFactory>>>* pp) const {
   *pp = m_impl->mem_table_rep_factory.name2p;
@@ -491,20 +491,20 @@ void JsonOptionsRepo::GetMap(
  *       }
  *     }
  */
-Status JsonOptionsRepo::OpenDB(const nlohmann::json& js, DB** dbp) {
+Status JsonPluginRepo::OpenDB(const nlohmann::json& js, DB** dbp) {
   return OpenDB_tpl<DB>(js, dbp);
 }
-Status JsonOptionsRepo::OpenDB(const nlohmann::json& js, DB_MultiCF** dbp) {
+Status JsonPluginRepo::OpenDB(const nlohmann::json& js, DB_MultiCF** dbp) {
   return OpenDB_tpl<DB_MultiCF>(js, dbp);
 }
 
-Status JsonOptionsRepo::OpenDB(const std::string& js, DB** dbp) try {
+Status JsonPluginRepo::OpenDB(const std::string& js, DB** dbp) try {
   return OpenDB_tpl<DB>(js, dbp);
 }
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, "bad json object");
 }
-Status JsonOptionsRepo::OpenDB(const std::string& js, DB_MultiCF** dbp) try {
+Status JsonPluginRepo::OpenDB(const std::string& js, DB_MultiCF** dbp) try {
   return OpenDB_tpl<DB_MultiCF>(js, dbp);
 }
 catch (const std::exception& ex) {
@@ -514,7 +514,7 @@ catch (const std::exception& ex) {
 template<class DBT>
 static void Impl_OpenDB_tpl(const std::string& dbname,
                             const json& db_open_js,
-                            JsonOptionsRepo& repo,
+                            JsonPluginRepo& repo,
                             DBT** dbp) {
   auto iter = db_open_js.find("method");
   if (db_open_js.end() == iter) {
@@ -542,7 +542,7 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
 }
 
 template<class DBT>
-Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
+Status JsonPluginRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
   *dbp = nullptr;
   auto open_defined_db = [&](const std::string& dbname) {
       auto iter = m_impl->db_js.find(dbname);
@@ -582,7 +582,7 @@ catch (const Status& s) {
   return s;
 }
 
-Status JsonOptionsRepo::OpenAllDB(
+Status JsonPluginRepo::OpenAllDB(
     std::shared_ptr<std::unordered_map<std::string, DB_Ptr>>* dbmap)
 try {
   *dbmap = nullptr;
@@ -637,7 +637,7 @@ catch (const Status& s) {
 
 template<class DBT>
 static Status JS_Str_OpenDB_tpl(const std::string& json_str, DBT** db) try {
-  JsonOptionsRepo repo;
+  JsonPluginRepo repo;
   nlohmann::json json_obj = json::parse(json_str);
   Status s = repo.Import(json_str);
   if (s.ok()) {
@@ -658,7 +658,7 @@ catch (const Status& s) {
 
 template<class DBT>
 static Status JS_File_OpenDB_tpl(const std::string& js_file, DBT** db) try {
-  JsonOptionsRepo repo;
+  JsonPluginRepo repo;
   std::string json_str;
   {
     std::fstream ifs(js_file.data());
@@ -677,7 +677,7 @@ catch (const std::exception& ex) {
 
 /**
  * @param json_str sub object "open" is used as json_obj in
- *                 JsonOptionsRepo::OpenDB
+ *                 JsonPluginRepo::OpenDB
  */
 Status JS_Str_OpenDB(const std::string& json_str, DB** db) {
   return JS_Str_OpenDB_tpl(json_str, db);
@@ -785,7 +785,7 @@ static int InitOnceDebugLevel() {
   return 0;
 }
 
-int JsonOptionsRepo::DebugLevel() {
+int JsonPluginRepo::DebugLevel() {
   static int d = InitOnceDebugLevel();
   return d;
 }

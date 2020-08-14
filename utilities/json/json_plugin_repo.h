@@ -51,14 +51,14 @@ struct DB_MultiCF {
   std::vector<ColumnFamilyHandle*> cf_handles;
 };
 
-class JsonOptionsRepo {
+class JsonPluginRepo {
  public:
-  JsonOptionsRepo() noexcept;
-  ~JsonOptionsRepo();
-  JsonOptionsRepo(const JsonOptionsRepo&) noexcept;
-  JsonOptionsRepo(JsonOptionsRepo&&) noexcept;
-  JsonOptionsRepo& operator=(const JsonOptionsRepo&) noexcept;
-  JsonOptionsRepo& operator=(JsonOptionsRepo&&) noexcept;
+  JsonPluginRepo() noexcept;
+  ~JsonPluginRepo();
+  JsonPluginRepo(const JsonPluginRepo&) noexcept;
+  JsonPluginRepo(JsonPluginRepo&&) noexcept;
+  JsonPluginRepo& operator=(const JsonPluginRepo&) noexcept;
+  JsonPluginRepo& operator=(JsonPluginRepo&&) noexcept;
 
   Status ImportJsonFile(const Slice& fname);
   Status Import(const std::string& json_str);
@@ -85,7 +85,7 @@ class JsonOptionsRepo {
   void Put(const std::string& name, const std::shared_ptr<DBOptions>&);
   void Put(const std::string& name, const std::shared_ptr<ColumnFamilyOptions>&);
 
-  // The caller should ensure DB handle's life time is longer than JsonOptionsRepo
+  // The caller should ensure DB handle's life time is longer than JsonPluginRepo
   void Put(const std::string& name, DB*);
   void Put(const std::string& name, DB_MultiCF*);
 
@@ -117,7 +117,7 @@ class JsonOptionsRepo {
   bool Get(const std::string& name, std::shared_ptr<DBOptions>*) const;
   bool Get(const std::string& name, std::shared_ptr<ColumnFamilyOptions>*) const;
 
-  // The caller should ensure DB handle's life time is longer than JsonOptionsRepo
+  // The caller should ensure DB handle's life time is longer than JsonPluginRepo
   bool Get(const std::string& name, DB**, Status* = nullptr) const;
   bool Get(const std::string& name, DB_MultiCF**, Status* = nullptr) const;
 
@@ -145,10 +145,10 @@ class JsonOptionsRepo {
   bool Get(const std::string& name, std::shared_ptr<TransactionDBMutexFactory>*) const;
 
   class Auto {
-    friend class JsonOptionsRepo;
-    const JsonOptionsRepo& m_repo;
+    friend class JsonPluginRepo;
+    const JsonPluginRepo& m_repo;
     const std::string&     m_name;
-    Auto(const JsonOptionsRepo& repo, const std::string& name)
+    Auto(const JsonPluginRepo& repo, const std::string& name)
         : m_repo(repo), m_name(name) {}
     Auto(const Auto&) = default;
     Auto(Auto&&) = default;

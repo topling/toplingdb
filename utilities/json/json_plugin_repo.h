@@ -16,6 +16,7 @@ struct Options;
 struct DBOptions;
 struct ColumnFamilyDescriptor;
 struct ColumnFamilyOptions;
+struct DB_Ptr;
 
 class Cache;
 class ColumnFamilyHandle;
@@ -70,11 +71,23 @@ class JsonOptionsRepo {
   Status OpenDB(const nlohmann::json&, DB**);
   Status OpenDB(const nlohmann::json&, DB_MultiCF**);
 
+  // dbmap is held by m_impl internally, if dbmap is null, user can still
+  // get db by Get(dbname) -- if user knows dbname
+  Status OpenAllDB(std::shared_ptr<std::unordered_map<std::string, DB_Ptr>>* dbmap = nullptr);
+
+  // user must ensure all dbs are alive when calling this function
+  void CloseAllDB();
+
   ///@{
   /// the semantic is overwrite
+  /// Put(name, PtrType(nullptr)) means delete
   void Put(const std::string& name, const std::shared_ptr<Options>&);
   void Put(const std::string& name, const std::shared_ptr<DBOptions>&);
   void Put(const std::string& name, const std::shared_ptr<ColumnFamilyOptions>&);
+
+  // The caller should ensure DB handle's life time is longer than JsonOptionsRepo
+  void Put(const std::string& name, DB*);
+  void Put(const std::string& name, DB_MultiCF*);
 
   void Put(const std::string& name, const std::shared_ptr<Cache>&);
   void Put(const std::string& name, const std::shared_ptr<CompactionFilterFactory>&);
@@ -103,6 +116,10 @@ class JsonOptionsRepo {
   bool Get(const std::string& name, std::shared_ptr<Options>*) const;
   bool Get(const std::string& name, std::shared_ptr<DBOptions>*) const;
   bool Get(const std::string& name, std::shared_ptr<ColumnFamilyOptions>*) const;
+
+  // The caller should ensure DB handle's life time is longer than JsonOptionsRepo
+  bool Get(const std::string& name, DB**, Status* = nullptr) const;
+  bool Get(const std::string& name, DB_MultiCF**, Status* = nullptr) const;
 
   bool Get(const std::string& name, std::shared_ptr<Cache>*) const;
   bool Get(const std::string& name, std::shared_ptr<CompactionFilterFactory>*) const;
@@ -179,5 +196,47 @@ public:
   operator unsigned long long() const;
 };
 
+}  // namespace ROCKSDB_NAMESPACE
+
+namespace ROCKSDB_NAMESPACE {
+struct DB_Ptr {
+  union {
+    DB* db;
+    DB_MultiCF* dbm;
+  };
+  enum ptr_type { kNull, kDB, kDB_MultiCF };
+  ptr_type type;
+
+  DB_Ptr(DB* db1) : db(db1), type(kDB) {}
+  DB_Ptr(DB_MultiCF* dbm1) : dbm(dbm1), type(kDB_MultiCF) {}
+  DB_Ptr(std::nullptr_t) : db(nullptr), type(kNull) {}
+  bool operator!() const { return nullptr == db; }
+  operator bool () const { return nullptr != db; }
+
+  bool IsMultiCF() const { return kDB_MultiCF == type; }
+};
+inline bool operator==(const DB_Ptr& x, const DB_Ptr& y) {
+  //assert(!((x.db == y.db) ^ (x.type == y.type)));
+#if !defined(NDEBUG)
+  if (x.db == y.db) {
+    if (x.db) {
+      assert(x.type == y.type);
+    }
+  }
+#endif
+  return x.db == y.db;
+}
+inline bool operator!=(const DB_Ptr& x, const DB_Ptr& y) { return !(x == y); }
 
 }  // namespace ROCKSDB_NAMESPACE
+
+namespace std {
+  template<>
+  struct hash<ROCKSDB_NAMESPACE::DB_Ptr> {
+    size_t operator()(const ROCKSDB_NAMESPACE::DB_Ptr& x) const {
+      assert(ROCKSDB_NAMESPACE::DB_Ptr::kNull != x.type);
+      assert(nullptr != x.db);
+      return size_t(x.db);
+    }
+  };
+}

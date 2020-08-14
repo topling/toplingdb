@@ -1306,4 +1306,25 @@ ROCKSDB_FACTORY_REG("BlobDB::Open", JS_BlobDB_MultiCF_Open);
 DB_MultiCF::DB_MultiCF() = default;
 DB_MultiCF::~DB_MultiCF() = default;
 
+// users should ensure databases are alive when calling this function
+void JsonOptionsRepo::CloseAllDB() {
+  for (auto& kv : *m_impl->db.name2p) {
+    assert(nullptr != kv.second.db);
+    if (kv.second.IsMultiCF()) {
+      DB_MultiCF* dbm = kv.second.dbm;
+      for (auto cfh : dbm->cf_handles) {
+        delete cfh;
+      }
+      delete dbm->db;
+      delete dbm;
+    }
+    else {
+      DB* db = kv.second.db;
+      delete db;
+    }
+  }
+  m_impl->db.name2p->clear();
+  m_impl->db.p2name.clear();
+}
+
 }

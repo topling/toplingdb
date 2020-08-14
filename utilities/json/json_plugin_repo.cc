@@ -339,23 +339,48 @@ Status JsonOptionsRepo::Export(string* json_str, bool pretty) const {
   return s;
 }
 
+template<class Map, class Ptr>
+static void
+Impl_Put(const std::string& name, Map& map, const Ptr& p) {
+  auto& name2p = *map.name2p;
+  if (p) { // put
+    auto ib = name2p.emplace(name, p);
+    if (!ib.second)
+      ib.first->second = p; // overwrite
+  }
+  else { // p is null, do delete
+    auto iter = name2p.find(name);
+    if (name2p.end() == iter) {
+      return;
+    }
+    map.p2name.erase(iter->second);
+    name2p.erase(iter);
+  }
+}
+
+template<class Map, class Ptr>
+static bool
+Impl_Get(const std::string& name, const Map& map, Ptr* pp) {
+  auto& name2p = *map.name2p;
+  auto iter = name2p.find(name);
+  if (name2p.end() != iter) {
+    *pp = iter->second;
+    return true;
+  }
+  else {
+    *pp = Ptr(nullptr);
+    return false;
+  }
+}
+
 #define JSON_REPO_TYPE_IMPL(field) \
 void JsonOptionsRepo::Put(const string& name, \
                 decltype((RepoPtrCref(((Impl*)0)->field))) p) { \
-  auto ib = m_impl->field.name2p->emplace(name, p); \
-  if (ib.second) \
-    ib.first->second = p; \
+  Impl_Put(name, m_impl->field, p); \
 } \
 bool JsonOptionsRepo::Get(const string& name, \
                 decltype(RepoPtrType(((Impl*)0)->field))* pp) const { \
-  auto& __map = *m_impl->field.name2p; \
-  auto iter = __map.find(name); \
-  if (__map.end() != iter) { \
-    *pp = iter->second; \
-    return true; \
-  } \
-  *pp = decltype(RepoPtrType(((Impl*)0)->field))(nullptr); \
-  return false; \
+  return Impl_Get(name, m_impl->field, pp); \
 }
 
 JSON_REPO_TYPE_IMPL(cache)
@@ -384,6 +409,45 @@ JSON_REPO_TYPE_IMPL(slice_transform)
 JSON_REPO_TYPE_IMPL(options)
 JSON_REPO_TYPE_IMPL(db_options)
 JSON_REPO_TYPE_IMPL(cf_options)
+
+void JsonOptionsRepo::Put(const std::string& name, DB* db) {
+  Impl_Put(name, m_impl->db, DB_Ptr(db));
+}
+void JsonOptionsRepo::Put(const std::string& name, DB_MultiCF* db) {
+  Impl_Put(name, m_impl->db, DB_Ptr(db));
+}
+bool JsonOptionsRepo::Get(const std::string& name, DB** db, Status* s) const {
+  DB_Ptr dbp(nullptr);
+  if (Impl_Get(name, m_impl->db, &dbp)) {
+    if (DB_Ptr::kDB == dbp.type) {
+      *db = dbp.db;
+      return true;
+    }
+    Status ss = Status::InvalidArgument(ROCKSDB_FUNC,
+        "database \"" + name + "\" mubst be DB, but is DB_MultiCF");
+    if (s)
+      *s = ss;
+    else
+      throw ss;
+  }
+  return false;
+}
+bool JsonOptionsRepo::Get(const std::string& name, DB_MultiCF** db, Status* s) const {
+  DB_Ptr dbp(nullptr);
+  if (Impl_Get(name, m_impl->db, &dbp)) {
+    if (DB_Ptr::kDB_MultiCF == dbp.type) {
+      *db = dbp.dbm;
+      return true;
+    }
+    Status ss = Status::InvalidArgument(ROCKSDB_FUNC,
+        "database \"" + name + "\" mubst be DB_MultiCF, but is DB");
+    if (s)
+      *s = ss;
+    else
+      throw ss;
+  }
+  return false;
+}
 
 void JsonOptionsRepo::GetMap(
     shared_ptr<unordered_map<string,
@@ -448,37 +512,51 @@ catch (const std::exception& ex) {
 }
 
 template<class DBT>
+static void Impl_OpenDB_tpl(const std::string& dbname,
+                            const json& db_open_js,
+                            JsonOptionsRepo& repo,
+                            DBT** dbp) {
+  auto iter = db_open_js.find("method");
+  if (db_open_js.end() == iter) {
+    throw Status::InvalidArgument(ROCKSDB_FUNC,
+        "dbname = \"" + dbname + "\", param \"method\" is missing");
+  }
+  const std::string& method = iter.value().get<string>();
+  iter = db_open_js.find("params");
+  if (db_open_js.end() == iter) {
+    throw Status::InvalidArgument(ROCKSDB_FUNC,
+        "dbname = \"" + dbname + "\", param \"params\" is missing");
+  }
+  auto params_js = iter.value();
+  if (!params_js.is_object()) {
+    throw Status::InvalidArgument(ROCKSDB_FUNC,
+        "dbname = \"" + dbname + "\", \"params\" must be a json object");
+  }
+  if (!dbname.empty()) {
+    params_js["name"] = dbname;
+  }
+  auto db = PluginFactory<DBT*>::AcquirePlugin(method, params_js, repo);
+  assert(nullptr != db);
+  repo.Put(dbname, db);
+  *dbp = db;
+}
+
+template<class DBT>
 Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
   *dbp = nullptr;
-  auto open_impl = [&](const std::string& dbname, const json& db_open_js) {
-      auto iter = db_open_js.find("method");
-      if (db_open_js.end() == iter) {
-        throw Status::InvalidArgument(ROCKSDB_FUNC,
-            "dbname = \"" + dbname + "\", param \"method\" is missing");
-      }
-      const std::string& method = iter.value().get<string>();
-      iter = db_open_js.find("params");
-      if (db_open_js.end() == iter) {
-        throw Status::InvalidArgument(ROCKSDB_FUNC,
-            "dbname = \"" + dbname + "\", param \"params\" is missing");
-      }
-      const auto& params_js = iter.value();
-      *dbp = PluginFactory<DBT*>::AcquirePlugin(method, params_js, *this);
-      assert(nullptr != *dbp);
-  };
   auto open_defined_db = [&](const std::string& dbname) {
       auto iter = m_impl->db_js.find(dbname);
       if (m_impl->db_js.end() == iter) {
         throw Status::NotFound(ROCKSDB_FUNC,
             "dbname = \"" + dbname + "\" is not found");
       }
-      open_impl(dbname, iter.value());
+      Impl_OpenDB_tpl(dbname, iter.value(), *this, dbp);
   };
   if (js.is_string()) {
     const std::string& str_val = js.get<std::string>();
     if (str_val.empty()) {
       return Status::InvalidArgument(ROCKSDB_FUNC,
-        "open method = \"" + str_val + "\" is empty");
+        "open js:string = \"" + str_val + "\" is empty");
     }
     if ('$' == str_val[0]) {
       if (str_val.size() < 3) {
@@ -491,7 +569,9 @@ Status JsonOptionsRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
       open_defined_db(str_val); // str_val is dbname
     }
   } else {
-    open_impl("<inline-defined>", js);
+    // when name is empty, js["params"]["name"] must be defined
+    std::string empty_name = "";
+    Impl_OpenDB_tpl(empty_name, js, *this, dbp);
   }
   return Status::OK();
 }
@@ -500,6 +580,59 @@ catch (const std::exception& ex) {
 }
 catch (const Status& s) {
   return s;
+}
+
+Status JsonOptionsRepo::OpenAllDB(
+    std::shared_ptr<std::unordered_map<std::string, DB_Ptr>>* dbmap)
+try {
+  *dbmap = nullptr;
+  size_t num = 0;
+  for (auto& item : m_impl->db_js.items()) {
+    const std::string& dbname = item.key();
+    const json& db_open_js = item.value();
+    auto iter = db_open_js.find("params");
+    if (db_open_js.end() == iter) {
+      return Status::InvalidArgument(ROCKSDB_FUNC,
+          "dbname = \"" + dbname + "\", param \"params\" is missing");
+    }
+    const json& params_js = iter.value();
+    if (!params_js.is_object()) {
+      return Status::InvalidArgument(ROCKSDB_FUNC,
+          "dbname = \"" + dbname + "\", \"params\" must be a json object");
+    }
+    iter = params_js.find("column_families");
+    if (params_js.end() == iter) {
+      DB* db = Get(dbname);
+      if (db) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "DB \"" + dbname + "\" have been opened, can not open same db twice");
+      }
+      Impl_OpenDB_tpl(dbname, db_open_js, *this, &db);
+    }
+    else {
+      DB_MultiCF* db = Get(dbname);
+      if (db) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "DB_MultiCF \"" + dbname + "\" have been opened, can not open same db twice");
+      }
+      Impl_OpenDB_tpl(dbname, db_open_js, *this, &db);
+    }
+    num++;
+  }
+  if (0 == num) {
+    return Status::InvalidArgument(ROCKSDB_FUNC, "databases are empty");
+  }
+  if (dbmap) {
+    *dbmap = m_impl->db.name2p;
+  }
+  return Status::OK();
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+catch (const Status& s) {
+  // nested Status
+  return Status::InvalidArgument(ROCKSDB_FUNC, s.ToString());
 }
 
 template<class DBT>

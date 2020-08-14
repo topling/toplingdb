@@ -59,6 +59,7 @@ struct JsonOptionsRepo::Impl {
   ObjRepo<Options> options;
   ObjRepo<DBOptions> db_options;
   ObjRepo<ColumnFamilyOptions> cf_options;
+  ObjMap<DB_Ptr> db;
 
   json db_js; // not evaluated during import
 };

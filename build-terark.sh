@@ -42,9 +42,10 @@ afr_level="1"
 dbg_level="2"
 rls_level="0"
 
-UNAME=`uname`
+UNAME=`uname | sed 's/^\([a-zA-Z]*\).*/\1/'`
 WARNING_FLAGS_Darwin='-Wall -Wno-shadow -Wno-shorten-64-to-32'
 WARNING_FLAGS_Linux='-Wall -Wno-shadow -Wno-class-memaccess'
+WARNING_FLAGS_CYGWIN='-Wall -Wno-shadow -Wno-class-memaccess'
 
 for type in $BUILD_TYPE; do
 	sig=`eval 'echo $'${type}_sig`

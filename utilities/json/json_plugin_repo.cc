@@ -582,10 +582,7 @@ catch (const Status& s) {
   return s;
 }
 
-Status JsonPluginRepo::OpenAllDB(
-    std::shared_ptr<std::unordered_map<std::string, DB_Ptr>>* dbmap)
-try {
-  *dbmap = nullptr;
+Status JsonPluginRepo::OpenAllDB() try {
   size_t num = 0;
   for (auto& item : m_impl->db_js.items()) {
     const std::string& dbname = item.key();
@@ -622,9 +619,6 @@ try {
   if (0 == num) {
     return Status::InvalidArgument(ROCKSDB_FUNC, "databases are empty");
   }
-  if (dbmap) {
-    *dbmap = m_impl->db.name2p;
-  }
   return Status::OK();
 }
 catch (const std::exception& ex) {
@@ -633,6 +627,10 @@ catch (const std::exception& ex) {
 catch (const Status& s) {
   // nested Status
   return Status::InvalidArgument(ROCKSDB_FUNC, s.ToString());
+}
+
+std::shared_ptr<std::unordered_map<std::string, DB_Ptr> > JsonPluginRepo::GetAllDB() const {
+  return m_impl->db.name2p;
 }
 
 template<class DBT>

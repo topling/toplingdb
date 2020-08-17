@@ -73,7 +73,8 @@ class JsonPluginRepo {
 
   // dbmap is held by m_impl internally, if dbmap is null, user can still
   // get db by Get(dbname) -- if user knows dbname
-  Status OpenAllDB(std::shared_ptr<std::unordered_map<std::string, DB_Ptr>>* dbmap = nullptr);
+  Status OpenAllDB();
+  std::shared_ptr<std::unordered_map<std::string, DB_Ptr>> GetAllDB() const;
 
   // user must ensure all dbs are alive when calling this function
   void CloseAllDB();

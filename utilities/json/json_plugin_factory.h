@@ -20,6 +20,16 @@ namespace ROCKSDB_NAMESPACE {
 
 using nlohmann::json;
 
+template<class P> struct RemovePtr_tpl;
+template<class T> struct RemovePtr_tpl<T*> { typedef T type; };
+template<class T> struct RemovePtr_tpl<std::shared_ptr<T> > { typedef T type; };
+template<> struct RemovePtr_tpl<DB_Ptr> { typedef DB type; };
+template<class P> using RemovePtr = typename RemovePtr_tpl<P>::type;
+
+template<class T> T* GetRawPtr(T* p){ return p; }
+template<class T> T* GetRawPtr(const std::shared_ptr<T>& p){ return p.get(); }
+inline DB* GetRawPtr(const DB_Ptr& p){ return p.db; }
+
 struct JsonPluginRepo::Impl {
   struct ObjInfo {
     std::string name;
@@ -27,7 +37,7 @@ struct JsonPluginRepo::Impl {
   };
   template<class Ptr>
   struct ObjMap {
-    std::unordered_map<Ptr, ObjInfo> p2name;
+    std::unordered_map<RemovePtr<Ptr>*, ObjInfo> p2name;
     std::shared_ptr<std::unordered_map<std::string, Ptr>> name2p =
         std::make_shared<std::unordered_map<std::string, Ptr>>();
   };
@@ -80,18 +90,19 @@ public:
   virtual ~PluginFactory() {}
   // in some contexts Acquire means 'CreateNew'
   // in some contexts Acquire means 'GetExisting'
-  static Ptr AcquirePlugin(const std::string& class_name, const json&,
-                                 const JsonPluginRepo&);
+  static Ptr AcquirePlugin(const std::string& clazz, const json&,
+                           const JsonPluginRepo&);
 
   // json is string class_name or
   // object{ class: "class_name", params: {...} }
+  // throw if not found
   static Ptr AcquirePlugin(const json&, const JsonPluginRepo&);
 
   static Ptr ObtainPlugin(const char* varname, const char* func_name,
-                                const json&, const JsonPluginRepo&);
+                          const json&, const JsonPluginRepo&);
 
   static Ptr GetPlugin(const char* varname, const char* func_name,
-                             const json&, const JsonPluginRepo&);
+                       const json&, const JsonPluginRepo&);
 
   static bool HasPlugin(const std::string& class_name);
   static bool SamePlugin(const std::string& clazz1, const std::string& clazz2);
@@ -120,21 +131,30 @@ struct PluginManipFunc {
 };
 template<class Object>
 using PluginManip = PluginFactory<const PluginManipFunc<Object>*>;
-template<class Object>
-void PluginUpdate(Object* p, const std::string& clazz,
+template<class Ptr>
+void PluginUpdate(const Ptr& p, const JsonPluginRepo::Impl::ObjMap<Ptr>& map,
                   const json& js, const JsonPluginRepo& repo) {
-  auto manip = PluginManip<Object>::AcquirePlugin(clazz, json{}, repo);
-  manip->Update(p, js, repo);
+  using Object = RemovePtr<Ptr>;
+  auto iter = map.p2name.find(GetRawPtr(p));
+  if (map.p2name.end() != iter) {
+    auto manip = PluginManip<Object>::AcquirePlugin(iter->second.params, repo);
+    manip->Update(GetRawPtr(p), js, repo);
+  }
 }
-template<class Object>
+template<class Ptr>
 std::string
-PluginToString(const Object& x, const std::string& clazz,
+PluginToString(const Ptr& p, const JsonPluginRepo::Impl::ObjMap<Ptr>& map,
                const json& js, const JsonPluginRepo& repo) {
-  auto manip = PluginManip<Object>::AcquirePlugin(clazz, json{}, repo);
-  return manip->ToString(x, js, repo);
+  using Object = RemovePtr<Ptr>;
+  auto iter = map.p2name.find(GetRawPtr(p));
+  if (map.p2name.end() != iter) {
+    auto manip = PluginManip<Object>::AcquirePlugin(iter->second.params, repo);
+    return manip->ToString(*p, js, repo);
+  }
+  throw Status::NotFound(ROCKSDB_FUNC, "Ptr not found");
 }
 std::string
-PluginToString(const DB_Ptr&, const std::string& clazz,
+PluginToString(const DB_Ptr&, const JsonPluginRepo::Impl::ObjMap<DB_Ptr>& map,
                const json& js, const JsonPluginRepo& repo);
 
 // use SerDeFunc as plugin, register SerDeFunc as plugin
@@ -432,7 +452,7 @@ const JsonPluginRepo& repoRefType();
 
 #define ROCKSDB_JSON_SET_FACT_INNER(inner, prop, repo_field) do { \
   auto& __p2name = repo.m_impl->repo_field.p2name; \
-  auto __iter = __p2name.find(prop); \
+  auto __iter = __p2name.find(GetRawPtr(prop)); \
   if (__p2name.end() != __iter) { \
     if (__iter->second.name.empty()) \
       inner = __iter->second.params; \

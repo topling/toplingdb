@@ -127,7 +127,7 @@ public:
     auto iter = m_map->name2p->find(name);
     if (m_map->name2p->end() != iter) {
       auto& p = iter->second;
-      std::string str = PluginToString(*p, m_clazz, query, *m_repo);
+      std::string str = PluginToString(p, *m_map, query, *m_repo);
       mg_write(conn, str.data(), str.size());
     }
     else {

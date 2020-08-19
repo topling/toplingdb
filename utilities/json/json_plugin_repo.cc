@@ -77,7 +77,7 @@ static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
     auto& existing = ib.first->second;
     if (!ib.second) { // existed
       assert(Ptr(nullptr) != existing);
-      auto oi_iter = field.p2name.find(existing);
+      auto oi_iter = field.p2name.find(GetRawPtr(existing));
       if (field.p2name.end() == oi_iter) {
         throw Status::Corruption(ROCKSDB_FUNC,
             "p2name[ptr_of(\"" + inst_id + "\")] is missing");
@@ -86,7 +86,7 @@ static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
       auto new_clazz = JsonGetClassName(ROCKSDB_FUNC, value);
       if (new_clazz == old_clazz) {
         try {
-          PluginUpdate(&*existing, old_clazz, value, repo);
+          PluginUpdate(existing, field, value, repo);
           oi_iter->second.params.merge_patch(value);
           continue; // done for current item
         }
@@ -96,7 +96,7 @@ static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
           value.swap(oi_iter->second.params);
         }
       }
-      field.p2name.erase(existing);
+      field.p2name.erase(GetRawPtr(existing));
     }
     // do not use ObtainPlugin, to disallow define var2 = var1
     Ptr p = PluginFactory<Ptr>::AcquirePlugin(value, repo);
@@ -107,7 +107,8 @@ static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
               ", value_js = " + value.dump());
     }
     existing = p;
-    field.p2name.emplace(p, JsonPluginRepo::Impl::ObjInfo{inst_id, std::move(value)});
+    field.p2name.emplace(GetRawPtr(p),
+        JsonPluginRepo::Impl::ObjInfo{inst_id, std::move(value)});
   }
 }
 
@@ -131,19 +132,20 @@ static void Impl_ImportOptions(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
     auto& existing = ib.first->second;
     if (!ib.second) { // existed
       assert(Ptr(nullptr) != existing);
-      auto oi_iter = field.p2name.find(existing);
+      auto oi_iter = field.p2name.find(GetRawPtr(existing));
       if (field.p2name.end() == oi_iter) {
         throw Status::Corruption(ROCKSDB_FUNC,
             "p2name[ptr_of(\"" + option_name + "\")] is missing");
       }
-      PluginUpdate(&*existing, option_class_name, params_js, repo);
+      PluginUpdate(existing, field, params_js, repo);
       oi_iter->second.params.merge_patch(params_js);
     }
     else {
       Ptr p = PluginFactory<Ptr>::AcquirePlugin(option_class_name, params_js, repo);
       assert(Ptr(nullptr) != p);
       existing = p;
-      field.p2name.emplace(p, JsonPluginRepo::Impl::ObjInfo{option_name, params_js});
+      field.p2name.emplace(GetRawPtr(p),
+          JsonPluginRepo::Impl::ObjInfo{option_name, params_js});
     }
   }
 }
@@ -365,7 +367,7 @@ Impl_Put(const std::string& name, Map& map, const Ptr& p) {
     if (name2p.end() == iter) {
       return;
     }
-    map.p2name.erase(iter->second);
+    map.p2name.erase(GetRawPtr(iter->second));
     name2p.erase(iter);
   }
 }
@@ -864,12 +866,20 @@ std::string JsonToString(const json& obj, const json& options) {
 }
 
 std::string
-PluginToString(const DB_Ptr& dbp, const std::string& clazz,
+PluginToString(const DB_Ptr& dbp,  const JsonPluginRepo::Impl::ObjMap<DB_Ptr>& map,
                const json& js, const JsonPluginRepo& repo) {
-  if (dbp.dbm)
-    return PluginToString(*dbp.dbm, clazz, js, repo);
-  else
-    return PluginToString(*dbp.db, clazz, js, repo);
+  auto iter = map.p2name.find(dbp.db);
+  if (map.p2name.end() != iter) {
+    if (dbp.dbm) {
+      auto manip = PluginManip<DB_MultiCF>::AcquirePlugin(iter->second.params, repo);
+      return manip->ToString(*dbp.dbm, js, repo);
+    }
+    else {
+      auto manip = PluginManip<DB>::AcquirePlugin(iter->second.params, repo);
+      return manip->ToString(*dbp.db, js, repo);
+    }
+  }
+  throw Status::NotFound(ROCKSDB_FUNC, "db ptr is not found");
 }
 
 }

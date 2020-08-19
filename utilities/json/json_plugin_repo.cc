@@ -198,6 +198,14 @@ void MergeSubObject(json* target, const json& patch, const string& subname) {
     target->merge_patch(sub_js);
   }
 }
+static
+void MergeSubAny(json* target, const json& patch, const string& subname) {
+  auto iter = patch.find(subname);
+  if (patch.end() != iter) {
+    auto& sub_js = iter.value();
+    target->merge_patch(sub_js);
+  }
+}
 
 static void JS_setenv(const nlohmann::json& main_js) {
   auto iter = main_js.find("setenv");
@@ -237,7 +245,7 @@ Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
   JS_setenv(main_js);
   MergeSubObject(&m_impl->db_js, main_js, "databases");
   MergeSubObject(&m_impl->http_js, main_js, "http");
-  MergeSubObject(&m_impl->open_js, main_js, "open");
+  MergeSubAny(&m_impl->open_js, main_js, "open");
   const auto& repo = *this;
 #define JSON_IMPORT_REPO(Clazz, field) \
   Impl_Import(m_impl->field, #Clazz, main_js, repo)

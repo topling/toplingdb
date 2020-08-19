@@ -232,7 +232,7 @@ static void JS_setenv(const nlohmann::json& main_js) {
 Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
   JS_setenv(main_js);
   MergeSubObject(&m_impl->db_js, main_js, "databases");
-  MergeSubObject(&m_impl->db_js, main_js, "http");
+  MergeSubObject(&m_impl->http_js, main_js, "http");
   const auto& repo = *this;
 #define JSON_IMPORT_REPO(Clazz, field) \
   Impl_Import(m_impl->field, #Clazz, main_js, repo)
@@ -539,6 +539,9 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
   repo.Put(dbname, db);
   *dbp = db;
   const auto& http_js = repo.m_impl->http_js;
+  if (JsonPluginRepo::DebugLevel() >= 2) {
+    fprintf(stderr, "INFO: http_js = %s\n", http_js.dump().c_str());
+  }
   if (http_js.is_object()) {
     repo.m_impl->http.Init(http_js, &repo);
   }

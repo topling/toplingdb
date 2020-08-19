@@ -4152,24 +4152,24 @@ class Benchmark {
     InitializeOptionsGeneral(opts);
   }
 
+  JsonPluginRepo repo_;
   void OpenDb(Options options, const std::string& db_name,
       DBWithColumnFamilies* db) {
     if (!FLAGS_json.empty()) {
       DB_MultiCF* dbmcf = nullptr;
-      JsonPluginRepo repo;
-      Status s = repo.ImportJsonFile(FLAGS_json);
+      Status s = repo_.ImportJsonFile(FLAGS_json);
       if (!s.ok()) {
         fprintf(stderr, "ERROR: ImportJsonFile(%s): %s\n",
                 FLAGS_json.c_str(), s.ToString().c_str());
         exit(1);
       }
-      s = repo.OpenDB(&dbmcf);
+      s = repo_.OpenDB(&dbmcf);
       if (!s.ok()) {
         fprintf(stderr, "ERROR: OpenDB(): JsonFile=%s: %s\n",
                 FLAGS_json.c_str(), s.ToString().c_str());
         exit(1);
       }
-      s = repo.StartHttpServer();
+      s = repo_.StartHttpServer();
       if (!s.ok()) {
         fprintf(stderr, "ERROR: StartHttpServer(): JsonFile=%s: %s\n",
                 FLAGS_json.c_str(), s.ToString().c_str());

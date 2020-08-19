@@ -171,9 +171,13 @@ Status JsonPluginRepo::ImportJsonFile(const Slice& fname) {
   return Import(json_str);
 }
 
-Status JsonPluginRepo::Import(const string& json_str) {
+Status JsonPluginRepo::Import(const string& json_str) try {
   json js = json::parse(json_str);
   return Import(js);
+}
+catch (const std::exception& ex) {
+  // just parse error
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
 
 static
@@ -233,6 +237,7 @@ Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
   JS_setenv(main_js);
   MergeSubObject(&m_impl->db_js, main_js, "databases");
   MergeSubObject(&m_impl->http_js, main_js, "http");
+  MergeSubObject(&m_impl->open_js, main_js, "open");
   const auto& repo = *this;
 #define JSON_IMPORT_REPO(Clazz, field) \
   Impl_Import(m_impl->field, #Clazz, main_js, repo)
@@ -577,10 +582,13 @@ Status JsonPluginRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
       // string which does not like ${dbname} or $dbname
       open_defined_db(str_val); // str_val is dbname
     }
-  } else {
+  } else if (js.is_object()) {
     // when name is empty, js["params"]["name"] must be defined
     std::string empty_name = "";
     Impl_OpenDB_tpl(empty_name, js, *this, dbp);
+  }
+  else {
+    throw Status::InvalidArgument(ROCKSDB_FUNC, "bad js = " + js.dump());
   }
   return Status::OK();
 }
@@ -642,61 +650,33 @@ std::shared_ptr<std::unordered_map<std::string, DB_Ptr> > JsonPluginRepo::GetAll
   return m_impl->db.name2p;
 }
 
-template<class DBT>
-static Status JS_Str_OpenDB_tpl(const std::string& json_str, DBT** db) try {
-  JsonPluginRepo repo;
-  nlohmann::json json_obj = json::parse(json_str);
-  Status s = repo.Import(json_str);
-  if (s.ok()) {
-    auto iter = json_obj.find("open");
-    if (json_obj.end() != iter) {
-      return repo.OpenDB(iter.value(), db);
-    }
-    s = Status::InvalidArgument(ROCKSDB_FUNC, "sub obj \"open\" is required");
-  }
-  return s;
+/**
+ * @param json_str sub object "open" is used as json_obj in
+ *                 JsonPluginRepo::OpenDB
+ */
+Status JsonPluginRepo::OpenDB(DB** db) {
+  if (m_impl->open_js.is_string() || m_impl->open_js.is_object())
+    return OpenDB(m_impl->open_js, db);
+  else
+    return Status::InvalidArgument(ROCKSDB_FUNC, "bad json[\"open\"] = " + js.dump());
+}
+Status JsonPluginRepo::OpenDB(DB_MultiCF** db) {
+  if (m_impl->open_js.is_string() || m_impl->open_js.is_object())
+    return OpenDB(m_impl->open_js, db);
+  else
+    return Status::InvalidArgument(ROCKSDB_FUNC, "bad json[\"open\"] = " + js.dump());
+}
+
+Status JsonPluginRepo::StartHttpServer() try {
+  m_impl->http.Init(m_impl->http_js, this);
+  return Status::OK();
 }
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
 catch (const Status& s) {
-  return s;
-}
-
-template<class DBT>
-static Status JS_File_OpenDB_tpl(const std::string& js_file, DBT** db) try {
-  JsonPluginRepo repo;
-  std::string json_str;
-  {
-    std::fstream ifs(js_file.data());
-    if (!ifs.is_open()) {
-      return Status::InvalidArgument("open json file fail", js_file);
-    }
-    std::stringstream ss;
-    ss << ifs.rdbuf();
-    json_str = ss.str();
-  }
-  return JS_Str_OpenDB_tpl(json_str, db);
-}
-catch (const std::exception& ex) {
-  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-}
-
-/**
- * @param json_str sub object "open" is used as json_obj in
- *                 JsonPluginRepo::OpenDB
- */
-Status JS_Str_OpenDB(const std::string& json_str, DB** db) {
-  return JS_Str_OpenDB_tpl(json_str, db);
-}
-Status JS_Str_OpenDB(const std::string& json_str, DB_MultiCF** db) {
-  return JS_Str_OpenDB_tpl(json_str, db);
-}
-Status JS_File_OpenDB(const std::string& js_file, DB** db) {
-  return JS_File_OpenDB_tpl(js_file, db);
-}
-Status JS_File_OpenDB(const std::string& js_file, DB_MultiCF** db) {
-  return JS_File_OpenDB_tpl(js_file, db);
+  // nested Status
+  return Status::InvalidArgument(ROCKSDB_FUNC, s.ToString());
 }
 
 std::string PluginParseInstID(const std::string& str_val) {

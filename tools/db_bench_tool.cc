@@ -4156,9 +4156,22 @@ class Benchmark {
       DBWithColumnFamilies* db) {
     if (!FLAGS_json.empty()) {
       DB_MultiCF* dbmcf = nullptr;
-      Status s = JS_File_OpenDB(FLAGS_json, &dbmcf);
+      JsonPluginRepo repo;
+      Status s = repo.ImportJsonFile(FLAGS_json);
       if (!s.ok()) {
-        fprintf(stderr, "ERROR: JS_File_OpenDB(%s): %s\n",
+        fprintf(stderr, "ERROR: ImportJsonFile(%s): %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      s = repo.OpenDB(&dbmcf);
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: OpenDB(): JsonFile=%s: %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      s = repo.StartHttpServer();
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: StartHttpServer(): JsonFile=%s: %s\n",
                 FLAGS_json.c_str(), s.ToString().c_str());
         exit(1);
       }

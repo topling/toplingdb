@@ -73,10 +73,17 @@ class JsonPluginRepo {
   Status OpenDB(const nlohmann::json&, DB**);
   Status OpenDB(const nlohmann::json&, DB_MultiCF**);
 
+  ///@{ open the DB defined in js["open"]
+  Status OpenDB(DB**);
+  Status OpenDB(DB_MultiCF**);
+  //@}
+
   // dbmap is held by m_impl internally, if dbmap is null, user can still
   // get db by Get(dbname) -- if user knows dbname
   Status OpenAllDB();
   std::shared_ptr<std::unordered_map<std::string, DB_Ptr>> GetAllDB() const;
+
+  Status StartHttpServer(); // http server for inspection
 
   // user must ensure all dbs are alive when calling this function
   void CloseAllDB();
@@ -177,12 +184,6 @@ class JsonPluginRepo {
   template<class DBType>
   Status OpenDB_tpl(const nlohmann::json&, DBType**);
 };
-
-Status JS_Str_OpenDB(const std::string& js_str, DB**);
-Status JS_Str_OpenDB(const std::string& js_str, DB_MultiCF**);
-
-Status JS_File_OpenDB(const std::string& js_file, DB**);
-Status JS_File_OpenDB(const std::string& js_file, DB_MultiCF**);
 
 ///@param obj json object to be dumped
 ///@param options options for dump(pretty,indent)

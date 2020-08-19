@@ -63,6 +63,7 @@ struct JsonPluginRepo::Impl {
   ObjMap<DB_Ptr> db;
 
   json db_js; // not evaluated during import
+  json open_js;
   json http_js;
 
   JsonCivetServer http;

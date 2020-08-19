@@ -475,8 +475,8 @@ endif
 
 OBJ_DIR?=.
 LIB_OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(LIB_SOURCES))
-ifeq ($(HAVE_POWER8),1)
 LIB_OBJECTS += $(patsubst %.c, $(OBJ_DIR)/%.o, $(LIB_SOURCES_C))
+ifeq ($(HAVE_POWER8),1)
 LIB_OBJECTS += $(patsubst %.S, $(OBJ_DIR)/%.o, $(LIB_SOURCES_ASM))
 endif
 
@@ -2152,7 +2152,7 @@ $(OBJ_DIR)/%.o: %.cpp
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.o: %.c
-	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -c $< -o $@
 endif
 
 # ---------------------------------------------------------------------------
@@ -2160,7 +2160,7 @@ endif
 # ---------------------------------------------------------------------------
 
 DEPFILES = $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, $(ALL_SOURCES))
-DEPFILES+ = $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C) $(TEST_MAIN_SOURCES_C))
+DEPFILES += $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C) $(TEST_MAIN_SOURCES_C))
 ifeq ($(USE_FOLLY_DISTRIBUTED_MUTEX),1)
   DEPFILES +=$(patsubst %.cpp, $(OBJ_DIR)/%.cpp.d, $(FOLLY_SOURCES))
 endif

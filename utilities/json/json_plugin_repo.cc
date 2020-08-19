@@ -86,8 +86,7 @@ static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
       auto new_clazz = JsonGetClassName(ROCKSDB_FUNC, value);
       if (new_clazz == old_clazz) {
         try {
-          auto update = PluginUpdater<Ptr>::AcquirePlugin(old_clazz, json{}, repo);
-          update(existing, value, repo);
+          PluginUpdate(&*existing, old_clazz, value, repo);
           oi_iter->second.params.merge_patch(value);
           continue; // done for current item
         }
@@ -137,8 +136,7 @@ static void Impl_ImportOptions(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
         throw Status::Corruption(ROCKSDB_FUNC,
             "p2name[ptr_of(\"" + option_name + "\")] is missing");
       }
-      auto update = PluginUpdater<Ptr>::AcquirePlugin(option_class_name, json{}, repo);
-      update(existing, params_js, repo);
+      PluginUpdate(&*existing, option_class_name, params_js, repo);
       oi_iter->second.params.merge_patch(params_js);
     }
     else {
@@ -234,6 +232,7 @@ static void JS_setenv(const nlohmann::json& main_js) {
 Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
   JS_setenv(main_js);
   MergeSubObject(&m_impl->db_js, main_js, "databases");
+  MergeSubObject(&m_impl->db_js, main_js, "http");
   const auto& repo = *this;
 #define JSON_IMPORT_REPO(Clazz, field) \
   Impl_Import(m_impl->field, #Clazz, main_js, repo)
@@ -419,7 +418,7 @@ void JsonPluginRepo::Put(const std::string& name, DB_MultiCF* db) {
 bool JsonPluginRepo::Get(const std::string& name, DB** db, Status* s) const {
   DB_Ptr dbp(nullptr);
   if (Impl_Get(name, m_impl->db, &dbp)) {
-    if (DB_Ptr::kDB == dbp.type) {
+    if (!dbp.dbm) {
       *db = dbp.db;
       return true;
     }
@@ -435,7 +434,7 @@ bool JsonPluginRepo::Get(const std::string& name, DB** db, Status* s) const {
 bool JsonPluginRepo::Get(const std::string& name, DB_MultiCF** db, Status* s) const {
   DB_Ptr dbp(nullptr);
   if (Impl_Get(name, m_impl->db, &dbp)) {
-    if (DB_Ptr::kDB_MultiCF == dbp.type) {
+    if (dbp.dbm) {
       *db = dbp.dbm;
       return true;
     }
@@ -539,6 +538,13 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
   assert(nullptr != db);
   repo.Put(dbname, db);
   *dbp = db;
+  const auto& http_js = repo.m_impl->http_js;
+  if (http_js.is_object()) {
+    repo.m_impl->http.Init(http_js, &repo);
+  }
+  else if (!http_js.is_null()) {
+    fprintf(stderr, "ERROR: bad http_js = %s\n", http_js.dump().c_str());
+  }
 }
 
 template<class DBT>
@@ -786,6 +792,85 @@ static int InitOnceDebugLevel() {
 int JsonPluginRepo::DebugLevel() {
   static int d = InitOnceDebugLevel();
   return d;
+}
+
+bool JsonWeakBool(const json& js) {
+  if (js.is_string()) {
+    const std::string& s = js.get<std::string>();
+    if (strcasecmp(s.c_str(), "true") == 0) return true;
+    if (strcasecmp(s.c_str(), "false") == 0) return false;
+    if (strcasecmp(s.c_str(), "on") == 0) return true;
+    if (strcasecmp(s.c_str(), "off") == 0) return false;
+    if (strcasecmp(s.c_str(), "yes") == 0) return true;
+    if (strcasecmp(s.c_str(), "no") == 0) return false;
+    if (isdigit((unsigned char)s[0])) {
+      return atoi(s.c_str()) != 0;
+    }
+    throw std::invalid_argument("JsonWeakBool: bad js = " + s);
+  }
+  if (js.is_boolean()) return js.get<bool>();
+  if (js.is_number_integer()) return js.get<long long>() != 0;
+  throw std::invalid_argument("JsonWeakBool: bad js = " + js.dump());
+}
+
+bool JsonWeakInt(const json& js) {
+  if (js.is_string()) {
+    const std::string& s = js.get<std::string>();
+    if (isdigit((unsigned char)s[0])) {
+      return atoi(s.c_str());
+    }
+    throw std::invalid_argument("JsonWeakInt: bad js = " + s);
+  }
+  if (js.is_number_integer()) return js.get<int>();
+  throw std::invalid_argument("JsonWeakBool: bad js = " + js.dump());
+}
+
+std::string JsonToHtml(const json& obj) {
+  std::string html;
+  html.append("<table><tbody>\n");
+  html.append("  <tr><th>name</th><th>value</th></tr>\n");
+  for (const auto& kv : obj.items()) {
+    const std::string& key = kv.key();
+    html.append("  <tr><td>");
+    html.append(key);
+    html.append("</td><td>");
+    html.append(kv.value().dump());
+    html.append("</td></tr>\n");
+  }
+  html.append("</tbody></table>\n");
+  return html;
+}
+
+std::string JsonToString(const json& obj, const json& options) {
+  int indent = -1;
+  auto iter = options.find("pretty");
+  if (options.end() != iter) {
+    if (JsonWeakBool(iter.value())) {
+      indent = 4;
+    }
+  }
+  iter = options.find("indent");
+  if (options.end() != iter) {
+    indent = JsonWeakInt(iter.value());
+  }
+  iter = options.find("html");
+  bool html = false;
+  if (options.end() != iter) {
+    html = JsonWeakBool(iter.value());
+  }
+  if (html)
+    return JsonToHtml(obj);
+  else
+    return obj.dump(indent);
+}
+
+std::string
+PluginToString(const DB_Ptr& dbp, const std::string& clazz,
+               const json& js, const JsonPluginRepo& repo) {
+  if (dbp.dbm)
+    return PluginToString(*dbp.dbm, clazz, js, repo);
+  else
+    return PluginToString(*dbp.db, clazz, js, repo);
 }
 
 }

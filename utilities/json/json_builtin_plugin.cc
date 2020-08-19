@@ -316,15 +316,24 @@ NewDBOptionsJS(const json& js, const JsonPluginRepo& repo) {
   return std::make_shared<DBOptions_Json>(js, repo);
 }
 ROCKSDB_FACTORY_REG("DBOptions", NewDBOptionsJS);
-static void DBOptions_Update(const std::shared_ptr<DBOptions>& p,
-                             const json& js, const JsonPluginRepo& repo) {
-  static_cast<DBOptions_Json*>(p.get())->Update(js, repo);
+struct DBOptions_Manip : PluginManipFunc<DBOptions> {
+  void Update(DBOptions* p, const json& js, const JsonPluginRepo& repo)
+  const final {
+    static_cast<DBOptions_Json*>(p)->Update(js, repo);
+  }
+  std::string ToString(const DBOptions& x, const json& dump_options,
+                       const JsonPluginRepo& repo) const final {
+    json djs;
+    static_cast<const DBOptions_Json&>(x).SaveToJson(djs, repo);
+    return JsonToString(djs, dump_options);
+  }
+};
+static const PluginManipFunc<DBOptions>*
+JS_DBOptionsManip(const json&, const JsonPluginRepo&) {
+  static const DBOptions_Manip manip;
+  return &manip;
 }
-static PluginUpdaterFunc<std::shared_ptr<DBOptions> >
-JS_DBOptionsUpdater(const json&, const JsonPluginRepo&) {
-  return &DBOptions_Update;
-}
-ROCKSDB_FACTORY_REG("DBOptions", JS_DBOptionsUpdater);
+ROCKSDB_FACTORY_REG("DBOptions", JS_DBOptionsManip);
 
 ///////////////////////////////////////////////////////////////////////////
 template<class Vec>
@@ -600,16 +609,25 @@ NewCFOptionsJS(const json& js, const JsonPluginRepo& repo) {
 }
 ROCKSDB_FACTORY_REG("ColumnFamilyOptions", NewCFOptionsJS);
 ROCKSDB_FACTORY_REG("CFOptions", NewCFOptionsJS);
-static void CFOptions_Update(const std::shared_ptr<ColumnFamilyOptions>& p,
-                             const json& js, const JsonPluginRepo& repo) {
-  static_cast<ColumnFamilyOptions_Json*>(p.get())->Update(js, repo);
+struct CFOptions_Manip : PluginManipFunc<ColumnFamilyOptions> {
+  void Update(ColumnFamilyOptions* p, const json& js,
+              const JsonPluginRepo& repo) const final {
+    static_cast<ColumnFamilyOptions_Json*>(p)->Update(js, repo);
+  }
+  std::string ToString(const ColumnFamilyOptions& x, const json& dump_options,
+                       const JsonPluginRepo& repo) const final {
+    json djs;
+    static_cast<const ColumnFamilyOptions_Json&>(x).SaveToJson(djs, repo);
+    return JsonToString(djs, dump_options);
+  }
+};
+static const PluginManipFunc<ColumnFamilyOptions>*
+JS_CFOptionsManip(const json&, const JsonPluginRepo&) {
+  static const CFOptions_Manip manip;
+  return &manip;
 }
-static PluginUpdaterFunc<std::shared_ptr<ColumnFamilyOptions> >
-JS_CFOptionsUpdater(const json&, const JsonPluginRepo&) {
-  return &CFOptions_Update;
-}
-ROCKSDB_FACTORY_REG("ColumnFamilyOptions", JS_CFOptionsUpdater);
-ROCKSDB_FACTORY_REG("CFOptions", JS_CFOptionsUpdater);
+ROCKSDB_FACTORY_REG("ColumnFamilyOptions", JS_CFOptionsManip);
+ROCKSDB_FACTORY_REG("CFOptions", JS_CFOptionsManip);
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -1310,8 +1328,9 @@ DB_MultiCF::~DB_MultiCF() = default;
 void JsonPluginRepo::CloseAllDB() {
   for (auto& kv : *m_impl->db.name2p) {
     assert(nullptr != kv.second.db);
-    if (kv.second.IsMultiCF()) {
+    if (kv.second.dbm) {
       DB_MultiCF* dbm = kv.second.dbm;
+      assert(kv.second.db = dbm->db);
       for (auto cfh : dbm->cf_handles) {
         delete cfh;
       }

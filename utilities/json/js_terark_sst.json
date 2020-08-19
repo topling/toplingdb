@@ -1,4 +1,8 @@
 {
+  "http": {
+    "document_root": "/",
+    "listening_ports": "8081"
+  },
   "Cache": {
     "clock-cache-default": {
       "class-needs-TBB": "ClockCache",

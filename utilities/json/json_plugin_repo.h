@@ -43,6 +43,8 @@ class TableFactory;
 class TablePropertiesCollectorFactory;
 class TransactionDBMutexFactory;
 
+using nlohmann::json;
+
 struct DB_MultiCF {
   DB_MultiCF();
   ~DB_MultiCF();
@@ -182,6 +184,10 @@ Status JS_Str_OpenDB(const std::string& js_str, DB_MultiCF**);
 Status JS_File_OpenDB(const std::string& js_file, DB**);
 Status JS_File_OpenDB(const std::string& js_file, DB_MultiCF**);
 
+///@param obj json object to be dumped
+///@param options options for dump(pretty,indent)
+std::string JsonToString(const json& obj, const json& options);
+
 class ParseSizeXiB {
   long long m_val;
 public:
@@ -201,30 +207,18 @@ public:
 
 namespace ROCKSDB_NAMESPACE {
 struct DB_Ptr {
-  union {
-    DB* db;
-    DB_MultiCF* dbm;
-  };
-  enum ptr_type { kNull, kDB, kDB_MultiCF };
-  ptr_type type;
+  DB* db = nullptr;
+  DB_MultiCF* dbm = nullptr;
 
-  DB_Ptr(DB* db1) : db(db1), type(kDB) {}
-  DB_Ptr(DB_MultiCF* dbm1) : dbm(dbm1), type(kDB_MultiCF) {}
-  DB_Ptr(std::nullptr_t) : db(nullptr), type(kNull) {}
+  DB_Ptr(DB* db1) : db(db1), dbm(nullptr) {}
+  DB_Ptr(DB_MultiCF* dbm1) : db(dbm1->db), dbm(dbm1) {}
+  DB_Ptr(std::nullptr_t) : db(nullptr), dbm(nullptr) {}
   bool operator!() const { return nullptr == db; }
   operator bool () const { return nullptr != db; }
-
-  bool IsMultiCF() const { return kDB_MultiCF == type; }
+  const DB_Ptr& operator*() const { assert(nullptr != db); return *this; }
 };
 inline bool operator==(const DB_Ptr& x, const DB_Ptr& y) {
-  //assert(!((x.db == y.db) ^ (x.type == y.type)));
-#if !defined(NDEBUG)
-  if (x.db == y.db) {
-    if (x.db) {
-      assert(x.type == y.type);
-    }
-  }
-#endif
+  assert(!((x.db == y.db) ^ (x.dbm == y.dbm)));
   return x.db == y.db;
 }
 inline bool operator!=(const DB_Ptr& x, const DB_Ptr& y) { return !(x == y); }
@@ -235,7 +229,6 @@ namespace std {
   template<>
   struct hash<ROCKSDB_NAMESPACE::DB_Ptr> {
     size_t operator()(const ROCKSDB_NAMESPACE::DB_Ptr& x) const {
-      assert(ROCKSDB_NAMESPACE::DB_Ptr::kNull != x.type);
       assert(nullptr != x.db);
       return size_t(x.db);
     }

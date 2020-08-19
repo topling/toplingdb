@@ -10,6 +10,7 @@
 #include <unordered_map>
 
 #include "json_plugin_repo.h"
+#include "web/json_civetweb.h"
 #include "json.h"
 #include "rocksdb/enum_reflection.h"
 #include "rocksdb/preproc.h"
@@ -62,6 +63,9 @@ struct JsonPluginRepo::Impl {
   ObjMap<DB_Ptr> db;
 
   json db_js; // not evaluated during import
+  json http_js;
+
+  JsonCivetServer http;
 };
 
 ///@note on principle, the factory itself is stateless, but its product
@@ -106,15 +110,35 @@ public:
 };
 template<class Object>
 using PluginFactorySP = PluginFactory<std::shared_ptr<Object> >;
-template<class Ptr>
-using PluginUpdaterFunc = void(*)(const Ptr&, const json&, const JsonPluginRepo&);
-template<class Ptr>
-using PluginUpdater = PluginFactory<PluginUpdaterFunc<Ptr> >;
+
+template<class Object>
+struct PluginManipFunc {
+  virtual ~PluginManipFunc() {}
+  virtual void Update(Object*, const json&, const JsonPluginRepo&) const = 0;
+  virtual std::string ToString(const Object&, const json&, const JsonPluginRepo&) const = 0;
+};
+template<class Object>
+using PluginManip = PluginFactory<const PluginManipFunc<Object>*>;
+template<class Object>
+void PluginUpdate(Object* p, const std::string& clazz,
+                  const json& js, const JsonPluginRepo& repo) {
+  auto manip = PluginManip<Object>::AcquirePlugin(clazz, json{}, repo);
+  manip->Update(p, js, repo);
+}
+template<class Object>
+std::string
+PluginToString(const Object& x, const std::string& clazz,
+               const json& js, const JsonPluginRepo& repo) {
+  auto manip = PluginManip<Object>::AcquirePlugin(clazz, json{}, repo);
+  return manip->ToString(x, js, repo);
+}
+std::string
+PluginToString(const DB_Ptr&, const std::string& clazz,
+               const json& js, const JsonPluginRepo& repo);
 
 // use SerDeFunc as plugin, register SerDeFunc as plugin
 template<class Object>
-class SerDeFunc {
- public:
+struct SerDeFunc {
   virtual ~SerDeFunc() {}
   virtual Status Serialize(const Object&, std::string* output) const = 0;
   virtual Status DeSerialize(Object*, const Slice& input) const = 0;

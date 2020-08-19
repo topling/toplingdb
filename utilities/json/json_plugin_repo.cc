@@ -551,16 +551,6 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
   assert(nullptr != db);
   repo.Put(dbname, db);
   *dbp = db;
-  const auto& http_js = repo.m_impl->http_js;
-  if (JsonPluginRepo::DebugLevel() >= 2) {
-    fprintf(stderr, "INFO: http_js = %s\n", http_js.dump().c_str());
-  }
-  if (http_js.is_object()) {
-    repo.m_impl->http.Init(http_js, &repo);
-  }
-  else if (!http_js.is_null()) {
-    fprintf(stderr, "ERROR: bad http_js = %s\n", http_js.dump().c_str());
-  }
 }
 
 template<class DBT>
@@ -681,7 +671,20 @@ Status JsonPluginRepo::OpenDB(DB_MultiCF** db) {
 }
 
 Status JsonPluginRepo::StartHttpServer() try {
-  m_impl->http.Init(m_impl->http_js, this);
+  const auto& http_js = m_impl->http_js;
+  if (JsonPluginRepo::DebugLevel() >= 2) {
+    fprintf(stderr, "INFO: http_js = %s\n", http_js.dump().c_str());
+  }
+  if (http_js.is_object()) {
+    m_impl->http.Init(http_js, this);
+  }
+  else {
+    if (DebugLevel() >= 2) {
+      fprintf(stderr, "ERROR: bad http_js = %s\n", http_js.dump().c_str());
+    }
+    return Status::InvalidArgument(
+        ROCKSDB_FUNC, "bad http_js = " + http_js.dump());
+  }
   return Status::OK();
 }
 catch (const std::exception& ex) {

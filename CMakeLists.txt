@@ -763,6 +763,9 @@ set(SOURCES
         utilities/json/json_builtin_plugin.cc
         utilities/json/json_plugin_repo.cc
         utilities/json/json_table_factory.cc
+        utilities/json/web/json_civetweb.cc
+        utilities/json/web/civetweb.c
+        utilities/json/web/CivetServer.cc
         utilities/leveldb_options/leveldb_options.cc
         utilities/memory/memory_util.cc
         utilities/merge_operators/bytesxor.cc

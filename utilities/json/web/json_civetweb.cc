@@ -76,6 +76,9 @@ public:
     m_clazz = clazz;
     m_ns = m_clazz;
     m_map = map;
+    if (JsonPluginRepo::DebugLevel() >= 2) {
+      fprintf(stderr, "INFO: http: clazz: %s\n", clazz);
+    }
   }
 
 	bool handleGet(CivetServer *server, struct mg_connection *conn) {

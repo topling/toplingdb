@@ -178,6 +178,11 @@ JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
     options.push_back(key);
     options.push_back(value.get<std::string>());
   }
+  if (JsonPluginRepo::DebugLevel() >= 2) {
+    for (const auto& val : options) {
+      fprintf(stderr, "INFO: JsonCivetServer::Impl::Impl(): %s\n", val.c_str());
+    }
+  }
   m_server.reset(new CivetServer(options));
 
   ADD_HANDLER(Cache, cache);

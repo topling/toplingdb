@@ -646,7 +646,8 @@ catch (const Status& s) {
   return Status::InvalidArgument(ROCKSDB_FUNC, s.ToString());
 }
 
-std::shared_ptr<std::unordered_map<std::string, DB_Ptr> > JsonPluginRepo::GetAllDB() const {
+std::shared_ptr<std::unordered_map<std::string, DB_Ptr> >
+JsonPluginRepo::GetAllDB() const {
   return m_impl->db.name2p;
 }
 
@@ -655,16 +656,20 @@ std::shared_ptr<std::unordered_map<std::string, DB_Ptr> > JsonPluginRepo::GetAll
  *                 JsonPluginRepo::OpenDB
  */
 Status JsonPluginRepo::OpenDB(DB** db) {
-  if (m_impl->open_js.is_string() || m_impl->open_js.is_object())
+  const auto& open_js = m_impl->open_js;
+  if (open_js.is_string() || open_js.is_object())
     return OpenDB(m_impl->open_js, db);
   else
-    return Status::InvalidArgument(ROCKSDB_FUNC, "bad json[\"open\"] = " + js.dump());
+    return Status::InvalidArgument(
+        ROCKSDB_FUNC, "bad json[\"open\"] = " + open_js.dump());
 }
 Status JsonPluginRepo::OpenDB(DB_MultiCF** db) {
-  if (m_impl->open_js.is_string() || m_impl->open_js.is_object())
-    return OpenDB(m_impl->open_js, db);
+  const auto& open_js = m_impl->open_js;
+  if (open_js.is_string() || open_js.is_object())
+    return OpenDB(open_js, db);
   else
-    return Status::InvalidArgument(ROCKSDB_FUNC, "bad json[\"open\"] = " + js.dump());
+    return Status::InvalidArgument(
+        ROCKSDB_FUNC, "bad json[\"open\"] = " + open_js.dump());
 }
 
 Status JsonPluginRepo::StartHttpServer() try {

@@ -115,7 +115,7 @@ public:
       std::sort(vec.begin(), vec.end());
       mg_printf(conn, "<html><body><table><tbody>\r\n");
       for (auto& kv : vec) {
-        mg_printf(conn, "<tr><td><a href='%s/%s'>%s</a></td></tr>\r\n",
+        mg_printf(conn, "<tr><td><a href='%s/%s?html=1'>%s</a></td></tr>\r\n",
                   m_ns.data(), kv.first.c_str(), kv.first.c_str());
       }
       mg_printf(conn, "</tbody></table></body></html>\r\n");

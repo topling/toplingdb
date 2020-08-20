@@ -127,7 +127,7 @@ class JsonPluginRepo {
   bool Get(const std::string& name, std::shared_ptr<DBOptions>*) const;
   bool Get(const std::string& name, std::shared_ptr<ColumnFamilyOptions>*) const;
 
-  // The caller should ensure DB handle's life time is longer than JsonPluginRepo
+  // The caller should ensure DB handle is alive
   bool Get(const std::string& name, DB**, Status* = nullptr) const;
   bool Get(const std::string& name, DB_MultiCF**, Status* = nullptr) const;
 

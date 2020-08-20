@@ -222,13 +222,3 @@ inline bool operator==(const DB_Ptr& x, const DB_Ptr& y) {
 inline bool operator!=(const DB_Ptr& x, const DB_Ptr& y) { return !(x == y); }
 
 }  // namespace ROCKSDB_NAMESPACE
-
-namespace std {
-  template<>
-  struct hash<ROCKSDB_NAMESPACE::DB_Ptr> {
-    size_t operator()(const ROCKSDB_NAMESPACE::DB_Ptr& x) const {
-      assert(nullptr != x.db);
-      return size_t(x.db);
-    }
-  };
-}

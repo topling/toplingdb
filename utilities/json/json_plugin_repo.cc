@@ -512,6 +512,9 @@ catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, "bad json object");
 }
 
+inline DB* GetDB(DB* db) { return db; }
+inline DB* GetDB(DB_MultiCF* db) { return db->db; }
+
 template<class DBT>
 static void Impl_OpenDB_tpl(const std::string& dbname,
                             const json& db_open_js,
@@ -536,9 +539,14 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
   if (!dbname.empty()) {
     params_js["name"] = dbname;
   }
+  // will open db by calling acq func such as DB::Open
   auto db = PluginFactory<DBT*>::AcquirePlugin(method, params_js, repo);
   assert(nullptr != db);
   repo.Put(dbname, db);
+  auto& p2name = repo.m_impl->db.p2name;
+  auto  dbiter = p2name.find(GetDB(db));
+  assert(p2name.end() != dbiter);
+  dbiter->second.params["class"] = method; // important!
   *dbp = db;
 }
 

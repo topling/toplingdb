@@ -826,6 +826,9 @@ std::string JsonToHtml(const json& obj) {
     if (val.is_object()) {
       html.append(JsonToHtml(val));
     }
+    else if (val.is_string()) {
+      html.append(val.get<std::string>());
+    }
     else {
       html.append(val.dump());
     }
@@ -846,6 +849,9 @@ std::string JsonToString(const json& obj, const json& options) {
   iter = options.find("indent");
   if (options.end() != iter) {
     indent = JsonWeakInt(iter.value());
+  }
+  if (-1 != indent) {
+    fprintf(stderr, "INFO: JsonToString: indent = %d\n", indent);
   }
   iter = options.find("html");
   bool html = false;

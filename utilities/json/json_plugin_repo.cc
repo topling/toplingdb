@@ -819,10 +819,16 @@ std::string JsonToHtml(const json& obj) {
   html.append("  <tr><th>name</th><th>value</th></tr>\n");
   for (const auto& kv : obj.items()) {
     const std::string& key = kv.key();
+    const auto& val = kv.value();
     html.append("  <tr><td>");
     html.append(key);
     html.append("</td><td>");
-    html.append(kv.value().dump());
+    if (val.is_object()) {
+      html.append(JsonToHtml(val));
+    }
+    else {
+      html.append(val.dump());
+    }
     html.append("</td></tr>\n");
   }
   html.append("</tbody></table>\n");

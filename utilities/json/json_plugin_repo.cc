@@ -835,18 +835,44 @@ bool JsonWeakInt(const json& js) {
   throw std::invalid_argument("JsonWeakBool: bad js = " + js.dump());
 }
 
-std::string JsonToHtml(const json& obj) {
-  std::string html;
+static void JsonToHtml_Object(const json& arr, std::string& html);
+static void JsonToHtml_Array(const json& arr, std::string& html) {
+  size_t cnt = 0;
+  for (const auto& kv : arr.items()) {
+    if (cnt++)
+      html.append("<tr><td>");
+    else
+      html.append("<td>"); // first elem
+
+    const auto& val = kv.value();
+    if (val.is_object())
+      JsonToHtml_Object(val, html);
+    else if (val.is_string())
+      html.append(val.get_ref<const std::string&>());
+    else // nested array also use dump
+      html.append(val.dump());
+
+    html.append("</td></tr>\n");
+  }
+}
+static void JsonToHtml_Object(const json& obj, std::string& html) {
   html.append("<table border=1><tbody>\n");
-  html.append("<tr><th>name</th><th>value</th></tr>\n");
+  //html.append("<tr><th>name</th><th>value</th></tr>\n");
   for (const auto& kv : obj.items()) {
     const std::string& key = kv.key();
     const auto& val = kv.value();
     if (val.is_object()) {
       html.append("<tr><th>");
       html.append(key);
-      html.append("</td><th>\n");
-      html.append(JsonToHtml(val));
+      html.append("</th><td>\n");
+      JsonToHtml_Object(obj, html);
+    }
+    else if (val.is_array()) {
+      char buf[64];
+      html.append(buf, snprintf(buf, sizeof(buf), "<tr><th rowspan=%zd>", val.size()));
+      html.append(key);
+      html.append("</th>\n");
+      JsonToHtml_Array(val, html);
     }
     else {
       html.append("<tr><td>");
@@ -860,6 +886,11 @@ std::string JsonToHtml(const json& obj) {
     html.append("</td></tr>\n");
   }
   html.append("</tbody></table>\n");
+}
+
+std::string JsonToHtml(const json& obj) {
+  std::string html;
+  JsonToHtml_Object(obj, html);
   return html;
 }
 

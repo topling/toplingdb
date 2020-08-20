@@ -114,7 +114,7 @@ static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
 
 template<class Ptr>
 static void Impl_ImportOptions(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
-                   const char* option_class_name,
+                   const std::string& option_class_name,
                    const json& main_js, const JsonPluginRepo& repo) {
   auto iter = main_js.find(option_class_name);
   if (main_js.end() == iter) {
@@ -122,8 +122,7 @@ static void Impl_ImportOptions(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
   }
   if (!iter.value().is_object()) {
     throw Status::InvalidArgument(
-      ROCKSDB_FUNC,
-      string(option_class_name) + " must be a json object");
+        ROCKSDB_FUNC, option_class_name + " must be a json object");
   }
   for (auto& item : iter.value().items()) {
     const string& option_name = item.key();
@@ -461,18 +460,6 @@ bool JsonPluginRepo::Get(const std::string& name, DB_MultiCF** db, Status* s) co
       throw ss;
   }
   return false;
-}
-
-void JsonPluginRepo::GetMap(
-    shared_ptr<unordered_map<string,
-                             shared_ptr<TableFactory>>>* pp) const {
-  *pp = m_impl->table_factory.name2p;
-}
-
-void JsonPluginRepo::GetMap(
-    shared_ptr<unordered_map<string,
-                             shared_ptr<MemTableRepFactory>>>* pp) const {
-  *pp = m_impl->mem_table_rep_factory.name2p;
 }
 
 /**

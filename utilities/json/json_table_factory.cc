@@ -399,7 +399,7 @@ class DispatherTableFactory : public TableFactory {
     return s;
   }
   Status BackPatch() const try {
-    m_repo->GetMap(&m_all);
+    m_all = m_repo->m_impl->table_factory.name2p;
     if (!m_json_obj.is_object()) {
       return Status::InvalidArgument(ROCKSDB_FUNC,
           "DispatherTableFactory options must be object");

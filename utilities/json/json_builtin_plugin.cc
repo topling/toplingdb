@@ -970,6 +970,43 @@ Options JS_Options(const json& js, const JsonPluginRepo& repo, string* name) {
   return Options(db_options, cf_options);
 }
 
+struct DB_Manip : PluginManipFunc<DB> {
+  void Update(DB* db, const json& js,
+              const JsonPluginRepo& repo) const final {
+
+  }
+  std::string ToString(const DB& db, const json& dump_options,
+                       const JsonPluginRepo& repo) const final {
+    auto dbo = static_cast<DBOptions_Json&&>(db.GetDBOptions());
+    json djs;
+    dbo.SaveToJson(djs, repo);
+    return JsonToString(djs, dump_options);
+  }
+};
+static const DB_Manip* JS_DB_Manip(const json&, const JsonPluginRepo&) {
+  static const DB_Manip manip;
+  return &manip;
+}
+
+struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
+  void Update(DB_MultiCF* db, const json& js,
+              const JsonPluginRepo& repo) const final {
+
+  }
+  std::string ToString(const DB_MultiCF& db, const json& dump_options,
+                       const JsonPluginRepo& repo) const final {
+    auto dbo = static_cast<DBOptions_Json&&>(db.db->GetDBOptions());
+    json djs;
+    dbo.SaveToJson(djs, repo);
+    return JsonToString(djs, dump_options);
+  }
+};
+static const DB_MultiCF_Manip*
+JS_DB_MultiCF_Manip(const json&, const JsonPluginRepo&) {
+  static const DB_MultiCF_Manip manip;
+  return &manip;
+}
+
 static
 DB* JS_DB_Open(const json& js, const JsonPluginRepo& repo) {
   std::string name;
@@ -987,6 +1024,7 @@ DB* JS_DB_Open(const json& js, const JsonPluginRepo& repo) {
   return db;
 }
 ROCKSDB_FACTORY_REG("DB::Open", JS_DB_Open);
+ROCKSDB_FACTORY_REG("DB::Open", JS_DB_Manip);
 
 static
 DB* JS_DB_OpenForReadOnly(const json& js, const JsonPluginRepo& repo) {
@@ -1001,6 +1039,7 @@ DB* JS_DB_OpenForReadOnly(const json& js, const JsonPluginRepo& repo) {
   return db;
 }
 ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_OpenForReadOnly);
+ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_Manip);
 
 static
 DB* JS_DB_OpenAsSecondary(const json& js, const JsonPluginRepo& repo) {
@@ -1014,6 +1053,7 @@ DB* JS_DB_OpenAsSecondary(const json& js, const JsonPluginRepo& repo) {
   return db;
 }
 ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_OpenAsSecondary);
+ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_Manip);
 
 std::unique_ptr<DB_MultiCF>
 JS_DB_MultiCF_Options(const json& js, const JsonPluginRepo& repo,
@@ -1074,6 +1114,7 @@ DB_MultiCF* JS_DB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DB::Open", JS_DB_MultiCF_Open);
+ROCKSDB_FACTORY_REG("DB::Open", JS_DB_MultiCF_Manip);
 
 static
 DB_MultiCF*
@@ -1090,6 +1131,7 @@ JS_DB_MultiCF_OpenForReadOnly(const json& js, const JsonPluginRepo& repo) {
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_MultiCF_OpenForReadOnly);
+ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_MultiCF_Manip);
 
 static
 DB_MultiCF*
@@ -1105,6 +1147,7 @@ JS_DB_MultiCF_OpenAsSecondary(const json& js, const JsonPluginRepo& repo) {
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_MultiCF_OpenAsSecondary);
+ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_MultiCF_Manip);
 
 /////////////////////////////////////////////////////////////////////////////
 // DBWithTTL::Open
@@ -1124,6 +1167,7 @@ DB* JS_DBWithTTL_Open(const json& js, const JsonPluginRepo& repo) {
   return db;
 }
 ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DBWithTTL_Open);
+ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DB_Manip);
 
 static
 DB_MultiCF*
@@ -1148,6 +1192,7 @@ JS_DBWithTTL_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DBWithTTL_MultiCF_Open);
+ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DB_MultiCF_Manip);
 
 /////////////////////////////////////////////////////////////////////////////
 // TransactionDB::Open
@@ -1195,6 +1240,7 @@ DB* JS_TransactionDB_Open(const json& js, const JsonPluginRepo& repo) {
   return db;
 }
 ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_TransactionDB_Open);
+ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_DB_Manip);
 
 static
 DB_MultiCF*
@@ -1212,6 +1258,7 @@ JS_TransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   return db.release();
 }
 ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_TransactionDB_MultiCF_Open);
+ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_DB_MultiCF_Manip);
 
 /////////////////////////////////////////////////////////////////////////////
 struct OptimisticTransactionDBOptions_Json: OptimisticTransactionDBOptions {
@@ -1231,6 +1278,8 @@ DB* JS_OccTransactionDB_Open(const json& js, const JsonPluginRepo& repo) {
   return db;
 }
 ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_OccTransactionDB_Open);
+ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_DB_Manip);
+
 static
 DB_MultiCF*
 JS_OccTransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
@@ -1256,6 +1305,7 @@ JS_OccTransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   return db.release();
 }
 ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_OccTransactionDB_MultiCF_Open);
+ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_DB_MultiCF_Manip);
 
 /////////////////////////////////////////////////////////////////////////////
 // BlobDB::Open
@@ -1300,6 +1350,7 @@ DB* JS_BlobDB_Open(const json& js, const JsonPluginRepo& repo) {
   return db;
 }
 ROCKSDB_FACTORY_REG("BlobDB::Open", JS_BlobDB_Open);
+ROCKSDB_FACTORY_REG("BlobDB::Open", JS_DB_Manip);
 
 static
 DB_MultiCF*
@@ -1317,6 +1368,7 @@ JS_BlobDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   return db.release();
 }
 ROCKSDB_FACTORY_REG("BlobDB::Open", JS_BlobDB_MultiCF_Open);
+ROCKSDB_FACTORY_REG("BlobDB::Open", JS_DB_MultiCF_Manip);
 
 } // namespace blob_db
 

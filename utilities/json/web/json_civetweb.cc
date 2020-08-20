@@ -113,7 +113,16 @@ public:
       vec.reserve(m_map->name2p->size());
       vec.assign(m_map->name2p->begin(), m_map->name2p->end());
       std::sort(vec.begin(), vec.end());
-      mg_printf(conn, "<html><body><table><tbody>\r\n");
+      bool use_json = false;
+      if (query.contains("json") && query.get_to(use_json)) {
+        json djs;
+        for (auto& x : vec) {
+          djs.push_back(x.first);
+        }
+        std::string jstr = djs.dump();
+        mg_write(conn, jstr.data(), jstr.size());
+      }
+      mg_printf(conn, "<html><body><table border=1><tbody>\r\n");
       for (auto& kv : vec) {
         mg_printf(conn, "<tr><td><a href='%s/%s?html=1'>%s</a></td></tr>\r\n",
                   m_ns.data(), kv.first.c_str(), kv.first.c_str());

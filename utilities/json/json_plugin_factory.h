@@ -107,14 +107,18 @@ public:
   static bool HasPlugin(const std::string& class_name);
   static bool SamePlugin(const std::string& clazz1, const std::string& clazz2);
 
+  typedef Ptr (*AcqFunc)(const json&,const JsonPluginRepo&);
+  struct Meta {
+    AcqFunc acq;
+    std::string base_class; // chain to base
+  };
   struct Reg {
     Reg(const Reg&) = delete;
     Reg(Reg&&) = delete;
     Reg& operator=(Reg&&) = delete;
     Reg& operator=(const Reg&) = delete;
-    typedef Ptr (*AcqFunc)(const json&,const JsonPluginRepo&);
-    using NameToFuncMap = std::unordered_map<std::string, AcqFunc>;
-    Reg(Slice class_name, AcqFunc acq);
+    using NameToFuncMap = std::unordered_map<std::string, Meta>;
+    Reg(Slice class_name, AcqFunc acq, Slice base_class = "");
     ~Reg();
     typename NameToFuncMap::iterator ipos;
     struct Impl;
@@ -175,9 +179,10 @@ struct PluginFactory<Ptr>::Reg::Impl {
 };
 
 template<class Ptr>
-PluginFactory<Ptr>::Reg::Reg(Slice class_name, AcqFunc acq) {
+PluginFactory<Ptr>::Reg::Reg(Slice class_name, AcqFunc acq, Slice base_class) {
   auto& imp = Impl::s_singleton();
-  auto ib = imp.func_map.insert(std::make_pair(class_name.ToString(), acq));
+  Meta meta{acq, std::string(base_class.data(), base_class.size())};
+  auto ib = imp.func_map.insert(std::make_pair(class_name.ToString(), std::move(meta)));
   if (!ib.second) {
     fprintf(stderr, "FATAL: %s:%d: %s: duplicate class_name = %s\n"
         , __FILE__, __LINE__, ROCKSDB_FUNC, class_name.data());
@@ -203,7 +208,7 @@ AcquirePlugin(const std::string& class_name, const json& js,
   auto& imp = Reg::Impl::s_singleton();
   auto iter = imp.func_map.find(class_name);
   if (imp.func_map.end() != iter) {
-    Ptr ptr = iter->second(js, repo);
+    Ptr ptr = iter->second.acq(js, repo);
     assert(!!ptr);
     return ptr;
   }
@@ -370,7 +375,7 @@ bool PluginFactory<Ptr>::SamePlugin(const std::string& clazz1,
   if (imp.func_map.end() == i2) {
     throw Status::NotFound(ROCKSDB_FUNC, "clazz2 = " + clazz2);
   }
-  return i1->second == i2->second;
+  return i1->second.acq == i2->second.acq;
 }
 
 const json& jsonRefType();

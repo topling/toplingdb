@@ -464,6 +464,8 @@ const JsonPluginRepo& repoRefType();
       inner = __iter->second.params; \
     else \
       inner = "${" + __iter->second.name + "}"; \
+  } else if (1) { \
+      inner = "$<BuiltinDefault>"; \
   } else { \
     fprintf(stderr, \
             "FATAL: %s: can not find name of %s(of %s) by ptr\n", \

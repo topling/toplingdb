@@ -866,6 +866,7 @@ static void JsonToHtml_Object(const json& obj, std::string& html) {
       html.append(key);
       html.append("</th><td>\n");
       JsonToHtml_Object(obj, html);
+      html.append("</td></tr>\n");
     }
     else if (val.is_array()) {
       char buf[64];
@@ -882,8 +883,8 @@ static void JsonToHtml_Object(const json& obj, std::string& html) {
         html.append(val.get_ref<const std::string&>());
       else
         html.append(val.dump());
+      html.append("</td></tr>\n");
     }
-    html.append("</td></tr>\n");
   }
   html.append("</tbody></table>\n");
 }

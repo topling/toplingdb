@@ -816,21 +816,24 @@ bool JsonWeakInt(const json& js) {
 std::string JsonToHtml(const json& obj) {
   std::string html;
   html.append("<table border=1><tbody>\n");
-  html.append("  <tr><th>name</th><th>value</th></tr>\n");
+  html.append("<tr><th>name</th><th>value</th></tr>\n");
   for (const auto& kv : obj.items()) {
     const std::string& key = kv.key();
     const auto& val = kv.value();
-    html.append("  <tr><td>");
-    html.append(key);
-    html.append("</td><td>");
     if (val.is_object()) {
+      html.append("<tr><th>");
+      html.append(key);
+      html.append("</td><th>\n");
       html.append(JsonToHtml(val));
     }
-    else if (val.is_string()) {
-      html.append(val.get_ref<const std::string&>());
-    }
     else {
-      html.append(val.dump());
+      html.append("<tr><td>");
+      html.append(key);
+      html.append("</td><td>");
+      if (val.is_string())
+        html.append(val.get_ref<const std::string&>());
+      else
+        html.append(val.dump());
     }
     html.append("</td></tr>\n");
   }

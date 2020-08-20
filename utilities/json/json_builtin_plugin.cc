@@ -49,7 +49,7 @@ ROCKSDB_FACTORY_REG("Posix", DefaultFileSystemForJson);
 ROCKSDB_FACTORY_REG("default", DefaultFileSystemForJson);
 ROCKSDB_FACTORY_REG("Default", DefaultFileSystemForJson);
 
-json DbPathToJson(const DbPath& x) {
+static json DbPathToJson(const DbPath& x) {
   if (0 == x.target_size)
     return json{x.path};
   else
@@ -69,8 +69,7 @@ static DbPath DbPathFromJson(const json& js) {
   return x;
 }
 
-static void Json_DbPathVec(const json& js,
-                           std::vector<DbPath>& db_paths) {
+static void Json_DbPathVec(const json& js, std::vector<DbPath>& db_paths) {
   db_paths.clear();
   if (js.is_string() || js.is_object()) {
     // only one path

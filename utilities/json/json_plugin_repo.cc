@@ -358,8 +358,12 @@ Impl_Put(const std::string& name, Map& map, const Ptr& p) {
   auto& name2p = *map.name2p;
   if (p) { // put
     auto ib = name2p.emplace(name, p);
-    if (!ib.second)
+    if (!ib.second) {
+      map.p2name.erase(GetRawPtr(ib.first->second));
       ib.first->second = p; // overwrite
+    }
+    map.p2name[GetRawPtr(ib.first->second)] =
+        { name, json::object({"manual", true}) };
   }
   else { // p is null, do delete
     auto iter = name2p.find(name);
@@ -539,14 +543,24 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
   if (!dbname.empty()) {
     params_js["name"] = dbname;
   }
+  auto& dbmap = repo.m_impl->db;
+  auto ib = dbmap.name2p->emplace(dbname, DB_Ptr(nullptr));
+  if (!ib.second) {
+    throw Status::InvalidArgument(ROCKSDB_FUNC, "dup dbname = " + dbname);
+  }
   // will open db by calling acq func such as DB::Open
   auto db = PluginFactory<DBT*>::AcquirePlugin(method, params_js, repo);
   assert(nullptr != db);
-  repo.Put(dbname, db);
-  auto& p2name = repo.m_impl->db.p2name;
-  auto  dbiter = p2name.find(GetDB(db));
-  assert(p2name.end() != dbiter);
-  dbiter->second.params["class"] = method; // important!
+  ib.first->second = DB_Ptr(db);
+  auto ib2 = dbmap.p2name.emplace(GetDB(db),
+    decltype(dbmap.p2name.end()->second) {
+      dbname,
+      json::object({
+        { "class", method }, // "method" is used as "class"
+        { "params", std::move(params_js) }
+      })
+    });
+  assert(ib2.second);
   *dbp = db;
 }
 

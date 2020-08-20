@@ -494,7 +494,7 @@ class DispatherTableFactory : public TableFactory {
           return Status::InvalidArgument(ROCKSDB_FUNC,
               "facname = \"" + facname + "\" is not a plugin");
         }
-        const std::string& varname = item.value().get<std::string>();
+        const std::string& varname = item.value().get_ref<const std::string&>();
         // facname is the param 'varname' for GetPlugin
         auto p = PluginFactorySP<TableFactory>::GetPlugin(
             facname.c_str(), ROCKSDB_FUNC, item.value(), *m_repo);

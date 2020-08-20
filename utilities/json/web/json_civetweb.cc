@@ -188,7 +188,7 @@ JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
         "conf[\"" + key + "\"] must be a string, but is: " + value.dump());
     }
     options.push_back(key);
-    options.push_back(value.get<std::string>());
+    options.push_back(value.get_ref<const std::string&>());
   }
   if (JsonPluginRepo::DebugLevel() >= 2) {
     for (const auto& val : options) {

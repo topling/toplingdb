@@ -920,7 +920,7 @@ Ptr ObtainOPT(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
               const char* option_class, // "DBOptions" or "CFOptions"
               const json& option_js, const JsonPluginRepo& repo) {
   if (option_js.is_string()) {
-    const std::string& option_name = option_js.get<std::string>();
+    const std::string& option_name = option_js.get_ref<const std::string&>();
     auto iter = field.name2p->find(option_name);
     if (field.name2p->end() == iter) {
         throw Status::NotFound(
@@ -946,7 +946,7 @@ Options JS_Options(const json& js, const JsonPluginRepo& repo, string* name) {
   if (js.end() == iter) {
     throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
   }
-  *name = iter.value().get<std::string>();
+  *name = iter.value().get_ref<const std::string&>();
   iter = js.find("options");
   if (js.end() == iter) {
     iter = js.find("db_options");
@@ -1028,7 +1028,7 @@ JS_DB_MultiCF_Options(const json& js, const JsonPluginRepo& repo,
   if (js.end() == iter) {
     throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
   }
-  *name = iter.value().get<std::string>();
+  *name = iter.value().get_ref<const std::string&>();
   iter = js.find("column_families");
   if (js.end() == iter) {
     throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"column_families\"");

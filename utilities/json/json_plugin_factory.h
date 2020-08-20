@@ -221,7 +221,7 @@ PluginFactory<Ptr>::
 GetPlugin(const char* varname, const char* func_name,
           const json& js, const JsonPluginRepo& repo) {
   if (js.is_string()) {
-    const std::string& str_val = js.get<std::string>();
+    const std::string& str_val = js.get_ref<const std::string&>();
     if (str_val.empty()) {
       throw Status::InvalidArgument(
           func_name, std::string(varname) + " inst_id/class_name is empty");
@@ -267,7 +267,7 @@ PluginFactory<Ptr>::
 ObtainPlugin(const char* varname, const char* func_name,
              const json& js, const JsonPluginRepo& repo) {
   if (js.is_string()) {
-    const std::string& str_val = js.get<std::string>();
+    const std::string& str_val = js.get_ref<const std::string&>();
     if (str_val.empty()) {
       throw Status::InvalidArgument(func_name, std::string(varname) +
                " inst_id/class_name is empty");
@@ -308,7 +308,7 @@ ObtainPlugin(const char* varname, const char* func_name,
     if (!iter.value().is_string()) {
         throw std::invalid_argument(std::string(ROCKSDB_FUNC) + ": sub obj class must be string");
     }
-    const std::string& clazz_name = iter.value().get<std::string>();
+    const std::string& clazz_name = iter.value().get_ref<const std::string&>();
     const json& params = js.at("params");
     return AcquirePlugin(clazz_name, params, repo);
   }
@@ -321,7 +321,7 @@ Ptr
 PluginFactory<Ptr>::
 AcquirePlugin(const json& js, const JsonPluginRepo& repo) {
   if (js.is_string()) {
-    const std::string& str_val = js.get<std::string>();
+    const std::string& str_val = js.get_ref<const std::string&>();
     if (str_val.empty()) {
       throw Status::InvalidArgument(ROCKSDB_FUNC, "jstr class_name is empty");
     }
@@ -339,7 +339,7 @@ AcquirePlugin(const json& js, const JsonPluginRepo& repo) {
     if (!iter.value().is_string()) {
       throw Status::InvalidArgument(ROCKSDB_FUNC, "js[\"class\"] must be string");
     }
-    const std::string& clazz_name = iter.value().get<std::string>();
+    const std::string& clazz_name = iter.value().get_ref<const std::string&>();
     const json& params = js.at("params");
     return AcquirePlugin(clazz_name, params, repo);
   }
@@ -413,7 +413,7 @@ const JsonPluginRepo& repoRefType();
       if (!__iter.value().is_string())       \
         throw Status::InvalidArgument(       \
           ROCKSDB_FUNC, "enum \"" #prop "\" must be json string"); \
-      const std::string& val = __iter.value().get<std::string>(); \
+      const std::string& val = __iter.value().get_ref<const std::string&>(); \
       if (!enum_value(val, &prop)) \
         throw Status::InvalidArgument( \
             ROCKSDB_FUNC, "bad " #prop "=" + val); \

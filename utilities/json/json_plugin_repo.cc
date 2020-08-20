@@ -41,7 +41,7 @@ static T* RepoPtrCref(const JsonPluginRepo::Impl::ObjMap<T*>&);
 
 std::string JsonGetClassName(const char* caller, const json& js) {
   if (js.is_string()) {
-    return js.get<std::string>();
+    return js.get_ref<const std::string&>();
   }
   if (js.is_object()) {
     auto iter = js.find("class");
@@ -49,7 +49,7 @@ std::string JsonGetClassName(const char* caller, const json& js) {
       if (!iter.value().is_string())
         throw Status::InvalidArgument(caller,
           "json[\"class\"] must be string, but is: " + js.dump());
-      return iter.value().get<std::string>();
+      return iter.value().get_ref<const std::string&>();
     }
     throw Status::InvalidArgument(caller,
       "json missing sub obj \"class\": " + js.dump());
@@ -230,7 +230,7 @@ static void JS_setenv(const nlohmann::json& main_js) {
       fprintf(stderr, "JS_setenv: %s = %s\n", name.c_str(), valstr.c_str());
     }
     if (val.is_string()) {
-      ::setenv(name.c_str(), val.get<std::string>().c_str(), true);
+      ::setenv(name.c_str(), val.get_ref<const std::string&>().c_str(), true);
     }
     else if (val.is_boolean()) {
       ::setenv(name.c_str(), val.get<bool>() ? "1" : "0", true);
@@ -554,7 +554,7 @@ Status JsonPluginRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
       Impl_OpenDB_tpl(dbname, iter.value(), *this, dbp);
   };
   if (js.is_string()) {
-    const std::string& str_val = js.get<std::string>();
+    const std::string& str_val = js.get_ref<const std::string&>();
     if (str_val.empty()) {
       return Status::InvalidArgument(ROCKSDB_FUNC,
         "open js:string = \"" + str_val + "\" is empty");
@@ -710,7 +710,7 @@ ParseSizeXiB::ParseSizeXiB(const nlohmann::json& js) {
   else if (js.is_number_unsigned())
     m_val = js.get<unsigned long long>();
   else if (js.is_string())
-    *this = ParseSizeXiB(js.get<std::string>());
+    *this = ParseSizeXiB(js.get_ref<const std::string&>());
   else
     throw std::invalid_argument("bad json = " + js.dump());
 }
@@ -727,7 +727,7 @@ ParseSizeXiB::ParseSizeXiB(const nlohmann::json& js, const char* key) {
       else if (sub_js.is_number_unsigned())
         m_val = sub_js.get<unsigned long long>();
       else if (sub_js.is_string())
-        *this = ParseSizeXiB(sub_js.get<std::string>());
+        *this = ParseSizeXiB(sub_js.get_ref<const std::string&>());
       else
         throw std::invalid_argument(
                 "bad sub_js = " + sub_js.dump() + ", key = \"" + key + "\"");
@@ -784,7 +784,7 @@ int JsonPluginRepo::DebugLevel() {
 
 bool JsonWeakBool(const json& js) {
   if (js.is_string()) {
-    const std::string& s = js.get<std::string>();
+    const std::string& s = js.get_ref<const std::string&>();
     if (strcasecmp(s.c_str(), "true") == 0) return true;
     if (strcasecmp(s.c_str(), "false") == 0) return false;
     if (strcasecmp(s.c_str(), "on") == 0) return true;
@@ -803,7 +803,7 @@ bool JsonWeakBool(const json& js) {
 
 bool JsonWeakInt(const json& js) {
   if (js.is_string()) {
-    const std::string& s = js.get<std::string>();
+    const std::string& s = js.get_ref<const std::string&>();
     if (isdigit((unsigned char)s[0])) {
       return atoi(s.c_str());
     }
@@ -827,7 +827,7 @@ std::string JsonToHtml(const json& obj) {
       html.append(JsonToHtml(val));
     }
     else if (val.is_string()) {
-      html.append(val.get<std::string>());
+      html.append(val.get_ref<const std::string&>());
     }
     else {
       html.append(val.dump());

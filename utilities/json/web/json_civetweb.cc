@@ -127,8 +127,16 @@ public:
     auto iter = m_map->name2p->find(name);
     if (m_map->name2p->end() != iter) {
       auto& p = iter->second;
-      std::string str = PluginToString(p, *m_map, query, *m_repo);
-      mg_write(conn, str.data(), str.size());
+      try {
+        std::string str = PluginToString(p, *m_map, query, *m_repo);
+        mg_write(conn, str.data(), str.size());
+      }
+      catch (const Status& es) {
+        mg_printf(conn, "Caught Status: %s\n", es.ToString().c_str());
+      }
+      catch (const std::exception& ex) {
+        mg_printf(conn, "Caught std::exception: %s\n", ex.what());
+      }
     }
     else {
       mg_printf(conn, "<html><body>\r\n");

@@ -57,6 +57,7 @@ json from_query_string(const char* qry) {
       assert(false);
       abort();
     }
+    qry = sep + 1;
   }
   return js;
 }

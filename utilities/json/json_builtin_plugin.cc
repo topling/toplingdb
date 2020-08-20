@@ -983,7 +983,8 @@ struct DB_Manip : PluginManipFunc<DB> {
     return JsonToString(djs, dump_options);
   }
 };
-static const DB_Manip* JS_DB_Manip(const json&, const JsonPluginRepo&) {
+static const PluginManipFunc<DB>*
+JS_DB_Manip(const json&, const JsonPluginRepo&) {
   static const DB_Manip manip;
   return &manip;
 }
@@ -1001,7 +1002,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     return JsonToString(djs, dump_options);
   }
 };
-static const DB_MultiCF_Manip*
+static const PluginManipFunc<DB_MultiCF>*
 JS_DB_MultiCF_Manip(const json&, const JsonPluginRepo&) {
   static const DB_MultiCF_Manip manip;
   return &manip;

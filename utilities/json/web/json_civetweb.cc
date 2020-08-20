@@ -89,9 +89,9 @@ public:
 
 		const mg_request_info* req = mg_get_request_info(conn);
     json query = from_query_string(req->query_string);
-    if (JsonPluginRepo::DebugLevel() >= 2) {
-      fprintf(stderr, "INFO: query = %s\n", query.dump().c_str());
-    }
+//    if (JsonPluginRepo::DebugLevel() >= 2) {
+//      fprintf(stderr, "INFO: query = %s\n", query.dump().c_str());
+//    }
     const char* uri = req->local_uri;
     if (nullptr == uri) {
       mg_printf(conn, "ERROR: local uri is null\r\n");

@@ -941,7 +941,7 @@ JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname) {
   link.append(mapname, maplen);
   link.push_back('/');
   link.append(varname);
-  link.append("'>${");
+  link.append("?html=1'>${");
   link.append(varname);
   link.append("}</a>");
   return link;

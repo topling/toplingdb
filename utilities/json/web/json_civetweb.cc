@@ -171,6 +171,7 @@ NewRepoHandler(const char* clazz, JsonPluginRepo* repo,
 #define ADD_HANDLER(clazz, varname) do { \
   auto p = NewRepoHandler(#clazz, repo, &repo->m_impl->varname); \
   m_server->addHandler("/" #clazz, *p);  \
+  m_server->addHandler("/" #varname, *p);  \
   m_clean.push_back([p](){ delete p; }); \
 } while (0)                             \
 
@@ -180,6 +181,11 @@ public:
   std::vector<std::function<void()> > m_clean;
 
   Impl(const json& conf, JsonPluginRepo* repo);
+  ~Impl() {
+    for (auto& clean: m_clean) {
+      clean();
+    }
+  }
 };
 
 JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
@@ -232,7 +238,9 @@ JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
   ADD_HANDLER(Options, options);
   ADD_HANDLER(DBOptions, db_options);
   ADD_HANDLER(ColumnFamilyOptions, cf_options);
-  ADD_HANDLER(DB_Ptr, db);
+
+  using DataBase = DB_Ptr;
+  ADD_HANDLER(DataBase, db);
 }
 
 void JsonCivetServer::Init(const json& conf, JsonPluginRepo* repo) {

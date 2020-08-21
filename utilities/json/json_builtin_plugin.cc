@@ -1026,7 +1026,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     auto dbo = static_cast<DBOptions_Json&&>(db.db->GetDBOptions());
     const auto& dbmap = repo.m_impl->db;
     const std::string& dbname = db.db->GetName();
-    auto i1 = dbmap.p2name.find((DB*)&db);
+    auto i1 = dbmap.p2name.find(db.db);
     if (dbmap.p2name.end() == i1) {
       THROW_NotFound("db ptr is not registered in repo, dbname = " + dbname);
     }

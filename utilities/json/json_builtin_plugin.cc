@@ -1053,9 +1053,10 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     auto& result_cfo_js = djs["CFOptions"];
     for (size_t i = 0; i < db.cf_handles.size(); ++i) {
       ColumnFamilyHandle* cf = db.cf_handles[i];
-      const std::string& cf_name = db.cf_descriptors[i].name;
-      Options opt = db.db->GetOptions(cf);
-      auto cfo = static_cast<CFOptions_Json&>(static_cast<CFOptions&>(opt));
+      ColumnFamilyDescriptor cfd;
+      cf->GetDescriptor(&cfd);
+      const std::string& cf_name = cfd.name;
+      auto cfo = static_cast<CFOptions_Json&>(static_cast<CFOptions&>(cfd.options));
       if (def_cfo_js.end() == (ijs = def_cfo_js.find(cf_name))) {
         THROW_Corruption(dbname + ".params.column_families." + cf_name + " is missing");
       }
@@ -1140,6 +1141,7 @@ ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_Manip);
 std::unique_ptr<DB_MultiCF>
 JS_DB_MultiCF_Options(const json& js, const JsonPluginRepo& repo,
                       std::shared_ptr<DBOptions>* db_options,
+                      std::vector<ColumnFamilyDescriptor>* cf_descriptors,
                       std::string* name,
                       std::function<void(const json&)> parse_extra = nullptr) {
   if (!js.is_object()) {
@@ -1170,9 +1172,9 @@ JS_DB_MultiCF_Options(const json& js, const JsonPluginRepo& repo,
     if (parse_extra) {
       parse_extra(cf_js);
     }
-    db->cf_descriptors.push_back({cf_name, *cf_options});
+    cf_descriptors->push_back({cf_name, *cf_options});
   }
-  if (db->cf_descriptors.empty()) {
+  if (cf_descriptors->empty()) {
     THROW_InvalidArgument("param \"column_families\" is empty");
   }
   return db;
@@ -1181,16 +1183,17 @@ JS_DB_MultiCF_Options(const json& js, const JsonPluginRepo& repo,
 static
 DB_MultiCF* JS_DB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   shared_ptr<DBOptions> db_opt;
+  std::vector<ColumnFamilyDescriptor> cfdvec;
   string name;
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name);
   bool read_only = false; // default false
   ROCKSDB_JSON_OPT_PROP(js, read_only);
   Status s;
   if (read_only)
     s = DB::OpenForReadOnly(
-                 *db_opt, name, db->cf_descriptors, &db->cf_handles, &db->db);
+                 *db_opt, name, cfdvec, &db->cf_handles, &db->db);
   else
-    s = DB::Open(*db_opt, name, db->cf_descriptors, &db->cf_handles, &db->db);
+    s = DB::Open(*db_opt, name, cfdvec, &db->cf_handles, &db->db);
   if (!s.ok())
     throw s;
   return db.release();
@@ -1202,11 +1205,12 @@ static
 DB_MultiCF*
 JS_DB_MultiCF_OpenForReadOnly(const json& js, const JsonPluginRepo& repo) {
   shared_ptr<DBOptions> db_opt;
+  std::vector<ColumnFamilyDescriptor> cfdvec;
   string name;
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name);
   bool error_if_log_file_exist = false; // default is false
   ROCKSDB_JSON_OPT_PROP(js, error_if_log_file_exist);
-  Status s = DB::OpenForReadOnly(*db_opt, name, db->cf_descriptors, &db->cf_handles,
+  Status s = DB::OpenForReadOnly(*db_opt, name, cfdvec, &db->cf_handles,
                            &db->db, error_if_log_file_exist);
   if (!s.ok())
     throw s;
@@ -1219,10 +1223,11 @@ static
 DB_MultiCF*
 JS_DB_MultiCF_OpenAsSecondary(const json& js, const JsonPluginRepo& repo) {
   shared_ptr<DBOptions> db_opt;
+  std::vector<ColumnFamilyDescriptor> cfdvec;
   std::string name, secondary_path;
   ROCKSDB_JSON_REQ_PROP(js, secondary_path);
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
-  Status s = DB::OpenAsSecondary(*db_opt, name, secondary_path, db->cf_descriptors,
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name);
+  Status s = DB::OpenAsSecondary(*db_opt, name, secondary_path, cfdvec,
                            &db->cf_handles, &db->db);
   if (!s.ok())
     throw s;
@@ -1255,6 +1260,7 @@ static
 DB_MultiCF*
 JS_DBWithTTL_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   shared_ptr<DBOptions> db_opt;
+  std::vector<ColumnFamilyDescriptor> cfdvec;
   std::string name;
   std::vector<int32_t> ttls;
   bool read_only = false;
@@ -1264,9 +1270,9 @@ JS_DBWithTTL_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
     ROCKSDB_JSON_REQ_PROP(cf_js, ttl);
     ttls.push_back(ttl);
   };
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name, parse_ttl);
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name, parse_ttl);
   DBWithTTL* dbptr = nullptr;
-  Status s = DBWithTTL::Open(*db_opt, name, db->cf_descriptors,
+  Status s = DBWithTTL::Open(*db_opt, name, cfdvec,
                        &db->cf_handles, &dbptr, ttls, read_only);
   if (!s.ok())
     throw s;
@@ -1328,11 +1334,12 @@ static
 DB_MultiCF*
 JS_TransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   shared_ptr<DBOptions> db_opt;
+  std::vector<ColumnFamilyDescriptor> cfdvec;
   std::string name;
   TransactionDBOptions trx_db_options(JS_TransactionDBOptions(js, repo));
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name);
   TransactionDB* dbptr = nullptr;
-  Status s = TransactionDB::Open(*db_opt, trx_db_options, name, db->cf_descriptors,
+  Status s = TransactionDB::Open(*db_opt, trx_db_options, name, cfdvec,
                            &db->cf_handles, &dbptr);
   if (!s.ok())
     throw s;
@@ -1366,20 +1373,21 @@ static
 DB_MultiCF*
 JS_OccTransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   shared_ptr<DBOptions> db_opt;
+  std::vector<ColumnFamilyDescriptor> cfdvec;
   std::string name;
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name);
   OptimisticTransactionDB* dbptr = nullptr;
   auto iter = js.find("occ_options");
   if (js.end() == iter) {
     Status s = OptimisticTransactionDB::Open(
-        *db_opt, name, db->cf_descriptors, &db->cf_handles, &dbptr);
+        *db_opt, name, cfdvec, &db->cf_handles, &dbptr);
     if (!s.ok())
       throw s;
   }
   else {
     Status s = OptimisticTransactionDB::Open(
         *db_opt, OptimisticTransactionDBOptions_Json(iter.value(), repo),
-        name, db->cf_descriptors, &db->cf_handles, &dbptr);
+        name, cfdvec, &db->cf_handles, &dbptr);
     if (!s.ok())
       throw s;
   }
@@ -1437,11 +1445,12 @@ static
 DB_MultiCF*
 JS_BlobDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   shared_ptr<DBOptions> db_opt;
+  std::vector<ColumnFamilyDescriptor> cfdvec;
   std::string name;
   BlobDBOptions bdb_options(JS_BlobDBOptions(js, repo));
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &name);
+  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name);
   BlobDB* dbptr = nullptr;
-  Status s = BlobDB::Open(*db_opt, bdb_options, name, db->cf_descriptors,
+  Status s = BlobDB::Open(*db_opt, bdb_options, name, cfdvec,
                     &db->cf_handles, &dbptr);
   if (!s.ok())
     throw s;

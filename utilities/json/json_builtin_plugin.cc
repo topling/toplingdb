@@ -1196,6 +1196,8 @@ DB_MultiCF* JS_DB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
     s = DB::Open(*db_opt, name, cfdvec, &db->cf_handles, &db->db);
   if (!s.ok())
     throw s;
+  if (db->cf_handles.size() != cfdvec.size())
+    THROW_Corruption("cf_handles.size() != cfdvec.size()");
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DB::Open", JS_DB_MultiCF_Open);
@@ -1214,6 +1216,8 @@ JS_DB_MultiCF_OpenForReadOnly(const json& js, const JsonPluginRepo& repo) {
                            &db->db, error_if_log_file_exist);
   if (!s.ok())
     throw s;
+  if (db->cf_handles.size() != cfdvec.size())
+    THROW_Corruption("cf_handles.size() != cfdvec.size()");
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_MultiCF_OpenForReadOnly);
@@ -1231,6 +1235,8 @@ JS_DB_MultiCF_OpenAsSecondary(const json& js, const JsonPluginRepo& repo) {
                            &db->cf_handles, &db->db);
   if (!s.ok())
     throw s;
+  if (db->cf_handles.size() != cfdvec.size())
+    THROW_Corruption("cf_handles.size() != cfdvec.size()");
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_MultiCF_OpenAsSecondary);
@@ -1276,6 +1282,8 @@ JS_DBWithTTL_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
                        &db->cf_handles, &dbptr, ttls, read_only);
   if (!s.ok())
     throw s;
+  if (db->cf_handles.size() != cfdvec.size())
+    THROW_Corruption("cf_handles.size() != cfdvec.size()");
   db->db = dbptr;
   return db.release();
 }
@@ -1343,6 +1351,8 @@ JS_TransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
                            &db->cf_handles, &dbptr);
   if (!s.ok())
     throw s;
+  if (db->cf_handles.size() != cfdvec.size())
+    THROW_Corruption("cf_handles.size() != cfdvec.size()");
   db->db = dbptr;
   return db.release();
 }
@@ -1391,6 +1401,8 @@ JS_OccTransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
     if (!s.ok())
       throw s;
   }
+  if (db->cf_handles.size() != cfdvec.size())
+    THROW_Corruption("cf_handles.size() != cfdvec.size()");
   db->db = dbptr;
   return db.release();
 }
@@ -1454,6 +1466,8 @@ JS_BlobDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
                     &db->cf_handles, &dbptr);
   if (!s.ok())
     throw s;
+  if (db->cf_handles.size() != cfdvec.size())
+    THROW_Corruption("cf_handles.size() != cfdvec.size()");
   db->db = dbptr;
   return db.release();
 }

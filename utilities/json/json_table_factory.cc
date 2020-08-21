@@ -23,6 +23,9 @@ ROCKSDB_FACTORY_REG("BloomFilter", NewBloomFilterPolicyJson);
 
 struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
   BlockBasedTableOptions_Json(const json& js, const JsonPluginRepo& repo) {
+    Update(js, repo);
+  }
+  void Update(const json& js, const JsonPluginRepo& repo) {
     ROCKSDB_JSON_OPT_FACT(js, flush_block_policy_factory);
     ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks);
     ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks_with_high_priority);
@@ -54,6 +57,48 @@ struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
     ROCKSDB_JSON_OPT_FACT(js, block_cache_compressed);
     ROCKSDB_JSON_OPT_FACT(js, persistent_cache);
     ROCKSDB_JSON_OPT_FACT(js, filter_policy);
+  }
+
+  json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
+    bool html = JsonWeakBool(dump_options, "html");
+    json js;
+    ROCKSDB_JSON_SET_FACT(js, flush_block_policy_factory);
+    ROCKSDB_JSON_SET_PROP(js, cache_index_and_filter_blocks);
+    ROCKSDB_JSON_SET_PROP(js, cache_index_and_filter_blocks_with_high_priority);
+    ROCKSDB_JSON_SET_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
+    ROCKSDB_JSON_SET_PROP(js, pin_top_level_index_and_filter);
+    ROCKSDB_JSON_SET_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
+    ROCKSDB_JSON_SET_ENUM(js, index_type);
+    ROCKSDB_JSON_SET_ENUM(js, data_block_index_type);
+    ROCKSDB_JSON_SET_ENUM(js, index_shortening);
+    ROCKSDB_JSON_SET_ENUM(js, data_block_index_type);
+    ROCKSDB_JSON_SET_PROP(js, data_block_hash_table_util_ratio);
+    ROCKSDB_JSON_SET_PROP(js, hash_index_allow_collision);
+    ROCKSDB_JSON_SET_ENUM(js, checksum);
+    ROCKSDB_JSON_SET_PROP(js, no_block_cache);
+    ROCKSDB_JSON_SET_SIZE(js, block_size);
+    ROCKSDB_JSON_SET_PROP(js, block_size_deviation);
+    ROCKSDB_JSON_SET_PROP(js, block_restart_interval);
+    ROCKSDB_JSON_SET_PROP(js, index_block_restart_interval);
+    ROCKSDB_JSON_SET_SIZE(js, metadata_block_size);
+    ROCKSDB_JSON_SET_PROP(js, partition_filters);
+    ROCKSDB_JSON_SET_PROP(js, use_delta_encoding);
+    ROCKSDB_JSON_SET_PROP(js, read_amp_bytes_per_bit);
+    ROCKSDB_JSON_SET_PROP(js, whole_key_filtering);
+    ROCKSDB_JSON_SET_PROP(js, verify_compression);
+    ROCKSDB_JSON_SET_PROP(js, format_version);
+    ROCKSDB_JSON_SET_PROP(js, enable_index_compression);
+    ROCKSDB_JSON_SET_PROP(js, block_align);
+    ROCKSDB_JSON_SET_FACX(js, block_cache, cache);
+    ROCKSDB_JSON_SET_FACX(js, block_cache_compressed, cache);
+    ROCKSDB_JSON_SET_FACT(js, persistent_cache);
+    ROCKSDB_JSON_SET_FACT(js, filter_policy);
+    return js;
+  }
+  std::string ToJsonStr(const json& dump_options,
+                        const JsonPluginRepo& repo) const {
+    auto js = ToJsonObj(dump_options, repo);
+    return JsonToString(js, dump_options);
   }
 };
 
@@ -194,6 +239,35 @@ NewBlockBasedTableFactoryFromJson(const json& js, const JsonPluginRepo& repo) {
   return std::make_shared<BlockBasedTableFactory>(_table_options);
 }
 ROCKSDB_FACTORY_REG("BlockBasedTable", NewBlockBasedTableFactoryFromJson);
+
+struct BlockBasedTableFactory_Manip : PluginManipFunc<TableFactory> {
+  void Update(TableFactory* p, const json& js,
+              const JsonPluginRepo& repo) const final {
+    if (auto t = dynamic_cast<BlockBasedTableFactory*>(p)) {
+      return;
+    }
+    std::string name = p->Name();
+    THROW_InvalidArgument("Is not DispatherTable, but is: " + name);
+  }
+  std::string ToString(const TableFactory& fac, const json& dump_options,
+                       const JsonPluginRepo& repo) const final {
+    if (auto t = dynamic_cast<const BlockBasedTableFactory*>(&fac)) {
+      auto o = static_cast<const BlockBasedTableOptions_Json&>(t->table_options());
+      return o.ToJsonStr(dump_options, repo);
+    }
+    std::string name = fac.Name();
+    THROW_InvalidArgument("Is not TerarkZipTable, but is: " + name);
+  }
+};
+
+static const PluginManipFunc<TableFactory>*
+JS_BlockBasedTableFactoryManip(const json&, const JsonPluginRepo&) {
+  static const BlockBasedTableFactory_Manip manip;
+  return &manip;
+}
+ROCKSDB_FACTORY_REG("Dispath", JS_BlockBasedTableFactoryManip);
+ROCKSDB_FACTORY_REG("Dispather", JS_BlockBasedTableFactoryManip);
+ROCKSDB_FACTORY_REG("DispatherTable", JS_BlockBasedTableFactoryManip);
 
 ////////////////////////////////////////////////////////////////////////////
 struct PlainTableOptions_Json : PlainTableOptions {

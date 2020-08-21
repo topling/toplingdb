@@ -447,6 +447,7 @@ const JsonPluginRepo& repoRefType();
       ROCKSDB_JSON_OPT_FACT_INNER(__iter.value(), prop); \
   }} while (0)
 
+#define ROCKSDB_JSON_SET_SIZE(js, prop) js[#prop] = prop
 #define ROCKSDB_JSON_SET_PROP(js, prop) js[#prop] = prop
 #define ROCKSDB_JSON_SET_ENUM(js, prop) js[#prop] = enum_stdstr(prop)
 #define ROCKSDB_JSON_SET_NEST(js, prop) \

@@ -239,6 +239,7 @@ NewBlockBasedTableFactoryFromJson(const json& js, const JsonPluginRepo& repo) {
   return std::make_shared<BlockBasedTableFactory>(_table_options);
 }
 ROCKSDB_FACTORY_REG("BlockBasedTable", NewBlockBasedTableFactoryFromJson);
+ROCKSDB_FACTORY_REG("BlockBased", NewBlockBasedTableFactoryFromJson);
 
 struct BlockBasedTableFactory_Manip : PluginManipFunc<TableFactory> {
   void Update(TableFactory* p, const json& js,
@@ -268,9 +269,8 @@ JS_BlockBasedTableFactoryManip(const json&, const JsonPluginRepo&) {
   static const BlockBasedTableFactory_Manip manip;
   return &manip;
 }
-ROCKSDB_FACTORY_REG("Dispath", JS_BlockBasedTableFactoryManip);
-ROCKSDB_FACTORY_REG("Dispather", JS_BlockBasedTableFactoryManip);
-ROCKSDB_FACTORY_REG("DispatherTable", JS_BlockBasedTableFactoryManip);
+ROCKSDB_FACTORY_REG("BlockBased", JS_BlockBasedTableFactoryManip);
+ROCKSDB_FACTORY_REG("BlockBasedTable", JS_BlockBasedTableFactoryManip);
 
 ////////////////////////////////////////////////////////////////////////////
 struct PlainTableOptions_Json : PlainTableOptions {

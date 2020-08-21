@@ -642,6 +642,10 @@ class DispatherTableFactory : public TableFactory {
     return JsonToString(js, dump_options);
   }
 
+  void UpdateOptions(const json& js, const JsonPluginRepo& repo) {
+
+  }
+
   mutable std::vector<std::shared_ptr<TableFactory> > m_level_writers;
   mutable std::shared_ptr<TableFactory> m_default_writer;
   mutable std::shared_ptr<std::unordered_map<std::string,
@@ -666,6 +670,7 @@ struct DispatcherTableFactory_Manip : PluginManipFunc<TableFactory> {
   void Update(TableFactory* p, const json& js,
               const JsonPluginRepo& repo) const final {
     if (auto t = dynamic_cast<DispatherTableFactory*>(p)) {
+      t->UpdateOptions(js, repo);
       return;
     }
     std::string name = p->Name();

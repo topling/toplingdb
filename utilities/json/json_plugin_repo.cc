@@ -911,7 +911,8 @@ std::string JsonToString(const json& obj, const json& options) {
 }
 
 std::string
-PluginToString(const DB_Ptr& dbp,  const JsonPluginRepo::Impl::ObjMap<DB_Ptr>& map,
+PluginToString(const DB_Ptr& dbp,
+               const JsonPluginRepo::Impl::ObjMap<DB_Ptr>& map,
                const json& js, const JsonPluginRepo& repo) {
   auto iter = map.p2name.find(dbp.db);
   if (map.p2name.end() != iter) {

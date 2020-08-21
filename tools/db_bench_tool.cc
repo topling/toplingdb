@@ -4176,7 +4176,6 @@ class Benchmark {
                 FLAGS_json.c_str(), s.ToString().c_str());
         exit(1);
       }
-      std::unique_ptr<DB_MultiCF> dbmcf_up(dbmcf);
       db->cfh = dbmcf->cf_handles;
       db->db = dbmcf->db;
       if (auto tdb = dynamic_cast<OptimisticTransactionDB*>(dbmcf->db)) {

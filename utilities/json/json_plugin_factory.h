@@ -18,6 +18,11 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+#define THROW_STATUS(Type, msg) throw Status::Type(ROCKSDB_FUNC, msg)
+#define THROW_InvalidArgument(msg) THROW_STATUS(InvalidArgument, msg)
+#define THROW_Corruption(msg) THROW_STATUS(Corruption, msg)
+#define THROW_NotFound(msg) THROW_STATUS(NotFound, msg)
+
 using nlohmann::json;
 
 template<class P> struct RemovePtr_tpl;
@@ -155,7 +160,7 @@ PluginToString(const Ptr& p, const JsonPluginRepo::Impl::ObjMap<Ptr>& map,
     auto manip = PluginManip<Object>::AcquirePlugin(iter->second.params, repo);
     return manip->ToString(*p, js, repo);
   }
-  throw Status::NotFound(ROCKSDB_FUNC, "Ptr not found");
+  THROW_NotFound("Ptr not found");
 }
 std::string
 PluginToString(const DB_Ptr&, const JsonPluginRepo::Impl::ObjMap<DB_Ptr>& map,
@@ -214,8 +219,7 @@ AcquirePlugin(const std::string& class_name, const json& js,
   }
   else {
     //return Ptr(nullptr);
-    throw Status::NotFound(ROCKSDB_FUNC,
-        "class = " + class_name + ", js = " + js.dump());
+    THROW_NotFound("class = " + class_name + ", js = " + js.dump());
   }
 }
 
@@ -309,17 +313,17 @@ ObtainPlugin(const char* varname, const char* func_name,
   } else if (js.is_object()) {
     auto iter = js.find("class");
     if (js.end() == iter) {
-        throw std::invalid_argument(std::string(ROCKSDB_FUNC) + ": sub obj class is required");
+        throw Status::InvalidArgument(func_name, "sub obj class is required");
     }
     if (!iter.value().is_string()) {
-        throw std::invalid_argument(std::string(ROCKSDB_FUNC) + ": sub obj class must be string");
+        throw Status::InvalidArgument(func_name, "sub obj class must be string");
     }
     const std::string& clazz_name = iter.value().get_ref<const std::string&>();
     const json& params = js.at("params");
     return AcquirePlugin(clazz_name, params, repo);
   }
-  throw std::invalid_argument(
-          std::string(ROCKSDB_FUNC) + ": js must be string, null, or object, but is: " + js.dump());
+  throw Status::InvalidArgument(func_name,
+      "js must be string, null, or object, but is: " + js.dump());
 }
 
 template<class Ptr>
@@ -329,7 +333,7 @@ AcquirePlugin(const json& js, const JsonPluginRepo& repo) {
   if (js.is_string()) {
     const std::string& str_val = js.get_ref<const std::string&>();
     if (str_val.empty()) {
-      throw Status::InvalidArgument(ROCKSDB_FUNC, "jstr class_name is empty");
+      THROW_InvalidArgument("jstr class_name is empty");
     }
     // now treat js as class name, try to --
     // AcquirePlugin with empty json params
@@ -340,16 +344,16 @@ AcquirePlugin(const json& js, const JsonPluginRepo& repo) {
   } else if (js.is_object()) {
     auto iter = js.find("class");
     if (js.end() == iter) {
-      throw Status::InvalidArgument(ROCKSDB_FUNC, "js[\"class\"] is required");
+      THROW_InvalidArgument("js[\"class\"] is required");
     }
     if (!iter.value().is_string()) {
-      throw Status::InvalidArgument(ROCKSDB_FUNC, "js[\"class\"] must be string");
+      THROW_InvalidArgument("js[\"class\"] must be string");
     }
     const std::string& clazz_name = iter.value().get_ref<const std::string&>();
     const json& params = js.at("params");
     return AcquirePlugin(clazz_name, params, repo);
   }
-  throw Status::InvalidArgument(ROCKSDB_FUNC,
+  THROW_InvalidArgument(
         "js must be string, null, or object, but is: " + js.dump());
 }
 
@@ -371,10 +375,10 @@ bool PluginFactory<Ptr>::SamePlugin(const std::string& clazz1,
   auto i1 = imp.func_map.find(clazz1);
   auto i2 = imp.func_map.find(clazz2);
   if (imp.func_map.end() == i1) {
-    throw Status::NotFound(ROCKSDB_FUNC, "clazz1 = " + clazz1);
+    THROW_NotFound("clazz1 = " + clazz1);
   }
   if (imp.func_map.end() == i2) {
-    throw Status::NotFound(ROCKSDB_FUNC, "clazz2 = " + clazz2);
+    THROW_NotFound("clazz2 = " + clazz2);
   }
   return i1->second.acq == i2->second.acq;
 }
@@ -395,8 +399,8 @@ const JsonPluginRepo& repoRefType();
     if (js.end() != __iter) try { \
       prop = __iter.value().get<decltype(prop)>(); \
     } catch (const std::exception& ex) {     \
-      throw Status::InvalidArgument( \
-        ROCKSDB_FUNC, std::string("\"" #prop "\": ") + ex.what()); \
+      THROW_InvalidArgument( \
+        std::string("\"" #prop "\": ") + ex.what()); \
     }
 
 // _REQ_ means 'required'
@@ -430,7 +434,7 @@ const JsonPluginRepo& repoRefType();
     if (js.end() != __iter) \
       prop = decltype(NestForBase(prop))(__iter.value()); \
   } catch (const std::exception& ex) { \
-    throw Status::InvalidArgument(ROCKSDB_FUNC, \
+    THROW_InvalidArgument( \
        std::string(#prop ": ") + ex.what()); \
   } while (0)
 

@@ -451,14 +451,13 @@ class DispatherTableFactory : public TableFactory {
       const char* facname = factory->Name();
       if (strcmp(facname, this->Name()) == 0) {
         if (is_user_defined) {
-          throw Status::InvalidArgument(ROCKSDB_FUNC,
-                   "Dispatch factory can not be defined as a reader");
+          THROW_InvalidArgument("Dispatch factory can not be defined as a reader");
         }
         return;
       }
       auto it = name2magic.find(facname);
       if (name2magic.end() == it) {
-        throw Status::InvalidArgument(ROCKSDB_FUNC,
+        THROW_InvalidArgument(
             std::string("not found magic of factory: ") + facname);
       }
       for (uint64_t magic : it->second) {

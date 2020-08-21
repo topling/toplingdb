@@ -430,17 +430,13 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
       auto iter = js.find("compression_per_level");
       if (js.end() != iter) {
         if (!iter.value().is_array()) {
-          throw Status::InvalidArgument(
-              ROCKSDB_FUNC,
-              "compression_per_level must be an array");
+          THROW_InvalidArgument("compression_per_level must be an array");
         }
         for (auto& item : iter.value().items()) {
-          const string& val = item.value().get<string>();
+          const string& val = item.value().get_ref<const string&>();
           CompressionType compressionType;
           if (!enum_value(val, &compressionType)) {
-            throw Status::InvalidArgument(
-                ROCKSDB_FUNC,
-                string("compression_per_level: invalid enum: ") + val);
+            THROW_InvalidArgument("compression_per_level: invalid enum: " + val);
           }
           compression_per_level.push_back(compressionType);
         }
@@ -457,8 +453,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
       auto iter = js.find("max_bytes_for_level_multiplier_additional");
       if (js.end() != iter)
         if (!Init_vec(iter.value(), max_bytes_for_level_multiplier_additional))
-          throw Status::InvalidArgument(
-              ROCKSDB_FUNC,
+          THROW_InvalidArgument(
               "max_bytes_for_level_multiplier_additional must be an int vector");
     }
     ROCKSDB_JSON_OPT_SIZE(js, max_compaction_bytes);
@@ -474,8 +469,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
       auto iter = js.find("table_properties_collector_factories");
       if (js.end() != iter) {
         if (!iter.value().is_array()) {
-          throw Status::InvalidArgument(
-              ROCKSDB_FUNC,
+          THROW_InvalidArgument(
               "table_properties_collector_factories must be an array");
         }
         decltype(table_properties_collector_factories) vec;
@@ -602,6 +596,9 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_FACT(js, compaction_thread_limiter);
   }
 };
+using CFOptions = ColumnFamilyOptions;
+using CFOptions_Json = ColumnFamilyOptions_Json;
+
 static shared_ptr<ColumnFamilyOptions>
 NewCFOptionsJS(const json& js, const JsonPluginRepo& repo) {
   return std::make_shared<ColumnFamilyOptions_Json>(js, repo);
@@ -700,13 +697,13 @@ JS_NewGenericRateLimiter(const json& js, const JsonPluginRepo& repo) {
   ROCKSDB_JSON_OPT_ENUM(js, mode);
   ROCKSDB_JSON_OPT_PROP(js, auto_tuned);
   if (rate_bytes_per_sec <= 0) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "rate_bytes_per_sec must > 0");
+    THROW_InvalidArgument("rate_bytes_per_sec must > 0");
   }
   if (refill_period_us <= 0) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "refill_period_us must > 0");
+    THROW_InvalidArgument("refill_period_us must > 0");
   }
   if (fairness <= 0) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "fairness must > 0");
+    THROW_InvalidArgument("fairness must > 0");
   }
   Env* env = Env::Default();
   auto iter = js.find("env");
@@ -714,8 +711,7 @@ JS_NewGenericRateLimiter(const json& js, const JsonPluginRepo& repo) {
     const auto& env_js = iter.value();
     env = PluginFactory<Env*>::GetPlugin("env", ROCKSDB_FUNC, env_js, repo);
     if (!env)
-      throw Status::InvalidArgument(
-          ROCKSDB_FUNC, "param env is specified but got null");
+      THROW_InvalidArgument("param env is specified but got null");
   }
   return std::make_shared<GenericRateLimiter>(
       rate_bytes_per_sec, refill_period_us, fairness,
@@ -775,14 +771,14 @@ JS_NewClockCache(const json& js, const JsonPluginRepo& repo) {
   auto p = NewClockCache(opt.capacity, opt.num_shard_bits,
                          opt.strict_capacity_limit, opt.metadata_charge_policy);
   if (nullptr != p) {
-	throw Status::InvalidArgument(ROCKSDB_FUNC,
+	THROW_InvalidArgument(
 		"SUPPORT_CLOCK_CACHE is defined but NewClockCache returns null");
   }
   return p;
 #else
   (void)js;
   (void)repo;
-  throw Status::InvalidArgument(ROCKSDB_FUNC,
+  THROW_InvalidArgument(
       "SUPPORT_CLOCK_CACHE is not defined, "
       "need to recompile with -D SUPPORT_CLOCK_CACHE=1");
 #endif
@@ -922,14 +918,12 @@ Ptr ObtainOPT(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
     const std::string& option_name = option_js.get_ref<const std::string&>();
     auto iter = field.name2p->find(option_name);
     if (field.name2p->end() == iter) {
-        throw Status::NotFound(
-                ROCKSDB_FUNC, "option_name = \"" + option_name + "\"");
+        THROW_NotFound("option_name = \"" + option_name + "\"");
     }
     return iter->second;
   }
   if (!option_js.is_object()) {
-    throw Status::InvalidArgument(
-        ROCKSDB_FUNC,
+    THROW_InvalidArgument(
         "option_js must be string or object, but is: " + option_js.dump());
   }
   return PluginFactory<Ptr>::AcquirePlugin(option_class, option_js, repo);
@@ -939,25 +933,23 @@ Ptr ObtainOPT(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
 
 Options JS_Options(const json& js, const JsonPluginRepo& repo, string* name) {
   if (!js.is_object()) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
+    THROW_InvalidArgument( "param json must be an object");
   }
   auto iter = js.find("name");
   if (js.end() == iter) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
+    THROW_InvalidArgument("missing param \"name\"");
   }
   *name = iter.value().get_ref<const std::string&>();
   iter = js.find("options");
   if (js.end() == iter) {
     iter = js.find("db_options");
     if (js.end() == iter) {
-      auto submsg = "missing param \"db_options\"";
-      throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
+      THROW_InvalidArgument("missing param \"db_options\"");
     }
     auto& db_options_js = iter.value();
     iter = js.find("cf_options");
     if (js.end() == iter) {
-      auto submsg = "missing param \"cf_options\"";
-      throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
+      THROW_InvalidArgument("missing param \"cf_options\"");
     }
     auto& cf_options_js = iter.value();
     auto db_options = ROCKSDB_OBTAIN_OPT(db_options, db_options_js, repo);
@@ -977,9 +969,43 @@ struct DB_Manip : PluginManipFunc<DB> {
   }
   std::string ToString(const DB& db, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
-    auto dbo = static_cast<DBOptions_Json&&>(db.GetDBOptions());
+    Options opt = db.GetOptions();
+    auto& dbo = static_cast<DBOptions_Json&>(static_cast<DBOptions&>(opt));
+    auto& cfo = static_cast<CFOptions_Json&>(static_cast<CFOptions&>(opt));
+    const auto& dbmap = repo.m_impl->db;
     json djs;
-    dbo.SaveToJson(djs, repo);
+    std::string dbo_name, cfo_name;
+    const std::string& dbname = db.GetName();
+    auto i1 = dbmap.p2name.find((DB*)&db);
+    if (dbmap.p2name.end() == i1) {
+      THROW_NotFound("db ptr is not registered in repo, dbname = " + dbname);
+    }
+    auto ijs = i1->second.params.find("params");
+    if (i1->second.params.end() == ijs) {
+      THROW_Corruption("p2name[" + dbname + "].params is missing");
+    }
+    const json& params_js = ijs.value();
+    if (params_js.end() != (ijs = params_js.find("options"))) {
+      dbo_name = "name: " + ijs.value().get_ref<const std::string&>() + "(Options)";
+      cfo_name = "name: " + ijs.value().get_ref<const std::string&>() + "(Options)";
+    } else {
+      if (params_js.end() != (ijs = params_js.find("db_options"))) {
+        if (ijs.value().is_string())
+          dbo_name = "name: " + ijs.value().get_ref<const std::string&>();
+      } else {
+        THROW_Corruption("p2name[" + dbname + "].params[db_options|options] are all missing");
+      }
+      if (params_js.end() != (ijs = params_js.find("cf_options"))) {
+        if (ijs.value().is_string())
+          cfo_name = "name: " + ijs.value().get_ref<const std::string&>();
+      } else {
+        THROW_Corruption("p2name[" + dbname + "].params[cf_options|options] are all missing");
+      }
+    }
+    if (dbo_name.empty()) dbo_name = "name: (defined inline)";
+    if (cfo_name.empty()) cfo_name = "name: (defined inline)";
+    djs["DBOptions"][0] = dbo_name; dbo.SaveToJson(djs["DBOptions"][1], repo);
+    djs["CFOptions"][0] = dbo_name; cfo.SaveToJson(djs["CFOptions"][1], repo);
     return JsonToString(djs, dump_options);
   }
 };
@@ -996,9 +1022,64 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
   }
   std::string ToString(const DB_MultiCF& db, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
-    auto dbo = static_cast<DBOptions_Json&&>(db.db->GetDBOptions());
     json djs;
-    dbo.SaveToJson(djs, repo);
+    auto dbo = static_cast<DBOptions_Json&&>(db.db->GetDBOptions());
+    const auto& dbmap = repo.m_impl->db;
+    const std::string& dbname = db.db->GetName();
+    auto i1 = dbmap.p2name.find((DB*)&db);
+    if (dbmap.p2name.end() == i1) {
+      THROW_NotFound("db ptr is not registered in repo, dbname = " + dbname);
+    }
+    auto ijs = i1->second.params.find("params");
+    if (i1->second.params.end() == ijs) {
+      THROW_Corruption("p2name[" + dbname + "].params is missing");
+    }
+    std::string dbo_name;
+    const json& params_js = ijs.value();
+    if (params_js.end() != (ijs = params_js.find("db_options"))) {
+      if (ijs.value().is_string()) {
+        dbo_name = "name: " + ijs.value().get_ref<const std::string&>();
+      }
+    } else {
+      THROW_Corruption("p2name[" + dbname + "].params[db_options|options] are all missing");
+    }
+    if (params_js.end() == (ijs = params_js.find("column_families"))) {
+      THROW_Corruption("p2name[" + dbname + "].params.column_families are all missing");
+    }
+    const auto& def_cfo_js = ijs.value();
+    if (dbo_name.empty()) dbo_name = "name: (defined inline)";
+    djs["DBOptions"][0] = dbo_name;
+    dbo.SaveToJson(djs["DBOptions"][1], repo);
+    auto& result_cfo_js = djs["CFOptions"];
+    for (size_t i = 0; i < db.cf_handles.size(); ++i) {
+      ColumnFamilyHandle* cf = db.cf_handles[i];
+      const std::string& cf_name = db.cf_descriptors[i].name;
+      Options opt = db.db->GetOptions(cf);
+      auto cfo = static_cast<CFOptions_Json&>(static_cast<CFOptions&>(opt));
+      if (def_cfo_js.end() == (ijs = def_cfo_js.find(cf_name))) {
+        THROW_Corruption(dbname + ".params.column_families." + cf_name + " is missing");
+      }
+      if (ijs.value().is_string()) {
+        // find in repo.m_impl->cf_options
+        auto cfo_varname = ijs.value().get_ref<const std::string&>();
+        auto icf = repo.m_impl->cf_options.name2p->find(cfo_varname);
+        if (repo.m_impl->cf_options.name2p->end() == icf) {
+          THROW_Corruption("Missing cfo_varname = " + cfo_varname);
+        }
+        auto picf = repo.m_impl->cf_options.p2name.find(icf->second.get());
+        if (repo.m_impl->cf_options.p2name.end() == picf) {
+          THROW_Corruption("Missing cfo p2name, cfo_varname = " + cfo_varname);
+        }
+        result_cfo_js[cf_name][0] = "name: " + cfo_varname;
+        result_cfo_js[cf_name][1] = picf->second.params;
+      }
+      else { // ijs point to inline defined CFOptions
+        result_cfo_js[cf_name][0] = "name: (defined inline)";
+        result_cfo_js[cf_name][1] = ijs.value();
+      }
+      // overwrite with up to date cfo
+      cfo.SaveToJson(result_cfo_js[cf_name][1], repo);
+    }
     return JsonToString(djs, dump_options);
   }
 };
@@ -1062,21 +1143,21 @@ JS_DB_MultiCF_Options(const json& js, const JsonPluginRepo& repo,
                       std::string* name,
                       std::function<void(const json&)> parse_extra = nullptr) {
   if (!js.is_object()) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "param json must be an object");
+    THROW_InvalidArgument("param json must be an object");
   }
   auto iter = js.find("name");
   if (js.end() == iter) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"name\"");
+    THROW_InvalidArgument("missing param \"name\"");
   }
   *name = iter.value().get_ref<const std::string&>();
   iter = js.find("column_families");
   if (js.end() == iter) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"column_families\"");
+    THROW_InvalidArgument("missing param \"column_families\"");
   }
   auto& js_cf_desc = iter.value();
   iter = js.find("db_options");
   if (js.end() == iter) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "missing param \"db_options\"");
+    THROW_InvalidArgument("missing param \"db_options\"");
   }
   auto& db_options_js = iter.value();
   Status s;
@@ -1092,7 +1173,7 @@ JS_DB_MultiCF_Options(const json& js, const JsonPluginRepo& repo,
     db->cf_descriptors.push_back({cf_name, *cf_options});
   }
   if (db->cf_descriptors.empty()) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "param \"column_families\" is empty");
+    THROW_InvalidArgument("param \"column_families\" is empty");
   }
   return db;
 }
@@ -1202,6 +1283,7 @@ JS_NewTransactionDBMutexFactoryImpl(const json&, const JsonPluginRepo&) {
   return std::make_shared<TransactionDBMutexFactoryImpl>();
 }
 ROCKSDB_FACTORY_REG("Default", JS_NewTransactionDBMutexFactoryImpl);
+ROCKSDB_FACTORY_REG("default", JS_NewTransactionDBMutexFactoryImpl);
 ROCKSDB_FACTORY_REG("TransactionDBMutexFactoryImpl", JS_NewTransactionDBMutexFactoryImpl);
 
 struct TransactionDBOptions_Json : TransactionDBOptions {
@@ -1223,8 +1305,7 @@ TransactionDBOptions
 JS_TransactionDBOptions(const json& js, const JsonPluginRepo& repo) {
   auto iter = js.find("txn_db_options");
   if (js.end() == iter) {
-    auto submsg = "missing required param \"txn_db_options\"";
-    throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
+    THROW_InvalidArgument("missing required param \"txn_db_options\"");
   }
   return TransactionDBOptions_Json(iter.value(), repo);
 }
@@ -1333,8 +1414,7 @@ BlobDBOptions
 JS_BlobDBOptions(const json& js, const JsonPluginRepo& repo) {
   auto iter = js.find("bdb_options");
   if (js.end() == iter) {
-    auto submsg = "missing required param \"bdb_options\"";
-    throw Status::InvalidArgument(ROCKSDB_FUNC, submsg);
+    THROW_InvalidArgument("missing required param \"bdb_options\"");
   }
   return BlobDBOptions_Json(iter.value(), repo);
 }

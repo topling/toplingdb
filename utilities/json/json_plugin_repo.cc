@@ -60,15 +60,14 @@ std::string JsonGetClassName(const char* caller, const json& js) {
 
 template<class Ptr>
 static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
-                   const char* name,
+                   const std::string& name,
                    const json& main_js, const JsonPluginRepo& repo) {
   auto iter = main_js.find(name);
   if (main_js.end() == iter) {
       return;
   }
   if (!iter.value().is_object()) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC,
-        string(name) + " must be an object with class and options");
+    THROW_InvalidArgument(name + " must be an object with class and options");
   }
   for (auto& item : iter.value().items()) {
     const string& inst_id = item.key();
@@ -79,8 +78,7 @@ static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
       assert(Ptr(nullptr) != existing);
       auto oi_iter = field.p2name.find(GetRawPtr(existing));
       if (field.p2name.end() == oi_iter) {
-        throw Status::Corruption(ROCKSDB_FUNC,
-            "p2name[ptr_of(\"" + inst_id + "\")] is missing");
+        THROW_Corruption("p2name[ptr_of(\"" + inst_id + "\")] is missing");
       }
       auto old_clazz = JsonGetClassName(ROCKSDB_FUNC, oi_iter->second.params);
       auto new_clazz = JsonGetClassName(ROCKSDB_FUNC, value);
@@ -101,9 +99,8 @@ static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
     // do not use ObtainPlugin, to disallow define var2 = var1
     Ptr p = PluginFactory<Ptr>::AcquirePlugin(value, repo);
     if (!p) {
-      throw Status::InvalidArgument(
-          ROCKSDB_FUNC,
-            "fail to AcquirePlugin: inst_id = " + inst_id +
+      THROW_InvalidArgument(
+          "fail to AcquirePlugin: inst_id = " + inst_id +
               ", value_js = " + value.dump());
     }
     existing = p;
@@ -121,8 +118,7 @@ static void Impl_ImportOptions(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
     return;
   }
   if (!iter.value().is_object()) {
-    throw Status::InvalidArgument(
-        ROCKSDB_FUNC, option_class_name + " must be a json object");
+    THROW_InvalidArgument(option_class_name + " must be a json object");
   }
   for (auto& item : iter.value().items()) {
     const string& option_name = item.key();
@@ -133,8 +129,7 @@ static void Impl_ImportOptions(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
       assert(Ptr(nullptr) != existing);
       auto oi_iter = field.p2name.find(GetRawPtr(existing));
       if (field.p2name.end() == oi_iter) {
-        throw Status::Corruption(ROCKSDB_FUNC,
-            "p2name[ptr_of(\"" + option_name + "\")] is missing");
+        THROW_Corruption("p2name[ptr_of(\"" + option_name + "\")] is missing");
       }
       PluginUpdate(existing, field, params_js, repo);
       oi_iter->second.params.merge_patch(params_js);
@@ -187,13 +182,10 @@ void MergeSubObject(json* target, const json& patch, const string& subname) {
   if (patch.end() != iter) {
     auto& sub_js = iter.value();
     if (!sub_js.is_object()) {
-      throw Status::InvalidArgument(
-          ROCKSDB_FUNC,
-          "\"" + subname + "\" must be an object");
+      THROW_InvalidArgument("\"" + subname + "\" must be an object");
     }
     if (!target->is_null() && !target->is_object()) {
-      throw Status::Corruption(
-          ROCKSDB_FUNC,
+      THROW_Corruption(
           "\"target\" must be an object or null, subname = " + subname);
     }
     target->merge_patch(sub_js);
@@ -215,15 +207,13 @@ static void JS_setenv(const nlohmann::json& main_js) {
   }
   auto& envmap = iter.value();
   if (!envmap.is_object()) {
-    throw Status::InvalidArgument(
-        ROCKSDB_FUNC, "main_js[\"setenv\"] must be a json object");
+    THROW_InvalidArgument("main_js[\"setenv\"] must be a json object");
   }
   for (auto& item : envmap.items()) {
     const std::string& name = item.key();
     const json& val = item.value();
     if (val.is_object() || val.is_array()) {
-      throw Status::InvalidArgument(
-          ROCKSDB_FUNC, "main_js[\"setenv\"] must not be object or array");
+      THROW_InvalidArgument("main_js[\"setenv\"] must not be object or array");
     }
     if (JsonPluginRepo::DebugLevel() >= 3) {
       const std::string& valstr = val.dump();
@@ -526,18 +516,18 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
                             DBT** dbp) {
   auto iter = db_open_js.find("method");
   if (db_open_js.end() == iter) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC,
+    THROW_InvalidArgument(
         "dbname = \"" + dbname + "\", param \"method\" is missing");
   }
   const std::string& method = iter.value().get<string>();
   iter = db_open_js.find("params");
   if (db_open_js.end() == iter) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC,
+    THROW_InvalidArgument(
         "dbname = \"" + dbname + "\", param \"params\" is missing");
   }
   auto params_js = iter.value();
   if (!params_js.is_object()) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC,
+    THROW_InvalidArgument(
         "dbname = \"" + dbname + "\", \"params\" must be a json object");
   }
   if (!dbname.empty()) {
@@ -546,7 +536,7 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
   auto& dbmap = repo.m_impl->db;
   auto ib = dbmap.name2p->emplace(dbname, DB_Ptr(nullptr));
   if (!ib.second) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "dup dbname = " + dbname);
+    THROW_InvalidArgument("dup dbname = " + dbname);
   }
   // will open db by calling acq func such as DB::Open
   auto db = PluginFactory<DBT*>::AcquirePlugin(method, params_js, repo);
@@ -570,8 +560,7 @@ Status JsonPluginRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
   auto open_defined_db = [&](const std::string& dbname) {
       auto iter = m_impl->db_js.find(dbname);
       if (m_impl->db_js.end() == iter) {
-        throw Status::NotFound(ROCKSDB_FUNC,
-            "dbname = \"" + dbname + "\" is not found");
+        THROW_NotFound("dbname = \"" + dbname + "\" is not found");
       }
       Impl_OpenDB_tpl(dbname, iter.value(), *this, dbp);
   };
@@ -597,7 +586,7 @@ Status JsonPluginRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
     Impl_OpenDB_tpl(empty_name, js, *this, dbp);
   }
   else {
-    throw Status::InvalidArgument(ROCKSDB_FUNC, "bad js = " + js.dump());
+    THROW_InvalidArgument("bad js = " + js.dump());
   }
   return Status::OK();
 }
@@ -935,7 +924,7 @@ PluginToString(const DB_Ptr& dbp,  const JsonPluginRepo::Impl::ObjMap<DB_Ptr>& m
       return manip->ToString(*dbp.db, js, repo);
     }
   }
-  throw Status::NotFound(ROCKSDB_FUNC, "db ptr is not found");
+  THROW_NotFound("db ptr is not in repo");
 }
 
 }

@@ -185,7 +185,7 @@ public:
 JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
 	mg_init_library(0);
   if (!conf.is_object()) {
-    throw Status::InvalidArgument(ROCKSDB_FUNC,
+    THROW_InvalidArgument(
         "conf must be a json object, but is: " + conf.dump());
   }
   std::vector<std::string> options;
@@ -193,7 +193,7 @@ JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
     std::string key = kv.key();
     const auto& value = kv.value();
     if (!value.is_string()) {
-      throw Status::InvalidArgument(ROCKSDB_FUNC,
+      THROW_InvalidArgument(
         "conf[\"" + key + "\"] must be a string, but is: " + value.dump());
     }
     options.push_back(key);

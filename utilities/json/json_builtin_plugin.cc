@@ -986,24 +986,24 @@ struct DB_Manip : PluginManipFunc<DB> {
     }
     const json& params_js = ijs.value();
     if (params_js.end() != (ijs = params_js.find("options"))) {
-      dbo_name = "name: " + ijs.value().get_ref<const std::string&>() + "(Options)";
-      cfo_name = "name: " + ijs.value().get_ref<const std::string&>() + "(Options)";
+      dbo_name = "json varname: " + ijs.value().get_ref<const std::string&>() + "(Options)";
+      cfo_name = "json varname: " + ijs.value().get_ref<const std::string&>() + "(Options)";
     } else {
       if (params_js.end() != (ijs = params_js.find("db_options"))) {
         if (ijs.value().is_string())
-          dbo_name = "name: " + ijs.value().get_ref<const std::string&>();
+          dbo_name = "json varname: " + ijs.value().get_ref<const std::string&>();
       } else {
         THROW_Corruption("p2name[" + dbname + "].params[db_options|options] are all missing");
       }
       if (params_js.end() != (ijs = params_js.find("cf_options"))) {
         if (ijs.value().is_string())
-          cfo_name = "name: " + ijs.value().get_ref<const std::string&>();
+          cfo_name = "json varname: " + ijs.value().get_ref<const std::string&>();
       } else {
         THROW_Corruption("p2name[" + dbname + "].params[cf_options|options] are all missing");
       }
     }
-    if (dbo_name.empty()) dbo_name = "name: (defined inline)";
-    if (cfo_name.empty()) cfo_name = "name: (defined inline)";
+    if (dbo_name.empty()) dbo_name = "json varname: (defined inline)";
+    if (cfo_name.empty()) cfo_name = "json varname: (defined inline)";
     djs["DBOptions"][0] = dbo_name; dbo.SaveToJson(djs["DBOptions"][1], repo);
     djs["CFOptions"][0] = dbo_name; cfo.SaveToJson(djs["CFOptions"][1], repo);
     return JsonToString(djs, dump_options);
@@ -1038,7 +1038,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     const json& params_js = ijs.value();
     if (params_js.end() != (ijs = params_js.find("db_options"))) {
       if (ijs.value().is_string()) {
-        dbo_name = "name: " + ijs.value().get_ref<const std::string&>();
+        dbo_name = "json varname: " + ijs.value().get_ref<const std::string&>();
       }
     } else {
       THROW_Corruption("p2name[" + dbname + "].params[db_options|options] are all missing");
@@ -1047,7 +1047,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
       THROW_Corruption("p2name[" + dbname + "].params.column_families are all missing");
     }
     const auto& def_cfo_js = ijs.value();
-    if (dbo_name.empty()) dbo_name = "name: (defined inline)";
+    if (dbo_name.empty()) dbo_name = "json varname: (defined inline)";
     djs["DBOptions"][0] = dbo_name;
     dbo.SaveToJson(djs["DBOptions"][1], repo);
     auto& result_cfo_js = djs["CFOptions"];
@@ -1071,11 +1071,11 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
         if (repo.m_impl->cf_options.p2name.end() == picf) {
           THROW_Corruption("Missing cfo p2name, cfo_varname = " + cfo_varname);
         }
-        result_cfo_js[cf_name][0] = "name: " + cfo_varname;
+        result_cfo_js[cf_name][0] = "json varname: " + cfo_varname;
         result_cfo_js[cf_name][1] = picf->second.params;
       }
       else { // ijs point to inline defined CFOptions
-        result_cfo_js[cf_name][0] = "name: (defined inline)";
+        result_cfo_js[cf_name][0] = "json varname: (defined inline)";
         result_cfo_js[cf_name][1] = ijs.value();
       }
       // overwrite with up to date cfo

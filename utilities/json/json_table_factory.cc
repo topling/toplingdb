@@ -534,6 +534,37 @@ class DispatherTableFactory : public TableFactory {
       return Status::OK();
   }
 
+  json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
+    bool html = JsonWeakBool(dump_options, "html");
+    auto& p2name = repo.m_impl->table_factory.p2name;
+    json js;
+    auto& lwjs = js["level_writers"];
+    for (auto& tf : m_level_writers) {
+      auto iter = p2name.find(tf.get());
+      if (p2name.end() == iter) {
+        THROW_Corruption("missing TableFactory of m_level_writer");
+      }
+      json wjs;
+      ROCKSDB_JSON_SET_FACT_INNER(wjs, tf, table_factory);
+      lwjs.push_back(std::move(wjs));
+    }
+    ROCKSDB_JSON_SET_FACT_INNER(js["default"], m_default_writer, table_factory);
+    std::unordered_map<std::string, std::shared_ptr<TableFactory> > rmap;
+    for (auto& kv : m_magic_to_factory) {
+      rmap[kv.second.varname] = kv.second.factory;
+    }
+    json& readers_js = js["readers"];
+    for (auto& kv : rmap) {
+      ROCKSDB_JSON_SET_FACT_INNER(readers_js[kv.first], kv.second, table_factory);
+    }
+    return js;
+  }
+  std::string ToJsonStr(const json& dump_options,
+                        const JsonPluginRepo& repo) const {
+    auto js = ToJsonObj(dump_options, repo);
+    return JsonToString(js, dump_options);
+  }
+
   mutable std::vector<std::shared_ptr<TableFactory> > m_level_writers;
   mutable std::shared_ptr<TableFactory> m_default_writer;
   mutable std::shared_ptr<std::unordered_map<std::string,
@@ -553,6 +584,35 @@ static std::shared_ptr<TableFactory>
 NewDispatcherTableFactoryJson(const json& js, const JsonPluginRepo& repo) {
   return std::make_shared<DispatherTableFactory>(js, repo);
 }
+
+struct DispatcherTableFactory_Manip : PluginManipFunc<TableFactory> {
+  void Update(TableFactory* p, const json& js,
+              const JsonPluginRepo& repo) const final {
+    if (auto t = dynamic_cast<DispatherTableFactory*>(p)) {
+      return;
+    }
+    std::string name = p->Name();
+    THROW_InvalidArgument("Is not DispatherTable, but is: " + name);
+  }
+  std::string ToString(const TableFactory& fac, const json& dump_options,
+                       const JsonPluginRepo& repo) const final {
+    if (auto t = dynamic_cast<const DispatherTableFactory*>(&fac)) {
+      return t->ToJsonStr(dump_options, repo);
+    }
+    std::string name = fac.Name();
+    THROW_InvalidArgument("Is not TerarkZipTable, but is: " + name);
+  }
+};
+
+static const PluginManipFunc<TableFactory>*
+JS_DispatcherTableFactoryManip(const json&, const JsonPluginRepo&) {
+  static const DispatcherTableFactory_Manip manip;
+  return &manip;
+}
+ROCKSDB_FACTORY_REG("Dispath", JS_DispatcherTableFactoryManip);
+ROCKSDB_FACTORY_REG("Dispather", JS_DispatcherTableFactoryManip);
+ROCKSDB_FACTORY_REG("DispatherTable", JS_DispatcherTableFactoryManip);
+
 ROCKSDB_FACTORY_REG("Dispath", NewDispatcherTableFactoryJson);
 ROCKSDB_FACTORY_REG("Dispather", NewDispatcherTableFactoryJson);
 ROCKSDB_FACTORY_REG("DispatherTable", NewDispatcherTableFactoryJson);

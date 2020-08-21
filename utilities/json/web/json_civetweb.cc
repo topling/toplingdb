@@ -67,15 +67,15 @@ class RepoHandler : public CivetHandler {
 public:
   JsonPluginRepo* m_repo;
   JsonPluginRepo::Impl::ObjMap<Ptr>* m_map;
-  Slice m_ns;
-  std::string m_clazz;
+  //Slice m_ns;
+  //std::string m_clazz;
 
   RepoHandler(const char* clazz,
               JsonPluginRepo* repo,
               JsonPluginRepo::Impl::ObjMap<Ptr>* map) {
     m_repo = repo;
-    m_clazz = clazz;
-    m_ns = m_clazz;
+    //m_clazz = clazz;
+    //m_ns = m_clazz;
     m_map = map;
     if (JsonPluginRepo::DebugLevel() >= 2) {
       fprintf(stderr, "INFO: http: clazz: %s\n", clazz);
@@ -99,14 +99,14 @@ public:
     }
     while ('/' == *uri) uri++;
     size_t urilen = strlen(uri);
-    if (urilen < m_ns.size()) {
-      mg_printf(conn, "ERROR: local uri is too short = %zd\r\n", urilen);
-      return true;
-    }
-    if (memcmp(uri, m_ns.data(), m_ns.size()) != 0) {
-      mg_printf(conn, "ERROR: registered uri = %s, request uri = %s\r\n", m_ns.data(), uri);
-      return true;
-    }
+//    if (urilen < m_ns.size()) {
+//      mg_printf(conn, "ERROR: local uri is too short = %zd\r\n", urilen);
+//      return true;
+//    }
+//    if (memcmp(uri, m_ns.data(), m_ns.size()) != 0) {
+//      mg_printf(conn, "ERROR: registered uri = %s, request uri = %s\r\n", m_ns.data(), uri);
+//      return true;
+//    }
     auto slash = (const char*)memchr(uri, '/', urilen);
     if (NULL == slash) {
       std::vector<std::pair<std::string, Ptr> > vec;
@@ -124,8 +124,8 @@ public:
       }
       mg_printf(conn, "<html><body><table border=1><tbody>\r\n");
       for (auto& kv : vec) {
-        mg_printf(conn, "<tr><td><a href='/%s/%s?html=1'>%s</a></td></tr>\r\n",
-                  m_ns.data(), kv.first.c_str(), kv.first.c_str());
+        mg_printf(conn, "<tr><td><a href='/%.*s/%s?html=1'>%s</a></td></tr>\r\n",
+                  int(urilen), uri, kv.first.c_str(), kv.first.c_str());
       }
       mg_printf(conn, "</tbody></table></body></html>\r\n");
       return true;

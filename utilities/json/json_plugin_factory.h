@@ -460,22 +460,31 @@ const JsonPluginRepo& repoRefType();
 #define ROCKSDB_JSON_SET_FACT(js, prop) \
         ROCKSDB_JSON_SET_FACT_INNER(js[#prop], prop, prop)
 
-#define ROCKSDB_JSON_SET_FACT_INNER(inner, prop, repo_field) do { \
-  auto& __p2name = repo.m_impl->repo_field.p2name; \
-  auto __iter = __p2name.find(GetRawPtr(prop)); \
-  if (__p2name.end() != __iter) { \
-    if (__iter->second.name.empty()) \
-      inner = __iter->second.params; \
-    else \
-      inner = "${" + __iter->second.name + "}"; \
-  } else if (1) { \
-      inner = "$(BuiltinDefault)"; \
-  } else { \
-    fprintf(stderr, \
-            "FATAL: %s: can not find name of %s(of %s) by ptr\n", \
-            ROCKSDB_FUNC, #prop, #repo_field); \
-    abort(); \
-  } } while (0)
+#define ROCKSDB_JSON_SET_FACT_INNER(inner, prop, repo_field) \
+  JsonRepoSet(inner, prop, repo.m_impl->repo_field, #repo_field, html)
 
+bool JsonWeakBool(const json& js, const char* subname);
+std::string
+JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname);
+void
+JsonRepoSetHtml_ahref(json&, const char* mapname, const std::string& varname);
+
+template<class Ptr, class Map>
+void JsonRepoSet(json& js, const Ptr& prop, const Map& map,
+                 const char* mapname, bool html) {
+  auto& p2name = map.p2name;
+  auto iter = p2name.find(GetRawPtr(prop));
+  if (p2name.end() != iter) {
+    if (iter->second.name.empty())
+      js = iter->second.params;
+    else if (html)
+      JsonRepoSetHtml_ahref(js, mapname, iter->second.name);
+    else
+      js = "${" + iter->second.name + "}";
+  }
+  else {
+      js = "$(BuiltinDefault)";
+  }
+}
 
 } // ROCKSDB_NAMESPACE

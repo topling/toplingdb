@@ -812,6 +812,14 @@ bool JsonWeakBool(const json& js) {
   throw std::invalid_argument("JsonWeakBool: bad js = " + js.dump());
 }
 
+bool JsonWeakBool(const json& js, const char* subname) {
+  auto iter = js.find("html");
+  if (js.end() != iter) {
+    return JsonWeakBool(iter.value());
+  }
+  return false;
+}
+
 bool JsonWeakInt(const json& js) {
   if (js.is_string()) {
     const std::string& s = js.get_ref<const std::string&>();
@@ -899,12 +907,7 @@ std::string JsonToString(const json& obj, const json& options) {
   if (-1 != indent) {
     fprintf(stderr, "INFO: JsonToString: indent = %d\n", indent);
   }
-  iter = options.find("html");
-  bool html = false;
-  if (options.end() != iter) {
-    html = JsonWeakBool(iter.value());
-  }
-  if (html)
+  if (JsonWeakBool(options, "html"))
     return JsonToHtml(obj);
   else
     return obj.dump(indent);
@@ -926,6 +929,27 @@ PluginToString(const DB_Ptr& dbp,
     }
   }
   THROW_NotFound("db ptr is not in repo");
+}
+
+std::string
+JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname) {
+  // <a href='/mapname/varname'>${varname}</a>
+  size_t maplen = strlen(mapname);
+  std::string link;
+  link.reserve(maplen + 2 * varname.size() + 64);
+  link.append("<a href='/");
+  link.append(mapname, maplen);
+  link.push_back('/');
+  link.append(varname);
+  link.append("'>${");
+  link.append(varname);
+  link.append("}</a>");
+  return link;
+}
+
+void
+JsonRepoSetHtml_ahref(json& js, const char* mapname, const std::string& varname) {
+  js = JsonRepoGetHtml_ahref(mapname, varname);
 }
 
 }

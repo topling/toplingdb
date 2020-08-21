@@ -211,7 +211,7 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_OPT_PROP(js, best_efforts_recovery);
   }
 
-  void SaveToJson(json& js, const JsonPluginRepo& repo) const {
+  void SaveToJson(json& js, const JsonPluginRepo& repo, bool html) const {
     ROCKSDB_JSON_SET_PROP(js, paranoid_checks);
     ROCKSDB_JSON_SET_FACT(js, env);
     ROCKSDB_JSON_SET_FACT(js, rate_limiter);
@@ -323,7 +323,8 @@ struct DBOptions_Manip : PluginManipFunc<DBOptions> {
   std::string ToString(const DBOptions& x, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
     json djs;
-    static_cast<const DBOptions_Json&>(x).SaveToJson(djs, repo);
+    bool html = JsonWeakBool(dump_options, "html");
+    static_cast<const DBOptions_Json&>(x).SaveToJson(djs, repo, html);
     return JsonToString(djs, dump_options);
   }
 };
@@ -517,7 +518,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_OPT_FACT(js, compaction_thread_limiter);
   }
 
-  void SaveToJson(json& js, const JsonPluginRepo& repo) const {
+  void SaveToJson(json& js, const JsonPluginRepo& repo, bool html) const {
     ROCKSDB_JSON_SET_PROP(js, max_write_buffer_number);
     ROCKSDB_JSON_SET_PROP(js, min_write_buffer_number_to_merge);
     ROCKSDB_JSON_SET_PROP(js, max_write_buffer_number_to_maintain);
@@ -554,7 +555,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_PROP(js, max_sequential_skip_in_iterations);
     ROCKSDB_JSON_SET_FACX(js, memtable_factory, mem_table_rep_factory);
     for (auto& table_properties_collector_factory :
-        table_properties_collector_factories) {
+               table_properties_collector_factories) {
       json inner;
       ROCKSDB_JSON_SET_FACT_INNER(inner,
                                   table_properties_collector_factory,
@@ -613,7 +614,8 @@ struct CFOptions_Manip : PluginManipFunc<ColumnFamilyOptions> {
   std::string ToString(const ColumnFamilyOptions& x, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
     json djs;
-    static_cast<const ColumnFamilyOptions_Json&>(x).SaveToJson(djs, repo);
+    bool html = JsonWeakBool(dump_options, "html");
+    static_cast<const ColumnFamilyOptions_Json&>(x).SaveToJson(djs, repo, html);
     return JsonToString(djs, dump_options);
   }
 };
@@ -1002,10 +1004,11 @@ struct DB_Manip : PluginManipFunc<DB> {
         THROW_Corruption("p2name[" + dbname + "].params[cf_options|options] are all missing");
       }
     }
+    bool html = JsonWeakBool(dump_options, "html");
     if (dbo_name.empty()) dbo_name = "json varname: (defined inline)";
     if (cfo_name.empty()) cfo_name = "json varname: (defined inline)";
-    djs["DBOptions"][0] = dbo_name; dbo.SaveToJson(djs["DBOptions"][1], repo);
-    djs["CFOptions"][0] = dbo_name; cfo.SaveToJson(djs["CFOptions"][1], repo);
+    djs["DBOptions"][0] = dbo_name; dbo.SaveToJson(djs["DBOptions"][1], repo, html);
+    djs["CFOptions"][0] = dbo_name; cfo.SaveToJson(djs["CFOptions"][1], repo, html);
     return JsonToString(djs, dump_options);
   }
 };
@@ -1047,9 +1050,10 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
       THROW_Corruption("p2name[" + dbname + "].params.column_families are all missing");
     }
     const auto& def_cfo_js = ijs.value();
+    bool html = JsonWeakBool(dump_options, "html");
     if (dbo_name.empty()) dbo_name = "json varname: (defined inline)";
     djs["DBOptions"][0] = dbo_name;
-    dbo.SaveToJson(djs["DBOptions"][1], repo);
+    dbo.SaveToJson(djs["DBOptions"][1], repo, html);
     auto& result_cfo_js = djs["CFOptions"];
     for (size_t i = 0; i < db.cf_handles.size(); ++i) {
       ColumnFamilyHandle* cf = db.cf_handles[i];
@@ -1079,7 +1083,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
         result_cfo_js[cf_name][1] = ijs.value();
       }
       // overwrite with up to date cfo
-      cfo.SaveToJson(result_cfo_js[cf_name][1], repo);
+      cfo.SaveToJson(result_cfo_js[cf_name][1], repo, html);
     }
     return JsonToString(djs, dump_options);
   }

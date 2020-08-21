@@ -244,6 +244,9 @@ struct BlockBasedTableFactory_Manip : PluginManipFunc<TableFactory> {
   void Update(TableFactory* p, const json& js,
               const JsonPluginRepo& repo) const final {
     if (auto t = dynamic_cast<BlockBasedTableFactory*>(p)) {
+      auto o = static_cast<const BlockBasedTableOptions_Json&>(t->table_options());
+      auto mo = const_cast<BlockBasedTableOptions_Json&>(o);
+      mo.Update(js, repo);
       return;
     }
     std::string name = p->Name();

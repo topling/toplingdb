@@ -262,7 +262,7 @@ struct DBOptions_Json : DBOptions {
       // cache object
       json& wbm = js["write_buffer_manager"];
       shared_ptr<Cache> cache;
-      ROCKSDB_JSON_SET_FACT(wbm["cache"], cache);
+      ROCKSDB_JSON_SET_FACT(wbm, cache);
       wbm["buffer_size"] = db_write_buffer_size;
     }
     ROCKSDB_JSON_SET_ENUM(js, access_hint_on_compaction_start);

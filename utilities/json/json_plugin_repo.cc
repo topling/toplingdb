@@ -796,23 +796,24 @@ int JsonPluginRepo::DebugLevel() {
 void JsonSetSize(json& js, unsigned long long val) {
   char buf[32];
   int shift = 0;
+  char unit = 'X';
   if (val % (1LL << 40) == 0) {
-    shift = 40;
+    shift = 40, unit = 'T';
   }
   else if (val % (1LL << 30) == 0) {
-    shift = 30;
+    shift = 30, unit = 'G';
   }
   else if (val % (1LL << 20) == 0) {
-    shift = 20;
+    shift = 20, unit = 'M';
   }
   else if (val % (1LL << 10) == 0) {
-    shift = 10;
+    shift = 10, unit = 'K';
   }
   else {
     js = val;
     return;
   }
-  js = std::string(buf, snprintf(buf, sizeof(buf), "%llu", val >> shift));
+  js = std::string(buf, snprintf(buf, sizeof(buf), "%llu %ciB", val >> shift, unit));
 }
 
 bool JsonWeakBool(const json& js) {

@@ -842,7 +842,7 @@ bool JsonWeakBool(const json& js, const char* subname) {
   return false;
 }
 
-bool JsonWeakInt(const json& js) {
+int JsonWeakInt(const json& js) {
   if (js.is_string()) {
     const std::string& s = js.get_ref<const std::string&>();
     if (isdigit((unsigned char)s[0])) {

@@ -220,7 +220,7 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_ENUM(js, info_log_level);
     ROCKSDB_JSON_SET_PROP(js, max_open_files);
     ROCKSDB_JSON_SET_PROP(js, max_file_opening_threads);
-    ROCKSDB_JSON_SET_PROP(js, max_total_wal_size);
+    ROCKSDB_JSON_SET_SIZE(js, max_total_wal_size);
     ROCKSDB_JSON_SET_FACT(js, statistics);
     ROCKSDB_JSON_SET_PROP(js, use_fsync);
     for (auto& x : db_paths) {
@@ -234,15 +234,15 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_PROP(js, max_background_compactions);
     ROCKSDB_JSON_SET_PROP(js, max_subcompactions);
     ROCKSDB_JSON_SET_PROP(js, max_background_flushes);
-    ROCKSDB_JSON_SET_PROP(js, max_log_file_size);
+    ROCKSDB_JSON_SET_SIZE(js, max_log_file_size);
     ROCKSDB_JSON_SET_PROP(js, log_file_time_to_roll);
     ROCKSDB_JSON_SET_PROP(js, keep_log_file_num);
     ROCKSDB_JSON_SET_PROP(js, recycle_log_file_num);
-    ROCKSDB_JSON_SET_PROP(js, max_manifest_file_size);
+    ROCKSDB_JSON_SET_SIZE(js, max_manifest_file_size);
     ROCKSDB_JSON_SET_PROP(js, table_cache_numshardbits);
     ROCKSDB_JSON_SET_PROP(js, WAL_ttl_seconds);
     ROCKSDB_JSON_SET_PROP(js, WAL_size_limit_MB);
-    ROCKSDB_JSON_SET_PROP(js, manifest_preallocation_size);
+    ROCKSDB_JSON_SET_SIZE(js, manifest_preallocation_size);
     ROCKSDB_JSON_SET_PROP(js, allow_mmap_reads);
     ROCKSDB_JSON_SET_PROP(js, allow_mmap_writes);
     ROCKSDB_JSON_SET_PROP(js, use_direct_reads);
@@ -253,9 +253,9 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_PROP(js, stats_dump_period_sec);
     ROCKSDB_JSON_SET_PROP(js, stats_persist_period_sec);
     ROCKSDB_JSON_SET_PROP(js, persist_stats_to_disk);
-    ROCKSDB_JSON_SET_PROP(js, stats_history_buffer_size);
+    ROCKSDB_JSON_SET_SIZE(js, stats_history_buffer_size);
     ROCKSDB_JSON_SET_PROP(js, advise_random_on_open);
-    ROCKSDB_JSON_SET_PROP(js, db_write_buffer_size);
+    ROCKSDB_JSON_SET_SIZE(js, db_write_buffer_size);
     {
       // class WriteBufferManager is damaged, cache passed to
       // its cons is not used, and there is no way to get its internal
@@ -263,16 +263,16 @@ struct DBOptions_Json : DBOptions {
       json& wbm = js["write_buffer_manager"];
       shared_ptr<Cache> cache;
       ROCKSDB_JSON_SET_FACT(wbm, cache);
-      wbm["buffer_size"] = db_write_buffer_size;
+      JsonSetSize(wbm["buffer_size"], db_write_buffer_size);
     }
     ROCKSDB_JSON_SET_ENUM(js, access_hint_on_compaction_start);
     ROCKSDB_JSON_SET_PROP(js, new_table_reader_for_compaction_inputs);
-    ROCKSDB_JSON_SET_PROP(js, compaction_readahead_size);
-    ROCKSDB_JSON_SET_PROP(js, random_access_max_buffer_size);
-    ROCKSDB_JSON_SET_PROP(js, writable_file_max_buffer_size);
+    ROCKSDB_JSON_SET_SIZE(js, compaction_readahead_size);
+    ROCKSDB_JSON_SET_SIZE(js, random_access_max_buffer_size);
+    ROCKSDB_JSON_SET_SIZE(js, writable_file_max_buffer_size);
     ROCKSDB_JSON_SET_PROP(js, use_adaptive_mutex);
-    ROCKSDB_JSON_SET_PROP(js, bytes_per_sync);
-    ROCKSDB_JSON_SET_PROP(js, wal_bytes_per_sync);
+    ROCKSDB_JSON_SET_SIZE(js, bytes_per_sync);
+    ROCKSDB_JSON_SET_SIZE(js, wal_bytes_per_sync);
     ROCKSDB_JSON_SET_PROP(js, strict_bytes_per_sync);
     for (auto& listener : listeners) {
       json inner;
@@ -285,7 +285,7 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_PROP(js, unordered_write);
     ROCKSDB_JSON_SET_PROP(js, allow_concurrent_memtable_write);
     ROCKSDB_JSON_SET_PROP(js, enable_write_thread_adaptive_yield);
-    ROCKSDB_JSON_SET_PROP(js, max_write_batch_group_size_bytes);
+    ROCKSDB_JSON_SET_SIZE(js, max_write_batch_group_size_bytes);
     ROCKSDB_JSON_SET_PROP(js, write_thread_max_yield_usec);
     ROCKSDB_JSON_SET_PROP(js, write_thread_slow_yield_usec);
     ROCKSDB_JSON_SET_PROP(js, skip_stats_update_on_db_open);
@@ -305,7 +305,7 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_PROP(js, atomic_flush);
     ROCKSDB_JSON_SET_PROP(js, avoid_unnecessary_blocking_io);
     ROCKSDB_JSON_SET_PROP(js, write_dbid_to_manifest);
-    ROCKSDB_JSON_SET_PROP(js, log_readahead_size);
+    ROCKSDB_JSON_SET_SIZE(js, log_readahead_size);
     ROCKSDB_JSON_SET_FACT(js, file_checksum_gen_factory);
     ROCKSDB_JSON_SET_PROP(js, best_efforts_recovery);
   }
@@ -401,7 +401,7 @@ struct CompressionOptions_Json : CompressionOptions {
     ROCKSDB_JSON_SET_PROP(js, window_bits);
     ROCKSDB_JSON_SET_PROP(js, level);
     ROCKSDB_JSON_SET_PROP(js, strategy);
-    ROCKSDB_JSON_SET_PROP(js, max_dict_bytes);
+    ROCKSDB_JSON_SET_SIZE(js, max_dict_bytes);
     ROCKSDB_JSON_SET_PROP(js, zstd_max_train_bytes);
     ROCKSDB_JSON_SET_PROP(js, parallel_threads);
     ROCKSDB_JSON_SET_PROP(js, enabled);
@@ -522,7 +522,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_PROP(js, max_write_buffer_number);
     ROCKSDB_JSON_SET_PROP(js, min_write_buffer_number_to_merge);
     ROCKSDB_JSON_SET_PROP(js, max_write_buffer_number_to_maintain);
-    ROCKSDB_JSON_SET_PROP(js, max_write_buffer_size_to_maintain);
+    ROCKSDB_JSON_SET_SIZE(js, max_write_buffer_size_to_maintain);
     ROCKSDB_JSON_SET_PROP(js, inplace_update_support);
     ROCKSDB_JSON_SET_PROP(js, inplace_update_num_locks);
     // ROCKSDB_JSON_SET_PROP(js, inplace_callback); // not need update
@@ -532,7 +532,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_FACX(js, memtable_insert_with_hint_prefix_extractor,
                           slice_transform);
     ROCKSDB_JSON_SET_PROP(js, bloom_locality);
-    ROCKSDB_JSON_SET_PROP(js, arena_block_size);
+    ROCKSDB_JSON_SET_SIZE(js, arena_block_size);
     auto& js_compression_per_level = js["compression_per_level"];
     for (auto one_enum : compression_per_level) {
       js_compression_per_level.push_back(enum_stdstr(one_enum));
@@ -540,14 +540,14 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_PROP(js, num_levels);
     ROCKSDB_JSON_SET_PROP(js, level0_slowdown_writes_trigger);
     ROCKSDB_JSON_SET_PROP(js, level0_stop_writes_trigger);
-    ROCKSDB_JSON_SET_PROP(js, target_file_size_base);
+    ROCKSDB_JSON_SET_SIZE(js, target_file_size_base);
     ROCKSDB_JSON_SET_PROP(js, target_file_size_multiplier);
     ROCKSDB_JSON_SET_PROP(js, level_compaction_dynamic_level_bytes);
     ROCKSDB_JSON_SET_PROP(js, max_bytes_for_level_multiplier);
     ROCKSDB_JSON_SET_PROP(js, max_bytes_for_level_multiplier_additional);
-    ROCKSDB_JSON_SET_PROP(js, max_compaction_bytes);
-    ROCKSDB_JSON_SET_PROP(js, soft_pending_compaction_bytes_limit);
-    ROCKSDB_JSON_SET_PROP(js, hard_pending_compaction_bytes_limit);
+    ROCKSDB_JSON_SET_SIZE(js, max_compaction_bytes);
+    ROCKSDB_JSON_SET_SIZE(js, soft_pending_compaction_bytes_limit);
+    ROCKSDB_JSON_SET_SIZE(js, hard_pending_compaction_bytes_limit);
     ROCKSDB_JSON_SET_ENUM(js, compaction_style);
     ROCKSDB_JSON_SET_PROP(js, compaction_pri);
     ROCKSDB_JSON_SET_NEST(js, compaction_options_universal);
@@ -580,14 +580,14 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_FACT(js, merge_operator);
     // ROCKSDB_JSON_OPT_FACT(js, compaction_filter);
     ROCKSDB_JSON_SET_FACT(js, compaction_filter_factory);
-    ROCKSDB_JSON_SET_PROP(js, write_buffer_size);
+    ROCKSDB_JSON_SET_SIZE(js, write_buffer_size);
     ROCKSDB_JSON_SET_ENUM(js, compression);
     ROCKSDB_JSON_SET_ENUM(js, bottommost_compression);
     ROCKSDB_JSON_SET_NEST(js, bottommost_compression_opts);
     ROCKSDB_JSON_SET_NEST(js, compression_opts);
     ROCKSDB_JSON_SET_PROP(js, level0_file_num_compaction_trigger);
     ROCKSDB_JSON_SET_FACX(js, prefix_extractor, slice_transform);
-    ROCKSDB_JSON_SET_PROP(js, max_bytes_for_level_base);
+    ROCKSDB_JSON_SET_SIZE(js, max_bytes_for_level_base);
     ROCKSDB_JSON_SET_PROP(js, snap_refresh_nanos);
     ROCKSDB_JSON_SET_PROP(js, disable_auto_compactions);
     ROCKSDB_JSON_SET_FACT(js, table_factory);
@@ -727,6 +727,13 @@ struct JemallocAllocatorOptions_Json : JemallocAllocatorOptions {
     ROCKSDB_JSON_OPT_PROP(js, limit_tcache_size);
     ROCKSDB_JSON_OPT_SIZE(js, tcache_size_lower_bound);
     ROCKSDB_JSON_OPT_SIZE(js, tcache_size_upper_bound);
+  }
+  json ToJson(const JsonPluginRepo&) {
+    json js;
+    ROCKSDB_JSON_SET_PROP(js, limit_tcache_size);
+    ROCKSDB_JSON_SET_SIZE(js, tcache_size_lower_bound);
+    ROCKSDB_JSON_SET_SIZE(js, tcache_size_upper_bound);
+    return js;
   }
 };
 std::shared_ptr<MemoryAllocator>
@@ -1431,6 +1438,22 @@ struct BlobDBOptions_Json : BlobDBOptions {
     ROCKSDB_JSON_OPT_PROP(js, enable_garbage_collection);
     ROCKSDB_JSON_OPT_PROP(js, garbage_collection_cutoff);
     ROCKSDB_JSON_OPT_PROP(js, disable_background_tasks);
+  }
+  json ToJson(const JsonPluginRepo&) const {
+    json js;
+    ROCKSDB_JSON_SET_PROP(js, blob_dir);
+    ROCKSDB_JSON_SET_PROP(js, path_relative);
+    ROCKSDB_JSON_SET_PROP(js, is_fifo);
+    ROCKSDB_JSON_SET_SIZE(js, max_db_size);
+    ROCKSDB_JSON_SET_PROP(js, ttl_range_secs);
+    ROCKSDB_JSON_SET_SIZE(js, min_blob_size);
+    ROCKSDB_JSON_SET_SIZE(js, bytes_per_sync);
+    ROCKSDB_JSON_SET_SIZE(js, blob_file_size);
+    ROCKSDB_JSON_SET_ENUM(js, compression);
+    ROCKSDB_JSON_SET_PROP(js, enable_garbage_collection);
+    ROCKSDB_JSON_SET_PROP(js, garbage_collection_cutoff);
+    ROCKSDB_JSON_SET_PROP(js, disable_background_tasks);
+    return js;
   }
 };
 

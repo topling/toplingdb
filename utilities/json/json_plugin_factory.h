@@ -447,7 +447,7 @@ const JsonPluginRepo& repoRefType();
       ROCKSDB_JSON_OPT_FACT_INNER(__iter.value(), prop); \
   }} while (0)
 
-#define ROCKSDB_JSON_SET_SIZE(js, prop) js[#prop] = prop
+#define ROCKSDB_JSON_SET_SIZE(js, prop) JsonSetSize(js[#prop], prop)
 #define ROCKSDB_JSON_SET_PROP(js, prop) js[#prop] = prop
 #define ROCKSDB_JSON_SET_ENUM(js, prop) js[#prop] = enum_stdstr(prop)
 #define ROCKSDB_JSON_SET_NEST(js, prop) \
@@ -464,6 +464,7 @@ const JsonPluginRepo& repoRefType();
 #define ROCKSDB_JSON_SET_FACT_INNER(inner, prop, repo_field) \
   JsonRepoSet(inner, prop, repo.m_impl->repo_field, #repo_field, html)
 
+void JsonSetSize(json&, unsigned long long);
 bool JsonWeakBool(const json& js, const char* subname);
 std::string
 JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname);

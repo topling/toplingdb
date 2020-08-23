@@ -1066,6 +1066,8 @@ struct DB_Manip : PluginManipFunc<DB> {
     if (cfo_name.empty()) cfo_name = "json varname: (defined inline)";
     djs["DBOptions"][0] = dbo_name; dbo.SaveToJson(djs["DBOptions"][1], repo, html);
     djs["CFOptions"][0] = dbo_name; cfo.SaveToJson(djs["CFOptions"][1], repo, html);
+    djs["CFOptions"][1]["MaxMemCompactionLevel"] = const_cast<DB&>(db).MaxMemCompactionLevel();
+    djs["CFOptions"][1]["Level0StopWriteTrigger"] = const_cast<DB&>(db).Level0StopWriteTrigger();
     return JsonToString(djs, dump_options);
   }
 };
@@ -1139,6 +1141,8 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
         result_cfo_js[cf_name][0] = "json varname: (defined inline)";
         result_cfo_js[cf_name][1] = ijs.value();
       }
+      result_cfo_js[cf_name][1]["MaxMemCompactionLevel"] = db.db->MaxMemCompactionLevel(cf);
+      result_cfo_js[cf_name][1]["Level0StopWriteTrigger"] = db.db->Level0StopWriteTrigger(cf);
       // overwrite with up to date cfo
       cfo.SaveToJson(result_cfo_js[cf_name][1], repo, html);
     }

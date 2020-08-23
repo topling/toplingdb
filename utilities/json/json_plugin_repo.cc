@@ -794,6 +794,10 @@ int JsonPluginRepo::DebugLevel() {
 }
 
 void JsonSetSize(json& js, unsigned long long val) {
+  if (0 == val) {
+    js = 0;
+    return;
+  }
   char buf[32];
   int shift = 0;
   char unit = 'X';

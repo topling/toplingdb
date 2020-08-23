@@ -765,12 +765,62 @@ struct LRUCacheOptions_Json : LRUCacheOptions {
     ROCKSDB_JSON_OPT_PROP(js, use_adaptive_mutex);
     ROCKSDB_JSON_OPT_ENUM(js, metadata_charge_policy);
   }
+  json ToJson(const JsonPluginRepo& repo, bool html) const {
+    json js;
+    ROCKSDB_JSON_SET_SIZE(js, capacity);
+    ROCKSDB_JSON_SET_PROP(js, num_shard_bits);
+    ROCKSDB_JSON_SET_PROP(js, strict_capacity_limit);
+    ROCKSDB_JSON_SET_PROP(js, high_pri_pool_ratio);
+    ROCKSDB_JSON_SET_FACT(js, memory_allocator);
+    ROCKSDB_JSON_SET_PROP(js, use_adaptive_mutex);
+    ROCKSDB_JSON_SET_ENUM(js, metadata_charge_policy);
+    return js;
+  }
 };
 static std::shared_ptr<Cache>
 JS_NewLRUCache(const json& js, const JsonPluginRepo& repo) {
   return NewLRUCache(LRUCacheOptions_Json(js, repo));
 }
 ROCKSDB_FACTORY_REG("LRUCache", JS_NewLRUCache);
+
+struct LRUCache_Manip : PluginManipFunc<Cache> {
+  void Update(Cache* p, const json& js, const JsonPluginRepo& repo)
+  const override {
+
+  }
+
+  string ToString(const Cache& r, const json& dump_options, const JsonPluginRepo& repo)
+  const override {
+    bool html = JsonWeakBool(dump_options, "html");
+    auto& p2name = repo.m_impl->cache.p2name;
+    auto iter = p2name.find((Cache*)&r);
+    json js;
+    if (p2name.end() != iter) {
+      js = iter->second.params;
+    }
+    size_t usage = r.GetUsage();
+    size_t pined_usage = r.GetPinnedUsage();
+    size_t capacity = r.GetCapacity();
+    size_t strict_capacity = r.HasStrictCapacityLimit();
+    double usage_rate = 1.0*usage / capacity;
+    double pined_rate = 1.0*pined_usage / capacity;
+    MemoryAllocator* memory_allocator = r.memory_allocator();
+    ROCKSDB_JSON_SET_SIZE(js, usage);
+    ROCKSDB_JSON_SET_SIZE(js, pined_usage);
+    ROCKSDB_JSON_SET_SIZE(js, capacity);
+    ROCKSDB_JSON_SET_PROP(js, strict_capacity);
+    ROCKSDB_JSON_SET_PROP(js, usage_rate);
+    ROCKSDB_JSON_SET_PROP(js, pined_rate);
+    ROCKSDB_JSON_SET_FACT(js, memory_allocator);
+    return std::string();
+  }
+};
+static const PluginManipFunc<Cache>*
+JS_LRUCache_Manip(const json&, const JsonPluginRepo&) {
+  static const LRUCache_Manip manip;
+  return &manip;
+}
+ROCKSDB_FACTORY_REG("LRUCache", JS_LRUCache_Manip);
 
 //////////////////////////////////////////////////////////////////////////////
 static std::shared_ptr<Cache>

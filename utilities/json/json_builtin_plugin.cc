@@ -812,7 +812,7 @@ struct LRUCache_Manip : PluginManipFunc<Cache> {
     ROCKSDB_JSON_SET_PROP(js, usage_rate);
     ROCKSDB_JSON_SET_PROP(js, pined_rate);
     ROCKSDB_JSON_SET_FACT(js, memory_allocator);
-    return std::string();
+    return JsonToString(js, dump_options);
   }
 };
 static const PluginManipFunc<Cache>*

@@ -62,12 +62,11 @@ static json DbPathToJson(const DbPath& x) {
 static json DbPathVecToJson(const std::vector<DbPath>& vec, bool html) {
   json js;
   if (!vec.empty()) {
-    json& db_pathes_js = js["db_pathes"];
     for (auto& x : vec) {
-      db_pathes_js.push_back(DbPathToJson(x));
+      js.push_back(DbPathToJson(x));
     }
     if (html)
-      db_pathes_js[0]["<htmltab:col>"] = json::array({ "path", "target_size" });
+      js[0]["<htmltab:col>"] = json::array({ "path", "target_size" });
   }
   return js;
 }

@@ -665,12 +665,19 @@ class DispatherTableFactory : public TableFactory {
     auto& p2name = repo.m_impl->table_factory.p2name;
     auto factory = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
       json wjs;
+      char buf[64];
+#define ToStr(...) std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__))
       ROCKSDB_JSON_SET_FACT_INNER(wjs["factory"], tf, table_factory);
       const auto& st = m_stats[0][level];
-      wjs["entry_cnt"] = st.st.entry_cnt;
-      wjs["sum_key_len"] = st.st.sum_key_len;
-      wjs["sum_val_len"] = st.st.sum_val_len;
-
+      if (html) {
+        wjs["entry_cnt"] = ToStr("%.3f M", st.st.entry_cnt/1e6);
+        wjs["sum_key_len"] = ToStr("%.3f G", st.st.sum_key_len/1e9);
+        wjs["sum_val_len"] = ToStr("%.3f G", st.st.sum_val_len/1e9);
+      } else {
+        wjs["entry_cnt"] = st.st.entry_cnt;
+        wjs["sum_key_len"] = st.st.sum_key_len;
+        wjs["sum_val_len"] = st.st.sum_val_len;
+      }
       const static std::string labels[] = {
            "1s-ops",  "1s-klen",  "1s-vlen",
            "5s-ops",  "5s-klen",  "5s-vlen",
@@ -678,14 +685,12 @@ class DispatherTableFactory : public TableFactory {
            "5m-ops",  "5m-klen",  "5m-vlen",
           "30m-ops", "30m-klen", "30m-vlen",
       };
-      char buf[64];
-#define ToStr(...) std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__))
       for (size_t j = 0; j < 5; ++j) {
         double cnt = st.st.entry_cnt   - m_stats[j+1][level].st.entry_cnt;
         double key = st.st.sum_key_len - m_stats[j+1][level].st.sum_key_len;
         double val = st.st.sum_val_len - m_stats[j+1][level].st.sum_val_len;
         double us = duration_cast<microseconds>(st.time - m_stats[j+1][level].time).count();
-        wjs[labels[3*j+0]] = ToStr("%f K us = %f", cnt/us*1e3, us);
+        wjs[labels[3*j+0]] = ToStr("%f K", cnt/us*1e3);
         wjs[labels[3*j+1]] = ToStr("%f M", key/us);
         wjs[labels[3*j+2]] = ToStr("%f M", val/us);
       }

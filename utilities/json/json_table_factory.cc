@@ -737,6 +737,7 @@ class DispatherTableFactory : public TableFactory {
   struct TimeStat {
     DispatherTableBuilder::Stat st;
     steady_clock::time_point time;
+    TimeStat() { time = steady_clock::now(); }
   };
   // 0s, 1s, 5s, 30s, 300s(5m), 1800(30m)
   mutable std::vector<TimeStat> m_stats[6];

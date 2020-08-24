@@ -666,7 +666,7 @@ class DispatherTableFactory : public TableFactory {
     auto& p2name = repo.m_impl->table_factory.p2name;
     auto factory = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
       json wjs;
-      ROCKSDB_JSON_SET_FACT_INNER(wjs, tf, table_factory);
+      ROCKSDB_JSON_SET_FACT_INNER(wjs["factory"], tf, table_factory);
       const auto& st = m_stats[0][level];
       wjs["entry_cnt"] = st.st.entry_cnt;
       wjs["sum_key_len"] = st.st.sum_key_len;

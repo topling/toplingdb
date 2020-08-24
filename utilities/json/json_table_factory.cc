@@ -673,7 +673,7 @@ class DispatherTableFactory : public TableFactory {
     auto factory = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
       json wjs;
       char buf[64];
-#define ToStr(...) std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__))
+#define ToStr(...) json{std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__))}
       ROCKSDB_JSON_SET_FACT_INNER(wjs["factory"], tf, table_factory);
       const auto& st = m_stats[0][level];
       if (html) {
@@ -690,9 +690,9 @@ class DispatherTableFactory : public TableFactory {
         double key = st.st.sum_key_len - m_stats[j+1][level].st.sum_key_len;
         double val = st.st.sum_val_len - m_stats[j+1][level].st.sum_val_len;
         double us = duration_cast<microseconds>(st.time - m_stats[j+1][level].time).count();
-        wjs[labels[3*j+0]] = ToStr("%f K", cnt/us*1e3);
-        wjs[labels[3*j+1]] = ToStr("%f M", key/us);
-        wjs[labels[3*j+2]] = ToStr("%f M", val/us);
+        wjs[labels[3*j+0]] = !cnt ? json{0} : ToStr("%f K", cnt/us*1e3);
+        wjs[labels[3*j+1]] = !key ? json{0} : ToStr("%f M", key/us);
+        wjs[labels[3*j+2]] = !val ? json{0} : ToStr("%f M", val/us);
       }
       return wjs;
     };

@@ -937,7 +937,7 @@ static void JsonToHtml_ArrayCol(const json& arr, std::string& html) {
 }
 
 static void JsonToHtml_Object(const json& obj, std::string& html, bool nested) {
-  if (nested)
+  if (nested && false) // dont 100% width
     html.append("<table border=1 width=\"100%\"><tbody>\n");
   else
     html.append("<table border=1><tbody>\n");

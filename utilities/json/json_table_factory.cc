@@ -792,7 +792,7 @@ void DispatherTableBuilder::UpdateStat() {
   df->m_stats[0][lev].time = tp;
   df->m_stats[0][lev].st.Add(st);
   for (size_t i = 1; i < 6; ++i) {
-    assert(df->m_stats[i].size() == df->m_level_writers.size());
+    assert(df->m_stats[i].size() == df->m_level_writers.size() + 1);
     assert(size_t(lev) < df->m_level_writers.size());
     auto& ts = df->m_stats[i][lev];
     ts.st.Add(st);
@@ -801,6 +801,9 @@ void DispatherTableBuilder::UpdateStat() {
     }
   }
   df->m_mtx.unlock();
+  if (JsonPluginRepo::DebugLevel() >= 4) {
+    fprintf(stderr, "DBUG: entry_cnt = %zd\n", st_sum.entry_cnt);
+  }
   st.Reset();
 }
 

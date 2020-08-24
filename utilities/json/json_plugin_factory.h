@@ -465,7 +465,7 @@ const JsonPluginRepo& repoRefType();
   JsonRepoSet(inner, prop, repo.m_impl->repo_field, #repo_field, html)
 
 void JsonSetSize(json&, unsigned long long);
-bool JsonWeakBool(const json& js, const char* subname);
+bool JsonSmartBool(const json& js, const char* subname);
 std::string
 JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname);
 void

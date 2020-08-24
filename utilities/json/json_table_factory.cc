@@ -60,7 +60,7 @@ struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
   }
 
   json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
-    bool html = JsonWeakBool(dump_options, "html");
+    bool html = JsonSmartBool(dump_options, "html");
     json js;
     ROCKSDB_JSON_SET_FACT(js, flush_block_policy_factory);
     ROCKSDB_JSON_SET_PROP(js, cache_index_and_filter_blocks);
@@ -612,7 +612,7 @@ class DispatherTableFactory : public TableFactory {
   }
 
   json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
-    bool html = JsonWeakBool(dump_options, "html");
+    bool html = JsonSmartBool(dump_options, "html");
     auto& p2name = repo.m_impl->table_factory.p2name;
     json js;
     auto& lwjs = js["level_writers"];

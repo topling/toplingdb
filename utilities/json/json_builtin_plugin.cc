@@ -223,8 +223,13 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_SIZE(js, max_total_wal_size);
     ROCKSDB_JSON_SET_FACT(js, statistics);
     ROCKSDB_JSON_SET_PROP(js, use_fsync);
-    for (auto& x : db_paths) {
-      js["db_pathes"].push_back(DbPathToJson(x));
+    if (!db_paths.empty()) {
+      json& db_pathes_js = js["db_pathes"];
+      for (auto& x : db_paths) {
+        db_pathes_js.push_back(DbPathToJson(x));
+      }
+      if (html)
+        db_pathes_js[0]["<htmltab:col>"] = 1;
     }
     ROCKSDB_JSON_SET_PROP(js, db_log_dir);
     ROCKSDB_JSON_SET_PROP(js, wal_dir);
@@ -323,7 +328,7 @@ struct DBOptions_Manip : PluginManipFunc<DBOptions> {
   std::string ToString(const DBOptions& x, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
     json djs;
-    bool html = JsonWeakBool(dump_options, "html");
+    bool html = JsonSmartBool(dump_options, "html");
     static_cast<const DBOptions_Json&>(x).SaveToJson(djs, repo, html);
     return JsonToString(djs, dump_options);
   }
@@ -591,8 +596,12 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_PROP(js, snap_refresh_nanos);
     ROCKSDB_JSON_SET_PROP(js, disable_auto_compactions);
     ROCKSDB_JSON_SET_FACT(js, table_factory);
-    for (auto& x : cf_paths) {
-      js["cf_paths"].push_back(DbPathToJson(x));
+    if (!cf_paths.empty()) {
+      json& cf_paths_js = js["cf_paths"];
+      for (auto& x : cf_paths) {
+        cf_paths_js.push_back(DbPathToJson(x));
+      }
+      cf_paths_js[0]["<htmltab:col>"] = 1;
     }
     ROCKSDB_JSON_SET_FACT(js, compaction_thread_limiter);
   }
@@ -614,7 +623,7 @@ struct CFOptions_Manip : PluginManipFunc<ColumnFamilyOptions> {
   std::string ToString(const ColumnFamilyOptions& x, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
     json djs;
-    bool html = JsonWeakBool(dump_options, "html");
+    bool html = JsonSmartBool(dump_options, "html");
     static_cast<const ColumnFamilyOptions_Json&>(x).SaveToJson(djs, repo, html);
     return JsonToString(djs, dump_options);
   }
@@ -791,7 +800,7 @@ struct LRUCache_Manip : PluginManipFunc<Cache> {
 
   string ToString(const Cache& r, const json& dump_options, const JsonPluginRepo& repo)
   const override {
-    bool html = JsonWeakBool(dump_options, "html");
+    bool html = JsonSmartBool(dump_options, "html");
     auto& p2name = repo.m_impl->cache.p2name;
     auto iter = p2name.find((Cache*)&r);
     json js;
@@ -1061,7 +1070,7 @@ struct DB_Manip : PluginManipFunc<DB> {
         THROW_Corruption("p2name[" + dbname + "].params[cf_options|options] are all missing");
       }
     }
-    bool html = JsonWeakBool(dump_options, "html");
+    bool html = JsonSmartBool(dump_options, "html");
     if (dbo_name.empty()) dbo_name = "json varname: (defined inline)";
     if (cfo_name.empty()) cfo_name = "json varname: (defined inline)";
     djs["DBOptions"][0] = dbo_name; dbo.SaveToJson(djs["DBOptions"][1], repo, html);
@@ -1109,7 +1118,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
       THROW_Corruption("p2name[" + dbname + "].params.column_families are all missing");
     }
     const auto& def_cfo_js = ijs.value();
-    bool html = JsonWeakBool(dump_options, "html");
+    bool html = JsonSmartBool(dump_options, "html");
     if (dbo_name.empty()) dbo_name = "json varname: (defined inline)";
     djs["DBOptions"][0] = dbo_name;
     dbo.SaveToJson(djs["DBOptions"][1], repo, html);

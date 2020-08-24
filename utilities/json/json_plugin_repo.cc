@@ -820,7 +820,7 @@ void JsonSetSize(json& js, unsigned long long val) {
   js = std::string(buf, snprintf(buf, sizeof(buf), "%llu %ciB", val >> shift, unit));
 }
 
-bool JsonWeakBool(const json& js) {
+bool JsonSmartBool(const json& js) {
   if (js.is_string()) {
     const std::string& s = js.get_ref<const std::string&>();
     if (strcasecmp(s.c_str(), "true") == 0) return true;
@@ -832,34 +832,50 @@ bool JsonWeakBool(const json& js) {
     if (isdigit((unsigned char)s[0])) {
       return atoi(s.c_str()) != 0;
     }
-    throw std::invalid_argument("JsonWeakBool: bad js = " + s);
+    throw std::invalid_argument("JsonSmartBool: bad js = " + s);
   }
   if (js.is_boolean()) return js.get<bool>();
   if (js.is_number_integer()) return js.get<long long>() != 0;
-  throw std::invalid_argument("JsonWeakBool: bad js = " + js.dump());
+  if (js.is_array()) {
+    // http param: a=1&a=2&a=3 will construct a json array
+    // we take the last item of the json array
+    if (js.size() == 0) {
+      throw std::invalid_argument("JsonSmartBool: js is an empty json array");
+    }
+    return JsonSmartBool(js.back());
+  }
+  throw std::invalid_argument("JsonSmartBool: bad js = " + js.dump());
 }
 
-bool JsonWeakBool(const json& js, const char* subname) {
-  auto iter = js.find("html");
+bool JsonSmartBool(const json& js, const char* subname) {
+  auto iter = js.find(subname);
   if (js.end() != iter) {
-    return JsonWeakBool(iter.value());
+    return JsonSmartBool(iter.value());
   }
   return false;
 }
 
-int JsonWeakInt(const json& js) {
+int JsonSmartInt(const json& js) {
   if (js.is_string()) {
     const std::string& s = js.get_ref<const std::string&>();
     if (isdigit((unsigned char)s[0])) {
       return atoi(s.c_str());
     }
-    throw std::invalid_argument("JsonWeakInt: bad js = " + s);
+    throw std::invalid_argument("JsonSmartInt: bad js = " + s);
   }
   if (js.is_number_integer()) return js.get<int>();
-  throw std::invalid_argument("JsonWeakBool: bad js = " + js.dump());
+  if (js.is_array()) {
+    // http param: a=1&a=2&a=3 will construct a json array
+    // we take the last item of the json array
+    if (js.size() == 0) {
+      throw std::invalid_argument("JsonSmartInt: js is an empty json array");
+    }
+    return JsonSmartInt(js.back());
+  }
+  throw std::invalid_argument("JsonSmartBool: bad js = " + js.dump());
 }
 
-static void JsonToHtml_Object(const json& arr, std::string& html);
+static void JsonToHtml_Object(const json& arr, std::string& html, bool nested);
 static void JsonToHtml_Array(const json& arr, std::string& html) {
   size_t cnt = 0;
   for (const auto& kv : arr.items()) {
@@ -870,7 +886,7 @@ static void JsonToHtml_Array(const json& arr, std::string& html) {
 
     const auto& val = kv.value();
     if (val.is_object())
-      JsonToHtml_Object(val, html);
+      JsonToHtml_Object(val, html, true);
     else if (val.is_string())
       html.append(val.get_ref<const std::string&>());
     else // nested array also use dump
@@ -879,8 +895,58 @@ static void JsonToHtml_Array(const json& arr, std::string& html) {
     html.append("</td></tr>\n");
   }
 }
-static void JsonToHtml_Object(const json& obj, std::string& html) {
-  html.append("<table border=1><tbody>\n");
+
+static void JsonToHtml_ArrayCol(const json& arr, std::string& html) {
+  std::vector<const std::string> colnames;
+  for (auto& kv : arr[0].items()) {
+    const std::string& key = kv.key();
+    if (key != "<htmltab:col>") {
+      colnames.push_back(key);
+    }
+  }
+  html.append("<table border=1 width=\"100%\"><tbody>\n");
+  html.append("<tr>");
+  for (const auto& colname: colnames) {
+    html.append("<th>");
+    html.append(colname);
+    html.append("</th>");
+  }
+  html.append("</tr>\n");
+  size_t row = 0;
+  for (auto& item : arr.items()) {
+    html.append("<tr>");
+    size_t col = 0;
+    for (auto& kv : item.value().items()) {
+      const std::string& key = kv.key();
+      if (0 == row) {
+        if (key == "<htmltab:col>") {
+          continue;
+        }
+      }
+      if (key != colnames[col]) {
+        throw std::invalid_argument(
+            "JsonToHtml_ArrayCol: array elements are not homogeneous: " + arr.dump());
+      }
+      const json& val = kv.value();
+      html.append("<td>");
+      if (val.is_string())
+        html.append(val.get_ref<const std::string&>());
+      else
+        html.append(val.dump());
+      html.append("</td>");
+      col++;
+    }
+    row++;
+    html.append("</tr>\n");
+  }
+  html.append("</tbody></table>\n");
+}
+
+static void JsonToHtml_Object(const json& obj, std::string& html, bool nested) {
+  if (nested)
+    html.append("<table border=1 width=\"100%\"><tbody>\n");
+  else
+    html.append("<table border=1><tbody>\n");
   //html.append("<tr><th>name</th><th>value</th></tr>\n");
   for (const auto& kv : obj.items()) {
     const std::string& key = kv.key();
@@ -889,15 +955,24 @@ static void JsonToHtml_Object(const json& obj, std::string& html) {
       html.append("<tr><th>");
       html.append(key);
       html.append("</th><td>\n");
-      JsonToHtml_Object(val, html);
+      JsonToHtml_Object(val, html, true);
       html.append("</td></tr>\n");
     }
     else if (val.is_array()) {
-      char buf[64];
-      html.append(buf, snprintf(buf, sizeof(buf), "<tr><th rowspan=%zd>", val.size()));
-      html.append(key);
-      html.append("</th>\n");
-      JsonToHtml_Array(val, html);
+      if (val.size() > 0 && val[0].contains("<htmltab:col>")) {
+        html.append("<tr><th>");
+        html.append(key);
+        html.append("</th><td>\n");
+        JsonToHtml_ArrayCol(val, html);
+        html.append("</td></tr>\n");
+      }
+      else {
+        char buf[64];
+        html.append(buf, snprintf(buf, sizeof(buf), "<tr><th rowspan=%zd>", val.size()));
+        html.append(key);
+        html.append("</th>\n");
+        JsonToHtml_Array(val, html);
+      }
     }
     else {
       html.append("<tr><td>");
@@ -915,7 +990,7 @@ static void JsonToHtml_Object(const json& obj, std::string& html) {
 
 std::string JsonToHtml(const json& obj) {
   std::string html;
-  JsonToHtml_Object(obj, html);
+  JsonToHtml_Object(obj, html, false);
   return html;
 }
 
@@ -923,18 +998,18 @@ std::string JsonToString(const json& obj, const json& options) {
   int indent = -1;
   auto iter = options.find("pretty");
   if (options.end() != iter) {
-    if (JsonWeakBool(iter.value())) {
+    if (JsonSmartBool(iter.value())) {
       indent = 4;
     }
   }
   iter = options.find("indent");
   if (options.end() != iter) {
-    indent = JsonWeakInt(iter.value());
+    indent = JsonSmartInt(iter.value());
   }
   if (-1 != indent) {
     fprintf(stderr, "INFO: JsonToString: indent = %d\n", indent);
   }
-  if (JsonWeakBool(options, "html"))
+  if (JsonSmartBool(options, "html"))
     return JsonToHtml(obj);
   else
     return obj.dump(indent);

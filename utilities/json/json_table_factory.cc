@@ -794,7 +794,6 @@ void DispatherTableBuilder::UpdateStat() {
     assert(df->m_stats[i].size() == df->m_level_writers.size() + 1);
     assert(lev <= df->m_level_writers.size());
     auto& ts = df->m_stats[i][lev];
-    ts.st.Add(st);
     if (JsonPluginRepo::DebugLevel() >= 5) {
       fprintf(stderr, "DBUG: tp-ts.time = %zd, g_durations[i] = %zd, (tp - ts.time > g_durations[i]) = %d\n",
               (size_t)duration_cast<seconds>(tp - ts.time).count(),
@@ -802,7 +801,8 @@ void DispatherTableBuilder::UpdateStat() {
               tp - ts.time > g_durations[i]);
     }
     if (tp - ts.time > g_durations[i]) {
-      ts = df->m_stats[i-1][lev]; // refresh
+      auto newer = df->m_stats[i-1][lev];
+      ts = newer; // refresh
     }
   }
   df->m_mtx.unlock();

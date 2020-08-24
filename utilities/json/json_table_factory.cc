@@ -799,7 +799,10 @@ void DispatherTableBuilder::UpdateStat() {
       ts = df->m_stats[i-1][lev]; // refresh
     }
     if (JsonPluginRepo::DebugLevel() >= 5) {
-      fprintf(stderr, "DBUG: (tp - ts.time > g_durations[i]) = %d\n", tp - ts.time > g_durations[i]);
+      fprintf(stderr, "DBUG: tp-ts.time = %zd, g_durations[i] = %zd, (tp - ts.time > g_durations[i]) = %d\n",
+              (size_t)duration_cast<seconds>(tp - ts.time).count(),
+              (size_t)duration_cast<seconds>(g_durations[i]).count(),
+              tp - ts.time > g_durations[i]);
     }
   }
   df->m_mtx.unlock();

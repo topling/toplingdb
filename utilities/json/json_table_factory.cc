@@ -795,7 +795,7 @@ void DispatherTableBuilder::UpdateStat() {
     assert(lev <= df->m_level_writers.size());
     auto& ts = df->m_stats[i][lev];
     ts.st.Add(st);
-    if (tp - ts.time > g_durations[i]) {
+    if (tp - ts.time > g_durations[i-1]) {
       ts = df->m_stats[i-1][lev]; // refresh
     }
     if (JsonPluginRepo::DebugLevel() >= 5) {

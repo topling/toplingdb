@@ -900,8 +900,7 @@ static void JsonToHtml_ArrayCol(const json& arr, std::string& html) {
   // columns has order
   std::vector<std::string> colnames;
   for (auto& kv : arr[0]["<htmltab:col>"].items()) {
-    const std::string& key = kv.key();
-    colnames.push_back(key);
+    colnames.push_back(kv.value());
   }
   html.append("<table border=1 width=\"100%\"><tbody>\n");
   html.append("<tr>");

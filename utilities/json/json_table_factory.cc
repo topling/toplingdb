@@ -685,7 +685,7 @@ class DispatherTableFactory : public TableFactory {
         double key = st.st.sum_key_len - m_stats[j+1][level].st.sum_key_len;
         double val = st.st.sum_val_len - m_stats[j+1][level].st.sum_val_len;
         double us = duration_cast<microseconds>(st.time - m_stats[j+1][level].time).count();
-        wjs[labels[3*j+0]] = ToStr("%f K", cnt/us*1e3);
+        wjs[labels[3*j+0]] = ToStr("%f K us = %f", cnt/us*1e3, us);
         wjs[labels[3*j+1]] = ToStr("%f M", key/us);
         wjs[labels[3*j+2]] = ToStr("%f M", val/us);
       }

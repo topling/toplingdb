@@ -897,7 +897,7 @@ static void JsonToHtml_Array(const json& arr, std::string& html) {
 }
 
 static void JsonToHtml_ArrayCol(const json& arr, std::string& html) {
-  std::vector<const std::string> colnames;
+  std::vector<std::string> colnames;
   for (auto& kv : arr[0].items()) {
     const std::string& key = kv.key();
     if (key != "<htmltab:col>") {

@@ -919,7 +919,9 @@ static void JsonToHtml_ArrayCol(const json& arr, std::string& html) {
       auto iter = row_js.find(colname);
       if (row_js.end() == iter) {
         throw std::invalid_argument(
-            "JsonToHtml_ArrayCol: array elements are not homogeneous: " + arr.dump());
+            "JsonToHtml_ArrayCol: array element are not homogeneous: missing colname = "
+            + colname + ", row = "  + row_js.dump()
+            + ", colnames = " + arr[0]["<htmltab:col>"].dump());
       }
       const json& val = iter.value();
       html.append("<td>");

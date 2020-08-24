@@ -718,7 +718,7 @@ class DispatherTableFactory : public TableFactory {
     js["default"] = factory(m_default_writer, 0);
     std::unordered_map<std::string, std::shared_ptr<TableFactory> > rmap;
     for (auto& kv : m_magic_to_factory) {
-      rmap[kv.second.varname] = kv.second.factory;
+      rmap[kv.second.factory->Name()] = kv.second.factory;
     }
     json& readers_js = js["readers"];
     for (auto& kv : rmap) {

@@ -58,6 +58,20 @@ static json DbPathToJson(const DbPath& x) {
         { "target_size", x.target_size }
     };
 }
+
+static json DbPathVecToJson(const std::vector<DbPath>& vec, bool html) {
+  json js;
+  if (!vec.empty()) {
+    json& db_pathes_js = js["db_pathes"];
+    for (auto& x : vec) {
+      db_pathes_js.push_back(DbPathToJson(x));
+    }
+    if (html)
+      db_pathes_js[0]["<htmltab:col>"] = json::array({ "path", "target_size" });
+  }
+  return js;
+}
+
 static DbPath DbPathFromJson(const json& js) {
   DbPath x;
   if (js.is_string()) {
@@ -224,12 +238,7 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_FACT(js, statistics);
     ROCKSDB_JSON_SET_PROP(js, use_fsync);
     if (!db_paths.empty()) {
-      json& db_pathes_js = js["db_pathes"];
-      for (auto& x : db_paths) {
-        db_pathes_js.push_back(DbPathToJson(x));
-      }
-      if (html)
-        db_pathes_js[0]["<htmltab:col>"] = 1;
+      js["db_pathes"] = DbPathVecToJson(db_paths, html);
     }
     ROCKSDB_JSON_SET_PROP(js, db_log_dir);
     ROCKSDB_JSON_SET_PROP(js, wal_dir);
@@ -597,12 +606,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_PROP(js, disable_auto_compactions);
     ROCKSDB_JSON_SET_FACT(js, table_factory);
     if (!cf_paths.empty()) {
-      json& cf_paths_js = js["cf_paths"];
-      for (auto& x : cf_paths) {
-        cf_paths_js.push_back(DbPathToJson(x));
-      }
-      if (html)
-        cf_paths_js[0]["<htmltab:col>"] = 1;
+      js["cf_paths"] = DbPathVecToJson(cf_paths, html);
     }
     ROCKSDB_JSON_SET_FACT(js, compaction_thread_limiter);
   }

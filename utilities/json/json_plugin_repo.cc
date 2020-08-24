@@ -897,12 +897,11 @@ static void JsonToHtml_Array(const json& arr, std::string& html) {
 }
 
 static void JsonToHtml_ArrayCol(const json& arr, std::string& html) {
+  // columns has order
   std::vector<std::string> colnames;
-  for (auto& kv : arr[0].items()) {
+  for (auto& kv : arr[0]["<htmltab:col>"].items()) {
     const std::string& key = kv.key();
-    if (key != "<htmltab:col>") {
-      colnames.push_back(key);
-    }
+    colnames.push_back(key);
   }
   html.append("<table border=1 width=\"100%\"><tbody>\n");
   html.append("<tr>");
@@ -915,26 +914,20 @@ static void JsonToHtml_ArrayCol(const json& arr, std::string& html) {
   size_t row = 0;
   for (auto& item : arr.items()) {
     html.append("<tr>");
-    size_t col = 0;
-    for (auto& kv : item.value().items()) {
-      const std::string& key = kv.key();
-      if (0 == row) {
-        if (key == "<htmltab:col>") {
-          continue;
-        }
-      }
-      if (key != colnames[col]) {
+    const auto& row_js = item.value();
+    for (auto& colname : colnames) {
+      auto iter = row_js.find(colname);
+      if (row_js.end() == iter) {
         throw std::invalid_argument(
             "JsonToHtml_ArrayCol: array elements are not homogeneous: " + arr.dump());
       }
-      const json& val = kv.value();
+      const json& val = iter.value();
       html.append("<td>");
       if (val.is_string())
         html.append(val.get_ref<const std::string&>());
       else
         html.append(val.dump());
       html.append("</td>");
-      col++;
     }
     row++;
     html.append("</tr>\n");

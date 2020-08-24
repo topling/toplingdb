@@ -663,6 +663,13 @@ class DispatherTableFactory : public TableFactory {
   json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
     const bool html = JsonSmartBool(dump_options, "html");
     auto& p2name = repo.m_impl->table_factory.p2name;
+    const static std::string labels[] = {
+         "1s-ops",  "1s-klen",  "1s-vlen",
+         "5s-ops",  "5s-klen",  "5s-vlen",
+        "30s-ops", "30s-klen", "30s-vlen",
+         "5m-ops",  "5m-klen",  "5m-vlen",
+        "30m-ops", "30m-klen", "30m-vlen",
+    };
     auto factory = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
       json wjs;
       char buf[64];
@@ -678,13 +685,6 @@ class DispatherTableFactory : public TableFactory {
         wjs["sum_key_len"] = st.st.sum_key_len;
         wjs["sum_val_len"] = st.st.sum_val_len;
       }
-      const static std::string labels[] = {
-           "1s-ops",  "1s-klen",  "1s-vlen",
-           "5s-ops",  "5s-klen",  "5s-vlen",
-          "30s-ops", "30s-klen", "30s-vlen",
-           "5m-ops",  "5m-klen",  "5m-vlen",
-          "30m-ops", "30m-klen", "30m-vlen",
-      };
       for (size_t j = 0; j < 5; ++j) {
         double cnt = st.st.entry_cnt   - m_stats[j+1][level].st.entry_cnt;
         double key = st.st.sum_key_len - m_stats[j+1][level].st.sum_key_len;
@@ -707,7 +707,13 @@ class DispatherTableFactory : public TableFactory {
       lwjs.push_back(factory(tf, i+1));
     }
     if (html && !m_level_writers.empty()) {
-      lwjs[0]["<htmltab:col>"] = 1;
+      auto& cols = lwjs[0]["<htmltab:col>"];
+      cols = json::array({
+          "factory", "entry_cnt", "sum_key_len", "sum_val_len",
+      });
+      for (auto& lab : labels) {
+        cols.push_back(lab);
+      }
     }
     js["default"] = factory(m_default_writer, 0);
     std::unordered_map<std::string, std::shared_ptr<TableFactory> > rmap;

@@ -481,24 +481,23 @@ class DispatherTableFactory : public TableFactory {
       abort();
     }
     int level = table_builder_options.level;
+    TableBuilder* builder;
     if (size_t(level) < m_level_writers.size()) {
       if (JsonPluginRepo::DebugLevel() >= 3) {
         Info(info_log,
           "Dispatch::NewTableBuilder: level = %d, use level factory = %s\n",
           level, m_level_writers[level]->Name());
       }
-      auto builder = m_level_writers[level]->NewTableBuilder(
+      builder = m_level_writers[level]->NewTableBuilder(
           table_builder_options, column_family_id, file);
-      if (builder) {
-        return builder;
+      if (!builder) {
+        Warn(info_log,
+          "Dispatch::NewTableBuilder: level = %d, use level factory = %s,"
+          " returns null, try default: %s\n",
+          level, m_level_writers[level]->Name(), m_default_writer->Name());
+        builder = m_default_writer->NewTableBuilder(
+            table_builder_options, column_family_id, file);
       }
-      Warn(info_log,
-        "Dispatch::NewTableBuilder: level = %d, use level factory = %s,"
-        " returns null, try default: %s\n",
-        level, m_level_writers[level]->Name(), m_default_writer->Name());
-      auto tb = m_default_writer->NewTableBuilder(
-          table_builder_options, column_family_id, file);
-      return new DispatherTableBuilder(tb, this, level);
     }
     else {
       if (JsonPluginRepo::DebugLevel() >= 3) {
@@ -506,10 +505,10 @@ class DispatherTableFactory : public TableFactory {
           "Dispatch::NewTableBuilder: level = %d, use default factory = %s\n",
           level, m_default_writer->Name());
       }
-      auto tb = m_default_writer->NewTableBuilder(
+      builder = m_default_writer->NewTableBuilder(
           table_builder_options, column_family_id, file);
-      return new DispatherTableBuilder(tb, this, level);
     }
+    return new DispatherTableBuilder(builder, this, level);
   }
 
   // Sanitizes the specified DB Options.

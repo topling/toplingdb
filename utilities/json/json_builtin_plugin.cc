@@ -601,7 +601,8 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
       for (auto& x : cf_paths) {
         cf_paths_js.push_back(DbPathToJson(x));
       }
-      cf_paths_js[0]["<htmltab:col>"] = 1;
+      if (html)
+        cf_paths_js[0]["<htmltab:col>"] = 1;
     }
     ROCKSDB_JSON_SET_FACT(js, compaction_thread_limiter);
   }

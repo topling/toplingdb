@@ -341,6 +341,51 @@ RegTableFactoryMagicNumber(uint64_t magic, const char* name) {
   }
 }
 
+using namespace std::chrono;
+class DispatherTableFactory;
+
+// for hook TableBuilder::Add(key, value) to perform statistics
+struct DispatherTableBuilder : public TableBuilder {
+  TableBuilder* tb = nullptr;
+  const DispatherTableFactory* dispatcher = nullptr;
+  struct Stat {
+    size_t entry_cnt = 0;
+    size_t sum_key_len = 0;
+    size_t sum_val_len = 0;
+    void Add(const Stat& y) {
+      entry_cnt += y.entry_cnt;
+      sum_key_len += y.sum_key_len;
+      sum_val_len += y.sum_val_len;
+    }
+    void Reset() {
+      entry_cnt = 0;
+      sum_key_len = 0;
+      sum_val_len = 0;
+    }
+  };
+  Stat st;
+  Stat st_sum;
+  int  level;
+  DispatherTableBuilder(TableBuilder* tb1,
+                        const DispatherTableFactory* dtf1,
+                        int level1);
+  ~DispatherTableBuilder() { UpdateStat(); }
+  void UpdateStat();
+  void Add(const Slice& key, const Slice& value) final;
+  Status status() const final { return tb->status(); }
+  IOStatus io_status() const final { return tb->io_status(); }
+  Status Finish() final { return tb->Finish(); }
+  void Abandon() final { tb->Abandon(); }
+  uint64_t NumEntries() const final { return tb->NumEntries(); }
+  bool IsEmpty() const { return tb->IsEmpty(); }
+  uint64_t FileSize() const final { return tb->FileSize(); }
+  uint64_t EstimatedFileSize() const { return tb->EstimatedFileSize(); }
+  bool NeedCompact() const { return tb->NeedCompact(); }
+  TableProperties GetTableProperties() const final { return tb->GetTableProperties(); }
+  std::string GetFileChecksum() const final { return tb->GetFileChecksum(); }
+  const char* GetFileChecksumFuncName() const final { return tb->GetFileChecksumFuncName(); }
+};
+
 class DispatherTableFactory : public TableFactory {
  public:
   ~DispatherTableFactory() {}
@@ -451,8 +496,9 @@ class DispatherTableFactory : public TableFactory {
         "Dispatch::NewTableBuilder: level = %d, use level factory = %s,"
         " returns null, try default: %s\n",
         level, m_level_writers[level]->Name(), m_default_writer->Name());
-      return m_default_writer->NewTableBuilder(
+      auto tb = m_default_writer->NewTableBuilder(
           table_builder_options, column_family_id, file);
+      return new DispatherTableBuilder(tb, this, level);
     }
     else {
       if (JsonPluginRepo::DebugLevel() >= 3) {
@@ -460,8 +506,9 @@ class DispatherTableFactory : public TableFactory {
           "Dispatch::NewTableBuilder: level = %d, use default factory = %s\n",
           level, m_default_writer->Name());
       }
-      return m_default_writer->NewTableBuilder(
+      auto tb = m_default_writer->NewTableBuilder(
           table_builder_options, column_family_id, file);
+      return new DispatherTableBuilder(tb, this, level);
     }
   }
 
@@ -516,6 +563,9 @@ class DispatherTableFactory : public TableFactory {
         }
         m_level_writers.push_back(p);
       }
+    }
+    for (auto& stv : m_stats) {
+      stv.resize(m_level_writers.size() + 1);
     }
     std::unordered_map<std::string, std::vector<uint64_t> > name2magic;
     for (auto& kv : GetDispatherTableMagicNumberMap()) {
@@ -615,17 +665,47 @@ class DispatherTableFactory : public TableFactory {
     bool html = JsonSmartBool(dump_options, "html");
     auto& p2name = repo.m_impl->table_factory.p2name;
     json js;
+    auto factory = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
+      json wjs;
+      ROCKSDB_JSON_SET_FACT_INNER(wjs, tf, table_factory);
+      const auto& st = m_stats[0][level];
+      wjs["entry_cnt"] = st.st.entry_cnt;
+      wjs["sum_key_len"] = st.st.sum_key_len;
+      wjs["sum_val_len"] = st.st.sum_val_len;
+
+      const static std::string labels[] = {
+           "1s-ops",  "1s-klen",  "1s-vlen",
+           "5s-ops",  "5s-klen",  "5s-vlen",
+          "30s-ops", "30s-klen", "30s-vlen",
+           "5m-ops",  "5m-klen",  "5m-vlen",
+          "30m-ops", "30m-klen", "30m-vlen",
+      };
+      char buf[64];
+#define ToStr(...) std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__))
+      for (size_t j = 0; j < 5; ++j) {
+        double cnt = st.st.entry_cnt - m_stats[j+1][level].st.entry_cnt;
+        double key = st.st.sum_key_len - m_stats[j+1][level].st.sum_key_len;
+        double val = st.st.sum_val_len - m_stats[j+1][level].st.sum_val_len;
+        double us = duration_cast<microseconds>(st.time - m_stats[j+1][level].time).count();
+        wjs[labels[3*j+0]] = ToStr("%f K", cnt/us*1e3);
+        wjs[labels[3*j+1]] = ToStr("%f M", key/us);
+        wjs[labels[3*j+2]] = ToStr("%f M", val/us);
+      }
+      return wjs;
+    };
     auto& lwjs = js["level_writers"];
-    for (auto& tf : m_level_writers) {
+    for (size_t i = 0, n = m_level_writers.size(); i < n; ++i) {
+      auto& tf = m_level_writers[i];
       auto iter = p2name.find(tf.get());
       if (p2name.end() == iter) {
         THROW_Corruption("missing TableFactory of m_level_writer");
       }
-      json wjs;
-      ROCKSDB_JSON_SET_FACT_INNER(wjs, tf, table_factory);
-      lwjs.push_back(std::move(wjs));
+      lwjs.push_back(factory(tf, i+1));
     }
-    ROCKSDB_JSON_SET_FACT_INNER(js["default"], m_default_writer, table_factory);
+    if (html) {
+      lwjs[0]["<htmltab:col>"] = 1;
+    }
+    js["default"] = factory(m_default_writer, 0);
     std::unordered_map<std::string, std::shared_ptr<TableFactory> > rmap;
     for (auto& kv : m_magic_to_factory) {
       rmap[kv.second.varname] = kv.second.factory;
@@ -646,8 +726,15 @@ class DispatherTableFactory : public TableFactory {
 
   }
 
+  mutable std::mutex m_mtx;
   mutable std::vector<std::shared_ptr<TableFactory> > m_level_writers;
   mutable std::shared_ptr<TableFactory> m_default_writer;
+  struct TimeStat {
+    DispatherTableBuilder::Stat st;
+    steady_clock::time_point time;
+  };
+  // 0s, 1s, 5s, 30s, 300s(5m), 1800(30m)
+  mutable std::vector<TimeStat> m_stats[6];
   mutable std::shared_ptr<std::unordered_map<std::string,
                                      std::shared_ptr<TableFactory>>> m_all;
   mutable std::string m_json_str;
@@ -660,6 +747,56 @@ class DispatherTableFactory : public TableFactory {
   };
   mutable std::unordered_map<uint64_t, ReaderFactory> m_magic_to_factory;
 };
+
+static const seconds g_durations[6] = {
+    seconds(0),
+    seconds(1),
+    seconds(5),
+    seconds(30),
+    seconds(300), // 5 minutes
+    seconds(1800), // 30 minutes
+};
+
+DispatherTableBuilder::DispatherTableBuilder(TableBuilder* tb1,
+                      const DispatherTableFactory* dtf1,
+                      int level1) {
+  tb = tb1;
+  dispatcher = dtf1;
+  if (size_t(level1) < dtf1->m_level_writers.size())
+    level = level1 + 1;
+  else
+    level = 0;
+}
+
+void DispatherTableBuilder::Add(const Slice& key, const Slice& value) {
+  st.entry_cnt++;
+  st.sum_key_len += key.size();
+  st.sum_val_len += value.size();
+  if (UNLIKELY(st.entry_cnt % 1024 == 0)) {
+    UpdateStat();
+  }
+  tb->Add(key, value);
+}
+void DispatherTableBuilder::UpdateStat() {
+  st_sum.Add(st);
+  auto tp = steady_clock::now();
+  auto df = dispatcher;
+  auto lev = size_t(level);
+  df->m_mtx.lock();
+  df->m_stats[0][lev].time = tp;
+  df->m_stats[0][lev].st.Add(st);
+  for (size_t i = 1; i < 6; ++i) {
+    assert(df->m_stats[i].size() == df->m_level_writers.size());
+    assert(size_t(lev) < df->m_level_writers.size());
+    auto& ts = df->m_stats[i][lev];
+    ts.st.Add(st);
+    if (tp - ts.time > g_durations[i]) {
+      ts = df->m_stats[i-1][lev]; // refresh
+    }
+  }
+  df->m_mtx.unlock();
+  st.Reset();
+}
 
 static std::shared_ptr<TableFactory>
 NewDispatcherTableFactoryJson(const json& js, const JsonPluginRepo& repo) {

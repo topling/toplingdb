@@ -662,9 +662,8 @@ class DispatherTableFactory : public TableFactory {
   }
 
   json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
-    bool html = JsonSmartBool(dump_options, "html");
+    const bool html = JsonSmartBool(dump_options, "html");
     auto& p2name = repo.m_impl->table_factory.p2name;
-    json js;
     auto factory = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
       json wjs;
       ROCKSDB_JSON_SET_FACT_INNER(wjs, tf, table_factory);
@@ -683,7 +682,7 @@ class DispatherTableFactory : public TableFactory {
       char buf[64];
 #define ToStr(...) std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__))
       for (size_t j = 0; j < 5; ++j) {
-        double cnt = st.st.entry_cnt - m_stats[j+1][level].st.entry_cnt;
+        double cnt = st.st.entry_cnt   - m_stats[j+1][level].st.entry_cnt;
         double key = st.st.sum_key_len - m_stats[j+1][level].st.sum_key_len;
         double val = st.st.sum_val_len - m_stats[j+1][level].st.sum_val_len;
         double us = duration_cast<microseconds>(st.time - m_stats[j+1][level].time).count();
@@ -693,6 +692,7 @@ class DispatherTableFactory : public TableFactory {
       }
       return wjs;
     };
+    json js;
     auto& lwjs = js["level_writers"];
     for (size_t i = 0, n = m_level_writers.size(); i < n; ++i) {
       auto& tf = m_level_writers[i];
@@ -702,7 +702,7 @@ class DispatherTableFactory : public TableFactory {
       }
       lwjs.push_back(factory(tf, i+1));
     }
-    if (html) {
+    if (html && !m_level_writers.empty()) {
       lwjs[0]["<htmltab:col>"] = 1;
     }
     js["default"] = factory(m_default_writer, 0);
@@ -719,7 +719,12 @@ class DispatherTableFactory : public TableFactory {
   std::string ToJsonStr(const json& dump_options,
                         const JsonPluginRepo& repo) const {
     auto js = ToJsonObj(dump_options, repo);
-    return JsonToString(js, dump_options);
+    try {
+      return JsonToString(js, dump_options);
+    }
+    catch (const std::exception& ex) {
+      THROW_InvalidArgument(std::string(ex.what()) + ", json:\n" + js.dump());
+    }
   }
 
   void UpdateOptions(const json& js, const JsonPluginRepo& repo) {

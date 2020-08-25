@@ -426,6 +426,8 @@ class DispatherTableFactory : public TableFactory {
       const std::string&                   varname = fp_iter->second.varname;
       Info(info_log, "%s: found factory: %016llX : %s: %s\n",
            func, magic, factory->Name(), varname.c_str());
+      fp_iter->second.open_cnt++;
+      fp_iter->second.sum_open_size += file_size;
       return factory->NewTableReader(ro, table_reader_options,
                                      std::move(file), file_size, table,
                                      prefetch_index_and_filter_in_cache);
@@ -497,6 +499,9 @@ class DispatherTableFactory : public TableFactory {
           level, m_level_writers[level]->Name(), m_default_writer->Name());
         builder = m_default_writer->NewTableBuilder(
             table_builder_options, column_family_id, file);
+        m_writer_files[0]++;
+      } else {
+        m_writer_files[level+1]++;
       }
     }
     else {
@@ -507,6 +512,7 @@ class DispatherTableFactory : public TableFactory {
       }
       builder = m_default_writer->NewTableBuilder(
           table_builder_options, column_family_id, file);
+      m_writer_files[0]++;
     }
     return new DispatherTableBuilder(builder, this, level);
   }
@@ -566,6 +572,7 @@ class DispatherTableFactory : public TableFactory {
     for (auto& stv : m_stats) {
       stv.resize(m_level_writers.size() + 1);
     }
+    m_writer_files.resize(m_level_writers.size() + 1);
     std::unordered_map<std::string, std::vector<uint64_t> > name2magic;
     for (auto& kv : GetDispatherTableMagicNumberMap()) {
       name2magic[kv.second].push_back(kv.first);
@@ -677,7 +684,7 @@ class DispatherTableFactory : public TableFactory {
       wjs["level"] = 0 == level ? json("default") : json(level-1);
       ROCKSDB_JSON_SET_FACT_INNER(wjs["factory"], tf, table_factory);
       const auto& st = m_stats[0][level];
-      wjs["files"] = st.file_cnt;
+      wjs["files"] = m_writer_files[level];
       if (html) {
         wjs["entry_cnt"] = ToStr("%.3f M", st.st.entry_cnt/1e6);
         wjs["sum_key_len"] = ToStr("%.3f G", st.st.sum_key_len/1e9);
@@ -719,14 +726,20 @@ class DispatherTableFactory : public TableFactory {
       }
     }
     lwjs.push_back(factory(m_default_writer, 0));
-    std::unordered_map<std::string, std::shared_ptr<TableFactory> > rmap;
-    for (auto& kv : m_magic_to_factory) {
-      rmap[kv.second.factory->Name()] = kv.second.factory;
-    }
     json& readers_js = js["readers"];
-    for (auto& kv : rmap) {
-      ROCKSDB_JSON_SET_FACT_INNER(readers_js[kv.first], kv.second, table_factory);
+    for (auto& kv : m_magic_to_factory) {
+      json one_js;
+      char buf[64];
+      one_js["class"] = kv.second.factory->Name();
+      one_js["magic_num"] = ToStr("%llX", (long long)kv.first);
+      ROCKSDB_JSON_SET_FACT_INNER(one_js["factory"], kv.second, table_factory);
+      one_js["open_cnt"] = kv.second.open_cnt;
+      one_js["sum_open_size"] = ToStr("%.3f G", kv.second.sum_open_size/1e9);
+      readers_js.push_back(std::move(one_js));
     }
+    readers_js[0]["<htmltab:col>"] = json::array({
+      "class", "magic_num", "factory", "open_cnt", "sum_open_size"
+    });
     return js;
   }
   std::string ToJsonStr(const json& dump_options,
@@ -750,11 +763,11 @@ class DispatherTableFactory : public TableFactory {
   struct TimeStat {
     DispatherTableBuilder::Stat st;
     steady_clock::time_point time;
-    size_t file_cnt = 0;
     TimeStat() { time = steady_clock::now(); }
   };
   // 0s, 1s, 5s, 30s, 300s(5m), 1800(30m)
   mutable std::vector<TimeStat> m_stats[6];
+  mutable std::vector<size_t> m_writer_files;
   mutable std::shared_ptr<std::unordered_map<std::string,
                                      std::shared_ptr<TableFactory>>> m_all;
   mutable std::string m_json_str;
@@ -763,6 +776,8 @@ class DispatherTableFactory : public TableFactory {
   struct ReaderFactory {
     std::shared_ptr<TableFactory> factory;
     std::string varname;
+    size_t open_cnt = 0;
+    unsigned long long sum_open_size = 0;
     bool is_user_defined;
   };
   mutable std::unordered_map<uint64_t, ReaderFactory> m_magic_to_factory;

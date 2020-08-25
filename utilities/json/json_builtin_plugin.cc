@@ -982,6 +982,26 @@ ROCKSDB_FACTORY_REG("HashLinkList", NewHashLinkListMemTableRepFactoryJson);
 /////////////////////////////////////////////////////////////////////////////
 // OpenDB implementations
 //
+
+template<class Ptr>
+auto IterPluginFind(JsonPluginRepo::Impl::ObjMap<Ptr>& field, const std::string& str) {
+  if ('$' != str[0]) {
+    auto iter = field.name2p->find(str);
+    if (field.name2p->end() == iter) {
+        THROW_NotFound("class/inst_id = \"" + str + "\"");
+    }
+    return iter;
+  }
+  else {
+    const std::string inst_id = PluginParseInstID(str);
+    auto iter = field.name2p->find(inst_id);
+    if (field.name2p->end() == iter) {
+        THROW_NotFound("inst_id = \"" + inst_id + "\"");
+    }
+    return iter;
+  }
+}
+
 const char* db_options_class = "DBOptions";
 const char* cf_options_class = "CFOptions";
 template<class Ptr>
@@ -1151,7 +1171,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
       if (ijs.value().is_string()) {
         // find in repo.m_impl->cf_options
         auto cfo_varname = ijs.value().get_ref<const std::string&>();
-        auto icf = repo.m_impl->cf_options.name2p->find(cfo_varname);
+        auto icf = IterPluginFind(repo.m_impl->cf_options, cfo_varname);
         if (repo.m_impl->cf_options.name2p->end() == icf) {
           THROW_Corruption("Missing cfo_varname = " + cfo_varname);
         }

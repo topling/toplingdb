@@ -548,9 +548,9 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_PROP(js, bloom_locality);
     ROCKSDB_JSON_SET_SIZE(js, arena_block_size);
     auto& js_compression_per_level = js["compression_per_level"];
-    for (auto one_enum : compression_per_level) {
+    js_compression_per_level.clear();
+    for (auto one_enum : compression_per_level)
       js_compression_per_level.push_back(enum_stdstr(one_enum));
-    }
     ROCKSDB_JSON_SET_PROP(js, num_levels);
     ROCKSDB_JSON_SET_PROP(js, level0_slowdown_writes_trigger);
     ROCKSDB_JSON_SET_PROP(js, level0_stop_writes_trigger);
@@ -568,6 +568,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_NEST(js, compaction_options_fifo);
     ROCKSDB_JSON_SET_PROP(js, max_sequential_skip_in_iterations);
     ROCKSDB_JSON_SET_FACX(js, memtable_factory, mem_table_rep_factory);
+    js["table_properties_collector_factories"].clear();
     for (auto& table_properties_collector_factory :
                table_properties_collector_factories) {
       json inner;

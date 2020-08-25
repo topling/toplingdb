@@ -594,7 +594,7 @@ class DispatherTableFactory : public TableFactory {
             std::string("not found magic of factory: ") + facname);
       }
       for (uint64_t magic : it->second) {
-        ReaderFactory rf{factory, varname, is_user_defined};
+        ReaderFactory rf{factory, varname, 0, 0, is_user_defined};
         auto ib = m_magic_to_factory.emplace(magic, rf);
         if (!ib.second) { // emplace fail
           const char* varname1 = ib.first->second.varname.c_str(); // existed

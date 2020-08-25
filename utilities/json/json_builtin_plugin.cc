@@ -984,7 +984,8 @@ ROCKSDB_FACTORY_REG("HashLinkList", NewHashLinkListMemTableRepFactoryJson);
 //
 
 template<class Ptr>
-auto IterPluginFind(JsonPluginRepo::Impl::ObjMap<Ptr>& field, const std::string& str) {
+typename JsonPluginRepo::Impl::ObjMap<Ptr>::iterator
+IterPluginFind(JsonPluginRepo::Impl::ObjMap<Ptr>& field, const std::string& str) {
   if ('$' != str[0]) {
     auto iter = field.name2p->find(str);
     if (field.name2p->end() == iter) {

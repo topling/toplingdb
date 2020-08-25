@@ -446,6 +446,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
         if (!iter.value().is_array()) {
           THROW_InvalidArgument("compression_per_level must be an array");
         }
+        compression_per_level.resize(0);
         for (auto& item : iter.value().items()) {
           const string& val = item.value().get_ref<const string&>();
           CompressionType compressionType;

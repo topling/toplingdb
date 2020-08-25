@@ -990,7 +990,7 @@ Ptr ObtainOPT(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
               const json& option_js, const JsonPluginRepo& repo) {
   if (option_js.is_string()) {
     const std::string& option_name = option_js.get_ref<const std::string&>();
-    if ('$' == option_name[0]) {
+    if ('$' != option_name[0]) {
       auto iter = field.name2p->find(option_name);
       if (field.name2p->end() == iter) {
           THROW_NotFound("option_name = \"" + option_name + "\"");

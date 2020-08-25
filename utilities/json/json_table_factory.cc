@@ -602,7 +602,8 @@ class DispatherTableFactory : public TableFactory {
         if (!ib.second) { // emplace fail
           const char* varname1 = ib.first->second.varname.c_str(); // existed
           const char* type = ib.first->second.is_user_defined ? "user" : "auto";
-          fprintf(stderr,
+          if (JsonPluginRepo::DebugLevel() >= 2)
+            fprintf(stderr,
                   "INFO: Dispatch::BackPatch: dup factory: %016llX : %-20s : %s(%s) %s(auto)\n",
                   (long long)magic, facname, varname1, type, varname.c_str());
         } else if (JsonPluginRepo::DebugLevel() >= 2) {

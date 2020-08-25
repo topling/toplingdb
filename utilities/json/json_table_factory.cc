@@ -735,7 +735,7 @@ class DispatherTableFactory : public TableFactory {
       char buf[64];
       one_js["class"] = kv.second.factory->Name();
       one_js["magic_num"] = ToStr("%llX", (long long)kv.first);
-      ROCKSDB_JSON_SET_FACT_INNER(one_js["factory"], kv.second, table_factory);
+      ROCKSDB_JSON_SET_FACT_INNER(one_js["factory"], kv.second.factory, table_factory);
       one_js["open_cnt"] = kv.second.open_cnt;
       one_js["sum_open_size"] = ToStr("%.3f G", kv.second.sum_open_size/1e9);
       readers_js.push_back(std::move(one_js));

@@ -350,17 +350,17 @@ struct DispatherTableBuilder : public TableBuilder {
   const DispatherTableFactory* dispatcher = nullptr;
   struct Stat {
     size_t entry_cnt = 0;
-    size_t sum_key_len = 0;
-    size_t sum_val_len = 0;
+    size_t key_size = 0;
+    size_t val_size = 0;
     void Add(const Stat& y) {
       entry_cnt += y.entry_cnt;
-      sum_key_len += y.sum_key_len;
-      sum_val_len += y.sum_val_len;
+      key_size += y.key_size;
+      val_size += y.val_size;
     }
     void Reset() {
       entry_cnt = 0;
-      sum_key_len = 0;
-      sum_val_len = 0;
+      key_size = 0;
+      val_size = 0;
     }
   };
   Stat st;
@@ -674,11 +674,11 @@ class DispatherTableFactory : public TableFactory {
     const bool html = JsonSmartBool(dump_options, "html");
     auto& p2name = repo.m_impl->table_factory.p2name;
     const static std::string labels[] = {
-         "1s-ops",  "1s-klen",  "1s-vlen",
-         "5s-ops",  "5s-klen",  "5s-vlen",
-        "30s-ops", "30s-klen", "30s-vlen",
-         "5m-ops",  "5m-klen",  "5m-vlen",
-        "30m-ops", "30m-klen", "30m-vlen",
+         "1s-ops",  "1s-key",  "1s-val",
+         "5s-ops",  "5s-key",  "5s-val",
+        "30s-ops", "30s-key", "30s-val",
+         "5m-ops",  "5m-key",  "5m-val",
+        "30m-ops", "30m-key", "30m-val",
     };
     auto factory = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
       json wjs;
@@ -690,21 +690,21 @@ class DispatherTableFactory : public TableFactory {
       wjs["files"] = m_writer_files[level];
       if (html) {
         wjs["entry_cnt"] = ToStr("%.3f M", st.st.entry_cnt/1e6);
-        wjs["sum_key_len"] = ToStr("%.3f G", st.st.sum_key_len/1e9);
-        wjs["sum_val_len"] = ToStr("%.3f G", st.st.sum_val_len/1e9);
+        wjs["key_size"] = ToStr("%.3f G", st.st.key_size/1e9);
+        wjs["val_size"] = ToStr("%.3f G", st.st.val_size/1e9);
       } else {
         wjs["entry_cnt"] = st.st.entry_cnt;
-        wjs["sum_key_len"] = st.st.sum_key_len;
-        wjs["sum_val_len"] = st.st.sum_val_len;
+        wjs["key_size"] = st.st.key_size;
+        wjs["val_size"] = st.st.val_size;
       }
       for (size_t j = 0; j < 5; ++j) {
         double cnt = st.st.entry_cnt   - m_stats[j+1][level].st.entry_cnt;
-        double key = st.st.sum_key_len - m_stats[j+1][level].st.sum_key_len;
-        double val = st.st.sum_val_len - m_stats[j+1][level].st.sum_val_len;
+        double key = st.st.key_size - m_stats[j+1][level].st.key_size;
+        double val = st.st.val_size - m_stats[j+1][level].st.val_size;
         double us = duration_cast<microseconds>(st.time - m_stats[j+1][level].time).count();
-        wjs[labels[3*j+0]] = !cnt ? json(0) : ToStr("%f K", cnt/us*1e3);
-        wjs[labels[3*j+1]] = !key ? json(0) : ToStr("%f M", key/us);
-        wjs[labels[3*j+2]] = !val ? json(0) : ToStr("%f M", val/us);
+        wjs[labels[3*j+0]] = !cnt ? json(0) : ToStr("%.3f K/s", cnt/us*1e3);
+        wjs[labels[3*j+1]] = !key ? json(0) : ToStr("%.3f M/s", key/us);
+        wjs[labels[3*j+2]] = !val ? json(0) : ToStr("%.3f M/s", val/us);
       }
       return wjs;
     };
@@ -722,7 +722,7 @@ class DispatherTableFactory : public TableFactory {
       auto& cols = lwjs[0]["<htmltab:col>"];
       cols = json::array({
           "level", "factory", "files",
-          "entry_cnt", "sum_key_len", "sum_val_len",
+          "entry_cnt", "key_size", "val_size",
       });
       for (auto& lab : labels) {
         cols.push_back(lab);
@@ -808,8 +808,8 @@ DispatherTableBuilder::DispatherTableBuilder(TableBuilder* tb1,
 
 void DispatherTableBuilder::Add(const Slice& key, const Slice& value) {
   st.entry_cnt++;
-  st.sum_key_len += key.size();
-  st.sum_val_len += value.size();
+  st.key_size += key.size();
+  st.val_size += value.size();
   if (UNLIKELY(st.entry_cnt % 1024 == 0)) {
     UpdateStat();
   }

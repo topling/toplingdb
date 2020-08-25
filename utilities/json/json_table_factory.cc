@@ -674,8 +674,10 @@ class DispatherTableFactory : public TableFactory {
       json wjs;
       char buf[64];
 #define ToStr(...) json(std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__)))
+      wjs["level"] = 0 == level ? json("default") : json(level-1);
       ROCKSDB_JSON_SET_FACT_INNER(wjs["factory"], tf, table_factory);
       const auto& st = m_stats[0][level];
+      wjs["files"] = st.file_cnt;
       if (html) {
         wjs["entry_cnt"] = ToStr("%.3f M", st.st.entry_cnt/1e6);
         wjs["sum_key_len"] = ToStr("%.3f G", st.st.sum_key_len/1e9);
@@ -697,7 +699,7 @@ class DispatherTableFactory : public TableFactory {
       return wjs;
     };
     json js;
-    auto& lwjs = js["level_writers"];
+    auto& lwjs = js["writers"];
     for (size_t i = 0, n = m_level_writers.size(); i < n; ++i) {
       auto& tf = m_level_writers[i];
       auto iter = p2name.find(tf.get());
@@ -709,13 +711,14 @@ class DispatherTableFactory : public TableFactory {
     if (html && !m_level_writers.empty()) {
       auto& cols = lwjs[0]["<htmltab:col>"];
       cols = json::array({
-          "factory", "entry_cnt", "sum_key_len", "sum_val_len",
+          "level", "factory", "files",
+          "entry_cnt", "sum_key_len", "sum_val_len",
       });
       for (auto& lab : labels) {
         cols.push_back(lab);
       }
     }
-    js["default"] = factory(m_default_writer, 0);
+    lwjs.push_back(factory(m_default_writer, 0));
     std::unordered_map<std::string, std::shared_ptr<TableFactory> > rmap;
     for (auto& kv : m_magic_to_factory) {
       rmap[kv.second.factory->Name()] = kv.second.factory;
@@ -747,6 +750,7 @@ class DispatherTableFactory : public TableFactory {
   struct TimeStat {
     DispatherTableBuilder::Stat st;
     steady_clock::time_point time;
+    size_t file_cnt = 0;
     TimeStat() { time = steady_clock::now(); }
   };
   // 0s, 1s, 5s, 30s, 300s(5m), 1800(30m)

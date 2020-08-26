@@ -24,6 +24,9 @@ TERARK_PLUGINS_DIR=`cd ../terark-zip-rocksdb; pwd`
 TERARK_PLUGINS_GIT_VER_SRC="${BUILD_ROOT}/git-version-terark_zip_rocksdb.cc"
 #TERARK_PLUGINS_SRC="`echo ${TERARK_PLUGINS_DIR}/src/table/*.cc`" \
 TERARK_PLUGINS_SRC="\
+ ${TERARK_PLUGINS_DIR}/src/table/terark_fast_table.cc \
+ ${TERARK_PLUGINS_DIR}/src/table/terark_fast_table_builder.cc \
+ ${TERARK_PLUGINS_DIR}/src/table/terark_fast_table_reader.cc \
  ${TERARK_PLUGINS_DIR}/src/table/terark_zip_common.cc \
  ${TERARK_PLUGINS_DIR}/src/table/terark_zip_config.cc \
  ${TERARK_PLUGINS_DIR}/src/table/terark_zip_index.cc \

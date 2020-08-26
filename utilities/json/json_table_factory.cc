@@ -369,7 +369,10 @@ struct DispatherTableBuilder : public TableBuilder {
   DispatherTableBuilder(TableBuilder* tb1,
                         const DispatherTableFactory* dtf1,
                         int level1);
-  ~DispatherTableBuilder() { UpdateStat(); }
+  ~DispatherTableBuilder() {
+    UpdateStat();
+    delete tb;
+  }
   void UpdateStat();
   void Add(const Slice& key, const Slice& value) final;
   Status status() const final { return tb->status(); }

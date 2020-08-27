@@ -3,6 +3,9 @@
     "document_root": "/",
     "listening_ports": "8081"
   },
+  "setenv": {
+    "DictZipBlobStore_zipThreads_nouse" : 8
+  },
   "Cache": {
     "clock-cache-default": {
       "class-needs-TBB": "ClockCache",
@@ -14,7 +17,7 @@
         "metadata_charge_policy": "kFullChargeCacheMetadata"
       }
     },
-    "lru-cache-default": {
+    "lru-cache-0G": {
       "class": "LRUCache",
       "params": {
         "capacity": 0,
@@ -38,7 +41,14 @@
     }
   },
   "TableFactory": {
-    "terark-default": {
+    "terark-fast": {
+      "class": "TerarkFastTable",
+      "params": {
+        "indexType": "MainPatricia",
+        "keyPrefixLen": 0
+      }
+    },
+    "terark-zip": {
       "class": "TerarkZipTable",
       "params": {
         "localTempDir": "/tmp",
@@ -74,7 +84,7 @@
         "index_block_restart_interval": 1,
         "metadata_block_size": "4K",
         "enable_index_compression": true,
-        "block_cache": "${lru-cache-default}",
+        "block_cache": "${lru-cache-4G}",
         "block_cache_compressed": null,
         "persistent_cache": null,
         "filter_policy": null
@@ -85,19 +95,45 @@
       "params": {
         "default": "block-based",
         "readers": {
-          "TerarkZipTable": "terark-default",
+          "TerarkFastTable": "terark-fast",
+          "TerarkZipTable": "terark-zip",
           "BlockBasedTable": "block-based"
         },
         "level_writers": [
+          "terark-fast",
+          "terark-fast",
+          "terark-zip",
+          "terark-zip",
+          "terark-zip",
+          "terark-zip",
+          "terark-zip",
+          "terark-zip",
           "block-based",
           "block-based",
           "block-based",
-          "terark-default",
-          "terark-default",
-          "terark-default",
-          "terark-default"
+          "terark-zip"
         ]
       }
+    }
+  },
+  "CFOptions": {
+    "default": {
+        "max_write_buffer_number": 4,
+        "target_file_size_base": "16M",
+        "target_file_size_multiplier": 2,
+        "table_factory": "dispatch",
+        "compression_per_level": [
+            "kNoCompression",
+            "kNoCompression",
+            "kNoCompression",
+            "kSnappyCompression",
+            "kSnappyCompression",
+            "kSnappyCompression",
+            "kSnappyCompression",
+            "kSnappyCompression",
+            "kSnappyCompression"
+        ],
+        "ttl": 0
     }
   },
   "databases": {
@@ -141,13 +177,7 @@
           "allow_mmap_reads": true
         },
         "column_families": {
-          "default": {
-            "max_write_buffer_number": 4,
-            "target_file_size_base": "16M",
-            "target_file_size_multiplier": 2,
-            "table_factory": "dispatch",
-            "ttl": 0
-          },
+          "default": "$default",
           "custom_cf" : {
             "max_write_buffer_number": 4,
             "target_file_size_base": "16M",

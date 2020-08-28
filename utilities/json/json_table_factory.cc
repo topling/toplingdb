@@ -838,7 +838,7 @@ void DispatherTableBuilder::UpdateStat() {
               tp - ts.time > g_durations[i]);
     }
     if (tp - ts.time > g_durations[i]) {
-      auto newer = df->m_stats[i-1][lev];
+      auto& newer = df->m_stats[i-1][lev];
       ts = newer; // refresh
     }
   }

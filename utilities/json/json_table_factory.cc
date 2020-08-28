@@ -357,13 +357,11 @@ struct DispatherTableBuilder : public TableBuilder {
       entry_cnt += y.entry_cnt;
       key_size += y.key_size;
       val_size += y.val_size;
-      file_size += y.file_size;
     }
     void Reset() {
       entry_cnt = 0;
       key_size = 0;
       val_size = 0;
-      file_size = 0;
     }
   };
   Stat st;
@@ -751,7 +749,8 @@ class DispatherTableFactory : public TableFactory {
       readers_js.push_back(std::move(one_js));
     }
     readers_js[0]["<htmltab:col>"] = json::array({
-      "class", "magic_num", "factory", "open_cnt", "sum_open_size"
+      "class", "magic_num", "factory", "open_cnt", "sum_open_size",
+      "avg_open_size"
     });
     return js;
   }
@@ -815,9 +814,17 @@ DispatherTableBuilder::DispatherTableBuilder(TableBuilder* tb1,
   else
     level = 0;
 }
+
+template<class T>
+inline
+std::atomic<T>& as_atomic(T& x) {
+    return reinterpret_cast<std::atomic<T>&>(x);
+}
+
 DispatherTableBuilder::~DispatherTableBuilder() {
   UpdateStat();
-  st.file_size += tb->FileSize();
+  as_atomic(dispatcher->m_stats[0][level].st.file_size)
+    .fetch_add(tb->FileSize(), std::memory_order_relaxed);
   delete tb;
 }
 

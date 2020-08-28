@@ -237,7 +237,7 @@ JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
 
   ADD_HANDLER(Options, options);
   ADD_HANDLER(DBOptions, db_options);
-  ADD_HANDLER(ColumnFamilyOptions, cf_options);
+  ADD_HANDLER(CFOptions, cf_options);
 
   //using DataBase = DB_Ptr;
   ADD_HANDLER(DataBase, db);

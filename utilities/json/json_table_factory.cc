@@ -739,7 +739,7 @@ class DispatherTableFactory : public TableFactory {
     json& readers_js = js["readers"];
     for (auto& kv : m_magic_to_factory) {
       size_t len = kv.second.sum_open_size;
-      size_t cnt = kv.second.sum_open_cnt;
+      size_t cnt = kv.second.open_cnt;
       json one_js;
       char buf[64];
       one_js["class"] = kv.second.factory->Name();

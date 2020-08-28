@@ -42,7 +42,7 @@ struct JsonPluginRepo::Impl {
   };
   template<class Ptr>
   struct ObjMap {
-    std::unordered_map<RemovePtr<Ptr>*, ObjInfo> p2name;
+    std::unordered_map<const void*, ObjInfo> p2name;
     std::shared_ptr<std::unordered_map<std::string, Ptr>> name2p =
         std::make_shared<std::unordered_map<std::string, Ptr>>();
   };

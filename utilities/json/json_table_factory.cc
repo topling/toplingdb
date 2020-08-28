@@ -357,6 +357,7 @@ struct DispatherTableBuilder : public TableBuilder {
       entry_cnt += y.entry_cnt;
       key_size += y.key_size;
       val_size += y.val_size;
+      file_size += y.file_size;
     }
     void Reset() {
       entry_cnt = 0;
@@ -736,13 +737,16 @@ class DispatherTableFactory : public TableFactory {
     lwjs.push_back(factory(m_default_writer, 0));
     json& readers_js = js["readers"];
     for (auto& kv : m_magic_to_factory) {
+      size_t len = kv.second.sum_open_size;
+      size_t cnt = kv.second.sum_open_cnt;
       json one_js;
       char buf[64];
       one_js["class"] = kv.second.factory->Name();
       one_js["magic_num"] = ToStr("%llX", (long long)kv.first);
       ROCKSDB_JSON_SET_FACT_INNER(one_js["factory"], kv.second.factory, table_factory);
-      one_js["open_cnt"] = kv.second.open_cnt;
-      one_js["sum_open_size"] = ToStr("%.3f G", kv.second.sum_open_size/1e9);
+      one_js["open_cnt"] = cnt;
+      one_js["sum_open_size"] = ToStr("%.3f G", len/1e9);
+      one_js["avg_open_size"] = ToStr("%.3f M", len/1e6/cnt);
       readers_js.push_back(std::move(one_js));
     }
     readers_js[0]["<htmltab:col>"] = json::array({

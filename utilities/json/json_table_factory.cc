@@ -352,6 +352,7 @@ struct DispatherTableBuilder : public TableBuilder {
     size_t entry_cnt = 0;
     size_t key_size = 0;
     size_t val_size = 0;
+    unsigned long long file_size = 0;
     void Add(const Stat& y) {
       entry_cnt += y.entry_cnt;
       key_size += y.key_size;
@@ -369,10 +370,7 @@ struct DispatherTableBuilder : public TableBuilder {
   DispatherTableBuilder(TableBuilder* tb1,
                         const DispatherTableFactory* dtf1,
                         int level1);
-  ~DispatherTableBuilder() {
-    UpdateStat();
-    delete tb;
-  }
+  ~DispatherTableBuilder();
   void UpdateStat();
   void Add(const Slice& key, const Slice& value) final;
   Status status() const final { return tb->status(); }
@@ -691,18 +689,21 @@ class DispatherTableFactory : public TableFactory {
       wjs["level"] = 0 == level ? json("default") : json(level-1);
       ROCKSDB_JSON_SET_FACT_INNER(wjs["factory"], tf, table_factory);
       const auto& st = m_stats[0][level];
-      wjs["files"] = m_writer_files[level];
+      size_t file_num = m_writer_files[level];
+      wjs["files"] = file_num;
       if (html) {
         wjs["entry_cnt"] = ToStr("%.3f M", st.st.entry_cnt/1e6);
         wjs["key_size"] = ToStr("%.3f G", st.st.key_size/1e9);
         wjs["val_size"] = ToStr("%.3f G", st.st.val_size/1e9);
+        wjs["avg_file"] = ToStr("%.3f M", st.st.file_size/1e6/file_num);
       } else {
         wjs["entry_cnt"] = st.st.entry_cnt;
         wjs["key_size"] = st.st.key_size;
         wjs["val_size"] = st.st.val_size;
+        wjs["avg_file"] = double(st.st.file_size) / file_num;
       }
       for (size_t j = 0; j < 5; ++j) {
-        double cnt = st.st.entry_cnt   - m_stats[j+1][level].st.entry_cnt;
+        double cnt = st.st.entry_cnt - m_stats[j+1][level].st.entry_cnt;
         double key = st.st.key_size - m_stats[j+1][level].st.key_size;
         double val = st.st.val_size - m_stats[j+1][level].st.val_size;
         double us = duration_cast<microseconds>(st.time - m_stats[j+1][level].time).count();
@@ -725,7 +726,7 @@ class DispatherTableFactory : public TableFactory {
     if (html && !m_level_writers.empty()) {
       auto& cols = lwjs[0]["<htmltab:col>"];
       cols = json::array({
-          "level", "factory", "files",
+          "level", "factory", "files", "avg_file",
           "entry_cnt", "key_size", "val_size",
       });
       for (auto& lab : labels) {
@@ -808,6 +809,11 @@ DispatherTableBuilder::DispatherTableBuilder(TableBuilder* tb1,
     level = level1 + 1;
   else
     level = 0;
+}
+DispatherTableBuilder::~DispatherTableBuilder() {
+  UpdateStat();
+  st.file_size += tb->FileSize();
+  delete tb;
 }
 
 void DispatherTableBuilder::Add(const Slice& key, const Slice& value) {

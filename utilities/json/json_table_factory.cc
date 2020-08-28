@@ -363,6 +363,7 @@ struct DispatherTableBuilder : public TableBuilder {
       entry_cnt = 0;
       key_size = 0;
       val_size = 0;
+      file_size = 0;
     }
   };
   Stat st;

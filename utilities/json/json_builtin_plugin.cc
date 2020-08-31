@@ -1199,7 +1199,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
         json  diff = json::diff(orig, jNew);
         json  show = json().patch(diff);
         orig = json();
-        for (auto& kv : show) {
+        for (auto& kv : show.items()) {
           orig[kv.key()] = hNew[kv.key()];
         }
       }

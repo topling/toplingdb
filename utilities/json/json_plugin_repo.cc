@@ -132,14 +132,17 @@ static void Impl_ImportOptions(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
         THROW_Corruption("p2name[ptr_of(\"" + option_name + "\")] is missing");
       }
       PluginUpdate(existing, field, params_js, repo);
-      oi_iter->second.params.merge_patch(params_js);
+      oi_iter->second.params["params"].merge_patch(params_js);
     }
     else {
       Ptr p = PluginFactory<Ptr>::AcquirePlugin(option_class_name, params_js, repo);
       assert(Ptr(nullptr) != p);
       existing = p;
       field.p2name.emplace(GetRawPtr(p),
-          JsonPluginRepo::Impl::ObjInfo{option_name, params_js});
+          JsonPluginRepo::Impl::ObjInfo{option_name, json{
+              { "class", option_class_name},
+              { "params", params_js}
+          }});
     }
   }
 }

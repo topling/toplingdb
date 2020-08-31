@@ -1180,7 +1180,11 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
         if (repo.m_impl->cf_options.p2name.end() == picf) {
           THROW_Corruption("Missing cfo p2name, cfo_varname = " + cfo_varname);
         }
-        result_cfo_js[cf_name][0] = "json varname: " + cfo_varname;
+        if (html) {
+          result_cfo_js[cf_name][0] = "json varname: " + JsonRepoGetHtml_ahref("CFOptions", cfo_varname);
+        } else {
+          result_cfo_js[cf_name][0] = "json varname: " + cfo_varname;
+        }
         if (JsonSmartBool(dump_options, "full")) {
           result_cfo_js[cf_name][1] = picf->second.params["params"];
           // overwrite with up to date cfo
@@ -1190,19 +1194,19 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
           json jNew;  cfo.SaveToJson(jNew, repo, false);
           json hNew;  cfo.SaveToJson(hNew, repo, html);
           json diff = json::diff(orig, jNew);
-          fprintf(stderr, "CF %s: orig = %s\n", cf_name.c_str(), orig.dump(4).c_str());
-          fprintf(stderr, "CF %s: jNew = %s\n", cf_name.c_str(), jNew.dump(4).c_str());
-          fprintf(stderr, "CF %s: diff = %s\n", cf_name.c_str(), diff.dump(4).c_str());
-	  for (auto& kv : diff.items()) {
-	    kv.value()["op"] = "add";
-	  }
+          //fprintf(stderr, "CF %s: orig = %s\n", cf_name.c_str(), orig.dump(4).c_str());
+          //fprintf(stderr, "CF %s: jNew = %s\n", cf_name.c_str(), jNew.dump(4).c_str());
+          //fprintf(stderr, "CF %s: diff = %s\n", cf_name.c_str(), diff.dump(4).c_str());
+          for (auto& kv : diff.items()) {
+            kv.value()["op"] = "add";
+          }
           json show = json().patch(diff);
           fprintf(stderr, "CF %s: show = %s\n", cf_name.c_str(), show.dump(4).c_str());
-	  json jRes;
+          json jRes;
           for (auto& kv : show.items()) {
             jRes[kv.key()] = hNew[kv.key()];
           }
-	  result_cfo_js[cf_name][1] = jRes;
+          result_cfo_js[cf_name][1] = jRes;
         }
       }
       else { // ijs point to inline defined CFOptions

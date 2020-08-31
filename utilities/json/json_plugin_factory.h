@@ -464,6 +464,8 @@ const JsonPluginRepo& repoRefType();
 #define ROCKSDB_JSON_SET_FACT_INNER(inner, prop, repo_field) \
   JsonRepoSet(inner, prop, repo.m_impl->repo_field, #repo_field, html)
 
+
+bool SameVarName(const std::string&, const std::string&);
 void JsonSetSize(json&, unsigned long long);
 bool JsonSmartBool(const json& js, const char* subname);
 std::string

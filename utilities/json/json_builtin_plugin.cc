@@ -1194,8 +1194,14 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
         cfo.SaveToJson(result_cfo_js[cf_name][1], repo, html);
       } else {
         json& orig = result_cfo_js[cf_name][1];
-        json  diff = json::diff(orig, cfo);
-        orig = json().patch(diff);
+        json  jNew;  cfo.SaveToJson(jNew, repo, false);
+        json  hNew;  cfo.SaveToJson(hNew, repo, html);
+        json  diff = json::diff(orig, jNew);
+        json  show = json().patch(diff);
+        orig = json();
+        for (auto& kv : show) {
+          orig[kv.key()] = hNew[kv.key()];
+        }
       }
     }
     return JsonToString(djs, dump_options);

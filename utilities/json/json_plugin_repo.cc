@@ -1031,6 +1031,17 @@ PluginToString(const DB_Ptr& dbp,
   THROW_NotFound("db ptr is not in repo");
 }
 
+static void append_varname(std::string& res, const std::string& varname) {
+  if ('$' == varname[0]) {
+    if ('{' == varname[1])
+      res.append(varname.data() + 2, varname.size() - 3);
+    else
+      res.append(varname.data() + 1, varname.size() - 1);
+  } else {
+    res.append(varname);
+  }
+}
+
 std::string
 JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname) {
   // <a href='/mapname/varname'>${varname}</a>
@@ -1040,16 +1051,9 @@ JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname) {
   link.append("<a href='/");
   link.append(mapname, maplen);
   link.push_back('/');
-  if ('$' == varname[0]) {
-    if ('{' == varname[1])
-      link.append(varname.data() + 2, varname.size() - 3);
-    else
-      link.append(varname.data() + 1, varname.size() - 1);
-  } else {
-    link.append(varname);
-  }
+  append_varname(link, varname);
   link.append("?html=1'>${");
-  link.append(varname);
+  append_varname(link, varname);
   link.append("}</a>");
   return link;
 }

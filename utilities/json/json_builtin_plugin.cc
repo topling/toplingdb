@@ -1213,7 +1213,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
         result_cfo_js[cf_name][0] = "json varname: (defined inline)";
         result_cfo_js[cf_name][1] = ijs.value();
         //result_cfo_js[cf_name][1]["class"] = "CFOptions";
-	//result_cfo_js[cf_name][1]["params"] = ijs.value();
+	      //result_cfo_js[cf_name][1]["params"] = ijs.value();
         cfo.SaveToJson(result_cfo_js[cf_name][1], repo, html);
       }
       result_cfo_js[cf_name][1]["MaxMemCompactionLevel"] = db.db->MaxMemCompactionLevel(cf);

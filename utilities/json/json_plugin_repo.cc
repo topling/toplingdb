@@ -1040,7 +1040,14 @@ JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname) {
   link.append("<a href='/");
   link.append(mapname, maplen);
   link.push_back('/');
-  link.append(varname);
+  if ('$' == varname[0]) {
+    if ('{' == varname[1])
+      link.append(varname.data() + 2, varname.size() - 3);
+    else
+      link.append(varname.data() + 1, varname.size() - 1);
+  } else {
+    link.append(varname);
+  }
   link.append("?html=1'>${");
   link.append(varname);
   link.append("}</a>");

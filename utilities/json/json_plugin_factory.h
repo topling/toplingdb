@@ -344,10 +344,10 @@ AcquirePlugin(const json& js, const JsonPluginRepo& repo) {
   } else if (js.is_object()) {
     auto iter = js.find("class");
     if (js.end() == iter) {
-      THROW_InvalidArgument("js[\"class\"] is required");
+      THROW_InvalidArgument("js[\"class\"] is required: " + js.dump());
     }
     if (!iter.value().is_string()) {
-      THROW_InvalidArgument("js[\"class\"] must be string");
+      THROW_InvalidArgument("js[\"class\"] must be string: " + js.dump());
     }
     const std::string& clazz_name = iter.value().get_ref<const std::string&>();
     const json& params = js.at("params");

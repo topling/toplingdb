@@ -624,12 +624,13 @@ ROCKSDB_FACTORY_REG("CFOptions", NewCFOptionsJS);
 struct CFOptions_Manip : PluginManipFunc<ColumnFamilyOptions> {
   void Update(ColumnFamilyOptions* p, const json& js,
               const JsonPluginRepo& repo) const final {
-    static_cast<ColumnFamilyOptions_Json*>(p)->Update(js, repo);
+    static_cast<ColumnFamilyOptions_Json*>(p)->Update(js, repo); // NOLINT
   }
   std::string ToString(const ColumnFamilyOptions& x, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
     json djs;
     bool html = JsonSmartBool(dump_options, "html");
+    // NOLINTNEXTLINE
     static_cast<const ColumnFamilyOptions_Json&>(x).SaveToJson(djs, repo, html);
     return JsonToString(djs, dump_options);
   }

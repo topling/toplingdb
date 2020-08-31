@@ -1209,7 +1209,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
             kv.value()["op"] = "add";
           }
           json show = json().patch(diff);
-          fprintf(stderr, "CF %s: show = %s\n", cf_name.c_str(), show.dump(4).c_str());
+          //fprintf(stderr, "CF %s: show = %s\n", cf_name.c_str(), show.dump(4).c_str());
           json jRes;
           for (auto& kv : show.items()) {
             jRes[kv.key()] = hNew[kv.key()];

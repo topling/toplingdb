@@ -646,8 +646,7 @@ ROCKSDB_FACTORY_REG("CFOptions", JS_CFOptionsManip);
 //////////////////////////////////////////////////////////////////////////////
 
 static shared_ptr<TablePropertiesCollectorFactory>
-NewCompactOnDeletionCollectorFactoryForJson(
-    const json& js, const JsonPluginRepo&) {
+JS_NewCompactOnDeletionCollectorFactory(const json& js, const JsonPluginRepo&) {
   size_t sliding_window_size = 0;
   size_t deletion_trigger = 0;
   double deletion_ratio = 0;
@@ -658,7 +657,7 @@ NewCompactOnDeletionCollectorFactoryForJson(
                                               deletion_trigger, deletion_ratio);
 }
 ROCKSDB_FACTORY_REG("CompactOnDeletionCollector",
-                    NewCompactOnDeletionCollectorFactoryForJson);
+               JS_NewCompactOnDeletionCollectorFactory);
 
 //----------------------------------------------------------------------------
 // SerDe example for TablePropertiesCollector

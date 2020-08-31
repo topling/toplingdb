@@ -565,7 +565,7 @@ Status JsonPluginRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
       Impl_OpenDB_tpl(dbname, iter.value(), *this, dbp);
   };
   if (js.is_string()) {
-    const std::string& str_val = js.get_ref<const std::string&>();
+    const auto& str_val = js.get_ref<const std::string&>();
     if (str_val.empty()) {
       return Status::InvalidArgument(ROCKSDB_FUNC,
         "open js:string = \"" + str_val + "\" is empty");
@@ -582,7 +582,7 @@ Status JsonPluginRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
     }
   } else if (js.is_object()) {
     // when name is empty, js["params"]["name"] must be defined
-    std::string empty_name = "";
+    std::string empty_name = ""; // NOLINT
     Impl_OpenDB_tpl(empty_name, js, *this, dbp);
   }
   else {
@@ -605,12 +605,12 @@ Status JsonPluginRepo::OpenAllDB() try {
     auto iter = db_open_js.find("params");
     if (db_open_js.end() == iter) {
       return Status::InvalidArgument(ROCKSDB_FUNC,
-          "dbname = \"" + dbname + "\", param \"params\" is missing");
+          "dbname = \"" + dbname + R"(", param "params" is missing)");
     }
     const json& params_js = iter.value();
     if (!params_js.is_object()) {
       return Status::InvalidArgument(ROCKSDB_FUNC,
-          "dbname = \"" + dbname + "\", \"params\" must be a json object");
+          "dbname = \"" + dbname + R"(", "params" must be a json object)");
     }
     iter = params_js.find("column_families");
     if (params_js.end() == iter) {

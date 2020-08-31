@@ -318,7 +318,7 @@ ObtainPlugin(const char* varname, const char* func_name,
     if (!iter.value().is_string()) {
         throw Status::InvalidArgument(func_name, "sub obj class must be string");
     }
-    const std::string& clazz_name = iter.value().get_ref<const std::string&>();
+    const auto& clazz_name = iter.value().get_ref<const std::string&>();
     const json& params = js.at("params");
     return AcquirePlugin(clazz_name, params, repo);
   }
@@ -331,7 +331,7 @@ Ptr
 PluginFactory<Ptr>::
 AcquirePlugin(const json& js, const JsonPluginRepo& repo) {
   if (js.is_string()) {
-    const std::string& str_val = js.get_ref<const std::string&>();
+    const auto& str_val = js.get_ref<const std::string&>();
     if (str_val.empty()) {
       THROW_InvalidArgument("jstr class_name is empty");
     }
@@ -349,7 +349,7 @@ AcquirePlugin(const json& js, const JsonPluginRepo& repo) {
     if (!iter.value().is_string()) {
       THROW_InvalidArgument("js[\"class\"] must be string: " + js.dump());
     }
-    const std::string& clazz_name = iter.value().get_ref<const std::string&>();
+    const auto& clazz_name = iter.value().get_ref<const std::string&>();
     const json& params = js.at("params");
     return AcquirePlugin(clazz_name, params, repo);
   }

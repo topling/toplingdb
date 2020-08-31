@@ -1181,28 +1181,39 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
           THROW_Corruption("Missing cfo p2name, cfo_varname = " + cfo_varname);
         }
         result_cfo_js[cf_name][0] = "json varname: " + cfo_varname;
-        result_cfo_js[cf_name][1] = picf->second.params;
+        if (JsonSmartBool(dump_options, "full")) {
+          result_cfo_js[cf_name][1] = picf->second.params["params"];
+          // overwrite with up to date cfo
+          cfo.SaveToJson(result_cfo_js[cf_name][1], repo, html);
+        } else {
+          json orig;  static_cast<const CFOptions_Json&>(*icf->second).SaveToJson(orig, repo, false);
+          json jNew;  cfo.SaveToJson(jNew, repo, false);
+          json hNew;  cfo.SaveToJson(hNew, repo, html);
+          json diff = json::diff(orig, jNew);
+          fprintf(stderr, "CF %s: orig = %s\n", cf_name.c_str(), orig.dump(4).c_str());
+          fprintf(stderr, "CF %s: jNew = %s\n", cf_name.c_str(), jNew.dump(4).c_str());
+          fprintf(stderr, "CF %s: diff = %s\n", cf_name.c_str(), diff.dump(4).c_str());
+	  for (auto& kv : diff.items()) {
+	    kv.value()["op"] = "add";
+	  }
+          json show = json().patch(diff);
+          fprintf(stderr, "CF %s: show = %s\n", cf_name.c_str(), show.dump(4).c_str());
+	  json jRes;
+          for (auto& kv : show.items()) {
+            jRes[kv.key()] = hNew[kv.key()];
+          }
+	  result_cfo_js[cf_name][1] = jRes;
+        }
       }
       else { // ijs point to inline defined CFOptions
         result_cfo_js[cf_name][0] = "json varname: (defined inline)";
         result_cfo_js[cf_name][1] = ijs.value();
+        //result_cfo_js[cf_name][1]["class"] = "CFOptions";
+	//result_cfo_js[cf_name][1]["params"] = ijs.value();
+        cfo.SaveToJson(result_cfo_js[cf_name][1], repo, html);
       }
       result_cfo_js[cf_name][1]["MaxMemCompactionLevel"] = db.db->MaxMemCompactionLevel(cf);
       result_cfo_js[cf_name][1]["Level0StopWriteTrigger"] = db.db->Level0StopWriteTrigger(cf);
-      if (JsonSmartBool(dump_options, "full")) {
-        // overwrite with up to date cfo
-        cfo.SaveToJson(result_cfo_js[cf_name][1], repo, html);
-      } else {
-        json& orig = result_cfo_js[cf_name][1];
-        json  jNew;  cfo.SaveToJson(jNew, repo, false);
-        json  hNew;  cfo.SaveToJson(hNew, repo, html);
-        json  diff = json::diff(orig, jNew);
-        json  show = json().patch(diff);
-        orig = json();
-        for (auto& kv : show.items()) {
-          orig[kv.key()] = hNew[kv.key()];
-        }
-      }
     }
     return JsonToString(djs, dump_options);
   }

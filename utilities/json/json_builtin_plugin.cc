@@ -1189,8 +1189,14 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
       }
       result_cfo_js[cf_name][1]["MaxMemCompactionLevel"] = db.db->MaxMemCompactionLevel(cf);
       result_cfo_js[cf_name][1]["Level0StopWriteTrigger"] = db.db->Level0StopWriteTrigger(cf);
-      // overwrite with up to date cfo
-      cfo.SaveToJson(result_cfo_js[cf_name][1], repo, html);
+      if (JsonSmartBool(dump_options, "full")) {
+        // overwrite with up to date cfo
+        cfo.SaveToJson(result_cfo_js[cf_name][1], repo, html);
+      } else {
+        json& orig = result_cfo_js[cf_name][1];
+        json  diff = json::diff(orig, cfo);
+        orig = json().patch(diff);
+      }
     }
     return JsonToString(djs, dump_options);
   }
@@ -1214,7 +1220,7 @@ DB* JS_DB_Open(const json& js, const JsonPluginRepo& repo) {
   else
     s = DB::Open(options, name, &db);
   if (!s.ok())
-    throw s;
+    throw s; // NOLINT
   return db;
 }
 ROCKSDB_FACTORY_REG("DB::Open", JS_DB_Open);

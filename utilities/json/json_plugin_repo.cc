@@ -141,7 +141,7 @@ static void Impl_ImportOptions(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
       field.p2name.emplace(GetRawPtr(p),
           JsonPluginRepo::Impl::ObjInfo{option_name, json{
               { "class", option_class_name},
-              { "params", params_js}
+              { "params", std::move(params_js)}
           }});
     }
   }
@@ -1052,4 +1052,4 @@ JsonRepoSetHtml_ahref(json& js, const char* mapname, const std::string& varname)
   js = JsonRepoGetHtml_ahref(mapname, varname);
 }
 
-}
+} // ROCKSDB_NAMESPACE

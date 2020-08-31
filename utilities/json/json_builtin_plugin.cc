@@ -49,6 +49,13 @@ ROCKSDB_FACTORY_REG("Posix", DefaultFileSystemForJson);
 ROCKSDB_FACTORY_REG("default", DefaultFileSystemForJson);
 ROCKSDB_FACTORY_REG("Default", DefaultFileSystemForJson);
 
+static bool IsDefaultPath(const vector<DbPath>& paths, const string& name) {
+  if (paths.size() != 1) {
+    return false;
+  }
+  return paths[0].path == name && paths[0].target_size == UINT64_MAX;
+}
+
 static json DbPathToJson(const DbPath& x) {
   if (0 == x.target_size)
     return json{x.path};
@@ -1181,7 +1188,8 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
           THROW_Corruption("Missing cfo p2name, cfo_varname = " + cfo_varname);
         }
         if (html) {
-          result_cfo_js[cf_name][0] = "json varname: " + JsonRepoGetHtml_ahref("CFOptions", cfo_varname);
+          auto comment = "&nbsp;&nbsp;&nbsp;&nbsp; changed fields are shown below:";
+          result_cfo_js[cf_name][0] = "json varname: " + JsonRepoGetHtml_ahref("CFOptions", cfo_varname) + comment;
         } else {
           result_cfo_js[cf_name][0] = "json varname: " + cfo_varname;
         }
@@ -1205,6 +1213,9 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
           json jRes;
           for (auto& kv : show.items()) {
             jRes[kv.key()] = hNew[kv.key()];
+          }
+          if (IsDefaultPath(cfo.cf_paths, dbname)) {
+            jRes.erase("cf_paths");
           }
           result_cfo_js[cf_name][1] = jRes;
         }

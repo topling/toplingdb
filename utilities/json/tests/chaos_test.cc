@@ -381,33 +381,39 @@ class ChaosTest {
       value = get_value(count, key);
       if (count % 2 == 0) {
         for (auto &h : hs) {
-          b.Put(h, key, value);
+          s = b.Put(h, key, value);
+          assert(s.ok());
         }
       } else {
         for (auto &h : hs) {
-          b.Merge(h, key, value);
+          s = b.Merge(h, key, value);
+          assert(s.ok());
         }
       }
       key = gen_key(r);
       if (count % 3 == 0) {
         for (auto &h : hs) {
-          b.Put(h, key, value);
+          s = b.Put(h, key, value);
+          assert(s.ok());
         }
       } else {
         for (auto &h : hs) {
-          b.Merge(h, key, value);
+          s = b.Merge(h, key, value);
+          assert(s.ok());
         }
       }
       if (count % 11 == 0) {
         key = gen_key(uid(mt));
         for (auto &h : hs) {
-          b.Delete(h, key);
+          s = b.Delete(h, key);
+          assert(s.ok());
         }
       }
       if (count % 13 == 0) {
         key = gen_key(uid(mt));
         for (auto &h : hs) {
-          b.Delete(h, key);
+          s = b.Delete(h, key);
+          assert(s.ok());
         }
       }
       if (flags_ & TestRangeDel) {
@@ -417,7 +423,8 @@ class ChaosTest {
           fprintf(stderr, "RangeDel [%s, %s)\n", keys.first.c_str(),
                   keys.second.c_str());
           for (auto &h : hs) {
-            b.DeleteRange(h, slice0, slice1);
+            s = b.DeleteRange(h, slice0, slice1);
+            assert(s.ok());
           }
         }
         if (count % 90017 == 0) {
@@ -426,14 +433,16 @@ class ChaosTest {
           fprintf(stderr, "RangeDel [%s, %s)\n", keys.first.c_str(),
                   keys.second.c_str());
           for (auto &h : hs) {
-            b.DeleteRange(h, slice0, slice1);
+            s = b.DeleteRange(h, slice0, slice1);
+            assert(s.ok());
           }
         }
         if (count % 50019 == 0) {
           fprintf(stderr, "RangeDel [MinKey, MaxKey+1), [%s, %s)\n",
                   MinKey.c_str(), MaxKey.c_str());
           for (auto &h : hs) {
-            b.DeleteRange(h, MinKey, MaxKey + "1");
+            s = b.DeleteRange(h, MinKey, MaxKey + "1");
+            assert(s.ok());
           }
         }
       }

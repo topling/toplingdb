@@ -25,7 +25,7 @@ namespace ROCKSDB_NAMESPACE {
 
 using nlohmann::json;
 
-template<class P> struct RemovePtr_tpl;
+template<class P> struct RemovePtr_tpl; // NOLINT
 template<class T> struct RemovePtr_tpl<T*> { typedef T type; };
 template<class T> struct RemovePtr_tpl<std::shared_ptr<T> > { typedef T type; };
 template<> struct RemovePtr_tpl<DB_Ptr> { typedef DB type; };
@@ -92,7 +92,7 @@ struct JsonPluginRepo::Impl {
 template<class Ptr>
 class PluginFactory {
 public:
-  virtual ~PluginFactory() {}
+  virtual ~PluginFactory() = default;
   // in some contexts Acquire means 'CreateNew'
   // in some contexts Acquire means 'GetExisting'
   static Ptr AcquirePlugin(const std::string& clazz, const json&,
@@ -123,7 +123,7 @@ public:
     Reg& operator=(Reg&&) = delete;
     Reg& operator=(const Reg&) = delete;
     using NameToFuncMap = std::unordered_map<std::string, Meta>;
-    Reg(Slice class_name, AcqFunc acq, Slice base_class = "");
+    Reg(Slice class_name, AcqFunc acq, Slice base_class = "") noexcept;
     ~Reg();
     typename NameToFuncMap::iterator ipos;
     struct Impl;
@@ -184,7 +184,7 @@ struct PluginFactory<Ptr>::Reg::Impl {
 };
 
 template<class Ptr>
-PluginFactory<Ptr>::Reg::Reg(Slice class_name, AcqFunc acq, Slice base_class) {
+PluginFactory<Ptr>::Reg::Reg(Slice class_name, AcqFunc acq, Slice base_class) noexcept {
   auto& imp = Impl::s_singleton();
   Meta meta{acq, std::string(base_class.data(), base_class.size())};
   auto ib = imp.func_map.insert(std::make_pair(class_name.ToString(), std::move(meta)));
@@ -208,10 +208,10 @@ PluginFactory<Ptr>::Reg::~Reg() {
 template<class Ptr>
 Ptr
 PluginFactory<Ptr>::
-AcquirePlugin(const std::string& class_name, const json& js,
+AcquirePlugin(const std::string& clazz, const json& js,
               const JsonPluginRepo& repo) {
   auto& imp = Reg::Impl::s_singleton();
-  auto iter = imp.func_map.find(class_name);
+  auto iter = imp.func_map.find(clazz);
   if (imp.func_map.end() != iter) {
     Ptr ptr = iter->second.acq(js, repo);
     assert(!!ptr);
@@ -219,7 +219,7 @@ AcquirePlugin(const std::string& class_name, const json& js,
   }
   else {
     //return Ptr(nullptr);
-    THROW_NotFound("class = " + class_name + ", js = " + js.dump());
+    THROW_NotFound("class = " + clazz + ", js = " + js.dump());
   }
 }
 
@@ -231,7 +231,7 @@ PluginFactory<Ptr>::
 GetPlugin(const char* varname, const char* func_name,
           const json& js, const JsonPluginRepo& repo) {
   if (js.is_string()) {
-    const std::string& str_val = js.get_ref<const std::string&>();
+    const auto& str_val = js.get_ref<const std::string&>();
     if (str_val.empty()) {
       throw Status::InvalidArgument(
           func_name, std::string(varname) + " inst_id/class_name is empty");
@@ -277,7 +277,7 @@ PluginFactory<Ptr>::
 ObtainPlugin(const char* varname, const char* func_name,
              const json& js, const JsonPluginRepo& repo) {
   if (js.is_string()) {
-    const std::string& str_val = js.get_ref<const std::string&>();
+    const auto& str_val = js.get_ref<const std::string&>();
     if (str_val.empty()) {
       throw Status::InvalidArgument(func_name, std::string(varname) +
                " inst_id/class_name is empty");

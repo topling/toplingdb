@@ -168,7 +168,7 @@
         "name": "db2"
       }
     },
-    "db_mcf": {
+    "db_chaos_test": {
       "method": "DB::Open",
       "params": {
         "db_options": {
@@ -186,8 +186,7 @@
           "default": "$default",
           "level" : "$default",
           "universal" : "$default"
-        },
-        "name": "db_chaos_test"
+        }
       }
     }
   },

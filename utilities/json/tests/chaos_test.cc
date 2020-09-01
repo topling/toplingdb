@@ -857,6 +857,7 @@ class ChaosTest {
       db_mcf->cf_handles[i]->GetDescriptor(&cfDescriptors[i]);
       hs[i] = db_mcf->cf_handles[i];
     }
+    db = db_mcf->db;
 #endif
   }
 

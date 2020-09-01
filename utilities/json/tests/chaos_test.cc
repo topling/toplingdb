@@ -852,6 +852,7 @@ class ChaosTest {
     }
     s = repo_.StartHttpServer();
     cfDescriptors.resize(db_mcf->cf_handles.size());
+    hs.resize(db_mcf->cf_handles.size());
     for (size_t i = 0; i < cfDescriptors.size(); i++) {
       db_mcf->cf_handles[i]->GetDescriptor(&cfDescriptors[i]);
       hs[i] = db_mcf->cf_handles[i];

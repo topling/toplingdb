@@ -2,8 +2,15 @@
 
 #include "chaos_test.hpp"
 #include <utilities/json/json_plugin_repo.h>
+#include <utilities/json/json_plugin_factory.h>
 
 namespace rocksdb {
+
+static std::shared_ptr<MergeOperator>
+JS_NewTestMergeOperator(const json&, const JsonPluginRepo&) {
+  return std::make_shared<TestMergeOperator>(',');
+}
+ROCKSDB_FACTORY_REG("TestMergeOperator", JS_NewTestMergeOperator);
 
 class ChaosTest {
  public:

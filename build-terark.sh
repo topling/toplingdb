@@ -37,6 +37,11 @@ TERARK_PLUGINS_SRC="\
  ${TERARK_PLUGINS_DIR}/${TERARK_PLUGINS_GIT_VER_SRC} \
 "
 
+AUTO_ALL_TESTS_SRC="\
+ ${TERARK_PLUGINS_DIR}/src/table/tests/terark_zip_table_db_test.cc \
+ ${TERARK_PLUGINS_DIR}/src/table/tests/terark_zip_table_reader_test.cc \
+"
+
 afr_sig=a
 dbg_sig=d
 rls_sig=r
@@ -56,10 +61,11 @@ for type in $BUILD_TYPE; do
 	DEBUG_LEVEL=`eval 'echo $'${type}_level`
 	env CXX=$CXX make -C ${TERARK_PLUGINS_DIR} ${TERARK_PLUGINS_GIT_VER_SRC}
 	env CXX=$CXX \
+		AUTO_ALL_TESTS_SRC="$AUTO_ALL_TESTS_SRC" \
 		DISABLE_WARNING_AS_ERROR=1 \
 		EXTRA_LIB_SOURCES="$TERARK_PLUGINS_SRC" \
 		OBJ_DIR=${BUILD_ROOT}/$type \
-		EXTRA_CXXFLAGS="-I${TERARK_CORE_DIR}/src -I${TERARK_CORE_DIR}/boost-include -I${TERARK_CORE_DIR}/3rdparty/zstd -fPIC" \
+		EXTRA_CXXFLAGS="-I${TERARK_PLUGINS_DIR}/src -I${TERARK_CORE_DIR}/src -I${TERARK_CORE_DIR}/boost-include -I${TERARK_CORE_DIR}/3rdparty/zstd -fPIC" \
 		EXTRA_LDFLAGS="-L${TERARK_CORE_DIR}/$BUILD_ROOT/lib_shared $libs" \
 		LIB_MODE=shared \
 		USE_RTTI=1 \

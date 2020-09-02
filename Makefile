@@ -1216,9 +1216,6 @@ librocksdb_env_basic_test.a: $(OBJ_DIR)/env/env_basic_test.o $(LIB_OBJECTS) $(TE
 db_bench: $(OBJ_DIR)/tools/db_bench.o $(BENCH_OBJECTS) $(TESTUTIL) $(LIBRARY)
 	$(AM_LINK)
 
-chaos_test: $(OBJ_DIR)/utilities/json/tests/chaos_test.o $(LIBRARY)
-	$(AM_LINK)
-
 trace_analyzer: $(OBJ_DIR)/tools/trace_analyzer.o $(ANALYZE_OBJECTS) $(TOOLS_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
@@ -1788,6 +1785,31 @@ testutil_test: $(OBJ_DIR)/test_util/testutil_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 io_tracer_test: $(OBJ_DIR)/trace_replay/io_tracer_test.o $(OBJ_DIR)/trace_replay/io_tracer.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+#--------------------------------------------------
+AUTO_ALL_EXCLUDE_SRC := \
+	tools/db_bench_tool_test.cc \
+	utilities/env_librados_test.cc
+
+AUTO_ALL_TESTS_SRC += $(shell find * -name '*_test.cc' -not -path 'java/*')
+AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC})
+AUTO_ALL_TESTS_OBJ := $(addprefix $(OBJ_DIR)/,$(AUTO_ALL_TESTS_SRC:%.cc=%.o))
+AUTO_ALL_TESTS_EXE := $(AUTO_ALL_TESTS_OBJ:%.o=%)
+
+.PHONY: auto_all_tests
+auto_all_tests: ${AUTO_ALL_TESTS_EXE}
+
+$(OBJ_DIR)/tools/%_test: $(OBJ_DIR)/tools/%_test.o \
+                         ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/tools/trace_analyzer_test : $(OBJ_DIR)/tools/trace_analyzer_test.o \
+                                       ${ANALYZE_OBJECTS} \
+                                       ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/%: $(OBJ_DIR)/%.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 #-------------------------------------------------

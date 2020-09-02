@@ -101,6 +101,15 @@ class CompositeRandomAccessFileWrapper : public RandomAccessFile {
     return target_->InvalidateCache(offset, length);
   }
 
+  Status FsRead(uint64_t offset, size_t n, Slice* result, char* scratch)
+  const override {
+    IOOptions io_opts;
+    IODebugContext dbg;
+    return target_->FsRead(offset, n, io_opts, result, scratch, &dbg);
+  }
+
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+
  private:
   std::unique_ptr<FSRandomAccessFile> target_;
 };
@@ -709,6 +718,12 @@ class LegacyRandomAccessFileWrapper : public FSRandomAccessFile {
     return status_to_io_status(target_->InvalidateCache(offset, length));
   }
 
+  IOStatus FsRead(uint64_t offset, size_t n, const IOOptions&,
+                  Slice* result, char* scratch,
+                  IODebugContext*) const override {
+    return status_to_io_status(target_->FsRead(offset, n, result, scratch));
+  }
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
  private:
   std::unique_ptr<RandomAccessFile> target_;
 };

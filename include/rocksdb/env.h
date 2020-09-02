@@ -741,7 +741,8 @@ class RandomAccessFile {
   //   glusterfs support fuse, glfs_pread is faster than fuse pread when
   //   cache miss, but fuse support mmap, we can read a glusterfs file by
   //   both mmap and glfs_pread
-  virtual Status FsRead(uint64_t offset, size_t len, void* buf) const;
+  virtual Status FsRead(uint64_t offset, size_t n, Slice* result,
+                        char* scratch) const;
 
   virtual intptr_t FileDescriptor() const {
     assert(false);
@@ -1497,6 +1498,17 @@ class RandomAccessFileWrapper : public RandomAccessFile {
   Status InvalidateCache(size_t offset, size_t length) override {
     return target_->InvalidateCache(offset, length);
   }
+
+  // read (distributed) filesystem by fs api, for example:
+  //   glusterfs support fuse, glfs_pread is faster than fuse pread when
+  //   cache miss, but fuse support mmap, we can read a glusterfs file by
+  //   both mmap and glfs_pread
+  Status FsRead(uint64_t offset, size_t n, Slice* result,
+              char* scratch) const override {
+    return target_->Read(offset, n, result, scratch);
+  }
+
+  intptr_t FileDescriptor() const override { return target_->FileDescriptor(); }
 
  private:
   RandomAccessFile* target_;

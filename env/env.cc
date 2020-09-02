@@ -147,9 +147,10 @@ RandomAccessFile::~RandomAccessFile() {
 }
 
 Status
-RandomAccessFile::FsRead(uint64_t offset, size_t len, void* buf) const {
+RandomAccessFile::FsRead(uint64_t offset, size_t n, Slice* result,
+              char* scratch) const {
     Slice res;
-    return Read(offset, len, &res, (char*)buf);
+    return Read(offset, n, &res, (char*)scratch);
 }
 
 WritableFile::~WritableFile() {

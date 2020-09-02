@@ -673,6 +673,7 @@ Status DBTestBase::TryReopen(const Options& options) {
   // problem, we manually call destructor of table_facotry which eventually
   // clears the block cache.
   last_options_ = options;
+  system(("mkdir -p " + dbname_).c_str());
   return DB::Open(options, dbname_, &db_);
 }
 

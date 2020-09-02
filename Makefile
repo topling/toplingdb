@@ -1790,6 +1790,7 @@ io_tracer_test: $(OBJ_DIR)/trace_replay/io_tracer_test.o $(OBJ_DIR)/trace_replay
 #--------------------------------------------------
 AUTO_ALL_EXCLUDE_SRC := \
 	tools/db_bench_tool_test.cc \
+	tools/block_cache_analyzer/block_cache_trace_analyzer_test.cc \
 	utilities/env_librados_test.cc
 
 AUTO_ALL_TESTS_SRC += $(shell find * -name '*_test.cc' -not -path 'java/*')

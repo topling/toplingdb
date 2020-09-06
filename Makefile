@@ -1789,9 +1789,11 @@ io_tracer_test: $(OBJ_DIR)/trace_replay/io_tracer_test.o $(OBJ_DIR)/trace_replay
 
 #--------------------------------------------------
 AUTO_ALL_EXCLUDE_SRC := \
-	tools/db_bench_tool_test.cc \
-	tools/block_cache_analyzer/block_cache_trace_analyzer_test.cc \
-	utilities/env_librados_test.cc
+	tools/db_bench_tool_test.cc
+
+ifndef ROCKSDB_USE_LIBRADOS
+  AUTO_ALL_EXCLUDE_SRC += utilities/env_librados_test.cc
+endif
 
 AUTO_ALL_TESTS_SRC += $(shell find * -name '*_test.cc' -not -path 'java/*')
 AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC})
@@ -1808,6 +1810,11 @@ $(OBJ_DIR)/tools/%_test: $(OBJ_DIR)/tools/%_test.o \
 $(OBJ_DIR)/tools/trace_analyzer_test : $(OBJ_DIR)/tools/trace_analyzer_test.o \
                                        ${ANALYZE_OBJECTS} \
                                        ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test: \
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test.o \
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 $(OBJ_DIR)/%: $(OBJ_DIR)/%.o $(TEST_LIBRARY) $(LIBRARY)

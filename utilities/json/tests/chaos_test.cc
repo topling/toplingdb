@@ -12,6 +12,9 @@ JS_NewTestMergeOperator(const json&, const JsonPluginRepo&) {
 }
 ROCKSDB_FACTORY_REG("TestMergeOperator", JS_NewTestMergeOperator);
 
+#define CheckAssert(ctx, assert_value, err) \
+        CheckAssertImp(ctx, assert_value, err, __FILE__, __LINE__)
+
 class ChaosTest {
  public:
   DB *db;
@@ -915,8 +918,9 @@ class ChaosTest {
     }
   }
 
-  void CheckAssert(ReadContext &ctx, bool assert_value, const char *err) {
+  void CheckAssertImp(ReadContext &ctx, bool assert_value, const char *err, const char* file, int line) {
     if (!assert_value) {
+      fprintf(stderr, "CheckAssert fail: %s:%d\n", file, line);
       fprintf(stderr, "count = %zd, seqno = %" PRIu64 ", key = %s, err = %s \n",
               ctx.count, ctx.seqno, ctx.key.c_str(), err);
       fprintf(stderr, "Get:\n");

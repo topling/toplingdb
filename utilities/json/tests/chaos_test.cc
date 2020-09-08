@@ -921,7 +921,7 @@ class ChaosTest {
   void CheckAssertImp(ReadContext &ctx, bool assert_value, const char *err, const char* file, int line) {
     if (!assert_value) {
       fprintf(stderr, "CheckAssert fail: %s:%d\n", file, line);
-      fprintf(stderr, "count = %zd, seqno = %" PRIu64 ", key = %s, err = %s \n",
+      fprintf(stderr, "count = %zd, seqno = %" PRIi64 ", key = %s, err = %s \n",
               ctx.count, ctx.seqno, ctx.key.c_str(), err);
       fprintf(stderr, "Get:\n");
       for (size_t i = 0; i < hs.size(); ++i) {

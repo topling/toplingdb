@@ -924,10 +924,22 @@ class ChaosTest {
       fprintf(stderr, "count = %zd, seqno = %" PRIi64 ", key = %s, err = %s \n",
               ctx.count, ctx.seqno, ctx.key.c_str(), err);
       fprintf(stderr, "Get:\n");
+      std::vector<std::string> vs;
       for (size_t i = 0; i < hs.size(); ++i) {
-        fprintf(stderr, "s%zd(%s) = %s, v%zd = %s\n", i, hs[i]->GetName().c_str(),
+        std::string sb;
+        for (size_t j = i + 1; j < hs.size(); ++j) {
+          if (i < ctx.values.size() && j < ctx.values.size() && ctx.values[i] == ctx.values[j]) {
+            char b[32];
+            sb.assign(b, snprintf(b, sizeof(b), "%zd,", j));
+          }
+        }
+        if (!sb.empty()) sb.pop_back();
+        vs.push_back(std::move(sb));
+      }
+      for (size_t i = 0; i < hs.size(); ++i) {
+        fprintf(stderr, "s%zd(%s) = %s, v%zd = %s, val_eq = %s\n", i, hs[i]->GetName().c_str(),
                 ctx.ss.size() > i ? ctx.ss[i].ToString().c_str() : "null", i,
-                ctx.values.size() > i ? ctx.values[i].c_str() : "null");
+                ctx.values.size() > i ? ctx.values[i].c_str() : "null", vs[i].c_str());
       }
       if (flags_ & TestIter) {
         fprintf(stderr, "Iter:\n");

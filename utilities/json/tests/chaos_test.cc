@@ -925,14 +925,14 @@ class ChaosTest {
               ctx.count, ctx.seqno, ctx.key.c_str(), err);
       fprintf(stderr, "Get:\n");
       for (size_t i = 0; i < hs.size(); ++i) {
-        fprintf(stderr, "s%zd = %s, v%zd = %s\n", i,
+        fprintf(stderr, "s%zd(%s) = %s, v%zd = %s\n", i, hs[i]->GetName().c_str(),
                 ctx.ss.size() > i ? ctx.ss[i].ToString().c_str() : "null", i,
                 ctx.values.size() > i ? ctx.values[i].c_str() : "null");
       }
       if (flags_ & TestIter) {
         fprintf(stderr, "Iter:\n");
         for (size_t i = 0; i < hs.size(); ++i) {
-          fprintf(stderr, "s%zd = %s, k%zd = %s, v%zd = %s\n", i,
+          fprintf(stderr, "s%zd(%s) = %s, k%zd = %s, v%zd = %s\n", i, hs[i]->GetName().c_str(),
                   ctx.iter.size() > i ? ctx.iter[i]->status().ToString().c_str()
                                       : "null",
                   i,

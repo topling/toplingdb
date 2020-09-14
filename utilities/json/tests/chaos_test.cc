@@ -802,6 +802,7 @@ class ChaosTest {
     }
   }
 
+#if defined(CHAOS_TEST_DEP_TERARK_CODE)
   bool HaveLevelFiles(int level) {
     std::vector<LiveFileMetaData> metadata;
     db->GetLiveFilesMetaData(&metadata);
@@ -810,6 +811,7 @@ class ChaosTest {
     }
     return false;
   }
+#endif
 
   void SetExit() { exit_ = true; }
 

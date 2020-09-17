@@ -682,10 +682,13 @@ class ChaosTest {
       auto fnIsNotFound = [](auto &s) { return s.IsNotFound(); };
       auto fnIsOK = [](auto &s) { return s.ok(); };
       if (IsAny(ctx.ss, fnIsNotFound)) {
-        for (size_t j = 0; j < ctx.keys.size(); ++j) {
-          if (ctx.ss[j].IsNotFound()) {
+        if (!IsAll(ctx.ss, fnIsNotFound)) {
+          for (size_t j = 0; j < ctx.keys.size(); ++j) {
             std::string value;
             Status s = db->Get(ctx.ro, ctx.keys[j], &value);
+            assert(s.code() == ctx.ss[j].code());
+            assert(s.subcode() == ctx.ss[j].subcode());
+            assert(value == ctx.values[j]);
           }
         }
         CheckAssert(ctx, IsAll(ctx.ss, fnIsNotFound), "MultiGet Status");

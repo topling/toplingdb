@@ -685,7 +685,7 @@ class ChaosTest {
         if (!IsAll(ctx.ss, fnIsNotFound)) {
           for (size_t j = 0; j < ctx.keys.size(); ++j) {
             std::string value;
-            Status s = db->Get(ctx.ro, ctx.keys[j], &value);
+            Status s = db->Get(ctx.ro, hs[j], ctx.keys[j], &value);
             assert(s.code() == ctx.ss[j].code());
             assert(s.subcode() == ctx.ss[j].subcode());
             assert(value == ctx.values[j]);
@@ -698,7 +698,7 @@ class ChaosTest {
         if (!same) {
           for (size_t j = 0; j < ctx.keys.size(); ++j) {
             std::string value;
-            Status s = db->Get(ctx.ro, ctx.keys[j], &value);
+            Status s = db->Get(ctx.ro, hs[j], ctx.keys[j], &value);
             assert(s.code() == ctx.ss[j].code());
             assert(s.subcode() == ctx.ss[j].subcode());
             assert(value == ctx.values[j]);

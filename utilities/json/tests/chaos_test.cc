@@ -43,7 +43,6 @@ class ChaosTest {
   uint16_t flags_;
   DBOptions dbo;
   std::atomic<uint64_t> atomic_count{1};
-  Status s;
   InstrumentedMutex mutex_;
   bool exit_;
 
@@ -339,7 +338,7 @@ class ChaosTest {
         &compaction_job_stats_, 8 /* max_task_per_thread */);
     int sub_compaction_used =
         compaction_job.Prepare(0 /* sub_compaction_slots */);
-    s = compaction_job.Run();
+    Status s = compaction_job.Run();
     compaction_job.Install(*cfd->GetLatestMutableCFOptions());
     if (!s.ok()) {
       fprintf(stderr, "Worker Compaction Error! %s\n", s.getState());
@@ -379,6 +378,7 @@ class ChaosTest {
       }
 #endif // CHAOS_TEST_DEP_TERARK_CODE
 
+      Status s;
       size_t r = uid(mt);
       key = gen_key(r);
       value = get_value(count, key);
@@ -679,15 +679,30 @@ class ChaosTest {
         k = ctx.key;
       }
       ctx.ss = db->MultiGet(ctx.ro, hs, ctx.keys, &ctx.values);
-      if (IsAny(ctx.ss, [](auto &s) { return s.IsNotFound(); })) {
-        CheckAssert(ctx, IsAll(ctx.ss, [](auto &s) { return s.IsNotFound(); }),
-                    "MultiGet Status");
+      auto fnIsNotFound = [](auto &s) { return s.IsNotFound(); };
+      auto fnIsOK = [](auto &s) { return s.ok(); };
+      if (IsAny(ctx.ss, fnIsNotFound)) {
+        for (size_t j = 0; j < ctx.keys.size(); ++j) {
+          if (ctx.ss[j].IsNotFound()) {
+            std::string value;
+            Status s = db->Get(ctx.ro, ctx.keys[j], &value);
+          }
+        }
+        CheckAssert(ctx, IsAll(ctx.ss, fnIsNotFound), "MultiGet Status");
       } else {
-        CheckAssert(ctx, IsAny(ctx.ss, [](auto &s) { return s.ok(); }),
-                    "MultiGet Status");
-        CheckAssert(ctx,
-                    IsSame(ctx.values, [](auto &l, auto &r) { return l == r; }),
-                    "MultiGet Value");
+        bool same = IsSame(ctx.values, [](auto &l, auto &r) { return l == r; });
+        bool isOk = IsAny(ctx.ss, fnIsOK);
+        if (!same) {
+          for (size_t j = 0; j < ctx.keys.size(); ++j) {
+            std::string value;
+            Status s = db->Get(ctx.ro, ctx.keys[j], &value);
+            assert(s.code() == ctx.ss[j].code());
+            assert(s.subcode() == ctx.ss[j].subcode());
+            assert(value == ctx.values[j]);
+          }
+        }
+        CheckAssert(ctx, isOk, "MultiGet Status");
+        CheckAssert(ctx, same, "MultiGet Value");
       }
       ctx.ro.snapshot = nullptr;
     }
@@ -783,9 +798,9 @@ class ChaosTest {
 
   void HashTest(ReadContext &ctx, std::mt19937_64 &mt,
                 std::uniform_int_distribution<uint64_t> &uid) {
-    auto snapshot = get_snapshot(mt);
+    auto snap = get_snapshot(mt);
     std::vector<rocksdb::Iterator *> iter_for_new;
-    ctx.ro.snapshot = snapshot.get();
+    ctx.ro.snapshot = snap.get();
     if (ctx.ro.snapshot == nullptr) {
       ctx.seqno = uint64_t(-1);
     } else {
@@ -831,6 +846,7 @@ class ChaosTest {
 
   void Open(int cf_num) {
     exit_ = false;
+    Status s;
 #if defined(CHAOS_TEST_DEP_TERARK_CODE)
     set_options();
     for (int i = 0; i < cf_num; ++i) {
@@ -930,9 +946,11 @@ class ChaosTest {
       for (size_t i = 0; i < hs.size(); ++i) {
         std::string sb;
         for (size_t j = i + 1; j < hs.size(); ++j) {
-          if (i < ctx.values.size() && j < ctx.values.size() && ctx.values[i] == ctx.values[j]) {
-            char b[32];
-            sb.assign(b, snprintf(b, sizeof(b), "%zd,", j));
+          if (i < ctx.values.size() && j < ctx.values.size()) {
+            if (ctx.values[i] == ctx.values[j]) {
+              char b[32];
+              sb.assign(b, snprintf(b, sizeof(b), "%zd,", j));
+            }
           }
         }
         if (!sb.empty()) sb.pop_back();

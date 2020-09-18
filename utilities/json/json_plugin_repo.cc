@@ -274,6 +274,7 @@ Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
       // DispatherTableFactory::SanitizeOptions()
       const DBOptions* db_options = nullptr;
       const ColumnFamilyOptions* cf_options = nullptr;
+      // NOLINTNEXTLINE, intentional nullptr
       Status s = kv.second->SanitizeOptions(*db_options, *cf_options);
       if (!s.ok()) return s;
     }
@@ -438,7 +439,7 @@ bool JsonPluginRepo::Get(const std::string& name, DB** db, Status* s) const {
     if (s)
       *s = ss;
     else
-      throw ss;
+      throw ss; // NOLINT
   }
   return false;
 }
@@ -454,7 +455,7 @@ bool JsonPluginRepo::Get(const std::string& name, DB_MultiCF** db, Status* s) co
     if (s)
       *s = ss;
     else
-      throw ss;
+      throw ss; // NOLINT
   }
   return false;
 }

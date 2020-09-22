@@ -1063,7 +1063,7 @@ int main(int argc, char **argv) {
   std::vector<std::thread> thread_vec;
   rocksdb::ChaosTest test(flags);
   test.Open(cf_num);
-  cf_num = FLAGS_cf_num = test.db_mcf->cf_handles.size();
+  cf_num = FLAGS_cf_num = (uint32_t)test.db_mcf->cf_handles.size();
   for (int j = 0; j < write_thread; ++j) {
     thread_vec.emplace_back(&rocksdb::ChaosTest::ReadFunc, std::ref(test), j);
   }

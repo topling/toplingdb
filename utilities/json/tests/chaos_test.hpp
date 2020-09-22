@@ -90,6 +90,7 @@ std::string MaxKey;
 //static thread_local std::mt19937_64 mt;
 std::hash<std::string> h1;
 std::string h(rocksdb::Slice key) { return std::to_string(h1(key.ToString())); }
+std::string h(const std::string& key) { return std::to_string(h1(key)); }
 enum {
   TestIter = 1ULL << 0,
   TestTerark = 1ULL << 1,
@@ -316,7 +317,7 @@ std::string get_value(size_t i, std::string &key) {
   value.append("#");
   value.append(str.data() + pos, str.data() + pos + size);
   value.append("#");
-  value.append(h(rocksdb::Slice(key)));
+  value.append(h(key));
   return value;
 }
 

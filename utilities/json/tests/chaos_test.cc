@@ -690,7 +690,7 @@ class ChaosTest {
       } else {
         ctx.ss = db->MultiGet(ctx.ro, hs, ctx.keys, &ctx.values);
         msg_status = "MultiGet Status";
-        msg_value = "SingleGet Value";
+        msg_value = "MultiGet Value";
       }
       auto fnIsNotFound = [](auto &s) { return s.IsNotFound(); };
       auto fnIsOK = [](auto &s) { return s.ok(); };

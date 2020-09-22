@@ -519,7 +519,7 @@ class DispatherTableFactory : public TableFactory {
   }
 
   // Sanitizes the specified DB Options.
-  Status SanitizeOptions(const DBOptions&, const ColumnFamilyOptions&)
+  Status ValidateOptions(const DBOptions&, const ColumnFamilyOptions&)
   const override {
     Status s;
     if (m_repo) {
@@ -662,16 +662,16 @@ class DispatherTableFactory : public TableFactory {
     return s;
   }
 
-  std::string GetPrintableTableOptions() const override {
+  std::string GetPrintableOptions() const override {
     return m_json_str;
   }
-
+/*
   Status GetOptionString(const ConfigOptions&,
                          std::string* opt_string) const override {
       *opt_string = m_json_str;
       return Status::OK();
   }
-
+*/
   json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
     const bool html = JsonSmartBool(dump_options, "html");
     auto& p2name = repo.m_impl->table_factory.p2name;

@@ -275,7 +275,7 @@ Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
       const DBOptions* db_options = nullptr;
       const ColumnFamilyOptions* cf_options = nullptr;
       // NOLINTNEXTLINE, intentional nullptr
-      Status s = kv.second->SanitizeOptions(*db_options, *cf_options);
+      Status s = kv.second->ValidateOptions(*db_options, *cf_options);
       if (!s.ok()) return s;
     }
   }

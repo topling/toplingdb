@@ -313,7 +313,7 @@ std::string get_value(size_t i, std::string &key) {
   }();
   size_t pos = (i * 4999) % str.size();
   size_t size = std::min(str.size() - pos, (i * 13) % (FLAGS_value_avg_size * 2));
-  std::string value = gen_key(i);
+  std::string value = key; //gen_key(i);
   value.append("#");
   value.append(str.data() + pos, str.data() + pos + size);
   value.append("#");

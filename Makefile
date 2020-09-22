@@ -1894,9 +1894,6 @@ prefetch_test: $(OBJ_DIR)/file/prefetch_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 #--------------------------------------------------
-#AUTO_ALL_EXCLUDE_SRC := \
-#	tools/db_bench_tool_test.cc
-
 ifndef ROCKSDB_USE_LIBRADOS
   AUTO_ALL_EXCLUDE_SRC += utilities/env_librados_test.cc
 endif

@@ -678,7 +678,20 @@ class ChaosTest {
       for (auto &k : ctx.keys) {
         k = ctx.key;
       }
-      ctx.ss = db->MultiGet(ctx.ro, hs, ctx.keys, &ctx.values);
+      const char *msg_status, *msg_value;
+      if (snap) {
+        ctx.ss.resize(hs.size());
+        ctx.values.resize(hs.size());
+        for (size_t j = 0; j < hs.size(); ++j) {
+          ctx.ss[j] = db->Get(ctx.ro, hs[j], ctx.key, &ctx.values[j]);
+        }
+        msg_status = "SingleGet Status";
+        msg_status = "SingleGet Value";
+      } else {
+        ctx.ss = db->MultiGet(ctx.ro, hs, ctx.keys, &ctx.values);
+        msg_status = "MultiGet Status";
+        msg_status = "SingleGet Value";
+      }
       auto fnIsNotFound = [](auto &s) { return s.IsNotFound(); };
       auto fnIsOK = [](auto &s) { return s.ok(); };
       if (IsAny(ctx.ss, fnIsNotFound)) {
@@ -691,7 +704,7 @@ class ChaosTest {
             assert(value == ctx.values[j]);
           }
         }
-        CheckAssert(ctx, IsAll(ctx.ss, fnIsNotFound), "MultiGet Status");
+        CheckAssert(ctx, IsAll(ctx.ss, fnIsNotFound), msg_status);
       } else {
         bool same = IsSame(ctx.values, [](auto &l, auto &r) { return l == r; });
         bool isOk = IsAny(ctx.ss, fnIsOK);
@@ -704,8 +717,8 @@ class ChaosTest {
             assert(value == ctx.values[j]);
           }
         }
-        CheckAssert(ctx, isOk, "MultiGet Status");
-        CheckAssert(ctx, same, "MultiGet Value");
+        CheckAssert(ctx, isOk, msg_status);
+        CheckAssert(ctx, same, msg_value);
       }
       ctx.ro.snapshot = nullptr;
     }

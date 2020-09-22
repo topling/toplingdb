@@ -686,11 +686,11 @@ class ChaosTest {
           ctx.ss[j] = db->Get(ctx.ro, hs[j], ctx.key, &ctx.values[j]);
         }
         msg_status = "SingleGet Status";
-        msg_status = "SingleGet Value";
+        msg_value = "SingleGet Value";
       } else {
         ctx.ss = db->MultiGet(ctx.ro, hs, ctx.keys, &ctx.values);
         msg_status = "MultiGet Status";
-        msg_status = "SingleGet Value";
+        msg_value = "SingleGet Value";
       }
       auto fnIsNotFound = [](auto &s) { return s.IsNotFound(); };
       auto fnIsOK = [](auto &s) { return s.ok(); };

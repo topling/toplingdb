@@ -81,8 +81,6 @@ DEFINE_string(json, "", "json config file");
 const size_t file_size_base = 64ull << 20;
 const size_t blob_size = 2048;
 const size_t key_mode_nums = 2;
-const size_t& value_avg_size = FLAGS_value_avg_size;
-const size_t& key_avg_size = FLAGS_key_avg_size;
 const size_t rand_key_times = 500;
 const char *READ_ONLY_TEST_KEY = "FF7EAC449F56EB1E9A9A0D43195";
 const size_t READ_ONLY_TEST_SEQ = 12983622;
@@ -313,7 +311,7 @@ std::string get_value(size_t i, std::string &key) {
     return s;
   }();
   size_t pos = (i * 4999) % str.size();
-  size_t size = std::min(str.size() - pos, (i * 13) % (value_avg_size * 2));
+  size_t size = std::min(str.size() - pos, (i * 13) % (FLAGS_value_avg_size * 2));
   std::string value = gen_key(i);
   value.append("#");
   value.append(str.data() + pos, str.data() + pos + size);

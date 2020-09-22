@@ -823,6 +823,10 @@ IOStatus PosixRandomAccessFile::InvalidateCache(size_t offset, size_t length) {
 #endif
 }
 
+intptr_t PosixRandomAccessFile::FileDescriptor() const {
+  return this->fd_;
+}
+
 /*
  * PosixMmapReadableFile
  *
@@ -868,6 +872,44 @@ IOStatus PosixMmapReadableFile::Read(uint64_t offset, size_t n,
   return s;
 }
 
+IOStatus PosixMmapReadableFile::FsRead(uint64_t offset, size_t n,
+                                       const IOOptions& /*opts*/, Slice* result,
+                                       char* scratch,
+                                       IODebugContext* /*dbg*/)
+const {
+  // copy from PosixRandomAccessFile::Read
+  IOStatus s;
+  ssize_t r = -1;
+  size_t left = n;
+  char* ptr = scratch;
+  while (left > 0) {
+    r = pread(fd_, ptr, left, static_cast<off_t>(offset));
+    if (r <= 0) {
+      if (r == -1 && errno == EINTR) {
+        continue;
+      }
+      break;
+    }
+    ptr += r;
+    offset += r;
+    left -= r;
+    if (use_direct_io() &&
+        r % static_cast<ssize_t>(GetRequiredBufferAlignment()) != 0) {
+      // Bytes reads don't fill sectors. Should only happen at the end
+      // of the file.
+      break;
+    }
+  }
+  if (r < 0) {
+    // An error: return a non-ok status
+    s = IOError(
+        "While pread offset " + ToString(offset) + " len " + ToString(n),
+        filename_, errno);
+  }
+  *result = Slice(scratch, (r < 0) ? 0 : n - left);
+  return s;
+}
+
 IOStatus PosixMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
 #ifndef OS_LINUX
   (void)offset;
@@ -883,6 +925,10 @@ IOStatus PosixMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
                      " len" + ToString(length),
                  filename_, errno);
 #endif
+}
+
+intptr_t PosixMmapReadableFile::FileDescriptor() const {
+  return this->fd_;
 }
 
 /*

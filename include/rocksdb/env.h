@@ -25,6 +25,7 @@
 #include <vector>
 #include "rocksdb/status.h"
 #include "rocksdb/thread_status.h"
+#include "rocksdb/enum_reflection.h"
 
 #ifdef _WIN32
 // Windows API macro interference
@@ -736,6 +737,18 @@ class RandomAccessFile {
         "RandomAccessFile::InvalidateCache not supported.");
   }
 
+  // read (distributed) filesystem by fs api, for example:
+  //   glusterfs support fuse, glfs_pread is faster than fuse pread when
+  //   cache miss, but fuse support mmap, we can read a glusterfs file by
+  //   both mmap and glfs_pread
+  virtual Status FsRead(uint64_t offset, size_t n, Slice* result,
+                        char* scratch) const;
+
+  virtual intptr_t FileDescriptor() const {
+    assert(false);
+    return -1;
+  }
+
   // If you're adding methods here, remember to add them to
   // RandomAccessFileWrapper too.
 };
@@ -1008,15 +1021,15 @@ class Directory {
   // DirectoryWrapper too.
 };
 
-enum InfoLogLevel : unsigned char {
+ROCKSDB_ENUM_PLAIN(InfoLogLevel, unsigned char,
   DEBUG_LEVEL = 0,
   INFO_LEVEL,
   WARN_LEVEL,
   ERROR_LEVEL,
   FATAL_LEVEL,
   HEADER_LEVEL,
-  NUM_INFO_LOG_LEVELS,
-};
+  NUM_INFO_LOG_LEVELS
+);
 
 // An interface for writing log messages.
 class Logger {
@@ -1487,6 +1500,17 @@ class RandomAccessFileWrapper : public RandomAccessFile {
   Status InvalidateCache(size_t offset, size_t length) override {
     return target_->InvalidateCache(offset, length);
   }
+
+  // read (distributed) filesystem by fs api, for example:
+  //   glusterfs support fuse, glfs_pread is faster than fuse pread when
+  //   cache miss, but fuse support mmap, we can read a glusterfs file by
+  //   both mmap and glfs_pread
+  Status FsRead(uint64_t offset, size_t n, Slice* result,
+              char* scratch) const override {
+    return target_->Read(offset, n, result, scratch);
+  }
+
+  intptr_t FileDescriptor() const override { return target_->FileDescriptor(); }
 
  private:
   RandomAccessFile* target_;

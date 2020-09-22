@@ -12,6 +12,7 @@
 #include "rocksdb/comparator.h"
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/stackable_db.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -29,9 +30,12 @@ struct OptimisticTransactionOptions {
   // Should be set if the DB has a non-default comparator.
   // See comment in WriteBatchWithIndex constructor.
   const Comparator* cmp = BytewiseComparator();
+
+  // Set index factory for WriteBatchWithIndex
+  const WriteBatchEntryIndexFactory* index_type = nullptr;
 };
 
-enum class OccValidationPolicy {
+ROCKSDB_ENUM_CLASS(OccValidationPolicy, int,
   // Validate serially at commit stage, AFTER entering the write-group.
   // Isolation validation is processed single-threaded(since in the
   // write-group).
@@ -42,7 +46,7 @@ enum class OccValidationPolicy {
   // reduce mutex contention. Each txn acquires locks for its write-set
   // records in some well-defined order.
   kValidateParallel = 1
-};
+);
 
 struct OptimisticTransactionDBOptions {
   OccValidationPolicy validate_policy = OccValidationPolicy::kValidateParallel;

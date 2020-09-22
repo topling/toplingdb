@@ -146,6 +146,13 @@ SequentialFile::~SequentialFile() {
 RandomAccessFile::~RandomAccessFile() {
 }
 
+Status
+RandomAccessFile::FsRead(uint64_t offset, size_t n, Slice* result,
+              char* scratch) const {
+    Slice res;
+    return Read(offset, n, &res, (char*)scratch);
+}
+
 WritableFile::~WritableFile() {
 }
 

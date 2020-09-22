@@ -1910,16 +1910,17 @@ $(OBJ_DIR)/tools/%_test: $(OBJ_DIR)/tools/%_test.o \
                          ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-$(OBJ_DIR)/tools/db_bench_tool_test: $(OBJ_DIR)/tools/db_bench_tool_test.o \
+$(OBJ_DIR)/tools/db_bench_tool_test : \
+$(OBJ_DIR)/tools/db_bench_tool_test.o \
                          ${BENCH_OBJECTS} $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-$(OBJ_DIR)/tools/trace_analyzer_test : $(OBJ_DIR)/tools/trace_analyzer_test.o \
-                                       ${ANALYZE_OBJECTS} \
-                                       ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
+$(OBJ_DIR)/tools/trace_analyzer_test : \
+$(OBJ_DIR)/tools/trace_analyzer_test.o \
+      ${ANALYZE_OBJECTS} ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test: \
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test : \
 $(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test.o \
 $(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)

@@ -51,7 +51,7 @@
     "terark-zip": {
       "class": "TerarkZipTable",
       "params": {
-        "localTempDir": "/tmp",
+        "localTempDir": "/dev/shm/terark-tmp",
         "indexType": "Mixed_XL_256_32_FL",
         "indexNestLevel": 3,
         "indexNestScale": 8,
@@ -67,6 +67,7 @@
         "checksumLevel": 0,
         "entropyAlgo": "kNoEntropy",
         "debugLevel": 0,
+	"flatTempFile": true,
         "softZipWorkingMemLimit": "16G",
         "hardZipWorkingMemLimit": "32G",
         "smallTaskMemory": "1G",
@@ -102,6 +103,7 @@
         "level_writers": [
           "terark-fast",
           "terark-fast",
+          "terark-fast",
           "terark-zip",
           "terark-zip",
           "terark-zip",
@@ -119,6 +121,7 @@
   "CFOptions": {
     "default": {
         "max_write_buffer_number": 4,
+        "write_buffer_size": "128M",
         "target_file_size_base": "16M",
         "target_file_size_multiplier": 2,
         "table_factory": "dispatch",
@@ -170,7 +173,7 @@
         "db_options": {
           "create_if_missing": true,
           "create_missing_column_families": true,
-          "max_background_compactions": 8,
+          "max_background_compactions": 6,
           "max_subcompactions": 5,
           "inplace_update_support": false,
           "WAL_size_limit_MB": 0,

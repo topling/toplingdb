@@ -62,11 +62,11 @@
         "disableCompressDict": true,
         "optimizeCpuL3Cache": true,
         "enableEntropyStore": false,
-        "offsetArrayBlockUnits": 128,
+        "offsetArrayBlockUnits": 0,
         "sampleRatio": 0.02,
         "checksumLevel": 0,
         "entropyAlgo": "kNoEntropy",
-        "debugLevel": 0,
+        "debugLevel": 2,
         "softZipWorkingMemLimit": "16G",
         "hardZipWorkingMemLimit": "32G",
         "smallTaskMemory": "1G",
@@ -95,7 +95,8 @@
     "dispatch" : {
       "class": "DispatherTable",
       "params": {
-        "default": "block-based",
+        "defaultx": "block-based",
+        "default": "terark-fast",
         "readers": {
           "TerarkFastTable": "terark-fast",
           "TerarkZipTable": "terark-zip",
@@ -120,11 +121,13 @@
   },
   "CFOptions": {
     "default": {
-      "max_write_buffer_number": 4,
+      "disable_auto_compactions": true,
+      "write_buffer_size": "1M",
+      "max_write_buffer_number": 3,
       "merge_operator": "TestMergeOperator",
-      "target_file_size_base": "1M",
+      "target_file_size_base": "256K",
       "target_file_size_multiplier": 2,
-      "table_factory": "dispatch",
+      "table_factory": "block-based",
       "level0_slowdown_writes_trigger": 40,
       "level0_stop_writes_trigger": 100,
       "compression_per_level": [
@@ -138,6 +141,98 @@
         "kSnappyCompression",
         "kSnappyCompression"
       ],
+      "ttl": 0
+    },
+    "default2": {
+      "disable_auto_compactions": true,
+      "write_buffer_size": "1500K",
+      "max_write_buffer_number": 5,
+      "merge_operator": "TestMergeOperator",
+      "target_file_size_base": "350K",
+      "target_file_size_multiplier": 1,
+      "table_factory": "block-based",
+      "level0_slowdown_writes_trigger": 40,
+      "level0_stop_writes_trigger": 100,
+      "compression_per_level": [
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kNoCompression",
+        "kNoCompression",
+        "kSnappyCompression",
+        "kSnappyCompression",
+        "kSnappyCompression",
+        "kSnappyCompression",
+        "kSnappyCompression",
+        "kSnappyCompression"
+      ],
+      "ttl": 0
+    },
+    "default3": {
+      "disable_auto_compactions": true,
+      "write_buffer_size": "2500K",
+      "max_write_buffer_number": 4,
+      "merge_operator": "TestMergeOperator",
+      "target_file_size_base": "280K",
+      "target_file_size_multiplier": 1,
+      "table_factory": "block-based",
+      "level0_slowdown_writes_trigger": 40,
+      "level0_stop_writes_trigger": 100,
+      "compression_per_level": [
+        "kNoCompression",
+        "kNoCompression",
+        "kNoCompression",
+        "kSnappyCompression",
+        "kSnappyCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kZlibCompression",
+        "kSnappyCompression",
+        "kSnappyCompression",
+        "kSnappyCompression",
+        "kSnappyCompression"
+      ],
+      "ttl": 0
+    },
+    "terark-fast": {
+      "write_buffer_size": "1M",
+      "max_write_buffer_number": 4,
+      "merge_operator": "TestMergeOperator",
+      "target_file_size_base": "256K",
+      "target_file_size_multiplier": 2,
+      "table_factory": "terark-fast",
+      "level0_slowdown_writes_trigger": 40,
+      "level0_stop_writes_trigger": 100,
+      "ttl": 0
+    },
+    "terark-zip": {
+      "write_buffer_size": "1M",
+      "max_write_buffer_number": 4,
+      "merge_operator": "TestMergeOperator",
+      "target_file_size_base": "256K",
+      "target_file_size_multiplier": 2,
+      "table_factory": "terark-zip",
+      "level0_slowdown_writes_trigger": 40,
+      "level0_stop_writes_trigger": 100,
       "ttl": 0
     }
   },
@@ -178,6 +273,7 @@
           "max_background_compactions": 8,
           "max_subcompactions": 5,
           "inplace_update_support": false,
+	  "paranoid_checks": true,
           "WAL_size_limit_MB": 0,
           "two_write_queues": true,
           "wal_recovery_mode": "kTolerateCorruptedTailRecords",
@@ -185,8 +281,8 @@
         },
         "column_families": {
           "default": "$default",
-          "level" : "$default",
-          "universal" : "$default"
+          "terark-fast" : "$terark-fast",
+          "terark-zip" : "$terark-zip"
         }
       }
     }

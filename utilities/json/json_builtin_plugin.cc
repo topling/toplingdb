@@ -901,7 +901,7 @@ ROCKSDB_FACTORY_REG(                  "bytewise", BytewiseComp);
 ROCKSDB_FACTORY_REG(                  "Bytewise", BytewiseComp);
 ROCKSDB_FACTORY_REG(        "BytewiseComparator", BytewiseComp);
 ROCKSDB_FACTORY_REG("leveldb.BytewiseComparator", BytewiseComp);
-ROCKSDB_FACTORY_REG(        "ReverseBytewise", RevBytewiseComp);
+ROCKSDB_FACTORY_REG(        "ReverseBytewise"          , RevBytewiseComp);
 ROCKSDB_FACTORY_REG(        "ReverseBytewiseComparator", RevBytewiseComp);
 ROCKSDB_FACTORY_REG("leveldb.ReverseBytewiseComparator", RevBytewiseComp);
 
@@ -1074,6 +1074,92 @@ Options JS_Options(const json& js, const JsonPluginRepo& repo, string* name) {
   return Options(db_options, cf_options);
 }
 
+static void Json_DB_Statistics(Statistics* st, json& djs) {
+  json& tikers = djs["tikers"];
+  json& histograms = djs["histograms"];
+  if (!st) {
+    tikers = "Statistics Is Turned Off";
+    histograms = "Statistics Is Turned Off";
+    return;
+  }
+  for (const auto& t : TickersNameMap) {
+    assert(t.first < TICKER_ENUM_MAX);
+    tikers[t.second] = st->getTickerCount(t.first);
+  }
+  for (const auto& h : HistogramsNameMap) {
+    assert(h.first < HISTOGRAM_ENUM_MAX);
+    HistogramData hData;
+    st->histogramData(h.first, &hData);
+    json cur;
+    cur["name"] = h.second;
+    cur["P50"] = hData.median;
+    cur["P95"] = hData.percentile95;
+    cur["P99"] = hData.percentile99;
+    cur["MAX"] = hData.max;
+    cur["CNT"] = hData.count;
+    cur["SUM"] = hData.sum;
+    histograms.push_back(std::move(cur));
+  }
+  histograms[0]["<htmltab:col>"] = json::array({
+    "name", "P50", "P95", "P99", "MAX", "CNT", "SUM"
+  });
+}
+
+static void Json_DB_Level_Stats(DB& db, json& djs) {
+
+}
+
+static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh, json& djs) {
+  static const std::string* aIntProps[] = {
+    &DB::Properties::kNumImmutableMemTable,
+    &DB::Properties::kNumImmutableMemTableFlushed,
+    &DB::Properties::kMemTableFlushPending,
+    &DB::Properties::kNumRunningFlushes,
+    &DB::Properties::kCompactionPending,
+    &DB::Properties::kNumRunningCompactions,
+    &DB::Properties::kBackgroundErrors,
+    &DB::Properties::kCurSizeActiveMemTable,
+    &DB::Properties::kCurSizeAllMemTables,
+    &DB::Properties::kSizeAllMemTables,
+    &DB::Properties::kNumEntriesActiveMemTable,
+    &DB::Properties::kNumEntriesImmMemTables,
+    &DB::Properties::kNumDeletesActiveMemTable,
+    &DB::Properties::kNumDeletesImmMemTables,
+    &DB::Properties::kEstimateNumKeys,
+    &DB::Properties::kEstimateTableReadersMem,
+    &DB::Properties::kIsFileDeletionsEnabled,
+    &DB::Properties::kNumSnapshots,
+    &DB::Properties::kOldestSnapshotTime,
+    &DB::Properties::kOldestSnapshotSequence,
+    &DB::Properties::kNumLiveVersions,
+    &DB::Properties::kCurrentSuperVersionNumber,
+    &DB::Properties::kEstimateLiveDataSize,
+    &DB::Properties::kMinLogNumberToKeep,
+    &DB::Properties::kMinObsoleteSstNumberToKeep,
+    &DB::Properties::kTotalSstFilesSize,
+    &DB::Properties::kLiveSstFilesSize,
+    &DB::Properties::kBaseLevel,
+    &DB::Properties::kEstimatePendingCompactionBytes,
+    //&DB::Properties::kAggregatedTableProperties,
+    //&DB::Properties::kAggregatedTablePropertiesAtLevel,
+    &DB::Properties::kActualDelayedWriteRate,
+    &DB::Properties::kIsWriteStopped,
+    &DB::Properties::kEstimateOldestKeyTime,
+    &DB::Properties::kBlockCacheCapacity,
+    &DB::Properties::kBlockCacheUsage,
+    &DB::Properties::kBlockCachePinnedUsage,
+  };
+  auto& ipjs = djs["IntProps"];
+  for (auto pName : aIntProps) {
+    uint64_t value = 0;
+    if (const_cast<DB&>(db).GetIntProperty(cfh, *pName, &value)) {
+       ipjs[*pName] = value;
+    } else {
+       ipjs[*pName] = "GetProperty Fail";
+    }
+  }
+}
+
 struct DB_Manip : PluginManipFunc<DB> {
   void Update(DB* db, const json& js,
               const JsonPluginRepo& repo) const final {
@@ -1121,6 +1207,8 @@ struct DB_Manip : PluginManipFunc<DB> {
     djs["CFOptions"][0] = dbo_name; cfo.SaveToJson(djs["CFOptions"][1], repo, html);
     djs["CFOptions"][1]["MaxMemCompactionLevel"] = const_cast<DB&>(db).MaxMemCompactionLevel();
     djs["CFOptions"][1]["Level0StopWriteTrigger"] = const_cast<DB&>(db).Level0StopWriteTrigger();
+    Json_DB_Statistics(dbo.statistics.get(), djs);
+    Json_DB_IntProps(db, db.DefaultColumnFamily(), djs);
     return JsonToString(djs, dump_options);
   }
 };
@@ -1167,6 +1255,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     djs["DBOptions"][0] = dbo_name;
     dbo.SaveToJson(djs["DBOptions"][1], repo, html);
     auto& result_cfo_js = djs["CFOptions"];
+    auto& cf_props = djs["CFProps"];
     for (size_t i = 0; i < db.cf_handles.size(); ++i) {
       ColumnFamilyHandle* cf = db.cf_handles[i];
       ColumnFamilyDescriptor cfd;
@@ -1229,7 +1318,9 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
       }
       result_cfo_js[cf_name][1]["MaxMemCompactionLevel"] = db.db->MaxMemCompactionLevel(cf);
       result_cfo_js[cf_name][1]["Level0StopWriteTrigger"] = db.db->Level0StopWriteTrigger(cf);
+      Json_DB_IntProps(*db.db, cf, cf_props[cf_name]);
     }
+    Json_DB_Statistics(dbo.statistics.get(), djs);
     return JsonToString(djs, dump_options);
   }
 };

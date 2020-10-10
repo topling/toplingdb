@@ -744,6 +744,16 @@ JS_NewGenericRateLimiter(const json& js, const JsonPluginRepo& repo) {
 ROCKSDB_FACTORY_REG("GenericRateLimiter", JS_NewGenericRateLimiter);
 
 //////////////////////////////////////////////////////////////////////////////
+
+static shared_ptr<Statistics>
+JS_NewStatistics(const json&, const JsonPluginRepo&) {
+  return CreateDBStatistics();
+}
+ROCKSDB_FACTORY_REG("default", JS_NewStatistics);
+ROCKSDB_FACTORY_REG("Default", JS_NewStatistics);
+ROCKSDB_FACTORY_REG("Statistics", JS_NewStatistics);
+
+//////////////////////////////////////////////////////////////////////////////
 struct JemallocAllocatorOptions_Json : JemallocAllocatorOptions {
   JemallocAllocatorOptions_Json(const json& js, const JsonPluginRepo&) {
     ROCKSDB_JSON_OPT_PROP(js, limit_tcache_size);

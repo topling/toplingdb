@@ -40,6 +40,11 @@
       }
     }
   },
+  "Statistics": {
+    "stat": {
+      "class" : "default"
+    }
+  },
   "TableFactory": {
     "terark-fast": {
       "class": "TerarkFastTable",
@@ -177,6 +182,7 @@
           "max_subcompactions": 5,
           "inplace_update_support": false,
           "WAL_size_limit_MB": 0,
+          "statistics": "$stat",
           "allow_mmap_reads": true
         },
         "column_families": {

@@ -1220,6 +1220,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     pjs = "GetProperty Fail";
     return;
   }
+  pjs = json::array();
   std::vector<std::pair<Slice, Slice> > header, fields;
   split(sum, "; ", header);
   std::string propName;
@@ -1229,20 +1230,26 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     propName.assign(DB::Properties::kAggregatedTablePropertiesAtLevel);
     propName.append(buf, snprintf(buf, sizeof buf, "%d", level));
     std::string value;
+    json elem;
     if (const_cast<DB&>(db).GetProperty(cfh, propName, &value)) {
       split(value, "; ", fields);
       for (auto& kv : fields) {
-        pjs.push_back({kv.first.ToString(), kv.second.ToString()});
+        elem.push_back({kv.first.ToString(), kv.second.ToString()});
       }
     }
     else {
       for (auto& kv : header) {
-        pjs.push_back({kv.first.ToString(), "Fail"});
+        elem.push_back({kv.first.ToString(), "Fail"});
       }
     }
+    pjs.push_back(std::move(elem));
   }
-  for (auto& kv : header) {
-    pjs.push_back({kv.first.ToString(), kv.second.ToString()});
+  {
+    json elem;
+    for (auto& kv : header) {
+      elem.push_back({kv.first.ToString(), kv.second.ToString()});
+    }
+    pjs.push_back(std::move(elem));
   }
   if (html) {
     auto& fieldsNames = pjs[0]["<htmltab:col>"];

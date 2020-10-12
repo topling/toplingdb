@@ -1156,7 +1156,7 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs, bool html)
   };
   auto& stjs = djs["StrProps"];
   for (auto pName : aStrProps) {
-    std::string value = 0;
+    std::string value;
     if (const_cast<DB&>(db).GetProperty(cfh, *pName, &value)) {
       if (html) {
         std::string str;

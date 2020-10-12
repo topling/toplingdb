@@ -41,9 +41,7 @@
     }
   },
   "Statistics": {
-    "stat": {
-      "class" : "default"
-    }
+    "stat": "default"
   },
   "TableFactory": {
     "terark-fast": {
@@ -141,6 +139,9 @@
             "kSnappyCompression",
             "kSnappyCompression"
         ],
+	"//level0_slowdown_writes_trigger": 100,
+	"//level0_stop_writes_trigger": 200,
+	"//level0_file_num_compaction_trigger": -1,
         "ttl": 0
     }
   },

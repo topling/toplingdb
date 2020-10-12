@@ -1253,6 +1253,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
   }
   if (html) {
     auto& fieldsNames = pjs[0]["<htmltab:col>"];
+    fieldsNames = json::array();
     for (auto& kv : header) {
       fieldsNames.push_back(kv.first.ToString());
     }

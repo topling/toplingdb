@@ -1234,12 +1234,12 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     if (const_cast<DB&>(db).GetProperty(cfh, propName, &value)) {
       split(value, "; ", fields);
       for (auto& kv : fields) {
-        elem.push_back({kv.first.ToString(), kv.second.ToString()});
+        elem[kv.first.ToString()] = kv.second.ToString();
       }
     }
     else {
       for (auto& kv : header) {
-        elem.push_back({kv.first.ToString(), "Fail"});
+        elem[kv.first.ToString()] = "Fail";
       }
     }
     pjs.push_back(std::move(elem));
@@ -1247,7 +1247,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
   {
     json elem;
     for (auto& kv : header) {
-      elem.push_back({kv.first.ToString(), kv.second.ToString()});
+      elem[kv.first.ToString()] = kv.second.ToString();
     }
     pjs.push_back(std::move(elem));
   }

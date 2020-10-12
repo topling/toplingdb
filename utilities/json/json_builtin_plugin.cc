@@ -1193,7 +1193,6 @@ GetAggregatedTableProperties(const DB& db, ColumnFamilyHandle* cfh,
 void split(Slice rope, Slice delim, std::vector<std::pair<Slice, Slice> >& F) {
   F.resize(0);
   size_t dlen = delim.size();
-  std::vector<std::pair<Slice, Slice> > F;
   const char *col = rope.data(), *End = rope.data() + rope.size();
   while (col <= End) {
     auto eq = (const char*)memchr(col, '=', End-col);
@@ -1201,10 +1200,10 @@ void split(Slice rope, Slice delim, std::vector<std::pair<Slice, Slice> >& F) {
       break;
     }
     auto next = (const char*)memmem(eq+1, End-eq-1, delim.data(), dlen);
-    if (next)
-      F.push_back({Slice(col, eq-col), Slice(eq+1, next-eq-1)});
-    else {
-      F.push_back({Slice(col, eq-col), Slice(eq+1, End-eq-1)});
+    if (next) {
+      F.emplace_back(Slice(col, eq-col), Slice(eq+1, next-eq-1));
+    } else {
+      F.emplace_back(Slice(col, eq-col), Slice(eq+1, End-eq-1));
       break;
     }
     col = next + dlen;

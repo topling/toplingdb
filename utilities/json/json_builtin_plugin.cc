@@ -1153,12 +1153,48 @@ static void chomp(std::string& s) {
     s.pop_back();
   }
 }
+static std::string html_pre(const std::string& value) {
+  std::string str;
+  str.reserve(value.size() + 11);
+  str.append("<pre>");
+  str.append(value);
+  str.append("</pre>");
+  return str;
+}
+static void
+GetAggregatedTableProperties(const DB& db, ColumnFamilyHandle* cfh,
+                             json& djs, int level, bool html) {
+  std::string propName;
+  if (level < 0) {
+    propName = DB::Properties::kAggregatedTableProperties;
+  }
+  else {
+    char buf[32];
+    propName.reserve(DB::Properties::kAggregatedTablePropertiesAtLevel.size() + 10);
+    propName.append(DB::Properties::kAggregatedTablePropertiesAtLevel);
+    propName.append(buf, snprintf(buf, sizeof buf, "%d", level));
+  }
+  std::string value;
+  if (const_cast<DB&>(db).GetProperty(cfh, propName, &value)) {
+    replace_substr(value, "; ", "\r\n");
+    chomp(value);
+    if (html) {
+      value.reserve(value.size() + 11);
+      value.insert(0, "<pre>");
+      value.append("</pre>");
+    }
+    djs[propName] = std::move(value);
+  }
+  else {
+    djs[propName] = "GetProperty Fail";
+  }
+}
 
 static void
-Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs, bool html) {
+Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs, int num_levels, bool html) {
   static const std::string* aStrProps[] = {
-    &DB::Properties::kNumFilesAtLevelPrefix,
-    &DB::Properties::kCompressionRatioAtLevelPrefix,
+    //&DB::Properties::kNumFilesAtLevelPrefix,
+    //&DB::Properties::kCompressionRatioAtLevelPrefix,
     &DB::Properties::kStats,
     &DB::Properties::kSSTables,
     &DB::Properties::kCFStats,
@@ -1166,8 +1202,8 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs, bool html)
     &DB::Properties::kCFFileHistogram,
     &DB::Properties::kDBStats,
     &DB::Properties::kLevelStats,
-    &DB::Properties::kAggregatedTableProperties,
-    &DB::Properties::kAggregatedTablePropertiesAtLevel,
+    //&DB::Properties::kAggregatedTableProperties,
+    //&DB::Properties::kAggregatedTablePropertiesAtLevel,
   };
   auto& stjs = djs["StrProps"];
   for (auto pName : aStrProps) {
@@ -1178,19 +1214,19 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs, bool html)
         chomp(value);
       }
       if (html) {
-        std::string str;
-        str.reserve(value.size() + 11);
-        str.append("<pre>");
-        str.append(value);
-        str.append("</pre>");
-        stjs[*pName] = std::move(str);
+        stjs[*pName] = html_pre(value);
       }
       else {
-        stjs[*pName] = value;
+        stjs[*pName] = std::move(value);
       }
     } else {
       stjs[*pName] = "GetProperty Fail";
     }
+  }
+  //GetAggregatedTableProperties(db, cfh, stjs, -1, html);
+  // -1 is for kAggregatedTableProperties
+  for (int level = -1; level < num_levels; level++) {
+    GetAggregatedTableProperties(db, cfh, stjs, level, html);
   }
 }
 

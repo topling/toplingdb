@@ -1329,7 +1329,7 @@ struct DB_Manip : PluginManipFunc<DB> {
     djs["CFOptions"][1]["Level0StopWriteTrigger"] = const_cast<DB&>(db).Level0StopWriteTrigger();
     Json_DB_Statistics(dbo.statistics.get(), djs, html);
     Json_DB_IntProps(db, db.DefaultColumnFamily(), djs);
-    Json_DB_Level_Stats(db, db.DefaultColumnFamily(), djs, html);
+    Json_DB_Level_Stats(db, db.DefaultColumnFamily(), djs, opt.num_levels, html);
     return JsonToString(djs, dump_options);
   }
 };
@@ -1440,7 +1440,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
       result_cfo_js[cf_name][1]["MaxMemCompactionLevel"] = db.db->MaxMemCompactionLevel(cf);
       result_cfo_js[cf_name][1]["Level0StopWriteTrigger"] = db.db->Level0StopWriteTrigger(cf);
       Json_DB_IntProps(*db.db, cf, cf_props[cf_name]);
-      Json_DB_Level_Stats(*db.db, cf, cf_props[cf_name], html);
+      Json_DB_Level_Stats(*db.db, cf, cf_props[cf_name], cfo.num_levels, html);
     }
     Json_DB_Statistics(dbo.statistics.get(), djs, html);
     return JsonToString(djs, dump_options);

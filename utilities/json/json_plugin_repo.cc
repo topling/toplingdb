@@ -879,6 +879,14 @@ int JsonSmartInt(const json& js) {
   throw std::invalid_argument("JsonSmartBool: bad js = " + js.dump());
 }
 
+int JsonSmartInt(const json& js, const char* subname, int Default) {
+  auto iter = js.find(subname);
+  if (js.end() != iter) {
+    return JsonSmartInt(iter.value());
+  }
+  return Default;
+}
+
 static void JsonToHtml_Object(const json& arr, std::string& html, bool nested);
 static void JsonToHtml_Array(const json& arr, std::string& html) {
   size_t cnt = 0;

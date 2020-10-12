@@ -486,6 +486,8 @@ const JsonPluginRepo& repoRefType();
 bool SameVarName(const std::string&, const std::string&);
 void JsonSetSize(json&, unsigned long long);
 bool JsonSmartBool(const json& js, const char* subname);
+int  JsonSmartInt(const json& js, const char* subname, int Default);
+
 std::string
 JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname);
 void

@@ -1191,12 +1191,19 @@ GetAggregatedTableProperties(const DB& db, ColumnFamilyHandle* cfh,
 }
 
 static void
-Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs, int num_levels, bool html) {
+Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
+                    bool html, const json& dump_options) {
+  ColumnFamilyDescriptor cfd;
+  Status s = cfh->GetDescriptor(&cfd);
+  if (!s.ok()) {
+    throw s; // NOLINT
+  }
+  const int num_levels = cfd.options.num_levels;
   static const std::string* aStrProps[] = {
     //&DB::Properties::kNumFilesAtLevelPrefix,
     //&DB::Properties::kCompressionRatioAtLevelPrefix,
     &DB::Properties::kStats,
-    &DB::Properties::kSSTables,
+    //&DB::Properties::kSSTables,
     &DB::Properties::kCFStats,
     &DB::Properties::kCFStatsNoFileHistogram,
     &DB::Properties::kCFFileHistogram,
@@ -1206,22 +1213,24 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs, int num_le
     //&DB::Properties::kAggregatedTablePropertiesAtLevel,
   };
   auto& stjs = djs["StrProps"];
-  for (auto pName : aStrProps) {
+  auto prop_to_js = [&](const std::string& name) {
     std::string value;
-    if (const_cast<DB&>(db).GetProperty(cfh, *pName, &value)) {
-      if (Slice(*pName).starts_with(DB::Properties::kAggregatedTableProperties)) {
-        replace_substr(value, "; ", "\r\n");
-        chomp(value);
-      }
+    if (const_cast<DB&>(db).GetProperty(cfh, name, &value)) {
       if (html) {
-        stjs[*pName] = html_pre(value);
+        stjs[name] = html_pre(value);
       }
       else {
-        stjs[*pName] = std::move(value);
+        stjs[name] = std::move(value);
       }
     } else {
-      stjs[*pName] = "GetProperty Fail";
+      stjs[name] = "GetProperty Fail";
     }
+  };
+  for (auto pName : aStrProps) {
+    prop_to_js(*pName);
+  }
+  if (JsonSmartBool(dump_options, "sst")) {
+    prop_to_js(DB::Properties::kSSTables);
   }
   //GetAggregatedTableProperties(db, cfh, stjs, -1, html);
   // -1 is for kAggregatedTableProperties
@@ -1288,14 +1297,9 @@ struct CFPropertiesWebView_Manip : PluginManipFunc<CFPropertiesWebView> {
   std::string ToString(const CFPropertiesWebView& cfp, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
     bool html = JsonSmartBool(dump_options, "html");
-    ColumnFamilyDescriptor cfd;
-    Status s = cfp.cfh->GetDescriptor(&cfd);
-    if (!s.ok()) {
-      throw s; // NOLINT
-    }
     json djs;
     Json_DB_IntProps(*cfp.db, cfp.cfh, djs);
-    Json_DB_Level_Stats(*cfp.db, cfp.cfh, djs, cfd.options.num_levels, html);
+    Json_DB_Level_Stats(*cfp.db, cfp.cfh, djs, html, dump_options);
     return JsonToString(djs, dump_options);
   }
 };

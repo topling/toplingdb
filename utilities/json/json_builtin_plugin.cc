@@ -1231,6 +1231,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     propName.append(buf, snprintf(buf, sizeof buf, "%d", level));
     std::string value;
     json elem;
+    elem["Level"] = i;
     if (const_cast<DB&>(db).GetProperty(cfh, propName, &value)) {
       split(value, "; ", fields);
       for (auto& kv : fields) {
@@ -1246,6 +1247,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
   }
   {
     json elem;
+    elem["Level"] = "sum";
     for (auto& kv : header) {
       elem[kv.first.ToString()] = kv.second.ToString();
     }
@@ -1254,6 +1256,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
   if (html) {
     auto& fieldsNames = pjs[0]["<htmltab:col>"];
     fieldsNames = json::array();
+    fieldsNames.push_back("Level");
     for (auto& kv : header) {
       fieldsNames.push_back(kv.first.ToString());
     }

@@ -1281,6 +1281,82 @@ static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh, json& djs) {
   }
 }
 
+struct CFPropertiesWebView_Manip : PluginManipFunc<CFPropertiesWebView> {
+  void Update(CFPropertiesWebView* cfp, const json& js,
+              const JsonPluginRepo& repo) const final {
+  }
+  std::string ToString(const CFPropertiesWebView& cfp, const json& dump_options,
+                       const JsonPluginRepo& repo) const final {
+    bool html = JsonSmartBool(dump_options, "html");
+    ColumnFamilyDescriptor cfd;
+    Status s = cfp.cfh->GetDescriptor(&cfd);
+    if (!s.ok()) {
+      throw s; // NOLINT
+    }
+    json djs;
+    Json_DB_IntProps(*cfp.db, cfp.cfh, djs);
+    Json_DB_Level_Stats(*cfp.db, cfp.cfh, djs, cfd.options.num_levels, html);
+    return JsonToString(djs, dump_options);
+  }
+};
+ROCKSDB_REG_PluginManip("builtin", CFPropertiesWebView_Manip);
+
+static void SetCFPropertiesWebView(DB* db, ColumnFamilyHandle* cfh,
+                                  const std::string& dbname,
+                                  const std::string& cfname,
+                                  const JsonPluginRepo& crepo) {
+  auto& repo = const_cast<JsonPluginRepo&>(crepo);
+  std::string varname = dbname + "/" + cfname;
+  auto view = std::make_shared<CFPropertiesWebView>(
+                               CFPropertiesWebView{db, cfh});
+  repo.m_impl->props.p2name.emplace(
+      view.get(), JsonPluginRepo::Impl::ObjInfo{varname, json("default")});
+  repo.m_impl->props.name2p->emplace(varname, view);
+}
+static void SetCFPropertiesWebView(DB* db, const std::string& dbname,
+                                   const JsonPluginRepo& crepo) {
+  auto cfh = db->DefaultColumnFamily();
+  SetCFPropertiesWebView(db, cfh, dbname, "default", crepo);
+}
+static void SetCFPropertiesWebView(DB_MultiCF* mcf, const std::string& dbname,
+                                   const std::vector<ColumnFamilyDescriptor>& cfdvec,
+                                   const JsonPluginRepo& crepo) {
+  assert(mcf->cf_handles.size() == cfdvec.size());
+  DB* db = mcf->db;
+  for (size_t i = 0; i < mcf->cf_handles.size(); i++) {
+    auto cfh = mcf->cf_handles[i];
+    const std::string& cfname = cfdvec[i].name;
+    SetCFPropertiesWebView(db, cfh, dbname, cfname, crepo);
+  }
+}
+
+static void
+JS_Add_CFPropertiesWebView_Link(json& djs, const DB& db, bool html,
+                                const json& dump_options,
+                                const JsonPluginRepo& repo) {
+  auto iter = repo.m_impl->props.name2p->find(db.GetName() + "/default");
+  assert(repo.m_impl->props.name2p->end() != iter);
+  if (repo.m_impl->props.name2p->end() == iter) {
+    abort();
+  }
+  auto properties = iter->second;
+  ROCKSDB_JSON_SET_FACX(djs, properties, props);
+}
+static void
+JS_Add_CFPropertiesWebView_Link(json& djs, bool html,
+                                const std::string& dbname,
+                                const std::string& cfname,
+                                const json& dump_options,
+                                const JsonPluginRepo& repo) {
+  auto iter = repo.m_impl->props.name2p->find(dbname + "/" + cfname);
+  assert(repo.m_impl->props.name2p->end() != iter);
+  if (repo.m_impl->props.name2p->end() == iter) {
+    abort();
+  }
+  auto properties = iter->second;
+  ROCKSDB_JSON_SET_FACX(djs, properties, props);
+}
+
 struct DB_Manip : PluginManipFunc<DB> {
   void Update(DB* db, const json& js,
               const JsonPluginRepo& repo) const final {
@@ -1327,9 +1403,10 @@ struct DB_Manip : PluginManipFunc<DB> {
     djs["CFOptions"][0] = dbo_name; cfo.SaveToJson(djs["CFOptions"][1], repo, html);
     djs["CFOptions"][1]["MaxMemCompactionLevel"] = const_cast<DB&>(db).MaxMemCompactionLevel();
     djs["CFOptions"][1]["Level0StopWriteTrigger"] = const_cast<DB&>(db).Level0StopWriteTrigger();
-    Json_DB_Statistics(dbo.statistics.get(), djs, html);
-    Json_DB_IntProps(db, db.DefaultColumnFamily(), djs);
-    Json_DB_Level_Stats(db, db.DefaultColumnFamily(), djs, opt.num_levels, html);
+    //Json_DB_Statistics(dbo.statistics.get(), djs, html);
+    //Json_DB_IntProps(db, db.DefaultColumnFamily(), djs);
+    //Json_DB_Level_Stats(db, db.DefaultColumnFamily(), djs, opt.num_levels, html);
+    JS_Add_CFPropertiesWebView_Link(djs, db, html, dump_options, repo);
     return JsonToString(djs, dump_options);
   }
 };
@@ -1439,10 +1516,12 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
       }
       result_cfo_js[cf_name][1]["MaxMemCompactionLevel"] = db.db->MaxMemCompactionLevel(cf);
       result_cfo_js[cf_name][1]["Level0StopWriteTrigger"] = db.db->Level0StopWriteTrigger(cf);
-      Json_DB_IntProps(*db.db, cf, cf_props[cf_name]);
-      Json_DB_Level_Stats(*db.db, cf, cf_props[cf_name], cfo.num_levels, html);
+      //Json_DB_IntProps(*db.db, cf, cf_props[cf_name]);
+      //Json_DB_Level_Stats(*db.db, cf, cf_props[cf_name], cfo.num_levels, html);
+      JS_Add_CFPropertiesWebView_Link(cf_props[cf_name], html,
+                                      dbname, cf_name, dump_options, repo);
     }
-    Json_DB_Statistics(dbo.statistics.get(), djs, html);
+    //Json_DB_Statistics(dbo.statistics.get(), djs, html);
     return JsonToString(djs, dump_options);
   }
 };
@@ -1466,6 +1545,7 @@ DB* JS_DB_Open(const json& js, const JsonPluginRepo& repo) {
     s = DB::Open(options, name, &db);
   if (!s.ok())
     throw s; // NOLINT
+  SetCFPropertiesWebView(db, name, repo);
   return db;
 }
 ROCKSDB_FACTORY_REG("DB::Open", JS_DB_Open);
@@ -1481,6 +1561,7 @@ DB* JS_DB_OpenForReadOnly(const json& js, const JsonPluginRepo& repo) {
   Status s = DB::OpenForReadOnly(options, name, &db, error_if_log_file_exist);
   if (!s.ok())
     throw s;
+  SetCFPropertiesWebView(db, name, repo);
   return db;
 }
 ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_OpenForReadOnly);
@@ -1495,6 +1576,7 @@ DB* JS_DB_OpenAsSecondary(const json& js, const JsonPluginRepo& repo) {
   Status s = DB::OpenAsSecondary(options, name, secondary_path, &db);
   if (!s.ok())
     throw s;
+  SetCFPropertiesWebView(db, name, repo);
   return db;
 }
 ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_OpenAsSecondary);
@@ -1560,6 +1642,7 @@ DB_MultiCF* JS_DB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
     throw s;
   if (db->cf_handles.size() != cfdvec.size())
     THROW_Corruption("cf_handles.size() != cfdvec.size()");
+  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DB::Open", JS_DB_MultiCF_Open);
@@ -1580,6 +1663,7 @@ JS_DB_MultiCF_OpenForReadOnly(const json& js, const JsonPluginRepo& repo) {
     throw s;
   if (db->cf_handles.size() != cfdvec.size())
     THROW_Corruption("cf_handles.size() != cfdvec.size()");
+  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_MultiCF_OpenForReadOnly);
@@ -1599,6 +1683,7 @@ JS_DB_MultiCF_OpenAsSecondary(const json& js, const JsonPluginRepo& repo) {
     throw s;
   if (db->cf_handles.size() != cfdvec.size())
     THROW_Corruption("cf_handles.size() != cfdvec.size()");
+  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_MultiCF_OpenAsSecondary);
@@ -1619,6 +1704,7 @@ DB* JS_DBWithTTL_Open(const json& js, const JsonPluginRepo& repo) {
   Status s = DBWithTTL::Open(options, name, &db, ttl, read_only);
   if (!s.ok())
     throw s;
+  SetCFPropertiesWebView(db, name, repo);
   return db;
 }
 ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DBWithTTL_Open);
@@ -1647,6 +1733,7 @@ JS_DBWithTTL_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   if (db->cf_handles.size() != cfdvec.size())
     THROW_Corruption("cf_handles.size() != cfdvec.size()");
   db->db = dbptr;
+  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
   return db.release();
 }
 ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DBWithTTL_MultiCF_Open);
@@ -1695,6 +1782,7 @@ DB* JS_TransactionDB_Open(const json& js, const JsonPluginRepo& repo) {
   Status s = TransactionDB::Open(options, trx_db_options, name, &db);
   if (!s.ok())
     throw s;
+  SetCFPropertiesWebView(db, name, repo);
   return db;
 }
 ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_TransactionDB_Open);
@@ -1716,6 +1804,7 @@ JS_TransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   if (db->cf_handles.size() != cfdvec.size())
     THROW_Corruption("cf_handles.size() != cfdvec.size()");
   db->db = dbptr;
+  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
   return db.release();
 }
 ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_TransactionDB_MultiCF_Open);
@@ -1736,6 +1825,7 @@ DB* JS_OccTransactionDB_Open(const json& js, const JsonPluginRepo& repo) {
   Status s = OptimisticTransactionDB::Open(options, name, &db);
   if (!s.ok())
     throw s;
+  SetCFPropertiesWebView(db, name, repo);
   return db;
 }
 ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_OccTransactionDB_Open);
@@ -1766,6 +1856,7 @@ JS_OccTransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   if (db->cf_handles.size() != cfdvec.size())
     THROW_Corruption("cf_handles.size() != cfdvec.size()");
   db->db = dbptr;
+  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
   return db.release();
 }
 ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_OccTransactionDB_MultiCF_Open);
@@ -1826,6 +1917,7 @@ DB* JS_BlobDB_Open(const json& js, const JsonPluginRepo& repo) {
   Status s = BlobDB::Open(options, bdb_options, name, &db);
   if (!s.ok())
     throw s;
+  SetCFPropertiesWebView(db, name, repo);
   return db;
 }
 ROCKSDB_FACTORY_REG("BlobDB::Open", JS_BlobDB_Open);
@@ -1847,6 +1939,7 @@ JS_BlobDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
   if (db->cf_handles.size() != cfdvec.size())
     THROW_Corruption("cf_handles.size() != cfdvec.size()");
   db->db = dbptr;
+  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
   return db.release();
 }
 ROCKSDB_FACTORY_REG("BlobDB::Open", JS_BlobDB_MultiCF_Open);
@@ -1859,12 +1952,32 @@ DB_MultiCF::~DB_MultiCF() = default;
 
 // users should ensure databases are alive when calling this function
 void JsonPluginRepo::CloseAllDB() {
+  using view_kv_ptr = decltype(&*m_impl->props.p2name.cbegin());
+  //using view_kv_ptr = const std::pair<const void* const, Impl::ObjInfo>*;
+  std::unordered_map<const void*, view_kv_ptr> cfh_to_view;
+  for (auto& kv : m_impl->props.p2name) {
+    auto view = (CFPropertiesWebView*)kv.first;
+    cfh_to_view[view->cfh] = &kv;
+  }
+  auto del_view = [&](ColumnFamilyHandle* cfh) {
+    auto iter = cfh_to_view.find(cfh);
+    assert(cfh_to_view.end() != iter);
+    if (cfh_to_view.end() == iter) {
+      fprintf(stderr, "Fatal: %s:%d: invariant violated\n", __FILE__, __LINE__);
+      abort();
+    }
+    auto view = (CFPropertiesWebView*)(iter->second->first);
+    const Impl::ObjInfo& oi = iter->second->second;
+    m_impl->props.p2name.erase(view);
+    m_impl->props.name2p->erase(oi.name);
+  };
   for (auto& kv : *m_impl->db.name2p) {
     assert(nullptr != kv.second.db);
     if (kv.second.dbm) {
       DB_MultiCF* dbm = kv.second.dbm;
       assert(kv.second.db = dbm->db);
       for (auto cfh : dbm->cf_handles) {
+        del_view(cfh);
         delete cfh;
       }
       delete dbm->db;
@@ -1872,6 +1985,7 @@ void JsonPluginRepo::CloseAllDB() {
     }
     else {
       DB* db = kv.second.db;
+      del_view(db->DefaultColumnFamily());
       delete db;
     }
   }

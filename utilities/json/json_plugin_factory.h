@@ -35,6 +35,10 @@ template<class T> T* GetRawPtr(T* p){ return p; }
 template<class T> T* GetRawPtr(const std::shared_ptr<T>& p){ return p.get(); }
 inline DB* GetRawPtr(const DB_Ptr& p){ return p.db; }
 
+struct CFPropertiesWebView {
+  DB* db;
+  ColumnFamilyHandle* cfh;
+};
 struct JsonPluginRepo::Impl {
   struct ObjInfo {
     std::string name;
@@ -75,6 +79,8 @@ struct JsonPluginRepo::Impl {
   ObjRepo<Options> options;
   ObjRepo<DBOptions> db_options;
   ObjRepo<ColumnFamilyOptions> cf_options;
+
+  ObjRepo<CFPropertiesWebView> props;
   ObjMap<DB_Ptr> db;
 
   json db_js; // not evaluated during import
@@ -137,7 +143,19 @@ struct PluginManipFunc {
   virtual ~PluginManipFunc() {}
   virtual void Update(Object*, const json&, const JsonPluginRepo&) const = 0;
   virtual std::string ToString(const Object&, const json&, const JsonPluginRepo&) const = 0;
+  using InterfaceType = PluginManipFunc;
 };
+template<class ManipClass>
+static const typename ManipClass::InterfaceType*
+PluginManipSingleton(const json&, const JsonPluginRepo&) {
+  static const ManipClass manip;
+  return &manip;
+}
+#define ROCKSDB_REG_PluginManip(ClassName, ManipClass) \
+  constexpr auto ROCKSDB_PP_CAT2(JS_##ManipClass, __LINE__) = \
+      &PluginManipSingleton<ManipClass>; \
+  ROCKSDB_FACTORY_REG(ClassName, ROCKSDB_PP_CAT2(JS_##ManipClass, __LINE__))
+
 template<class Object>
 using PluginManip = PluginFactory<const PluginManipFunc<Object>*>;
 template<class Ptr>

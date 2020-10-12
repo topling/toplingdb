@@ -1190,6 +1190,69 @@ GetAggregatedTableProperties(const DB& db, ColumnFamilyHandle* cfh,
   }
 }
 
+void split(Slice rope, Slice delim, std::vector<std::pair<Slice, Slice> >& F) {
+  F.resize(0);
+  size_t dlen = delim.size();
+  std::vector<std::pair<Slice, Slice> > F;
+  const char *col = rope.data(), *End = rope.data() + rope.size();
+  while (col <= End) {
+    auto eq = (const char*)memchr(col, '=', End-col);
+    if (!eq) {
+      break;
+    }
+    auto next = (const char*)memmem(eq+1, End-eq-1, delim.data(), dlen);
+    if (next)
+      F.push_back({Slice(col, eq-col), Slice(eq+1, next-eq-1)});
+    else {
+      F.push_back({Slice(col, eq-col), Slice(eq+1, End-eq-1)});
+      break;
+    }
+    col = next + dlen;
+  }
+}
+
+static void
+GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
+                                json& djs, int num_levels, bool html) {
+  std::string sum;
+  auto& pjs = djs[DB::Properties::kAggregatedTableProperties];
+  if (!const_cast<DB&>(db).GetProperty(
+        cfh, DB::Properties::kAggregatedTableProperties, &sum)) {
+    pjs = "GetProperty Fail";
+    return;
+  }
+  std::vector<std::pair<Slice, Slice> > header, fields;
+  split(sum, "; ", header);
+  std::string propName;
+  propName.reserve(DB::Properties::kAggregatedTablePropertiesAtLevel.size() + 10);
+  for (int level = 0; level < num_levels; level++) {
+    char buf[32];
+    propName.assign(DB::Properties::kAggregatedTablePropertiesAtLevel);
+    propName.append(buf, snprintf(buf, sizeof buf, "%d", level));
+    std::string value;
+    if (const_cast<DB&>(db).GetProperty(cfh, propName, &value)) {
+      split(value, "; ", fields);
+      for (auto& kv : fields) {
+        pjs.push_back({kv.first.ToString(), kv.second.ToString()});
+      }
+    }
+    else {
+      for (auto& kv : header) {
+        pjs.push_back({kv.first.ToString(), "Fail"});
+      }
+    }
+  }
+  for (auto& kv : header) {
+    pjs.push_back({kv.first.ToString(), kv.second.ToString()});
+  }
+  if (html) {
+    auto& fieldsNames = pjs[0]["<htmltab:col>"];
+    for (auto& kv : header) {
+      fieldsNames.push_back(kv.first.ToString());
+    }
+  }
+}
+
 static void
 Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
                     bool html, const json& dump_options) {
@@ -1234,8 +1297,12 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
   }
   //GetAggregatedTableProperties(db, cfh, stjs, -1, html);
   // -1 is for kAggregatedTableProperties
-  for (int level = -1; level < num_levels; level++) {
-    GetAggregatedTableProperties(db, cfh, stjs, level, html);
+  if (JsonSmartBool(dump_options, "aggregated-table-properties-txt")) {
+    for (int level = -1; level < num_levels; level++) {
+      GetAggregatedTableProperties(db, cfh, stjs, level, html);
+    }
+  } else {
+    GetAggregatedTablePropertiesTab(db, cfh, stjs, num_levels, html);
   }
 }
 

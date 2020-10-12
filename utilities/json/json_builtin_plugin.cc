@@ -1275,7 +1275,7 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
   static const std::string* aStrProps[] = {
     //&DB::Properties::kNumFilesAtLevelPrefix,
     //&DB::Properties::kCompressionRatioAtLevelPrefix,
-    &DB::Properties::kStats,
+    //&DB::Properties::kStats,
     //&DB::Properties::kSSTables,
     &DB::Properties::kCFStats,
     //&DB::Properties::kCFStatsNoFileHistogram,

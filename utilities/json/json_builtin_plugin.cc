@@ -1310,7 +1310,7 @@ static void SetCFPropertiesWebView(DB* db, ColumnFamilyHandle* cfh,
   auto view = std::make_shared<CFPropertiesWebView>(
                                CFPropertiesWebView{db, cfh});
   repo.m_impl->props.p2name.emplace(
-      view.get(), JsonPluginRepo::Impl::ObjInfo{varname, json("default")});
+      view.get(), JsonPluginRepo::Impl::ObjInfo{varname, json("builtin")});
   repo.m_impl->props.name2p->emplace(varname, view);
 }
 static void SetCFPropertiesWebView(DB* db, const std::string& dbname,

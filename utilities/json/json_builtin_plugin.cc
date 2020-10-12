@@ -1139,6 +1139,21 @@ ROCKSDB_FACTORY_REG("default", JS_Statistics_Manip);
 ROCKSDB_FACTORY_REG("Default", JS_Statistics_Manip);
 ROCKSDB_FACTORY_REG("Statistics", JS_Statistics_Manip);
 
+static void replace_substr(std::string& s, const std::string& f,
+                           const std::string& t) {
+    assert(not f.empty());
+    for (auto pos = s.find(f);                // find first occurrence of f
+            pos != std::string::npos;         // make sure f was found
+            s.replace(pos, f.size(), t),      // replace with t, and
+            pos = s.find(f, pos + t.size()))  // find next occurrence of f
+    {}
+}
+static void chomp(std::string& s) {
+  while (!s.empty() && isspace((unsigned char)s.back())) {
+    s.pop_back();
+  }
+}
+
 static void
 Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs, bool html) {
   static const std::string* aStrProps[] = {
@@ -1158,6 +1173,10 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs, bool html)
   for (auto pName : aStrProps) {
     std::string value;
     if (const_cast<DB&>(db).GetProperty(cfh, *pName, &value)) {
+      if (Slice(*pName).starts_with(DB::Properties::kAggregatedTableProperties)) {
+        replace_substr(value, "; ", "\r\n");
+        chomp(value);
+      }
       if (html) {
         std::string str;
         str.reserve(value.size() + 11);

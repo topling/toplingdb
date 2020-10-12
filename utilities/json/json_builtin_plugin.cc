@@ -1231,7 +1231,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     propName.append(buf, snprintf(buf, sizeof buf, "%d", level));
     std::string value;
     json elem;
-    elem["Level"] = i;
+    elem["Level"] = level;
     if (const_cast<DB&>(db).GetProperty(cfh, propName, &value)) {
       split(value, "; ", fields);
       for (auto& kv : fields) {

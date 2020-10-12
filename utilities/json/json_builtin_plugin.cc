@@ -1084,7 +1084,7 @@ Options JS_Options(const json& js, const JsonPluginRepo& repo, string* name) {
   return Options(db_options, cf_options);
 }
 
-static void Json_DB_Statistics(Statistics* st, json& djs) {
+static void Json_DB_Statistics(const Statistics* st, json& djs, bool html) {
   json& tikers = djs["tikers"];
   json& histograms = djs["histograms"];
   if (!st) {
@@ -1110,13 +1110,69 @@ static void Json_DB_Statistics(Statistics* st, json& djs) {
     cur["SUM"] = hData.sum;
     histograms.push_back(std::move(cur));
   }
-  histograms[0]["<htmltab:col>"] = json::array({
-    "name", "P50", "P95", "P99", "MAX", "CNT", "SUM"
-  });
+  if (html) {
+    histograms[0]["<htmltab:col>"] = json::array({
+      "name", "P50", "P95", "P99", "MAX", "CNT", "SUM"
+    });
+  }
 }
 
-static void Json_DB_Level_Stats(DB& db, json& djs) {
+struct Statistics_Manip : PluginManipFunc<Statistics> {
+  void Update(Statistics* db, const json& js,
+              const JsonPluginRepo& repo) const final {
 
+  }
+  std::string ToString(const Statistics& db, const json& dump_options,
+                       const JsonPluginRepo& repo) const final {
+    bool html = JsonSmartBool(dump_options, "html");
+    json djs;
+    Json_DB_Statistics(&db, djs, html);
+    return JsonToString(djs, dump_options);
+  }
+};
+static const PluginManipFunc<Statistics>*
+JS_Statistics_Manip(const json&, const JsonPluginRepo&) {
+  static const Statistics_Manip manip;
+  return &manip;
+}
+ROCKSDB_FACTORY_REG("default", JS_Statistics_Manip);
+ROCKSDB_FACTORY_REG("Default", JS_Statistics_Manip);
+ROCKSDB_FACTORY_REG("Statistics", JS_Statistics_Manip);
+
+static void
+Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs, bool html) {
+  static const std::string* aStrProps[] = {
+    &DB::Properties::kNumFilesAtLevelPrefix,
+    &DB::Properties::kCompressionRatioAtLevelPrefix,
+    &DB::Properties::kStats,
+    &DB::Properties::kSSTables,
+    &DB::Properties::kCFStats,
+    &DB::Properties::kCFStatsNoFileHistogram,
+    &DB::Properties::kCFFileHistogram,
+    &DB::Properties::kDBStats,
+    &DB::Properties::kLevelStats,
+    &DB::Properties::kAggregatedTableProperties,
+    &DB::Properties::kAggregatedTablePropertiesAtLevel,
+  };
+  auto& stjs = djs["StrProps"];
+  for (auto pName : aStrProps) {
+    std::string value = 0;
+    if (const_cast<DB&>(db).GetProperty(cfh, *pName, &value)) {
+      if (html) {
+        std::string str;
+        str.reserve(value.size() + 11);
+        str.append("<pre>");
+        str.append(value);
+        str.append("</pre>");
+        stjs[*pName] = std::move(str);
+      }
+      else {
+        stjs[*pName] = value;
+      }
+    } else {
+      stjs[*pName] = "GetProperty Fail";
+    }
+  }
 }
 
 static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh, json& djs) {
@@ -1150,8 +1206,8 @@ static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh, json& djs) {
     &DB::Properties::kLiveSstFilesSize,
     &DB::Properties::kBaseLevel,
     &DB::Properties::kEstimatePendingCompactionBytes,
-    //&DB::Properties::kAggregatedTableProperties,
-    //&DB::Properties::kAggregatedTablePropertiesAtLevel,
+    //&DB::Properties::kAggregatedTableProperties, // string
+    //&DB::Properties::kAggregatedTablePropertiesAtLevel, // string
     &DB::Properties::kActualDelayedWriteRate,
     &DB::Properties::kIsWriteStopped,
     &DB::Properties::kEstimateOldestKeyTime,
@@ -1163,9 +1219,9 @@ static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh, json& djs) {
   for (auto pName : aIntProps) {
     uint64_t value = 0;
     if (const_cast<DB&>(db).GetIntProperty(cfh, *pName, &value)) {
-       ipjs[*pName] = value;
+      ipjs[*pName] = value;
     } else {
-       ipjs[*pName] = "GetProperty Fail";
+      ipjs[*pName] = "GetProperty Fail";
     }
   }
 }
@@ -1173,7 +1229,6 @@ static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh, json& djs) {
 struct DB_Manip : PluginManipFunc<DB> {
   void Update(DB* db, const json& js,
               const JsonPluginRepo& repo) const final {
-
   }
   std::string ToString(const DB& db, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
@@ -1217,8 +1272,9 @@ struct DB_Manip : PluginManipFunc<DB> {
     djs["CFOptions"][0] = dbo_name; cfo.SaveToJson(djs["CFOptions"][1], repo, html);
     djs["CFOptions"][1]["MaxMemCompactionLevel"] = const_cast<DB&>(db).MaxMemCompactionLevel();
     djs["CFOptions"][1]["Level0StopWriteTrigger"] = const_cast<DB&>(db).Level0StopWriteTrigger();
-    Json_DB_Statistics(dbo.statistics.get(), djs);
+    Json_DB_Statistics(dbo.statistics.get(), djs, html);
     Json_DB_IntProps(db, db.DefaultColumnFamily(), djs);
+    Json_DB_Level_Stats(db, db.DefaultColumnFamily(), djs, html);
     return JsonToString(djs, dump_options);
   }
 };
@@ -1329,8 +1385,9 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
       result_cfo_js[cf_name][1]["MaxMemCompactionLevel"] = db.db->MaxMemCompactionLevel(cf);
       result_cfo_js[cf_name][1]["Level0StopWriteTrigger"] = db.db->Level0StopWriteTrigger(cf);
       Json_DB_IntProps(*db.db, cf, cf_props[cf_name]);
+      Json_DB_Level_Stats(*db.db, cf, cf_props[cf_name], html);
     }
-    Json_DB_Statistics(dbo.statistics.get(), djs);
+    Json_DB_Statistics(dbo.statistics.get(), djs, html);
     return JsonToString(djs, dump_options);
   }
 };

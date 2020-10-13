@@ -1316,7 +1316,8 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
   }
 }
 
-static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh, json& djs) {
+static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh,
+                             json& djs, bool showbad) {
   static const std::string* aIntProps[] = {
     &DB::Properties::kNumImmutableMemTable,
     &DB::Properties::kNumImmutableMemTableFlushed,
@@ -1375,7 +1376,10 @@ struct CFPropertiesWebView_Manip : PluginManipFunc<CFPropertiesWebView> {
                        const JsonPluginRepo& repo) const final {
     bool html = JsonSmartBool(dump_options, "html");
     json djs;
-    Json_DB_IntProps(*cfp.db, cfp.cfh, djs);
+    if (!JsonSmartBool(dump_options, "noint")) {
+      bool showbad = JsonSmartBool(dump_options, "showbad");
+      Json_DB_IntProps(*cfp.db, cfp.cfh, djs, showbad);
+    }
     Json_DB_Level_Stats(*cfp.db, cfp.cfh, djs, html, dump_options);
     return JsonToString(djs, dump_options);
   }

@@ -1362,7 +1362,7 @@ static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh,
     uint64_t value = 0;
     if (const_cast<DB&>(db).GetIntProperty(cfh, *pName, &value)) {
       ipjs[*pName] = value;
-    } else {
+    } else if (showbad) {
       ipjs[*pName] = "GetProperty Fail";
     }
   }

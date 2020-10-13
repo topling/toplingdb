@@ -1417,7 +1417,6 @@ static void SetCFPropertiesWebView(DB_MultiCF* mcf, const std::string& dbname,
 
 static void
 JS_Add_CFPropertiesWebView_Link(json& djs, const DB& db, bool html,
-                                const json& dump_options,
                                 const JsonPluginRepo& repo) {
   auto iter = repo.m_impl->props.name2p->find(db.GetName() + "/default");
   assert(repo.m_impl->props.name2p->end() != iter);
@@ -1431,7 +1430,6 @@ static void
 JS_Add_CFPropertiesWebView_Link(json& djs, bool html,
                                 const std::string& dbname,
                                 const std::string& cfname,
-                                const json& dump_options,
                                 const JsonPluginRepo& repo) {
   auto iter = repo.m_impl->props.name2p->find(dbname + "/" + cfname);
   assert(repo.m_impl->props.name2p->end() != iter);
@@ -1491,7 +1489,7 @@ struct DB_Manip : PluginManipFunc<DB> {
     //Json_DB_Statistics(dbo.statistics.get(), djs, html);
     //Json_DB_IntProps(db, db.DefaultColumnFamily(), djs);
     //Json_DB_Level_Stats(db, db.DefaultColumnFamily(), djs, opt.num_levels, html);
-    JS_Add_CFPropertiesWebView_Link(djs, db, html, dump_options, repo);
+    JS_Add_CFPropertiesWebView_Link(djs, db, html, repo);
     return JsonToString(djs, dump_options);
   }
 };
@@ -1604,7 +1602,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
       //Json_DB_IntProps(*db.db, cf, cf_props[cf_name]);
       //Json_DB_Level_Stats(*db.db, cf, cf_props[cf_name], cfo.num_levels, html);
       JS_Add_CFPropertiesWebView_Link(cf_props[cf_name], html,
-                                      dbname, cf_name, dump_options, repo);
+                                      dbname, cf_name, repo);
     }
     //Json_DB_Statistics(dbo.statistics.get(), djs, html);
     return JsonToString(djs, dump_options);

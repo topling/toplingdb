@@ -560,6 +560,10 @@ class DispatherTableFactory : public TableFactory {
         return Status::InvalidArgument(ROCKSDB_FUNC,
             "level_writers must be a json array");
       }
+      if (level_writers_js.empty()) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "level_writers must be a non-empty json array");
+      }
       for (auto& item : level_writers_js.items()) {
         auto& options = item.value();
         auto p = PluginFactorySP<TableFactory>::

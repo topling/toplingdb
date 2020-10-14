@@ -348,12 +348,7 @@ struct DBOptions_Manip : PluginManipFunc<DBOptions> {
     return JsonToString(djs, dump_options);
   }
 };
-static const PluginManipFunc<DBOptions>*
-JS_DBOptionsManip(const json&, const JsonPluginRepo&) {
-  static const DBOptions_Manip manip;
-  return &manip;
-}
-ROCKSDB_FACTORY_REG("DBOptions", JS_DBOptionsManip);
+ROCKSDB_REG_PluginManip("DBOptions", DBOptions_Manip);
 
 ///////////////////////////////////////////////////////////////////////////
 template<class Vec>
@@ -642,13 +637,8 @@ struct CFOptions_Manip : PluginManipFunc<ColumnFamilyOptions> {
     return JsonToString(djs, dump_options);
   }
 };
-static const PluginManipFunc<ColumnFamilyOptions>*
-JS_CFOptionsManip(const json&, const JsonPluginRepo&) {
-  static const CFOptions_Manip manip;
-  return &manip;
-}
-ROCKSDB_FACTORY_REG("ColumnFamilyOptions", JS_CFOptionsManip);
-ROCKSDB_FACTORY_REG("CFOptions", JS_CFOptionsManip);
+ROCKSDB_REG_PluginManip("ColumnFamilyOptions", CFOptions_Manip);
+ROCKSDB_REG_PluginManip("CFOptions", CFOptions_Manip);
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -847,12 +837,7 @@ struct LRUCache_Manip : PluginManipFunc<Cache> {
     return JsonToString(js, dump_options);
   }
 };
-static const PluginManipFunc<Cache>*
-JS_LRUCache_Manip(const json&, const JsonPluginRepo&) {
-  static const LRUCache_Manip manip;
-  return &manip;
-}
-ROCKSDB_FACTORY_REG("LRUCache", JS_LRUCache_Manip);
+ROCKSDB_REG_PluginManip("LRUCache", LRUCache_Manip);
 
 //////////////////////////////////////////////////////////////////////////////
 static std::shared_ptr<Cache>
@@ -1129,7 +1114,6 @@ static void Json_DB_Statistics(const Statistics* st, json& djs,
 struct Statistics_Manip : PluginManipFunc<Statistics> {
   void Update(Statistics* db, const json& js,
               const JsonPluginRepo& repo) const final {
-
   }
   std::string ToString(const Statistics& db, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
@@ -1140,14 +1124,9 @@ struct Statistics_Manip : PluginManipFunc<Statistics> {
     return JsonToString(djs, dump_options);
   }
 };
-static const PluginManipFunc<Statistics>*
-JS_Statistics_Manip(const json&, const JsonPluginRepo&) {
-  static const Statistics_Manip manip;
-  return &manip;
-}
-ROCKSDB_FACTORY_REG("default", JS_Statistics_Manip);
-ROCKSDB_FACTORY_REG("Default", JS_Statistics_Manip);
-ROCKSDB_FACTORY_REG("Statistics", JS_Statistics_Manip);
+ROCKSDB_REG_PluginManip("default", Statistics_Manip);
+ROCKSDB_REG_PluginManip("Default", Statistics_Manip);
+ROCKSDB_REG_PluginManip("Statistics", Statistics_Manip);
 
 static void replace_substr(std::string& s, const std::string& f,
                            const std::string& t) {
@@ -1503,11 +1482,7 @@ struct DB_Manip : PluginManipFunc<DB> {
     return JsonToString(djs, dump_options);
   }
 };
-static const PluginManipFunc<DB>*
-JS_DB_Manip(const json&, const JsonPluginRepo&) {
-  static const DB_Manip manip;
-  return &manip;
-}
+static constexpr auto JS_DB_Manip = &PluginManipSingleton<DB_Manip>;
 
 struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
   void Update(DB_MultiCF* db, const json& js,
@@ -1618,11 +1593,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     return JsonToString(djs, dump_options);
   }
 };
-static const PluginManipFunc<DB_MultiCF>*
-JS_DB_MultiCF_Manip(const json&, const JsonPluginRepo&) {
-  static const DB_MultiCF_Manip manip;
-  return &manip;
-}
+static constexpr auto JS_DB_MultiCF_Manip = &PluginManipSingleton<DB_Manip>;
 
 static
 DB* JS_DB_Open(const json& js, const JsonPluginRepo& repo) {

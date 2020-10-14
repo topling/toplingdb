@@ -1084,7 +1084,8 @@ Options JS_Options(const json& js, const JsonPluginRepo& repo, string* name) {
   return Options(db_options, cf_options);
 }
 
-static void Json_DB_Statistics(const Statistics* st, json& djs, bool html) {
+static void Json_DB_Statistics(const Statistics* st, json& djs,
+                               bool html, bool nozero) {
   json& tikers = djs["tikers"];
   json& histograms = djs["histograms"];
   if (!st) {
@@ -1094,25 +1095,33 @@ static void Json_DB_Statistics(const Statistics* st, json& djs, bool html) {
   }
   for (const auto& t : TickersNameMap) {
     assert(t.first < TICKER_ENUM_MAX);
-    tikers[t.second] = st->getTickerCount(t.first);
+    uint64_t value = st->getTickerCount(t.first);
+    if (!nozero || value)
+      tikers[t.second] = value;
   }
   for (const auto& h : HistogramsNameMap) {
     assert(h.first < HISTOGRAM_ENUM_MAX);
     HistogramData hData;
     st->histogramData(h.first, &hData);
+    if (nozero && 0 == hData.count) {
+      continue;
+    }
     json cur;
     cur["name"] = h.second;
     cur["P50"] = hData.median;
     cur["P95"] = hData.percentile95;
     cur["P99"] = hData.percentile99;
+    cur["AVG"] = hData.average;
+    cur["MIN"] = hData.min;
     cur["MAX"] = hData.max;
     cur["CNT"] = hData.count;
+    cur["STD"] = hData.standard_deviation;
     cur["SUM"] = hData.sum;
     histograms.push_back(std::move(cur));
   }
   if (html) {
     histograms[0]["<htmltab:col>"] = json::array({
-      "name", "P50", "P95", "P99", "MAX", "CNT", "SUM"
+      "name", "P50", "P95", "P99", "AVG", "MIN", "MAX", "CNT", "STD", "SUM"
     });
   }
 }
@@ -1125,8 +1134,9 @@ struct Statistics_Manip : PluginManipFunc<Statistics> {
   std::string ToString(const Statistics& db, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
     bool html = JsonSmartBool(dump_options, "html");
+    bool nozero = JsonSmartBool(dump_options, "nozero");
     json djs;
-    Json_DB_Statistics(&db, djs, html);
+    Json_DB_Statistics(&db, djs, html, nozero);
     return JsonToString(djs, dump_options);
   }
 };

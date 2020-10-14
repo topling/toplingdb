@@ -483,9 +483,10 @@ class DispatherTableFactory : public TableFactory {
               "SanitizeOptions() was not called");
       abort();
     }
-    int level = table_builder_options.level;
+    int level = std::min(table_builder_options.level,
+                         int(m_level_writers.size()-1));
     TableBuilder* builder;
-    if (size_t(level) < m_level_writers.size()) {
+    if (level >= 0) {
       if (JsonPluginRepo::DebugLevel() >= 3) {
         Info(info_log,
           "Dispatch::NewTableBuilder: level = %d, use level factory = %s\n",

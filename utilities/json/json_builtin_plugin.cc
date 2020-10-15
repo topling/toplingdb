@@ -1201,7 +1201,8 @@ void split(Slice rope, Slice delim, std::vector<std::pair<Slice, Slice> >& F) {
 
 static void
 GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
-                                json& djs, int num_levels, bool html) {
+                                json& djs, int num_levels,
+                                bool html, bool nozero) {
   std::string sum;
   auto& pjs = djs[DB::Properties::kAggregatedTableProperties];
   if (!const_cast<DB&>(db).GetProperty(
@@ -1230,6 +1231,12 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     else {
       for (auto& kv : header) {
         elem[kv.first.ToString()] = "Fail";
+      }
+    }
+    if (nozero) {
+      auto iter = elem.find("# entries");
+      if (elem.end() != iter && iter.value().get<int64_t>() == 0) {
+        continue;
       }
     }
     pjs.push_back(std::move(elem));
@@ -1301,7 +1308,8 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
       GetAggregatedTableProperties(db, cfh, stjs, level, html);
     }
   } else {
-    GetAggregatedTablePropertiesTab(db, cfh, stjs, num_levels, html);
+    bool nozero = JsonSmartBool(dump_options, "nozero");
+    GetAggregatedTablePropertiesTab(db, cfh, stjs, num_levels, html, nozero);
   }
 }
 

@@ -823,7 +823,7 @@ struct LRUCache_Manip : PluginManipFunc<Cache> {
     size_t usage = r.GetUsage();
     size_t pined_usage = r.GetPinnedUsage();
     size_t capacity = r.GetCapacity();
-    size_t strict_capacity = r.HasStrictCapacityLimit();
+    bool strict_capacity = r.HasStrictCapacityLimit();
     double usage_rate = 1.0*usage / capacity;
     double pined_rate = 1.0*pined_usage / capacity;
     MemoryAllocator* memory_allocator = r.memory_allocator();

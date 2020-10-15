@@ -1224,7 +1224,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     const char* user_key_beg = name.data_ + strlen("index block size (user-key? ");
     const char* user_key_end = strchr(user_key_beg, ',');
     const char* delta_value_beg = user_key_end + strlen(", delta-value? ");
-    const char* delta_value_end = strchr(user_key_beg, ')');
+    const char* delta_value_end = strchr(delta_value_beg, ')');
     std::string result; result.reserve(32);
     result.append(value.data_, value.size_);
     result.append(" : ");
@@ -1273,7 +1273,10 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     fieldsNames = json::array();
     fieldsNames.push_back("Level");
     for (auto& kv : header) {
-      fieldsNames.push_back(kv.first.ToString());
+      if (kv.first.starts_with("index block size"))
+        fieldsNames.push_back("index block size : user-key : delta-value");
+      else
+        fieldsNames.push_back(kv.first.ToString());
     }
   }
 }

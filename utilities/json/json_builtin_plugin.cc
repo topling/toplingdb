@@ -1235,7 +1235,8 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     }
     if (nozero) {
       auto iter = elem.find("# entries");
-      if (elem.end() != iter && iter.value().get<int64_t>() == 0) {
+      if (elem.end() != iter &&
+          iter.value().get_ref<const std::string&>() == "0") {
         continue;
       }
     }

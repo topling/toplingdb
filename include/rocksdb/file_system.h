@@ -710,6 +710,16 @@ class FSRandomAccessFile {
                           IODebugContext* dbg) const {
     return Read(offset, n, options, result, scratch, dbg);
   }
+  virtual IOStatus FsMultiRead(FSReadRequest* reqs, size_t num_reqs,
+                               const IOOptions& options, IODebugContext* dbg) {
+    assert(reqs != nullptr);
+    for (size_t i = 0; i < num_reqs; ++i) {
+      FSReadRequest& req = reqs[i];
+      req.status =
+          FsRead(req.offset, req.len, options, &req.result, req.scratch, dbg);
+    }
+    return IOStatus::OK();
+  }
 
   virtual intptr_t FileDescriptor() const {
     assert(false);

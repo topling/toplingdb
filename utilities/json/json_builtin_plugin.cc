@@ -1215,6 +1215,24 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
   split(sum, "; ", header);
   std::string propName;
   propName.reserve(DB::Properties::kAggregatedTablePropertiesAtLevel.size() + 10);
+  auto set_elem = [&](json& elem, Slice name, Slice value) {
+    if (!name.starts_with("index block size")) {
+        elem[name.ToString()] = value.ToString();
+        return;
+    }
+    // sample: "index block size (user-key? 185, delta-value? 185)"
+    const char* user_key_beg = name.data_ + strlen("index block size (user-key? ");
+    const char* user_key_end = strchr(user_key_beg, ',');
+    const char* delta_value_beg = user_key_end + strlen(", delta-value? ");
+    const char* delta_value_end = strchr(user_key_beg, ')');
+    std::string result; result.reserve(32);
+    result.append(value.data_, value.size_);
+    result.append(" : ");
+    result.append(user_key_beg, user_key_end);
+    result.append(" : ");
+    result.append(delta_value_beg, delta_value_end);
+    elem["index block size : user-key : delta-value"] = result;
+  };
   for (int level = 0; level < num_levels; level++) {
     char buf[32];
     propName.assign(DB::Properties::kAggregatedTablePropertiesAtLevel);
@@ -1225,7 +1243,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     if (const_cast<DB&>(db).GetProperty(cfh, propName, &value)) {
       split(value, "; ", fields);
       for (auto& kv : fields) {
-        elem[kv.first.ToString()] = kv.second.ToString();
+        set_elem(elem, kv.first, kv.second);
       }
     }
     else {
@@ -1246,7 +1264,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     json elem;
     elem["Level"] = "sum";
     for (auto& kv : header) {
-      elem[kv.first.ToString()] = kv.second.ToString();
+      set_elem(elem, kv.first, kv.second);
     }
     pjs.push_back(std::move(elem));
   }

@@ -1601,7 +1601,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     return JsonToString(djs, dump_options);
   }
 };
-static constexpr auto JS_DB_MultiCF_Manip = &PluginManipSingleton<DB_Manip>;
+static constexpr auto JS_DB_MultiCF_Manip = &PluginManipSingleton<DB_MultiCF_Manip>;
 
 static
 DB* JS_DB_Open(const json& js, const JsonPluginRepo& repo) {

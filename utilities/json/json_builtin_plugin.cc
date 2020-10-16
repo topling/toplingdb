@@ -1466,6 +1466,10 @@ void JS_RokcsDB_AddVersion(json& djs) {
   djs["git_sha"] = strchr(rocksdb_build_git_sha, ':') + 1;
   djs["git_date"] = strchr(rocksdb_build_git_date, ':') + 1;
   djs["compile_date"] = rocksdb_build_compile_date;
+  char s[32];
+  auto n = snprintf(s, sizeof(s), "%d.%d.%d",
+                    ROCKSDB_MAJOR, ROCKSDB_MINOR, ROCKSDB_PATCH);
+  djs["version"] = std::string(s, n);
 }
 
 struct DB_Manip : PluginManipFunc<DB> {

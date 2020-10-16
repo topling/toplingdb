@@ -1340,7 +1340,7 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
 }
 
 static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh,
-                             json& djs, bool showbad) {
+                             json& djs, bool showbad, bool nozero) {
   static const std::string* aIntProps[] = {
     &DB::Properties::kNumImmutableMemTable,
     &DB::Properties::kNumImmutableMemTableFlushed,
@@ -1384,7 +1384,8 @@ static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh,
   for (auto pName : aIntProps) {
     uint64_t value = 0;
     if (const_cast<DB&>(db).GetIntProperty(cfh, *pName, &value)) {
-      ipjs[*pName] = value;
+      if (!nozero || value)
+        ipjs[*pName] = value;
     } else if (showbad) {
       ipjs[*pName] = "GetProperty Fail";
     }
@@ -1401,7 +1402,8 @@ struct CFPropertiesWebView_Manip : PluginManipFunc<CFPropertiesWebView> {
     json djs;
     if (!JsonSmartBool(dump_options, "noint")) {
       bool showbad = JsonSmartBool(dump_options, "showbad");
-      Json_DB_IntProps(*cfp.db, cfp.cfh, djs, showbad);
+      bool nozero = JsonSmartBool(dump_options, "nozero");
+      Json_DB_IntProps(*cfp.db, cfp.cfh, djs, showbad, nozero);
     }
     Json_DB_Level_Stats(*cfp.db, cfp.cfh, djs, html, dump_options);
     return JsonToString(djs, dump_options);

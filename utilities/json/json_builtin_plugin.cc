@@ -33,6 +33,10 @@
   #include "memory/memkind_kmem_allocator.h"
 #endif
 
+extern const char* rocksdb_build_git_sha;
+extern const char* rocksdb_build_git_date;
+extern const char* rocksdb_build_compile_date;
+
 namespace ROCKSDB_NAMESPACE {
 
 using std::shared_ptr;
@@ -1458,6 +1462,11 @@ JS_Add_CFPropertiesWebView_Link(json& djs, bool html,
   auto properties = iter->second;
   ROCKSDB_JSON_SET_FACX(djs, properties, props);
 }
+void JS_RokcsDB_AddVersion(json& djs) {
+  djs["git_sha"] = strchr(rocksdb_build_git_sha, ':') + 1;
+  djs["git_date"] = strchr(rocksdb_build_git_date, ':') + 1;
+  djs["compile_date"] = rocksdb_build_compile_date;
+}
 
 struct DB_Manip : PluginManipFunc<DB> {
   void Update(DB* db, const json& js,
@@ -1509,6 +1518,7 @@ struct DB_Manip : PluginManipFunc<DB> {
     //Json_DB_IntProps(db, db.DefaultColumnFamily(), djs);
     //Json_DB_Level_Stats(db, db.DefaultColumnFamily(), djs, opt.num_levels, html);
     JS_Add_CFPropertiesWebView_Link(djs, db, html, repo);
+    JS_RokcsDB_AddVersion(djs["version"]);
     return JsonToString(djs, dump_options);
   }
 };
@@ -1620,6 +1630,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
                                       dbname, cf_name, repo);
     }
     //Json_DB_Statistics(dbo.statistics.get(), djs, html);
+    JS_RokcsDB_AddVersion(djs["version"]);
     return JsonToString(djs, dump_options);
   }
 };

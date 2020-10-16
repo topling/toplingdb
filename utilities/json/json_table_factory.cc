@@ -915,14 +915,9 @@ struct DispatcherTableFactory_Manip : PluginManipFunc<TableFactory> {
   }
 };
 
-static const PluginManipFunc<TableFactory>*
-JS_DispatcherTableFactoryManip(const json&, const JsonPluginRepo&) {
-  static const DispatcherTableFactory_Manip manip;
-  return &manip;
-}
-ROCKSDB_FACTORY_REG("Dispath", JS_DispatcherTableFactoryManip);
-ROCKSDB_FACTORY_REG("Dispather", JS_DispatcherTableFactoryManip);
-ROCKSDB_FACTORY_REG("DispatherTable", JS_DispatcherTableFactoryManip);
+ROCKSDB_REG_PluginManip("Dispath", DispatcherTableFactory_Manip);
+ROCKSDB_REG_PluginManip("Dispather", DispatcherTableFactory_Manip);
+ROCKSDB_REG_PluginManip("DispatherTable", DispatcherTableFactory_Manip);
 
 ROCKSDB_FACTORY_REG("Dispath", NewDispatcherTableFactoryJson);
 ROCKSDB_FACTORY_REG("Dispather", NewDispatcherTableFactoryJson);

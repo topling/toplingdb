@@ -1465,6 +1465,11 @@ JS_Add_CFPropertiesWebView_Link(json& djs, bool html,
   ROCKSDB_JSON_SET_FACX(djs, properties, props);
 }
 void JS_RokcsDB_AddVersion(json& djs) {
+#ifdef NDEBUG
+  djs["build_type"] = "release";
+#else
+  djs["build_type"] = "debug";
+#endif
   djs["git_sha"] = strchr(rocksdb_build_git_sha, ':') + 1;
   djs["git_date"] = strchr(rocksdb_build_git_date, ':') + 1;
   djs["compile_date"] = rocksdb_build_compile_date;

@@ -679,6 +679,7 @@ class DispatherTableFactory : public TableFactory {
 */
   json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
     const bool html = JsonSmartBool(dump_options, "html");
+    const bool nozero = JsonSmartBool(dump_options, "nozero");
     auto& p2name = repo.m_impl->table_factory.p2name;
     const static std::string labels[] = {
          "1s-ops",  "1s-key",  "1s-val",
@@ -687,14 +688,18 @@ class DispatherTableFactory : public TableFactory {
          "5m-ops",  "5m-key",  "5m-val",
         "30m-ops", "30m-key", "30m-val",
     };
-    auto factory = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
+    json lwjs;
+    auto add_writer = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
+      size_t file_num = m_writer_files[level];
+      if (nozero && 0 == file_num) {
+        return;
+      }
       json wjs;
       char buf[64];
 #define ToStr(...) json(std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__)))
       wjs["level"] = 0 == level ? json("default") : json(level-1);
       ROCKSDB_JSON_SET_FACT_INNER(wjs["factory"], tf, table_factory);
       const auto& st = m_stats[0][level];
-      size_t file_num = m_writer_files[level];
       wjs["files"] = file_num;
       if (html) {
         wjs["entry_cnt"] = ToStr("%.3f M", st.st.entry_cnt/1e6);
@@ -716,17 +721,16 @@ class DispatherTableFactory : public TableFactory {
         wjs[labels[3*j+1]] = !key ? json(0) : ToStr("%.3f M/s", key/us);
         wjs[labels[3*j+2]] = !val ? json(0) : ToStr("%.3f M/s", val/us);
       }
-      return wjs;
+      lwjs.push_back(std::move(wjs));
     };
     json js;
-    auto& lwjs = js["writers"];
     for (size_t i = 0, n = m_level_writers.size(); i < n; ++i) {
       auto& tf = m_level_writers[i];
       auto iter = p2name.find(tf.get());
       if (p2name.end() == iter) {
         THROW_Corruption("missing TableFactory of m_level_writer");
       }
-      lwjs.push_back(factory(tf, i+1));
+      add_writer(tf, i+1);
     }
     if (html && !m_level_writers.empty()) {
       auto& cols = lwjs[0]["<htmltab:col>"];
@@ -738,11 +742,19 @@ class DispatherTableFactory : public TableFactory {
         cols.push_back(lab);
       }
     }
-    lwjs.push_back(factory(m_default_writer, 0));
-    json& readers_js = js["readers"];
+    add_writer(m_default_writer, 0);
+    if (lwjs.empty()) {
+      lwjs = "Did Not Created Any TableBuilder, try nozero=0";
+    }
+    js["writers"] = std::move(lwjs);
+
+    json readers_js;
     for (auto& kv : m_magic_to_factory) {
       size_t len = kv.second.sum_open_size;
       size_t cnt = kv.second.open_cnt;
+      if (nozero && 0 == cnt) {
+        continue;
+      }
       json one_js;
       char buf[64];
       one_js["class"] = kv.second.factory->Name();
@@ -753,10 +765,16 @@ class DispatherTableFactory : public TableFactory {
       one_js["avg_open_size"] = ToStr("%.3f M", len/1e6/cnt);
       readers_js.push_back(std::move(one_js));
     }
-    readers_js[0]["<htmltab:col>"] = json::array({
-      "class", "magic_num", "factory", "open_cnt", "sum_open_size",
-      "avg_open_size"
-    });
+    if (readers_js.empty()) {
+      readers_js = "Did Not Created Any TableReader, try nozero=0";
+    }
+    else {
+      readers_js[0]["<htmltab:col>"] = json::array({
+        "class", "magic_num", "factory", "open_cnt", "sum_open_size",
+        "avg_open_size"
+      });
+    }
+    js["readers"] = std::move(readers_js);
     return js;
   }
   std::string ToJsonStr(const json& dump_options,

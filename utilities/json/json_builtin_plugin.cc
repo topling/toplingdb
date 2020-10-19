@@ -1204,8 +1204,8 @@ void split(Slice rope, Slice delim, std::vector<std::pair<Slice, Slice> >& F) {
 }
 
 const static std::string index_block_size_name[] = {
-   "index block size : user-key : delta-value", // json
-   "index block size :<br/>user-key : delta-value", // html
+   "index_block_size : user-key : delta-value", // json
+   "index_block_size :<br/>user-key : delta-value", // html
 };
 
 static void

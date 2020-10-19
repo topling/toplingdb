@@ -60,8 +60,8 @@ static bool IsDefaultPath(const vector<DbPath>& paths, const string& name) {
   return paths[0].path == name && paths[0].target_size == UINT64_MAX;
 }
 
-static json DbPathToJson(const DbPath& x) {
-  if (0 == x.target_size && 0)
+static json DbPathToJson(const DbPath& x, bool simplify_zero) {
+  if (simplify_zero && 0 == x.target_size)
     return json{x.path};
   else
     return json{
@@ -72,11 +72,16 @@ static json DbPathToJson(const DbPath& x) {
 
 static json DbPathVecToJson(const std::vector<DbPath>& vec, bool html) {
   json js;
-  if (!vec.empty()) {
+  if (vec.size() == 1) {
+    js = DbPathToJson(vec[0], true);
+  }
+  else if (!vec.empty()) {
+    auto is_non_zero = [](const DbPath& p) {return 0 != p.target_size; };
+    bool has_non_zero = std::any_of(vec.begin(), vec.end(), is_non_zero);
     for (auto& x : vec) {
-      js.push_back(DbPathToJson(x));
+      js.push_back(DbPathToJson(x, !has_non_zero));
     }
-    if (html)
+    if (html && has_non_zero)
       js[0]["<htmltab:col>"] = json::array({ "path", "target_size" });
   }
   return js;

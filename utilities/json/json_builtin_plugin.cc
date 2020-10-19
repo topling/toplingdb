@@ -1240,7 +1240,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     result.append(user_key_beg, user_key_end);
     result.append(" : ");
     result.append(delta_value_beg, delta_value_end);
-    elem[index_block_size_name[html?0:1]] = std::move(result);
+    elem[index_block_size_name[html?1:0]] = std::move(result);
   };
   for (int level = 0; level < num_levels; level++) {
     char buf[32];

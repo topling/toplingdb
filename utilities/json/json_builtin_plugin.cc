@@ -1203,6 +1203,11 @@ void split(Slice rope, Slice delim, std::vector<std::pair<Slice, Slice> >& F) {
   }
 }
 
+const static std::string index_block_size_name[] = {
+   "index block size : user-key : delta-value", // json
+   "index block size :<br/>user-key : delta-value", // html
+};
+
 static void
 GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
                                 json& djs, int num_levels,
@@ -1235,7 +1240,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     result.append(user_key_beg, user_key_end);
     result.append(" : ");
     result.append(delta_value_beg, delta_value_end);
-    elem["index block size : user-key : delta-value"] = result;
+    elem[index_block_size_name[html?0:1]] = result;
   };
   for (int level = 0; level < num_levels; level++) {
     char buf[32];
@@ -1278,7 +1283,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     fieldsNames.push_back("Level");
     for (auto& kv : header) {
       if (kv.first.starts_with("index block size"))
-        fieldsNames.push_back("index block size : user-key : delta-value");
+        fieldsNames.push_back(index_block_size_name[html?0:1]);
       else
         fieldsNames.push_back(kv.first.ToString());
     }

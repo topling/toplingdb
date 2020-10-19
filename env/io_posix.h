@@ -210,6 +210,7 @@ class PosixRandomAccessFile : public FSRandomAccessFile {
   virtual size_t GetRequiredBufferAlignment() const override {
     return logical_sector_size_;
   }
+  virtual intptr_t FileDescriptor() const override;
 };
 
 class PosixWritableFile : public FSWritableFile {
@@ -297,6 +298,10 @@ class PosixMmapReadableFile : public FSRandomAccessFile {
                         Slice* result, char* scratch,
                         IODebugContext* dbg) const override;
   virtual IOStatus InvalidateCache(size_t offset, size_t length) override;
+  virtual IOStatus FsRead(uint64_t offset, size_t n, const IOOptions& opts,
+                          Slice* result, char* scratch,
+                          IODebugContext* dbg) const override;
+  virtual intptr_t FileDescriptor() const override;
 };
 
 class PosixMmapFile : public FSWritableFile {

@@ -61,7 +61,7 @@ static bool IsDefaultPath(const vector<DbPath>& paths, const string& name) {
 }
 
 static json DbPathToJson(const DbPath& x) {
-  if (0 == x.target_size)
+  if (0 == x.target_size && 0)
     return json{x.path};
   else
     return json{
@@ -146,7 +146,7 @@ struct DBOptions_Json : DBOptions {
     {
       auto iter = js.find("db_paths");
       if (js.end() != iter)
-        Json_DbPathVec(js, db_paths);
+        Json_DbPathVec(iter.value(), db_paths);
     }
     ROCKSDB_JSON_OPT_PROP(js, db_log_dir);
     ROCKSDB_JSON_OPT_PROP(js, wal_dir);
@@ -248,7 +248,7 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_FACT(js, statistics);
     ROCKSDB_JSON_SET_PROP(js, use_fsync);
     if (!db_paths.empty()) {
-      js["db_pathes"] = DbPathVecToJson(db_paths, html);
+      js["db_paths"] = DbPathVecToJson(db_paths, html);
     }
     ROCKSDB_JSON_SET_PROP(js, db_log_dir);
     ROCKSDB_JSON_SET_PROP(js, wal_dir);
@@ -533,7 +533,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_OPT_FACT(js, table_factory);
     {
       auto iter = js.find("cf_paths");
-      if (js.end() != iter) Json_DbPathVec(js, cf_paths);
+      if (js.end() != iter) Json_DbPathVec(iter.value(), cf_paths);
     }
     ROCKSDB_JSON_OPT_FACT(js, compaction_thread_limiter);
   }

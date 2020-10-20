@@ -89,6 +89,25 @@ struct JsonPluginRepo::Impl {
 
   JsonCivetServer http;
 };
+struct DB_MultiCF_Impl : public DB_MultiCF {
+  DB_MultiCF_Impl();
+  ~DB_MultiCF_Impl() override;
+  ColumnFamilyHandle* Get(const std::string& cfname) const override;
+  Status CreateColumnFamily(const std::string& cfname, const std::string& json_str, ColumnFamilyHandle**) override;
+  Status DropColumnFamily(const std::string& cfname) override;
+  Status DropColumnFamily(ColumnFamilyHandle*) override;
+  void AddOneCF_ToMap(const std::string& cfname, ColumnFamilyHandle*, const json&);
+  void InitAddCF_ToMap(const json& js_cf_desc);
+  JsonPluginRepo::Impl::ObjMap<ColumnFamilyHandle*> m_cfhs;
+  JsonPluginRepo m_repo;
+  std::function<ColumnFamilyHandle*
+    (DB*, const std::string& cfname, const ColumnFamilyOptions&, const json& extra_args)
+   > m_create_cf;
+};
+template<class Ptr>
+Ptr ObtainOPT(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
+              const char* option_class, // "DBOptions" or "CFOptions"
+              const json& option_js, const JsonPluginRepo& repo);
 
 ///@note on principle, the factory itself is stateless, but its product
 /// can has states, sometimes we need factory of factory, in this case,

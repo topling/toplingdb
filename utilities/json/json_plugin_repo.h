@@ -47,7 +47,13 @@ using nlohmann::json;
 
 struct DB_MultiCF {
   DB_MultiCF();
-  ~DB_MultiCF();
+  virtual ~DB_MultiCF();
+  virtual ColumnFamilyHandle* Get(const std::string& cfname) const = 0;
+  virtual Status CreateColumnFamily(const std::string& cfname, const std::string& json_str, ColumnFamilyHandle**) = 0;
+  virtual Status DropColumnFamily(const std::string& cfname) = 0;
+  virtual Status DropColumnFamily(ColumnFamilyHandle*) = 0;
+  ColumnFamilyHandle* operator[](const std::string& cfname) const { return Get(cfname); }
+
   DB* db = nullptr;
   std::vector<ColumnFamilyHandle*> cf_handles;
 };

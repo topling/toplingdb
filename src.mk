@@ -231,6 +231,7 @@ LIB_SOURCES =                                                   \
   utilities/fault_injection_env.cc                              \
   utilities/fault_injection_fs.cc                               \
   utilities/json/json_builtin_plugin.cc                         \
+  utilities/json/json_db_open.cc                                \
   utilities/json/json_plugin_repo.cc                            \
   utilities/json/json_table_factory.cc                          \
   utilities/json/web/json_civetweb.cc                           \

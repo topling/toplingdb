@@ -207,7 +207,7 @@ JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
   }
   if (JsonPluginRepo::DebugLevel() >= 2) {
     for (const auto& val : options) {
-      fprintf(stderr, "INFO: JsonCivetServer::Impl::Impl(): len=%zd: %s\n", val.size(), val.c_str());
+      fprintf(stderr, "INFO: JsonCivetServer::Impl::Impl(): len=%02zd: %s\n", val.size(), val.c_str());
     }
   }
   m_server.reset(new CivetServer(options));

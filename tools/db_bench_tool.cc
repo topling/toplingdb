@@ -4181,6 +4181,8 @@ class Benchmark {
         db->opt_txn_db = tdb;
         db->db = tdb->GetBaseDB();
       }
+      Options opt = db->db->GetOptions();
+      dbstats = opt.statistics;
       return;
     }
     Status s;

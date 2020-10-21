@@ -4154,6 +4154,7 @@ class Benchmark {
   void OpenDb(Options options, const std::string& db_name,
       DBWithColumnFamilies* db) {
     if (!FLAGS_json.empty()) {
+      repo_.CloseAllDB(false);
       repo_ = JsonPluginRepo();
       DB_MultiCF* dbmcf = nullptr;
       Status s = repo_.ImportJsonFile(FLAGS_json);

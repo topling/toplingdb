@@ -91,7 +91,7 @@ class JsonPluginRepo {
   Status StartHttpServer(); // http server for inspection
 
   // user must ensure all dbs are alive when calling this function
-  void CloseAllDB();
+  void CloseAllDB(bool del_rocksdb_objs = true);
 
   ///@{
   /// the semantic is overwrite

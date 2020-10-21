@@ -2124,7 +2124,7 @@ DB_MultiCF::DB_MultiCF() = default;
 DB_MultiCF::~DB_MultiCF() = default;
 
 // users should ensure databases are alive when calling this function
-void JsonPluginRepo::CloseAllDB() {
+void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
   using view_kv_ptr = decltype(&*m_impl->props.p2name.cbegin());
   //using view_kv_ptr = const std::pair<const void* const, Impl::ObjInfo>*;
   std::unordered_map<const void*, view_kv_ptr> cfh_to_view;
@@ -2144,6 +2144,10 @@ void JsonPluginRepo::CloseAllDB() {
     m_impl->props.p2name.erase(view);
     m_impl->props.name2p->erase(oi.name);
   };
+  auto del_rocks = [del_rocksdb_objs](auto obj) {
+    if (del_rocksdb_objs)
+      delete obj;
+  };
   for (auto& kv : *m_impl->db.name2p) {
     assert(nullptr != kv.second.db);
     if (kv.second.dbm) {
@@ -2151,15 +2155,15 @@ void JsonPluginRepo::CloseAllDB() {
       assert(kv.second.db = dbm->db);
       for (auto cfh : dbm->cf_handles) {
         del_view(cfh);
-        delete cfh;
+        del_rocks(cfh);
       }
-      delete dbm->db;
+      del_rocks(dbm->db);
       delete dbm;
     }
     else {
       DB* db = kv.second.db;
       del_view(db->DefaultColumnFamily());
-      delete db;
+      del_rocks(db);
     }
   }
   m_impl->db.name2p->clear();

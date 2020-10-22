@@ -1434,6 +1434,8 @@ Status Version::GetAggregatedTableProperties(
   }
 
   auto* new_tp = new TableProperties();
+  new_tp->column_family_id = cfd_->GetID();
+  new_tp->column_family_name = cfd_->GetName();
   for (const auto& item : props) {
     new_tp->Add(*item.second);
   }

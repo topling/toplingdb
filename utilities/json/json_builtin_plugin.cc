@@ -1440,7 +1440,7 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
     html.append("<th>UserKey</th>");
     html.append("<th>SeqNum</th>");
     html.append("<th>Type</th>");
-    html.append("<th>FileTime</th>");
+    html.append("<th rowspan=2>FileTime</th>");
     html.append("</tr>");
   };
 

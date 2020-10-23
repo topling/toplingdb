@@ -9,6 +9,7 @@
 #include <cinttypes>
 
 #include "rocksdb/db.h"
+#include "db/dbformat.h"
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
 #include "options/db_options.h"
@@ -1215,8 +1216,7 @@ const static std::string index_block_size_name[] = {
 
 static void
 GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
-                                json& djs, int num_levels,
-                                bool html, bool nozero) {
+                                json& djs, bool html, bool nozero) {
   std::string sum;
   auto& pjs = djs[DB::Properties::kAggregatedTableProperties];
   if (!const_cast<DB&>(db).GetProperty(
@@ -1247,6 +1247,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     result.append(delta_value_beg, delta_value_end);
     elem[index_block_size_name[html?1:0]] = std::move(result);
   };
+  int num_levels = const_cast<DB&>(db).NumberLevels(cfh);
   for (int level = 0; level < num_levels; level++) {
     char buf[32];
     propName.assign(DB::Properties::kAggregatedTablePropertiesAtLevel);
@@ -1295,15 +1296,188 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
   }
 }
 
+static const char* StrDateTime(char* buf, const char* fmt, time_t rawtime) {
+  time(&rawtime);
+  struct tm* timeinfo = localtime(&rawtime);
+  strftime(buf, sizeof(buf), fmt, timeinfo);
+  return buf;
+}
+
+static void Html_AppendTime(std::string& html, char* buf, uint64_t t) {
+  if (t)
+    html.append(StrDateTime(buf, "<td>%F %T</td>", t));
+  else
+    html.append("<td>0</td>");
+}
+
+#define AppendFmt(...) html.append(buf, snprintf(buf, sizeof(buf), __VA_ARGS__))
+static void Html_AppendInternalKey(std::string& html, Slice ikey) {
+  char buf[32];
+  ParsedInternalKey pikey;
+  ParseInternalKey(ikey, &pikey);
+  html.append("<td>");
+  html.append(Slice(pikey.user_key).ToString(true));
+  html.append("</td>");
+  html.append("<td>");
+  AppendFmt("%" PRIu64, pikey.sequence);
+  html.append("</td>");
+  html.append("<td>");
+  AppendFmt("%d", pikey.type);
+  html.append("</td>");
+}
+
+static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cfh) {
+  std::string html;
+  char buf[128];
+  ColumnFamilyMetaData meta;
+  TablePropertiesCollection props;
+  const_cast<DB&>(db).GetColumnFamilyMetaData(cfh, &meta);
+  {
+    Status s = const_cast<DB&>(db).GetPropertiesOfAllTables(cfh, &props);
+    if (!s.ok()) {
+      html = "GetPropertiesOfAllTables() fail: " + s.ToString();
+      return html;
+    }
+  }
+  //int max_open_files = const_cast<DB&>(db).GetDBOptions().max_open_files;
+  size_t num_compacting = 0;
+  auto write = [&](const SstFileMetaData& x, const TableProperties* p) {
+    html.append("<tr>");
+    if (x.name.empty()) {
+      AppendFmt("<td>%zd</td>", num_compacting);
+      html.append("<th>sum</th>");
+    } else {
+      num_compacting += x.being_compacted ? 1 : 0;
+      //html.append(x.being_compacted ? "<td>true</td>" : "<td>false</td>");
+      html.append(x.being_compacted ? "<td>&#9989;</td>" : "<td>&#10062;</td>");
+      AppendFmt("<th>%s</th>", x.name.c_str());
+    }
+    uint64_t file_creation_time;
+    if (!p) {
+      AppendFmt("%" PRIu64, x.num_entries);
+      AppendFmt("%" PRIu64, x.num_deletions);
+      html.append("<td>&#10067;</td>"); // merge
+      html.append("<td>&#10067;</td>"); // range del
+      html.append("<td>&#10067;</td>"); // data blocks
+      html.append("<td>&#10067;</td>"); // sum zip key = index size
+      html.append("<td>&#10067;</td>"); // sum zip val = data size
+      html.append("<td>&#10067;</td>"); // sum raw key size
+      html.append("<td>&#10067;</td>"); // sum raw val size
+      html.append("<td>&#10067;</td>"); // key_zip_ratio
+      html.append("<td>&#10067;</td>"); // val_zip_ratio
+      html.append("<td>&#10067;</td>"); // kv_zip_ratio
+      html.append("<td>&#10067;</td>"); // avg zip key size
+      html.append("<td>&#10067;</td>"); // avg zip val size
+      html.append("<td>&#10067;</td>"); // avg raw key size
+      html.append("<td>&#10067;</td>"); // avg raw val size
+      html.append("<td>&#10067;</td>"); // compression name
+      file_creation_time = x.file_creation_time;
+    } else {
+      auto avg_raw_key = double(p->raw_key_size) / p->num_entries;
+      auto avg_raw_val = double(p->raw_value_size) / p->num_entries;
+      auto avg_zip_key = double(p->index_size) / p->num_entries;
+      auto avg_zip_val = double(p->data_size) / p->num_entries;
+      auto kv_zip_size = double(p->index_size + p->data_size);
+      auto kv_raw_size = double(p->raw_key_size + p->raw_value_size);
+      auto key_zip_ratio = double(p->index_size)/p->raw_key_size;
+      auto val_zip_ratio = double(p->data_size)/p->raw_value_size;
+      auto kv_zip_ratio = kv_zip_size/kv_raw_size;
+      AppendFmt("<td>%" PRIu64"</td>", p->num_entries);
+      AppendFmt("<td>%" PRIu64"</td>", p->num_deletions);
+      AppendFmt("<td>%" PRIu64"</td>", p->num_merge_operands);
+      AppendFmt("<td>%" PRIu64"</td>", p->num_range_deletions);
+      AppendFmt("<td>%" PRIu64"</td>", p->num_data_blocks);
+      AppendFmt("<td>%" PRIu64"</td>", p->index_size);
+      AppendFmt("<td>%" PRIu64"</td>", p->data_size);
+      AppendFmt("<td>%.3f</td>", p->index_size/kv_zip_size);
+      AppendFmt("<td>%" PRIu64"</td>", p->raw_key_size);
+      AppendFmt("<td>%" PRIu64"</td>", p->raw_value_size);
+      AppendFmt("<td>%.3f</td>", p->raw_key_size/kv_raw_size);
+      AppendFmt("<td>%.3f</td>", key_zip_ratio);
+      AppendFmt("<td>%.3f</td>", val_zip_ratio);
+      AppendFmt("<td>%.3f</td>", kv_zip_ratio);
+      AppendFmt("<td>%.3f</td>", avg_zip_key);
+      AppendFmt("<td>%.3f</td>", avg_zip_val);
+      AppendFmt("<td>%.3f</td>", avg_raw_key);
+      AppendFmt("<td>%.3f</td>", avg_raw_val);
+      html.append("<td>");
+      html.append(p->compression_name);
+      html.append("</td>");
+      file_creation_time = p->file_creation_time;
+    }
+    Html_AppendInternalKey(html, x.smallestkey);
+    Html_AppendInternalKey(html, x.largestkey);
+    Html_AppendTime(html, buf, file_creation_time);
+    html.append("</tr>\n");
+  };
+
+  html.append("<p>");
+  AppendFmt("file count = %zd, ", meta.file_count);
+  AppendFmt("total size = %" PRIu64, meta.size);
+  html.append("</p>\n");
+  for (auto& curr_level : meta.levels) {
+    html.append("<p>");
+    //int max_open_files = const_cast<DB&>(db).GetDBOptions().max_open_files;
+    AppendFmt("level = %d, ", curr_level.level);
+    AppendFmt("file count = %zd, ", curr_level.files.size());
+    AppendFmt("total size = %" PRIu64, curr_level.size);
+    html.append("</p>\n");
+    html.append("<table border=1><tbody>\n");
+    html.append("<tr>");
+    for (auto colname : {
+      "&#127959;", // compacting
+      "Name",
+      "Entries", "Dels", "Merges",
+      "RDels", // range del
+      "DBlocks",
+      "ZipKey", "ZipVal", "Zip:K/V",
+      "RawKey", "RawVal", "Raw:K/V",
+      "K:Z/Raw", "V:Z/Raw", "KV:Z/Raw",
+      "AvgZipKey", "AvgZipVal", "AvgRawKey", "AvgRawVal",
+      "ZipAlgo"
+    }) {
+      html.append("<th rowspan=2>");
+      html.append(colname);
+      html.append("</th>");
+    }
+    html.append("<th colspan=3>Smallest Key</th>");
+    html.append("<th colspan=3>Largest Key</th>");
+    html.append("</tr>");
+    html.append("<tr>");
+    html.append("<th>UserKey</th>");
+    html.append("<th>SeqNum</th>");
+    html.append("<th>Type</th>");
+    html.append("<th>UserKey</th>");
+    html.append("<th>SeqNum</th>");
+    html.append("<th>Type</th>");
+    html.append("<th>FileTime</th>");
+    html.append("</tr>");
+    TableProperties agg;
+    SstFileMetaData aggx;
+    agg.file_creation_time = UINT64_MAX;
+    for (auto& x : curr_level.files) {
+      std::string fullname = x.db_path + x.name;
+      html.append("<tr>");
+      auto iter = props.find(fullname);
+      if (props.end() == iter) {
+        if (x.file_creation_time && x.file_creation_time < agg.file_creation_time) {
+          agg.file_creation_time = x.file_creation_time;
+        }
+        write(x, nullptr);
+      } else {
+        write(x, iter->second.get());
+        agg.Add(*iter->second);
+      }
+      write(aggx, &agg);
+    }
+    html.append("</tbody></table>\n");
+  }
+  return html;
+}
+
 static void
 Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
                     bool html, const json& dump_options) {
-  ColumnFamilyDescriptor cfd;
-  Status s = cfh->GetDescriptor(&cfd);
-  if (!s.ok()) {
-    throw s; // NOLINT
-  }
-  const int num_levels = cfd.options.num_levels;
   static const std::string* aStrProps[] = {
     //&DB::Properties::kNumFilesAtLevelPrefix,
     //&DB::Properties::kCompressionRatioAtLevelPrefix,
@@ -1334,18 +1508,33 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
   for (auto pName : aStrProps) {
     prop_to_js(*pName);
   }
-  if (JsonSmartBool(dump_options, "sst")) {
-    prop_to_js(DB::Properties::kSSTables);
+  int arg_sst = JsonSmartInt(dump_options, "sst", 0);
+  if (!html && arg_sst) {
+      prop_to_js(DB::Properties::kSSTables);
+  }
+  else switch (arg_sst) {
+    default:
+      stjs[DB::Properties::kSSTables] = "bad param 'sst'";
+      break;
+    case 0:
+      break;
+    case 1:
+      prop_to_js(DB::Properties::kSSTables);
+      break;
+    case 2: // show as html table
+      stjs[DB::Properties::kSSTables] = Json_DB_CF_SST_HtmlTable(db, cfh);
+      break;
   }
   //GetAggregatedTableProperties(db, cfh, stjs, -1, html);
   // -1 is for kAggregatedTableProperties
   if (JsonSmartBool(dump_options, "aggregated-table-properties-txt")) {
+    const int num_levels = const_cast<DB&>(db).NumberLevels(cfh);
     for (int level = -1; level < num_levels; level++) {
       GetAggregatedTableProperties(db, cfh, stjs, level, html);
     }
   } else {
     bool nozero = JsonSmartBool(dump_options, "nozero");
-    GetAggregatedTablePropertiesTab(db, cfh, stjs, num_levels, html, nozero);
+    GetAggregatedTablePropertiesTab(db, cfh, stjs, html, nozero);
   }
 }
 
@@ -1652,6 +1841,17 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     }
     //Json_DB_Statistics(dbo.statistics.get(), djs, html);
     JS_RokcsDB_AddVersion(djs["version"]);
+    auto getStr = [](auto fn) -> std::string {
+      std::string str;
+      Status s = fn(str);
+      if (s.ok())
+        return str;
+      else
+        return "Fail: " + s.ToString();
+    };
+    using namespace std::placeholders;
+    djs["DbIdentity"] = getStr(std::bind(&DB::GetDbIdentity, db.db, _1));
+    djs["DbSessionId"] = getStr(std::bind(&DB::GetDbSessionId, db.db, _1));
     return JsonToString(djs, dump_options);
   }
 };

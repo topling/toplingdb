@@ -1411,18 +1411,7 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
     html.append("</tr>\n");
   };
 
-  html.append("<p>");
-  AppendFmt("file count = %zd, ", meta.file_count);
-  AppendFmt("total size = %" PRIu64, meta.size);
-  html.append("</p>\n");
-  for (auto& curr_level : meta.levels) {
-    html.append("<p>");
-    //int max_open_files = const_cast<DB&>(db).GetDBOptions().max_open_files;
-    AppendFmt("level = %d, ", curr_level.level);
-    AppendFmt("file count = %zd, ", curr_level.files.size());
-    AppendFmt("total size = %" PRIu64, curr_level.size);
-    html.append("</p>\n");
-    html.append("<table border=1><tbody>\n");
+  auto writeHeader = [&]() {
     html.append("<tr>");
     for (auto colname : {
       "&#127959;", // compacting
@@ -1452,10 +1441,31 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
     html.append("<th>Type</th>");
     html.append("<th>FileTime</th>");
     html.append("</tr>");
+  };
+
+  html.append("<p>");
+  AppendFmt("file count = %zd, ", meta.file_count);
+  AppendFmt("total size = %" PRIu64, meta.size);
+  html.append("</p>\n");
+  for (auto& curr_level : meta.levels) {
+    html.append("<p>");
+    AppendFmt("level = %d, ", curr_level.level);
+    AppendFmt("file count = %zd, ", curr_level.files.size());
+    AppendFmt("total size = %" PRIu64, curr_level.size);
+    html.append("</p>\n");
+    if (curr_level.files.empty()) {
+      continue;
+    }
+    html.append("<table border=1><tbody>\n");
+    //writeHeader();
     TableProperties agg;
     SstFileMetaData aggx;
     agg.file_creation_time = UINT64_MAX;
-    for (auto& x : curr_level.files) {
+    for (size_t i = 0, n = curr_level.files.size(); i < n; i++) {
+      if (i % 20 == 0) {
+        writeHeader();
+      }
+      auto& x = curr_level.files[i];
       std::string fullname = x.db_path + x.name;
       html.append("<tr>");
       auto iter = props.find(fullname);

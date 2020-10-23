@@ -1420,6 +1420,22 @@ Status Version::GetPropertiesOfTablesInRange(
   return Status::OK();
 }
 
+static std::string AggregateNames(const std::map<std::string, int>& map) {
+  std::string str;
+  for (auto& kv : map) {
+    str.append(kv.first.empty() ? "N/A" : kv.first);
+    if (map.size() > 1) {
+      char buf[32];
+      auto len = snprintf(buf, sizeof(buf), "=%d,", kv.second);
+      str.append(buf, len);
+    }
+  }
+  if (map.size() > 1) {
+    str.pop_back(); // trailing ','
+  }
+  return str;
+}
+
 Status Version::GetAggregatedTableProperties(
     std::shared_ptr<const TableProperties>* tp, int level) {
   TablePropertiesCollection props;
@@ -1436,9 +1452,12 @@ Status Version::GetAggregatedTableProperties(
   auto* new_tp = new TableProperties();
   new_tp->column_family_id = cfd_->GetID();
   new_tp->column_family_name = cfd_->GetName();
+  std::map<std::string, int> algos;
   for (const auto& item : props) {
     new_tp->Add(*item.second);
+    algos[item.second->compression_name]++;
   }
+  new_tp->compression_name = AggregateNames(algos);
   tp->reset(new_tp);
   return Status::OK();
 }

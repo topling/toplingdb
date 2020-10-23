@@ -193,15 +193,6 @@ void TableProperties::Add(const TableProperties& tp) {
   num_range_deletions += tp.num_range_deletions;
   oldest_key_time = std::min(oldest_key_time, tp.oldest_key_time);
   creation_time = std::min(creation_time, tp.creation_time);
-  if (db_session_id.empty()) {
-    db_session_id = tp.db_session_id;
-  }
-  if (db_id.empty()) {
-    db_id = tp.db_id;
-  }
-  if (compression_name.empty()) {
-    compression_name = tp.compression_name;
-  }
 }
 
 const std::string TablePropertiesNames::kDbId = "rocksdb.creating.db.identity";

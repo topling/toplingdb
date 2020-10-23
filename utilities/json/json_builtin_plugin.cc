@@ -1370,6 +1370,7 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
       html.append("<td>&#10067;</td>"); // avg zip val size
       html.append("<td>&#10067;</td>"); // avg raw key size
       html.append("<td>&#10067;</td>"); // avg raw val size
+      html.append("<td>&#10067;</td>"); // oldest_key_time
       html.append("<td>&#10067;</td>"); // compression name
       file_creation_time = x.file_creation_time;
     } else {
@@ -1403,11 +1404,13 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
       html.append("<td>");
       html.append(p->compression_name);
       html.append("</td>");
+      AppendFmt("<td>%" PRIu64 "</td>", p->oldest_key_time);
       file_creation_time = p->file_creation_time;
     }
     Html_AppendInternalKey(html, x.smallestkey);
     Html_AppendInternalKey(html, x.largestkey);
     Html_AppendTime(html, buf, file_creation_time);
+    AppendFmt("<td>%" PRIu64"</td>", x.num_reads_sampled);
     html.append("</tr>\n");
   };
 
@@ -1440,7 +1443,9 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
     html.append("<th>UserKey</th>");
     html.append("<th>SeqNum</th>");
     html.append("<th>Type</th>");
+    html.append("<th rowspan=2>OldestTS</th>");
     html.append("<th rowspan=2>FileTime</th>");
+    html.append("<th rowspan=2>NumReads</th>");
     html.append("</tr>");
   };
 

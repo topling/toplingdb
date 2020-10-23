@@ -1454,7 +1454,7 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
   AppendFmt("total size = %" PRIu64, meta.size);
   html.append("</p>\n");
   for (auto& curr_level : meta.levels) {
-    html.append("<p>");
+    html.append("<hr><p>");
     AppendFmt("level = %d, ", curr_level.level);
     AppendFmt("file count = %zd, ", curr_level.files.size());
     AppendFmt("total size = %" PRIu64, curr_level.size);
@@ -1485,6 +1485,9 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
         agg.Add(*iter->second);
       }
       write(aggx, &agg);
+    }
+    if (curr_level.files.size() % 20 >= 10) {
+      writeHeader();
     }
     html.append("</tbody></table>\n");
   }

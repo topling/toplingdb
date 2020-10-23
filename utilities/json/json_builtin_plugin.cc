@@ -1414,7 +1414,8 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
   auto writeHeader = [&]() {
     html.append("<tr>");
     for (auto colname : {
-      "&#127959;", // compacting
+      // "&#127959;", // compacting: 施工中
+      "&#127540;", // compacting: character: "合"
       "Name",
       "Entries", "Dels", "Merges",
       "RDels", // range del

@@ -1420,7 +1420,7 @@ Status Version::GetPropertiesOfTablesInRange(
   return Status::OK();
 }
 
-static std::string AggregateNames(const std::map<std::string, int>& map) {
+std::string AggregateNames(const std::map<std::string, int>& map) {
   std::string str;
   for (auto& kv : map) {
     str.append(kv.first.empty() ? "N/A" : kv.first);

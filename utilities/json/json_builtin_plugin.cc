@@ -1314,20 +1314,29 @@ static void Html_AppendTime(std::string& html, char* buf, uint64_t t) {
 static void Html_AppendInternalKey(std::string& html, Slice ikey) {
   char buf[32];
   ParsedInternalKey pikey;
-  ParseInternalKey(ikey, &pikey);
-  html.append("<td>");
-  html.append(Slice(pikey.user_key).ToString(true));
-  html.append("</td>");
-  html.append("<td>");
-  AppendFmt("%" PRIu64, pikey.sequence);
-  html.append("</td>");
-  html.append("<td>");
-  AppendFmt("%d", pikey.type);
-  html.append("</td>");
+  Status s = ParseInternalKey(ikey, &pikey);
+  if (s.ok()) {
+    html.append("<td>");
+    html.append(Slice(pikey.user_key).ToString(true));
+    html.append("</td>");
+    html.append("<td>");
+    AppendFmt("%" PRIu64, pikey.sequence);
+    html.append("</td>");
+    html.append("<td>");
+    AppendFmt("%d", pikey.type);
+    html.append("</td>");
+  }
+  else {
+    html.append("<td colspan=3><span style='color:red'>");
+    html.append(s.ToString());
+    html.append("</span></td>");
+  }
 }
 
+std::string AggregateNames(const std::map<std::string, int>& map);
 static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cfh) {
   std::string html;
+try {
   char buf[128];
   ColumnFamilyMetaData meta;
   TablePropertiesCollection props;
@@ -1339,18 +1348,57 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
       return html;
     }
   }
+  struct SstProp : SstFileMetaData, TableProperties {};
   //int max_open_files = const_cast<DB&>(db).GetDBOptions().max_open_files;
-  size_t num_compacting = 0;
+  std::vector<SstProp> levels_agg(const_cast<DB&>(db).NumberLevels());
+  std::map<std::string, int> algos_all;
+  for (int level = 0; level < (int)meta.levels.size(); level++) {
+    auto& curr_level = meta.levels[level];
+    auto& agg = levels_agg[level];
+    uint64_t num_compacting = 0;
+    std::map<std::string, int> algos;
+    for (size_t i = 0, n = curr_level.files.size(); i < n; i++) {
+      const auto& x = curr_level.files[i];
+      std::string fullname = x.db_path + x.name;
+      auto iter = props.find(fullname);
+      uint64_t file_creation_time;
+      if (props.end() == iter) {
+        file_creation_time = x.file_creation_time;
+      }
+      else {
+        const TableProperties* p = iter->second.get();
+        agg.Add(*p);
+        file_creation_time = p->file_creation_time;
+        algos[p->compression_name]++;
+        algos_all[p->compression_name]++;
+      }
+      if (file_creation_time && file_creation_time < agg.TableProperties::file_creation_time) {
+        agg.TableProperties::file_creation_time = file_creation_time;
+      }
+      num_compacting += x.being_compacted ? 1 : 0;
+    }
+    // use creation_time as num_compacting
+    agg.creation_time = num_compacting;
+    agg.compression_name = AggregateNames(algos);
+  }
   auto write = [&](const SstFileMetaData& x, const TableProperties* p) {
     html.append("<tr>");
-    if (x.name.empty()) {
-      AppendFmt("<td>%zd</td>", num_compacting);
-      html.append("<th>sum</th>");
+    if (x.name.empty()) { // is aggregated
+      AppendFmt("<th>%" PRIu64 "</th>", p->creation_time); // num_compacting
+      html.append("<th>sum</th>"); // sst name
+    } else if ('L' == x.name[0]) { // is aggregated
+      AppendFmt("<th>%" PRIu64 "</th>", p->creation_time); // num_compacting
+      html.append("<th>");
+      html.append(x.name); // Ln as name
+      html.append("</th>");
     } else {
-      num_compacting += x.being_compacted ? 1 : 0;
-      //html.append(x.being_compacted ? "<td>true</td>" : "<td>false</td>");
-      html.append(x.being_compacted ? "<td>&#9989;</td>" : "<td>&#10062;</td>");
-      AppendFmt("<th>%s</th>", x.name.c_str());
+      //html.append(x.being_compacted ? "<th>true</th>" : "<th>false</th>");
+      html.append(x.being_compacted ? "<th>&#9989;</th>" : "<th>&#10062;</th>");
+      auto beg = x.name.begin();
+      auto dot = std::find(beg, x.name.end(), '.');
+      html.append("<th>");
+      html.append(beg, dot);
+      html.append("</th>");
     }
     uint64_t file_creation_time;
     if (!p) {
@@ -1370,8 +1418,8 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
       html.append("<td>&#10067;</td>"); // avg zip val size
       html.append("<td>&#10067;</td>"); // avg raw key size
       html.append("<td>&#10067;</td>"); // avg raw val size
-      html.append("<td>&#10067;</td>"); // oldest_key_time
       html.append("<td>&#10067;</td>"); // compression name
+      //html.append("<td>&#10067;</td>"); // oldest_key_time
       file_creation_time = x.file_creation_time;
     } else {
       auto avg_raw_key = double(p->raw_key_size) / p->num_entries;
@@ -1404,9 +1452,11 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
       html.append("<td>");
       html.append(p->compression_name);
       html.append("</td>");
-      AppendFmt("<td>%" PRIu64 "</td>", p->oldest_key_time);
+      //AppendFmt("<td>%" PRIu64 "</td>", p->oldest_key_time);
       file_creation_time = p->file_creation_time;
     }
+    AppendFmt("<td>%" PRIu64"</td>", x.smallest_seqno);
+    AppendFmt("<td>%" PRIu64"</td>", x.largest_seqno);
     Html_AppendInternalKey(html, x.smallestkey);
     Html_AppendInternalKey(html, x.largestkey);
     Html_AppendTime(html, buf, file_creation_time);
@@ -1415,19 +1465,21 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
   };
 
   auto writeHeader = [&]() {
-    html.append("<tr>");
+    html.append("<thead><tr>");
     for (auto colname : {
       // "&#127959;", // compacting: 施工中
       "&#127540;", // compacting: character: "合"
       "Name",
       "Entries", "Dels", "Merges",
-      "RDels", // range del
-      "DBlocks",
+      "Rng<br>Dels", // range del
+      "Data<br>Blocks",
       "ZipKey", "ZipVal", "Zip:K/V",
       "RawKey", "RawVal", "Raw:K/V",
-      "K:Z/Raw", "V:Z/Raw", "KV:Z/Raw",
+      "Key<br>Zip/Raw", "Value<br>Zip/Raw", "Key+Val<br>Zip/Raw",
       "AvgZipKey", "AvgZipVal", "AvgRawKey", "AvgRawVal",
-      "ZipAlgo"
+      "ZipAlgo", //"OldestTS",
+      "Smallest<br>SeqNum",
+      "Largest<br>SeqNum",
     }) {
       html.append("<th rowspan=2>");
       html.append(colname);
@@ -1435,6 +1487,8 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
     }
     html.append("<th colspan=3>Smallest Key</th>");
     html.append("<th colspan=3>Largest Key</th>");
+    html.append("<th rowspan=2>FileTime</th>");
+    html.append("<th rowspan=2>NumReads<br>Sampled</th>");
     html.append("</tr>");
     html.append("<tr>");
     html.append("<th>UserKey</th>");
@@ -1443,17 +1497,40 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
     html.append("<th>UserKey</th>");
     html.append("<th>SeqNum</th>");
     html.append("<th>Type</th>");
-    html.append("<th rowspan=2>OldestTS</th>");
-    html.append("<th rowspan=2>FileTime</th>");
-    html.append("<th rowspan=2>NumReads</th>");
-    html.append("</tr>");
+    html.append("</tr></thead>");
   };
-
+  html.append("<div>");
+  html.append(R"EOS(<style>
+    div * td {
+      text-align: right;
+    }
+  </style>)EOS"
+  );
   html.append("<p>");
-  AppendFmt("file count = %zd, ", meta.file_count);
+  AppendFmt("all levels summary: file count = %zd, ", meta.file_count);
   AppendFmt("total size = %" PRIu64, meta.size);
   html.append("</p>\n");
-  for (auto& curr_level : meta.levels) {
+  html.append("<table border=1>\n");
+  writeHeader();
+  html.append("<tbody>\n");
+  TableProperties all_levels_agg;
+  for (int level = 0; level < (int)levels_agg.size(); level++) {
+    SstFileMetaData aggx;
+    aggx.name.assign(buf, snprintf(buf, sizeof buf, "L%d", level));
+    write(aggx, &levels_agg[level]);
+    all_levels_agg.Add(levels_agg[level]);
+    // use creation_time as num_compacting
+    auto& num_compacting = levels_agg[level].creation_time;
+    all_levels_agg.creation_time += num_compacting;
+  }
+  all_levels_agg.compression_name = AggregateNames(algos_all);
+  html.append("</tbody>\n");
+  html.append("<tfoot>\n");
+  write(SstFileMetaData(), &all_levels_agg);
+  html.append("</tfoot></table>\n");
+
+  for (int level = 0; level < (int)meta.levels.size(); level++) {
+    auto& curr_level = meta.levels[level];
     html.append("<hr><p>");
     AppendFmt("level = %d, ", curr_level.level);
     AppendFmt("file count = %zd, ", curr_level.files.size());
@@ -1462,36 +1539,31 @@ static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cf
     if (curr_level.files.empty()) {
       continue;
     }
-    html.append("<table border=1><tbody>\n");
-    //writeHeader();
-    TableProperties agg;
-    SstFileMetaData aggx;
-    agg.file_creation_time = UINT64_MAX;
+    html.append("<table border=1>\n");
+    writeHeader();
+    html.append("<tbody>\n");
     for (size_t i = 0, n = curr_level.files.size(); i < n; i++) {
-      if (i % 20 == 0) {
-        writeHeader();
-      }
-      auto& x = curr_level.files[i];
+      const auto& x = curr_level.files[i];
       std::string fullname = x.db_path + x.name;
       html.append("<tr>");
       auto iter = props.find(fullname);
       if (props.end() == iter) {
-        if (x.file_creation_time && x.file_creation_time < agg.file_creation_time) {
-          agg.file_creation_time = x.file_creation_time;
-        }
         write(x, nullptr);
       } else {
         write(x, iter->second.get());
-        agg.Add(*iter->second);
       }
-      write(aggx, &agg);
     }
-    if (curr_level.files.size() % 20 >= 10) {
-      writeHeader();
-    }
-    html.append("</tbody></table>\n");
+    html.append("</tbody>\n");
+    html.append("<tfoot>\n");
+    write(levels_agg[level], &levels_agg[level]);
+    html.append("</tfoot></table>\n");
   }
+  html.append("</div>");
   return html;
+}
+catch (const std::exception& ex) {
+  throw std::runtime_error(html + "\n" + ex.what());
+}
 }
 
 static void

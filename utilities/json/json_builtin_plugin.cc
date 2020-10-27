@@ -1322,13 +1322,13 @@ static void Html_AppendInternalKey(std::string& html, Slice ikey) {
   ParsedInternalKey pikey;
   Status s = ParseInternalKey(ikey, &pikey);
   if (s.ok()) {
-    html.append("<td class='left'>");
+    html.append("<td class='monoleft'>");
     html.append(Slice(pikey.user_key).ToString(true));
     html.append("</td>");
     html.append("<td>");
     AppendFmt("%" PRIu64, pikey.sequence);
     html.append("</td>");
-    html.append("<td>");
+    html.append("<td class='center'>");
     AppendFmt("%d", pikey.type);
     html.append("</td>");
   }
@@ -1359,7 +1359,7 @@ try {
   auto comp = cfh->GetComparator();
   struct SstProp : SstFileMetaData, TableProperties {};
   //int max_open_files = const_cast<DB&>(db).GetDBOptions().max_open_files;
-  std::vector<SstProp> levels_agg(const_cast<DB&>(db).NumberLevels());
+  std::vector<SstProp> levels_agg(meta.levels.size());
   std::map<std::string, int> algos_all;
   auto agg_sst = [&](SstProp& agg, const SstFileMetaData& x,
                      const TableProperties* p, uint64_t num_compacting) {
@@ -1394,8 +1394,7 @@ try {
     auto& agg = levels_agg[level];
     agg.smallest_seqno = UINT64_MAX;
     std::map<std::string, int> algos;
-    for (size_t i = 0, n = curr_level.files.size(); i < n; i++) {
-      const auto& x = curr_level.files[i];
+    for (const auto & x : curr_level.files) {
       std::string fullname = x.db_path + x.name;
       auto iter = props.find(fullname);
       const TableProperties* p = nullptr;
@@ -1410,17 +1409,14 @@ try {
     }
     agg.compression_name = AggregateNames(algos, "<br>");
   }
-  auto write = [&](const SstFileMetaData& x, const TableProperties* p) {
+  auto write = [&](const SstFileMetaData& x, const TableProperties* p, int fcnt) {
     if (x.being_compacted)
       html.append("<tr class='bghighlight'>");
     else
       html.append("<tr>");
-    if (x.name.empty()) { // is aggregated
-      html.append("<th>sum</th>"); // sst name
-      AppendFmt("<th>%" PRIu64 "</th>", p->creation_time); // num_compacting
-    } else if ('L' == x.name[0]) { // is aggregated
+    if (x.name.empty() || 'L' == x.name[0]) { // is aggregated
       html.append("<th>");
-      html.append(x.name); // Ln as name
+      html.append(x.name.empty() ? "sum" : x.name);
       html.append("</th>");
       AppendFmt("<th>%" PRIu64 "</th>", p->creation_time); // num_compacting
     } else {
@@ -1429,8 +1425,12 @@ try {
       html.append("<th>");
       html.append(beg + ('/' == beg[0]), dot);
       html.append("</th>");
-      //html.append(x.being_compacted ? "<th>true</th>" : "<th>false</th>");
-      html.append(x.being_compacted ? "<th>&#9989;</th>" : "<th>&#10062;</th>");
+      html.append("<th class='emoji'>");
+      //html.append(x.being_compacted ? "true" : "false");
+      //html.append(x.being_compacted ? "&#9989;" : "&#10062;"); // yes/no
+      //html.append(x.being_compacted ? "&#128308;" : "&#128309;"); // red/blue circle
+      html.append(x.being_compacted ? "&#128994;" : "&#128309;"); // green/blue circle
+      html.append("</th>");
     }
     AppendFmt("<td>%.6f</td>", x.size/1e9);
     uint64_t file_creation_time;
@@ -1496,42 +1496,22 @@ try {
     Html_AppendInternalKey(html, x.largest_ikey);
     Html_AppendTime(html, buf, file_creation_time);
     AppendFmt("<td>%" PRIu64"</td>", x.num_reads_sampled);
+    if (fcnt >= 0) {
+      AppendFmt("<td>%d</td>", fcnt);
+    }
     html.append("</tr>\n");
   };
 
-  auto writeHeader = [&]() {
+  auto writeHeader = [&](bool with_fcnt) {
     html.append("<thead><tr>");
-    /*
-    for (auto colname : {
-     "Name",
-      // "&#127959;", // compacting: 施工中
-      "&#127540;", // compacting: character: "合"
-      "FileSize<br>(GB)",
-      "Entries", "Dels", "Merges",
-      "Rng<br>Dels", // range del
-      "Data<br>Blocks",
-      "ZipKey<br>(GB)", "ZipVal<br>(GB)", "Zip<br>K/KV",
-      "RawKey<br>(GB)", "RawVal<br>(GB)", "Raw<br>K/KV",
-      "Key<br>Zip/Raw", "Value<br>Zip/Raw", "Key+Val<br>Zip/Raw",
-      "AvgZipKey", "AvgZipVal", "AvgRawKey", "AvgRawVal",
-      "ZipAlgo", //"OldestTS",
-      "Smallest<br>SeqNum",
-      "Largest<br>SeqNum",
-    }) {
-      html.append("<th rowspan=2>");
-      html.append(colname);
-      html.append("</th>");
-    }
-    */
     html.append("<th rowspan=2>Name</th>");
     //html.append("<th rowspan=2>&#127959;</th>"); // compacting: 施工中
-    html.append("<th rowspan=2>&#127540;</th>"); // compacting: character: "合"
+    //html.append("<th rowspan=2>&#127540;</th>"); // compacting: character: "合"
+    //compacting: emoji: recycling
+    html.append("<th rowspan=2 class='emoji' style='font-size: xx-large' title='being compacted ?'>&#9851;</th>");
     html.append("<th colspan=2>FileSize(GB)</th>");
-    html.append("<th rowspan=2>Entries</th>");
-    html.append("<th rowspan=2>Dels</th>");
-    html.append("<th rowspan=2>Merges</th>");
-    html.append("<th rowspan=2>Rng<br>Dels</th>");
-    html.append("<th rowspan=2>Data<br>Blocks</th>");
+    html.append("<th colspan=4>Entries</th>");
+    html.append("<th rowspan=2 title='Data Blocks'>B</th>");
     html.append("<th colspan=3>ZipSize(GB)</th>");
     html.append("<th colspan=3>RawSize(GB)</th>");
     html.append("<th colspan=3>ZipRatio(Zip/Raw)</th>");
@@ -1544,16 +1524,25 @@ try {
     html.append("<th colspan=3>Largest Key</th>");
     html.append("<th rowspan=2>FileTime</th>");
     html.append("<th rowspan=2>NumReads<br>Sampled</th>");
+    if (with_fcnt) {
+      html.append("<th rowspan=2>File<br>CNT</th>");
+    }
     html.append("</tr>");
     html.append("<tr>");
     html.append("<th>Zip</th>");
     html.append("<th>Raw</th>");
+
+    html.append("<th title='All Entries'>All</th>");
+    html.append("<th title='Deletions'>D</th>");
+    html.append("<th title='Merges'>M</th>");
+    html.append("<th title='Range Deletions'>R</th>");
+
     html.append("<th>Key</th>");
     html.append("<th>Value</th>");
-    html.append("<th>K/KV</th>");
+    html.append("<th title='size ratio of Key/(Key + Value)'>K/KV</th>");
     html.append("<th>Key</th>");
     html.append("<th>Value</th>");
-    html.append("<th>K/KV</th>");
+    html.append("<th title='size ratio of Key/(Key + Value)'>K/KV</th>");
 
     html.append("<th>Key</th>");     // Zip Ratio
     html.append("<th>Value</th>");
@@ -1580,10 +1569,20 @@ try {
     }
     div * td.left {
       text-align: left;
+      font-family: Sans-serif;
+    }
+    div * td.monoleft {
+      text-align: left;
       font-family: monospace;
+    }
+    div * td.center {
+      text-align: center;
     }
     .bghighlight {
       background-color: AntiqueWhite;
+    }
+    .emoji {
+      font-family: "Apple Color Emoji","Segoe UI Emoji",NotoColorEmoji,"Segoe UI Symbol","Android Emoji",EmojiSymbols;
     }
   </style>)EOS"
   );
@@ -1592,7 +1591,7 @@ try {
   AppendFmt("total size = %.3f GB", meta.size/1e9);
   html.append("</p>\n");
   html.append("<table border=1>\n");
-  writeHeader();
+  writeHeader(true);
   html.append("<tbody>\n");
   SstProp all_levels_agg;
   for (int level = 0; level < (int)levels_agg.size(); level++) {
@@ -1601,14 +1600,14 @@ try {
       continue;
     }
     curr_agg.name.assign(buf, snprintf(buf, sizeof buf, "L%d", level));
-    write(curr_agg, &curr_agg);
+    write(curr_agg, &curr_agg, (int)meta.levels[level].files.size());
     // use creation_time as num_compacting
     agg_sst(all_levels_agg, curr_agg, &curr_agg, curr_agg.creation_time);
   }
   all_levels_agg.compression_name = AggregateNames(algos_all, "<br>");
   html.append("</tbody>\n");
   html.append("<tfoot>\n");
-  write(all_levels_agg, &all_levels_agg);
+  write(all_levels_agg, &all_levels_agg, (int)meta.file_count);
   html.append("</tfoot></table>\n");
 
   for (int level = 0; level < (int)meta.levels.size(); level++) {
@@ -1622,23 +1621,22 @@ try {
     AppendFmt("total size = %.3f GB", curr_level.size/1e9);
     html.append("</p>\n");
     html.append("<table border=1>\n");
-    writeHeader();
+    writeHeader(false);
     html.append("<tbody>\n");
-    for (size_t i = 0, n = curr_level.files.size(); i < n; i++) {
-      const auto& x = curr_level.files[i];
+    for (const auto & x : curr_level.files) {
       std::string fullname = x.db_path + x.name;
       html.append("<tr>");
       auto iter = props.find(fullname);
       if (props.end() == iter) {
-        write(x, nullptr);
+        write(x, nullptr, -1);
       } else {
-        write(x, iter->second.get());
+        write(x, iter->second.get(), -1);
       }
     }
     html.append("</tbody>\n");
     html.append("<tfoot>\n");
     levels_agg[level].name = ""; // sum
-    write(levels_agg[level], &levels_agg[level]);
+    write(levels_agg[level], &levels_agg[level], -1);
     html.append("</tfoot></table>\n");
   }
   html.append("</div>");

@@ -54,7 +54,7 @@
     "terark-zip": {
       "class": "TerarkZipTable",
       "params": {
-        "localTempDir": "/dev/shm/terark-tmp",
+        "localTempDir": "/tmp",
         "indexType": "Mixed_XL_256_32_FL",
         "indexNestLevel": 3,
         "indexNestScale": 8,
@@ -70,7 +70,7 @@
         "checksumLevel": 0,
         "entropyAlgo": "kNoEntropy",
         "debugLevel": 0,
-	"flatTempFile": true,
+        "flatTempFile": true,
         "softZipWorkingMemLimit": "16G",
         "hardZipWorkingMemLimit": "32G",
         "smallTaskMemory": "1G",
@@ -105,8 +105,6 @@
         },
         "level_writers": [
           "terark-fast",
-          "terark-fast",
-          "terark-fast",
           "terark-zip",
           "terark-zip",
           "terark-zip",
@@ -132,12 +130,9 @@
             "kNoCompression",
             "kNoCompression",
             "kNoCompression",
-            "kSnappyCompression",
-            "kSnappyCompression",
-            "kSnappyCompression",
-            "kSnappyCompression",
-            "kSnappyCompression",
-            "kSnappyCompression"
+            "kNoCompression",
+            "kNoCompression",
+            "kNoCompression"
         ],
 	"//level0_slowdown_writes_trigger": 100,
 	"//level0_stop_writes_trigger": 200,

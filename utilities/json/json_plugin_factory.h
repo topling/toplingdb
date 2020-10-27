@@ -22,6 +22,7 @@ namespace ROCKSDB_NAMESPACE {
 #define THROW_InvalidArgument(msg) THROW_STATUS(InvalidArgument, msg)
 #define THROW_Corruption(msg) THROW_STATUS(Corruption, msg)
 #define THROW_NotFound(msg) THROW_STATUS(NotFound, msg)
+#define THROW_NotSupported(msg) THROW_STATUS(NotSupported, msg)
 
 using nlohmann::json;
 

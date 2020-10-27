@@ -200,7 +200,7 @@ void TableProperties::Add(const TableProperties& tp) {
         x = y;
     }
   };
-  agg_time(creation_time, tp.creation_time);
+  //agg_time(creation_time, tp.creation_time);
   agg_time(file_creation_time, tp.file_creation_time);
 }
 

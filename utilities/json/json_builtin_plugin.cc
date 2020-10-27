@@ -348,6 +348,13 @@ ROCKSDB_FACTORY_REG("DBOptions", NewDBOptionsJS);
 struct DBOptions_Manip : PluginManipFunc<DBOptions> {
   void Update(DBOptions* p, const json& js, const JsonPluginRepo& repo)
   const final {
+    auto iter = js.find("objname");
+    if (js.end() == iter) {
+      THROW_Corruption("missing js[\"objname\"]");
+    }
+    auto& objname = iter.value().get_ref<const std::string&>();
+    //std::shared_ptr<DBOptions> dbo = repo[objname];
+
     static_cast<DBOptions_Json*>(p)->Update(js, repo);
   }
   std::string ToString(const DBOptions& x, const json& dump_options,
@@ -1296,16 +1303,15 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
   }
 }
 
-static const char* StrDateTime(char* buf, const char* fmt, time_t rawtime) {
+static size_t StrDateTime(char* buf, const char* fmt, time_t rawtime) {
   time(&rawtime);
   struct tm* timeinfo = localtime(&rawtime);
-  strftime(buf, sizeof(buf), fmt, timeinfo);
-  return buf;
+  return strftime(buf, 64, fmt, timeinfo);
 }
 
 static void Html_AppendTime(std::string& html, char* buf, uint64_t t) {
   if (t)
-    html.append(StrDateTime(buf, "<td>%F %T</td>", t));
+    html.append(buf, StrDateTime(buf, "<td>%F %T</td>", t));
   else
     html.append("<td>0</td>");
 }
@@ -1327,13 +1333,15 @@ static void Html_AppendInternalKey(std::string& html, Slice ikey) {
     html.append("</td>");
   }
   else {
-    html.append("<td colspan=3><span style='color:red'>");
+    html.append("<td colspan=3 style='color:red'>");
     html.append(s.ToString());
-    html.append("</span></td>");
+    html.append("<br>");
+    html.append(ikey.ToString(true));
+    html.append("</td>");
   }
 }
 
-std::string AggregateNames(const std::map<std::string, int>& map);
+std::string AggregateNames(const std::map<std::string, int>& map, const char* delim);
 static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cfh) {
   std::string html;
 try {
@@ -1348,38 +1356,55 @@ try {
       return html;
     }
   }
+  auto comp = cfh->GetComparator();
   struct SstProp : SstFileMetaData, TableProperties {};
   //int max_open_files = const_cast<DB&>(db).GetDBOptions().max_open_files;
   std::vector<SstProp> levels_agg(const_cast<DB&>(db).NumberLevels());
   std::map<std::string, int> algos_all;
+  auto agg_sst = [&](SstProp& agg, const SstFileMetaData& x,
+                     const TableProperties* p, uint64_t num_compacting) {
+    uint64_t file_creation_time;
+    if (nullptr == p) {
+      file_creation_time = x.file_creation_time;
+    } else {
+      agg.Add(*p);
+      file_creation_time = p->file_creation_time;
+    }
+    if (file_creation_time && file_creation_time < agg.TableProperties::file_creation_time) {
+      agg.TableProperties::file_creation_time = file_creation_time;
+    }
+    if (agg.smallest_ikey.empty()) {
+      agg.smallest_ikey = x.smallest_ikey;
+    } else if (comp->Compare(agg.smallest_ikey, x.smallest_ikey) > 0) {
+      agg.smallest_ikey = x.smallest_ikey;
+    }
+    if (agg.largest_ikey.empty()) {
+      agg.largest_ikey = x.largest_ikey;
+    } else if (comp->Compare(agg.largest_ikey, x.largest_ikey) < 0) {
+      agg.largest_ikey = x.largest_ikey;
+    }
+    agg.size += x.size;
+    agg.creation_time += num_compacting; // use creation_time as num_compacting
+  };
   for (int level = 0; level < (int)meta.levels.size(); level++) {
     auto& curr_level = meta.levels[level];
     auto& agg = levels_agg[level];
-    uint64_t num_compacting = 0;
     std::map<std::string, int> algos;
     for (size_t i = 0, n = curr_level.files.size(); i < n; i++) {
       const auto& x = curr_level.files[i];
       std::string fullname = x.db_path + x.name;
       auto iter = props.find(fullname);
-      uint64_t file_creation_time;
-      if (props.end() == iter) {
-        file_creation_time = x.file_creation_time;
-      }
-      else {
-        const TableProperties* p = iter->second.get();
-        agg.Add(*p);
-        file_creation_time = p->file_creation_time;
+      const TableProperties* p = nullptr;
+      if (props.end() != iter) {
+        p = iter->second.get();
         algos[p->compression_name]++;
-        algos_all[p->compression_name]++;
       }
-      if (file_creation_time && file_creation_time < agg.TableProperties::file_creation_time) {
-        agg.TableProperties::file_creation_time = file_creation_time;
-      }
-      num_compacting += x.being_compacted ? 1 : 0;
+      agg_sst(agg, x, p, x.being_compacted?1:0);
     }
-    // use creation_time as num_compacting
-    agg.creation_time = num_compacting;
-    agg.compression_name = AggregateNames(algos);
+    for (auto& kv : algos) {
+      algos_all[kv.first] += kv.second;
+    }
+    agg.compression_name = AggregateNames(algos, "<br>");
   }
   auto write = [&](const SstFileMetaData& x, const TableProperties* p) {
     html.append("<tr>");
@@ -1397,9 +1422,10 @@ try {
       auto beg = x.name.begin();
       auto dot = std::find(beg, x.name.end(), '.');
       html.append("<th>");
-      html.append(beg, dot);
+      html.append(beg + ('/' == beg[0]), dot);
       html.append("</th>");
     }
+    AppendFmt("<td>%.3f</td>", x.size/1e6);
     uint64_t file_creation_time;
     if (!p) {
       AppendFmt("%" PRIu64, x.num_entries);
@@ -1436,11 +1462,11 @@ try {
       AppendFmt("<td>%" PRIu64"</td>", p->num_merge_operands);
       AppendFmt("<td>%" PRIu64"</td>", p->num_range_deletions);
       AppendFmt("<td>%" PRIu64"</td>", p->num_data_blocks);
-      AppendFmt("<td>%" PRIu64"</td>", p->index_size);
-      AppendFmt("<td>%" PRIu64"</td>", p->data_size);
+      AppendFmt("<td>%.6f</td>", p->index_size/1e9);
+      AppendFmt("<td>%.6f</td>", p->data_size/1e9);
       AppendFmt("<td>%.3f</td>", p->index_size/kv_zip_size);
-      AppendFmt("<td>%" PRIu64"</td>", p->raw_key_size);
-      AppendFmt("<td>%" PRIu64"</td>", p->raw_value_size);
+      AppendFmt("<td>%.6f</td>", p->raw_key_size/1e9);
+      AppendFmt("<td>%.6f</td>", p->raw_value_size/1e9);
       AppendFmt("<td>%.3f</td>", p->raw_key_size/kv_raw_size);
       AppendFmt("<td>%.3f</td>", key_zip_ratio);
       AppendFmt("<td>%.3f</td>", val_zip_ratio);
@@ -1457,8 +1483,8 @@ try {
     }
     AppendFmt("<td>%" PRIu64"</td>", x.smallest_seqno);
     AppendFmt("<td>%" PRIu64"</td>", x.largest_seqno);
-    Html_AppendInternalKey(html, x.smallestkey);
-    Html_AppendInternalKey(html, x.largestkey);
+    Html_AppendInternalKey(html, x.smallest_ikey);
+    Html_AppendInternalKey(html, x.largest_ikey);
     Html_AppendTime(html, buf, file_creation_time);
     AppendFmt("<td>%" PRIu64"</td>", x.num_reads_sampled);
     html.append("</tr>\n");
@@ -1469,14 +1495,14 @@ try {
     for (auto colname : {
       // "&#127959;", // compacting: 施工中
       "&#127540;", // compacting: character: "合"
-      "Name",
+      "Name", "FileSize<br>(MB)",
       "Entries", "Dels", "Merges",
       "Rng<br>Dels", // range del
       "Data<br>Blocks",
-      "ZipKey", "ZipVal", "Zip:K/V",
-      "RawKey", "RawVal", "Raw:K/V",
+      "ZipKey<br>(GB)", "ZipVal<br>(GB)", "Zip:K/V",
+      "RawKey<br>(GB)", "RawVal<br>(GB)", "Raw:K/V",
       "Key<br>Zip/Raw", "Value<br>Zip/Raw", "Key+Val<br>Zip/Raw",
-      "AvgZipKey", "AvgZipVal", "AvgRawKey", "AvgRawVal",
+      "AvgZipKey", "AvgZipVal", "AvgRawKey", "AvgRawVal(KB)",
       "ZipAlgo", //"OldestTS",
       "Smallest<br>SeqNum",
       "Largest<br>SeqNum",
@@ -1508,37 +1534,38 @@ try {
   );
   html.append("<p>");
   AppendFmt("all levels summary: file count = %zd, ", meta.file_count);
-  AppendFmt("total size = %" PRIu64, meta.size);
+  AppendFmt("total size = %.3f GB", meta.size/1e9);
   html.append("</p>\n");
   html.append("<table border=1>\n");
   writeHeader();
   html.append("<tbody>\n");
-  TableProperties all_levels_agg;
+  SstProp all_levels_agg;
   for (int level = 0; level < (int)levels_agg.size(); level++) {
-    SstFileMetaData aggx;
-    aggx.name.assign(buf, snprintf(buf, sizeof buf, "L%d", level));
-    write(aggx, &levels_agg[level]);
-    all_levels_agg.Add(levels_agg[level]);
+    auto& curr_agg = levels_agg[level];
+    if (0 == curr_agg.size) {
+      continue;
+    }
+    curr_agg.name.assign(buf, snprintf(buf, sizeof buf, "L%d", level));
+    write(curr_agg, &curr_agg);
     // use creation_time as num_compacting
-    auto& num_compacting = levels_agg[level].creation_time;
-    all_levels_agg.creation_time += num_compacting;
+    agg_sst(all_levels_agg, curr_agg, &curr_agg, curr_agg.creation_time);
   }
-  all_levels_agg.compression_name = AggregateNames(algos_all);
+  all_levels_agg.compression_name = AggregateNames(algos_all, "<br>");
   html.append("</tbody>\n");
   html.append("<tfoot>\n");
-  write(SstFileMetaData(), &all_levels_agg);
+  write(all_levels_agg, &all_levels_agg);
   html.append("</tfoot></table>\n");
 
   for (int level = 0; level < (int)meta.levels.size(); level++) {
     auto& curr_level = meta.levels[level];
-    html.append("<hr><p>");
-    AppendFmt("level = %d, ", curr_level.level);
-    AppendFmt("file count = %zd, ", curr_level.files.size());
-    AppendFmt("total size = %" PRIu64, curr_level.size);
-    html.append("</p>\n");
     if (curr_level.files.empty()) {
       continue;
     }
+    html.append("<hr><p>");
+    AppendFmt("level = %d, ", curr_level.level);
+    AppendFmt("file count = %zd, ", curr_level.files.size());
+    AppendFmt("total size = %.3f GB", curr_level.size/1e9);
+    html.append("</p>\n");
     html.append("<table border=1>\n");
     writeHeader();
     html.append("<tbody>\n");
@@ -1555,6 +1582,7 @@ try {
     }
     html.append("</tbody>\n");
     html.append("<tfoot>\n");
+    levels_agg[level].name = "sum";
     write(levels_agg[level], &levels_agg[level]);
     html.append("</tfoot></table>\n");
   }
@@ -1828,7 +1856,7 @@ static constexpr auto JS_DB_Manip = &PluginManipSingleton<DB_Manip>;
 struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
   void Update(DB_MultiCF* db, const json& js,
               const JsonPluginRepo& repo) const final {
-
+    THROW_NotSupported("");
   }
   std::string ToString(const DB_MultiCF& db, const json& dump_options,
                        const JsonPluginRepo& repo) const final {

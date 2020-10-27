@@ -1502,7 +1502,7 @@ try {
       "ZipKey<br>(GB)", "ZipVal<br>(GB)", "Zip:K/V",
       "RawKey<br>(GB)", "RawVal<br>(GB)", "Raw:K/V",
       "Key<br>Zip/Raw", "Value<br>Zip/Raw", "Key+Val<br>Zip/Raw",
-      "AvgZipKey", "AvgZipVal", "AvgRawKey", "AvgRawVal(KB)",
+      "AvgZipKey", "AvgZipVal", "AvgRawKey", "AvgRawVal",
       "ZipAlgo", //"OldestTS",
       "Smallest<br>SeqNum",
       "Largest<br>SeqNum",

@@ -1425,7 +1425,7 @@ try {
       html.append(beg + ('/' == beg[0]), dot);
       html.append("</th>");
     }
-    AppendFmt("<td>%.3f</td>", x.size/1e6);
+    AppendFmt("<td>%.6f</td>", x.size/1e9);
     uint64_t file_creation_time;
     if (!p) {
       AppendFmt("%" PRIu64, x.num_entries);
@@ -1495,7 +1495,7 @@ try {
     for (auto colname : {
       // "&#127959;", // compacting: 施工中
       "&#127540;", // compacting: character: "合"
-      "Name", "FileSize<br>(MB)",
+      "Name", "FileSize<br>(GB)",
       "Entries", "Dels", "Merges",
       "Rng<br>Dels", // range del
       "Data<br>Blocks",

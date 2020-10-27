@@ -1322,7 +1322,7 @@ static void Html_AppendInternalKey(std::string& html, Slice ikey) {
   ParsedInternalKey pikey;
   Status s = ParseInternalKey(ikey, &pikey);
   if (s.ok()) {
-    html.append("<td>");
+    html.append("<td class='left'>");
     html.append(Slice(pikey.user_key).ToString(true));
     html.append("</td>");
     html.append("<td>");
@@ -1373,6 +1373,8 @@ try {
     if (file_creation_time && file_creation_time < agg.TableProperties::file_creation_time) {
       agg.TableProperties::file_creation_time = file_creation_time;
     }
+    agg.smallest_seqno = std::min(agg.smallest_seqno, x.smallest_seqno);
+    agg.largest_seqno = std::max(agg.largest_seqno, x.largest_seqno);
     if (agg.smallest_ikey.empty()) {
       agg.smallest_ikey = x.smallest_ikey;
     } else if (comp->Compare(agg.smallest_ikey, x.smallest_ikey) > 0) {
@@ -1385,10 +1387,12 @@ try {
     }
     agg.size += x.size;
     agg.creation_time += num_compacting; // use creation_time as num_compacting
+    agg.num_reads_sampled += x.num_reads_sampled;
   };
   for (int level = 0; level < (int)meta.levels.size(); level++) {
     auto& curr_level = meta.levels[level];
     auto& agg = levels_agg[level];
+    agg.smallest_seqno = UINT64_MAX;
     std::map<std::string, int> algos;
     for (size_t i = 0, n = curr_level.files.size(); i < n; i++) {
       const auto& x = curr_level.files[i];
@@ -1407,27 +1411,31 @@ try {
     agg.compression_name = AggregateNames(algos, "<br>");
   }
   auto write = [&](const SstFileMetaData& x, const TableProperties* p) {
-    html.append("<tr>");
+    if (x.being_compacted)
+      html.append("<tr class='bghighlight'>");
+    else
+      html.append("<tr>");
     if (x.name.empty()) { // is aggregated
-      AppendFmt("<th>%" PRIu64 "</th>", p->creation_time); // num_compacting
       html.append("<th>sum</th>"); // sst name
-    } else if ('L' == x.name[0]) { // is aggregated
       AppendFmt("<th>%" PRIu64 "</th>", p->creation_time); // num_compacting
+    } else if ('L' == x.name[0]) { // is aggregated
       html.append("<th>");
       html.append(x.name); // Ln as name
       html.append("</th>");
+      AppendFmt("<th>%" PRIu64 "</th>", p->creation_time); // num_compacting
     } else {
-      //html.append(x.being_compacted ? "<th>true</th>" : "<th>false</th>");
-      html.append(x.being_compacted ? "<th>&#9989;</th>" : "<th>&#10062;</th>");
       auto beg = x.name.begin();
       auto dot = std::find(beg, x.name.end(), '.');
       html.append("<th>");
       html.append(beg + ('/' == beg[0]), dot);
       html.append("</th>");
+      //html.append(x.being_compacted ? "<th>true</th>" : "<th>false</th>");
+      html.append(x.being_compacted ? "<th>&#9989;</th>" : "<th>&#10062;</th>");
     }
     AppendFmt("<td>%.6f</td>", x.size/1e9);
     uint64_t file_creation_time;
     if (!p) {
+      html.append("<td>unkown</td>"); // raw size (key + value)
       AppendFmt("%" PRIu64, x.num_entries);
       AppendFmt("%" PRIu64, x.num_deletions);
       html.append("<td>&#10067;</td>"); // merge
@@ -1441,8 +1449,8 @@ try {
       html.append("<td>&#10067;</td>"); // val_zip_ratio
       html.append("<td>&#10067;</td>"); // kv_zip_ratio
       html.append("<td>&#10067;</td>"); // avg zip key size
-      html.append("<td>&#10067;</td>"); // avg zip val size
       html.append("<td>&#10067;</td>"); // avg raw key size
+      html.append("<td>&#10067;</td>"); // avg zip val size
       html.append("<td>&#10067;</td>"); // avg raw val size
       html.append("<td>&#10067;</td>"); // compression name
       //html.append("<td>&#10067;</td>"); // oldest_key_time
@@ -1457,6 +1465,7 @@ try {
       auto key_zip_ratio = double(p->index_size)/p->raw_key_size;
       auto val_zip_ratio = double(p->data_size)/p->raw_value_size;
       auto kv_zip_ratio = kv_zip_size/kv_raw_size;
+      AppendFmt("<td>%.6f</td>", kv_raw_size/1e9);
       AppendFmt("<td>%" PRIu64"</td>", p->num_entries);
       AppendFmt("<td>%" PRIu64"</td>", p->num_deletions);
       AppendFmt("<td>%" PRIu64"</td>", p->num_merge_operands);
@@ -1472,10 +1481,10 @@ try {
       AppendFmt("<td>%.3f</td>", val_zip_ratio);
       AppendFmt("<td>%.3f</td>", kv_zip_ratio);
       AppendFmt("<td>%.3f</td>", avg_zip_key);
+      AppendFmt("<td>%.1f</td>", avg_raw_key);
       AppendFmt("<td>%.3f</td>", avg_zip_val);
-      AppendFmt("<td>%.3f</td>", avg_raw_key);
-      AppendFmt("<td>%.3f</td>", avg_raw_val);
-      html.append("<td>");
+      AppendFmt("<td>%.1f</td>", avg_raw_val);
+      html.append("<td class='left'>");
       html.append(p->compression_name);
       html.append("</td>");
       //AppendFmt("<td>%" PRIu64 "</td>", p->oldest_key_time);
@@ -1492,15 +1501,17 @@ try {
 
   auto writeHeader = [&]() {
     html.append("<thead><tr>");
+    /*
     for (auto colname : {
+     "Name",
       // "&#127959;", // compacting: 施工中
       "&#127540;", // compacting: character: "合"
-      "Name", "FileSize<br>(GB)",
+      "FileSize<br>(GB)",
       "Entries", "Dels", "Merges",
       "Rng<br>Dels", // range del
       "Data<br>Blocks",
-      "ZipKey<br>(GB)", "ZipVal<br>(GB)", "Zip:K/V",
-      "RawKey<br>(GB)", "RawVal<br>(GB)", "Raw:K/V",
+      "ZipKey<br>(GB)", "ZipVal<br>(GB)", "Zip<br>K/KV",
+      "RawKey<br>(GB)", "RawVal<br>(GB)", "Raw<br>K/KV",
       "Key<br>Zip/Raw", "Value<br>Zip/Raw", "Key+Val<br>Zip/Raw",
       "AvgZipKey", "AvgZipVal", "AvgRawKey", "AvgRawVal",
       "ZipAlgo", //"OldestTS",
@@ -1511,12 +1522,48 @@ try {
       html.append(colname);
       html.append("</th>");
     }
+    */
+    html.append("<th rowspan=2>Name</th>");
+    //html.append("<th rowspan=2>&#127959;</th>"); // compacting: 施工中
+    html.append("<th rowspan=2>&#127540;</th>"); // compacting: character: "合"
+    html.append("<th colspan=2>FileSize(GB)</th>");
+    html.append("<th rowspan=2>Entries</th>");
+    html.append("<th rowspan=2>Dels</th>");
+    html.append("<th rowspan=2>Merges</th>");
+    html.append("<th rowspan=2>Rng<br>Dels</th>");
+    html.append("<th rowspan=2>Data<br>Blocks</th>");
+    html.append("<th colspan=3>ZipSize(GB)</th>");
+    html.append("<th colspan=3>RawSize(GB)</th>");
+    html.append("<th colspan=3>ZipRatio(Zip/Raw)</th>");
+    html.append("<th colspan=2>AvgKey</th>");
+    html.append("<th colspan=2>AvgValue</th>");
+    html.append("<th rowspan=2>ZipAlgo</th>");
+    html.append("<th rowspan=2>Smallest<br>SeqNum</th>");
+    html.append("<th rowspan=2>Largest<br>SeqNum</th>");
     html.append("<th colspan=3>Smallest Key</th>");
     html.append("<th colspan=3>Largest Key</th>");
     html.append("<th rowspan=2>FileTime</th>");
     html.append("<th rowspan=2>NumReads<br>Sampled</th>");
     html.append("</tr>");
     html.append("<tr>");
+    html.append("<th>Zip</th>");
+    html.append("<th>Raw</th>");
+    html.append("<th>Key</th>");
+    html.append("<th>Value</th>");
+    html.append("<th>K/KV</th>");
+    html.append("<th>Key</th>");
+    html.append("<th>Value</th>");
+    html.append("<th>K/KV</th>");
+
+    html.append("<th>Key</th>");     // Zip Ratio
+    html.append("<th>Value</th>");
+    html.append("<th>K+V</th>");
+
+    html.append("<th>Zip</th>");  // AvgLen
+    html.append("<th>Raw</th>");
+    html.append("<th>Zip</th>");
+    html.append("<th>Raw</th>");
+
     html.append("<th>UserKey</th>");
     html.append("<th>SeqNum</th>");
     html.append("<th>Type</th>");
@@ -1529,6 +1576,14 @@ try {
   html.append(R"EOS(<style>
     div * td {
       text-align: right;
+      font-family: monospace;
+    }
+    div * td.left {
+      text-align: left;
+      font-family: monospace;
+    }
+    .bghighlight {
+      background-color: AntiqueWhite;
     }
   </style>)EOS"
   );
@@ -1582,7 +1637,7 @@ try {
     }
     html.append("</tbody>\n");
     html.append("<tfoot>\n");
-    levels_agg[level].name = "sum";
+    levels_agg[level].name = ""; // sum
     write(levels_agg[level], &levels_agg[level]);
     html.append("</tfoot></table>\n");
   }

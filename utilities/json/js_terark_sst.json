@@ -105,6 +105,7 @@
         },
         "level_writers": [
           "terark-fast",
+          "terark-fast",
           "terark-zip",
           "terark-zip",
           "terark-zip",

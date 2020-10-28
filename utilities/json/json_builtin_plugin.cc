@@ -1577,6 +1577,7 @@ try {
     }
     div * td.center {
       text-align: center;
+      font-family: Sans-serif;
     }
     .bghighlight {
       background-color: AntiqueWhite;

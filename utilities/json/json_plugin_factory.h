@@ -507,6 +507,7 @@ bool SameVarName(const std::string&, const std::string&);
 void JsonSetSize(json&, unsigned long long);
 bool JsonSmartBool(const json& js, const char* subname);
 int  JsonSmartInt(const json& js, const char* subname, int Default);
+int64_t JsonSmartInt64(const json& js, const char* subname, int64_t Default);
 
 std::string
 JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname);

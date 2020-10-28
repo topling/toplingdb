@@ -10,6 +10,8 @@
 
 #include "rocksdb/db.h"
 #include "db/dbformat.h"
+#include "db/column_family.h"
+#include "db/table_cache.h"
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
 #include "options/db_options.h"
@@ -1361,6 +1363,16 @@ try {
   //int max_open_files = const_cast<DB&>(db).GetDBOptions().max_open_files;
   std::vector<SstProp> levels_agg(meta.levels.size());
   std::map<std::string, int> algos_all;
+  std::map<std::string, int> path_idm;
+  {
+    auto cfhi = static_cast<ColumnFamilyHandleImpl*>(cfh);
+    auto cfd = cfhi->cfd();
+    auto iopt = cfd->ioptions();
+    for (int id = 0, n = (int)iopt->cf_paths.size(); id < n; ++id) {
+      auto& path = iopt->cf_paths[id].path;
+      path_idm[path] = id;
+    }
+  }
   auto agg_sst = [&](SstProp& agg, const SstFileMetaData& x,
                      const TableProperties* p, uint64_t num_compacting) {
     uint64_t file_creation_time;
@@ -1419,11 +1431,19 @@ try {
       html.append(x.name.empty() ? "sum" : x.name);
       html.append("</th>");
       AppendFmt("<th>%" PRIu64 "</th>", p->creation_time); // num_compacting
-    } else {
+    } else { // is an sst file
       auto beg = x.name.begin();
       auto dot = std::find(beg, x.name.end(), '.');
       html.append("<th>");
+      html.append("<a href='javascript:sst_file_href(");
       html.append(beg + ('/' == beg[0]), dot);
+      AppendFmt(",%d", path_idm[x.db_path]);
+      AppendFmt(",%zd", x.size);
+      AppendFmt(",%" PRIu64, x.smallest_seqno);
+      AppendFmt(",%" PRIu64, x.largest_seqno);
+      html.append(")'>");
+      html.append(beg + ('/' == beg[0]), dot);
+      html.append("</a>");
       html.append("</th>");
       html.append("<th class='emoji'>");
       //html.append(x.being_compacted ? "true" : "false");
@@ -1562,7 +1582,19 @@ try {
     html.append("</tr></thead>");
   };
   html.append("<div>");
-  html.append(R"EOS(<style>
+  html.append(R"EOS(
+  <script>
+    function sst_file_href(file, path_id, fsize, smallest, largest) {
+      location.href = location.href
+         + "&file=" + file
+         + "&path=" + path_id
+         + "&size=" + fsize
+         + "&smallest=" + smallest
+         + "&largest=" + largest
+         ;
+    }
+  </script>
+  <style>
     div * td {
       text-align: right;
       font-family: monospace;
@@ -1764,6 +1796,27 @@ static void Json_DB_IntProps(const DB& db, ColumnFamilyHandle* cfh,
   }
 }
 
+static std::string Json_DB_OneSST(const DB& db, ColumnFamilyHandle* cfh0,
+                                  const json& dump_options, int file_num) {
+  auto cfh = static_cast<ColumnFamilyHandleImpl*>(cfh0);
+  auto cfd = cfh->cfd();
+  auto tc = cfd->table_cache();
+  FileDescriptor fd(file_num,
+                    JsonSmartInt(dump_options, "path", 0),
+                    JsonSmartInt64(dump_options, "size", 0),
+                    JsonSmartInt64(dump_options, "smallest", 0),
+                    JsonSmartInt64(dump_options, "largest", kMaxSequenceNumber));
+  Cache::Handle* ch = nullptr;
+  auto s = tc->FindTable(ReadOptions(), cfd->internal_comparator(), fd, &ch);
+  if (!s.ok()) {
+    THROW_InvalidArgument(s.ToString());
+  }
+  TableReader* tr = tc->GetTableReaderFromHandle(ch);
+  const auto& zip_algo = tr->GetTableProperties()->compression_name;
+  auto manip = PluginManip<TableReader>::AcquirePlugin(zip_algo, json(), JsonPluginRepo());
+  return manip->ToString(*tr, dump_options, JsonPluginRepo());
+}
+
 struct CFPropertiesWebView_Manip : PluginManipFunc<CFPropertiesWebView> {
   void Update(CFPropertiesWebView* cfp, const json& js,
               const JsonPluginRepo& repo) const final {
@@ -1772,6 +1825,10 @@ struct CFPropertiesWebView_Manip : PluginManipFunc<CFPropertiesWebView> {
                        const JsonPluginRepo& repo) const final {
     bool html = JsonSmartBool(dump_options, "html");
     json djs;
+    int file_num = JsonSmartInt(dump_options, "file", -1);
+    if (file_num >= 0) {
+      return Json_DB_OneSST(*cfp.db, cfp.cfh, dump_options, file_num);
+    }
     if (!JsonSmartBool(dump_options, "noint")) {
       bool showbad = JsonSmartBool(dump_options, "showbad");
       bool nozero = JsonSmartBool(dump_options, "nozero");

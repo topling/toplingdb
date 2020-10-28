@@ -876,13 +876,41 @@ int JsonSmartInt(const json& js) {
     }
     return JsonSmartInt(js.back());
   }
-  throw std::invalid_argument("JsonSmartBool: bad js = " + js.dump());
+  throw std::invalid_argument("JsonSmartInt: bad js = " + js.dump());
 }
 
 int JsonSmartInt(const json& js, const char* subname, int Default) {
   auto iter = js.find(subname);
   if (js.end() != iter) {
     return JsonSmartInt(iter.value());
+  }
+  return Default;
+}
+
+int64_t JsonSmartInt64(const json& js) {
+  if (js.is_string()) {
+    const std::string& s = js.get_ref<const std::string&>();
+    if (isdigit((unsigned char)s[0])) {
+      return atoi(s.c_str());
+    }
+    throw std::invalid_argument("JsonSmartInt64: bad js = " + s);
+  }
+  if (js.is_number_integer()) return js.get<int>();
+  if (js.is_array()) {
+    // http param: a=1&a=2&a=3 will construct a json array
+    // we take the last item of the json array
+    if (js.size() == 0) {
+      throw std::invalid_argument("JsonSmartInt: js is an empty json array");
+    }
+    return JsonSmartInt64(js.back());
+  }
+  throw std::invalid_argument("JsonSmartInt64: bad js = " + js.dump());
+}
+
+int64_t JsonSmartInt64(const json& js, const char* subname, int64_t Default) {
+  auto iter = js.find(subname);
+  if (js.end() != iter) {
+    return JsonSmartInt64(iter.value());
   }
   return Default;
 }

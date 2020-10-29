@@ -1436,7 +1436,7 @@ try {
       auto dot = std::find(beg, x.name.end(), '.');
       html.append("<th>");
       html.append("<a href='javascript:sst_file_href(");
-      html.append(beg + ('/' == beg[0]), dot);
+      AppendFmt("%" PRIu64, x.file_number);
       AppendFmt(",%d", path_idm[x.db_path]);
       AppendFmt(",%zd", x.size);
       AppendFmt(",%" PRIu64, x.smallest_seqno);

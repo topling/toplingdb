@@ -9,6 +9,7 @@
 #include <cinttypes>
 
 #include "rocksdb/db.h"
+#include "cache/lru_cache.h"
 #include "db/dbformat.h"
 #include "db/column_family.h"
 #include "db/table_cache.h"
@@ -853,6 +854,11 @@ struct LRUCache_Manip : PluginManipFunc<Cache> {
     ROCKSDB_JSON_SET_PROP(js, usage_rate);
     ROCKSDB_JSON_SET_PROP(js, pined_rate);
     ROCKSDB_JSON_SET_FACT(js, memory_allocator);
+    auto lru = dynamic_cast<const LRUCache*>(&r);
+    if (lru) {
+      size_t cached_elem_num = const_cast<LRUCache*>(lru)->TEST_GetLRUSize();
+      ROCKSDB_JSON_SET_PROP(js, cached_elem_num);
+    }
     return JsonToString(js, dump_options);
   }
 };

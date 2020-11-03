@@ -555,6 +555,10 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
       })
     });
   assert(ib2.second);
+  if (!ib2.second) {
+    fprintf(stderr, "%s:%d: Unexpected\n", __FILE__, __LINE__);
+    abort();
+  }
   *dbp = db;
 }
 

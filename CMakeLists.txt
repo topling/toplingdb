@@ -84,7 +84,7 @@ else()
 endif()
 
 if( NOT DEFINED CMAKE_CXX_STANDARD )
-  set(CMAKE_CXX_STANDARD 11)
+  set(CMAKE_CXX_STANDARD 14)
 endif()
 
 include(CMakeDependentOption)
@@ -203,6 +203,11 @@ add_library(build_version OBJECT ${BUILD_VERSION_CC})
 target_include_directories(build_version PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/util)
 if(MSVC)
+  if(MSVC_VERSION LESS 1926)
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /experimental:preprocessor")
+  else()
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:preprocessor")
+  endif()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /EHsc /GS /Gd /GR /GF /fp:precise /Zc:wchar_t /Zc:forScope /errorReport:queue")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /d2Zi+ /W4 /wd4127 /wd4800 /wd4996 /wd4351 /wd4100 /wd4204 /wd4324")
 else()
@@ -790,6 +795,13 @@ set(SOURCES
         utilities/env_timed.cc
         utilities/fault_injection_env.cc
         utilities/fault_injection_fs.cc
+        utilities/json/json_db_open.cc
+        utilities/json/json_builtin_plugin.cc
+        utilities/json/json_plugin_repo.cc
+        utilities/json/json_table_factory.cc
+        utilities/json/web/json_civetweb.cc
+        utilities/json/web/civetweb.c
+        utilities/json/web/CivetServer.cc
         utilities/leveldb_options/leveldb_options.cc
         utilities/memory/memory_util.cc
         utilities/merge_operators/bytesxor.cc
@@ -1212,6 +1224,7 @@ if(WITH_TESTS)
         utilities/cassandra/cassandra_row_merge_test.cc
         utilities/cassandra/cassandra_serialize_test.cc
         utilities/checkpoint/checkpoint_test.cc
+        utilities/json/tests/chaos_test.cc
         utilities/memory/memory_test.cc
         utilities/merge_operators/string_append/stringappend_test.cc
         utilities/object_registry_test.cc

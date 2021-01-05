@@ -302,7 +302,7 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   void Dump(Logger* log) const;
 };
 
-enum class WALRecoveryMode : char {
+ROCKSDB_ENUM_CLASS(WALRecoveryMode, char,
   // Original levelDB recovery
   //
   // We tolerate the last record in any log to be incomplete due to a crash
@@ -338,8 +338,8 @@ enum class WALRecoveryMode : char {
   // possible
   // Use case : Ideal for last ditch effort to recover data or systems that
   // operate with low grade unrelated data
-  kSkipAnyCorruptedRecords = 0x03,
-};
+  kSkipAnyCorruptedRecords = 0x03
+);
 
 struct DbPath {
   std::string path;
@@ -759,7 +759,8 @@ struct DBOptions {
   // Specify the file access pattern once a compaction is started.
   // It will be applied to all input files of a compaction.
   // Default: NORMAL
-  enum AccessHint { NONE, NORMAL, SEQUENTIAL, WILLNEED };
+  ROCKSDB_ENUM_PLAIN_INCLASS(AccessHint, int,
+      NONE, NORMAL, SEQUENTIAL, WILLNEED);
   AccessHint access_hint_on_compaction_start = NORMAL;
 
   // If true, always create a new file descriptor and new table reader

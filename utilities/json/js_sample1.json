@@ -1,0 +1,29 @@
+{
+  "databases": {
+    "db1": {
+      "method": "DB::Open",
+      "params": {
+        "options": {
+          "max_background_compactions": 8,
+          "max_subcompactions": 5,
+          "max_write_buffer_number": 4,
+          "inplace_update_support": false,
+          "memtable_huge_page_size": 2097152,
+          "memtable_insert_with_hint_prefix_extractor": {
+            "class": "FixedPrefixTransform",
+            "params": {
+              "fixed_len": 8
+            }
+          }
+        }
+      }
+    }
+  },
+  "db2": {
+    "method": "DB::Open",
+    "params": {
+      "options": {}
+    }
+  },
+  "open": "db1"
+}

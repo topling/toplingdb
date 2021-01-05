@@ -140,7 +140,7 @@ class SpecialMemTableRep : public MemTableRep {
   }
 
   // Returns true iff an entry that compares equal to key is in the list.
-  virtual bool Contains(const char* key) const override {
+  virtual bool Contains(const Slice& key) const override {
     return memtable_->Contains(key);
   }
 
@@ -152,7 +152,7 @@ class SpecialMemTableRep : public MemTableRep {
 
   virtual void Get(const LookupKey& k, void* callback_args,
                    bool (*callback_func)(void* arg,
-                                         const char* entry)) override {
+                                         const KeyValuePair*)) override {
     memtable_->Get(k, callback_args, callback_func);
   }
 

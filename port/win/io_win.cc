@@ -227,12 +227,30 @@ Status WinMmapReadableFile::Read(uint64_t offset, size_t n, Slice* result,
   return s;
 }
 
+Status WinMmapReadableFile::FsRead(uint64_t offset, size_t len, void* buf)
+const {
+  size_t bytes_read = 0;
+  Status s = pread(this, (char*)buf, len, offset, bytes_read);
+  if (bytes_read != len) {
+    s = IOError(
+        "PosixMmapReadableFile::FsRead(): pread(\"file = " + filename_
+            + "\", offset = " + ToString(offset)
+            + ", len = " + ToString(len) + ") = " + ToString(bytes_read),
+        errno);
+  }
+  return s;
+}
+
 Status WinMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
   return Status::OK();
 }
 
 size_t WinMmapReadableFile::GetUniqueId(char* id, size_t max_size) const {
   return GetUniqueIdFromFile(hFile_, id, max_size);
+}
+
+intptr_t WinMmapReadableFile::FileDescriptor() const {
+  return (intptr_t)this->hFile_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

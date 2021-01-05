@@ -216,6 +216,7 @@ endif
 
 #-----------------------------------------------
 include src.mk
+LIB_SOURCES += ${EXTRA_LIB_SOURCES}
 
 AM_DEFAULT_VERBOSITY ?= 0
 
@@ -506,8 +507,8 @@ endif
 
 OBJ_DIR?=.
 LIB_OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(LIB_SOURCES))
-ifeq ($(HAVE_POWER8),1)
 LIB_OBJECTS += $(patsubst %.c, $(OBJ_DIR)/%.o, $(LIB_SOURCES_C))
+ifeq ($(HAVE_POWER8),1)
 LIB_OBJECTS += $(patsubst %.S, $(OBJ_DIR)/%.o, $(LIB_SOURCES_ASM))
 endif
 
@@ -2030,6 +2031,39 @@ io_tracer_parser_test: $(OBJ_DIR)/tools/io_tracer_parser_test.o $(OBJ_DIR)/tools
 	$(AM_LINK)
 
 io_tracer_parser: $(OBJ_DIR)/tools/io_tracer_parser.o $(TOOLS_LIBRARY) $(LIBRARY)
+#--------------------------------------------------
+ifndef ROCKSDB_USE_LIBRADOS
+  AUTO_ALL_EXCLUDE_SRC += utilities/env_librados_test.cc
+endif
+
+AUTO_ALL_TESTS_SRC += $(shell find * -name '*_test.cc' -not -path 'java/*')
+AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC})
+AUTO_ALL_TESTS_OBJ := $(addprefix $(OBJ_DIR)/,$(AUTO_ALL_TESTS_SRC:%.cc=%.o))
+AUTO_ALL_TESTS_EXE := $(AUTO_ALL_TESTS_OBJ:%.o=%)
+
+.PHONY: auto_all_tests
+auto_all_tests: ${AUTO_ALL_TESTS_EXE}
+
+$(OBJ_DIR)/tools/%_test: $(OBJ_DIR)/tools/%_test.o \
+                         ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/tools/db_bench_tool_test : \
+$(OBJ_DIR)/tools/db_bench_tool_test.o \
+                         ${BENCH_OBJECTS} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/tools/trace_analyzer_test : \
+$(OBJ_DIR)/tools/trace_analyzer_test.o \
+      ${ANALYZE_OBJECTS} ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test : \
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test.o \
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/%: $(OBJ_DIR)/%.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 #-------------------------------------------------
@@ -2437,7 +2471,7 @@ $(OBJ_DIR)/%.o: %.cpp
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.o: %.c
-	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -c $< -o $@
 endif
 
 # ---------------------------------------------------------------------------
@@ -2445,7 +2479,7 @@ endif
 # ---------------------------------------------------------------------------
 
 DEPFILES = $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, $(ALL_SOURCES))
-DEPFILES+ = $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C) $(TEST_MAIN_SOURCES_C))
+DEPFILES += $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C) $(TEST_MAIN_SOURCES_C))
 ifeq ($(USE_FOLLY_DISTRIBUTED_MUTEX),1)
   DEPFILES +=$(patsubst %.cpp, $(OBJ_DIR)/%.cpp.d, $(FOLLY_SOURCES))
 endif

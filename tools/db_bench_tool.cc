@@ -80,6 +80,8 @@
 #include <io.h>  // open/close
 #endif
 
+#include "utilities/json/json_plugin_repo.h"
+
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
 using GFLAGS_NAMESPACE::RegisterFlagValidator;
 using GFLAGS_NAMESPACE::SetUsageMessage;
@@ -882,6 +884,8 @@ DEFINE_int64(
 DEFINE_string(block_cache_trace_file, "", "Block cache trace file path.");
 DEFINE_int32(trace_replay_threads, 1,
              "The number of threads to replay, must >=1.");
+
+DEFINE_string(json, "", "json config file.");
 
 static enum ROCKSDB_NAMESPACE::CompressionType StringToCompressionType(
     const char* ctype) {
@@ -2685,6 +2689,7 @@ class Benchmark {
             false /*strict_capacity_limit*/, FLAGS_cache_high_pri_pool_ratio);
       }
     }
+    return nullptr;
   }
 
  public:
@@ -2783,12 +2788,20 @@ class Benchmark {
   }
 
   ~Benchmark() {
+    CloseDB();
+  }
+  void CloseDB() {
     db_.DeleteDBs();
     delete prefix_extractor_;
     if (cache_.get() != nullptr) {
       // this will leak, but we're shutting down so nobody cares
       cache_->DisownData();
     }
+  }
+
+  void exit(int code) {
+    CloseDB();
+    ::exit(code);
   }
 
   Slice AllocateKey(std::unique_ptr<const char[]>* key_guard) {
@@ -4149,8 +4162,41 @@ class Benchmark {
     InitializeOptionsGeneral(opts);
   }
 
+  JsonPluginRepo repo_;
   void OpenDb(Options options, const std::string& db_name,
       DBWithColumnFamilies* db) {
+    if (!FLAGS_json.empty()) {
+      repo_.CloseAllDB(false);
+      repo_ = JsonPluginRepo();
+      DB_MultiCF* dbmcf = nullptr;
+      Status s = repo_.ImportJsonFile(FLAGS_json);
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: ImportJsonFile(%s): %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      s = repo_.OpenDB(&dbmcf);
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: OpenDB(): JsonFile=%s: %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      s = repo_.StartHttpServer();
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: StartHttpServer(): JsonFile=%s: %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      db->cfh = dbmcf->cf_handles;
+      db->db = dbmcf->db;
+      if (auto tdb = dynamic_cast<OptimisticTransactionDB*>(dbmcf->db)) {
+        db->opt_txn_db = tdb;
+        db->db = tdb->GetBaseDB();
+      }
+      Options opt = db->db->GetOptions();
+      dbstats = opt.statistics;
+      return;
+    }
     Status s;
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {

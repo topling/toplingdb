@@ -231,6 +231,12 @@ LIB_SOURCES =                                                   \
   utilities/env_timed.cc                                        \
   utilities/fault_injection_env.cc                              \
   utilities/fault_injection_fs.cc                               \
+  utilities/json/json_builtin_plugin.cc                         \
+  utilities/json/json_db_open.cc                                \
+  utilities/json/json_plugin_repo.cc                            \
+  utilities/json/json_table_factory.cc                          \
+  utilities/json/web/json_civetweb.cc                           \
+  utilities/json/web/CivetServer.cc                             \
   utilities/leveldb_options/leveldb_options.cc                  \
   utilities/memory/memory_util.cc                               \
   utilities/merge_operators/max.cc                              \
@@ -299,6 +305,7 @@ else
 LIB_SOURCES_ASM =
 LIB_SOURCES_C =
 endif
+LIB_SOURCES_C += utilities/json/web/civetweb.c
 
 TOOL_LIB_SOURCES =                                              \
   tools/io_tracer_parser_tool.cc                                \

@@ -20,6 +20,8 @@ struct DB_Ptr;
 
 class Cache;
 class ColumnFamilyHandle;
+
+class CompactionExecutorFactory;
 class CompactionFilterFactory;
 class Comparator;
 class ConcurrentTaskLimiter;
@@ -38,6 +40,7 @@ class PersistentCache;
 class RateLimiter;
 class SliceTransform;
 class SstFileManager;
+class SstPartitionerFactory;
 class Statistics;
 class TableFactory;
 class TablePropertiesCollectorFactory;
@@ -105,6 +108,7 @@ class JsonPluginRepo {
   void Put(const std::string& name, DB_MultiCF*);
 
   void Put(const std::string& name, const std::shared_ptr<Cache>&);
+  void Put(const std::string& name, const std::shared_ptr<CompactionExecutorFactory>&);
   void Put(const std::string& name, const std::shared_ptr<CompactionFilterFactory>&);
   void Put(const std::string& name, const Comparator*);
   void Put(const std::string& name, const std::shared_ptr<ConcurrentTaskLimiter>&);
@@ -122,6 +126,7 @@ class JsonPluginRepo {
   void Put(const std::string& name, const std::shared_ptr<RateLimiter>&);
   void Put(const std::string& name, const std::shared_ptr<const SliceTransform>&);
   void Put(const std::string& name, const std::shared_ptr<SstFileManager>&);
+  void Put(const std::string& name, const std::shared_ptr<SstPartitionerFactory>&);
   void Put(const std::string& name, const std::shared_ptr<Statistics>&);
   void Put(const std::string& name, const std::shared_ptr<TableFactory>&);
   void Put(const std::string& name, const std::shared_ptr<TablePropertiesCollectorFactory>&);
@@ -137,6 +142,7 @@ class JsonPluginRepo {
   bool Get(const std::string& name, DB_MultiCF**, Status* = nullptr) const;
 
   bool Get(const std::string& name, std::shared_ptr<Cache>*) const;
+  bool Get(const std::string& name, std::shared_ptr<CompactionExecutorFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<CompactionFilterFactory>*) const;
   bool Get(const std::string& name, const Comparator**) const;
   bool Get(const std::string& name, std::shared_ptr<ConcurrentTaskLimiter>*) const;
@@ -154,6 +160,7 @@ class JsonPluginRepo {
   bool Get(const std::string& name, std::shared_ptr<RateLimiter>*) const;
   bool Get(const std::string& name, std::shared_ptr<const SliceTransform>*) const;
   bool Get(const std::string& name, std::shared_ptr<SstFileManager>*) const;
+  bool Get(const std::string& name, std::shared_ptr<SstPartitionerFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<Statistics>*) const;
   bool Get(const std::string& name, std::shared_ptr<TableFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<TablePropertiesCollectorFactory>*) const;

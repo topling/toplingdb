@@ -56,6 +56,7 @@ struct JsonPluginRepo::Impl {
 
   ObjRepo<Cache> cache;
   ObjRepo<PersistentCache> persistent_cache;
+  ObjRepo<CompactionExecutorFactory> compaction_executor_factory;
   ObjRepo<CompactionFilterFactory> compaction_filter_factory;
   ObjMap<const Comparator*> comparator;
   ObjRepo<ConcurrentTaskLimiter> compaction_thread_limiter;
@@ -71,6 +72,7 @@ struct JsonPluginRepo::Impl {
   ObjRepo<MergeOperator> merge_operator;
   ObjRepo<RateLimiter> rate_limiter;
   ObjRepo<SstFileManager> sst_file_manager;
+  ObjRepo<SstPartitionerFactory> sst_partitioner_factory;
   ObjRepo<Statistics> statistics;
   ObjRepo<TableFactory> table_factory;
   ObjRepo<TablePropertiesCollectorFactory> table_properties_collector_factory;

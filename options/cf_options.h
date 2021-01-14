@@ -123,6 +123,8 @@ struct ImmutableCFOptions {
 
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory;
 
+  std::shared_ptr<class CompactionExecutorFactory> compaction_executor_factory;
+
   bool allow_data_in_errors;
 
   std::string db_host_id;

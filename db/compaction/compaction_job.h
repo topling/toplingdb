@@ -104,6 +104,8 @@ class CompactionJob {
   // Return the IO status
   IOStatus io_status() const { return io_status_; }
 
+  size_t NumSubCompacts() const;
+
  private:
   struct SubcompactionState;
 
@@ -142,6 +144,9 @@ class CompactionJob {
       int* num_files, uint64_t* bytes_read, int input_level);
 
   void LogCompaction();
+
+  Status RunLocal();
+  Status RunRemote();
 
   int job_id_;
 

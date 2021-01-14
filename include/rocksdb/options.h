@@ -294,6 +294,8 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   // Default: nullptr
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory = nullptr;
 
+  std::shared_ptr<class CompactionExecutorFactory> compaction_executor_factory;
+
   // Create ColumnFamilyOptions with default values for all fields
   ColumnFamilyOptions();
   // Create ColumnFamilyOptions from Options

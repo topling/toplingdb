@@ -242,6 +242,10 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_OPT_SIZE(js, log_readahead_size);
     ROCKSDB_JSON_OPT_FACT(js, file_checksum_gen_factory);
     ROCKSDB_JSON_OPT_PROP(js, best_efforts_recovery);
+    ROCKSDB_JSON_OPT_PROP(js, max_bgerror_resume_count);
+    ROCKSDB_JSON_OPT_PROP(js, bgerror_resume_retry_interval);
+    ROCKSDB_JSON_OPT_PROP(js, allow_data_in_errors);
+    ROCKSDB_JSON_OPT_PROP(js, db_host_id);
   }
 
   void SaveToJson(json& js, const JsonPluginRepo& repo, bool html) const {
@@ -341,6 +345,10 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_SIZE(js, log_readahead_size);
     ROCKSDB_JSON_SET_FACT(js, file_checksum_gen_factory);
     ROCKSDB_JSON_SET_PROP(js, best_efforts_recovery);
+    ROCKSDB_JSON_SET_PROP(js, max_bgerror_resume_count);
+    ROCKSDB_JSON_SET_PROP(js, bgerror_resume_retry_interval);
+    ROCKSDB_JSON_SET_PROP(js, allow_data_in_errors);
+    ROCKSDB_JSON_SET_PROP(js, db_host_id);
   }
 };
 static shared_ptr<DBOptions>
@@ -552,6 +560,8 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
       if (js.end() != iter) Json_DbPathVec(iter.value(), cf_paths);
     }
     ROCKSDB_JSON_OPT_FACT(js, compaction_thread_limiter);
+    ROCKSDB_JSON_OPT_FACT(js, sst_partitioner_factory);
+    ROCKSDB_JSON_OPT_FACT(js, compaction_executor_factory);
   }
 
   void SaveToJson(json& js, const JsonPluginRepo& repo, bool html) const {
@@ -632,6 +642,8 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
       js["cf_paths"] = DbPathVecToJson(cf_paths, html);
     }
     ROCKSDB_JSON_SET_FACT(js, compaction_thread_limiter);
+    ROCKSDB_JSON_SET_FACT(js, sst_partitioner_factory);
+    ROCKSDB_JSON_SET_FACT(js, compaction_executor_factory);
   }
 };
 using CFOptions = ColumnFamilyOptions;

@@ -249,6 +249,7 @@ Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
   JSON_IMPORT_REPO(SliceTransform          , slice_transform);
   JSON_IMPORT_REPO(Cache                   , cache);
   JSON_IMPORT_REPO(PersistentCache         , persistent_cache);
+  JSON_IMPORT_REPO(CompactionExecutorFactory, compaction_executor_factory);
   JSON_IMPORT_REPO(CompactionFilterFactory , compaction_filter_factory);
   JSON_IMPORT_REPO(ConcurrentTaskLimiter   , compaction_thread_limiter);
   JSON_IMPORT_REPO(EventListener           , event_listener);
@@ -259,6 +260,7 @@ Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
   JSON_IMPORT_REPO(MergeOperator           , merge_operator);
   JSON_IMPORT_REPO(RateLimiter             , rate_limiter);
   JSON_IMPORT_REPO(SstFileManager          , sst_file_manager);
+  JSON_IMPORT_REPO(SstPartitionerFactory   , sst_partitioner_factory);
   JSON_IMPORT_REPO(Statistics              , statistics);
   JSON_IMPORT_REPO(TablePropertiesCollectorFactory,
                    table_properties_collector_factory);
@@ -311,6 +313,7 @@ Status JsonPluginRepo::Export(nlohmann::json* main_js) const try {
   JSON_EXPORT_REPO(SliceTransform          , slice_transform);
   JSON_EXPORT_REPO(Cache                   , cache);
   JSON_EXPORT_REPO(PersistentCache         , persistent_cache);
+  JSON_EXPORT_REPO(CompactionExecutorFactory, compaction_executor_factory);
   JSON_EXPORT_REPO(CompactionFilterFactory , compaction_filter_factory);
   JSON_EXPORT_REPO(ConcurrentTaskLimiter   , compaction_thread_limiter);
   JSON_EXPORT_REPO(EventListener           , event_listener);
@@ -321,6 +324,7 @@ Status JsonPluginRepo::Export(nlohmann::json* main_js) const try {
   JSON_EXPORT_REPO(MergeOperator           , merge_operator);
   JSON_EXPORT_REPO(RateLimiter             , rate_limiter);
   JSON_EXPORT_REPO(SstFileManager          , sst_file_manager);
+  JSON_EXPORT_REPO(SstPartitionerFactory   , sst_partitioner_factory);
   JSON_EXPORT_REPO(Statistics              , statistics);
   JSON_EXPORT_REPO(TablePropertiesCollectorFactory,
                    table_properties_collector_factory);
@@ -396,6 +400,7 @@ bool JsonPluginRepo::Get(const string& name, \
 
 JSON_REPO_TYPE_IMPL(cache)
 JSON_REPO_TYPE_IMPL(persistent_cache)
+JSON_REPO_TYPE_IMPL(compaction_executor_factory)
 JSON_REPO_TYPE_IMPL(compaction_filter_factory)
 JSON_REPO_TYPE_IMPL(comparator)
 JSON_REPO_TYPE_IMPL(compaction_thread_limiter)
@@ -411,6 +416,7 @@ JSON_REPO_TYPE_IMPL(mem_table_rep_factory)
 JSON_REPO_TYPE_IMPL(merge_operator)
 JSON_REPO_TYPE_IMPL(rate_limiter)
 JSON_REPO_TYPE_IMPL(sst_file_manager)
+JSON_REPO_TYPE_IMPL(sst_partitioner_factory)
 JSON_REPO_TYPE_IMPL(statistics)
 JSON_REPO_TYPE_IMPL(table_factory)
 JSON_REPO_TYPE_IMPL(table_properties_collector_factory)

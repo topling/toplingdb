@@ -1,0 +1,3 @@
+[submodule "third-party/terark-zip"]
+	path = third-party/terark-zip
+	url = git@github.com:bytedance/terark-zip.git

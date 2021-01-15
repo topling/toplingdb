@@ -8,6 +8,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/compaction/compaction_job.h"
+#include "compaction_executor.h"
 
 #include <algorithm>
 #include <cinttypes>
@@ -49,6 +50,7 @@
 #include "port/port.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
+#include "rocksdb/merge_operator.h"
 #include "rocksdb/sst_partitioner.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
@@ -266,35 +268,6 @@ struct CompactionJob::CompactionState {
   }
 };
 
-struct CompactionParams {
-  int job_id;
-  int output_level;
-  std::vector<CompactionInputFiles> inputs;
-  uint64_t target_file_size;
-  uint64_t max_compaction_bytes;
-  //uint32_t output_path_id;
-  CompressionType compression;
-  CompressionOptions compression_opts;
-  uint32_t max_subcompactions;
-  std::vector<FileMetaData*> grandparents;
-  double score;
-  bool manual_compaction;
-  bool deletion_compaction;
-  CompactionReason compaction_reason;
-
-  std::unique_ptr<VersionSet> versions;
-  SequenceNumber preserve_deletes_seqnum;
-  std::vector<SequenceNumber> existing_snapshots;
-  SequenceNumber earliest_write_conflict_snapshot;
-  bool paranoid_file_checks;
-  std::string dbname;
-  std::string db_id;
-  std::string db_session_id;
-};
-
-struct CompactionResults {
-
-};
 
 void CompactionJob::AggregateStatistics() {
   assert(compact_);
@@ -804,7 +777,16 @@ Status CompactionJob::RunLocal() {
   return status;
 }
 
-Status CompactionJob::RunRemote() {
+std::string SerializeCompactionFilterFactory(const CompactionFilterFactory*, uint32_t cf_id);
+std::string SerializeSstPartitionerFactory(const SstPartitionerFactory*, uint32_t cf_id);
+std::string SerializeTabPropCollectorFactory(const TablePropertiesCollectorFactory*, uint32_t cf_id);
+std::string SerializePrefixExtractor(const SliceTransform*, uint32_t cf_id);
+std::string SerializeTableFactory(const TableFactory*, uint32_t cf_id);
+std::string SerializeMergeOperator(const MergeOperator*, uint32_t cf_id);
+std::string SerializeUserComparator(const Comparator*, uint32_t cf_id);
+
+Status CompactionJob::RunRemote()
+try {
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_RUN);
   TEST_SYNC_POINT("CompactionJob::RunRemote():Start");
@@ -813,167 +795,142 @@ Status CompactionJob::RunRemote() {
 
   const size_t num_threads = compact_->sub_compact_states.size();
   assert(num_threads > 0);
+  const Compaction* c = compact_->compaction;
+  ColumnFamilyData* cfd = c->column_family_data();
+  auto imm_cfo = c->immutable_cf_options();
+  auto mut_cfo = c->mutable_cf_options();
+  const uint32_t cf_id = cfd->GetID();
+
+  CompactionRpcStub rpc_stub;
+
+  // if with compaction filter, always use compaction filter factory
+  assert(nullptr == imm_cfo->compaction_filter);
+
+  auto CreateStubObjects = [&]() {
+    rpc_stub.sub_compacts.reserve(num_threads);
+    for (size_t i = 0; i < num_threads; ++i) {
+      rpc_stub.sub_compacts.push_back({});
+      auto& sub = rpc_stub.sub_compacts.back();
+      sub.compaction_filter = c->CreateCompactionFilter();
+      if (sub.compaction_filter && !sub.compaction_filter->IgnoreSnapshots()) {
+        throw Status::NotSupported(
+            "CompactionFilter::IgnoreSnapshots() = false is not supported "
+            "anymore.");
+      }
+      sub.sst_partitioner = c->CreateSstPartitioner();
+    }
+  };
+
+  CompactionParams rpc_params;
+  CompactionResults rpc_results;
+
+  rpc_params.job_id = job_id_;
+  //rpc_params.level = c->level();
+  rpc_params.output_level = c->output_level();
+  rpc_params.num_levels = c->number_levels();
+  rpc_params.cf_id = cf_id;
+  rpc_params.inputs = c->inputs();
+  rpc_params.target_file_size = c->max_output_file_size();
+  rpc_params.max_compaction_bytes = c->max_compaction_bytes();
+  rpc_params.max_subcompactions = num_threads;
+  rpc_params.compression = mut_cfo->compression;
+  rpc_params.compression_opts = mut_cfo->compression_opts;
+  rpc_params.grandparents = &c->grandparents();
+  rpc_params.score = c->score();
+  rpc_params.manual_compaction = c->is_manual_compaction();
+  rpc_params.deletion_compaction = c->deletion_compaction();
+  rpc_params.compaction_reason = c->compaction_reason();
+
+  rpc_params.version_set = this->versions_;
+  rpc_params.preserve_deletes_seqnum = this->preserve_deletes_seqnum_;
+  rpc_params.existing_snapshots = &this->existing_snapshots_;
+  rpc_params.earliest_write_conflict_snapshot = this->earliest_write_conflict_snapshot_;
+  rpc_params.paranoid_file_checks = this->paranoid_file_checks_;
+  rpc_params.dbname = this->dbname_;
+  rpc_params.db_id = this->db_id_;
+  rpc_params.db_session_id = this->db_session_id_;
+  rpc_params.full_history_ts_low = this->full_history_ts_low_;
+  rpc_params.compaction_job_stats = this->compaction_job_stats_;
+
+
+  if (auto factory = imm_cfo->compaction_filter_factory) {
+    rpc_params.compaction_filter_factory.clazz = factory->Name();
+    rpc_params.compaction_filter_factory.content =
+        SerializeCompactionFilterFactory(factory, cf_id);
+  }
+  if (auto factory = imm_cfo->sst_partitioner_factory.get()) {
+    rpc_params.sst_partitioner.clazz = factory->Name();
+    rpc_params.sst_partitioner.content =
+        SerializeSstPartitionerFactory(factory, cf_id);
+  }
+  if (auto pe = mut_cfo->prefix_extractor.get()) {
+    rpc_params.sst_partitioner.clazz = pe->Name();
+    rpc_params.sst_partitioner.content = SerializePrefixExtractor(pe, cf_id);
+  }
+  if (auto tf = imm_cfo->table_factory) {
+    rpc_params.table_factory.clazz = tf->Name();
+    rpc_params.table_factory.content = SerializeTableFactory(tf, cf_id);
+  }
+  if (auto mo = imm_cfo->merge_operator) {
+    rpc_params.merge_operator.clazz = mo->Name();
+    rpc_params.merge_operator.content = SerializeMergeOperator(mo, cf_id);
+  }
+  if (auto uc = imm_cfo->user_comparator) {
+    rpc_params.user_comparator.clazz = uc->Name();
+    rpc_params.user_comparator.content = SerializeUserComparator(uc, cf_id);
+  }
+//  rpc_params.event_listner.reserve(imm_cfo->listeners.size());
+//  for (auto& x : imm_cfo->listeners) {
+//    rpc_params.event_listner.push_back(x->Name()); // no ->Name()
+//  }
+  rpc_params.int_tbl_prop_collector_factories.reserve(
+      imm_cfo->table_properties_collector_factories.size());
+  for (auto& tpc : imm_cfo->table_properties_collector_factories) {
+    ObjectRpcParam p;
+    p.clazz = tpc->Name();
+    p.content = SerializeTabPropCollectorFactory(tpc.get(), cf_id);
+    rpc_params.int_tbl_prop_collector_factories.push_back(std::move(p));
+  }
+
+  rpc_params.allow_ingest_behind = imm_cfo->allow_ingest_behind;
+  rpc_params.bottommost_level = c->bottommost_level();
+  rpc_params.smallest_user_key = compact_->SmallestUserKey().ToString();
+  rpc_params.largest_user_key = compact_->LargestUserKey().ToString();
+
   const uint64_t start_micros = env_->NowMicros();
 
-  // Launch a thread for each of subcompactions 1...num_threads-1
-  std::vector<port::Thread> thread_pool;
-  thread_pool.reserve(num_threads - 1);
-  for (size_t i = 1; i < compact_->sub_compact_states.size(); i++) {
-    thread_pool.emplace_back(&CompactionJob::ProcessKeyValueCompaction, this,
-                             &compact_->sub_compact_states[i]);
+  auto exec_factory = imm_cfo->compaction_executor_factory.get();
+  auto exec = exec_factory->NewExecutor(c);
+  Status s = exec->Execute(rpc_params, &rpc_results);
+  if (!s.ok()) {
+    return s;
   }
 
-  // Always schedule the first subcompaction (whether or not there are also
-  // others) in the current thread to be efficient with resources
-  ProcessKeyValueCompaction(&compact_->sub_compact_states[0]);
-
-  // Wait for all other threads (if there are any) to finish execution
-  for (auto& thread : thread_pool) {
-    thread.join();
-  }
-
+  assert(rpc_results.sub_compacts.size() == num_threads);
   compaction_stats_.micros = env_->NowMicros() - start_micros;
   compaction_stats_.cpu_micros = 0;
-  for (size_t i = 0; i < compact_->sub_compact_states.size(); i++) {
+  for (size_t i = 0; i < num_threads; i++) {
     compaction_stats_.cpu_micros +=
-        compact_->sub_compact_states[i].compaction_job_stats.cpu_micros;
+        rpc_results.sub_compacts[i].job_stats.cpu_micros;
   }
 
   RecordTimeToHistogram(stats_, COMPACTION_TIME, compaction_stats_.micros);
   RecordTimeToHistogram(stats_, COMPACTION_CPU_TIME,
                         compaction_stats_.cpu_micros);
 
-  TEST_SYNC_POINT("CompactionJob::Run:BeforeVerify");
-
-  // Check if any thread encountered an error during execution
-  Status status;
-  IOStatus io_s;
-  bool wrote_new_blob_files = false;
-
-  for (const auto& state : compact_->sub_compact_states) {
-    if (!state.status.ok()) {
-      status = state.status;
-      io_s = state.io_status;
-      break;
-    }
-
-    if (!state.blob_file_additions.empty()) {
-      wrote_new_blob_files = true;
-    }
-  }
-
-  if (io_status_.ok()) {
-    io_status_ = io_s;
-  }
-  if (status.ok()) {
-    constexpr IODebugContext* dbg = nullptr;
-
-    if (output_directory_) {
-      io_s = output_directory_->Fsync(IOOptions(), dbg);
-    }
-
-    if (io_s.ok() && wrote_new_blob_files && blob_output_directory_ &&
-        blob_output_directory_ != output_directory_) {
-      io_s = blob_output_directory_->Fsync(IOOptions(), dbg);
-    }
-  }
-  if (io_status_.ok()) {
-    io_status_ = io_s;
-  }
-  if (status.ok()) {
-    status = io_s;
-  }
-  if (status.ok()) {
-    thread_pool.clear();
-    std::vector<const CompactionJob::SubcompactionState::Output*> files_output;
-    for (const auto& state : compact_->sub_compact_states) {
-      for (const auto& output : state.outputs) {
-        files_output.emplace_back(&output);
-      }
-    }
-    ColumnFamilyData* cfd = compact_->compaction->column_family_data();
-    auto prefix_extractor =
-        compact_->compaction->mutable_cf_options()->prefix_extractor.get();
-    std::atomic<size_t> next_file_idx(0);
-    auto verify_table = [&](Status& output_status) {
-      while (true) {
-        size_t file_idx = next_file_idx.fetch_add(1);
-        if (file_idx >= files_output.size()) {
-          break;
-        }
-        // Verify that the table is usable
-        // We set for_compaction to false and don't OptimizeForCompactionTableRead
-        // here because this is a special case after we finish the table building
-        // No matter whether use_direct_io_for_flush_and_compaction is true,
-        // we will regard this verification as user reads since the goal is
-        // to cache it here for further user reads
-        ReadOptions read_options;
-        InternalIterator* iter = cfd->table_cache()->NewIterator(
-            read_options, file_options_, cfd->internal_comparator(),
-            files_output[file_idx]->meta, /*range_del_agg=*/nullptr,
-            prefix_extractor,
-            /*table_reader_ptr=*/nullptr,
-            cfd->internal_stats()->GetFileReadHist(
-                compact_->compaction->output_level()),
-            TableReaderCaller::kCompactionRefill, /*arena=*/nullptr,
-            /*skip_filters=*/false, compact_->compaction->output_level(),
-            MaxFileSizeForL0MetaPin(
-                *compact_->compaction->mutable_cf_options()),
-            /*smallest_compaction_key=*/nullptr,
-            /*largest_compaction_key=*/nullptr,
-            /*allow_unprepared_value=*/false);
-        auto s = iter->status();
-
-        if (s.ok() && paranoid_file_checks_) {
-          OutputValidator validator(cfd->internal_comparator(),
-                                    /*_enable_order_check=*/true,
-                                    /*_enable_hash=*/true);
-          for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
-            s = validator.Add(iter->key(), iter->value());
-            if (!s.ok()) {
-              break;
-            }
-          }
-          if (s.ok()) {
-            s = iter->status();
-          }
-          if (s.ok() &&
-              !validator.CompareValidator(files_output[file_idx]->validator)) {
-            s = Status::Corruption("Paranoid checksums do not match");
-          }
-        }
-
-        delete iter;
-
-        if (!s.ok()) {
-          output_status = s;
-          break;
-        }
-      }
-    };
-    for (size_t i = 1; i < compact_->sub_compact_states.size(); i++) {
-      thread_pool.emplace_back(verify_table,
-                               std::ref(compact_->sub_compact_states[i].status));
-    }
-    verify_table(compact_->sub_compact_states[0].status);
-    for (auto& thread : thread_pool) {
-      thread.join();
-    }
-    for (const auto& state : compact_->sub_compact_states) {
-      if (!state.status.ok()) {
-        status = state.status;
-        break;
-      }
-    }
-  }
-
   TablePropertiesCollection tp;
-  for (const auto& state : compact_->sub_compact_states) {
-    for (const auto& output : state.outputs) {
-      auto fn =
-          TableFileName(state.compaction->immutable_cf_options()->cf_paths,
-                        output.meta.fd.GetNumber(), output.meta.fd.GetPathId());
-      tp[fn] = output.table_properties;
+  auto& cf_paths = imm_cfo->cf_paths;
+  for (const auto& sub: rpc_results.sub_compacts) {
+    for (const auto& old_fname : sub.output_files) {
+      auto path_id = c->output_path_id(); // should get from old_fname
+      uint64_t file_number = versions_->NewFileNumber();
+      std::string new_fname = TableFileName(cf_paths, file_number, path_id);
+      Status st = imm_cfo->env->RenameFile(old_fname, new_fname);
+      if (!st.ok()) {
+        return st;
+      }
+      // TODO: open table new_fname
+      tp[new_fname] = output.table_properties;
     }
   }
   compact_->compaction->SetOutputTableProperties(std::move(tp));
@@ -986,8 +943,11 @@ Status CompactionJob::RunRemote() {
   LogFlush(db_options_.info_log);
   TEST_SYNC_POINT("CompactionJob::Run():End");
 
-  compact_->status = status;
-  return status;
+  compact_->status = Status::OK();
+  return Status::OK();
+}
+catch (const Status& s) {
+  return s;
 }
 
 Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {

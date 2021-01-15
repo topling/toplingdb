@@ -148,7 +148,7 @@ class Compaction {
     return &inputs_[compaction_input_level].files;
   }
 
-  const std::vector<CompactionInputFiles>* inputs() { return &inputs_; }
+  const std::vector<CompactionInputFiles>* inputs() const { return &inputs_; }
 
   // Returns the LevelFilesBrief of the specified compaction input level.
   const LevelFilesBrief* input_levels(size_t compaction_input_level) const {
@@ -286,7 +286,7 @@ class Compaction {
 
   int GetInputBaseLevel() const;
 
-  CompactionReason compaction_reason() { return compaction_reason_; }
+  CompactionReason compaction_reason() const { return compaction_reason_; }
 
   const std::vector<FileMetaData*>& grandparents() const {
     return grandparents_;

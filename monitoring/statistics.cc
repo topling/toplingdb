@@ -428,4 +428,14 @@ bool StatisticsImpl::HistEnabledForType(uint32_t type) const {
   return type < HISTOGRAM_ENUM_MAX;
 }
 
+void StatisticsImpl::Merge(const uint64_t* tickers, const HistogramStat* hist) {
+  auto core = per_core_stats_.Access();
+  for (uint32_t t = 0; t < TICKER_ENUM_MAX; ++t) {
+    core->tickers_[t].fetch_add(tickers[t], std::memory_order_relaxed);
+  }
+  for (uint32_t h = 0; h < HISTOGRAM_ENUM_MAX; ++h) {
+    core->histograms_[h].Merge(hist[h]);
+  }
+}
+
 }  // namespace ROCKSDB_NAMESPACE

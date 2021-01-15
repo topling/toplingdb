@@ -170,6 +170,8 @@ else()
   endif()
 endif()
 
+include_directories(third-party/terark-zip/src)
+
 string(TIMESTAMP TS "%Y/%m/%d %H:%M:%S" UTC)
 set(GIT_DATE_TIME "${TS}" CACHE STRING "the time we first built rocksdb")
 

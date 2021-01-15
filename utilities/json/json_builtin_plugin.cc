@@ -2559,16 +2559,21 @@ ROCKSDB_FACTORY_REG("BlobDB::Open", JS_DB_MultiCF_Manip);
 DB_MultiCF::DB_MultiCF() = default;
 DB_MultiCF::~DB_MultiCF() = default;
 
-// users should ensure databases are alive when calling this function
-void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
-  using view_kv_ptr = decltype(&*m_impl->props.p2name.cbegin());
-  //using view_kv_ptr = const std::pair<const void* const, Impl::ObjInfo>*;
-  std::unordered_map<const void*, view_kv_ptr> cfh_to_view;
-  for (auto& kv : m_impl->props.p2name) {
-    auto view = (CFPropertiesWebView*)kv.first;
-    cfh_to_view[view->cfh] = &kv;
+using view_kv_ptr = const std::pair<const void* const,
+                                    JsonPluginRepo::Impl::ObjInfo>*;
+
+struct DB_ObjMapForDel : std::unordered_map<const void*, view_kv_ptr> {
+  using Impl = JsonPluginRepo::Impl;
+  JsonPluginRepo::Impl* m_impl;
+  DB_ObjMapForDel(JsonPluginRepo::Impl* impl) : m_impl(impl) {
+    auto& cfh_to_view = *this;
+    for (auto& kv : m_impl->props.p2name) {
+      auto view = (CFPropertiesWebView*)kv.first;
+      cfh_to_view[view->cfh] = &kv;
+    }
   }
-  auto del_view = [&](ColumnFamilyHandle* cfh) {
+  void del_view(ColumnFamilyHandle* cfh) {
+    auto& cfh_to_view = *this;
     auto iter = cfh_to_view.find(cfh);
     assert(cfh_to_view.end() != iter);
     if (cfh_to_view.end() == iter) {
@@ -2579,16 +2584,21 @@ void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
     const Impl::ObjInfo& oi = iter->second->second;
     m_impl->props.p2name.erase(view);
     m_impl->props.name2p->erase(oi.name);
-  };
-  auto del_rocks = [del_rocksdb_objs](auto obj) {
+  }
+  template<class Object>
+  void del_rocks(Object* obj, bool del_rocksdb_objs) {
     if (del_rocksdb_objs)
       delete obj;
-  };
-  for (auto& kv : *m_impl->db.name2p) {
-    assert(nullptr != kv.second.db);
-    if (kv.second.dbm) {
-      DB_MultiCF* dbm = kv.second.dbm;
-      assert(kv.second.db = dbm->db);
+  }
+  void close_db(const DB_Ptr& dbp, bool del_rocksdb_objs) {
+    assert(nullptr != dbp.db);
+    auto del_rocks = [del_rocksdb_objs](auto obj) {
+      if (del_rocksdb_objs)
+        delete obj;
+    };
+    if (dbp.dbm) {
+      DB_MultiCF* dbm = dbp.dbm;
+      assert(dbp.db == dbm->db);
       for (auto cfh : dbm->cf_handles) {
         del_view(cfh);
         del_rocks(cfh);
@@ -2597,13 +2607,48 @@ void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
       delete dbm;
     }
     else {
-      DB* db = kv.second.db;
+      DB* db = dbp.db;
       del_view(db->DefaultColumnFamily());
       del_rocks(db);
     }
   }
+};
+
+// users should ensure databases are alive when calling this function
+void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
+  DB_ObjMapForDel dbmap(m_impl.get());
+  for (auto& kv : *m_impl->db.name2p) {
+    assert(nullptr != kv.second.db);
+    dbmap.close_db(kv.second, del_rocksdb_objs);
+  }
   m_impl->db.name2p->clear();
   m_impl->db.p2name.clear();
+}
+
+Status JsonPluginRepo::CloseDB(const std::string& dbname, bool del_db_objs) {
+  auto iter = m_impl->db.name2p->find(dbname);
+  if (m_impl->db.name2p->end() == iter) {
+    return Status::NotFound(ROCKSDB_FUNC, dbname);
+  }
+  assert(nullptr != iter->second.db);
+  assert(m_impl->db.p2name.count(iter->second.db) > 0);
+  DB_ObjMapForDel dbmap(m_impl.get());
+  dbmap.close_db(iter->second, del_db_objs);
+  m_impl->db.p2name.erase(iter->second.db);
+  m_impl->db.name2p->erase(iter);
+  return Status::OK();
+}
+
+Status JsonPluginRepo::CloseDB(DB* db, bool del_db_objs) {
+  assert(nullptr != db);
+  auto iter = m_impl->db.p2name.find(db);
+  if (m_impl->db.p2name.end() == iter) {
+    return Status::NotFound(ROCKSDB_FUNC, db->GetName());
+  }
+  assert(!iter->second.name.empty()); // dbname must not empty
+  assert(db->GetName() == iter->second.name);
+  assert(m_impl->db.name2p->count(iter->second.name) > 0);
+  return CloseDB(iter->second.name, del_db_objs);
 }
 
 }

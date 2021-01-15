@@ -77,6 +77,8 @@ class JsonPluginRepo {
   Status OpenDB(const std::string& js, DB_MultiCF**);
   Status OpenDB(const nlohmann::json&, DB**);
   Status OpenDB(const nlohmann::json&, DB_MultiCF**);
+  Status CloseDB(const std::string& dbname, bool del_db_objs = true);
+  Status CloseDB(DB*, bool del_db_objs = true);
 
   ///@{ open the DB defined in js["open"]
   Status OpenDB(DB**);

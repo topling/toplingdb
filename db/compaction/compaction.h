@@ -272,7 +272,7 @@ class Compaction {
       int output_level, VersionStorageInfo* vstorage,
       const std::vector<CompactionInputFiles>& inputs);
 
-  TablePropertiesCollection GetOutputTableProperties() const {
+  const TablePropertiesCollection& GetOutputTableProperties() const {
     return output_table_properties_;
   }
 

@@ -18,9 +18,16 @@ struct CompactionParams {
   int num_levels;
   uint32_t cf_id;
   const std::vector<CompactionInputFiles>* inputs;
+  uint64_t current_next_file_number;
   uint64_t target_file_size;
   uint64_t max_compaction_bytes;
-  //uint32_t output_path_id;
+
+  // we add a dedicated path to compaction worker's cf_path as
+  // output path, thus reduce changes to the existing rocksdb code.
+  // the output_path_id should be the last elem of cf_paths, so it
+  // needs not the field output_path_id.
+  //uint32_t output_path_id; // point to the extra cf_path
+
   uint32_t max_subcompactions; // num_threads
   CompressionType compression;
   CompressionOptions compression_opts;
@@ -65,6 +72,12 @@ struct CompactionParams {
 };
 
 struct CompactionResults {
+  struct FileMinMeta {
+    std::string fname;
+    uint64_t    fsize;
+    uint64_t    smallest_seqno;
+    uint64_t    largest_seqno;
+  };
   struct ObjectRpcRetVal {
     std::string compaction_filter;
     std::string merge_operator;
@@ -73,8 +86,9 @@ struct CompactionResults {
     std::string prefix_extractor;
     std::vector<std::string> int_tbl_prop_collector;
     std::vector<std::string> event_listner;
-    std::vector<std::string> output_files;
+    std::vector<FileMinMeta> output_files;
     CompactionJobStats job_stats;
+    uint64_t num_output_records;
   };
   // collect remote statistics
   struct StatisticsResult {

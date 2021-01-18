@@ -829,6 +829,7 @@ try {
   rpc_params.output_level = c->output_level();
   rpc_params.num_levels = c->number_levels();
   rpc_params.cf_id = cf_id;
+  rpc_params.current_next_file_number = versions_->current_next_file_number();
   rpc_params.inputs = c->inputs();
   rpc_params.target_file_size = c->max_output_file_size();
   rpc_params.max_compaction_bytes = c->max_compaction_bytes();
@@ -851,7 +852,6 @@ try {
   rpc_params.db_session_id = this->db_session_id_;
   rpc_params.full_history_ts_low = this->full_history_ts_low_;
   rpc_params.compaction_job_stats = this->compaction_job_stats_;
-
 
   if (auto factory = imm_cfo->compaction_filter_factory) {
     rpc_params.compaction_filter_factory.clazz = factory->Name();
@@ -908,20 +908,23 @@ try {
 
   assert(rpc_results.sub_compacts.size() == num_threads);
   compaction_stats_.micros = env_->NowMicros() - start_micros;
+  uint64_t cpu_micros = 0;
   compaction_stats_.cpu_micros = 0;
-  for (size_t i = 0; i < num_threads; i++) {
-    compaction_stats_.cpu_micros +=
-        rpc_results.sub_compacts[i].job_stats.cpu_micros;
+  for (auto& sub_compact : rpc_results.sub_compacts) {
+    cpu_micros += sub_compact.job_stats.cpu_micros;
   }
+  compaction_stats_.cpu_micros = cpu_micros;
 
   RecordTimeToHistogram(stats_, COMPACTION_TIME, compaction_stats_.micros);
-  RecordTimeToHistogram(stats_, COMPACTION_CPU_TIME,
-                        compaction_stats_.cpu_micros);
+  RecordTimeToHistogram(stats_, COMPACTION_CPU_TIME, cpu_micros);
 
   TablePropertiesCollection tp;
   auto& cf_paths = imm_cfo->cf_paths;
-  for (const auto& sub: rpc_results.sub_compacts) {
-    for (const auto& old_fname : sub.output_files) {
+  for (size_t i = 0; i < num_threads; ++i) {
+    const auto& sub_result = rpc_results.sub_compacts[i];
+    auto& sub_state = compact_->sub_compact_states[i];
+    for (const auto& min_meta : sub_result.output_files) {
+      auto& old_fname = min_meta.fname;
       auto path_id = c->output_path_id(); // should get from old_fname
       uint64_t file_number = versions_->NewFileNumber();
       std::string new_fname = TableFileName(cf_paths, file_number, path_id);
@@ -929,9 +932,26 @@ try {
       if (!st.ok()) {
         return st;
       }
-      // TODO: open table new_fname
-      tp[new_fname] = output.table_properties;
+      FileDescriptor fd(file_number, path_id, min_meta.fsize,
+                        min_meta.smallest_seqno, min_meta.largest_seqno);
+      TableCache* tc = cfd->table_cache();
+      Cache::Handle* ch = nullptr;
+      auto& icmp = cfd->internal_comparator();
+      st = tc->FindTable(ReadOptions(), icmp, fd, &ch);
+      if (!st.ok()) {
+        return st;
+      }
+      TableReader* tr = tc->GetTableReaderFromHandle(ch);
+      tp[new_fname] = tr->GetTableProperties();
+
+      FileMetaData meta;
+      meta.fd = FileDescriptor(file_number, path_id, min_meta.fsize);
+      bool enable_order_check = mut_cfo->check_flush_compaction_key_order;
+      sub_state.outputs.emplace_back(std::move(meta), icmp,
+          enable_order_check, /*enable_hash=*/paranoid_file_checks_);
+      sub_state.total_bytes += min_meta.fsize;
     }
+    sub_state.num_output_records = sub_result.num_output_records;
   }
   compact_->compaction->SetOutputTableProperties(std::move(tp));
 

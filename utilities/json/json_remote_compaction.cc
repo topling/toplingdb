@@ -9,13 +9,15 @@
 #include <rocksdb/merge_operator.h>
 #include <db/compaction/compaction_executor.h>
 
+#include <utility>
+
 namespace ROCKSDB_NAMESPACE {
 
 
 class RemoteCompactionExecutor : public CompactionExecutor {
   std::string m_cmd;
  public:
-  explicit RemoteCompactionExecutor(const std::string& cmd) : m_cmd(cmd) {}
+  explicit RemoteCompactionExecutor(std::string cmd) : m_cmd(std::move(cmd)) {}
   void SetParams(CompactionParams*,
                  const ImmutableCFOptions&,
                  const MutableCFOptions&) override;
@@ -63,24 +65,34 @@ void ExampleUseMySerDe(const std::string& clazz) {
 // end. SerDe example for TablePropertiesCollector
 
 template<class ObjectPtr>
-void SetObjectRpcParamTpl(ObjectRpcParam& p, const ObjectPtr& obj) {
+void SetObjectRpcParamReqTpl(ObjectRpcParam& p, const ObjectPtr& obj) {
   if (auto p_obj = GetRawPtr(obj)) {
     p.clazz = obj->Name();
-    p.content = SerDe_Serialize(p.clazz, p_obj);
+    p.content = SerDe_SerializeReq(p.clazz, p_obj);
+  }
+}
+template<class ObjectPtr>
+void SetObjectRpcParamOptTpl(ObjectRpcParam& p, const ObjectPtr& obj) {
+  if (auto p_obj = GetRawPtr(obj)) {
+    p.clazz = obj->Name();
+    p.content = SerDe_SerializeOpt(p.clazz, p_obj);
   }
 }
 void RemoteCompactionExecutor::SetParams(CompactionParams* params,
                                          const ImmutableCFOptions& imm_cfo,
                                          const MutableCFOptions& mut_cfo) {
   //uint32_t cf_id = params->cf_id;
-#define SetObjectRpcParam(cfo, field) \
-  SetObjectRpcParamTpl(params->field, cfo.field)
-  SetObjectRpcParam(imm_cfo, compaction_filter_factory);
-  SetObjectRpcParam(imm_cfo, sst_partitioner_factory);
-  SetObjectRpcParam(mut_cfo, prefix_extractor);
-  SetObjectRpcParam(imm_cfo, table_factory);
-  SetObjectRpcParam(imm_cfo, merge_operator);
-  SetObjectRpcParam(imm_cfo, user_comparator);
+#define SetObjectRpcParamReq(cfo, field) \
+  SetObjectRpcParamReqTpl(params->field, cfo.field)
+#define SetObjectRpcParamOpt(cfo, field) \
+  SetObjectRpcParamOptTpl(params->field, cfo.field)
+
+  SetObjectRpcParamReq(imm_cfo, compaction_filter_factory);
+  SetObjectRpcParamOpt(imm_cfo, sst_partitioner_factory);
+  SetObjectRpcParamOpt(mut_cfo, prefix_extractor);
+  SetObjectRpcParamReq(imm_cfo, table_factory);
+  SetObjectRpcParamOpt(imm_cfo, merge_operator);
+  SetObjectRpcParamOpt(imm_cfo, user_comparator);
 //  params->event_listner.reserve(imm_cfo.listeners.size());
 //  for (auto& x : imm_cfo.listeners) {
 //    params->event_listner.push_back(x->Name()); // no ->Name()
@@ -108,7 +120,8 @@ Status RemoteCompactionExecutor::Execute(const CompactionParams& params,
 class RemoteCompactionExecutorFactory : public CompactionExecutorFactory {
   std::string m_cmd;
  public:
-  RemoteCompactionExecutorFactory(const std::string& cmd) : m_cmd(cmd) {}
+  explicit
+  RemoteCompactionExecutorFactory(std::string cmd) : m_cmd(std::move(cmd)) {}
 
   CompactionExecutor* NewExecutor(const Compaction*) const override {
     return new RemoteCompactionExecutor(m_cmd);

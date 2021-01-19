@@ -216,14 +216,31 @@ struct SerDeFunc {
 template<class Object>
 using SerDeFactory = PluginFactory<const SerDeFunc<Object>*>;
 
+// Suffix 'Req' means 'required'
 template<class Object>
-std::string SerDe_Serialize(const std::string& clazz, const Object* obj) {
+std::string SerDe_SerializeReq(const std::string& clazz, const Object* obj) {
   assert(nullptr != obj);
   const SerDeFunc<Object>* serde =
      SerDeFactory<Object>::AcquirePlugin(clazz, json{}, JsonPluginRepo());
   std::string bytes;
   serde->Serialize(*obj, &bytes);
   return bytes;
+}
+
+// Suffix 'Opt' means 'optional'
+template<class Object>
+std::string SerDe_SerializeOpt(const std::string& clazz, const Object* obj) {
+  assert(nullptr != obj);
+  try {
+    const SerDeFunc<Object>* serde =
+        SerDeFactory<Object>::AcquirePlugin(clazz, json{}, JsonPluginRepo());
+    std::string bytes;
+    serde->Serialize(*obj, &bytes);
+    return bytes;
+  }
+  catch (const Status&) {
+    return std::string(); // empty string
+  }
 }
 
 template<class Ptr>

@@ -27,6 +27,8 @@ struct CompactionParams {
   // the output_path_id should be the last elem of cf_paths, so it
   // needs not the field output_path_id.
   //uint32_t output_path_id; // point to the extra cf_path
+  //std::string output_path; // will append to cfopt.cf_paths on remote node?
+  std::vector<DbPath> cf_paths;
 
   uint32_t max_subcompactions; // num_threads
   CompressionType compression;
@@ -59,7 +61,7 @@ struct CompactionParams {
   ObjectRpcParam user_comparator;
   ObjectRpcParam table_factory;
   ObjectRpcParam prefix_extractor;
-  ObjectRpcParam sst_partitioner;
+  ObjectRpcParam sst_partitioner_factory;
 
   //bool skip_filters;
   bool allow_ingest_behind;
@@ -115,6 +117,9 @@ struct CompactionRpcStub {
 class CompactionExecutor {
  public:
   virtual ~CompactionExecutor();
+  virtual void SetParams(CompactionParams*,
+                         const ImmutableCFOptions&,
+                         const MutableCFOptions&) = 0;
   virtual Status Execute(const CompactionParams&, CompactionResults*) = 0;
 };
 
@@ -122,6 +127,7 @@ class CompactionExecutorFactory {
  public:
   virtual ~CompactionExecutorFactory();
   virtual CompactionExecutor* NewExecutor(const Compaction*) const = 0;
+  virtual const char* Name() const = 0;
 };
 
 CompactionExecutorFactory* GetLocalCompactionExecutorFactory();

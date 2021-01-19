@@ -688,46 +688,6 @@ JS_NewCompactOnDeletionCollectorFactory(const json& js, const JsonPluginRepo&) {
 ROCKSDB_FACTORY_REG("CompactOnDeletionCollector",
                JS_NewCompactOnDeletionCollectorFactory);
 
-//----------------------------------------------------------------------------
-// SerDe example for TablePropertiesCollector
-struct MySerDe : SerDeFunc<TablePropertiesCollector> {
-  Status Serialize(const TablePropertiesCollector&, std::string* /*output*/)
-  const override {
-    // do serialize
-    return Status::OK();
-  }
-  Status DeSerialize(TablePropertiesCollector*, const Slice& /*input*/)
-  const override {
-    // do deserialize
-    return Status::OK();
-  }
-};
-static const SerDeFunc<TablePropertiesCollector>*
-CreateMySerDe(const json&,const JsonPluginRepo&) {
-  static MySerDe serde;
-  return &serde;
-}
-//ROCKSDB_FACTORY_REG("CompactOnDeletionCollector", CreateMySerDe);
-ROCKSDB_FACTORY_REG("MySerDe", CreateMySerDe);
-
-void ExampleUseMySerDe(const string& clazz) {
-  // SerDe should have same class name(clazz) with PluginFactory
-  Status s;
-  const SerDeFunc<TablePropertiesCollector>* serde =
-      SerDeFactory<TablePropertiesCollector>::AcquirePlugin(
-          clazz, json{}, JsonPluginRepo{});
-  auto factory =
-      PluginFactorySP<TablePropertiesCollectorFactory>::AcquirePlugin(
-          clazz, json{}, JsonPluginRepo{});
-  auto instance = factory->CreateTablePropertiesCollector({});
-  std::string bytes;
-  s = serde->Serialize(*instance, &bytes);
-  // send bytes ...
-  // recv bytes ...
-  s = serde->DeSerialize(&*instance, bytes);
-}
-// end. SerDe example for TablePropertiesCollector
-
 //////////////////////////////////////////////////////////////////////////////
 
 static shared_ptr<RateLimiter>

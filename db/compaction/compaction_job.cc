@@ -777,14 +777,6 @@ Status CompactionJob::RunLocal() {
   return status;
 }
 
-std::string SerializeCompactionFilterFactory(const CompactionFilterFactory*, uint32_t cf_id);
-std::string SerializeSstPartitionerFactory(const SstPartitionerFactory*, uint32_t cf_id);
-std::string SerializeTabPropCollectorFactory(const TablePropertiesCollectorFactory*, uint32_t cf_id);
-std::string SerializePrefixExtractor(const SliceTransform*, uint32_t cf_id);
-std::string SerializeTableFactory(const TableFactory*, uint32_t cf_id);
-std::string SerializeMergeOperator(const MergeOperator*, uint32_t cf_id);
-std::string SerializeUserComparator(const Comparator*, uint32_t cf_id);
-
 Status CompactionJob::RunRemote()
 try {
   AutoThreadOperationStageUpdater stage_updater(
@@ -834,8 +826,8 @@ try {
   rpc_params.target_file_size = c->max_output_file_size();
   rpc_params.max_compaction_bytes = c->max_compaction_bytes();
   rpc_params.max_subcompactions = num_threads;
-  rpc_params.compression = mut_cfo->compression;
-  rpc_params.compression_opts = mut_cfo->compression_opts;
+  rpc_params.compression = c->output_compression();
+  rpc_params.compression_opts = c->output_compression_opts();
   rpc_params.grandparents = &c->grandparents();
   rpc_params.score = c->score();
   rpc_params.manual_compaction = c->is_manual_compaction();
@@ -853,54 +845,15 @@ try {
   rpc_params.full_history_ts_low = this->full_history_ts_low_;
   rpc_params.compaction_job_stats = this->compaction_job_stats_;
 
-  if (auto factory = imm_cfo->compaction_filter_factory) {
-    rpc_params.compaction_filter_factory.clazz = factory->Name();
-    rpc_params.compaction_filter_factory.content =
-        SerializeCompactionFilterFactory(factory, cf_id);
-  }
-  if (auto factory = imm_cfo->sst_partitioner_factory.get()) {
-    rpc_params.sst_partitioner.clazz = factory->Name();
-    rpc_params.sst_partitioner.content =
-        SerializeSstPartitionerFactory(factory, cf_id);
-  }
-  if (auto pe = mut_cfo->prefix_extractor.get()) {
-    rpc_params.sst_partitioner.clazz = pe->Name();
-    rpc_params.sst_partitioner.content = SerializePrefixExtractor(pe, cf_id);
-  }
-  if (auto tf = imm_cfo->table_factory) {
-    rpc_params.table_factory.clazz = tf->Name();
-    rpc_params.table_factory.content = SerializeTableFactory(tf, cf_id);
-  }
-  if (auto mo = imm_cfo->merge_operator) {
-    rpc_params.merge_operator.clazz = mo->Name();
-    rpc_params.merge_operator.content = SerializeMergeOperator(mo, cf_id);
-  }
-  if (auto uc = imm_cfo->user_comparator) {
-    rpc_params.user_comparator.clazz = uc->Name();
-    rpc_params.user_comparator.content = SerializeUserComparator(uc, cf_id);
-  }
-//  rpc_params.event_listner.reserve(imm_cfo->listeners.size());
-//  for (auto& x : imm_cfo->listeners) {
-//    rpc_params.event_listner.push_back(x->Name()); // no ->Name()
-//  }
-  rpc_params.int_tbl_prop_collector_factories.reserve(
-      imm_cfo->table_properties_collector_factories.size());
-  for (auto& tpc : imm_cfo->table_properties_collector_factories) {
-    ObjectRpcParam p;
-    p.clazz = tpc->Name();
-    p.content = SerializeTabPropCollectorFactory(tpc.get(), cf_id);
-    rpc_params.int_tbl_prop_collector_factories.push_back(std::move(p));
-  }
-
-  rpc_params.allow_ingest_behind = imm_cfo->allow_ingest_behind;
   rpc_params.bottommost_level = c->bottommost_level();
   rpc_params.smallest_user_key = compact_->SmallestUserKey().ToString();
   rpc_params.largest_user_key = compact_->LargestUserKey().ToString();
 
   const uint64_t start_micros = env_->NowMicros();
-
   auto exec_factory = imm_cfo->compaction_executor_factory.get();
+  assert(nullptr != exec_factory);
   auto exec = exec_factory->NewExecutor(c);
+  exec->SetParams(&rpc_params, *imm_cfo, *mut_cfo);
   Status s = exec->Execute(rpc_params, &rpc_results);
   if (!s.ok()) {
     return s;

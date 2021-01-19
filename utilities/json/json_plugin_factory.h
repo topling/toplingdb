@@ -216,6 +216,16 @@ struct SerDeFunc {
 template<class Object>
 using SerDeFactory = PluginFactory<const SerDeFunc<Object>*>;
 
+template<class Object>
+std::string SerDe_Serialize(const std::string& clazz, const Object* obj) {
+  assert(nullptr != obj);
+  const SerDeFunc<Object>* serde =
+     SerDeFactory<Object>::AcquirePlugin(clazz, json{}, JsonPluginRepo());
+  std::string bytes;
+  serde->Serialize(*obj, &bytes);
+  return bytes;
+}
+
 template<class Ptr>
 struct PluginFactory<Ptr>::Reg::Impl {
   NameToFuncMap func_map;

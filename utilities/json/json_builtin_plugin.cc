@@ -1300,7 +1300,7 @@ static void Html_AppendTime(std::string& html, char* buf, uint64_t t) {
 static void Html_AppendInternalKey(std::string& html, Slice ikey) {
   char buf[32];
   ParsedInternalKey pikey;
-  Status s = ParseInternalKey(ikey, &pikey);
+  Status s = ParseInternalKey(ikey, &pikey, true);
   if (s.ok()) {
     html.append("<td class='monoleft'>");
     html.append(Slice(pikey.user_key).ToString(true));

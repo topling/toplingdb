@@ -363,7 +363,7 @@ struct DBOptions_Manip : PluginManipFunc<DBOptions> {
     if (js.end() == iter) {
       THROW_Corruption("missing js[\"objname\"]");
     }
-    auto& objname = iter.value().get_ref<const std::string&>();
+    //auto& objname = iter.value().get_ref<const std::string&>();
     //std::shared_ptr<DBOptions> dbo = repo[objname];
 
     static_cast<DBOptions_Json*>(p)->Update(js, repo);

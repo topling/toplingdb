@@ -171,6 +171,7 @@ else()
 endif()
 
 include_directories(third-party/terark-zip/src)
+include_directories(third-party/terark-zip/3rdparty/boost-include)
 
 string(TIMESTAMP TS "%Y/%m/%d %H:%M:%S" UTC)
 set(GIT_DATE_TIME "${TS}" CACHE STRING "the time we first built rocksdb")

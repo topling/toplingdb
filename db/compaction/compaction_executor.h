@@ -12,6 +12,8 @@ struct ObjectRpcParam {
 };
 
 struct CompactionParams {
+  CompactionParams();
+  ~CompactionParams();
   int job_id;
   //int level;
   int output_level;
@@ -53,7 +55,7 @@ struct CompactionParams {
   //FSDirectory* db_directory;
   //FSDirectory* output_directory;
   //FSDirectory* blob_output_directory;
-  Statistics* stats;
+  //Statistics* stats;
 
   //ObjectRpcParam compaction_filter; // don't use compaction_filter
   ObjectRpcParam compaction_filter_factory; // always use
@@ -67,6 +69,7 @@ struct CompactionParams {
   bool allow_ingest_behind;
   bool preserve_deletes;
   bool bottommost_level;
+  bool is_deserialized;
   std::string smallest_user_key;
   std::string largest_user_key;
   //std::vector<ObjectRpcParam> event_listner;

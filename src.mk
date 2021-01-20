@@ -19,6 +19,7 @@ LIB_SOURCES =                                                   \
   db/column_family.cc                                           \
   db/compacted_db_impl.cc                                       \
   db/compaction/compaction.cc                                   \
+  db/compaction/compaction_executor.cc                          \
   db/compaction/compaction_iterator.cc                          \
   db/compaction/compaction_job.cc                               \
   db/compaction/compaction_picker.cc                            \

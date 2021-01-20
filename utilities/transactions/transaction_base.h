@@ -29,8 +29,7 @@ namespace ROCKSDB_NAMESPACE {
 class TransactionBaseImpl : public Transaction {
  public:
   TransactionBaseImpl(DB* db, const WriteOptions& write_options,
-                      const LockTrackerFactory& lock_tracker_factory,
-                      const WriteBatchEntryIndexFactory* = nullptr);
+                      const LockTrackerFactory& lock_tracker_factory);
 
   virtual ~TransactionBaseImpl();
 

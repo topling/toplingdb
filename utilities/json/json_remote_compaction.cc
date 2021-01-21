@@ -59,7 +59,8 @@ void DataIO_saveObject(DataIO& dio, const Status& x) {
 DATA_IO_LOAD_SAVE_E(FileDescriptor, & packed_number_and_path_id & file_size
                   & smallest_seqno & largest_seqno)
 DATA_IO_DUMP_RAW_MEM_E(FileSampledStats)
-DATA_IO_LOAD_SAVE_E(FileMetaData, & fd & stats & compensated_file_size
+DATA_IO_LOAD_SAVE_E(FileMetaData, & fd & smallest & largest & stats
+                  & compensated_file_size
                   & num_entries & num_deletions
                   & raw_key_size & raw_value_size
                   & being_compacted & init_stats_from_file
@@ -104,10 +105,31 @@ void DataIO_saveObject(DataIO& dio, const AtomicCompactionUnitBoundary& x) {
 
 DATA_IO_LOAD_SAVE_E(CompactionInputFiles,
                   & level & files & atomic_compaction_unit_boundaries)
-
+/*
+DATA_IO_LOAD_SAVE_E(VersionStorageInfo, & num_levels_ & num_non_empty_levels_
+                  & level_max_bytes_
+                  & level_files_brief_
+                  )
+*/
+/*
+DATA_IO_LOAD_SAVE_E(VersionSet, & next_file_number_ & last_sequence_
+                  // below are not necessary fields, but we serialize it for
+                  // for completeness & debugging
+                  & last_allocated_sequence_
+                  & last_published_sequence_
+                  & min_log_number_to_keep_2pc_
+                  & manifest_file_number_
+                  & options_file_number_
+                  & pending_manifest_file_number_
+                  & prev_log_number_
+                  & current_version_number_
+                  )
+*/
+DATA_IO_DUMP_RAW_MEM_E(VersionSetSerDe)
 DATA_IO_LOAD_SAVE_E(CompactionParams,
                   & job_id & num_levels & output_level & cf_id
-                  & current_next_file_number & target_file_size
+                  & version_set
+                  & target_file_size
                   & max_compaction_bytes & cf_paths & max_subcompactions
                   & compression & compression_opts & score
                   & manual_compaction & deletion_compaction
@@ -123,7 +145,7 @@ DATA_IO_LOAD_SAVE_E(CompactionParams,
                   & int_tbl_prop_collector_factories
                   & ExplicitSerDePointer(inputs)
                   & ExplicitSerDePointer(grandparents)
-                  & ExplicitSerDePointer(version_set)
+                  //& ExplicitSerDePointer(version_set)
                   & ExplicitSerDePointer(existing_snapshots)
                   & ExplicitSerDePointer(compaction_job_stats)
                   )
@@ -159,15 +181,53 @@ DATA_IO_LOAD_SAVE_E(ObjectRpcRetVal, & compaction_filter & merge_operator
                   )
 DATA_IO_LOAD_SAVE_E(CompactionResults, & sub_compacts & stat_result & status)
 
-class RemoteCompactionExecutor : public CompactionExecutor {
-  std::string m_cmd;
- public:
-  explicit RemoteCompactionExecutor(std::string cmd) : m_cmd(std::move(cmd)) {}
-  void SetParams(CompactionParams*,
-                 const ImmutableCFOptions&,
-                 const MutableCFOptions&) override;
-  Status Execute(const CompactionParams&, CompactionResults*) override;
+void SerDeRead(FILE* fp, CompactionParams* p) {
+  using namespace terark;
+  LittleEndianDataInput<NonOwnerFileStream> dio(fp);
+  dio >> *p;
+}
+void SerDeWrite(FILE* fp, CompactionResults* res) {
+  using namespace terark;
+  LittleEndianDataOutput<NonOwnerFileStream> dio(fp);
+  dio << *res;
+}
+
+struct MyVersionSet : VersionSet {
+  void From(const VersionSetSerDe& version_set) {
+    next_file_number_ = version_set.next_file_number;
+    last_sequence_ = version_set.last_sequence;
+    // below are not necessary fields, but we serialize it for
+    // for completeness debugging
+    last_allocated_sequence_ = version_set.last_allocated_sequence;
+    last_published_sequence_ = version_set.last_published_sequence;
+    min_log_number_to_keep_2pc_ = version_set.min_log_number_to_keep_2pc;
+    manifest_file_number_ = version_set.manifest_file_number;
+    options_file_number_ = version_set.options_file_number;
+    pending_manifest_file_number_ = version_set.pending_manifest_file_number;
+    prev_log_number_ = version_set.prev_log_number;
+    current_version_number_ = version_set.current_version_number;
+  }
+  void To(VersionSetSerDe& version_set) const {
+    version_set.next_file_number = next_file_number_;
+    version_set.last_sequence = last_sequence_;
+    // below are not necessary fields, but we serialize it for
+    // for completeness debugging
+    version_set.last_allocated_sequence = last_allocated_sequence_;
+    version_set.last_published_sequence = last_published_sequence_;
+    version_set.min_log_number_to_keep_2pc = min_log_number_to_keep_2pc_;
+    version_set.manifest_file_number = manifest_file_number_;
+    version_set.options_file_number = options_file_number_;
+    version_set.pending_manifest_file_number = pending_manifest_file_number_;
+    version_set.prev_log_number = prev_log_number_;
+    version_set.current_version_number = current_version_number_;
+  }
 };
+void VersionSetSerDe::From(const VersionSet* vs) {
+  static_cast<const MyVersionSet*>(vs)->To(*this);
+}
+void VersionSetSerDe::To(VersionSet* vs) const {
+  static_cast<MyVersionSet*>(vs)->From(*this);
+}
 
 //----------------------------------------------------------------------------
 // SerDe example for TablePropertiesCollector
@@ -223,6 +283,17 @@ void SetObjectRpcParamOptTpl(ObjectRpcParam& p, const ObjectPtr& obj) {
     p.content = SerDe_SerializeOpt(p.clazz, p_obj);
   }
 }
+
+class RemoteCompactionExecutor : public CompactionExecutor {
+  std::string m_cmd;
+ public:
+  explicit RemoteCompactionExecutor(std::string cmd) : m_cmd(std::move(cmd)) {}
+  void SetParams(CompactionParams*,
+                 const ImmutableCFOptions&,
+                 const MutableCFOptions&) override;
+  Status Execute(const CompactionParams&, CompactionResults*) override;
+};
+
 void RemoteCompactionExecutor::SetParams(CompactionParams* params,
                                          const ImmutableCFOptions& imm_cfo,
                                          const MutableCFOptions& mut_cfo) {

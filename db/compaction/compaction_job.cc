@@ -821,7 +821,8 @@ try {
   rpc_params.output_level = c->output_level();
   rpc_params.num_levels = c->number_levels();
   rpc_params.cf_id = cf_id;
-  rpc_params.current_next_file_number = versions_->current_next_file_number();
+  rpc_params.version_set.next_file_number = versions_->current_next_file_number();
+  rpc_params.version_set.last_sequence = versions_->LastSequence();
   rpc_params.inputs = c->inputs();
   rpc_params.target_file_size = c->max_output_file_size();
   rpc_params.max_compaction_bytes = c->max_compaction_bytes();
@@ -834,7 +835,7 @@ try {
   rpc_params.deletion_compaction = c->deletion_compaction();
   rpc_params.compaction_reason = c->compaction_reason();
 
-  rpc_params.version_set = this->versions_;
+  //rpc_params.version_set = this->versions_;
   rpc_params.preserve_deletes_seqnum = this->preserve_deletes_seqnum_;
   rpc_params.existing_snapshots = &this->existing_snapshots_;
   rpc_params.earliest_write_conflict_snapshot = this->earliest_write_conflict_snapshot_;

@@ -1,5 +1,6 @@
 set(CORE_TOOLS
   sst_dump.cc
+  compact_worker.cc
   ldb.cc)
 foreach(src ${CORE_TOOLS})
   get_filename_component(exename ${src} NAME_WE)

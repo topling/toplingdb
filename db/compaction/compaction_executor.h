@@ -10,7 +10,20 @@ struct ObjectRpcParam {
   std::string clazz;
   std::string content; // serialized bytes for rpc
 };
-
+struct VersionSetSerDe {
+  uint64_t last_sequence;
+  uint64_t last_allocated_sequence;
+  uint64_t last_published_sequence;
+  uint64_t next_file_number;
+  uint64_t min_log_number_to_keep_2pc;
+  uint64_t manifest_file_number;
+  uint64_t options_file_number;
+  uint64_t pending_manifest_file_number;
+  uint64_t prev_log_number;
+  uint64_t current_version_number;
+  void From(const VersionSet*);
+  void To(VersionSet*) const;
+};
 struct CompactionParams {
   CompactionParams();
   ~CompactionParams();
@@ -19,8 +32,9 @@ struct CompactionParams {
   int output_level;
   int num_levels;
   uint32_t cf_id;
+  std::string cf_name;
   const std::vector<CompactionInputFiles>* inputs;
-  uint64_t current_next_file_number;
+  VersionSetSerDe version_set;
   uint64_t target_file_size;
   uint64_t max_compaction_bytes;
 
@@ -41,7 +55,7 @@ struct CompactionParams {
   bool deletion_compaction;
   CompactionReason compaction_reason;
 
-  VersionSet* version_set;
+  //VersionSet* version_set;
   SequenceNumber preserve_deletes_seqnum;
   const std::vector<SequenceNumber>* existing_snapshots;
   SequenceNumber earliest_write_conflict_snapshot;
@@ -50,6 +64,7 @@ struct CompactionParams {
   std::string db_id;
   std::string db_session_id;
   std::string full_history_ts_low;
+  uint64_t db_write_buffer_size;
   CompactionJobStats* compaction_job_stats;
   //SnapshotChecker* snapshot_checker; // not used
   //FSDirectory* db_directory;
@@ -116,6 +131,9 @@ struct CompactionRpcStub {
   };
   std::vector<OneSub> sub_compacts;
 };
+
+void SerDeRead(FILE* fp, CompactionParams* p);
+void SerDeWrite(FILE* fp, CompactionResults* res);
 
 class CompactionExecutor {
  public:

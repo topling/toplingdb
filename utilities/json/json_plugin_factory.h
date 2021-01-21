@@ -243,6 +243,23 @@ std::string SerDe_SerializeOpt(const std::string& clazz, const Object* obj) {
   }
 }
 
+template<class Object>
+void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
+  assert(nullptr != obj);
+  const SerDeFunc<Object>* serde = nullptr;
+  try {
+    serde = SerDeFactory<Object>::AcquirePlugin(clazz, json{}, JsonPluginRepo());
+  }
+  catch (const Status&) {
+    assert(bytes.empty());
+    if (!bytes.empty()) {
+      fprintf(stderr, "ERROR: %s: class = %s, bytes is not empty\n", clazz.c_str());
+    }
+    return;
+  }
+  serde->DeSerialize(obj, bytes);
+}
+
 template<class Ptr>
 struct PluginFactory<Ptr>::Reg::Impl {
   NameToFuncMap func_map;

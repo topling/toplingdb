@@ -1903,6 +1903,14 @@ struct DB_Manip : PluginManipFunc<DB> {
     if (dbmap.p2name.end() == i1) {
       THROW_NotFound("db ptr is not registered in repo, dbname = " + dbname);
     }
+    if (dump_options.contains("compact")) {
+      DB* dbp = const_cast<DB*>(&db);
+      std::thread([=]() {
+        CompactRangeOptions cro;
+        dbp->CompactRange(cro, nullptr, nullptr);
+      }).detach();
+      return "compact job issued: dbname = " + dbname;
+    }
     auto ijs = i1->second.params.find("params");
     if (i1->second.params.end() == ijs) {
       THROW_Corruption("p2name[" + dbname + "].params is missing");
@@ -1953,6 +1961,20 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     auto dbo = static_cast<DBOptions_Json&&>(db.db->GetDBOptions());
     const auto& dbmap = repo.m_impl->db;
     const std::string& dbname = db.db->GetName();
+    if (dump_options.contains("compact")) {
+      std::string cfname = dump_options["compact"];
+      auto cfh = db.Get(cfname);
+      if (nullptr == cfh) {
+        THROW_NotFound("cf_name is not registered in repo, dbname = " + dbname
+                       + ", cfname = " + cfname);
+      }
+      DB* dbp = db.db;
+      std::thread([=]() {
+        CompactRangeOptions cro;
+        dbp->CompactRange(cro, cfh, nullptr, nullptr);
+      }).detach();
+      return "compact job issued: dbname = " + dbname + ", cfname = " + cfname;
+    }
     auto i1 = dbmap.p2name.find(db.db);
     if (dbmap.p2name.end() == i1) {
       THROW_NotFound("db ptr is not registered in repo, dbname = " + dbname);

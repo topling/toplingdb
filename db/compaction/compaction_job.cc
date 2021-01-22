@@ -821,8 +821,8 @@ try {
   rpc_params.output_level = c->output_level();
   rpc_params.num_levels = c->number_levels();
   rpc_params.cf_id = cf_id;
-  rpc_params.version_set.next_file_number = versions_->current_next_file_number();
-  rpc_params.version_set.last_sequence = versions_->LastSequence();
+  rpc_params.cf_name = cfd->GetName();
+  rpc_params.version_set.From(versions_);
   rpc_params.inputs = c->inputs();
   rpc_params.target_file_size = c->max_output_file_size();
   rpc_params.max_compaction_bytes = c->max_compaction_bytes();
@@ -844,6 +844,8 @@ try {
   rpc_params.db_id = this->db_id_;
   rpc_params.db_session_id = this->db_session_id_;
   rpc_params.full_history_ts_low = this->full_history_ts_low_;
+  rpc_params.db_write_buffer_size = this->db_options_.db_write_buffer_size;
+  rpc_params.compaction_log_level = this->db_options_.info_log_level;
   rpc_params.compaction_job_stats = this->compaction_job_stats_;
 
   rpc_params.bottommost_level = c->bottommost_level();

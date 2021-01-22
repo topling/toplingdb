@@ -59,10 +59,10 @@ struct MyVersionSet : VersionSet {
   }
 };
 void VersionSetSerDe::From(const VersionSet* vs) {
-  static_cast<const MyVersionSet*>(vs)->To(*this);
+  static_cast<const MyVersionSet*>(vs)->To(*this); // NOLINT
 }
 void VersionSetSerDe::To(VersionSet* vs) const {
-  static_cast<MyVersionSet*>(vs)->From(*this);
+  static_cast<MyVersionSet*>(vs)->From(*this); // NOLINT
 }
 
 CompactionExecutor::~CompactionExecutor() = default;

@@ -6,13 +6,15 @@
 #include <utilities/json/json_plugin_factory.h>
 #include <db/compaction/compaction_executor.h>
 #include <db/error_handler.h>
+#include <rocksdb/merge_operator.h>
 #include <env/composite_env_wrapper.h>
 #include <terark/fstring.hpp>
 //#include <terark/io/FileStream.hpp>
 //#include <terark/io/DataIO.hpp>
 
+namespace ROCKSDB_NAMESPACE {
+
 //using namespace terark;
-using namespace ROCKSDB_NAMESPACE;
 using namespace std;
 
 string MakeOutputPath(const CompactionParams& params) {
@@ -22,17 +24,37 @@ string MakeOutputPath(const CompactionParams& params) {
   return path;
 }
 
-template<class Ptr>
-void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param) {
+// for CompactionFilter:
+// bind extra to CompactionFilterFactory, so the CompactionFilter created
+// by CompactionFilterFactory should return its internal data such as some
+// statistics into the 'string' object, then the 'string' object will be
+// returned to the rocksdb process.
+// CompactionFilterFactory should use g_sub_compact_thread_idx as index
+// to 'extra' (type vector<string*>)
+template <class Object>
+void ExtraBind(Object* obj, vector<string*>* extra) {
+  const string& clazz = obj->Name();
+  const ExtraBinderFunc<Object, vector<string*> >* func =
+      ExtraBinder<Object, vector<string*> >::NullablePlugin(clazz);
+  if (func) {
+    func->Bind(obj, extra);
+  }
+}
+
+template <class Ptr>
+void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param, vector<string*>* result) {
   if (param.clazz.empty()) {
-    return; // not defined
+    return;  // not defined
   }
   ptr = PluginFactory<Ptr>::AcquirePlugin(param.clazz, json{}, JsonPluginRepo());
   if (!param.content.empty())
     SerDe_DeSerialize(param.clazz, param.content, &*ptr);
+  ExtraBind(&*ptr, result);
 }
 
-int main(int argc, char* argv[]) try {
+int main(int argc, char* argv[]) {
+  unique_ptr<CompactionResults> results(new CompactionResults());
+try {
 /*
   string json_file;
   if (auto env = getenv("JSON_DB_CONFIG")) {
@@ -52,7 +74,6 @@ int main(int argc, char* argv[]) try {
     }
   }
 */
-  unique_ptr<CompactionResults> results(new CompactionResults());
   CompactionParams  params;
   SerDeRead(stdin, &params);
   EnvOptions env_options; env_options.use_mmap_reads = true;
@@ -64,8 +85,15 @@ int main(int argc, char* argv[]) try {
   ImmutableDBOptions imm_dbo;
   MutableDBOptions   mut_dbo;
   ColumnFamilyOptions cfo;
+  results->sub_compacts.resize(params.max_subcompactions);
+  vector<string*> compaction_filter_factory, user_comparator, merge_operator,
+                  table_factory, prefix_extractor, sst_partitioner_factory;
+
 #define MyCreatePlugin2(obj, field1, field2) \
-  CreatePluginTpl(obj.field1, params.field2)
+  for (auto& x : results->sub_compacts) {    \
+    field2.push_back(&x.field2);             \
+  }                                          \
+  CreatePluginTpl(obj.field1, params.field2, &field2)
 #define MyCreatePlugin1(obj, field) MyCreatePlugin2(obj, field, field)
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   MyCreatePlugin1(cfo, compaction_filter_factory);
@@ -85,8 +113,8 @@ int main(int argc, char* argv[]) try {
   env->CreateDirIfMissing(fake_dbname);
   unique_ptr<VersionSet> versions(
       new VersionSet(fake_dbname, &imm_dbo, env_options, table_cache.get(),
-                       &write_buffer_manager, &write_controller,
-                       /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr));
+                     &write_buffer_manager, &write_controller,
+                     /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr));
   params.version_set.To(versions.get());
 
   uint64_t log_number = 0;
@@ -106,10 +134,10 @@ int main(int argc, char* argv[]) try {
   {
     unique_ptr<WritableFile> file;
     Status s1 = env->NewWritableFile(
-            manifest, &file, env->OptimizeForManifestWrite(env_options));
+        manifest, &file, env->OptimizeForManifestWrite(env_options));
     TERARK_VERIFY_F(s1.ok(), "%s", s1.ToString().c_str());
     unique_ptr<WritableFileWriter> file_writer(new WritableFileWriter(
-     NewLegacyWritableFileWrapper(std::move(file)), manifest, env_options));
+        NewLegacyWritableFileWrapper(std::move(file)), manifest, env_options));
     log::Writer log(std::move(file_writer), log_number, false);
     string record;
     new_db.EncodeTo(&record);
@@ -168,21 +196,31 @@ int main(int argc, char* argv[]) try {
   mutex.Unlock();
   {
     Status s1 = compaction_job.Run();
-    TERARK_VERIFY_F(s1.ok(), "%s", s1.ToString().c_str());
-    auto s2 = compaction_job.io_status();
-    TERARK_VERIFY_F(s2.ok(), "%s", s2.ToString().c_str());
+    //TERARK_VERIFY_F(s1.ok(), "%s", s1.ToString().c_str());
+    results->status = s1;
+    //auto s2 = compaction_job.io_status();
+    //TERARK_VERIFY_F(s2.ok(), "%s", s2.ToString().c_str());
   }
-  results->stat_result;
+  SerDeWrite(stdout, results.get());
   return 0;
 }
 catch (const std::exception& ex) {
+  SerDeWrite(stdout, results.get());
   fprintf(stderr, "%s:%d: %s: caught exception: %s\n",
           __FILE__, __LINE__, ROCKSDB_FUNC, ex.what());
   return 1;
 }
 catch (const ROCKSDB_NAMESPACE::Status& s) {
+  SerDeWrite(stdout, results.get());
   fprintf(stderr, "%s:%d: %s: caught Status: %s\n",
           __FILE__, __LINE__, ROCKSDB_FUNC, s.ToString().c_str());
   return 1;
 }
 
+} // main
+
+}
+
+int main(int argc, char* argv[]) {
+  return ROCKSDB_NAMESPACE::main(argc, argv);
+}

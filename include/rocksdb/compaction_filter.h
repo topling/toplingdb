@@ -28,6 +28,7 @@ struct CompactionFilterContext {
   // or is it occurring as an automatic compaction process
   bool is_manual_compaction;
   // Which column family this compaction is for.
+  //uint16_t sub_compact_idx;
   uint32_t column_family_id;
 };
 

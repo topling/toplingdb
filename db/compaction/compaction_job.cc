@@ -606,13 +606,12 @@ Status CompactionJob::RunLocal() {
   std::vector<port::Thread> thread_pool;
   thread_pool.reserve(num_threads - 1);
   for (size_t i = 1; i < compact_->sub_compact_states.size(); i++) {
-    thread_pool.emplace_back(&CompactionJob::ProcessKeyValueCompaction, this,
-                             &compact_->sub_compact_states[i]);
+    thread_pool.emplace_back(&CompactionJob::ProcessKeyValueCompaction, this, i);
   }
 
   // Always schedule the first subcompaction (whether or not there are also
   // others) in the current thread to be efficient with resources
-  ProcessKeyValueCompaction(&compact_->sub_compact_states[0]);
+  ProcessKeyValueCompaction(0);
 
   // Wait for all other threads (if there are any) to finish execution
   for (auto& thread : thread_pool) {
@@ -1054,7 +1053,11 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   return status;
 }
 
-void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
+thread_local size_t g_sub_compact_thread_idx = size_t(-1);
+
+void CompactionJob::ProcessKeyValueCompaction(size_t thread_idx) {
+  g_sub_compact_thread_idx = thread_idx;
+  SubcompactionState* sub_compact = &compact_->sub_compact_states[thread_idx];
   assert(sub_compact);
   assert(sub_compact->compaction);
 

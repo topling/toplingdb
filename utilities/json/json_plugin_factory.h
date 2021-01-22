@@ -131,6 +131,11 @@ public:
   // throw if not found
   static Ptr AcquirePlugin(const json&, const JsonPluginRepo&);
 
+  // not throw if plugin does not exist
+  static Ptr NullablePlugin(const std::string& clazz,
+                            const json& = json(),
+                            const JsonPluginRepo& = JsonPluginRepo());
+
   static Ptr ObtainPlugin(const char* varname, const char* func_name,
                           const json&, const JsonPluginRepo&);
 
@@ -260,6 +265,14 @@ void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
   serde->DeSerialize(obj, bytes);
 }
 
+template<class Object, class Extra>
+struct ExtraBinderFunc {
+  virtual ~ExtraBinderFunc() {}
+  virtual void Bind(Object*, Extra*) const = 0;
+};
+template<class Object, class Extra>
+using ExtraBinder = PluginFactory<const ExtraBinderFunc<Object, Extra>*>;
+
 template<class Ptr>
 struct PluginFactory<Ptr>::Reg::Impl {
   NameToFuncMap func_map;
@@ -291,9 +304,8 @@ PluginFactory<Ptr>::Reg::~Reg() {
 
 template<class Ptr>
 Ptr
-PluginFactory<Ptr>::
-AcquirePlugin(const std::string& clazz, const json& js,
-              const JsonPluginRepo& repo) {
+PluginFactory<Ptr>::AcquirePlugin(const std::string& clazz, const json& js,
+                                  const JsonPluginRepo& repo) {
   auto& imp = Reg::Impl::s_singleton();
   auto iter = imp.func_map.find(clazz);
   if (imp.func_map.end() != iter) {
@@ -305,6 +317,20 @@ AcquirePlugin(const std::string& clazz, const json& js,
     //return Ptr(nullptr);
     THROW_NotFound("class = " + clazz + ", js = " + js.dump());
   }
+}
+
+template<class Ptr>
+Ptr
+PluginFactory<Ptr>::NullablePlugin(const std::string& clazz, const json& js,
+                                   const JsonPluginRepo& repo) {
+  auto& imp = Reg::Impl::s_singleton();
+  auto iter = imp.func_map.find(clazz);
+  if (imp.func_map.end() != iter) {
+    Ptr ptr = iter->second.acq(js, repo);
+    assert(!!ptr);
+    return ptr;
+  }
+  return Ptr(nullptr);
 }
 
 std::string PluginParseInstID(const std::string& str_val);
@@ -577,5 +603,7 @@ void JsonRepoSet(json& js, const Ptr& prop, const Map& map,
       js = "$(BuiltinDefault)";
   }
 }
+
+extern thread_local size_t g_sub_compact_thread_idx;
 
 } // ROCKSDB_NAMESPACE

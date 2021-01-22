@@ -100,11 +100,12 @@ struct CompactionResults {
     uint64_t    largest_seqno;
   };
   struct ObjectRpcRetVal {
-    std::string compaction_filter;
+    std::string compaction_filter_factory; // for each compaction filter
     std::string merge_operator;
     std::string user_comparator;
-    std::string table_builder;
+    std::string table_factory; // table builder
     std::string prefix_extractor;
+    std::string sst_partitioner_factory;
     std::vector<std::string> int_tbl_prop_collector;
     std::vector<std::string> event_listner;
     std::vector<FileMinMeta> output_files;

@@ -123,7 +123,7 @@ class CompactionJob {
   void AllocateCompactionOutputFileNumbers();
   // Call compaction filter. Then iterate through input and compact the
   // kv-pairs
-  void ProcessKeyValueCompaction(SubcompactionState* sub_compact);
+  void ProcessKeyValueCompaction(size_t thread_idx);
 
   Status FinishCompactionOutputFile(
       const Status& input_status, SubcompactionState* sub_compact,

@@ -53,6 +53,7 @@ struct CompactionParams {
   double score;
   bool manual_compaction;
   bool deletion_compaction;
+  InfoLogLevel compaction_log_level;
   CompactionReason compaction_reason;
 
   //VersionSet* version_set;
@@ -116,6 +117,7 @@ struct CompactionResults {
     HistogramStat histograms[INTERNAL_HISTOGRAM_ENUM_MAX];
   };
   std::vector<ObjectRpcRetVal> sub_compacts;
+  CompactionJobStats job_stats;
   StatisticsResult stat_result;
   Status status;
 };

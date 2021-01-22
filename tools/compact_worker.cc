@@ -5,6 +5,7 @@
 #include <utilities/json/json_plugin_repo.h>
 #include <utilities/json/json_plugin_factory.h>
 #include <db/compaction/compaction_executor.h>
+#include <db/error_handler.h>
 #include <env/composite_env_wrapper.h>
 #include <terark/fstring.hpp>
 //#include <terark/io/FileStream.hpp>
@@ -51,6 +52,7 @@ int main(int argc, char* argv[]) try {
     }
   }
 */
+  unique_ptr<CompactionResults> results(new CompactionResults());
   CompactionParams  params;
   SerDeRead(stdin, &params);
   EnvOptions env_options; env_options.use_mmap_reads = true;
@@ -92,6 +94,13 @@ int main(int argc, char* argv[]) try {
   new_db.SetLogNumber(log_number);
   new_db.SetNextFile(params.version_set.next_file_number);
   new_db.SetLastSequence(params.version_set.last_sequence);
+  new_db.SetColumnFamily(params.cf_id);
+  new_db.AddColumnFamily(params.cf_name);
+  for (auto& onelevel : *params.inputs) {
+    for (auto& file : onelevel.files) {
+      new_db.AddFile(onelevel.level, *file); // file will be copied
+    }
+  }
   auto manifest_fnum = params.version_set.manifest_file_number;
   const string manifest = DescriptorFileName(fake_dbname, manifest_fnum);
   {
@@ -113,14 +122,57 @@ int main(int argc, char* argv[]) try {
     column_families.emplace_back(params.cf_name, cfo);
     auto s4 = versions->Recover(column_families, false);
     TERARK_VERIFY_F(s4.ok(), "%s", s4.ToString().c_str());
-    auto cfd = versions->GetColumnFamilySet()->GetColumnFamily();
   }
-
+  auto cfd = versions->GetColumnFamilySet()->GetColumnFamily(params.cf_id);
   size_t output_path_id = params.cf_paths.size();
-  Compaction compaction();
-  //----------------------------------------------------------------------------
+  VersionStorageInfo* storage_info = cfd->current()->storage_info();
+  vector<CompactionInputFiles> inputs = *params.inputs;
+  for (auto& onelevel : inputs) {
+    onelevel.files = storage_info->LevelFiles(onelevel.level);
+  }
+  Compaction compaction(storage_info,
+      *cfd->ioptions(), *cfd->GetLatestMutableCFOptions(), mut_dbo, inputs,
+      params.output_level, params.target_file_size, params.max_compaction_bytes,
+      uint32_t(output_path_id), params.compression, params.compression_opts,
+      params.max_subcompactions, *params.grandparents, params.manual_compaction,
+      params.score, params.deletion_compaction, params.compaction_reason);
+  compaction.SetInputVersion(cfd->current());
+//----------------------------------------------------------------------------
+  LogBuffer log_buffer(params.compaction_log_level, imm_dbo.info_log.get());
+  InstrumentedMutex mutex;
+  atomic<bool> shutting_down(false);
+  auto statistics = CreateDBStatistics();
+  ErrorHandler error_handler(nullptr, imm_dbo, &mutex);
+  mutex.Lock();
+  EventLogger event_logger(imm_dbo.info_log.get());
+  SnapshotChecker* snapshot_checker = nullptr;
+  if (!params.full_history_ts_low.empty()) {
+    TERARK_VERIFY_EQ(cfo.comparator->timestamp_size(), params.full_history_ts_low.size());
+  }
+  CompactionJob compaction_job(
+      params.job_id, &compaction, imm_dbo, env_options, versions.get(),
+      &shutting_down, params.preserve_deletes_seqnum, &log_buffer,
+      nullptr, nullptr, nullptr, nullptr,
+      &mutex, &error_handler, *params.existing_snapshots,
+      params.earliest_write_conflict_snapshot, snapshot_checker,
+      table_cache, &event_logger, params.paranoid_file_checks,
+      false/*measure_io_stats*/,
+      fake_dbname, &results->job_stats, Env::Priority::USER,
+      nullptr /* IOTracer */,
+      /*manual_compaction_paused=*/nullptr,
+      params.db_id, params.db_session_id,
+      params.full_history_ts_low);
+  //VerifyInitializationOfCompactionJobStats(compaction_job_stats_);
 
-  unique_ptr<CompactionResults> results(new CompactionResults());
+  compaction_job.Prepare();
+  mutex.Unlock();
+  {
+    Status s1 = compaction_job.Run();
+    TERARK_VERIFY_F(s1.ok(), "%s", s1.ToString().c_str());
+    auto s2 = compaction_job.io_status();
+    TERARK_VERIFY_F(s2.ok(), "%s", s2.ToString().c_str());
+  }
+  results->stat_result;
   return 0;
 }
 catch (const std::exception& ex) {

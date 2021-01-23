@@ -27,28 +27,29 @@ string MakeOutputPath(const CompactionParams& params) {
 // for CompactionFilter:
 // bind extra to CompactionFilterFactory, so the CompactionFilter created
 // by CompactionFilterFactory should return its internal data such as some
-// statistics into the 'string' object, then the 'string' object will be
+// statistics into the ResultType object, then the ResultType object will be
 // returned to the rocksdb process.
 // CompactionFilterFactory should use g_sub_compact_thread_idx as index
-// to 'extra' (type vector<string*>)
-template <class Object>
-void ExtraBind(Object* obj, vector<string*>* extra) {
+// to 'extra' (type vector<ResultType>)
+template<class Object, class ResultType>
+void ExtraBind(Object* obj, vector<ResultType>* extra) {
   const string& clazz = obj->Name();
-  const ExtraBinderFunc<Object, vector<string*> >* func =
-      ExtraBinder<Object, vector<string*> >::NullablePlugin(clazz);
+  const ExtraBinderFunc<Object, vector<ResultType> >* func =
+      ExtraBinder<Object, vector<ResultType> >::NullablePlugin(clazz);
   if (func) {
     func->Bind(obj, extra);
   }
 }
 
-template <class Ptr>
-void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param, vector<string*>* result) {
+template<class Ptr, class ResultType>
+void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param,
+                     vector<ResultType>* result) {
   if (param.clazz.empty()) {
     return;  // not defined
   }
   ptr = PluginFactory<Ptr>::AcquirePlugin(param.clazz, json{}, JsonPluginRepo());
-  if (!param.content.empty())
-    SerDe_DeSerialize(param.clazz, param.content, &*ptr);
+  if (!param.serde.empty())
+    SerDe_DeSerialize(param.clazz, param.serde, &*ptr);
   ExtraBind(&*ptr, result);
 }
 
@@ -86,14 +87,9 @@ try {
   MutableDBOptions   mut_dbo;
   ColumnFamilyOptions cfo;
   results->sub_compacts.resize(params.max_subcompactions);
-  vector<string*> compaction_filter_factory, user_comparator, merge_operator,
-                  table_factory, prefix_extractor, sst_partitioner_factory;
 
 #define MyCreatePlugin2(obj, field1, field2) \
-  for (auto& x : results->sub_compacts) {    \
-    field2.push_back(&x.field2);             \
-  }                                          \
-  CreatePluginTpl(obj.field1, params.field2, &field2)
+  CreatePluginTpl(obj.field1, params.field2, &results->sub_compacts.field2)
 #define MyCreatePlugin1(obj, field) MyCreatePlugin2(obj, field, field)
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   MyCreatePlugin1(cfo, compaction_filter_factory);

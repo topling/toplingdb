@@ -174,8 +174,9 @@ DATA_IO_LOAD_SAVE_E(CompactionJobStats, & elapsed_micros & cpu_micros
                   & smallest_output_key_prefix & largest_output_key_prefix
                   & num_single_del_fallthru & num_single_del_mismatch
                   )
-DATA_IO_LOAD_SAVE_E(ObjectRpcRetVal, & compaction_filter & merge_operator
-                  & user_comparator & table_builder & prefix_extractor
+DATA_IO_LOAD_SAVE_E(ObjectRpcRetVal,
+                  & compaction_filter_factory & merge_operator
+                  & user_comparator & table_factory & prefix_extractor
                   & int_tbl_prop_collector & event_listner
                   & output_files & job_stats & num_output_records
                   )

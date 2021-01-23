@@ -865,8 +865,8 @@ try {
   compaction_stats_.micros = env_->NowMicros() - start_micros;
   uint64_t cpu_micros = 0;
   compaction_stats_.cpu_micros = 0;
-  for (auto& sub_compact : rpc_results.sub_compacts) {
-    cpu_micros += sub_compact.job_stats.cpu_micros;
+  for (auto& job_stat : rpc_results.sub_compacts.job_stats) {
+    cpu_micros += job_stat.cpu_micros;
   }
   compaction_stats_.cpu_micros = cpu_micros;
 
@@ -876,9 +876,8 @@ try {
   TablePropertiesCollection tp;
   auto& cf_paths = imm_cfo->cf_paths;
   for (size_t i = 0; i < num_threads; ++i) {
-    const auto& sub_result = rpc_results.sub_compacts[i];
     auto& sub_state = compact_->sub_compact_states[i];
-    for (const auto& min_meta : sub_result.output_files) {
+    for (const auto& min_meta : rpc_results.sub_compacts.output_files[i]) {
       auto& old_fname = min_meta.fname;
       auto path_id = c->output_path_id(); // should get from old_fname
       uint64_t file_number = versions_->NewFileNumber();
@@ -906,7 +905,7 @@ try {
           enable_order_check, /*enable_hash=*/paranoid_file_checks_);
       sub_state.total_bytes += min_meta.fsize;
     }
-    sub_state.num_output_records = sub_result.num_output_records;
+    sub_state.num_output_records = rpc_results.sub_compacts.num_output_records[i];
   }
   compact_->compaction->SetOutputTableProperties(std::move(tp));
 

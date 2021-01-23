@@ -8,7 +8,8 @@ namespace ROCKSDB_NAMESPACE {
 
 struct ObjectRpcParam {
   std::string clazz;
-  std::string content; // serialized bytes for rpc
+  std::string params; // construction json params
+  std::string serde; // serialized bytes for rpc
 };
 struct VersionSetSerDe {
   uint64_t last_sequence;
@@ -100,24 +101,27 @@ struct CompactionResults {
     uint64_t    largest_seqno;
   };
   struct ObjectRpcRetVal {
-    std::string compaction_filter_factory; // for each compaction filter
-    std::string merge_operator;
-    std::string user_comparator;
-    std::string table_factory; // table builder
-    std::string prefix_extractor;
-    std::string sst_partitioner_factory;
-    std::vector<std::string> int_tbl_prop_collector;
-    std::vector<std::string> event_listner;
-    std::vector<FileMinMeta> output_files;
-    CompactionJobStats job_stats;
-    uint64_t num_output_records;
+    // each field is a vector which each element is for a sub_compact
+    std::vector<std::string> compaction_filter_factory; // for each compaction filter
+    std::vector<std::string> merge_operator;
+    std::vector<std::string> user_comparator;
+    std::vector<std::string> table_factory; // table builder
+    std::vector<std::string> prefix_extractor;
+    std::vector<std::string> sst_partitioner_factory;
+    std::vector<std::vector<std::string> > int_tbl_prop_collector;
+    std::vector<std::vector<std::string> > event_listner;
+    std::vector<std::vector<FileMinMeta> > output_files;
+    std::vector<CompactionJobStats> job_stats;
+    std::vector<uint64_t> num_output_records;
+    void resize(size_t);
+    size_t size() const;
   };
   // collect remote statistics
   struct StatisticsResult {
     uint64_t tickers[INTERNAL_TICKER_ENUM_MAX] = {0};
     HistogramStat histograms[INTERNAL_HISTOGRAM_ENUM_MAX];
   };
-  std::vector<ObjectRpcRetVal> sub_compacts;
+  ObjectRpcRetVal sub_compacts;
   CompactionJobStats job_stats;
   StatisticsResult stat_result;
   Status status;

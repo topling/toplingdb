@@ -604,6 +604,6 @@ void JsonRepoSet(json& js, const Ptr& prop, const Map& map,
   }
 }
 
-extern thread_local size_t g_sub_compact_thread_idx;
+size_t GetSubCompactIdx();
 
 } // ROCKSDB_NAMESPACE

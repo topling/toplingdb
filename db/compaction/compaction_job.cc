@@ -1052,7 +1052,8 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   return status;
 }
 
-thread_local size_t g_sub_compact_thread_idx = size_t(-1);
+static thread_local size_t g_sub_compact_thread_idx = size_t(-1);
+size_t GetSubCompactIdx() { return g_sub_compact_thread_idx; }
 
 void CompactionJob::ProcessKeyValueCompaction(size_t thread_idx) {
   g_sub_compact_thread_idx = thread_idx;

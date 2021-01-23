@@ -17,19 +17,13 @@ namespace ROCKSDB_NAMESPACE {
 //using namespace terark;
 using namespace std;
 
-string MakeOutputPath(const CompactionParams& params) {
-  string path = params.cf_paths[0].path;
-  char buf[128];
-  path.append(buf, snprintf(buf, sizeof(buf), "/job-%08d", params.job_id));
-  return path;
-}
-
 // for CompactionFilter:
 // bind extra to CompactionFilterFactory, so the CompactionFilter created
 // by CompactionFilterFactory should return its internal data such as some
 // statistics into the ResultType object, then the ResultType object will be
 // returned to the rocksdb process.
-// CompactionFilterFactory should use g_sub_compact_thread_idx as index
+// CompactionFilterFactory should use GetSubCompactIdx() as index to get
+// per-thread(per-SubCompact) ResultType
 // to 'extra' (type vector<ResultType>)
 template<class Object, class ResultType>
 void ExtraBind(Object* obj, vector<ResultType>* extra) {
@@ -53,8 +47,51 @@ void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param,
   ExtraBind(&*ptr, result);
 }
 
+const char* GetEnvString(const char* name, const char* Default = nullptr) {
+  if (auto value = getenv(name)) {
+    return value;
+  }
+  else if (nullptr == Default) {
+    THROW_STD(invalid_argument, "missing env var: %s", name);
+  }
+}
+
+string GetDirFromEnv(const char* name, const char* Default = nullptr) {
+  string dir = GetEnvString(name, Default);
+  if (!dir.empty() && '/' != dir.back()) {
+    dir.push_back('/');
+  }
+  return dir;
+}
+
+class Main {
+// used for mapping hoster node dir to worker node dir
+const string g_worker_root = GetDirFromEnv("WORKER_ROOT");
+const string g_hoster_root = GetDirFromEnv("HOSTER_ROOT");
+
+string GetWorkerNodeDir(const string& hostNodeDir) {
+  if (Slice(hostNodeDir).starts_with(g_hoster_root)) {
+    string dir;
+    size_t suffixLen = hostNodeDir.size() - g_hoster_root.size();
+    dir.reserve(g_worker_root.size() + suffixLen);
+    dir.append(g_worker_root);
+    dir.append(hostNodeDir.data() + g_hoster_root.size(), suffixLen);
+  }
+  THROW_STD(invalid_argument,
+            "hostNodeDir = '%s' does not start with HOSTER_ROOT='%s'",
+            hostNodeDir.c_str(), g_hoster_root.c_str());
+}
+string MakeOutputPath(const CompactionParams& params) {
+  string path = GetWorkerNodeDir(params.cf_paths[0].path);
+  char buf[128];
+  path.append(buf, snprintf(buf, sizeof(buf), "/job-%08d", params.job_id));
+  return path;
+}
+public:
 int main(int argc, char* argv[]) {
   unique_ptr<CompactionResults> results(new CompactionResults());
+  TERARK_UNUSED_VAR(argc);
+  TERARK_UNUSED_VAR(argv);
 try {
 /*
   string json_file;
@@ -102,7 +139,11 @@ try {
   string output_dir = MakeOutputPath(params);
   imm_dbo.env = env;
   imm_dbo.fs = fs;
-  imm_dbo.db_paths = params.cf_paths;
+  imm_dbo.db_paths.clear();
+  imm_dbo.db_paths.reserve(params.cf_paths.size() + 1);
+  for (auto& dir : params.cf_paths) {
+    imm_dbo.db_paths.emplace_back(GetWorkerNodeDir(dir.path), dir.target_size);
+  }
   imm_dbo.db_paths.emplace_back(output_dir, UINT64_MAX);
   cfo.cf_paths = imm_dbo.db_paths;
   string fake_dbname = output_dir;
@@ -215,8 +256,11 @@ catch (const ROCKSDB_NAMESPACE::Status& s) {
 
 } // main
 
-}
+}; // class Main
+
+} // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char* argv[]) {
-  return ROCKSDB_NAMESPACE::main(argc, argv);
+  ROCKSDB_NAMESPACE::Main m;
+  return m.main(argc, argv);
 }

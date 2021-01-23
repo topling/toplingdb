@@ -237,14 +237,14 @@ template<class ObjectPtr>
 void SetObjectRpcParamReqTpl(ObjectRpcParam& p, const ObjectPtr& obj) {
   if (auto p_obj = GetRawPtr(obj)) {
     p.clazz = obj->Name();
-    p.content = SerDe_SerializeReq(p.clazz, p_obj);
+    p.serde = SerDe_SerializeReq(p.clazz, p_obj);
   }
 }
 template<class ObjectPtr>
 void SetObjectRpcParamOptTpl(ObjectRpcParam& p, const ObjectPtr& obj) {
   if (auto p_obj = GetRawPtr(obj)) {
     p.clazz = obj->Name();
-    p.content = SerDe_SerializeOpt(p.clazz, p_obj);
+    p.serde = SerDe_SerializeOpt(p.clazz, p_obj);
   }
 }
 

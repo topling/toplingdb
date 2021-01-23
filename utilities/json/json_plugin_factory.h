@@ -236,33 +236,28 @@ std::string SerDe_SerializeReq(const std::string& clazz, const Object* obj) {
 template<class Object>
 std::string SerDe_SerializeOpt(const std::string& clazz, const Object* obj) {
   assert(nullptr != obj);
-  try {
-    const SerDeFunc<Object>* serde =
-        SerDeFactory<Object>::AcquirePlugin(clazz, json{}, JsonPluginRepo());
+  const SerDeFunc<Object>* serde = SerDeFactory<Object>::NullablePlugin(clazz);
+  if (serde) {
     std::string bytes;
     serde->Serialize(*obj, &bytes);
     return bytes;
   }
-  catch (const Status&) {
-    return std::string(); // empty string
-  }
+  return std::string(); // empty string
 }
 
 template<class Object>
 void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
   assert(nullptr != obj);
-  const SerDeFunc<Object>* serde = nullptr;
-  try {
-    serde = SerDeFactory<Object>::AcquirePlugin(clazz, json{}, JsonPluginRepo());
+  const SerDeFunc<Object>* serde = SerDeFactory<Object>::NullablePlugin(clazz);
+  if (serde) {
+    serde->DeSerialize(obj, bytes);
   }
-  catch (const Status&) {
+  else {
     assert(bytes.empty());
     if (!bytes.empty()) {
       fprintf(stderr, "ERROR: %s: class = %s, bytes is not empty\n", clazz.c_str());
     }
-    return;
   }
-  serde->DeSerialize(obj, bytes);
 }
 
 template<class Object, class Extra>

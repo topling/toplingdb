@@ -39,6 +39,14 @@ RepoPtrCref(const JsonPluginRepo::Impl::ObjMap<shared_ptr<T> >&);
 template<class T> // just for type deduction
 static T* RepoPtrCref(const JsonPluginRepo::Impl::ObjMap<T*>&);
 
+template<class T> // just for type deduction
+static const T*
+RepoConstRawPtr(const JsonPluginRepo::Impl::ObjMap<shared_ptr<T> >&);
+
+template<class T> // just for type deduction
+static const T*
+RepoConstRawPtr(const JsonPluginRepo::Impl::ObjMap<T*>&);
+
 std::string JsonGetClassName(const char* caller, const json& js) {
   if (js.is_string()) {
     return js.get_ref<const std::string&>();
@@ -388,6 +396,16 @@ Impl_Get(const std::string& name, const Map& map, Ptr* pp) {
   }
 }
 
+template<class Map, class Ptr>
+static const json&
+Impl_GetConsParams(const Map& map, const Ptr& p) {
+  auto iter = map.p2name.find(GetRawPtr(p));
+  if (map.p2name.end() == iter) {
+    THROW_NotFound("p is not in repo");
+  }
+  return iter->second.params;
+}
+
 #define JSON_REPO_TYPE_IMPL(field) \
 void JsonPluginRepo::Put(const string& name, \
                 decltype((RepoPtrCref(((Impl*)0)->field))) p) { \
@@ -396,6 +414,10 @@ void JsonPluginRepo::Put(const string& name, \
 bool JsonPluginRepo::Get(const string& name, \
                 decltype(RepoPtrType(((Impl*)0)->field))* pp) const { \
   return Impl_Get(name, m_impl->field, pp); \
+} \
+const json& JsonPluginRepo::GetConsParams( \
+                decltype((RepoPtrCref(((Impl*)0)->field))) p) const { \
+  return Impl_GetConsParams(m_impl->field, p); \
 }
 
 JSON_REPO_TYPE_IMPL(cache)
@@ -426,6 +448,41 @@ JSON_REPO_TYPE_IMPL(slice_transform)
 JSON_REPO_TYPE_IMPL(options)
 JSON_REPO_TYPE_IMPL(db_options)
 JSON_REPO_TYPE_IMPL(cf_options)
+
+#define JSON_GetConsParams(field) \
+const json& JsonPluginRepo::GetConsParams( \
+                decltype((RepoConstRawPtr(((Impl*)0)->field))) p) const { \
+  return Impl_GetConsParams(m_impl->field, p); \
+}
+
+JSON_GetConsParams(cache)
+JSON_GetConsParams(persistent_cache)
+JSON_GetConsParams(compaction_executor_factory)
+JSON_GetConsParams(compaction_filter_factory)
+//JSON_GetConsParams(comparator)
+JSON_GetConsParams(compaction_thread_limiter)
+//JSON_GetConsParams(env)
+JSON_GetConsParams(event_listener)
+JSON_GetConsParams(file_checksum_gen_factory)
+JSON_GetConsParams(file_system)
+JSON_GetConsParams(filter_policy)
+JSON_GetConsParams(flush_block_policy_factory)
+JSON_GetConsParams(info_log)
+JSON_GetConsParams(memory_allocator)
+JSON_GetConsParams(mem_table_rep_factory)
+JSON_GetConsParams(merge_operator)
+JSON_GetConsParams(rate_limiter)
+JSON_GetConsParams(sst_file_manager)
+JSON_GetConsParams(sst_partitioner_factory)
+JSON_GetConsParams(statistics)
+JSON_GetConsParams(table_factory)
+JSON_GetConsParams(table_properties_collector_factory)
+JSON_GetConsParams(txn_db_mutex_factory)
+JSON_GetConsParams(slice_transform)
+
+JSON_GetConsParams(options)
+JSON_GetConsParams(db_options)
+JSON_GetConsParams(cf_options)
 
 void JsonPluginRepo::Put(const std::string& name, DB* db) {
   Impl_Put(name, m_impl->db, DB_Ptr(db));

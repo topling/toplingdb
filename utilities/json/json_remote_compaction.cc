@@ -234,17 +234,23 @@ void ExampleUseMySerDe(const std::string& clazz) {
 // end. SerDe example for TablePropertiesCollector
 
 template<class ObjectPtr>
-void SetObjectRpcParamReqTpl(ObjectRpcParam& p, const ObjectPtr& obj) {
+void SetObjectRpcParamReqTpl(ObjectRpcParam& p, const ObjectPtr& obj,
+                             const JsonPluginRepo& repo) {
   if (auto p_obj = GetRawPtr(obj)) {
     p.clazz = obj->Name();
     p.serde = SerDe_SerializeReq(p.clazz, p_obj);
+    const json& js = repo.GetConsParams(obj);
+    p.params = js.dump();
   }
 }
 template<class ObjectPtr>
-void SetObjectRpcParamOptTpl(ObjectRpcParam& p, const ObjectPtr& obj) {
+void SetObjectRpcParamOptTpl(ObjectRpcParam& p, const ObjectPtr& obj,
+                             const JsonPluginRepo& repo) {
   if (auto p_obj = GetRawPtr(obj)) {
     p.clazz = obj->Name();
     p.serde = SerDe_SerializeOpt(p.clazz, p_obj);
+    const json& js = repo.GetConsParams(obj);
+    p.params = js.dump();
   }
 }
 
@@ -261,11 +267,13 @@ class RemoteCompactionExecutor : public CompactionExecutor {
 void RemoteCompactionExecutor::SetParams(CompactionParams* params,
                                          const ImmutableCFOptions& imm_cfo,
                                          const MutableCFOptions& mut_cfo) {
+  TERARK_VERIFY(nullptr != imm_cfo.plugin_repo);
+  const JsonPluginRepo& repo = *imm_cfo.plugin_repo;
   //uint32_t cf_id = params->cf_id;
 #define SetObjectRpcParamReq(cfo, field) \
-  SetObjectRpcParamReqTpl(params->field, cfo.field)
+  SetObjectRpcParamReqTpl(params->field, cfo.field, repo)
 #define SetObjectRpcParamOpt(cfo, field) \
-  SetObjectRpcParamOptTpl(params->field, cfo.field)
+  SetObjectRpcParamOptTpl(params->field, cfo.field, repo)
 
   SetObjectRpcParamReq(imm_cfo, compaction_filter_factory);
   SetObjectRpcParamOpt(imm_cfo, sst_partitioner_factory);
@@ -281,7 +289,7 @@ void RemoteCompactionExecutor::SetParams(CompactionParams* params,
       imm_cfo.table_properties_collector_factories.size());
   for (auto& tpc : imm_cfo.table_properties_collector_factories) {
     ObjectRpcParam p;
-    SetObjectRpcParamOptTpl(p, tpc);
+    SetObjectRpcParamOptTpl(p, tpc, repo);
     params->int_tbl_prop_collector_factories.push_back(std::move(p));
   }
   params->allow_ingest_behind = imm_cfo.allow_ingest_behind;

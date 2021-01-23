@@ -41,7 +41,9 @@ void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param,
   if (param.clazz.empty()) {
     return;  // not defined
   }
-  ptr = PluginFactory<Ptr>::AcquirePlugin(param.clazz, json{}, JsonPluginRepo());
+  JsonPluginRepo repo; // empty repo
+  json cons_params = json::parse(param.params);
+  ptr = PluginFactory<Ptr>::AcquirePlugin(param.clazz, cons_params, repo);
   if (!param.serde.empty())
     SerDe_DeSerialize(param.clazz, param.serde, &*ptr);
   ExtraBind(&*ptr, result);

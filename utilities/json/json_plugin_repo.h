@@ -169,7 +169,7 @@ class JsonPluginRepo {
   class Auto {
     friend class JsonPluginRepo;
     const JsonPluginRepo& m_repo;
-    const std::string&     m_name;
+    const std::string&    m_name;
     Auto(const JsonPluginRepo& repo, const std::string& name)
         : m_repo(repo), m_name(name) {}
     Auto(const Auto&) = default;
@@ -182,6 +182,60 @@ class JsonPluginRepo {
   /// std::shared_ptr<TableFactory> factory = repo["BlockBasedTable"];
   Auto Get(const std::string& name) const { return Auto(*this, name); }
   Auto operator[](const std::string& name) const { return Auto(*this, name); }
+
+  const json& GetConsParams(const std::shared_ptr<Options>&) const;
+  const json& GetConsParams(const std::shared_ptr<DBOptions>&) const;
+  const json& GetConsParams(const std::shared_ptr<ColumnFamilyOptions>&) const;
+  const json& GetConsParams(const std::shared_ptr<Cache>&) const;
+  const json& GetConsParams(const std::shared_ptr<CompactionExecutorFactory>&) const;
+  const json& GetConsParams(const std::shared_ptr<CompactionFilterFactory>&) const;
+  const json& GetConsParams(const Comparator*) const;
+  const json& GetConsParams(const std::shared_ptr<ConcurrentTaskLimiter>&) const;
+  const json& GetConsParams(Env*) const;
+  const json& GetConsParams(const std::shared_ptr<EventListener>&) const;
+  const json& GetConsParams(const std::shared_ptr<FileChecksumGenFactory>&) const;
+  const json& GetConsParams(const std::shared_ptr<FileSystem>&) const;
+  const json& GetConsParams(const std::shared_ptr<const FilterPolicy>&) const;
+  const json& GetConsParams(const std::shared_ptr<FlushBlockPolicyFactory>&) const;
+  const json& GetConsParams(const std::shared_ptr<Logger>&) const;
+  const json& GetConsParams(const std::shared_ptr<MemoryAllocator>&) const;
+  const json& GetConsParams(const std::shared_ptr<MemTableRepFactory>&) const;
+  const json& GetConsParams(const std::shared_ptr<MergeOperator>&) const;
+  const json& GetConsParams(const std::shared_ptr<PersistentCache>&) const;
+  const json& GetConsParams(const std::shared_ptr<RateLimiter>&) const;
+  const json& GetConsParams(const std::shared_ptr<const SliceTransform>&) const;
+  const json& GetConsParams(const std::shared_ptr<SstFileManager>&) const;
+  const json& GetConsParams(const std::shared_ptr<SstPartitionerFactory>&) const;
+  const json& GetConsParams(const std::shared_ptr<Statistics>&) const;
+  const json& GetConsParams(const std::shared_ptr<TableFactory>&) const;
+  const json& GetConsParams(const std::shared_ptr<TablePropertiesCollectorFactory>&) const;
+  const json& GetConsParams(const std::shared_ptr<TransactionDBMutexFactory>&) const;
+
+  const json& GetConsParams(const Options*) const;
+  const json& GetConsParams(const DBOptions*) const;
+  const json& GetConsParams(const ColumnFamilyOptions*) const;
+  const json& GetConsParams(const Cache*) const;
+  const json& GetConsParams(const CompactionExecutorFactory*) const;
+  const json& GetConsParams(const CompactionFilterFactory*) const;
+  const json& GetConsParams(const ConcurrentTaskLimiter*) const;
+  const json& GetConsParams(const EventListener*) const;
+  const json& GetConsParams(const FileChecksumGenFactory*) const;
+  const json& GetConsParams(const FileSystem*) const;
+  const json& GetConsParams(const FilterPolicy*) const;
+  const json& GetConsParams(const FlushBlockPolicyFactory*) const;
+  const json& GetConsParams(const Logger*) const;
+  const json& GetConsParams(const MemoryAllocator*) const;
+  const json& GetConsParams(const MemTableRepFactory*) const;
+  const json& GetConsParams(const MergeOperator*) const;
+  const json& GetConsParams(const PersistentCache*) const;
+  const json& GetConsParams(const RateLimiter*) const;
+  const json& GetConsParams(const SliceTransform*) const;
+  const json& GetConsParams(const SstFileManager*) const;
+  const json& GetConsParams(const SstPartitionerFactory*) const;
+  const json& GetConsParams(const Statistics*) const;
+  const json& GetConsParams(const TableFactory*) const;
+  const json& GetConsParams(const TablePropertiesCollectorFactory*) const;
+  const json& GetConsParams(const TransactionDBMutexFactory*) const;
 
   static int DebugLevel();
 

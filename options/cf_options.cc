@@ -847,6 +847,7 @@ ImmutableCFOptions::ImmutableCFOptions(const ImmutableDBOptions& db_options,
       sst_partitioner_factory(cf_options.sst_partitioner_factory),
       compaction_executor_factory(cf_options.compaction_executor_factory),
       allow_data_in_errors(db_options.allow_data_in_errors),
+      plugin_repo(db_options.plugin_repo),
       db_host_id(db_options.db_host_id) {}
 
 // Multiple two operands. If they overflow, return op1.

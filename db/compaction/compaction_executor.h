@@ -95,8 +95,8 @@ struct CompactionParams {
 
 struct CompactionResults {
   struct FileMinMeta {
-    std::string fname;
-    uint64_t    fsize;
+    std::string file_name;
+    uint64_t    file_size;
     uint64_t    smallest_seqno;
     uint64_t    largest_seqno;
   };
@@ -117,7 +117,7 @@ struct CompactionResults {
     size_t size() const;
   };
   // collect remote statistics
-  struct StatisticsResult {
+  struct RawStatistics {
     uint64_t tickers[INTERNAL_TICKER_ENUM_MAX] = {0};
     HistogramStat histograms[INTERNAL_HISTOGRAM_ENUM_MAX];
   };
@@ -130,11 +130,12 @@ struct CompactionResults {
   std::string table_factory;
   std::string prefix_extractor;
   std::string sst_partitioner_factory;
-  std::vector<std::string>  int_tbl_prop_collector;
+  std::vector<std::string>  int_tbl_prop_collector_factories;
   std::vector<std::string>  event_listner;
 
+  InternalStats::CompactionStats compaction_stats;
   CompactionJobStats job_stats;
-  StatisticsResult stat_result;
+  RawStatistics statistics;
   Status status;
 };
 

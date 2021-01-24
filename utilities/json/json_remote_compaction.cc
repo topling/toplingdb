@@ -152,10 +152,11 @@ DATA_IO_LOAD_SAVE_E(CompactionParams,
 
 using FileMinMeta = CompactionResults::FileMinMeta;
 using ObjectRpcRetVal = CompactionResults::ObjectRpcRetVal;
-using StatisticsResult = CompactionResults::StatisticsResult;
+using RawStatistics = CompactionResults::RawStatistics;
 
-DATA_IO_LOAD_SAVE_E(FileMinMeta, &fname &fsize &smallest_seqno &largest_seqno)
-DATA_IO_LOAD_SAVE_E(StatisticsResult, & tickers & histograms)
+DATA_IO_LOAD_SAVE_E(FileMinMeta, & file_name & file_size
+                  & smallest_seqno &largest_seqno)
+DATA_IO_LOAD_SAVE_E(RawStatistics, & tickers & histograms)
 DATA_IO_DUMP_RAW_MEM_E(HistogramStat)
 DATA_IO_LOAD_SAVE_E(CompactionJobStats, & elapsed_micros & cpu_micros
                   & num_input_records & num_input_files
@@ -183,9 +184,9 @@ DATA_IO_LOAD_SAVE_E(ObjectRpcRetVal,
 DATA_IO_LOAD_SAVE_E(CompactionResults, & sub_compacts
                  & compaction_filter_factory & merge_operator
                  & user_comparator & table_factory & prefix_extractor
-                 & sst_partitioner_factory & int_tbl_prop_collector
+                 & sst_partitioner_factory & int_tbl_prop_collector_factories
                  & event_listner
-                 & stat_result & status)
+                 & statistics & status)
 
 void SerDeRead(FILE* fp, CompactionParams* p) {
   using namespace terark;
@@ -317,19 +318,26 @@ void DoNotifyPlugin(const Ptr& p, const ResultType* extra) {
 }
 
 void RemoteCompactionExecutor::NotifyResults(const CompactionResults* results,
-                                          const ImmutableCFOptions& imm_cfo,
-                                          const MutableCFOptions& mut_cfo) {
+                                             const ImmutableCFOptions& imm_cfo,
+                                             const MutableCFOptions& mut_cfo) {
+//DoNotifyPlugin(obj.field1, &results->sub_compacts.field2);
 #define NotifyPlugin2(obj, field1, field2) \
-  DoNotifyPlugin(obj.field1, &results->sub_compacts.field2); \
   DoNotifyPlugin(obj.field1, &results->field2)
 #define NotifyPlugin1(obj, field) NotifyPlugin2(obj, field, field)
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   NotifyPlugin1(imm_cfo, compaction_filter_factory);
-  NotifyPlugin2(imm_cfo, user_comparator, user_comparator);
+  NotifyPlugin1(imm_cfo, user_comparator);
   NotifyPlugin1(imm_cfo, merge_operator);
   NotifyPlugin1(imm_cfo, table_factory);
   NotifyPlugin1(mut_cfo, prefix_extractor);
   NotifyPlugin1(imm_cfo, sst_partitioner_factory);
+  TERARK_VERIFY_EQ(results->int_tbl_prop_collector_factories.size(),
+                   imm_cfo.table_properties_collector_factories.size());
+  size_t n_tbl_prop_coll = results->int_tbl_prop_collector_factories.size();
+  for (size_t i = 0; i < n_tbl_prop_coll; i++) {
+    DoNotifyPlugin(imm_cfo.table_properties_collector_factories[i],
+                   &results->int_tbl_prop_collector_factories[i]);
+  }
 }
 
 Status RemoteCompactionExecutor::Execute(const CompactionParams& params,

@@ -776,6 +776,19 @@ Status CompactionJob::RunLocal() {
   return status;
 }
 
+void CompactionJob::GetSubCompactOutputs(
+        std::vector<std::vector<const FileMetaData*> >* outputs) const {
+  outputs->clear();
+  outputs->reserve(compact_->sub_compact_states.size());
+  for (const auto& state : compact_->sub_compact_states) {
+    outputs->emplace_back();
+    auto& cur_sub = outputs->back();
+    for (const auto& output : state.outputs) {
+      cur_sub.push_back(&output.meta);
+    }
+  }
+}
+
 Status CompactionJob::RunRemote()
 try {
   AutoThreadOperationStageUpdater stage_updater(
@@ -863,31 +876,29 @@ try {
   exec->NotifyResults(&rpc_results, *imm_cfo, *mut_cfo);
 
   assert(rpc_results.sub_compacts.size() == num_threads);
-  compaction_stats_.micros = env_->NowMicros() - start_micros;
-  uint64_t cpu_micros = 0;
-  compaction_stats_.cpu_micros = 0;
-  for (auto& job_stat : rpc_results.sub_compacts.job_stats) {
-    cpu_micros += job_stat.cpu_micros;
-  }
-  compaction_stats_.cpu_micros = cpu_micros;
+  //compaction_stats_.micros = env_->NowMicros() - start_micros;
+  compaction_stats_ = rpc_results.compaction_stats;
+  *compaction_job_stats_ = rpc_results.job_stats;
 
-  RecordTimeToHistogram(stats_, COMPACTION_TIME, compaction_stats_.micros);
-  RecordTimeToHistogram(stats_, COMPACTION_CPU_TIME, cpu_micros);
+  // remote statistics will be merged to stat_ later: stats_->Merge(..)
+  //RecordTimeToHistogram(stats_, COMPACTION_TIME, compaction_stats_.micros);
+  //RecordTimeToHistogram(stats_, COMPACTION_CPU_TIME, compaction_stats_.cpu_micros);
 
   TablePropertiesCollection tp;
   auto& cf_paths = imm_cfo->cf_paths;
+  compact_->num_output_files = 0;
   for (size_t i = 0; i < num_threads; ++i) {
     auto& sub_state = compact_->sub_compact_states[i];
     for (const auto& min_meta : rpc_results.sub_compacts.output_files[i]) {
-      auto& old_fname = min_meta.fname;
-      auto path_id = c->output_path_id(); // should get from old_fname
+      auto& old_fname = min_meta.file_name;
+      auto path_id = c->output_path_id();
       uint64_t file_number = versions_->NewFileNumber();
       std::string new_fname = TableFileName(cf_paths, file_number, path_id);
       Status st = imm_cfo->env->RenameFile(old_fname, new_fname);
       if (!st.ok()) {
         return st;
       }
-      FileDescriptor fd(file_number, path_id, min_meta.fsize,
+      FileDescriptor fd(file_number, path_id, min_meta.file_size,
                         min_meta.smallest_seqno, min_meta.largest_seqno);
       TableCache* tc = cfd->table_cache();
       Cache::Handle* ch = nullptr;
@@ -900,23 +911,30 @@ try {
       tp[new_fname] = tr->GetTableProperties();
 
       FileMetaData meta;
-      meta.fd = FileDescriptor(file_number, path_id, min_meta.fsize);
+      meta.fd = FileDescriptor(file_number, path_id, min_meta.file_size);
       bool enable_order_check = mut_cfo->check_flush_compaction_key_order;
       sub_state.outputs.emplace_back(std::move(meta), icmp,
           enable_order_check, /*enable_hash=*/paranoid_file_checks_);
-      sub_state.total_bytes += min_meta.fsize;
+      sub_state.total_bytes += min_meta.file_size;
     }
     sub_state.num_output_records = rpc_results.sub_compacts.num_output_records[i];
+    compact_->num_output_files += sub_state.outputs.size();
+    compact_->total_bytes += sub_state.total_bytes;
+    compact_->num_output_records += rpc_results.job_stats.num_output_records;
   }
   compact_->compaction->SetOutputTableProperties(std::move(tp));
 
   // Finish up all book-keeping to unify the subcompaction results
-  AggregateStatistics();
-  UpdateCompactionStats();
+  // these were run on remote compaction worker node
+  //AggregateStatistics();
+  //UpdateCompactionStats();
 
-  RecordCompactionIOStats();
+  //RecordCompactionIOStats(); // update remote statistics to local -->>
+  stats_->Merge(rpc_results.statistics.tickers,
+                rpc_results.statistics.histograms);
+
   LogFlush(db_options_.info_log);
-  TEST_SYNC_POINT("CompactionJob::Run():End");
+  TEST_SYNC_POINT("CompactionJob::RunRemote():End");
 
   compact_->status = Status::OK();
   return Status::OK();

@@ -40,8 +40,7 @@ void ExtraBind(Object* obj, ResultType* extra) {
 
 template<class Ptr, class ResultType>
 void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param,
-                     vector<ResultType>* sub_compact_result,
-                     string* aggregated_result) {
+                     vector<ResultType>* sub_compact_result) {
   if (param.clazz.empty()) {
     return;  // not defined
   }
@@ -51,7 +50,6 @@ void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param,
   if (!param.serde.empty())
     SerDe_DeSerialize(param.clazz, param.serde, &*ptr);
   ExtraBind(&*ptr, sub_compact_result);
-  ExtraBind(&*ptr, aggregated_result);
 }
 
 const char* GetEnvString(const char* name, const char* Default = nullptr) {
@@ -134,7 +132,7 @@ try {
   results->sub_compacts.resize(params.max_subcompactions);
 
 #define MyCreatePlugin2(obj, field1, field2) \
-  CreatePluginTpl(obj.field1, params.field2, &results->sub_compacts.field2, &results->field2)
+  CreatePluginTpl(obj.field1, params.field2, &results->sub_compacts.field2)
 #define MyCreatePlugin1(obj, field) MyCreatePlugin2(obj, field, field)
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   MyCreatePlugin1(cfo, compaction_filter_factory);
@@ -143,6 +141,18 @@ try {
   MyCreatePlugin1(cfo, table_factory);
   MyCreatePlugin1(cfo, prefix_extractor);
   MyCreatePlugin1(cfo, sst_partitioner_factory);
+
+  size_t n_tbl_prop_coll = params.int_tbl_prop_collector_factories.size();
+  cfo.table_properties_collector_factories.resize(n_tbl_prop_coll);
+//  for (size_t i = 0; i < params.max_subcompactions; ++i) {
+//    results->sub_compacts.int_tbl_prop_collector
+//  }
+  for (size_t i = 0; i < n_tbl_prop_coll; i++) {
+    auto& factory = cfo.table_properties_collector_factories[i];
+    auto& cons_param = params.int_tbl_prop_collector_factories[i];
+    auto& result = results->sub_compacts.int_tbl_prop_collector;
+    CreatePluginTpl(factory, cons_param, (vector<int>*)nullptr);
+  }
 
   string output_dir = MakeOutputPath(params);
   imm_dbo.env = env;
@@ -246,6 +256,41 @@ try {
     //auto s2 = compaction_job.io_status();
     //TERARK_VERIFY_F(s2.ok(), "%s", s2.ToString().c_str());
   }
+#define SetResultSerDe2(obj, field1, field2) \
+  results->field2 = SerDe_SerializeOpt(params.field2.clazz, GetRawPtr(obj.field1))
+#define SetResultSerDe1(obj, field) SetResultSerDe2(obj, field, field)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  SetResultSerDe1(cfo, compaction_filter_factory);
+  SetResultSerDe2(cfo, comparator, user_comparator);
+  SetResultSerDe1(cfo, merge_operator);
+  SetResultSerDe1(cfo, table_factory);
+  SetResultSerDe1(cfo, prefix_extractor);
+  SetResultSerDe1(cfo, sst_partitioner_factory);
+  for (size_t i = 0; i < n_tbl_prop_coll; i++) {
+    auto& factory = cfo.table_properties_collector_factories[i];
+    auto& cons_param = params.int_tbl_prop_collector_factories[i];
+    auto& result = results->int_tbl_prop_collector_factories[i];
+    result = SerDe_SerializeOpt(cons_param.clazz, GetRawPtr(factory));
+  }
+  vector<vector<const FileMetaData*> > output_files;
+  compaction_job.GetSubCompactOutputs(&output_files);
+  results->sub_compacts.output_files.resize(output_files.size());
+  for (size_t i = 0; i < output_files.size(); ++i) {
+    auto& src_vec = output_files[i];
+    auto& dst_vec = results->sub_compacts.output_files[i];
+    dst_vec.resize(src_vec.size());
+    for (size_t j = 0; j < dst_vec.size(); ++j) {
+      const FileMetaData& src = *src_vec[j];
+      CompactionResults::FileMinMeta& dst = dst_vec[j];
+      dst.file_number = src.fd.GetNumber();
+      dst.file_size = src.fd.GetFileSize();
+      dst.smallest_seqno = src.fd.smallest_seqno;
+      dst.largest_seqno = src.fd.largest_seqno;
+    }
+  }
+  results->compaction_stats = compaction_job.GetCompactionStats();
+  results->job_stats = *compaction_job.GetCompactionJobStats();
+  statistics->GetAggregated(results->statistics.tickers, results->statistics.histograms);
   SerDeWrite(stdout, results.get());
   return 0;
 }

@@ -106,6 +106,10 @@ class CompactionJob {
 
   size_t NumSubCompacts() const;
 
+  void GetSubCompactOutputs(std::vector<std::vector<const FileMetaData*> >*) const;
+  CompactionJobStats* GetCompactionJobStats() const { return compaction_job_stats_; }
+  const InternalStats::CompactionStats& GetCompactionStats() const { return compaction_stats_; }
+
  private:
   struct SubcompactionState;
 

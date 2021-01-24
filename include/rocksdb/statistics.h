@@ -575,6 +575,7 @@ class Statistics {
   virtual bool HistEnabledForType(uint32_t type) const {
     return type < HISTOGRAM_ENUM_MAX;
   }
+  virtual void GetAggregated(uint64_t* tickers, struct HistogramStat*) const = 0;
   virtual void Merge(const uint64_t* tickers, const struct HistogramStat*) = 0;
 
   void set_stats_level(StatsLevel sl) {

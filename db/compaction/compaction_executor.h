@@ -122,6 +122,17 @@ struct CompactionResults {
     HistogramStat histograms[INTERNAL_HISTOGRAM_ENUM_MAX];
   };
   ObjectRpcRetVal sub_compacts;
+
+  // aggregated info for return to the hoster
+  std::string compaction_filter_factory;
+  std::string merge_operator;
+  std::string user_comparator;
+  std::string table_factory;
+  std::string prefix_extractor;
+  std::string sst_partitioner_factory;
+  std::vector<std::string>  int_tbl_prop_collector;
+  std::vector<std::string>  event_listner;
+
   CompactionJobStats job_stats;
   StatisticsResult stat_result;
   Status status;
@@ -148,6 +159,9 @@ class CompactionExecutor {
   virtual void SetParams(CompactionParams*,
                          const ImmutableCFOptions&,
                          const MutableCFOptions&) = 0;
+  virtual void NotifyResults(const CompactionResults*,
+                             const ImmutableCFOptions&,
+                             const MutableCFOptions&) = 0;
   virtual Status Execute(const CompactionParams&, CompactionResults*) = 0;
 };
 
@@ -159,5 +173,7 @@ class CompactionExecutorFactory {
 };
 
 CompactionExecutorFactory* GetLocalCompactionExecutorFactory();
+bool IsCompactionWorker();
+void SetCompactionWorker(bool b);
 
 } // namespace ROCKSDB_NAMESPACE

@@ -114,4 +114,12 @@ class LocalCompactionExecutorFactory : public CompactionExecutorFactory {
   }
 };
 
+static bool g_is_compaction_worker = false;
+bool IsCompactionWorker() {
+  return g_is_compaction_worker;
+}
+void SetCompactionWorker(bool b) {
+  g_is_compaction_worker = b;
+}
+
 } // namespace ROCKSDB_NAMESPACE

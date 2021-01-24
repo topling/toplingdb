@@ -55,7 +55,6 @@ void DataIO_saveObject(DataIO& dio, const Status& x) {
   }
 }
 
-
 DATA_IO_LOAD_SAVE_E(FileDescriptor, & packed_number_and_path_id & file_size
                   & smallest_seqno & largest_seqno)
 DATA_IO_DUMP_RAW_MEM_E(FileSampledStats)
@@ -126,6 +125,7 @@ DATA_IO_LOAD_SAVE_E(VersionSet, & next_file_number_ & last_sequence_
                   )
 */
 DATA_IO_DUMP_RAW_MEM_E(VersionSetSerDe)
+DATA_IO_LOAD_SAVE_E(ObjectRpcParam, &clazz &params &serde)
 DATA_IO_LOAD_SAVE_E(CompactionParams,
                   & job_id & num_levels & output_level & cf_id
                   & version_set
@@ -180,7 +180,12 @@ DATA_IO_LOAD_SAVE_E(ObjectRpcRetVal,
                   & int_tbl_prop_collector & event_listner
                   & output_files & job_stats & num_output_records
                   )
-DATA_IO_LOAD_SAVE_E(CompactionResults, & sub_compacts & stat_result & status)
+DATA_IO_LOAD_SAVE_E(CompactionResults, & sub_compacts
+                 & compaction_filter_factory & merge_operator
+                 & user_comparator & table_factory & prefix_extractor
+                 & sst_partitioner_factory & int_tbl_prop_collector
+                 & event_listner
+                 & stat_result & status)
 
 void SerDeRead(FILE* fp, CompactionParams* p) {
   using namespace terark;
@@ -261,6 +266,9 @@ class RemoteCompactionExecutor : public CompactionExecutor {
   void SetParams(CompactionParams*,
                  const ImmutableCFOptions&,
                  const MutableCFOptions&) override;
+  void NotifyResults(const CompactionResults* results,
+                     const ImmutableCFOptions& imm_cfo,
+                     const MutableCFOptions& mut_cfo) override;
   Status Execute(const CompactionParams&, CompactionResults*) override;
 };
 
@@ -296,6 +304,32 @@ void RemoteCompactionExecutor::SetParams(CompactionParams* params,
 
   params->cf_paths = imm_cfo.cf_paths;
   //params->output_path = ??; // TODO: use remote hostname?
+}
+
+template<class Ptr, class ResultType>
+void DoNotifyPlugin(const Ptr& p, const ResultType* extra) {
+  const std::string& clazz = p->Name();
+  using Object = typename std::remove_reference<decltype(*p)>::type;
+  auto* func = ExtraBinder<Object, ResultType>::NullablePlugin(clazz);
+  if (func) {
+    func->Bind(&*p, const_cast<ResultType*>(extra));
+  }
+}
+
+void RemoteCompactionExecutor::NotifyResults(const CompactionResults* results,
+                                          const ImmutableCFOptions& imm_cfo,
+                                          const MutableCFOptions& mut_cfo) {
+#define NotifyPlugin2(obj, field1, field2) \
+  DoNotifyPlugin(obj.field1, &results->sub_compacts.field2); \
+  DoNotifyPlugin(obj.field1, &results->field2)
+#define NotifyPlugin1(obj, field) NotifyPlugin2(obj, field, field)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  NotifyPlugin1(imm_cfo, compaction_filter_factory);
+  NotifyPlugin2(imm_cfo, user_comparator, user_comparator);
+  NotifyPlugin1(imm_cfo, merge_operator);
+  NotifyPlugin1(imm_cfo, table_factory);
+  NotifyPlugin1(mut_cfo, prefix_extractor);
+  NotifyPlugin1(imm_cfo, sst_partitioner_factory);
 }
 
 Status RemoteCompactionExecutor::Execute(const CompactionParams& params,

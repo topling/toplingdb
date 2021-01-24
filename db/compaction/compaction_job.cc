@@ -860,6 +860,7 @@ try {
   if (!s.ok()) {
     return s;
   }
+  exec->NotifyResults(&rpc_results, *imm_cfo, *mut_cfo);
 
   assert(rpc_results.sub_compacts.size() == num_threads);
   compaction_stats_.micros = env_->NowMicros() - start_micros;

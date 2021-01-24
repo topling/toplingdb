@@ -22,14 +22,17 @@ using namespace std;
 // by CompactionFilterFactory should return its internal data such as some
 // statistics into the ResultType object, then the ResultType object will be
 // returned to the rocksdb process.
-// CompactionFilterFactory should use GetSubCompactIdx() as index to get
-// per-thread(per-SubCompact) ResultType
-// to 'extra' (type vector<ResultType>)
+// 1. For results->sub_compacts.field
+//    CompactionFilterFactory should use GetSubCompactIdx() as index to get
+//    per-thread(per-SubCompact) ResultType
+//    to 'extra' (type ResultType).
+//    really bind to factory's product object
+// 2. For results->field, this is an aggregated info, bind to factory itself.
 template<class Object, class ResultType>
-void ExtraBind(Object* obj, vector<ResultType>* extra) {
+void ExtraBind(Object* obj, ResultType* extra) {
   const string& clazz = obj->Name();
-  const ExtraBinderFunc<Object, vector<ResultType> >* func =
-      ExtraBinder<Object, vector<ResultType> >::NullablePlugin(clazz);
+  const ExtraBinderFunc<Object, ResultType>* func =
+      ExtraBinder<Object, ResultType>::NullablePlugin(clazz);
   if (func) {
     func->Bind(obj, extra);
   }
@@ -37,7 +40,8 @@ void ExtraBind(Object* obj, vector<ResultType>* extra) {
 
 template<class Ptr, class ResultType>
 void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param,
-                     vector<ResultType>* result) {
+                     vector<ResultType>* sub_compact_result,
+                     string* aggregated_result) {
   if (param.clazz.empty()) {
     return;  // not defined
   }
@@ -46,7 +50,8 @@ void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param,
   ptr = PluginFactory<Ptr>::AcquirePlugin(param.clazz, cons_params, repo);
   if (!param.serde.empty())
     SerDe_DeSerialize(param.clazz, param.serde, &*ptr);
-  ExtraBind(&*ptr, result);
+  ExtraBind(&*ptr, sub_compact_result);
+  ExtraBind(&*ptr, aggregated_result);
 }
 
 const char* GetEnvString(const char* name, const char* Default = nullptr) {
@@ -91,6 +96,7 @@ string MakeOutputPath(const CompactionParams& params) {
 }
 public:
 int main(int argc, char* argv[]) {
+  SetCompactionWorker(true);
   unique_ptr<CompactionResults> results(new CompactionResults());
   TERARK_UNUSED_VAR(argc);
   TERARK_UNUSED_VAR(argv);
@@ -128,7 +134,7 @@ try {
   results->sub_compacts.resize(params.max_subcompactions);
 
 #define MyCreatePlugin2(obj, field1, field2) \
-  CreatePluginTpl(obj.field1, params.field2, &results->sub_compacts.field2)
+  CreatePluginTpl(obj.field1, params.field2, &results->sub_compacts.field2, &results->field2)
 #define MyCreatePlugin1(obj, field) MyCreatePlugin2(obj, field, field)
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   MyCreatePlugin1(cfo, compaction_filter_factory);

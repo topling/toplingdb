@@ -110,7 +110,7 @@ Status LocalCompactionExecutor::Execute(const CompactionParams& params,
 class LocalCompactionExecutorFactory : public CompactionExecutorFactory {
  public:
   CompactionExecutor* NewExecutor(const Compaction*) const override {
-
+    return nullptr;
   }
 };
 

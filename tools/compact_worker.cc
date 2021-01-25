@@ -59,6 +59,7 @@ bool ReplacePrefix(Slice Old, Slice New, const string& str, string* res) {
 
 class Main {
 // used for mapping hoster node dir to worker node dir
+const string g_worker_db_name = GetDirFromEnv("WORKER_DB_NAME");
 const string g_worker_root = GetDirFromEnv("WORKER_ROOT");
 const string g_hoster_root = GetDirFromEnv("HOSTER_ROOT");
 
@@ -156,10 +157,9 @@ try {
   }
   imm_dbo.db_paths.emplace_back(output_dir, UINT64_MAX);
   cfo.cf_paths = imm_dbo.db_paths;
-  string fake_dbname = output_dir;
-  env->CreateDirIfMissing(fake_dbname);
+  env->CreateDirIfMissing(g_worker_db_name);
   unique_ptr<VersionSet> versions(
-      new VersionSet(fake_dbname, &imm_dbo, env_options, table_cache.get(),
+      new VersionSet(g_worker_db_name, &imm_dbo, env_options, table_cache.get(),
                      &write_buffer_manager, &write_controller,
                      /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr));
   params.version_set.To(versions.get());
@@ -172,12 +172,12 @@ try {
   new_db.SetColumnFamily(params.cf_id);
   new_db.AddColumnFamily(params.cf_name);
   for (auto& onelevel : *params.inputs) {
-    for (auto& file : onelevel.files) {
-      new_db.AddFile(onelevel.level, *file); // file will be copied
+    for (auto& file_meta : onelevel.files) {
+      new_db.AddFile(onelevel.level, *file_meta); // file_meta will be copied
     }
   }
   auto manifest_fnum = params.version_set.manifest_file_number;
-  const string manifest = DescriptorFileName(fake_dbname, manifest_fnum);
+  const string manifest = DescriptorFileName(g_worker_db_name, manifest_fnum);
   {
     unique_ptr<WritableFile> file;
     Status s1 = env->NewWritableFile(
@@ -191,7 +191,7 @@ try {
     auto s2 = log.AddRecord(record);
     TERARK_VERIFY_F(s2.ok(), "%s", s2.ToString().c_str());
   // Make "CURRENT" file that points to the new manifest file.
-    auto s3 = SetCurrentFile(fs.get(), fake_dbname, manifest_fnum, nullptr);
+    auto s3 = SetCurrentFile(fs.get(), g_worker_db_name, manifest_fnum, nullptr);
     TERARK_VERIFY_F(s3.ok(), "%s", s3.ToString().c_str());
     std::vector<ColumnFamilyDescriptor> column_families;
     column_families.emplace_back(params.cf_name, cfo);
@@ -228,12 +228,12 @@ try {
   CompactionJob compaction_job(
       params.job_id, &compaction, imm_dbo, env_options, versions.get(),
       &shutting_down, params.preserve_deletes_seqnum, &log_buffer,
-      nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, nullptr, statistics.get(),
       &mutex, &error_handler, *params.existing_snapshots,
       params.earliest_write_conflict_snapshot, snapshot_checker,
       table_cache, &event_logger, params.paranoid_file_checks,
       false/*measure_io_stats*/,
-      fake_dbname, &results->job_stats, Env::Priority::USER,
+      g_worker_db_name, &results->job_stats, Env::Priority::USER,
       nullptr /* IOTracer */,
       /*manual_compaction_paused=*/nullptr,
       params.db_id, params.db_session_id,
@@ -285,17 +285,22 @@ try {
   }
   results->compaction_stats = compaction_job.GetCompactionStats();
   results->job_stats = *compaction_job.GetCompactionJobStats();
-  statistics->GetAggregated(results->statistics.tickers, results->statistics.histograms);
+  statistics->GetAggregated(results->statistics.tickers,
+                            results->statistics.histograms);
   SerDeWrite(stdout, results.get());
   return 0;
 }
 catch (const std::exception& ex) {
+  if (results->status.ok()) {
+    results->status = Status::Corruption(ROCKSDB_FUNC, ex.what());
+  }
   SerDeWrite(stdout, results.get());
   fprintf(stderr, "%s:%d: %s: caught exception: %s\n",
           __FILE__, __LINE__, ROCKSDB_FUNC, ex.what());
   return 1;
 }
 catch (const ROCKSDB_NAMESPACE::Status& s) {
+  results->status = s;
   SerDeWrite(stdout, results.get());
   fprintf(stderr, "%s:%d: %s: caught Status: %s\n",
           __FILE__, __LINE__, ROCKSDB_FUNC, s.ToString().c_str());

@@ -28,35 +28,6 @@ CompactionParams::~CompactionParams() {
   }
 }
 
-void CompactionResults::ObjectRpcRetVal::resize(size_t n) {
-  compaction_filter_factory.resize(n); // for each compaction filter
-  merge_operator.resize(n);
-  user_comparator.resize(n);
-  table_factory.resize(n); // table builder
-  prefix_extractor.resize(n);
-  sst_partitioner_factory.resize(n);
-  int_tbl_prop_collector.resize(n);
-  event_listner.resize(n);
-  output_files.resize(n);
-  job_stats.resize(n);
-  num_output_records.resize(n);
-}
-size_t CompactionResults::ObjectRpcRetVal::size() const {
-  size_t n_size = compaction_filter_factory.size();
-  //assert(n_size == compaction_filter_factory.size());
-  assert(n_size == merge_operator.size());
-  assert(n_size == user_comparator.size());
-  assert(n_size == table_factory.size()); // table builder
-  assert(n_size == prefix_extractor.size());
-  assert(n_size == sst_partitioner_factory.size());
-  assert(n_size == int_tbl_prop_collector.size());
-  assert(n_size == event_listner.size());
-  assert(n_size == output_files.size());
-  assert(n_size == job_stats.size());
-  assert(n_size == num_output_records.size());
-  return n_size;
-}
-
 struct MyVersionSet : VersionSet {
   void From(const VersionSetSerDe& version_set) {
     next_file_number_ = version_set.next_file_number;
@@ -105,6 +76,7 @@ class LocalCompactionExecutor : public CompactionExecutor {
 Status LocalCompactionExecutor::Execute(const CompactionParams& params,
                                         CompactionResults* results)
 {
+  return Status::OK();
 }
 
 class LocalCompactionExecutorFactory : public CompactionExecutorFactory {

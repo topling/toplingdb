@@ -809,7 +809,7 @@ try {
 
   // if with compaction filter, always use compaction filter factory
   assert(nullptr == imm_cfo->compaction_filter);
-
+/*
   auto CreateStubObjects = [&]() {
     rpc_stub.sub_compacts.reserve(num_threads);
     for (size_t i = 0; i < num_threads; ++i) {
@@ -824,7 +824,7 @@ try {
       sub.sst_partitioner = c->CreateSstPartitioner();
     }
   };
-
+*/
   CompactionParams rpc_params;
   CompactionResults rpc_results;
 
@@ -864,7 +864,7 @@ try {
   rpc_params.smallest_user_key = compact_->SmallestUserKey().ToString();
   rpc_params.largest_user_key = compact_->LargestUserKey().ToString();
 
-  const uint64_t start_micros = env_->NowMicros();
+  //const uint64_t start_micros = env_->NowMicros();
   auto exec_factory = imm_cfo->compaction_executor_factory.get();
   assert(nullptr != exec_factory);
   auto exec = exec_factory->NewExecutor(c);

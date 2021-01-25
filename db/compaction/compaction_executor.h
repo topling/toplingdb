@@ -100,28 +100,11 @@ struct CompactionResults {
     uint64_t    smallest_seqno;
     uint64_t    largest_seqno;
   };
-  struct ObjectRpcRetVal {
-    // each field is a vector which each element is for a sub_compact
-    std::vector<std::string> compaction_filter_factory; // for each compaction filter
-    std::vector<std::string> merge_operator;
-    std::vector<std::string> user_comparator;
-    std::vector<std::string> table_factory; // table builder
-    std::vector<std::string> prefix_extractor;
-    std::vector<std::string> sst_partitioner_factory;
-    std::vector<std::vector<std::string> > int_tbl_prop_collector;
-    std::vector<std::vector<std::string> > event_listner;
-    std::vector<std::vector<FileMinMeta> > output_files;
-    std::vector<CompactionJobStats> job_stats;
-    std::vector<uint64_t> num_output_records;
-    void resize(size_t);
-    size_t size() const;
-  };
   // collect remote statistics
   struct RawStatistics {
     uint64_t tickers[INTERNAL_TICKER_ENUM_MAX] = {0};
     HistogramStat histograms[INTERNAL_HISTOGRAM_ENUM_MAX];
   };
-  ObjectRpcRetVal sub_compacts;
 
   // aggregated info for return to the hoster
   std::string compaction_filter_factory;
@@ -133,6 +116,7 @@ struct CompactionResults {
   std::vector<std::string>  int_tbl_prop_collector_factories;
   std::vector<std::string>  event_listner;
 
+  std::vector<std::vector<FileMinMeta> > output_files;
   InternalStats::CompactionStats compaction_stats;
   CompactionJobStats job_stats;
   RawStatistics statistics;

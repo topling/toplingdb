@@ -151,7 +151,6 @@ DATA_IO_LOAD_SAVE_E(CompactionParams,
                   )
 
 using FileMinMeta = CompactionResults::FileMinMeta;
-using ObjectRpcRetVal = CompactionResults::ObjectRpcRetVal;
 using RawStatistics = CompactionResults::RawStatistics;
 
 DATA_IO_LOAD_SAVE_E(FileMinMeta, & file_name & file_size
@@ -175,18 +174,14 @@ DATA_IO_LOAD_SAVE_E(CompactionJobStats, & elapsed_micros & cpu_micros
                   & smallest_output_key_prefix & largest_output_key_prefix
                   & num_single_del_fallthru & num_single_del_mismatch
                   )
-DATA_IO_LOAD_SAVE_E(ObjectRpcRetVal,
-                  & compaction_filter_factory & merge_operator
-                  & user_comparator & table_factory & prefix_extractor
-                  & int_tbl_prop_collector & event_listner
-                  & output_files & job_stats & num_output_records
-                  )
-DATA_IO_LOAD_SAVE_E(CompactionResults, & sub_compacts
+DATA_IO_LOAD_SAVE_E(CompactionResults,
                  & compaction_filter_factory & merge_operator
                  & user_comparator & table_factory & prefix_extractor
                  & sst_partitioner_factory & int_tbl_prop_collector_factories
-                 & event_listner
-                 & statistics & status)
+                 & event_listner & output_files
+                 & compaction_stats & job_stats
+                 & statistics & status
+                 )
 
 void SerDeRead(FILE* fp, CompactionParams* p) {
   using namespace terark;
@@ -198,46 +193,6 @@ void SerDeWrite(FILE* fp, CompactionResults* res) {
   LittleEndianDataOutput<NonOwnerFileStream> dio(fp);
   dio << *res;
 }
-
-//----------------------------------------------------------------------------
-// SerDe example for TablePropertiesCollector
-struct MySerDe : SerDeFunc<TablePropertiesCollector> {
-  Status Serialize(const TablePropertiesCollector&, std::string* /*output*/)
-  const override {
-    // do serialize
-    return Status::OK();
-  }
-  Status DeSerialize(TablePropertiesCollector*, const Slice& /*input*/)
-  const override {
-    // do deserialize
-    return Status::OK();
-  }
-};
-static const SerDeFunc<TablePropertiesCollector>*
-CreateMySerDe(const json&,const JsonPluginRepo&) {
-  static MySerDe serde;
-  return &serde;
-}
-//ROCKSDB_FACTORY_REG("CompactOnDeletionCollector", CreateMySerDe);
-ROCKSDB_FACTORY_REG("MySerDe", CreateMySerDe);
-
-void ExampleUseMySerDe(const std::string& clazz) {
-  // SerDe should have same class name(clazz) with PluginFactory
-  Status s;
-  const SerDeFunc<TablePropertiesCollector>* serde =
-      SerDeFactory<TablePropertiesCollector>::AcquirePlugin(
-          clazz, json{}, JsonPluginRepo{});
-  auto factory =
-      PluginFactorySP<TablePropertiesCollectorFactory>::AcquirePlugin(
-          clazz, json{}, JsonPluginRepo{});
-  auto instance = factory->CreateTablePropertiesCollector({});
-  std::string bytes;
-  s = serde->Serialize(*instance, &bytes);
-  // send bytes ...
-  // recv bytes ...
-  s = serde->DeSerialize(&*instance, bytes);
-}
-// end. SerDe example for TablePropertiesCollector
 
 template<class ObjectPtr>
 void SetObjectRpcParamReqTpl(ObjectRpcParam& p, const ObjectPtr& obj,

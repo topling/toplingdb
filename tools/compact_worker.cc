@@ -17,30 +17,8 @@ namespace ROCKSDB_NAMESPACE {
 //using namespace terark;
 using namespace std;
 
-// for CompactionFilter:
-// bind extra to CompactionFilterFactory, so the CompactionFilter created
-// by CompactionFilterFactory should return its internal data such as some
-// statistics into the ResultType object, then the ResultType object will be
-// returned to the rocksdb process.
-// 1. For results->sub_compacts.field
-//    CompactionFilterFactory should use GetSubCompactIdx() as index to get
-//    per-thread(per-SubCompact) ResultType
-//    to 'extra' (type ResultType).
-//    really bind to factory's product object
-// 2. For results->field, this is an aggregated info, bind to factory itself.
-template<class Object, class ResultType>
-void ExtraBind(Object* obj, ResultType* extra) {
-  const string& clazz = obj->Name();
-  const ExtraBinderFunc<Object, ResultType>* func =
-      ExtraBinder<Object, ResultType>::NullablePlugin(clazz);
-  if (func) {
-    func->Bind(obj, extra);
-  }
-}
-
-template<class Ptr, class ResultType>
-void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param,
-                     vector<ResultType>* sub_compact_result) {
+template<class Ptr>
+void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param) {
   if (param.clazz.empty()) {
     return;  // not defined
   }
@@ -49,7 +27,6 @@ void CreatePluginTpl(Ptr& ptr, const ObjectRpcParam& param,
   ptr = PluginFactory<Ptr>::AcquirePlugin(param.clazz, cons_params, repo);
   if (!param.serde.empty())
     SerDe_DeSerialize(param.clazz, param.serde, &*ptr);
-  ExtraBind(&*ptr, sub_compact_result);
 }
 
 const char* GetEnvString(const char* name, const char* Default = nullptr) {
@@ -69,22 +46,39 @@ string GetDirFromEnv(const char* name, const char* Default = nullptr) {
   return dir;
 }
 
+bool ReplacePrefix(Slice Old, Slice New, const string& str, string* res) {
+  if (Slice(str).starts_with(Old)) {
+    size_t suffixLen = str.size() - Old.size();
+    res->reserve(New.size() + suffixLen);
+    res->append(New.data_, New.size_);
+    res->append(str.data() + Old.size(), suffixLen);
+    return true;
+  }
+  return false;
+}
+
 class Main {
 // used for mapping hoster node dir to worker node dir
 const string g_worker_root = GetDirFromEnv("WORKER_ROOT");
 const string g_hoster_root = GetDirFromEnv("HOSTER_ROOT");
 
 string GetWorkerNodeDir(const string& hostNodeDir) {
-  if (Slice(hostNodeDir).starts_with(g_hoster_root)) {
-    string dir;
-    size_t suffixLen = hostNodeDir.size() - g_hoster_root.size();
-    dir.reserve(g_worker_root.size() + suffixLen);
-    dir.append(g_worker_root);
-    dir.append(hostNodeDir.data() + g_hoster_root.size(), suffixLen);
+  string res;
+  if (ReplacePrefix(g_hoster_root, g_worker_root, hostNodeDir, &res)) {
+    return res;
   }
   THROW_STD(invalid_argument,
             "hostNodeDir = '%s' does not start with HOSTER_ROOT='%s'",
             hostNodeDir.c_str(), g_hoster_root.c_str());
+}
+string GetHosterNodeDir(const string& workerNodeDir) {
+  string res;
+  if (ReplacePrefix(g_worker_root, g_hoster_root, workerNodeDir, &res)) {
+    return res;
+  }
+  THROW_STD(invalid_argument,
+            "workerNodeDir = '%s' does not start with WORKER_ROOT='%s'",
+            workerNodeDir.c_str(), g_worker_root.c_str());
 }
 string MakeOutputPath(const CompactionParams& params) {
   string path = GetWorkerNodeDir(params.cf_paths[0].path);
@@ -129,10 +123,9 @@ try {
   ImmutableDBOptions imm_dbo;
   MutableDBOptions   mut_dbo;
   ColumnFamilyOptions cfo;
-  results->sub_compacts.resize(params.max_subcompactions);
 
 #define MyCreatePlugin2(obj, field1, field2) \
-  CreatePluginTpl(obj.field1, params.field2, &results->sub_compacts.field2)
+  CreatePluginTpl(obj.field1, params.field2)
 #define MyCreatePlugin1(obj, field) MyCreatePlugin2(obj, field, field)
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   MyCreatePlugin1(cfo, compaction_filter_factory);
@@ -150,8 +143,7 @@ try {
   for (size_t i = 0; i < n_tbl_prop_coll; i++) {
     auto& factory = cfo.table_properties_collector_factories[i];
     auto& cons_param = params.int_tbl_prop_collector_factories[i];
-    auto& result = results->sub_compacts.int_tbl_prop_collector;
-    CreatePluginTpl(factory, cons_param, (vector<int>*)nullptr);
+    CreatePluginTpl(factory, cons_param);
   }
 
   string output_dir = MakeOutputPath(params);
@@ -230,7 +222,8 @@ try {
   EventLogger event_logger(imm_dbo.info_log.get());
   SnapshotChecker* snapshot_checker = nullptr;
   if (!params.full_history_ts_low.empty()) {
-    TERARK_VERIFY_EQ(cfo.comparator->timestamp_size(), params.full_history_ts_low.size());
+    TERARK_VERIFY_EQ(cfo.comparator->timestamp_size(),
+                     params.full_history_ts_low.size());
   }
   CompactionJob compaction_job(
       params.job_id, &compaction, imm_dbo, env_options, versions.get(),
@@ -274,15 +267,17 @@ try {
   }
   vector<vector<const FileMetaData*> > output_files;
   compaction_job.GetSubCompactOutputs(&output_files);
-  results->sub_compacts.output_files.resize(output_files.size());
+  results->output_files.resize(output_files.size());
   for (size_t i = 0; i < output_files.size(); ++i) {
     auto& src_vec = output_files[i];
-    auto& dst_vec = results->sub_compacts.output_files[i];
+    auto& dst_vec = results->output_files[i];
     dst_vec.resize(src_vec.size());
     for (size_t j = 0; j < dst_vec.size(); ++j) {
       const FileMetaData& src = *src_vec[j];
       CompactionResults::FileMinMeta& dst = dst_vec[j];
-      dst.file_number = src.fd.GetNumber();
+      auto fnum = src.fd.GetNumber();
+      auto fname = TableFileName(cfo.cf_paths, fnum, output_path_id);
+      dst.file_name = GetHosterNodeDir(fname);
       dst.file_size = src.fd.GetFileSize();
       dst.smallest_seqno = src.fd.smallest_seqno;
       dst.largest_seqno = src.fd.largest_seqno;

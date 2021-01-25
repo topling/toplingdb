@@ -875,7 +875,7 @@ try {
   }
   exec->NotifyResults(&rpc_results, *imm_cfo, *mut_cfo);
 
-  assert(rpc_results.sub_compacts.size() == num_threads);
+  assert(rpc_results.output_files.size() == num_threads);
   //compaction_stats_.micros = env_->NowMicros() - start_micros;
   compaction_stats_ = rpc_results.compaction_stats;
   *compaction_job_stats_ = rpc_results.job_stats;
@@ -884,12 +884,12 @@ try {
   //RecordTimeToHistogram(stats_, COMPACTION_TIME, compaction_stats_.micros);
   //RecordTimeToHistogram(stats_, COMPACTION_CPU_TIME, compaction_stats_.cpu_micros);
 
-  TablePropertiesCollection tp;
+  TablePropertiesCollection tp_map;
   auto& cf_paths = imm_cfo->cf_paths;
   compact_->num_output_files = 0;
   for (size_t i = 0; i < num_threads; ++i) {
     auto& sub_state = compact_->sub_compact_states[i];
-    for (const auto& min_meta : rpc_results.sub_compacts.output_files[i]) {
+    for (const auto& min_meta : rpc_results.output_files[i]) {
       auto& old_fname = min_meta.file_name;
       auto path_id = c->output_path_id();
       uint64_t file_number = versions_->NewFileNumber();
@@ -908,7 +908,8 @@ try {
         return st;
       }
       TableReader* tr = tc->GetTableReaderFromHandle(ch);
-      tp[new_fname] = tr->GetTableProperties();
+      auto tp = tr->GetTableProperties();
+      tp_map[new_fname] = tr->GetTableProperties();
 
       FileMetaData meta;
       meta.fd = FileDescriptor(file_number, path_id, min_meta.file_size);
@@ -916,13 +917,13 @@ try {
       sub_state.outputs.emplace_back(std::move(meta), icmp,
           enable_order_check, /*enable_hash=*/paranoid_file_checks_);
       sub_state.total_bytes += min_meta.file_size;
+      sub_state.num_output_records += tp->num_entries;
     }
-    sub_state.num_output_records = rpc_results.sub_compacts.num_output_records[i];
     compact_->num_output_files += sub_state.outputs.size();
     compact_->total_bytes += sub_state.total_bytes;
     compact_->num_output_records += rpc_results.job_stats.num_output_records;
   }
-  compact_->compaction->SetOutputTableProperties(std::move(tp));
+  compact_->compaction->SetOutputTableProperties(std::move(tp_map));
 
   // Finish up all book-keeping to unify the subcompaction results
   // these were run on remote compaction worker node

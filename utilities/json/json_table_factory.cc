@@ -345,25 +345,11 @@ using namespace std::chrono;
 class DispatherTableFactory;
 
 // for hook TableBuilder::Add(key, value) to perform statistics
-struct DispatherTableBuilder : public TableBuilder {
+class DispatherTableBuilder : public TableBuilder {
+ public:
   TableBuilder* tb = nullptr;
   const DispatherTableFactory* dispatcher = nullptr;
-  struct Stat {
-    size_t entry_cnt = 0;
-    size_t key_size = 0;
-    size_t val_size = 0;
-    unsigned long long file_size = 0;
-    void Add(const Stat& y) {
-      entry_cnt += y.entry_cnt;
-      key_size += y.key_size;
-      val_size += y.val_size;
-    }
-    void Reset() {
-      entry_cnt = 0;
-      key_size = 0;
-      val_size = 0;
-    }
-  };
+  using Stat = DispatherTableFactory::Stat;
   Stat st;
   Stat st_sum;
   int  level;
@@ -387,289 +373,296 @@ struct DispatherTableBuilder : public TableBuilder {
   const char* GetFileChecksumFuncName() const final { return tb->GetFileChecksumFuncName(); }
 };
 
-class DispatherTableFactory : public TableFactory {
- public:
-  ~DispatherTableFactory() {}
+DispatherTableFactory::~DispatherTableFactory() {}
 
-  DispatherTableFactory(const json& js, const JsonPluginRepo& repo) {
-    m_json_obj = js; // backup
-    m_json_str = js.dump();
-    m_repo.reset(new JsonPluginRepo(repo)); // backup
+DispatherTableFactory::
+DispatherTableFactory(const json& js, const JsonPluginRepo& repo) {
+  m_json_obj = js; // backup
+  m_json_str = js.dump();
+  m_is_back_patched = false;
+}
+
+const char* DispatherTableFactory::Name() const {
+  return "DispatherTableFactory";
+}
+
+Status DispatherTableFactory::NewTableReader(
+    const ReadOptions& ro,
+    const TableReaderOptions& table_reader_options,
+    std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
+    std::unique_ptr<TableReader>* table,
+    bool prefetch_index_and_filter_in_cache) const {
+  if (!m_is_back_patched) {
+    return Status::InvalidArgument(
+        ROCKSDB_FUNC, "BackPatch() was not called");
   }
-
-  const char* Name() const final { return "DispatherTableFactory"; }
-
-  using TableFactory::NewTableReader;
-  Status NewTableReader(
-      const ReadOptions& ro,
-      const TableReaderOptions& table_reader_options,
-      std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
-      std::unique_ptr<TableReader>* table,
-      bool prefetch_index_and_filter_in_cache) const override {
-    assert(m_repo.get() == nullptr);
-    if (m_repo) {
-      return Status::InvalidArgument(
-          ROCKSDB_FUNC, "SanitizeOptions() was not called");
-    }
-    auto info_log = table_reader_options.ioptions.info_log;
-    Footer footer;
-    auto s = ReadFooterFromFile(IOOptions(),
-                                file.get(), nullptr /* prefetch_buffer */,
-                                file_size, &footer);
-    if (!s.ok()) {
-      return s;
-    }
-    const char* func = "Dispatch::NewTableReader"; // short func name
-    auto magic = (unsigned long long)footer.table_magic_number();
-    auto fp_iter = m_magic_to_factory.find(magic);
-    if (m_magic_to_factory.end() != fp_iter) {
-      const std::shared_ptr<TableFactory>& factory = fp_iter->second.factory;
-      const std::string&                   varname = fp_iter->second.varname;
-      Info(info_log, "%s: found factory: %016llX : %s: %s\n",
-           func, magic, factory->Name(), varname.c_str());
-      fp_iter->second.open_cnt++;
-      fp_iter->second.sum_open_size += file_size;
-      return factory->NewTableReader(ro, table_reader_options,
-                                     std::move(file), file_size, table,
-                                     prefetch_index_and_filter_in_cache);
-    }
-    auto& map = GetDispatherTableMagicNumberMap();
-    auto iter = map.find(magic);
-    if (map.end() != iter) {
-      const std::string& facname = iter->second;
-      if (PluginFactorySP<TableFactory>::HasPlugin(facname)) {
-        try {
-          Warn(info_log,
-              "%s: not found factory: %016llX : %s, onfly create it.\n",
-              func, magic, facname.c_str());
-          json null_js;
-          JsonPluginRepo empty_repo;
-          auto factory = PluginFactorySP<TableFactory>::
-                AcquirePlugin(
-              facname, null_js, empty_repo);
-          return factory->NewTableReader(ro, table_reader_options,
-                                         std::move(file), file_size, table,
-                                         prefetch_index_and_filter_in_cache);
-        }
-        catch (const std::exception& ex) {
-          return Status::Corruption(ROCKSDB_FUNC,
-            "onfly create factory=\"" + facname + "\" failed: " + ex.what());
-        }
-        catch (const Status& es) {
-          return Status::Corruption(ROCKSDB_FUNC,
-            "onfly create factory=\"" + facname + "\" failed: " + es.ToString());
-        }
-      } else {
-        std::string msg;
-        msg += "MagicNumber = ";
-        msg += Slice((char*)&iter->first, 8).ToString(true);
-        msg += " -> Factory class = " + facname;
-        msg += " is defined in TableMagicNumberMap but not registered as a plugin.";
-        return Status::Corruption(ROCKSDB_FUNC, msg);
-      }
-    }
-    return Status::NotSupported("Unidentified table format");
+  auto info_log = table_reader_options.ioptions.info_log;
+  Footer footer;
+  auto s = ReadFooterFromFile(IOOptions(),
+                              file.get(), nullptr /* prefetch_buffer */,
+                              file_size, &footer);
+  if (!s.ok()) {
+    return s;
   }
-
-  TableBuilder* NewTableBuilder(
-      const TableBuilderOptions& table_builder_options,
-      uint32_t column_family_id, WritableFileWriter* file)
-  const override {
-    assert(m_repo.get() == nullptr);
-    auto info_log = table_builder_options.ioptions.info_log;
-    if (m_repo) {
-      fprintf(stderr, "FATAL: %s:%d: %s: %s\n",
-              __FILE__, __LINE__, ROCKSDB_FUNC,
-              "SanitizeOptions() was not called");
-      abort();
-    }
-    int level = std::min(table_builder_options.level,
-                         int(m_level_writers.size()-1));
-    TableBuilder* builder;
-    if (level >= 0) {
-      if (JsonPluginRepo::DebugLevel() >= 3) {
-        Info(info_log,
-          "Dispatch::NewTableBuilder: level = %d, use level factory = %s\n",
-          level, m_level_writers[level]->Name());
-      }
-      builder = m_level_writers[level]->NewTableBuilder(
-          table_builder_options, column_family_id, file);
-      if (!builder) {
+  const char* func = "Dispatch::NewTableReader"; // short func name
+  auto magic = (unsigned long long)footer.table_magic_number();
+  auto fp_iter = m_magic_to_factory.find(magic);
+  if (m_magic_to_factory.end() != fp_iter) {
+    const std::shared_ptr<TableFactory>& factory = fp_iter->second.factory;
+    const std::string&                   varname = fp_iter->second.varname;
+    Info(info_log, "%s: found factory: %016llX : %s: %s\n",
+         func, magic, factory->Name(), varname.c_str());
+    fp_iter->second.open_cnt++;
+    fp_iter->second.sum_open_size += file_size;
+    return factory->NewTableReader(ro, table_reader_options,
+                                   std::move(file), file_size, table,
+                                   prefetch_index_and_filter_in_cache);
+  }
+  auto& map = GetDispatherTableMagicNumberMap();
+  auto iter = map.find(magic);
+  if (map.end() != iter) {
+    const std::string& facname = iter->second;
+    if (PluginFactorySP<TableFactory>::HasPlugin(facname)) {
+      try {
         Warn(info_log,
-          "Dispatch::NewTableBuilder: level = %d, use level factory = %s,"
-          " returns null, try default: %s\n",
-          level, m_level_writers[level]->Name(), m_default_writer->Name());
-        builder = m_default_writer->NewTableBuilder(
-            table_builder_options, column_family_id, file);
-        m_writer_files[0]++;
-      } else {
-        m_writer_files[level+1]++;
+            "%s: not found factory: %016llX : %s, onfly create it.\n",
+            func, magic, facname.c_str());
+        json null_js;
+        JsonPluginRepo empty_repo;
+        auto factory = PluginFactorySP<TableFactory>::
+              AcquirePlugin(
+            facname, null_js, empty_repo);
+        return factory->NewTableReader(ro, table_reader_options,
+                                       std::move(file), file_size, table,
+                                       prefetch_index_and_filter_in_cache);
       }
+      catch (const std::exception& ex) {
+        return Status::Corruption(ROCKSDB_FUNC,
+          "onfly create factory=\"" + facname + "\" failed: " + ex.what());
+      }
+      catch (const Status& es) {
+        return Status::Corruption(ROCKSDB_FUNC,
+          "onfly create factory=\"" + facname + "\" failed: " + es.ToString());
+      }
+    } else {
+      std::string msg;
+      msg += "MagicNumber = ";
+      msg += Slice((char*)&iter->first, 8).ToString(true);
+      msg += " -> Factory class = " + facname;
+      msg += " is defined in TableMagicNumberMap but not registered as a plugin.";
+      return Status::Corruption(ROCKSDB_FUNC, msg);
     }
-    else {
-      if (JsonPluginRepo::DebugLevel() >= 3) {
-        Info(info_log,
-          "Dispatch::NewTableBuilder: level = %d, use default factory = %s\n",
-          level, m_default_writer->Name());
-      }
+  }
+  return Status::NotSupported("Unidentified table format");
+}
+
+TableBuilder* DispatherTableFactory::NewTableBuilder(
+    const TableBuilderOptions& table_builder_options,
+    uint32_t column_family_id, WritableFileWriter* file)
+const {
+  auto info_log = table_builder_options.ioptions.info_log;
+  if (m_is_back_patched) {
+    fprintf(stderr, "FATAL: %s:%d: %s: %s\n",
+            __FILE__, __LINE__, ROCKSDB_FUNC,
+            "BackPatch() was not called");
+    abort();
+  }
+  int level = std::min(table_builder_options.level,
+                       int(m_level_writers.size()-1));
+  TableBuilder* builder;
+  if (level >= 0) {
+    if (JsonPluginRepo::DebugLevel() >= 3) {
+      Info(info_log,
+        "Dispatch::NewTableBuilder: level = %d, use level factory = %s\n",
+        level, m_level_writers[level]->Name());
+    }
+    builder = m_level_writers[level]->NewTableBuilder(
+        table_builder_options, column_family_id, file);
+    if (!builder) {
+      Warn(info_log,
+        "Dispatch::NewTableBuilder: level = %d, use level factory = %s,"
+        " returns null, try default: %s\n",
+        level, m_level_writers[level]->Name(), m_default_writer->Name());
       builder = m_default_writer->NewTableBuilder(
           table_builder_options, column_family_id, file);
       m_writer_files[0]++;
-    }
-    return new DispatherTableBuilder(builder, this, level);
-  }
-
-  // Sanitizes the specified DB Options.
-  Status ValidateOptions(const DBOptions&, const ColumnFamilyOptions&)
-  const override {
-    Status s;
-    if (m_repo) {
-      // m_repo is non-null indicate BackPatch was not called
-      s = BackPatch();
-    }
-    return s;
-  }
-  Status BackPatch() const try {
-    m_all = m_repo->m_impl->table_factory.name2p;
-    if (!m_json_obj.is_object()) {
-      return Status::InvalidArgument(ROCKSDB_FUNC,
-          "DispatherTableFactory options must be object");
-    }
-    auto iter = m_json_obj.find("default");
-    if (m_json_obj.end() != iter) {
-      auto& subjs = iter.value();
-      m_default_writer = PluginFactorySP<TableFactory>::
-        ObtainPlugin("default", ROCKSDB_FUNC, subjs, *m_repo);
-      if (!m_default_writer) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
-            "fail get defined default writer = " + subjs.dump());
-      }
     } else {
-      auto iter2 = m_all->find("default");
-      if (m_all->end() != iter2) {
-        m_default_writer = iter2->second;
-      } else {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
-            "fail get global default Factory");
-      }
+      m_writer_files[level+1]++;
     }
-    iter = m_json_obj.find("level_writers");
-    if (m_json_obj.end() != iter) {
-      auto& level_writers_js = iter.value();
-      if (!level_writers_js.is_array()) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
-            "level_writers must be a json array");
-      }
-      if (level_writers_js.empty()) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
-            "level_writers must be a non-empty json array");
-      }
-      for (auto& item : level_writers_js.items()) {
-        auto& options = item.value();
-        auto p = PluginFactorySP<TableFactory>::
-          ObtainPlugin("default", ROCKSDB_FUNC, options, *m_repo);
-        if (!p) {
-          return Status::InvalidArgument(ROCKSDB_FUNC,
-              "ObtainPlugin returns null, options = " + options.dump());
-        }
-        m_level_writers.push_back(p);
-      }
-    }
-    for (auto& stv : m_stats) {
-      stv.resize(m_level_writers.size() + 1);
-    }
-    m_writer_files.resize(m_level_writers.size() + 1);
-    std::unordered_map<std::string, std::vector<uint64_t> > name2magic;
-    for (auto& kv : GetDispatherTableMagicNumberMap()) {
-      name2magic[kv.second].push_back(kv.first);
-      //fprintf(stderr, "DEBG: %016llX : %s\n", (long long)kv.first, kv.second.c_str());
-    }
-    auto add_magic = [&](const std::shared_ptr<TableFactory>& factory,
-                         const std::string& varname,
-                         bool is_user_defined) {
-      const char* facname = factory->Name();
-      if (strcmp(facname, this->Name()) == 0) {
-        if (is_user_defined) {
-          THROW_InvalidArgument("Dispatch factory can not be defined as a reader");
-        }
-        return;
-      }
-      auto it = name2magic.find(facname);
-      if (name2magic.end() == it) {
-        THROW_InvalidArgument(
-            std::string("not found magic of factory: ") + facname);
-      }
-      for (uint64_t magic : it->second) {
-        ReaderFactory rf;
-        rf.factory = factory;
-        rf.varname = varname;
-        rf.is_user_defined = is_user_defined;
-        auto ib = m_magic_to_factory.emplace(magic, rf);
-        if (!ib.second) { // emplace fail
-          const char* varname1 = ib.first->second.varname.c_str(); // existed
-          const char* type = ib.first->second.is_user_defined ? "user" : "auto";
-          if (JsonPluginRepo::DebugLevel() >= 2)
-            fprintf(stderr,
-                  "INFO: Dispatch::BackPatch: dup factory: %016llX : %-20s : %s(%s) %s(auto)\n",
-                  (long long)magic, facname, varname1, type, varname.c_str());
-        } else if (JsonPluginRepo::DebugLevel() >= 2) {
-          fprintf(stderr,
-                  "INFO: Dispatch::BackPatch: reg factory: %016llX : %-20s : %s\n",
-                  (long long)magic, facname, varname.c_str());
-        }
-      }
-    };
-    iter = m_json_obj.find("readers");
-    if (m_json_obj.end() != iter) {
-      auto& readers_js = iter.value();
-      if (!readers_js.is_object()) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
-                                       "readers must be a json object");
-      }
-      for (auto& item : readers_js.items()) {
-        auto& facname = item.key();
-        if (!item.value().is_string()) {
-          return Status::InvalidArgument(ROCKSDB_FUNC,
-              "readers[\"" + facname + "\"] must be a json string");
-        }
-        if (!PluginFactorySP<TableFactory>::HasPlugin(facname)) {
-          return Status::InvalidArgument(ROCKSDB_FUNC,
-              "facname = \"" + facname + "\" is not a plugin");
-        }
-        const std::string& varname = item.value().get_ref<const std::string&>();
-        // facname is the param 'varname' for GetPlugin
-        auto p = PluginFactorySP<TableFactory>::GetPlugin(
-            facname.c_str(), ROCKSDB_FUNC, item.value(), *m_repo);
-        if (!p) {
-          return Status::InvalidArgument(ROCKSDB_FUNC,
-              "undefined varname = " + varname + "(factory = " + facname + ")");
-        }
-        if (!PluginFactorySP<TableFactory>::SamePlugin(p->Name(), facname)) {
-          return Status::InvalidArgument(ROCKSDB_FUNC,
-              "facname = " + facname + " but factory->Name() = " + p->Name());
-        }
-        add_magic(p, varname, true);
-      }
-    }
-    for (auto& kv : *m_all) {
-      auto& varname = kv.first; // factory varname
-      auto& factory = kv.second;
-      add_magic(factory, varname, false);
-    }
-    m_repo.reset();
-    m_json_obj = json{}; // reset
-    return Status::OK();
   }
-  catch (const std::exception& ex) {
-    return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  else {
+    if (JsonPluginRepo::DebugLevel() >= 3) {
+      Info(info_log,
+        "Dispatch::NewTableBuilder: level = %d, use default factory = %s\n",
+        level, m_default_writer->Name());
+    }
+    builder = m_default_writer->NewTableBuilder(
+        table_builder_options, column_family_id, file);
+    m_writer_files[0]++;
   }
-  catch (const Status& s) {
-    return s;
-  }
+  return new DispatherTableBuilder(builder, this, level);
+}
 
-  std::string GetPrintableOptions() const override {
-    return m_json_str;
+// Sanitizes the specified DB Options.
+Status DispatherTableFactory::ValidateOptions(const DBOptions&, const ColumnFamilyOptions&)
+const {
+  return Status::OK();
+}
+
+Status DispatherTableBackPatch(TableFactory* f, const JsonPluginRepo& repo) {
+  auto disptcher = dynamic_cast<DispatherTableFactory*>(f);
+  assert(nullptr != disptcher);
+  return disptcher->BackPatch(repo);
+}
+
+extern bool IsCompactionWorker();
+Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
+  m_all = repo.m_impl->table_factory.name2p;
+  if (!m_json_obj.is_object()) {
+    return Status::InvalidArgument(ROCKSDB_FUNC,
+        "DispatherTableFactory options must be object");
   }
+  auto iter = m_json_obj.find("default");
+  if (m_json_obj.end() != iter) {
+    auto& subjs = iter.value();
+    m_default_writer = PluginFactorySP<TableFactory>::
+      ObtainPlugin("default", ROCKSDB_FUNC, subjs, repo);
+    if (!m_default_writer) {
+      return Status::InvalidArgument(ROCKSDB_FUNC,
+          "fail get defined default writer = " + subjs.dump());
+    }
+  } else {
+    auto iter2 = m_all->find("default");
+    if (m_all->end() != iter2) {
+      m_default_writer = iter2->second;
+    } else {
+      return Status::InvalidArgument(ROCKSDB_FUNC,
+          "fail get global default Factory");
+    }
+  }
+  iter = m_json_obj.find("level_writers");
+  if (m_json_obj.end() != iter) {
+    auto& level_writers_js = iter.value();
+    if (!level_writers_js.is_array()) {
+      return Status::InvalidArgument(ROCKSDB_FUNC,
+          "level_writers must be a json array");
+    }
+    if (level_writers_js.empty()) {
+      return Status::InvalidArgument(ROCKSDB_FUNC,
+          "level_writers must be a non-empty json array");
+    }
+    for (auto& item : level_writers_js.items()) {
+      auto& options = item.value();
+      auto p = PluginFactorySP<TableFactory>::
+        ObtainPlugin("default", ROCKSDB_FUNC, options, repo);
+      if (!p) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "ObtainPlugin returns null, options = " + options.dump());
+      }
+      m_level_writers.push_back(p);
+    }
+  }
+  for (auto& stv : m_stats) {
+    stv.resize(m_level_writers.size() + 1);
+  }
+  m_writer_files.resize(m_level_writers.size() + 1);
+  std::unordered_map<std::string, std::vector<uint64_t> > name2magic;
+  for (auto& kv : GetDispatherTableMagicNumberMap()) {
+    name2magic[kv.second].push_back(kv.first);
+    //fprintf(stderr, "DEBG: %016llX : %s\n", (long long)kv.first, kv.second.c_str());
+  }
+  auto add_magic = [&](const std::shared_ptr<TableFactory>& factory,
+                       const std::string& varname,
+                       bool is_user_defined) {
+    const char* facname = factory->Name();
+    if (strcmp(facname, this->Name()) == 0) {
+      if (is_user_defined) {
+        THROW_InvalidArgument("Dispatch factory can not be defined as a reader");
+      }
+      return;
+    }
+    auto it = name2magic.find(facname);
+    if (name2magic.end() == it) {
+      THROW_InvalidArgument(
+          std::string("not found magic of factory: ") + facname);
+    }
+    for (uint64_t magic : it->second) {
+      ReaderFactory rf;
+      rf.factory = factory;
+      rf.varname = varname;
+      rf.is_user_defined = is_user_defined;
+      auto ib = m_magic_to_factory.emplace(magic, rf);
+      if (!ib.second) { // emplace fail
+        const char* varname1 = ib.first->second.varname.c_str(); // existed
+        const char* type = ib.first->second.is_user_defined ? "user" : "auto";
+        if (JsonPluginRepo::DebugLevel() >= 2)
+          fprintf(stderr,
+                "INFO: Dispatch::BackPatch: dup factory: %016llX : %-20s : %s(%s) %s(auto)\n",
+                (long long)magic, facname, varname1, type, varname.c_str());
+      } else if (JsonPluginRepo::DebugLevel() >= 2) {
+        fprintf(stderr,
+                "INFO: Dispatch::BackPatch: reg factory: %016llX : %-20s : %s\n",
+                (long long)magic, facname, varname.c_str());
+      }
+    }
+  };
+  iter = m_json_obj.find("readers");
+  if (m_json_obj.end() != iter) {
+    auto& readers_js = iter.value();
+    if (!readers_js.is_object()) {
+      return Status::InvalidArgument(ROCKSDB_FUNC,
+                                     "readers must be a json object");
+    }
+    for (auto& item : readers_js.items()) {
+      auto& facname = item.key();
+      if (!item.value().is_string()) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "readers[\"" + facname + "\"] must be a json string");
+      }
+      if (!PluginFactorySP<TableFactory>::HasPlugin(facname)) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "facname = \"" + facname + "\" is not a plugin");
+      }
+      const std::string& varname = item.value().get_ref<const std::string&>();
+      // facname is the param 'varname' for GetPlugin
+      auto p = PluginFactorySP<TableFactory>::GetPlugin(
+          facname.c_str(), ROCKSDB_FUNC, item.value(), repo);
+      if (!p) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "undefined varname = " + varname + "(factory = " + facname + ")");
+      }
+      if (!PluginFactorySP<TableFactory>::SamePlugin(p->Name(), facname)) {
+        return Status::InvalidArgument(ROCKSDB_FUNC,
+            "facname = " + facname + " but factory->Name() = " + p->Name());
+      }
+      add_magic(p, varname, true);
+    }
+  }
+  for (auto& kv : *m_all) {
+    auto& varname = kv.first; // factory varname
+    auto& factory = kv.second;
+    add_magic(factory, varname, false);
+  }
+  for (auto& kv : *m_all) {
+    auto& varname = kv.first; // factory varname
+    auto& factory = kv.second;
+    const json& cons_params = repo.GetConsParams(factory);
+    m_cons_params.emplace_back(factory.get(), &cons_params);
+  }
+  std::sort(m_cons_params.begin(), m_cons_params.end());
+  m_json_obj = json{}; // reset
+  return Status::OK();
+}
+catch (const std::exception& ex) {
+  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+}
+catch (const Status& s) {
+  return s;
+}
+
+std::string DispatherTableFactory::GetPrintableOptions() const {
+  return m_json_str;
+}
 /*
   Status GetOptionString(const ConfigOptions&,
                          std::string* opt_string) const override {
@@ -677,146 +670,120 @@ class DispatherTableFactory : public TableFactory {
       return Status::OK();
   }
 */
-  json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
-    const bool html = JsonSmartBool(dump_options, "html");
-    const bool nozero = JsonSmartBool(dump_options, "nozero");
-    auto& p2name = repo.m_impl->table_factory.p2name;
-    const static std::string labels[] = {
-         "1s-ops",  "1s-key",  "1s-val",
-         "5s-ops",  "5s-key",  "5s-val",
-        "30s-ops", "30s-key", "30s-val",
-         "5m-ops",  "5m-key",  "5m-val",
-        "30m-ops", "30m-key", "30m-val",
-    };
-    json lwjs;
-    auto add_writer = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
-      size_t file_num = m_writer_files[level];
-      if (nozero && 0 == file_num) {
-        return;
-      }
-      json wjs;
-      char buf[64];
+json DispatherTableFactory::ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
+  const bool html = JsonSmartBool(dump_options, "html");
+  const bool nozero = JsonSmartBool(dump_options, "nozero");
+  auto& p2name = repo.m_impl->table_factory.p2name;
+  const static std::string labels[] = {
+       "1s-ops",  "1s-key",  "1s-val",
+       "5s-ops",  "5s-key",  "5s-val",
+      "30s-ops", "30s-key", "30s-val",
+       "5m-ops",  "5m-key",  "5m-val",
+      "30m-ops", "30m-key", "30m-val",
+  };
+  json lwjs;
+  auto add_writer = [&](const std::shared_ptr<TableFactory>& tf, size_t level) {
+    size_t file_num = m_writer_files[level];
+    if (nozero && 0 == file_num) {
+      return;
+    }
+    json wjs;
+    char buf[64];
 #define ToStr(...) json(std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__)))
-      wjs["level"] = 0 == level ? json("default") : json(level-1);
-      ROCKSDB_JSON_SET_FACT_INNER(wjs["factory"], tf, table_factory);
-      const auto& st = m_stats[0][level];
-      wjs["files"] = file_num;
-      if (html) {
-        wjs["entry_cnt"] = ToStr("%.3f M", st.st.entry_cnt/1e6);
-        wjs["key_size"] = ToStr("%.3f G", st.st.key_size/1e9);
-        wjs["val_size"] = ToStr("%.3f G", st.st.val_size/1e9);
-        wjs["avg_file"] = ToStr("%.3f M", st.st.file_size/1e6/file_num);
-      } else {
-        wjs["entry_cnt"] = st.st.entry_cnt;
-        wjs["key_size"] = st.st.key_size;
-        wjs["val_size"] = st.st.val_size;
-        wjs["avg_file"] = double(st.st.file_size) / file_num;
-      }
-      for (size_t j = 0; j < 5; ++j) {
-        double cnt = st.st.entry_cnt - m_stats[j+1][level].st.entry_cnt;
-        double key = st.st.key_size - m_stats[j+1][level].st.key_size;
-        double val = st.st.val_size - m_stats[j+1][level].st.val_size;
-        double us = duration_cast<microseconds>(st.time - m_stats[j+1][level].time).count();
-        wjs[labels[3*j+0]] = !cnt ? json(0) : ToStr("%.3f K/s", cnt/us*1e3);
-        wjs[labels[3*j+1]] = !key ? json(0) : ToStr("%.3f M/s", key/us);
-        wjs[labels[3*j+2]] = !val ? json(0) : ToStr("%.3f M/s", val/us);
-      }
-      lwjs.push_back(std::move(wjs));
-    };
-    json js;
-    for (size_t i = 0, n = m_level_writers.size(); i < n; ++i) {
-      auto& tf = m_level_writers[i];
-      auto iter = p2name.find(tf.get());
-      if (p2name.end() == iter) {
-        THROW_Corruption("missing TableFactory of m_level_writer");
-      }
-      add_writer(tf, i+1);
+    wjs["level"] = 0 == level ? json("default") : json(level-1);
+    ROCKSDB_JSON_SET_FACT_INNER(wjs["factory"], tf, table_factory);
+    const auto& st = m_stats[0][level];
+    wjs["files"] = file_num;
+    if (html) {
+      wjs["entry_cnt"] = ToStr("%.3f M", st.st.entry_cnt/1e6);
+      wjs["key_size"] = ToStr("%.3f G", st.st.key_size/1e9);
+      wjs["val_size"] = ToStr("%.3f G", st.st.val_size/1e9);
+      wjs["avg_file"] = ToStr("%.3f M", st.st.file_size/1e6/file_num);
+    } else {
+      wjs["entry_cnt"] = st.st.entry_cnt;
+      wjs["key_size"] = st.st.key_size;
+      wjs["val_size"] = st.st.val_size;
+      wjs["avg_file"] = double(st.st.file_size) / file_num;
     }
-    if (html && !m_level_writers.empty()) {
-      auto& cols = lwjs[0]["<htmltab:col>"];
-      cols = json::array({
-          "level", "factory", "files", "avg_file",
-          "entry_cnt", "key_size", "val_size",
-      });
-      for (auto& lab : labels) {
-        cols.push_back(lab);
-      }
+    for (size_t j = 0; j < 5; ++j) {
+      double cnt = st.st.entry_cnt - m_stats[j+1][level].st.entry_cnt;
+      double key = st.st.key_size - m_stats[j+1][level].st.key_size;
+      double val = st.st.val_size - m_stats[j+1][level].st.val_size;
+      double us = duration_cast<microseconds>(st.time - m_stats[j+1][level].time).count();
+      wjs[labels[3*j+0]] = !cnt ? json(0) : ToStr("%.3f K/s", cnt/us*1e3);
+      wjs[labels[3*j+1]] = !key ? json(0) : ToStr("%.3f M/s", key/us);
+      wjs[labels[3*j+2]] = !val ? json(0) : ToStr("%.3f M/s", val/us);
     }
-    add_writer(m_default_writer, 0);
-    if (lwjs.empty()) {
-      lwjs = "Did Not Created Any TableBuilder, try nozero=0";
-    }
-    js["writers"] = std::move(lwjs);
-
-    json readers_js;
-    for (auto& kv : m_magic_to_factory) {
-      size_t len = kv.second.sum_open_size;
-      size_t cnt = kv.second.open_cnt;
-      if (nozero && 0 == cnt) {
-        continue;
-      }
-      json one_js;
-      char buf[64];
-      one_js["class"] = kv.second.factory->Name();
-      one_js["magic_num"] = ToStr("%llX", (long long)kv.first);
-      ROCKSDB_JSON_SET_FACT_INNER(one_js["factory"], kv.second.factory, table_factory);
-      one_js["open_cnt"] = cnt;
-      one_js["sum_open_size"] = ToStr("%.3f G", len/1e9);
-      one_js["avg_open_size"] = ToStr("%.3f M", len/1e6/cnt);
-      readers_js.push_back(std::move(one_js));
-    }
-    if (readers_js.empty()) {
-      readers_js = "Did Not Created Any TableReader, try nozero=0";
-    }
-    else {
-      readers_js[0]["<htmltab:col>"] = json::array({
-        "class", "magic_num", "factory", "open_cnt", "sum_open_size",
-        "avg_open_size"
-      });
-    }
-    js["readers"] = std::move(readers_js);
-    return js;
-  }
-  std::string ToJsonStr(const json& dump_options,
-                        const JsonPluginRepo& repo) const {
-    auto js = ToJsonObj(dump_options, repo);
-    try {
-      return JsonToString(js, dump_options);
-    }
-    catch (const std::exception& ex) {
-      THROW_InvalidArgument(std::string(ex.what()) + ", json:\n" + js.dump());
-    }
-  }
-
-  void UpdateOptions(const json& js, const JsonPluginRepo& repo) {
-
-  }
-
-  mutable std::mutex m_mtx;
-  mutable std::vector<std::shared_ptr<TableFactory> > m_level_writers;
-  mutable std::shared_ptr<TableFactory> m_default_writer;
-  struct TimeStat {
-    DispatherTableBuilder::Stat st;
-    steady_clock::time_point time;
-    TimeStat() { time = steady_clock::now(); }
+    lwjs.push_back(std::move(wjs));
   };
-  // 0s, 1s, 5s, 30s, 300s(5m), 1800(30m)
-  mutable std::vector<TimeStat> m_stats[6];
-  mutable std::vector<size_t> m_writer_files;
-  mutable std::shared_ptr<std::unordered_map<std::string,
-                                     std::shared_ptr<TableFactory>>> m_all;
-  mutable std::string m_json_str;
-  mutable json m_json_obj{}; // reset to null after back patched
-  mutable std::unique_ptr<JsonPluginRepo> m_repo; // for back patch
-  struct ReaderFactory {
-    std::shared_ptr<TableFactory> factory;
-    std::string varname;
-    size_t open_cnt = 0;
-    unsigned long long sum_open_size = 0;
-    bool is_user_defined;
-  };
-  mutable std::unordered_map<uint64_t, ReaderFactory> m_magic_to_factory;
-};
+  json js;
+  for (size_t i = 0, n = m_level_writers.size(); i < n; ++i) {
+    auto& tf = m_level_writers[i];
+    auto iter = p2name.find(tf.get());
+    if (p2name.end() == iter) {
+      THROW_Corruption("missing TableFactory of m_level_writer");
+    }
+    add_writer(tf, i+1);
+  }
+  if (html && !m_level_writers.empty()) {
+    auto& cols = lwjs[0]["<htmltab:col>"];
+    cols = json::array({
+        "level", "factory", "files", "avg_file",
+        "entry_cnt", "key_size", "val_size",
+    });
+    for (auto& lab : labels) {
+      cols.push_back(lab);
+    }
+  }
+  add_writer(m_default_writer, 0);
+  if (lwjs.empty()) {
+    lwjs = "Did Not Created Any TableBuilder, try nozero=0";
+  }
+  js["writers"] = std::move(lwjs);
+
+  json readers_js;
+  for (auto& kv : m_magic_to_factory) {
+    size_t len = kv.second.sum_open_size;
+    size_t cnt = kv.second.open_cnt;
+    if (nozero && 0 == cnt) {
+      continue;
+    }
+    json one_js;
+    char buf[64];
+    one_js["class"] = kv.second.factory->Name();
+    one_js["magic_num"] = ToStr("%llX", (long long)kv.first);
+    ROCKSDB_JSON_SET_FACT_INNER(one_js["factory"], kv.second.factory, table_factory);
+    one_js["open_cnt"] = cnt;
+    one_js["sum_open_size"] = ToStr("%.3f G", len/1e9);
+    one_js["avg_open_size"] = ToStr("%.3f M", len/1e6/cnt);
+    readers_js.push_back(std::move(one_js));
+  }
+  if (readers_js.empty()) {
+    readers_js = "Did Not Created Any TableReader, try nozero=0";
+  }
+  else {
+    readers_js[0]["<htmltab:col>"] = json::array({
+      "class", "magic_num", "factory", "open_cnt", "sum_open_size",
+      "avg_open_size"
+    });
+  }
+  js["readers"] = std::move(readers_js);
+  return js;
+}
+std::string DispatherTableFactory::ToJsonStr(const json& dump_options,
+                                             const JsonPluginRepo& repo) const {
+  auto js = ToJsonObj(dump_options, repo);
+  try {
+    return JsonToString(js, dump_options);
+  }
+  catch (const std::exception& ex) {
+    THROW_InvalidArgument(std::string(ex.what()) + ", json:\n" + js.dump());
+  }
+}
+
+void DispatherTableFactory::UpdateOptions(const json& js, const JsonPluginRepo& repo) {
+
+}
 
 static const seconds g_durations[6] = {
     seconds(0),
@@ -862,16 +829,22 @@ void DispatherTableBuilder::Add(const Slice& key, const Slice& value) {
 }
 void DispatherTableBuilder::UpdateStat() {
   st_sum.Add(st);
+  const_cast<DispatherTableFactory*>(dispatcher)->UpdateStat(level, st);
+  if (JsonPluginRepo::DebugLevel() >= 4) {
+    fprintf(stderr, "DBUG: entry_cnt = %zd\n", st_sum.entry_cnt);
+  }
+  st.Reset();
+}
+
+void DispatherTableFactory::UpdateStat(size_t lev, const Stat& st) {
   auto tp = steady_clock::now();
-  auto df = dispatcher;
-  auto lev = size_t(level);
-  df->m_mtx.lock();
-  df->m_stats[0][lev].time = tp;
-  df->m_stats[0][lev].st.Add(st);
+  m_mtx.lock();
+  m_stats[0][lev].time = tp;
+  m_stats[0][lev].st.Add(st);
   for (size_t i = 1; i < 6; ++i) {
-    assert(df->m_stats[i].size() == df->m_level_writers.size() + 1);
-    assert(lev <= df->m_level_writers.size());
-    auto& ts = df->m_stats[i][lev];
+    assert(m_stats[i].size() == m_level_writers.size() + 1);
+    assert(lev <= m_level_writers.size());
+    auto& ts = m_stats[i][lev];
     if (JsonPluginRepo::DebugLevel() >= 5) {
       fprintf(stderr, "DBUG: tp-ts.time = %zd, g_durations[i] = %zd, (tp - ts.time > g_durations[i]) = %d\n",
               (size_t)duration_cast<seconds>(tp - ts.time).count(),
@@ -879,15 +852,11 @@ void DispatherTableBuilder::UpdateStat() {
               tp - ts.time > g_durations[i]);
     }
     if (tp - ts.time > g_durations[i]) {
-      auto& newer = df->m_stats[i-1][lev];
+      auto& newer = m_stats[i-1][lev];
       ts = newer; // refresh
     }
   }
-  df->m_mtx.unlock();
-  if (JsonPluginRepo::DebugLevel() >= 4) {
-    fprintf(stderr, "DBUG: entry_cnt = %zd\n", st_sum.entry_cnt);
-  }
-  st.Reset();
+  m_mtx.unlock();
 }
 
 static std::shared_ptr<TableFactory>

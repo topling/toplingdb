@@ -645,7 +645,6 @@ Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
     add_magic(factory, varname, false);
   }
   for (auto& kv : *m_all) {
-    auto& varname = kv.first; // factory varname
     auto& factory = kv.second;
     const json& cons_params = repo.GetConsParams(factory);
     m_cons_params.emplace_back(factory.get(), &cons_params);

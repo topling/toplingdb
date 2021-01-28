@@ -33,16 +33,17 @@ void write_obj(DioWriter& dio, std::map<const T*, size_t>& ptr2id,
 }
 */
 
-using ReaderFactory = DispatherTableFactory::ReaderFactory;
-//using Stat = DispatherTableFactory::Stat;
-using TimeStat = DispatherTableFactory::TimeStat;
+//using ReaderFactory = DispatherTableFactory::ReaderFactory;
+using Stat = DispatherTableFactory::Stat;
+//using TimeStat = DispatherTableFactory::TimeStat;
 //using TimePoint = std::chrono::steady_clock::time_point;
 //DATA_IO_DUMP_RAW_MEM_E(TimePoint)
-DATA_IO_LOAD_SAVE_E(ReaderFactory, & varname & open_cnt
-                                   & sum_open_size & is_user_defined)
+//DATA_IO_LOAD_SAVE_E(ReaderFactory, & varname & open_cnt
+//                                   & sum_open_size & is_user_defined)
 //DATA_IO_LOAD_SAVE_E(Stat, & entry_cnt & key_size & val_size)
 //DATA_IO_LOAD_SAVE_E(TimeStat, & st & time)
-DATA_IO_DUMP_RAW_MEM_E(TimeStat)
+//DATA_IO_DUMP_RAW_MEM_E(TimeStat)
+DATA_IO_DUMP_RAW_MEM_E(Stat)
 
 class DispatherTableFactoryEx : public DispatherTableFactory {
 public:
@@ -51,8 +52,7 @@ public:
     for (auto& kv : *m_all) {
       ptr2name.emplace(kv.second.get(), kv.first);
     }
-    DioWriter dio;
-    dio.resize(64*1024);
+    DioWriter dio(64*1024);
     //dio << m_json_str; // has been set by cons
     dio.write_var_uint64(ptr2name.size());
     for (auto& kv : ptr2name) {
@@ -84,8 +84,7 @@ public:
     BackPatch(repo); // NOLINT
   }
   void WorkerSide_Serialize(std::string* output) const {
-    DioWriter dio;
-    dio.resize(128);
+    DioWriter dio(128);
     size_t level = 0, num_levels = m_stats[0].size();
     for (level = 0; level < num_levels; ++level) {
       if (m_stats[0][level].st.entry_cnt) {
@@ -93,17 +92,18 @@ public:
         dio.write_var_uint64(level);
         dio << m_stats[0][level].st;
         dio << m_writer_files[level+1];
+        output->assign((const char*)dio.begin(), dio.tell());
         return;
       }
     }
-    dio.writeByte(0);
+    output->assign("", 1); // '\0'
   }
   void HosterSide_DeSerialize(Slice input) {
     DioReader dio(input.data_, input.size_);
     const auto hasData = dio.readByte();
     if (hasData) {
       Stat st;
-      size_t writer_files;
+      size_t writer_files = 0;
       size_t level = (size_t)dio.read_var_uint64();
       dio >> st;
       dio >> writer_files;
@@ -143,15 +143,9 @@ struct DispatherTableFactory_SerDe : SerDeFunc<TableFactory> {
     return Status::Corruption(ROCKSDB_FUNC, ex.what());
   }
 };
-static const SerDeFunc<TableFactory>*
-JS_DispatherTableFactory_SerDe(const json&,const JsonPluginRepo&) {
-  const static DispatherTableFactory_SerDe serde;
-  return &serde;
-}
-ROCKSDB_FACTORY_REG("DispatherTableFactory", JS_DispatherTableFactory_SerDe);
-ROCKSDB_FACTORY_REG("DispatherTable", JS_DispatherTableFactory_SerDe);
-ROCKSDB_FACTORY_REG("Dispather", JS_DispatherTableFactory_SerDe);
-ROCKSDB_FACTORY_REG("Dispath", JS_DispatherTableFactory_SerDe);
+ROCKSDB_REG_PluginSerDe("DispatherTable", DispatherTableFactory_SerDe);
+ROCKSDB_REG_PluginSerDe("Dispather", DispatherTableFactory_SerDe);
+ROCKSDB_REG_PluginSerDe("Dispath", DispatherTableFactory_SerDe);
 
 
 } // ROCKSDB_NAMESPACE

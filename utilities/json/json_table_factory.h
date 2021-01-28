@@ -21,7 +21,7 @@ struct RegTableFactoryMagicNumber {
   RegTableFactoryMagicNumber g_AutoRegTF_##magic(magic, name)
 
 class DispatherTableFactory : public TableFactory {
- public:
+public:
   ~DispatherTableFactory();
   DispatherTableFactory(const DispatherTableFactory&) = delete;
   DispatherTableFactory(const json& js, const JsonPluginRepo& repo);
@@ -82,8 +82,7 @@ class DispatherTableFactory : public TableFactory {
   };
   void UpdateStat(size_t lev, const Stat& st);
 
- protected:
-
+protected:
   mutable std::mutex m_mtx;
   std::vector<std::shared_ptr<TableFactory> > m_level_writers;
   std::shared_ptr<TableFactory> m_default_writer;

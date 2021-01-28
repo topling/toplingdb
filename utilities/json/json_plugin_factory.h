@@ -217,7 +217,19 @@ struct SerDeFunc {
   virtual ~SerDeFunc() {}
   virtual Status Serialize(const Object&, std::string* output) const = 0;
   virtual Status DeSerialize(Object*, const Slice& input) const = 0;
+  using InterfaceType = SerDeFunc;
 };
+template<class SerDeClass>
+static const typename SerDeClass::InterfaceType*
+PluginSerDeSingleton(const json&, const JsonPluginRepo&) {
+  static const SerDeClass singleton;
+  return &singleton;
+}
+#define ROCKSDB_REG_PluginSerDe(ClassName, SerDeClass) \
+  constexpr auto ROCKSDB_PP_CAT2(JS_##SerDeClass, __LINE__) = \
+      &PluginSerDeSingleton<SerDeClass>; \
+  ROCKSDB_FACTORY_REG(ClassName, ROCKSDB_PP_CAT2(JS_##SerDeClass, __LINE__))
+
 template<class Object>
 using SerDeFactory = PluginFactory<const SerDeFunc<Object>*>;
 

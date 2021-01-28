@@ -383,7 +383,7 @@ DispatherTableFactory(const json& js, const JsonPluginRepo& repo) {
 }
 
 const char* DispatherTableFactory::Name() const {
-  return "DispatherTableFactory";
+  return "DispatherTable";
 }
 
 Status DispatherTableFactory::NewTableReader(

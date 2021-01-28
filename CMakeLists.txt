@@ -802,12 +802,10 @@ set(SOURCES
         utilities/json/json_db_open.cc
         utilities/json/json_builtin_plugin.cc
         utilities/json/json_plugin_repo.cc
-        utilities/json/json_remote_compaction.cc
         utilities/json/json_table_factory.cc
         utilities/json/web/json_civetweb.cc
         utilities/json/web/civetweb.c
         utilities/json/web/CivetServer.cc
-        utilities/json/dcompact/dispatch_table_factory_serde.cc
         utilities/json/internal_dispather_table.h
         utilities/leveldb_options/leveldb_options.cc
         utilities/memory/memory_util.cc

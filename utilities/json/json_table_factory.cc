@@ -7,6 +7,7 @@
 #include "json.h"
 #include "json_plugin_factory.h"
 #include "json_table_factory.h"
+#include "internal_dispather_table.h"
 
 namespace ROCKSDB_NAMESPACE {
 

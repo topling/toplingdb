@@ -1,11 +1,9 @@
 //
 // Created by leipeng on 2021-01-27.
 //
-#include <utilities/json/json_table_factory.h>
-#include <utilities/json/json_plugin_factory.h>
+#include <utilities/json/internal_dispather_table.h>
 #include <terark/io/DataIO.hpp>
 #include <terark/io/MemStream.hpp>
-#include <terark/io/access_byid.hpp>
 #include <terark/util/atomic.hpp>
 
 namespace ROCKSDB_NAMESPACE {

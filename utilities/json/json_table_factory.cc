@@ -342,6 +342,21 @@ RegTableFactoryMagicNumber(uint64_t magic, const char* name) {
   }
 }
 
+////////////////////////////////////////////////////////////////////////////
+static std::shared_ptr<SstPartitionerFactory>
+NewFixedPrefixPartitionerFactoryJson(const json& js, const JsonPluginRepo&) {
+  size_t prefix_len = 0;
+  ROCKSDB_JSON_REQ_PROP(js, prefix_len);
+  return NewSstPartitionerFixedPrefixFactory(prefix_len);
+}
+ROCKSDB_FACTORY_REG("SstPartitionerFixedPrefixFactory",
+                    NewFixedPrefixPartitionerFactoryJson);
+ROCKSDB_FACTORY_REG("SstPartitionerFixedPrefix",
+                    NewFixedPrefixPartitionerFactoryJson);
+ROCKSDB_FACTORY_REG("FixedPrefix", NewFixedPrefixPartitionerFactoryJson);
+
+////////////////////////////////////////////////////////////////////////////
+
 using namespace std::chrono;
 class DispatherTableFactory;
 

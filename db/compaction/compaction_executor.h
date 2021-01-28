@@ -26,6 +26,8 @@ struct VersionSetSerDe {
   void To(VersionSet*) const;
 };
 struct CompactionParams {
+  CompactionParams(const CompactionParams&) = delete;
+  CompactionParams& operator=(const CompactionParams&) = delete;
   CompactionParams();
   ~CompactionParams();
   int job_id;
@@ -94,6 +96,10 @@ struct CompactionParams {
 };
 
 struct CompactionResults {
+  CompactionResults(const CompactionResults&) = delete;
+  CompactionResults& operator=(const CompactionResults&) = delete;
+  CompactionResults();
+  ~CompactionResults();
   struct FileMinMeta {
     std::string file_name;
     uint64_t    file_size;
@@ -123,41 +129,25 @@ struct CompactionResults {
   Status status;
 };
 
-struct CompactionRpcStub {
-  struct OneSub {
-    std::unique_ptr<CompactionFilter> compaction_filter;
-    std::unique_ptr<SstPartitioner> sst_partitioner;
-    //std::unique_ptr<EventListener> event_listner;
-    //std::unique_ptr<MergeOperator> merge_operator;
-    //std::unique_ptr<TableBuilder> table_builder;
-    //std::unique_ptr<FileChecksumGenerator> file_checksum_generator;
-  };
-  std::vector<OneSub> sub_compacts;
-};
-
 void SerDeRead(FILE* fp, CompactionParams* p);
-void SerDeWrite(FILE* fp, CompactionResults* res);
+void SerDeWrite(FILE* fp, const CompactionResults* res);
 
 class CompactionExecutor {
  public:
   virtual ~CompactionExecutor();
-  virtual void SetParams(CompactionParams*,
-                         const ImmutableCFOptions&,
-                         const MutableCFOptions&) = 0;
-  virtual void NotifyResults(const CompactionResults*,
-                             const ImmutableCFOptions&,
-                             const MutableCFOptions&) = 0;
+  virtual void SetParams(CompactionParams*, const Compaction*) = 0;
+  virtual void NotifyResults(const CompactionResults*, const Compaction*) = 0;
   virtual Status Execute(const CompactionParams&, CompactionResults*) = 0;
 };
 
 class CompactionExecutorFactory {
  public:
   virtual ~CompactionExecutorFactory();
+  virtual bool ShouldRunLocal(const Compaction*) const = 0;
   virtual CompactionExecutor* NewExecutor(const Compaction*) const = 0;
   virtual const char* Name() const = 0;
 };
 
-CompactionExecutorFactory* GetLocalCompactionExecutorFactory();
 bool IsCompactionWorker();
 void SetCompactionWorker(bool b);
 

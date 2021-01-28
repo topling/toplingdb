@@ -22,11 +22,18 @@ CompactionParams::~CompactionParams() {
       delete meta;
     }
     delete grandparents;
+    for (auto& level_files : *inputs) {
+      for (auto meta : level_files.files)
+        delete meta;
+    }
     delete inputs;
     delete existing_snapshots;
     delete compaction_job_stats;
   }
 }
+
+CompactionResults::CompactionResults() {}
+CompactionResults::~CompactionResults() {}
 
 struct MyVersionSet : VersionSet {
   void From(const VersionSetSerDe& version_set) {
@@ -67,24 +74,6 @@ void VersionSetSerDe::To(VersionSet* vs) const {
 
 CompactionExecutor::~CompactionExecutor() = default;
 CompactionExecutorFactory::~CompactionExecutorFactory() = default;
-
-class LocalCompactionExecutor : public CompactionExecutor {
- public:
-  Status Execute(const CompactionParams&, CompactionResults*) override;
-};
-
-Status LocalCompactionExecutor::Execute(const CompactionParams& params,
-                                        CompactionResults* results)
-{
-  return Status::OK();
-}
-
-class LocalCompactionExecutorFactory : public CompactionExecutorFactory {
- public:
-  CompactionExecutor* NewExecutor(const Compaction*) const override {
-    return nullptr;
-  }
-};
 
 static bool g_is_compaction_worker = false;
 bool IsCompactionWorker() {

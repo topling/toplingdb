@@ -267,7 +267,9 @@ void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
   else {
     assert(bytes.empty());
     if (!bytes.empty()) {
-      fprintf(stderr, "ERROR: %s: class = %s, bytes is not empty\n", clazz.c_str());
+      fprintf(stderr, "ERROR: %s: class = %s, bytes is not empty\n",
+              ROCKSDB_FUNC, clazz.c_str());
+      abort();
     }
   }
 }

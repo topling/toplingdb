@@ -585,7 +585,8 @@ size_t CompactionJob::NumSubCompacts() const {
 
 Status CompactionJob::Run() {
   auto icf_opt = compact_->compaction->immutable_cf_options();
-  if (!icf_opt->compaction_executor_factory) {
+  auto exec = icf_opt->compaction_executor_factory.get();
+  if (!exec || exec->ShouldRunLocal(compact_->compaction)) {
     return RunLocal();
   }
   return RunRemote();

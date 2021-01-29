@@ -104,8 +104,6 @@ class CompactionJob {
   // Return the IO status
   IOStatus io_status() const { return io_status_; }
 
-  size_t NumSubCompacts() const;
-
   void GetSubCompactOutputs(std::vector<std::vector<const FileMetaData*> >*) const;
   CompactionJobStats* GetCompactionJobStats() const { return compaction_job_stats_; }
   const InternalStats::CompactionStats& GetCompactionStats() const { return compaction_stats_; }

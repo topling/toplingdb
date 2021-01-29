@@ -579,10 +579,6 @@ void CompactionJob::GenSubcompactionBoundaries() {
   }
 }
 
-size_t CompactionJob::NumSubCompacts() const {
-  return compact_->sub_compact_states.size();
-}
-
 Status CompactionJob::Run() {
   auto icf_opt = compact_->compaction->immutable_cf_options();
   auto exec = icf_opt->compaction_executor_factory.get();
@@ -806,31 +802,12 @@ try {
   auto mut_cfo = c->mutable_cf_options();
   const uint32_t cf_id = cfd->GetID();
 
-  CompactionRpcStub rpc_stub;
-
   // if with compaction filter, always use compaction filter factory
   assert(nullptr == imm_cfo->compaction_filter);
-/*
-  auto CreateStubObjects = [&]() {
-    rpc_stub.sub_compacts.reserve(num_threads);
-    for (size_t i = 0; i < num_threads; ++i) {
-      rpc_stub.sub_compacts.push_back({});
-      auto& sub = rpc_stub.sub_compacts.back();
-      sub.compaction_filter = c->CreateCompactionFilter();
-      if (sub.compaction_filter && !sub.compaction_filter->IgnoreSnapshots()) {
-        throw Status::NotSupported(
-            "CompactionFilter::IgnoreSnapshots() = false is not supported "
-            "anymore.");
-      }
-      sub.sst_partitioner = c->CreateSstPartitioner();
-    }
-  };
-*/
   CompactionParams rpc_params;
   CompactionResults rpc_results;
 
   rpc_params.job_id = job_id_;
-  //rpc_params.level = c->level();
   rpc_params.output_level = c->output_level();
   rpc_params.num_levels = c->number_levels();
   rpc_params.cf_id = cf_id;
@@ -848,7 +825,6 @@ try {
   rpc_params.deletion_compaction = c->deletion_compaction();
   rpc_params.compaction_reason = c->compaction_reason();
 
-  //rpc_params.version_set = this->versions_;
   rpc_params.preserve_deletes_seqnum = this->preserve_deletes_seqnum_;
   rpc_params.existing_snapshots = &this->existing_snapshots_;
   rpc_params.earliest_write_conflict_snapshot = this->earliest_write_conflict_snapshot_;
@@ -869,12 +845,12 @@ try {
   auto exec_factory = imm_cfo->compaction_executor_factory.get();
   assert(nullptr != exec_factory);
   auto exec = exec_factory->NewExecutor(c);
-  exec->SetParams(&rpc_params, *imm_cfo, *mut_cfo);
+  exec->SetParams(&rpc_params, c);
   Status s = exec->Execute(rpc_params, &rpc_results);
   if (!s.ok()) {
     return s;
   }
-  exec->NotifyResults(&rpc_results, *imm_cfo, *mut_cfo);
+  exec->NotifyResults(&rpc_results, c);
 
   assert(rpc_results.output_files.size() == num_threads);
   //compaction_stats_.micros = env_->NowMicros() - start_micros;

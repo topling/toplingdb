@@ -800,7 +800,6 @@ try {
   ColumnFamilyData* cfd = c->column_family_data();
   auto imm_cfo = c->immutable_cf_options();
   auto mut_cfo = c->mutable_cf_options();
-  const uint32_t cf_id = cfd->GetID();
 
   // if with compaction filter, always use compaction filter factory
   assert(nullptr == imm_cfo->compaction_filter);
@@ -808,38 +807,16 @@ try {
   CompactionResults rpc_results;
 
   rpc_params.job_id = job_id_;
-  rpc_params.output_level = c->output_level();
-  rpc_params.num_levels = c->number_levels();
-  rpc_params.cf_id = cf_id;
-  rpc_params.cf_name = cfd->GetName();
   rpc_params.version_set.From(versions_);
-  rpc_params.inputs = c->inputs();
-  rpc_params.target_file_size = c->max_output_file_size();
-  rpc_params.max_compaction_bytes = c->max_compaction_bytes();
-  rpc_params.max_subcompactions = num_threads;
-  rpc_params.compression = c->output_compression();
-  rpc_params.compression_opts = c->output_compression_opts();
-  rpc_params.grandparents = &c->grandparents();
-  rpc_params.score = c->score();
-  rpc_params.manual_compaction = c->is_manual_compaction();
-  rpc_params.deletion_compaction = c->deletion_compaction();
-  rpc_params.compaction_reason = c->compaction_reason();
-
-  rpc_params.preserve_deletes_seqnum = this->preserve_deletes_seqnum_;
-  rpc_params.existing_snapshots = &this->existing_snapshots_;
-  rpc_params.earliest_write_conflict_snapshot = this->earliest_write_conflict_snapshot_;
-  rpc_params.paranoid_file_checks = this->paranoid_file_checks_;
+  rpc_params.preserve_deletes_seqnum = preserve_deletes_seqnum_;
+  rpc_params.existing_snapshots = &existing_snapshots_;
+  rpc_params.earliest_write_conflict_snapshot = earliest_write_conflict_snapshot_;
+  rpc_params.paranoid_file_checks = paranoid_file_checks_;
   rpc_params.dbname = this->dbname_;
   rpc_params.db_id = this->db_id_;
   rpc_params.db_session_id = this->db_session_id_;
   rpc_params.full_history_ts_low = this->full_history_ts_low_;
-  rpc_params.db_write_buffer_size = this->db_options_.db_write_buffer_size;
-  rpc_params.compaction_log_level = this->db_options_.info_log_level;
   rpc_params.compaction_job_stats = this->compaction_job_stats_;
-
-  rpc_params.bottommost_level = c->bottommost_level();
-  rpc_params.smallest_user_key = compact_->SmallestUserKey().ToString();
-  rpc_params.largest_user_key = compact_->LargestUserKey().ToString();
 
   //const uint64_t start_micros = env_->NowMicros();
   auto exec_factory = imm_cfo->compaction_executor_factory.get();
@@ -891,8 +868,9 @@ try {
       FileMetaData meta;
       meta.fd = FileDescriptor(file_number, path_id, min_meta.file_size);
       bool enable_order_check = mut_cfo->check_flush_compaction_key_order;
+      bool enable_hash = paranoid_file_checks_;
       sub_state.outputs.emplace_back(std::move(meta), icmp,
-          enable_order_check, /*enable_hash=*/paranoid_file_checks_);
+          enable_order_check, enable_hash);
       sub_state.total_bytes += min_meta.file_size;
       sub_state.num_output_records += tp->num_entries;
     }

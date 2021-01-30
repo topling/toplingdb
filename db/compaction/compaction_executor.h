@@ -89,8 +89,6 @@ struct CompactionParams {
   bool preserve_deletes;
   bool bottommost_level;
   bool is_deserialized;
-  std::string smallest_user_key;
-  std::string largest_user_key;
   //std::vector<ObjectRpcParam> event_listner;
   std::vector<ObjectRpcParam> int_tbl_prop_collector_factories;
 };

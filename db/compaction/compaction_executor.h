@@ -68,13 +68,11 @@ struct CompactionParams {
   std::string db_id;
   std::string db_session_id;
   std::string full_history_ts_low;
-  uint64_t db_write_buffer_size;
   CompactionJobStats* compaction_job_stats;
   //SnapshotChecker* snapshot_checker; // not used
   //FSDirectory* db_directory;
   //FSDirectory* output_directory;
   //FSDirectory* blob_output_directory;
-  //Statistics* stats;
 
   //ObjectRpcParam compaction_filter; // don't use compaction_filter
   ObjectRpcParam compaction_filter_factory; // always use

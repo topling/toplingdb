@@ -477,7 +477,7 @@ TableBuilder* DispatherTableFactory::NewTableBuilder(
     uint32_t column_family_id, WritableFileWriter* file)
 const {
   auto info_log = table_builder_options.ioptions.info_log;
-  if (m_is_back_patched) {
+  if (!m_is_back_patched) {
     fprintf(stderr, "FATAL: %s:%d: %s: %s\n",
             __FILE__, __LINE__, ROCKSDB_FUNC,
             "BackPatch() was not called");
@@ -533,6 +533,13 @@ Status DispatherTableBackPatch(TableFactory* f, const JsonPluginRepo& repo) {
 
 extern bool IsCompactionWorker();
 Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
+  if (m_is_back_patched) {
+    fprintf(stderr, "FATAL: %s:%d: %s: %s\n",
+            __FILE__, __LINE__, ROCKSDB_FUNC,
+            "BackPatch() was already called");
+    abort();
+  }
+  assert(m_all.get() == nullptr);
   m_all = repo.m_impl->table_factory.name2p;
   if (!m_json_obj.is_object()) {
     return Status::InvalidArgument(ROCKSDB_FUNC,
@@ -666,6 +673,7 @@ Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
   }
   std::sort(m_cons_params.begin(), m_cons_params.end());
   m_json_obj = json{}; // reset
+  m_is_back_patched = true;
   return Status::OK();
 }
 catch (const std::exception& ex) {

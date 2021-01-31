@@ -1887,6 +1887,26 @@ void JS_RokcsDB_AddVersion(json& djs) {
   djs["version"] = std::string(s, n);
 }
 
+static std::string RunManualCompact(const DB* dbc, ColumnFamilyHandle* cfh,
+                                    const json& dump_options) {
+  DB* db = const_cast<DB*>(dbc);
+  DBOptions dbo = db->GetDBOptions();
+  int parallel = JsonSmartInt(dump_options, "parallel",
+                              dbo.max_background_compactions);
+  for (int i = 0; i < parallel; ++i) {
+    std::thread([=]() {
+      CompactRangeOptions cro;
+      cro.exclusive_manual_compaction = false;
+      db->CompactRange(cro, cfh, nullptr, nullptr);
+    }).detach();
+  }
+  const std::string& dbname = db->GetName();
+  const std::string& cfname = cfh->GetName();
+  char buf[32];
+  return std::string(buf, snprintf(buf, sizeof(buf), "%d", parallel)) +
+       " compact job issued: dbname = " + dbname + ", cfname = " + cfname;
+}
+
 struct DB_Manip : PluginManipFunc<DB> {
   void Update(DB* db, const json& js,
               const JsonPluginRepo& repo) const final {
@@ -1905,12 +1925,7 @@ struct DB_Manip : PluginManipFunc<DB> {
       THROW_NotFound("db ptr is not registered in repo, dbname = " + dbname);
     }
     if (dump_options.contains("compact")) {
-      DB* dbp = const_cast<DB*>(&db);
-      std::thread([=]() {
-        CompactRangeOptions cro;
-        dbp->CompactRange(cro, nullptr, nullptr);
-      }).detach();
-      return "compact job issued: dbname = " + dbname;
+      return RunManualCompact(&db, db.DefaultColumnFamily(), dump_options);
     }
     auto ijs = i1->second.params.find("params");
     if (i1->second.params.end() == ijs) {
@@ -1969,12 +1984,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
         THROW_NotFound("cf_name is not registered in repo, dbname = " + dbname
                        + ", cfname = " + cfname);
       }
-      DB* dbp = db.db;
-      std::thread([=]() {
-        CompactRangeOptions cro;
-        dbp->CompactRange(cro, cfh, nullptr, nullptr);
-      }).detach();
-      return "compact job issued: dbname = " + dbname + ", cfname = " + cfname;
+      return RunManualCompact(db.db, cfh, dump_options);
     }
     auto i1 = dbmap.p2name.find(db.db);
     if (dbmap.p2name.end() == i1) {

@@ -686,13 +686,7 @@ catch (const Status& s) {
 std::string DispatherTableFactory::GetPrintableOptions() const {
   return m_json_str;
 }
-/*
-  Status GetOptionString(const ConfigOptions&,
-                         std::string* opt_string) const override {
-      *opt_string = m_json_str;
-      return Status::OK();
-  }
-*/
+
 json DispatherTableFactory::ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
   const bool html = JsonSmartBool(dump_options, "html");
   const bool nozero = JsonSmartBool(dump_options, "nozero");

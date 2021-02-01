@@ -9,6 +9,8 @@
 #include "json_fwd.h"
 #include "rocksdb/rocksdb_namespace.h"
 #include "rocksdb/status.h"
+#include <memory>
+#include <unordered_map>
 
 namespace ROCKSDB_NAMESPACE {
 

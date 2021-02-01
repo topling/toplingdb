@@ -243,18 +243,29 @@ std::string SerDe_SerializeReq(const std::string& clazz, const Object* obj) {
   serde->Serialize(*obj, &bytes);
   return bytes;
 }
+template<class Object>
+std::string SerDe_SerializeReq(const std::string& clazz,
+                               const std::shared_ptr<Object>& obj) {
+  return SerDe_SerializeReq(clazz, obj.get());
+}
 
 // Suffix 'Opt' means 'optional'
+// if clazz has no SerDeFunc, obj can     be null
+// if clazz has    SerDeFunc, obj can not be null
 template<class Object>
 std::string SerDe_SerializeOpt(const std::string& clazz, const Object* obj) {
-  assert(nullptr != obj);
+  std::string bytes;
   const SerDeFunc<Object>* serde = SerDeFactory<Object>::NullablePlugin(clazz);
   if (serde) {
-    std::string bytes;
+    assert(nullptr != obj);
     serde->Serialize(*obj, &bytes);
-    return bytes;
   }
-  return std::string(); // empty string
+  return bytes;
+}
+template<class Object>
+std::string SerDe_SerializeOpt(const std::string& clazz,
+                               const std::shared_ptr<Object>& obj) {
+  return SerDe_SerializeOpt(clazz, obj.get());
 }
 
 template<class Object>
@@ -272,6 +283,11 @@ void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
       abort();
     }
   }
+}
+template<class Object>
+void SerDe_DeSerialize(const std::string& clazz, Slice bytes,
+                       const std::shared_ptr<Object>& obj) {
+  SerDe_DeSerialize(clazz, bytes, obj);
 }
 
 template<class Object, class Extra>

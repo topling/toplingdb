@@ -101,6 +101,8 @@ struct CompactionResults {
     uint64_t    file_size;
     uint64_t    smallest_seqno;
     uint64_t    largest_seqno;
+    InternalKey smallest_ikey;
+    InternalKey largest_ikey;
   };
   // collect remote statistics
   struct RawStatistics {

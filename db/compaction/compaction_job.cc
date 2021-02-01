@@ -867,11 +867,14 @@ try {
       tp_map[new_fname] = tr->GetTableProperties();
 
       FileMetaData meta;
-      meta.fd = FileDescriptor(file_number, path_id, min_meta.file_size);
+      meta.fd = fd;
+      meta.smallest = min_meta.smallest_ikey;
+      meta.largest = min_meta.largest_ikey;
       bool enable_order_check = mut_cfo->check_flush_compaction_key_order;
       bool enable_hash = paranoid_file_checks_;
       sub_state.outputs.emplace_back(std::move(meta), icmp,
           enable_order_check, enable_hash);
+      sub_state.outputs.back().finished = true;
       sub_state.total_bytes += min_meta.file_size;
       sub_state.num_output_records += tp->num_entries;
     }

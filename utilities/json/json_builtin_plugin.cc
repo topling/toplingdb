@@ -1891,8 +1891,9 @@ static std::string RunManualCompact(const DB* dbc, ColumnFamilyHandle* cfh,
                                     const json& dump_options) {
   DB* db = const_cast<DB*>(dbc);
   DBOptions dbo = db->GetDBOptions();
-  int parallel = JsonSmartInt(dump_options, "parallel",
-                              dbo.max_background_compactions);
+  int parallel = 1;
+//  int parallel = JsonSmartInt(dump_options, "parallel",
+//                              dbo.max_background_compactions);
   for (int i = 0; i < parallel; ++i) {
     std::thread([=]() {
       CompactRangeOptions cro;

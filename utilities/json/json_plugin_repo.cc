@@ -394,13 +394,14 @@ Impl_Get(const std::string& name, const Map& map, Ptr* pp) {
 }
 
 template<class Map, class Ptr>
-static const json&
+static const json*
 Impl_GetConsParams(const Map& map, const Ptr& p) {
   auto iter = map.p2name.find(GetRawPtr(p));
   if (map.p2name.end() == iter) {
-    THROW_NotFound("p is not in repo");
+    //THROW_NotFound("p is not in repo");
+    return nullptr;
   }
-  return iter->second.params;
+  return &iter->second.params;
 }
 
 #define JSON_REPO_TYPE_IMPL(field) \
@@ -412,7 +413,7 @@ bool JsonPluginRepo::Get(const string& name, \
                 decltype(RepoPtrType(((Impl*)0)->field))* pp) const { \
   return Impl_Get(name, m_impl->field, pp); \
 } \
-const json& JsonPluginRepo::GetConsParams( \
+const json* JsonPluginRepo::GetConsParams( \
                 decltype((RepoPtrCref(((Impl*)0)->field))) p) const { \
   return Impl_GetConsParams(m_impl->field, p); \
 }
@@ -447,7 +448,7 @@ JSON_REPO_TYPE_IMPL(db_options)
 JSON_REPO_TYPE_IMPL(cf_options)
 
 #define JSON_GetConsParams(field) \
-const json& JsonPluginRepo::GetConsParams( \
+const json* JsonPluginRepo::GetConsParams( \
                 decltype((RepoConstRawPtr(((Impl*)0)->field))) p) const { \
   return Impl_GetConsParams(m_impl->field, p); \
 }

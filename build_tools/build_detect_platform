@@ -345,6 +345,9 @@ EOF
         then
           COMMON_FLAGS="$COMMON_FLAGS -DGFLAGS=1 -DGFLAGS_NAMESPACE=google"
           PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lgflags"
+        else
+          echo Not found: GFLAGS 1>&2
+          exit 1
         fi
     fi
 
@@ -358,6 +361,9 @@ EOF
             COMMON_FLAGS="$COMMON_FLAGS -DZLIB"
             PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lz"
             JAVA_LDFLAGS="$JAVA_LDFLAGS -lz"
+        else
+          echo Not found: zlib "(for gzip)" 1>&2
+          exit 1
         fi
     fi
 

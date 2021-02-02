@@ -668,8 +668,8 @@ Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
   }
   for (auto& kv : *m_all) {
     auto& factory = kv.second;
-    const json& cons_params = repo.GetConsParams(factory);
-    m_cons_params.emplace_back(factory.get(), &cons_params);
+    const json* cons_params = repo.GetConsParams(factory);
+    m_cons_params.emplace_back(factory.get(), cons_params);
   }
   std::sort(m_cons_params.begin(), m_cons_params.end());
   m_json_obj = json{}; // reset

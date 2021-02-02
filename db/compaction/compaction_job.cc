@@ -828,6 +828,9 @@ try {
   if (!s.ok()) {
     return s;
   }
+  if (!rpc_results.status.ok()) {
+    return rpc_results.status;
+  }
   exec->NotifyResults(&rpc_results, c);
 
   assert(rpc_results.output_files.size() == num_threads);

@@ -31,9 +31,8 @@ struct CompactionParams {
   CompactionParams();
   ~CompactionParams();
   int job_id;
-  //int level;
-  int output_level;
   int num_levels;
+  int output_level;
   uint32_t cf_id;
   std::string cf_name;
   const std::vector<CompactionInputFiles>* inputs;

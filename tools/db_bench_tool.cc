@@ -4193,8 +4193,9 @@ class Benchmark {
         db->opt_txn_db = tdb;
         db->db = tdb->GetBaseDB();
       }
-      Options opt = db->db->GetOptions();
-      dbstats = opt.statistics;
+      DBOptions dbo = db->db->GetDBOptions();
+      dbstats = dbo.statistics;
+      FLAGS_db = db->db->GetName();
       return;
     }
     Status s;

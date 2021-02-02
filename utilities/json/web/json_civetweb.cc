@@ -234,6 +234,8 @@ JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
   ADD_HANDLER(TablePropertiesCollectorFactory, table_properties_collector_factory);
   ADD_HANDLER(TransactionDBMutexFactory, txn_db_mutex_factory);
   ADD_HANDLER(SliceTransform, slice_transform);
+  ADD_HANDLER(SstPartitionerFactory, sst_partitioner_factory);
+  ADD_HANDLER(CompactionExecutorFactory, compaction_executor_factory);
 
   ADD_HANDLER(Options, options);
   ADD_HANDLER(DBOptions, db_options);

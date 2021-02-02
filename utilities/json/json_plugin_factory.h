@@ -237,8 +237,10 @@ using SerDeFactory = PluginFactory<const SerDeFunc<Object>*>;
 template<class Object>
 std::string SerDe_SerializeReq(const std::string& clazz, const Object* obj) {
   assert(nullptr != obj);
+  json js; // empty js
+  JsonPluginRepo repo; // empty repo
   const SerDeFunc<Object>* serde =
-     SerDeFactory<Object>::AcquirePlugin(clazz, json{}, JsonPluginRepo());
+     SerDeFactory<Object>::AcquirePlugin(clazz, js, repo);
   std::string bytes;
   serde->Serialize(*obj, &bytes);
   return bytes;

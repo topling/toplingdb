@@ -215,8 +215,8 @@ PluginToString(const DB_Ptr&, const JsonPluginRepo::Impl::ObjMap<DB_Ptr>& map,
 template<class Object>
 struct SerDeFunc {
   virtual ~SerDeFunc() {}
-  virtual Status Serialize(const Object&, std::string* output) const = 0;
-  virtual Status DeSerialize(Object*, const Slice& input) const = 0;
+  virtual void Serialize(const Object&, std::string* output) const = 0;
+  virtual void DeSerialize(Object*, const Slice& input) const = 0;
   using InterfaceType = SerDeFunc;
 };
 template<class SerDeClass>
@@ -271,11 +271,11 @@ std::string SerDe_SerializeOpt(const std::string& clazz,
 }
 
 template<class Object>
-Status SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
+void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
   assert(nullptr != obj);
   const SerDeFunc<Object>* serde = SerDeFactory<Object>::NullablePlugin(clazz);
   if (serde) {
-    return serde->DeSerialize(obj, bytes);
+    serde->DeSerialize(obj, bytes);
   }
   else {
     assert(bytes.empty());
@@ -284,13 +284,12 @@ Status SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
               ROCKSDB_FUNC, clazz.c_str());
       abort();
     }
-    return Status::OK();
   }
 }
 template<class Object>
-Status SerDe_DeSerialize(const std::string& clazz, Slice bytes,
+void SerDe_DeSerialize(const std::string& clazz, Slice bytes,
                        const std::shared_ptr<Object>& obj) {
-  return SerDe_DeSerialize(clazz, bytes, obj);
+  SerDe_DeSerialize(clazz, bytes, obj);
 }
 
 template<class Object, class Extra>

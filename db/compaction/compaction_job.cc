@@ -794,7 +794,7 @@ try {
   log_buffer_->FlushBufferToLog();
   LogCompaction();
 
-  const size_t num_threads = compact_->sub_compact_states.size();
+  size_t num_threads = compact_->sub_compact_states.size();
   assert(num_threads > 0);
   const Compaction* c = compact_->compaction;
   ColumnFamilyData* cfd = c->column_family_data();
@@ -833,7 +833,11 @@ try {
   }
   exec->NotifyResults(&rpc_results, c);
 
-  assert(rpc_results.output_files.size() == num_threads);
+  // remote compact fabricates a version_set, which may cause
+  // GenSubcompactionBoundaries yield different num of sub_compact_states,
+  // thus makes the following assert fail:
+  //assert(rpc_results.output_files.size() == num_threads); // can be diff
+
   //compaction_stats_.micros = env_->NowMicros() - start_micros;
   compaction_stats_ = rpc_results.compaction_stats;
   *compaction_job_stats_ = rpc_results.job_stats;
@@ -845,6 +849,18 @@ try {
   TablePropertiesCollection tp_map;
   auto& cf_paths = imm_cfo->cf_paths;
   compact_->num_output_files = 0;
+
+  if (rpc_results.output_files.size() != num_threads) {
+    // this will happen, but is rare, log it
+    ROCKS_LOG_BUFFER(log_buffer_,
+                     "subcompact num diff: rpc = %zd, local = %zd",
+                     rpc_results.output_files.size(), num_threads);
+    num_threads = rpc_results.output_files.size();
+    auto& sub_vec = compact_->sub_compact_states;
+    Compaction* mc = compact_->compaction;
+    sub_vec.resize(num_threads, SubcompactionState(mc, nullptr, nullptr, 0));
+  }
+
   for (size_t i = 0; i < num_threads; ++i) {
     auto& sub_state = compact_->sub_compact_states[i];
     for (const auto& min_meta : rpc_results.output_files[i]) {

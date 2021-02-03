@@ -35,7 +35,7 @@ struct CompactionParams {
   int output_level;
   uint32_t cf_id;
   std::string cf_name;
-  const std::vector<CompactionInputFiles>* inputs;
+  const std::vector<CompactionInputFiles>* inputs = nullptr;
   VersionSetSerDe version_set;
   uint64_t target_file_size;
   uint64_t max_compaction_bytes;
@@ -51,7 +51,7 @@ struct CompactionParams {
   uint32_t max_subcompactions; // num_threads
   CompressionType compression;
   CompressionOptions compression_opts;
-  const std::vector<FileMetaData*>* grandparents;
+  const std::vector<FileMetaData*>* grandparents = nullptr;
   double score;
   bool manual_compaction;
   bool deletion_compaction;
@@ -60,14 +60,14 @@ struct CompactionParams {
 
   //VersionSet* version_set;
   SequenceNumber preserve_deletes_seqnum;
-  const std::vector<SequenceNumber>* existing_snapshots;
+  const std::vector<SequenceNumber>* existing_snapshots = nullptr;
   SequenceNumber earliest_write_conflict_snapshot;
   bool paranoid_file_checks;
   std::string dbname;
   std::string db_id;
   std::string db_session_id;
   std::string full_history_ts_low;
-  CompactionJobStats* compaction_job_stats;
+  CompactionJobStats* compaction_job_stats = nullptr;
   //SnapshotChecker* snapshot_checker; // not used
   //FSDirectory* db_directory;
   //FSDirectory* output_directory;

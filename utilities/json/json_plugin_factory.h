@@ -271,11 +271,11 @@ std::string SerDe_SerializeOpt(const std::string& clazz,
 }
 
 template<class Object>
-void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
+Status SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
   assert(nullptr != obj);
   const SerDeFunc<Object>* serde = SerDeFactory<Object>::NullablePlugin(clazz);
   if (serde) {
-    serde->DeSerialize(obj, bytes);
+    return serde->DeSerialize(obj, bytes);
   }
   else {
     assert(bytes.empty());
@@ -284,12 +284,13 @@ void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
               ROCKSDB_FUNC, clazz.c_str());
       abort();
     }
+    return Status::OK();
   }
 }
 template<class Object>
-void SerDe_DeSerialize(const std::string& clazz, Slice bytes,
+Status SerDe_DeSerialize(const std::string& clazz, Slice bytes,
                        const std::shared_ptr<Object>& obj) {
-  SerDe_DeSerialize(clazz, bytes, obj);
+  return SerDe_DeSerialize(clazz, bytes, obj);
 }
 
 template<class Object, class Extra>

@@ -366,7 +366,7 @@ Impl_Put(const std::string& name, Map& map, const Ptr& p) {
       ib.first->second = p; // overwrite
     }
     map.p2name[GetRawPtr(ib.first->second)] =
-        { name, json::object({"manual", true}) };
+        { name, json::object({{"manual", true}}) };
   }
   else { // p is null, do delete
     auto iter = name2p.find(name);

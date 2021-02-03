@@ -848,7 +848,8 @@ try {
   for (size_t i = 0; i < num_threads; ++i) {
     auto& sub_state = compact_->sub_compact_states[i];
     for (const auto& min_meta : rpc_results.output_files[i]) {
-      auto& old_fname = min_meta.file_name;
+      auto old_fnum = min_meta.file_number;
+      auto old_fname = MakeTableFileName(rpc_results.output_dir, old_fnum);
       auto path_id = c->output_path_id();
       uint64_t file_number = versions_->NewFileNumber();
       std::string new_fname = TableFileName(cf_paths, file_number, path_id);
@@ -898,6 +899,8 @@ try {
 
   LogFlush(db_options_.info_log);
   TEST_SYNC_POINT("CompactionJob::RunRemote():End");
+
+  env_->DeleteDir(rpc_results.output_dir);
 
   compact_->status = Status::OK();
   return Status::OK();

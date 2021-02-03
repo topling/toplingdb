@@ -96,7 +96,7 @@ struct CompactionResults {
   CompactionResults();
   ~CompactionResults();
   struct FileMinMeta {
-    std::string file_name;
+    uint64_t    file_number;
     uint64_t    file_size;
     uint64_t    smallest_seqno;
     uint64_t    largest_seqno;
@@ -119,6 +119,7 @@ struct CompactionResults {
   std::vector<std::string>  int_tbl_prop_collector_factories;
   std::vector<std::string>  event_listner;
 
+  std::string output_dir;
   std::vector<std::vector<FileMinMeta> > output_files;
   InternalStats::CompactionStats compaction_stats;
   CompactionJobStats job_stats;

@@ -278,12 +278,11 @@ Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
   JSON_IMPORT_REPO(TableFactory            , table_factory);
   JSON_IMPORT_REPO(TransactionDBMutexFactory, txn_db_mutex_factory);
 
-  extern Status DispatherTableBackPatch(TableFactory*, const JsonPluginRepo&);
+  extern void DispatherTableBackPatch(TableFactory*, const JsonPluginRepo&);
   for (auto& kv : *m_impl->table_factory.name2p) {
     if (Slice(kv.second->Name()) == "DispatherTable") {
       auto tf = kv.second.get();
-      Status s = DispatherTableBackPatch(tf, repo);
-      if (!s.ok()) return s;
+      DispatherTableBackPatch(tf, repo);
     }
   }
 

@@ -34,7 +34,7 @@ public:
   std::string GetPrintableOptions() const override;
 
 // non TableFactory methods:
-  Status BackPatch(const JsonPluginRepo& repo);
+  void BackPatch(const JsonPluginRepo& repo);
   json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const;
   std::string ToJsonStr(const json& dump_options,
                         const JsonPluginRepo& repo) const;

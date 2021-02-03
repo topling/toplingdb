@@ -525,14 +525,14 @@ const {
   return Status::OK();
 }
 
-Status DispatherTableBackPatch(TableFactory* f, const JsonPluginRepo& repo) {
+void DispatherTableBackPatch(TableFactory* f, const JsonPluginRepo& repo) {
   auto disptcher = dynamic_cast<DispatherTableFactory*>(f);
   assert(nullptr != disptcher);
-  return disptcher->BackPatch(repo);
+  disptcher->BackPatch(repo);
 }
 
 extern bool IsCompactionWorker();
-Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
+void DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) {
   if (m_is_back_patched) {
     fprintf(stderr, "FATAL: %s:%d: %s: %s\n",
             __FILE__, __LINE__, ROCKSDB_FUNC,
@@ -542,8 +542,7 @@ Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
   assert(m_all.get() == nullptr);
   m_all = repo.m_impl->table_factory.name2p;
   if (!m_json_obj.is_object()) {
-    return Status::InvalidArgument(ROCKSDB_FUNC,
-        "DispatherTableFactory options must be object");
+    THROW_InvalidArgument("DispatherTableFactory options must be object");
   }
   auto iter = m_json_obj.find("default");
   if (m_json_obj.end() != iter) {
@@ -551,35 +550,31 @@ Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
     m_default_writer = PluginFactorySP<TableFactory>::
       ObtainPlugin("default", ROCKSDB_FUNC, subjs, repo);
     if (!m_default_writer) {
-      return Status::InvalidArgument(ROCKSDB_FUNC,
-          "fail get defined default writer = " + subjs.dump());
+      THROW_InvalidArgument("fail get defined default writer = " + subjs.dump());
     }
   } else {
     auto iter2 = m_all->find("default");
     if (m_all->end() != iter2) {
       m_default_writer = iter2->second;
     } else {
-      return Status::InvalidArgument(ROCKSDB_FUNC,
-          "fail get global default Factory");
+     THROW_InvalidArgument("fail get global default Factory");
     }
   }
   iter = m_json_obj.find("level_writers");
   if (m_json_obj.end() != iter) {
     auto& level_writers_js = iter.value();
     if (!level_writers_js.is_array()) {
-      return Status::InvalidArgument(ROCKSDB_FUNC,
-          "level_writers must be a json array");
+      THROW_InvalidArgument("level_writers must be a json array");
     }
     if (level_writers_js.empty()) {
-      return Status::InvalidArgument(ROCKSDB_FUNC,
-          "level_writers must be a non-empty json array");
+      THROW_InvalidArgument("level_writers must be a non-empty json array");
     }
     for (auto& item : level_writers_js.items()) {
       auto& options = item.value();
       auto p = PluginFactorySP<TableFactory>::
         ObtainPlugin("default", ROCKSDB_FUNC, options, repo);
       if (!p) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
+        THROW_InvalidArgument(
             "ObtainPlugin returns null, options = " + options.dump());
       }
       m_level_writers.push_back(p);
@@ -633,17 +628,16 @@ Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
   if (m_json_obj.end() != iter) {
     auto& readers_js = iter.value();
     if (!readers_js.is_object()) {
-      return Status::InvalidArgument(ROCKSDB_FUNC,
-                                     "readers must be a json object");
+      THROW_InvalidArgument("readers must be a json object");
     }
     for (auto& item : readers_js.items()) {
       auto& facname = item.key();
       if (!item.value().is_string()) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
+        THROW_InvalidArgument(
             "readers[\"" + facname + "\"] must be a json string");
       }
       if (!PluginFactorySP<TableFactory>::HasPlugin(facname)) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
+        THROW_InvalidArgument(
             "facname = \"" + facname + "\" is not a plugin");
       }
       const std::string& varname = item.value().get_ref<const std::string&>();
@@ -651,11 +645,11 @@ Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
       auto p = PluginFactorySP<TableFactory>::GetPlugin(
           facname.c_str(), ROCKSDB_FUNC, item.value(), repo);
       if (!p) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
+        THROW_InvalidArgument(
             "undefined varname = " + varname + "(factory = " + facname + ")");
       }
       if (!PluginFactorySP<TableFactory>::SamePlugin(p->Name(), facname)) {
-        return Status::InvalidArgument(ROCKSDB_FUNC,
+        THROW_InvalidArgument(
             "facname = " + facname + " but factory->Name() = " + p->Name());
       }
       add_magic(p, varname, true);
@@ -674,13 +668,6 @@ Status DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) try {
   std::sort(m_cons_params.begin(), m_cons_params.end());
   m_json_obj = json{}; // reset
   m_is_back_patched = true;
-  return Status::OK();
-}
-catch (const std::exception& ex) {
-  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
-}
-catch (const Status& s) {
-  return s;
 }
 
 std::string DispatherTableFactory::GetPrintableOptions() const {

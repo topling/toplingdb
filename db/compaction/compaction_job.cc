@@ -856,8 +856,8 @@ try {
     // this will happen, but is rare, log it
     ROCKS_LOG_BUFFER(log_buffer_,
                      "subcompact num diff: rpc = %zd, local = %zd",
-                     rpc_results.output_files.size(), num_threads);
-    num_threads = rpc_results.output_files.size();
+                     result_sub_num, num_threads);
+    num_threads = result_sub_num;
     auto& sub_vec = compact_->sub_compact_states;
     while (sub_vec.size() < result_sub_num) {
       sub_vec.emplace_back(compact_->compaction, nullptr, nullptr, 0);
@@ -904,9 +904,10 @@ try {
       sub_state.total_bytes += min_meta.file_size;
       sub_state.num_output_records += tp->num_entries;
     }
+    // instead AggregateStatistics:
     compact_->num_output_files += sub_state.outputs.size();
     compact_->total_bytes += sub_state.total_bytes;
-    compact_->num_output_records += rpc_results.job_stats.num_output_records;
+    compact_->num_output_records += sub_state.num_output_records;
   }
   compact_->compaction->SetOutputTableProperties(std::move(tp_map));
 
@@ -914,6 +915,7 @@ try {
   // these were run on remote compaction worker node
   //AggregateStatistics();
   //UpdateCompactionStats();
+  compaction_job_stats_->Add(rpc_results.job_stats); // instead AggregateStatistics
 
   //RecordCompactionIOStats(); // update remote statistics to local -->>
   stats_->Merge(rpc_results.statistics.tickers,

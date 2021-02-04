@@ -851,14 +851,19 @@ try {
   compact_->num_output_files = 0;
 
   if (rpc_results.output_files.size() != num_threads) {
+    size_t result_sub_num = rpc_results.output_files.size();
     // this will happen, but is rare, log it
     ROCKS_LOG_BUFFER(log_buffer_,
                      "subcompact num diff: rpc = %zd, local = %zd",
                      rpc_results.output_files.size(), num_threads);
     num_threads = rpc_results.output_files.size();
     auto& sub_vec = compact_->sub_compact_states;
-    Compaction* mc = compact_->compaction;
-    sub_vec.resize(num_threads, SubcompactionState(mc, nullptr, nullptr, 0));
+    while (sub_vec.size() < result_sub_num) {
+      sub_vec.emplace_back(compact_->compaction, nullptr, nullptr, 0);
+    }
+    while (sub_vec.size() > result_sub_num) {
+      sub_vec.pop_back();
+    }
   }
 
   for (size_t i = 0; i < num_threads; ++i) {

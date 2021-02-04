@@ -823,6 +823,7 @@ try {
   auto exec_factory = imm_cfo->compaction_executor_factory.get();
   assert(nullptr != exec_factory);
   auto exec = exec_factory->NewExecutor(c);
+  std::unique_ptr<CompactionExecutor> exec_auto_del(exec);
   exec->SetParams(&rpc_params, c);
   Status s = exec->Execute(rpc_params, &rpc_results);
   if (!s.ok()) {

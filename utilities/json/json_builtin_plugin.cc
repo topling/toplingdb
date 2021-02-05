@@ -165,6 +165,7 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_OPT_PROP(js, base_background_compactions);
     ROCKSDB_JSON_OPT_PROP(js, max_background_compactions);
     ROCKSDB_JSON_OPT_PROP(js, max_subcompactions);
+    ROCKSDB_JSON_OPT_PROP(js, max_level1_subcompactions);
     ROCKSDB_JSON_OPT_PROP(js, max_background_flushes);
     ROCKSDB_JSON_OPT_SIZE(js, max_log_file_size);
     ROCKSDB_JSON_OPT_PROP(js, log_file_time_to_roll);
@@ -271,6 +272,7 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_PROP(js, base_background_compactions);
     ROCKSDB_JSON_SET_PROP(js, max_background_compactions);
     ROCKSDB_JSON_SET_PROP(js, max_subcompactions);
+    ROCKSDB_JSON_SET_PROP(js, max_level1_subcompactions);
     ROCKSDB_JSON_SET_PROP(js, max_background_flushes);
     ROCKSDB_JSON_SET_SIZE(js, max_log_file_size);
     ROCKSDB_JSON_SET_PROP(js, log_file_time_to_roll);

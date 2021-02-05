@@ -16,6 +16,7 @@ public:
   ~JsonCivetServer();
   JsonCivetServer();
   void Init(const json& conf, JsonPluginRepo*);
+  void Close();
   JsonCivetServer(const JsonCivetServer&) = delete;
   JsonCivetServer& operator=(const JsonCivetServer&) = delete;
 private:

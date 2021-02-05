@@ -189,7 +189,7 @@ public:
 };
 
 JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
-	mg_init_library(0);
+  mg_init_library(0);
   if (!conf.is_object()) {
     THROW_InvalidArgument(
         "conf must be a json object, but is: " + conf.dump());
@@ -251,12 +251,16 @@ void JsonCivetServer::Init(const json& conf, JsonPluginRepo* repo) {
   if (!m_impl)
     m_impl = new Impl(conf, repo);
 }
+void JsonCivetServer::Close() {
+  delete m_impl;
+  m_impl = nullptr;
+}
 JsonCivetServer::JsonCivetServer() {
   m_impl = nullptr;
 }
 JsonCivetServer::~JsonCivetServer() {
   delete m_impl;
-	mg_exit_library();
+  mg_exit_library();
 }
 
 } // ROCKSDB_NAMESPACE

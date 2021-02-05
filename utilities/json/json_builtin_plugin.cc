@@ -2569,6 +2569,7 @@ DB_MultiCF::~DB_MultiCF() = default;
 
 // users should ensure databases are alive when calling this function
 void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
+  m_impl->http.Close();
   using view_kv_ptr = decltype(&*m_impl->props.p2name.cbegin());
   //using view_kv_ptr = const std::pair<const void* const, Impl::ObjInfo>*;
   std::unordered_map<const void*, view_kv_ptr> cfh_to_view;

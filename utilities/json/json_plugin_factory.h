@@ -291,6 +291,10 @@ void SerDe_DeSerialize(const std::string& clazz, Slice bytes,
                        const std::shared_ptr<Object>& obj) {
   SerDe_DeSerialize(clazz, bytes, obj);
 }
+template<class Ptr>
+void SerDe_DeSerialize(Slice bytes, const Ptr& p) {
+  SerDe_DeSerialize(p->Name(), bytes, p);
+}
 
 template<class Object, class Extra>
 struct ExtraBinderFunc {

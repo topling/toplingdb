@@ -752,7 +752,7 @@ MutableDBOptions::MutableDBOptions()
       base_background_compactions(-1),
       max_background_compactions(-1),
       max_subcompactions(0),
-      max_level1_subcompactions(3),
+      max_level1_subcompactions(0),
       avoid_flush_during_shutdown(false),
       writable_file_max_buffer_size(1024 * 1024),
       delayed_write_rate(2 * 1024U * 1024U),

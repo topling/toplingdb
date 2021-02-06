@@ -579,8 +579,9 @@ struct DBOptions {
   uint32_t max_subcompactions = 1;
 
   // L0 -> L1 compactions involves all L0 and L1 files, more subcompactions
-  // makes such compactions faster
-  uint32_t max_level1_subcompactions = 3;
+  // makes such compactions faster. Default 0 means ignore
+  // max_level1_subcompactions and fall back to use max_subcompactions
+  uint32_t max_level1_subcompactions = 0;
 
   // NOT SUPPORTED ANYMORE: RocksDB automatically decides this based on the
   // value of max_background_jobs. For backwards compatibility we will set

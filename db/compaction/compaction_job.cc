@@ -884,13 +884,16 @@ try {
       TableCache* tc = cfd->table_cache();
       Cache::Handle* ch = nullptr;
       auto& icmp = cfd->internal_comparator();
-      st = tc->FindTable(ReadOptions(), icmp, fd, &ch);
+      auto pref_ext = mut_cfo->prefix_extractor.get();
+      st = tc->FindTable(ReadOptions(), icmp, fd, &ch, pref_ext);
       if (!st.ok()) {
         return st;
       }
+      assert(nullptr != ch);
       TableReader* tr = tc->GetTableReaderFromHandle(ch);
       auto tp = tr->GetTableProperties();
       tp_map[new_fname] = tr->GetTableProperties();
+      tc->ReleaseHandle(ch); // end use of TableReader in handle
 
       FileMetaData meta;
       meta.fd = fd;

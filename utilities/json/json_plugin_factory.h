@@ -272,9 +272,9 @@ std::string SerDe_SerializeOpt(const std::string& clazz,
 
 template<class Object>
 void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
-  assert(nullptr != obj);
   const SerDeFunc<Object>* serde = SerDeFactory<Object>::NullablePlugin(clazz);
   if (serde) {
+    assert(nullptr != obj);
     serde->DeSerialize(obj, bytes);
   }
   else {

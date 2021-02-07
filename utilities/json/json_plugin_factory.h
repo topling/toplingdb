@@ -293,7 +293,8 @@ void SerDe_DeSerialize(const std::string& clazz, Slice bytes,
 }
 template<class Ptr>
 void SerDe_DeSerialize(Slice bytes, const Ptr& p) {
-  SerDe_DeSerialize(p->Name(), bytes, p);
+  if (p)
+    SerDe_DeSerialize(p->Name(), bytes, p);
 }
 
 template<class Object, class Extra>

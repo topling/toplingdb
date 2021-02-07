@@ -289,7 +289,7 @@ void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
 template<class Object>
 void SerDe_DeSerialize(const std::string& clazz, Slice bytes,
                        const std::shared_ptr<Object>& obj) {
-  SerDe_DeSerialize(clazz, bytes, obj);
+  SerDe_DeSerialize(clazz, bytes, obj.get());
 }
 template<class Ptr>
 void SerDe_DeSerialize(Slice bytes, const Ptr& p) {

@@ -127,9 +127,6 @@ struct CompactionResults {
   Status status;
 };
 
-void SerDeRead(FILE* fp, CompactionParams* p);
-void SerDeWrite(FILE* fp, const CompactionResults* res);
-
 class CompactionExecutor {
  public:
   virtual ~CompactionExecutor();
@@ -145,8 +142,5 @@ class CompactionExecutorFactory {
   virtual CompactionExecutor* NewExecutor(const Compaction*) const = 0;
   virtual const char* Name() const = 0;
 };
-
-bool IsCompactionWorker();
-void SetCompactionWorker(bool b);
 
 } // namespace ROCKSDB_NAMESPACE

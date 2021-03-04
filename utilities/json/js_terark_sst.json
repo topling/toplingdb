@@ -70,7 +70,6 @@
         "checksumLevel": 0,
         "entropyAlgo": "kNoEntropy",
         "debugLevel": 0,
-        "flatTempFile": true,
         "softZipWorkingMemLimit": "16G",
         "hardZipWorkingMemLimit": "32G",
         "smallTaskMemory": "1G",

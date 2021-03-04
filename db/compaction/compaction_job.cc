@@ -806,6 +806,7 @@ try {
   CompactionParams rpc_params;
   CompactionResults rpc_results;
 
+  rpc_results.status = Status::Incomplete("Just Created");
   rpc_params.job_id = job_id_;
   rpc_params.version_set.From(versions_);
   rpc_params.preserve_deletes_seqnum = preserve_deletes_seqnum_;

@@ -2044,7 +2044,7 @@ ifndef ROCKSDB_USE_LIBRADOS
   AUTO_ALL_EXCLUDE_SRC += utilities/env_librados_test.cc
 endif
 
-AUTO_ALL_TESTS_SRC += $(shell find * -name '*_test.cc' -not -path 'java/*')
+AUTO_ALL_TESTS_SRC := $(shell find * -name '*_test.cc' -not -path 'java/*') ${EXTRA_TESTS_SRC}
 AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC})
 AUTO_ALL_TESTS_OBJ := $(addprefix $(OBJ_DIR)/,$(AUTO_ALL_TESTS_SRC:%.cc=%.o))
 AUTO_ALL_TESTS_EXE := $(AUTO_ALL_TESTS_OBJ:%.o=%)

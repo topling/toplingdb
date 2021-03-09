@@ -636,6 +636,4 @@ void JsonRepoSet(json& js, const Ptr& prop, const Map& map,
   }
 }
 
-size_t GetSubCompactIdx();
-
 } // ROCKSDB_NAMESPACE

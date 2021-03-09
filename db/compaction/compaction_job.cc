@@ -591,7 +591,7 @@ Status CompactionJob::Run() {
 Status CompactionJob::RunLocal() {
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_RUN);
-  TEST_SYNC_POINT("CompactionJob::RunLocal():Start");
+  TEST_SYNC_POINT("CompactionJob::Run():Start");
   log_buffer_->FlushBufferToLog();
   LogCompaction();
 
@@ -767,7 +767,7 @@ Status CompactionJob::RunLocal() {
 
   RecordCompactionIOStats();
   LogFlush(db_options_.info_log);
-  TEST_SYNC_POINT("CompactionJob::RunLocal():End");
+  TEST_SYNC_POINT("CompactionJob::Run():End");
 
   compact_->status = status;
   return status;
@@ -1065,11 +1065,7 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   return status;
 }
 
-static thread_local size_t g_sub_compact_thread_idx = size_t(-1);
-size_t GetSubCompactIdx() { return g_sub_compact_thread_idx; }
-
 void CompactionJob::ProcessKeyValueCompaction(size_t thread_idx) {
-  g_sub_compact_thread_idx = thread_idx;
   SubcompactionState* sub_compact = &compact_->sub_compact_states[thread_idx];
   assert(sub_compact);
   assert(sub_compact->compaction);

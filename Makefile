@@ -254,7 +254,7 @@ LDFLAGS += -lrados
 endif
 
 AM_LINK = $(AM_V_CCLD)$(CXX) -L. $(patsubst lib%.a, -l%, $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^)) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-AM_SHARE = $(AM_V_CCLD) $(CXX) $(EXTRA_SHARED_LIB_LIB) $(PLATFORM_SHARED_LDFLAGS)$@ -L. $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^) $(LDFLAGS) -o $@
+AM_SHARE = $(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$@ -L. $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^) $(EXTRA_SHARED_LIB_LIB) $(LDFLAGS) -o $@
 
 # Detect what platform we're building on.
 # Export some common variables that might have been passed as Make variables
@@ -892,7 +892,7 @@ $(SHARED3): $(SHARED4)
 
 endif   # PLATFORM_SHARED_VERSIONED
 $(SHARED4): $(LIB_OBJECTS)
-	$(AM_V_CCLD) $(CXX) $(EXTRA_SHARED_LIB_LIB) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(LIB_OBJECTS) $(LDFLAGS) -o $@
+	$(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(LIB_OBJECTS) $(EXTRA_SHARED_LIB_LIB) $(LDFLAGS) -o $@
 endif  # PLATFORM_SHARED_EXT
 
 .PHONY: blackbox_crash_test check clean coverage crash_test ldb_tests package \

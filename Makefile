@@ -2049,12 +2049,24 @@ AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC}
 AUTO_ALL_TESTS_OBJ := $(addprefix $(OBJ_DIR)/,$(AUTO_ALL_TESTS_SRC:%.cc=%.o))
 AUTO_ALL_TESTS_EXE := $(AUTO_ALL_TESTS_OBJ:%.o=%)
 
+define LN_TEST_TARGET
+t${DEBUG_LEVEL}/${1}: ${2}
+	mkdir -p $(dir $$@) && ln -sf `realpath ${2}` $$@
+
+endef
+#intentional one blank line above
+
 .PHONY: auto_all_tests
 auto_all_tests: ${AUTO_ALL_TESTS_EXE}
 
 $(OBJ_DIR)/tools/%_test: $(OBJ_DIR)/tools/%_test.o \
                          ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
+
+$(OBJ_DIR)/%_test: $(OBJ_DIR)/%_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(eval $(foreach test,${AUTO_ALL_TESTS_EXE},$(call LN_TEST_TARGET,$(notdir ${test}),${test})))
 
 $(OBJ_DIR)/tools/db_bench_tool_test : \
 $(OBJ_DIR)/tools/db_bench_tool_test.o \

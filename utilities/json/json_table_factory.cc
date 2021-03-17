@@ -446,8 +446,7 @@ Status DispatherTableFactory::NewTableReader(
         json null_js;
         JsonPluginRepo empty_repo;
         auto factory = PluginFactorySP<TableFactory>::
-              AcquirePlugin(
-            facname, null_js, empty_repo);
+                AcquirePlugin(facname, null_js, empty_repo);
         return factory->NewTableReader(ro, table_reader_options,
                                        std::move(file), file_size, table,
                                        prefetch_index_and_filter_in_cache);

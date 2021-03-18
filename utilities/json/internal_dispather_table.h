@@ -11,7 +11,7 @@ namespace ROCKSDB_NAMESPACE {
 
 class DispatherTableFactory : public TableFactory {
 public:
-  ~DispatherTableFactory();
+  ~DispatherTableFactory() override;
   DispatherTableFactory(const DispatherTableFactory&) = delete;
   DispatherTableFactory(const json& js, const JsonPluginRepo& repo);
 

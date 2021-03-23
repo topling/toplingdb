@@ -763,6 +763,13 @@ catch (const Status& s) {
   return Status::InvalidArgument(ROCKSDB_FUNC, s.ToString());
 }
 
+void JsonPluginRepo::CloseHttpServer() {
+  if (JsonPluginRepo::DebugLevel() >= 2) {
+    fprintf(stderr, "INFO: CloseHttpServer(): http_js = %s\n", );
+  }
+  m_impl->http.Close();
+}
+
 std::string PluginParseInstID(const std::string& str_val) {
   // ${inst_id} or $inst_id
   if ('{' == str_val[1])

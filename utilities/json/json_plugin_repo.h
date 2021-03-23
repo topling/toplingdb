@@ -94,6 +94,7 @@ class JsonPluginRepo {
   std::shared_ptr<std::unordered_map<std::string, DB_Ptr>> GetAllDB() const;
 
   Status StartHttpServer(); // http server for inspection
+  void   CloseHttpServer();
 
   // user must ensure all dbs are alive when calling this function
   void CloseAllDB(bool del_rocksdb_objs = true);

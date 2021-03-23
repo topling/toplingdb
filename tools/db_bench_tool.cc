@@ -2791,6 +2791,7 @@ class Benchmark {
     CloseDB();
   }
   void CloseDB() {
+    repo_.CloseHttpServer();
     db_.DeleteDBs();
     delete prefix_extractor_;
     if (cache_.get() != nullptr) {

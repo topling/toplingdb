@@ -97,6 +97,14 @@ public:
       mg_printf(conn, "ERROR: local uri is null\r\n");
       return true;
     }
+    {
+      char buf[64];
+      time_t rawtime;
+      time(&rawtime);
+      struct tm* timeinfo = localtime(&rawtime);
+      strftime(buf, sizeof(buf), "%F %T",timeinfo);
+      mg_printf(conn, "<p>Current Time: %s</p>\r\n", buf);
+    }
     while ('/' == *uri) uri++;
     size_t urilen = strlen(uri);
 //    if (urilen < m_ns.size()) {

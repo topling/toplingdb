@@ -765,7 +765,8 @@ catch (const Status& s) {
 
 void JsonPluginRepo::CloseHttpServer() {
   if (JsonPluginRepo::DebugLevel() >= 2) {
-    fprintf(stderr, "INFO: CloseHttpServer(): http_js = %s\n", );
+    fprintf(stderr, "INFO: CloseHttpServer(): http_js = %s\n",
+            m_impl->http_js.dump().c_str());
   }
   m_impl->http.Close();
 }

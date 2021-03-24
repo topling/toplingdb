@@ -1088,8 +1088,7 @@ static void JsonToHtml_Object(const json& obj, std::string& html, bool nested) {
       if (val.is_string())
         html.append(val.get_ref<const std::string&>());
       else if (val.is_number()) {
-        html.resize(html.size()-4); // pop "<td>"
-        html.append("<td align='right'>");
+        //html.replace(html.size()-4, 4, "<td align='right'>");
         if (val.is_number_float()) {
           char buf[64];
           auto len = snprintf(buf, sizeof buf, "%.6f", val.get<double>());

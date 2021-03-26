@@ -79,8 +79,8 @@ static bool g_is_compaction_worker = false;
 bool IsCompactionWorker() {
   return g_is_compaction_worker;
 }
-void SetCompactionWorker(bool b) {
-  g_is_compaction_worker = b;
+void SetAsCompactionWorker() {
+  g_is_compaction_worker = true;
 }
 
 } // namespace ROCKSDB_NAMESPACE

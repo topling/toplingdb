@@ -945,6 +945,12 @@ catch (const Status& s) {
 Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   assert(compact_);
   if (!compact_->status.ok()) { // caller does not check retval of Run()
+    ColumnFamilyData* cfd = compact_->compaction->column_family_data();
+    assert(cfd);
+    ROCKS_LOG_BUFFER(log_buffer_, "[%s] compaction failed, job_id = %d : %s",
+                     cfd->GetName().c_str(), job_id_,
+                     compact_->status.ToString().c_str());
+    CleanupCompaction();
     return compact_->status;
   }
 

@@ -933,12 +933,20 @@ try {
   compact_->status = Status::OK();
   return Status::OK();
 }
+catch (const std::exception& ex) {
+  compact_->status = Status::Corruption(ROCKSDB_FUNC, ex.what());
+  return compact_->status;
+}
 catch (const Status& s) {
+  compact_->status = s;
   return s;
 }
 
 Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   assert(compact_);
+  if (!compact_->status.ok()) { // caller does not check retval of Run()
+    return compact_->status;
+  }
 
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_INSTALL);

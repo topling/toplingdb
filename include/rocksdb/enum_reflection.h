@@ -133,7 +133,7 @@ std::string enum_str_all_namevalues() {
   enum Class EnumType : IntRep { \
     __VA_ARGS__ \
   }; \
-  IntRep enum_rep_type(EnumType*); \
+  Inline IntRep enum_rep_type(EnumType*) { return IntRep(0); } \
   Inline ROCKSDB_NAMESPACE::Slice enum_str_define(EnumType*) { \
     return ROCKSDB_PP_STR(enum Class EnumType : IntRep) \
       " { " #__VA_ARGS__ " }"; \
@@ -193,7 +193,7 @@ std::string enum_str_all_namevalues() {
   enum Class EnumType : IntRep { \
     ROCKSDB_PP_FLATTEN(__VA_ARGS__) \
   }; \
-  IntRep enum_rep_type(EnumType*); \
+  Inline IntRep enum_rep_type(EnumType*) { return IntRep(0); } \
   Inline ROCKSDB_NAMESPACE::Slice enum_str_define(EnumType*) { \
     return ROCKSDB_PP_STR(enum Class EnumType : IntRep) \
      " { " \

@@ -124,6 +124,33 @@ std::string enum_str_all_namevalues() {
   return s;
 }
 
+// return number of ignored flags
+template<class Enum>
+size_t enum_flags(Slice str, Enum* flags) {
+  *flags = Enum(0);
+  size_t ignored = 0;
+  const char* cur = str.data();
+  const char* end = str.size() + cur;
+  while (cur < end) {
+    Slice sym = var_symbol(cur);
+    if (!sym.empty()) {
+      Enum one;
+      if (enum_value(sym, &one)) {
+        *flags = Enum(size_t(*flags) | size_t(one));
+      } else {
+        ignored++;
+      }
+    }
+    cur += sym.size() + 1;
+  }
+  return ignored;
+}
+template<class Enum>
+Enum enum_flags(Slice str) {
+    Enum flags;
+    enum_flags(str, &flags); // ignore return value
+    return flags;
+}
 
 #define ROCKSDB_PP_SYMBOL(ctx, arg) ROCKSDB_NAMESPACE::var_symbol(#arg)
 

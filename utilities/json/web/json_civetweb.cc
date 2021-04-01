@@ -82,12 +82,12 @@ public:
     }
   }
 
-	bool handleGet(CivetServer *server, struct mg_connection *conn) {
-		mg_printf(conn,
-		          "HTTP/1.1 200 OK\r\nContent-Type: "
-		          "text/html\r\nConnection: close\r\n\r\n");
+  bool handleGet(CivetServer *server, struct mg_connection *conn) override {
+    mg_printf(conn,
+              "HTTP/1.1 200 OK\r\nContent-Type: "
+              "text/html\r\nConnection: close\r\n\r\n");
 
-		const mg_request_info* req = mg_get_request_info(conn);
+    const mg_request_info* req = mg_get_request_info(conn);
     json query = from_query_string(req->query_string);
 //    if (JsonPluginRepo::DebugLevel() >= 2) {
 //      fprintf(stderr, "INFO: query = %s\n", query.dump().c_str());

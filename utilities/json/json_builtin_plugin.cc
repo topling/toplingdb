@@ -1038,7 +1038,8 @@ Ptr ObtainOPT(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
 #define ROCKSDB_OBTAIN_OPT(field, option_js, repo) \
    ObtainOPT(repo.m_impl->field, field##_class, option_js, repo)
 
-Options JS_Options(const json& js, const JsonPluginRepo& repo, string* name) {
+Options JS_Options(const json& js, const JsonPluginRepo& repo,
+                   string* name, string* path) {
   if (!js.is_object()) {
     THROW_InvalidArgument( "param json must be an object");
   }
@@ -1047,6 +1048,11 @@ Options JS_Options(const json& js, const JsonPluginRepo& repo, string* name) {
     THROW_InvalidArgument("missing param \"name\"");
   }
   *name = iter.value().get_ref<const std::string&>();
+  iter = js.find("path");
+  if (js.end() == iter) {
+      THROW_InvalidArgument("missing param \"path\", this should be a bug");
+  }
+  *path = iter.value().get_ref<const std::string&>();
   iter = js.find("options");
   if (js.end() == iter) {
     iter = js.find("db_options");
@@ -2013,6 +2019,7 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     bool html = JsonSmartBool(dump_options, "html");
     if (dbo_name.empty()) dbo_name = "json varname: (defined inline)";
     djs["DBOptions"][0] = dbo_name;
+    djs["path"] = db.db->GetName();
     dbo.SaveToJson(djs["DBOptions"][1], repo, html);
     auto& result_cfo_js = djs["CFOptions"];
     auto& cf_props = djs["CFProps"];
@@ -2103,16 +2110,16 @@ static constexpr auto JS_DB_MultiCF_Manip = &PluginManipSingleton<DB_MultiCF_Man
 
 static
 DB* JS_DB_Open(const json& js, const JsonPluginRepo& repo) {
-  std::string name;
-  Options options(JS_Options(js, repo, &name));
+  std::string name, path;
+  Options options(JS_Options(js, repo, &name, &path));
   bool read_only = false; // default false
   ROCKSDB_JSON_OPT_PROP(js, read_only);
   DB* db = nullptr;
   Status s;
   if (read_only)
-    s = DB::OpenForReadOnly(options, name, &db);
+    s = DB::OpenForReadOnly(options, path, &db);
   else
-    s = DB::Open(options, name, &db);
+    s = DB::Open(options, path, &db);
   if (!s.ok())
     throw s; // NOLINT
   SetCFPropertiesWebView(db, name, repo);
@@ -2123,12 +2130,12 @@ ROCKSDB_FACTORY_REG("DB::Open", JS_DB_Manip);
 
 static
 DB* JS_DB_OpenForReadOnly(const json& js, const JsonPluginRepo& repo) {
-  std::string name;
-  Options options(JS_Options(js, repo, &name));
+  std::string name, path;
+  Options options(JS_Options(js, repo, &name, &path));
   bool error_if_log_file_exist = false; // default
   ROCKSDB_JSON_OPT_PROP(js, error_if_log_file_exist);
   DB* db = nullptr;
-  Status s = DB::OpenForReadOnly(options, name, &db, error_if_log_file_exist);
+  Status s = DB::OpenForReadOnly(options, path, &db, error_if_log_file_exist);
   if (!s.ok())
     throw s;
   SetCFPropertiesWebView(db, name, repo);
@@ -2139,11 +2146,11 @@ ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_Manip);
 
 static
 DB* JS_DB_OpenAsSecondary(const json& js, const JsonPluginRepo& repo) {
-  std::string name, secondary_path;
+  std::string name, path, secondary_path;
   ROCKSDB_JSON_REQ_PROP(js, secondary_path);
-  Options options(JS_Options(js, repo, &name));
+  Options options(JS_Options(js, repo, &name, &path));
   DB* db = nullptr;
-  Status s = DB::OpenAsSecondary(options, name, secondary_path, &db);
+  Status s = DB::OpenAsSecondary(options, path, secondary_path, &db);
   if (!s.ok())
     throw s;
   SetCFPropertiesWebView(db, name, repo);
@@ -2152,46 +2159,50 @@ DB* JS_DB_OpenAsSecondary(const json& js, const JsonPluginRepo& repo) {
 ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_OpenAsSecondary);
 ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_Manip);
 
-std::unique_ptr<DB_MultiCF_Impl>
-JS_DB_MultiCF_Options(const json& js, const JsonPluginRepo& repo,
-                      std::shared_ptr<DBOptions>* db_options,
-                      std::vector<ColumnFamilyDescriptor>* cf_descriptors,
-                      std::string* name,
-                      const json** pp_js_cf_desc) {
-  if (!js.is_object()) {
-    THROW_InvalidArgument("param json must be an object");
+struct MultiCF_Open {
+  std::shared_ptr<DBOptions> db_opt;
+  std::vector<ColumnFamilyDescriptor> cfdvec;
+  std::string name, path;
+  const json* js_cf_desc;
+  std::unique_ptr<DB_MultiCF_Impl> db;
+  MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
+    if (!js.is_object()) {
+      THROW_InvalidArgument("param json must be an object");
+    }
+    auto iter = js.find("name");
+    if (js.end() == iter) {
+      THROW_InvalidArgument("missing param \"name\"");
+    }
+    name = iter.value().get_ref<const std::string&>();
+    iter = js.find("path");
+    if (js.end() == iter) {
+      THROW_InvalidArgument("missing param \"path\", this should be a bug");
+    }
+    path = iter.value().get_ref<const std::string&>();
+    iter = js.find("column_families");
+    if (js.end() == iter) {
+      THROW_InvalidArgument("missing param \"column_families\"");
+    }
+    js_cf_desc = &iter.value();
+    iter = js.find("db_options");
+    if (js.end() == iter) {
+      THROW_InvalidArgument("missing param \"db_options\"");
+    }
+    auto& db_options_js = iter.value();
+    db_opt = ROCKSDB_OBTAIN_OPT(db_options, db_options_js, repo);
+    db.reset(new DB_MultiCF_Impl);
+    db->m_repo = repo;
+    for (auto& kv : js_cf_desc->items()) {
+      const std::string& cf_name = kv.key();
+      auto& cf_js = kv.value();
+      auto cf_options = ROCKSDB_OBTAIN_OPT(cf_options, cf_js, repo);
+      cfdvec.push_back({cf_name, *cf_options});
+    }
+    if (cfdvec.empty()) {
+      THROW_InvalidArgument("param \"column_families\" is empty");
+    }
   }
-  auto iter = js.find("name");
-  if (js.end() == iter) {
-    THROW_InvalidArgument("missing param \"name\"");
-  }
-  *name = iter.value().get_ref<const std::string&>();
-  iter = js.find("column_families");
-  if (js.end() == iter) {
-    THROW_InvalidArgument("missing param \"column_families\"");
-  }
-  auto& js_cf_desc = iter.value();
-  iter = js.find("db_options");
-  if (js.end() == iter) {
-    THROW_InvalidArgument("missing param \"db_options\"");
-  }
-  auto& db_options_js = iter.value();
-  Status s;
-  *db_options = ROCKSDB_OBTAIN_OPT(db_options, db_options_js, repo);
-  std::unique_ptr<DB_MultiCF_Impl> db(new DB_MultiCF_Impl);
-  db->m_repo = repo;
-  *pp_js_cf_desc = &js_cf_desc;
-  for (auto& kv : js_cf_desc.items()) {
-    const std::string& cf_name = kv.key();
-    auto& cf_js = kv.value();
-    auto cf_options = ROCKSDB_OBTAIN_OPT(cf_options, cf_js, repo);
-    cf_descriptors->push_back({cf_name, *cf_options});
-  }
-  if (cf_descriptors->empty()) {
-    THROW_InvalidArgument("param \"column_families\" is empty");
-  }
-  return db;
-}
+};
 
 static ColumnFamilyHandle*
 JS_CreateCF(DB* db, const std::string& cfname,
@@ -2203,31 +2214,31 @@ JS_CreateCF(DB* db, const std::string& cfname,
   }
   return cfh;
 }
+
 static
 DB_MultiCF* JS_DB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
-  shared_ptr<DBOptions> db_opt;
-  std::vector<ColumnFamilyDescriptor> cfdvec;
-  string name;
-  const json* js_cf_desc = nullptr;
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name, &js_cf_desc);
-  bool read_only = false; // default false
-  ROCKSDB_JSON_OPT_PROP(js, read_only);
-  Status s;
-  if (read_only)
-    s = DB::OpenForReadOnly(
-                 *db_opt, name, cfdvec, &db->cf_handles, &db->db);
-  else
-    s = DB::Open(*db_opt, name, cfdvec, &db->cf_handles, &db->db);
-  if (!s.ok())
-    throw s;
-  if (db->cf_handles.size() != cfdvec.size())
-    THROW_Corruption("cf_handles.size() != cfdvec.size()");
-  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
-  if (!read_only) {
-    db->m_create_cf = &JS_CreateCF;
-  }
-  db->InitAddCF_ToMap(*js_cf_desc);
-  return db.release();
+  struct X : MultiCF_Open {
+    X(const json& js, const JsonPluginRepo& repo) : MultiCF_Open(js, repo) {
+      bool read_only = false; // default false
+      ROCKSDB_JSON_OPT_PROP(js, read_only);
+      Status s;
+      if (read_only)
+        s = DB::OpenForReadOnly(
+                     *db_opt, path, cfdvec, &db->cf_handles, &db->db);
+      else
+        s = DB::Open(*db_opt, path, cfdvec, &db->cf_handles, &db->db);
+      if (!s.ok())
+        throw s;
+      if (db->cf_handles.size() != cfdvec.size())
+        THROW_Corruption("cf_handles.size() != cfdvec.size()");
+      SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
+      if (!read_only) {
+        db->m_create_cf = &JS_CreateCF;
+      }
+      db->InitAddCF_ToMap(*js_cf_desc);
+    }
+  } p(js, repo);
+  return p.db.release();
 }
 ROCKSDB_FACTORY_REG("DB::Open", JS_DB_MultiCF_Open);
 ROCKSDB_FACTORY_REG("DB::Open", JS_DB_MultiCF_Manip);
@@ -2235,22 +2246,21 @@ ROCKSDB_FACTORY_REG("DB::Open", JS_DB_MultiCF_Manip);
 static
 DB_MultiCF*
 JS_DB_MultiCF_OpenForReadOnly(const json& js, const JsonPluginRepo& repo) {
-  shared_ptr<DBOptions> db_opt;
-  std::vector<ColumnFamilyDescriptor> cfdvec;
-  string name;
-  const json* js_cf_desc = nullptr;
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name, &js_cf_desc);
-  bool error_if_log_file_exist = false; // default is false
-  ROCKSDB_JSON_OPT_PROP(js, error_if_log_file_exist);
-  Status s = DB::OpenForReadOnly(*db_opt, name, cfdvec, &db->cf_handles,
-                           &db->db, error_if_log_file_exist);
-  if (!s.ok())
-    throw s;
-  if (db->cf_handles.size() != cfdvec.size())
-    THROW_Corruption("cf_handles.size() != cfdvec.size()");
-  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
-  db->InitAddCF_ToMap(*js_cf_desc);
-  return db.release();
+  struct X : MultiCF_Open {
+    X(const json& js, const JsonPluginRepo& repo) : MultiCF_Open(js, repo) {
+      bool error_if_log_file_exist = false;  // default is false
+      ROCKSDB_JSON_OPT_PROP(js, error_if_log_file_exist);
+      Status s = DB::OpenForReadOnly(*db_opt, path, cfdvec, &db->cf_handles,
+                                     &db->db, error_if_log_file_exist);
+      if (!s.ok())
+        throw s;
+      if (db->cf_handles.size() != cfdvec.size())
+        THROW_Corruption("cf_handles.size() != cfdvec.size()");
+      SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
+      db->InitAddCF_ToMap(*js_cf_desc);
+    }
+  } p(js, repo);
+  return p.db.release();
 }
 ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_MultiCF_OpenForReadOnly);
 ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_MultiCF_Manip);
@@ -2258,22 +2268,22 @@ ROCKSDB_FACTORY_REG("DB::OpenForReadOnly", JS_DB_MultiCF_Manip);
 static
 DB_MultiCF*
 JS_DB_MultiCF_OpenAsSecondary(const json& js, const JsonPluginRepo& repo) {
-  shared_ptr<DBOptions> db_opt;
-  std::vector<ColumnFamilyDescriptor> cfdvec;
-  std::string name, secondary_path;
-  ROCKSDB_JSON_REQ_PROP(js, secondary_path);
-  const json* js_cf_desc = nullptr;
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name, &js_cf_desc);
-  Status s = DB::OpenAsSecondary(*db_opt, name, secondary_path, cfdvec,
-                           &db->cf_handles, &db->db);
-  if (!s.ok())
-    throw s;
-  if (db->cf_handles.size() != cfdvec.size())
-    THROW_Corruption("cf_handles.size() != cfdvec.size()");
-  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
-  db->m_create_cf = &JS_CreateCF;
-  db->InitAddCF_ToMap(*js_cf_desc);
-  return db.release();
+  struct X : MultiCF_Open {
+    X(const json& js, const JsonPluginRepo& repo) : MultiCF_Open(js, repo) {
+      std::string secondary_path;
+      ROCKSDB_JSON_REQ_PROP(js, secondary_path);
+      Status s = DB::OpenAsSecondary(*db_opt, path, secondary_path, cfdvec,
+                                     &db->cf_handles, &db->db);
+      if (!s.ok())
+        throw s;
+      if (db->cf_handles.size() != cfdvec.size())
+        THROW_Corruption("cf_handles.size() != cfdvec.size()");
+      SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
+      db->m_create_cf = &JS_CreateCF;
+      db->InitAddCF_ToMap(*js_cf_desc);
+    }
+  } p(js, repo);
+  return p.db.release();
 }
 ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_MultiCF_OpenAsSecondary);
 ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_MultiCF_Manip);
@@ -2283,14 +2293,14 @@ ROCKSDB_FACTORY_REG("DB::OpenAsSecondary", JS_DB_MultiCF_Manip);
 
 static
 DB* JS_DBWithTTL_Open(const json& js, const JsonPluginRepo& repo) {
-  std::string name;
-  Options options(JS_Options(js, repo, &name));
+  std::string name, path;
+  Options options(JS_Options(js, repo, &name, &path));
   int32_t ttl = 0; // default 0
   bool read_only = false; // default false
   ROCKSDB_JSON_OPT_PROP(js, ttl);
   ROCKSDB_JSON_OPT_PROP(js, read_only);
   DBWithTTL* db = nullptr;
-  Status s = DBWithTTL::Open(options, name, &db, ttl, read_only);
+  Status s = DBWithTTL::Open(options, path, &db, ttl, read_only);
   if (!s.ok())
     throw s;
   SetCFPropertiesWebView(db, name, repo);
@@ -2315,34 +2325,33 @@ JS_CreateCF_WithTTL(DB* db, const std::string& cfname,
 static
 DB_MultiCF*
 JS_DBWithTTL_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
-  shared_ptr<DBOptions> db_opt;
-  std::vector<ColumnFamilyDescriptor> cfdvec;
-  std::string name;
-  std::vector<int32_t> ttls;
-  bool read_only = false;
-  ROCKSDB_JSON_OPT_PROP(js, read_only);
-  auto parse_ttl = [&ttls](const json& cf_js) {
-    int32_t ttl = 0;
-    ROCKSDB_JSON_REQ_PROP(cf_js, ttl);
-    ttls.push_back(ttl);
-  };
-  const json* js_cf_desc = nullptr;
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name, &js_cf_desc);
-  for (auto& item : js_cf_desc->items()) {
-    parse_ttl(item.value());
-  }
-  DBWithTTL* dbptr = nullptr;
-  Status s = DBWithTTL::Open(*db_opt, name, cfdvec,
-                       &db->cf_handles, &dbptr, ttls, read_only);
-  if (!s.ok())
-    throw s; // NOLINT
-  if (db->cf_handles.size() != cfdvec.size())
-    THROW_Corruption("cf_handles.size() != cfdvec.size()");
-  db->db = dbptr;
-  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
-  db->m_create_cf = &JS_CreateCF_WithTTL;
-  db->InitAddCF_ToMap(*js_cf_desc);
-  return db.release();
+  struct X : MultiCF_Open {
+    X(const json& js, const JsonPluginRepo& repo) : MultiCF_Open(js, repo) {
+      std::vector<int32_t> ttls;
+      bool read_only = false;
+      ROCKSDB_JSON_OPT_PROP(js, read_only);
+      auto parse_ttl = [&ttls](const json& cf_js) {
+        int32_t ttl = 0;
+        ROCKSDB_JSON_REQ_PROP(cf_js, ttl);
+        ttls.push_back(ttl);
+      };
+      for (auto& item : js_cf_desc->items()) {
+        parse_ttl(item.value());
+      }
+      DBWithTTL* dbptr = nullptr;
+      Status s = DBWithTTL::Open(*db_opt, path, cfdvec,
+                                 &db->cf_handles, &dbptr, ttls, read_only);
+      if (!s.ok())
+        throw s;  // NOLINT
+      if (db->cf_handles.size() != cfdvec.size())
+        THROW_Corruption("cf_handles.size() != cfdvec.size()");
+      db->db = dbptr;
+      SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
+      db->m_create_cf = &JS_CreateCF_WithTTL;
+      db->InitAddCF_ToMap(*js_cf_desc);
+    }
+  } p(js, repo);
+  return p.db.release();
 }
 ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DBWithTTL_MultiCF_Open);
 ROCKSDB_FACTORY_REG("DBWithTTL::Open", JS_DB_MultiCF_Manip);
@@ -2383,11 +2392,11 @@ JS_TransactionDBOptions(const json& js, const JsonPluginRepo& repo) {
 
 static
 DB* JS_TransactionDB_Open(const json& js, const JsonPluginRepo& repo) {
-  std::string name;
-  Options options(JS_Options(js, repo, &name));
+  std::string name, path;
+  Options options(JS_Options(js, repo, &name, &path));
   TransactionDBOptions trx_db_options(JS_TransactionDBOptions(js, repo));
   TransactionDB* db = nullptr;
-  Status s = TransactionDB::Open(options, trx_db_options, name, &db);
+  Status s = TransactionDB::Open(options, trx_db_options, path, &db);
   if (!s.ok())
     throw s;
   SetCFPropertiesWebView(db, name, repo);
@@ -2399,24 +2408,23 @@ ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_DB_Manip);
 static
 DB_MultiCF*
 JS_TransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
-  shared_ptr<DBOptions> db_opt;
-  std::vector<ColumnFamilyDescriptor> cfdvec;
-  std::string name;
-  TransactionDBOptions trx_db_options(JS_TransactionDBOptions(js, repo));
-  const json* js_cf_desc = nullptr;
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name, &js_cf_desc);
-  TransactionDB* dbptr = nullptr;
-  Status s = TransactionDB::Open(*db_opt, trx_db_options, name, cfdvec,
-                           &db->cf_handles, &dbptr);
-  if (!s.ok())
-    throw s;
-  if (db->cf_handles.size() != cfdvec.size())
-    THROW_Corruption("cf_handles.size() != cfdvec.size()");
-  db->db = dbptr;
-  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
-  db->m_create_cf = &JS_CreateCF;
-  db->InitAddCF_ToMap(*js_cf_desc);
-  return db.release();
+  struct X : MultiCF_Open {
+    X(const json& js, const JsonPluginRepo& repo) : MultiCF_Open(js, repo) {
+      TransactionDBOptions trx_db_options(JS_TransactionDBOptions(js, repo));
+      TransactionDB* dbptr = nullptr;
+      Status s = TransactionDB::Open(*db_opt, trx_db_options, path, cfdvec,
+                                     &db->cf_handles, &dbptr);
+      if (!s.ok())
+        throw s;
+      if (db->cf_handles.size() != cfdvec.size())
+        THROW_Corruption("cf_handles.size() != cfdvec.size()");
+      db->db = dbptr;
+      SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
+      db->m_create_cf = &JS_CreateCF;
+      db->InitAddCF_ToMap(*js_cf_desc);
+    }
+  } p(js, repo);
+  return p.db.release();
 }
 ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_TransactionDB_MultiCF_Open);
 ROCKSDB_FACTORY_REG("TransactionDB::Open", JS_DB_MultiCF_Manip);
@@ -2430,10 +2438,10 @@ struct OptimisticTransactionDBOptions_Json: OptimisticTransactionDBOptions {
 };
 static
 DB* JS_OccTransactionDB_Open(const json& js, const JsonPluginRepo& repo) {
-  std::string name;
-  Options options(JS_Options(js, repo, &name));
+  std::string name, path;
+  Options options(JS_Options(js, repo, &name, &path));
   OptimisticTransactionDB* db = nullptr;
-  Status s = OptimisticTransactionDB::Open(options, name, &db);
+  Status s = OptimisticTransactionDB::Open(options, path, &db);
   if (!s.ok())
     throw s;
   SetCFPropertiesWebView(db, name, repo);
@@ -2445,33 +2453,32 @@ ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_DB_Manip);
 static
 DB_MultiCF*
 JS_OccTransactionDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
-  shared_ptr<DBOptions> db_opt;
-  std::vector<ColumnFamilyDescriptor> cfdvec;
-  std::string name;
-  const json* js_cf_desc = nullptr;
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name, &js_cf_desc);
-  OptimisticTransactionDB* dbptr = nullptr;
-  auto iter = js.find("occ_options");
-  if (js.end() == iter) {
-    Status s = OptimisticTransactionDB::Open(
-        *db_opt, name, cfdvec, &db->cf_handles, &dbptr);
-    if (!s.ok())
-      throw s;
-  }
-  else {
-    Status s = OptimisticTransactionDB::Open(
-        *db_opt, OptimisticTransactionDBOptions_Json(iter.value(), repo),
-        name, cfdvec, &db->cf_handles, &dbptr);
-    if (!s.ok())
-      throw s;
-  }
-  if (db->cf_handles.size() != cfdvec.size())
-    THROW_Corruption("cf_handles.size() != cfdvec.size()");
-  db->db = dbptr;
-  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
-  db->m_create_cf = &JS_CreateCF;
-  db->InitAddCF_ToMap(*js_cf_desc);
-  return db.release();
+  struct X : MultiCF_Open {
+    X(const json& js, const JsonPluginRepo& repo) : MultiCF_Open(js, repo) {
+      OptimisticTransactionDB* dbptr = nullptr;
+      auto iter = js.find("occ_options");
+      if (js.end() == iter) {
+        Status s = OptimisticTransactionDB::Open(
+            *db_opt, path, cfdvec, &db->cf_handles, &dbptr);
+        if (!s.ok())
+          throw s;
+      }
+      else {
+        Status s = OptimisticTransactionDB::Open(
+            *db_opt, OptimisticTransactionDBOptions_Json(iter.value(), repo),
+            path, cfdvec, &db->cf_handles, &dbptr);
+        if (!s.ok())
+          throw s;
+      }
+      if (db->cf_handles.size() != cfdvec.size())
+        THROW_Corruption("cf_handles.size() != cfdvec.size()");
+      db->db = dbptr;
+      SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
+      db->m_create_cf = &JS_CreateCF;
+      db->InitAddCF_ToMap(*js_cf_desc);
+    }
+  } p(js, repo);
+  return p.db.release();
 }
 ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_OccTransactionDB_MultiCF_Open);
 ROCKSDB_FACTORY_REG("OptimisticTransactionDB::Open", JS_DB_MultiCF_Manip);
@@ -2524,11 +2531,11 @@ JS_BlobDBOptions(const json& js, const JsonPluginRepo& repo) {
 
 static
 DB* JS_BlobDB_Open(const json& js, const JsonPluginRepo& repo) {
-  std::string name;
-  Options options(JS_Options(js, repo, &name));
+  std::string name, path;
+  Options options(JS_Options(js, repo, &name, &path));
   BlobDBOptions bdb_options(JS_BlobDBOptions(js, repo));
   BlobDB* db = nullptr;
-  Status s = BlobDB::Open(options, bdb_options, name, &db);
+  Status s = BlobDB::Open(options, bdb_options, path, &db);
   if (!s.ok())
     throw s;
   SetCFPropertiesWebView(db, name, repo);
@@ -2540,24 +2547,23 @@ ROCKSDB_FACTORY_REG("BlobDB::Open", JS_DB_Manip);
 static
 DB_MultiCF*
 JS_BlobDB_MultiCF_Open(const json& js, const JsonPluginRepo& repo) {
-  shared_ptr<DBOptions> db_opt;
-  std::vector<ColumnFamilyDescriptor> cfdvec;
-  std::string name;
-  BlobDBOptions bdb_options(JS_BlobDBOptions(js, repo));
-  const json* js_cf_desc = nullptr;
-  auto db = JS_DB_MultiCF_Options(js, repo, &db_opt, &cfdvec, &name, &js_cf_desc);
-  BlobDB* dbptr = nullptr;
-  Status s = BlobDB::Open(*db_opt, bdb_options, name, cfdvec,
-                    &db->cf_handles, &dbptr);
-  if (!s.ok())
-    throw s;
-  if (db->cf_handles.size() != cfdvec.size())
-    THROW_Corruption("cf_handles.size() != cfdvec.size()");
-  db->db = dbptr;
-  SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
-  db->m_create_cf = &JS_CreateCF;
-  db->InitAddCF_ToMap(*js_cf_desc);
-  return db.release();
+  struct X : MultiCF_Open {
+    X(const json& js, const JsonPluginRepo& repo) : MultiCF_Open(js, repo) {
+      BlobDBOptions bdb_options(JS_BlobDBOptions(js, repo));
+      BlobDB* dbptr = nullptr;
+      Status s = BlobDB::Open(*db_opt, bdb_options, path, cfdvec,
+                        &db->cf_handles, &dbptr);
+      if (!s.ok())
+        throw s;
+      if (db->cf_handles.size() != cfdvec.size())
+        THROW_Corruption("cf_handles.size() != cfdvec.size()");
+      db->db = dbptr;
+      SetCFPropertiesWebView(db.get(), name, cfdvec, repo);
+      db->m_create_cf = &JS_CreateCF;
+      db->InitAddCF_ToMap(*js_cf_desc);
+    }
+  } p(js, repo);
+  return p.db.release();
 }
 ROCKSDB_FACTORY_REG("BlobDB::Open", JS_BlobDB_MultiCF_Open);
 ROCKSDB_FACTORY_REG("BlobDB::Open", JS_DB_MultiCF_Manip);

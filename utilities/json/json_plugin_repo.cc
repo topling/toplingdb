@@ -597,6 +597,17 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
   if (!dbname.empty()) {
     params_js["name"] = dbname;
   }
+  { // dbname of rocksdb is really the db's default dir path.
+    // And MANIFEST is always in the dir specified by dbname,
+    // so dbname in rocksdb can be /some/path/to/db_dir, this makes
+    // some confusion, so we allowing the path to be explicitly defined
+    // in params, and keep using dbname as default 'path'.
+    auto ib = params_js.emplace("path", dbname);
+    if (!ib.second && !ib.first->is_string()) {
+      THROW_InvalidArgument(
+        "dbname = '" + dbname + "', params[path] must be a string if defined");
+    }
+  }
   auto& dbmap = repo.m_impl->db;
   auto ib = dbmap.name2p->emplace(dbname, DB_Ptr(nullptr));
   if (!ib.second) {

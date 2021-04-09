@@ -954,8 +954,9 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
     ROCKS_LOG_BUFFER(log_buffer_, "[%s] compaction failed, job_id = %d : %s",
                      cfd->GetName().c_str(), job_id_,
                      compact_->status.ToString().c_str());
+    Status s = compact_->status;
     CleanupCompaction();
-    return compact_->status;
+    return s;
   }
 
   AutoThreadOperationStageUpdater stage_updater(

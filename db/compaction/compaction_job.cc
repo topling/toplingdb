@@ -828,9 +828,11 @@ try {
   exec->SetParams(&rpc_params, c);
   Status s = exec->Execute(rpc_params, &rpc_results);
   if (!s.ok()) {
+    compact_->status = s;
     return s;
   }
   if (!rpc_results.status.ok()) {
+    compact_->status = s;
     return rpc_results.status;
   }
   exec->NotifyResults(&rpc_results, c);
@@ -878,6 +880,7 @@ try {
       std::string new_fname = TableFileName(cf_paths, file_number, path_id);
       Status st = imm_cfo->env->RenameFile(old_fname, new_fname);
       if (!st.ok()) {
+        compact_->status = st;
         return st;
       }
       FileDescriptor fd(file_number, path_id, min_meta.file_size,
@@ -888,6 +891,7 @@ try {
       auto pref_ext = mut_cfo->prefix_extractor.get();
       st = tc->FindTable(ReadOptions(), icmp, fd, &ch, pref_ext);
       if (!st.ok()) {
+        compact_->status = st;
         return st;
       }
       assert(nullptr != ch);

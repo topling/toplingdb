@@ -832,7 +832,7 @@ try {
     return s;
   }
   if (!rpc_results.status.ok()) {
-    compact_->status = s;
+    compact_->status = rpc_results.status;
     return rpc_results.status;
   }
   exec->NotifyResults(&rpc_results, c);

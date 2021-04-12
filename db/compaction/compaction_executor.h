@@ -139,6 +139,7 @@ class CompactionExecutorFactory {
  public:
   virtual ~CompactionExecutorFactory();
   virtual bool ShouldRunLocal(const Compaction*) const = 0;
+  virtual bool AllowFallbackToLocal() const = 0;
   virtual CompactionExecutor* NewExecutor(const Compaction*) const = 0;
   virtual const char* Name() const = 0;
 };

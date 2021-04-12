@@ -585,7 +585,15 @@ Status CompactionJob::Run() {
   if (!exec || exec->ShouldRunLocal(compact_->compaction)) {
     return RunLocal();
   }
-  return RunRemote();
+  Status s = RunRemote();
+  if (!s.ok()) {
+    if (exec->AllowFallbackToLocal()) {
+      s = RunLocal();
+    } else {
+      // fatal, rocksdb does not handle compact errors properly
+    }
+  }
+  return s;
 }
 
 Status CompactionJob::RunLocal() {

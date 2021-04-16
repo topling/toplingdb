@@ -1859,7 +1859,12 @@ static void SetCFPropertiesWebView(DB_MultiCF* mcf, const std::string& dbname,
 static void
 JS_Add_CFPropertiesWebView_Link(json& djs, const DB& db, bool html,
                                 const JsonPluginRepo& repo) {
-  auto iter = repo.m_impl->props.name2p->find(db.GetName() + "/default");
+  auto i1 = repo.m_impl->db.p2name.find(&db);
+  if (repo.m_impl->db.p2name.end() == i1) {
+    abort();
+  }
+  const std::string& db_varname = i1->second.name;
+  auto iter = repo.m_impl->props.name2p->find(db_varname + "/default");
   assert(repo.m_impl->props.name2p->end() != iter);
   if (repo.m_impl->props.name2p->end() == iter) {
     abort();
@@ -1928,7 +1933,15 @@ struct DB_Manip : PluginManipFunc<DB> {
     const auto& dbmap = repo.m_impl->db;
     json djs;
     std::string dbo_name, cfo_name;
-    const std::string& dbname = db.GetName();
+    //const std::string& dbname = db.GetName();
+    std::string dbname;
+    {
+      auto iter = repo.m_impl->db.p2name.find(&db);
+      if (repo.m_impl->db.p2name.end() == iter) {
+        THROW_NotFound("db.p2name.find(), db.path = " + db.GetName());
+      }
+      dbname = iter->second.name;
+    }
     auto i1 = dbmap.p2name.find((DB*)&db);
     if (dbmap.p2name.end() == i1) {
       THROW_NotFound("db ptr is not registered in repo, dbname = " + dbname);
@@ -1985,7 +1998,15 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     json djs;
     auto dbo = static_cast<DBOptions_Json&&>(db.db->GetDBOptions());
     const auto& dbmap = repo.m_impl->db;
-    const std::string& dbname = db.db->GetName();
+    //const std::string& dbname = db.db->GetName();
+    std::string dbname;
+    {
+      auto iter = repo.m_impl->db.p2name.find(db.db);
+      if (repo.m_impl->db.p2name.end() == iter) {
+        THROW_NotFound("db.p2name.find(), db.path = " + db.db->GetName());
+      }
+      dbname = iter->second.name;
+    }
     if (dump_options.contains("compact")) {
       std::string cfname = dump_options["compact"];
       auto cfh = db.Get(cfname);

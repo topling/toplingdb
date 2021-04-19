@@ -1683,7 +1683,8 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
     //&DB::Properties::kAggregatedTableProperties,
     //&DB::Properties::kAggregatedTablePropertiesAtLevel,
   };
-  auto& stjs = djs["StrProps"];
+  // if noint, promote StrProps to top json
+  auto& stjs = JsonSmartBool(dump_options, "noint") ? djs : djs["StrProps"];
   auto prop_to_js = [&](const std::string& name) {
     std::string value;
     if (const_cast<DB&>(db).GetProperty(cfh, name, &value)) {

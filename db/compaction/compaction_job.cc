@@ -828,7 +828,7 @@ try {
   rpc_params.compaction_job_stats = this->compaction_job_stats_;
   rpc_params.max_subcompactions = num_threads;
 
-  //const uint64_t start_micros = env_->NowMicros();
+  const uint64_t start_micros = env_->NowMicros();
   auto exec_factory = imm_cfo->compaction_executor_factory.get();
   assert(nullptr != exec_factory);
   auto exec = exec_factory->NewExecutor(c);
@@ -850,7 +850,7 @@ try {
   // thus makes the following assert fail:
   //assert(rpc_results.output_files.size() == num_threads); // can be diff
 
-  //compaction_stats_.micros = env_->NowMicros() - start_micros;
+  const uint64_t elapsed_us = env_->NowMicros() - start_micros;
   compaction_stats_ = rpc_results.compaction_stats;
   *compaction_job_stats_ = rpc_results.job_stats;
 
@@ -866,8 +866,8 @@ try {
     size_t result_sub_num = rpc_results.output_files.size();
     // this will happen, but is rare, log it
     ROCKS_LOG_BUFFER(log_buffer_,
-                     "subcompact num diff: rpc = %zd, local = %zd",
-                     result_sub_num, num_threads);
+                     "job-%08d: subcompact num diff: rpc = %zd, local = %zd",
+                     job_id_, result_sub_num, num_threads);
     num_threads = result_sub_num;
     auto& sub_vec = compact_->sub_compact_states;
     while (sub_vec.size() < result_sub_num) {
@@ -877,6 +877,8 @@ try {
       sub_vec.pop_back();
     }
   }
+  ROCKS_LOG_BUFFER(log_buffer_, "job-%08d: dcompact time = %f sec",
+                   job_id_, elapsed_us/1e6);
 
   for (size_t i = 0; i < num_threads; ++i) {
     auto& sub_state = compact_->sub_compact_states[i];

@@ -125,6 +125,7 @@ struct CompactionResults {
   CompactionJobStats job_stats;
   RawStatistics statistics;
   Status status;
+  size_t wait_time_usec;
 };
 
 class CompactionExecutor {

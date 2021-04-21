@@ -32,7 +32,9 @@ CompactionParams::~CompactionParams() {
   }
 }
 
-CompactionResults::CompactionResults() {}
+CompactionResults::CompactionResults() {
+  wait_time_usec = 0;
+}
 CompactionResults::~CompactionResults() {}
 
 struct MyVersionSet : VersionSet {

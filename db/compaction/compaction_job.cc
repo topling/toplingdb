@@ -877,9 +877,8 @@ try {
       sub_vec.pop_back();
     }
   }
-  ROCKS_LOG_INFO(db_options_.info_log, "job-%08d: dcompact time = %f sec",
-                 job_id_, elapsed_us/1e6);
 
+  size_t out_raw_bytes = 0;
   for (size_t i = 0; i < num_threads; ++i) {
     auto& sub_state = compact_->sub_compact_states[i];
     for (const auto& min_meta : rpc_results.output_files[i]) {
@@ -908,8 +907,8 @@ try {
       TableReader* tr = tc->GetTableReaderFromHandle(ch);
       auto tp = tr->GetTableProperties();
       tp_map[new_fname] = tr->GetTableProperties();
+      out_raw_bytes += tp->raw_key_size + tp->raw_value_size;
       tc->ReleaseHandle(ch); // end use of TableReader in handle
-
       FileMetaData meta;
       meta.fd = fd;
       meta.smallest = min_meta.smallest_ikey;
@@ -928,6 +927,14 @@ try {
     compact_->num_output_records += sub_state.num_output_records;
   }
   compact_->compaction->SetOutputTableProperties(std::move(tp_map));
+
+  ROCKS_LOG_INFO(db_options_.info_log,
+      "job-%08d: dcompact time = %7.3f sec, files = %3zd, "
+      "out zip = %6.3f GB %7.3f MB/sec, "
+      "out raw = %6.3f GB %7.3f MB/sec",
+      job_id_, elapsed_us/1e6, compact_->num_output_files,
+      compact_->total_bytes/1e9, double(compact_->total_bytes)/elapsed_us,
+      out_raw_bytes/1e9, double(out_raw_bytes)/elapsed_us);
 
   // Finish up all book-keeping to unify the subcompaction results
   // these were run on remote compaction worker node

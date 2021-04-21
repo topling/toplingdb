@@ -931,12 +931,11 @@ try {
   {
     Compaction::InputLevelSummaryBuffer inputs_summary; // NOLINT
     ROCKS_LOG_INFO(db_options_.info_log,
-      "[%s] [JOB %d] Dcompacted %s => %.3f GB, time = %7.3f sec, "
+      "[%s] [JOB %d] Dcompacted %s => time = %7.3f sec, "
       "out zip = %6.3f GB %8.3f MB/sec, "
       "out raw = %6.3f GB %8.3f MB/sec",
       c->column_family_data()->GetName().c_str(), job_id_,
       c->InputLevelSummary(&inputs_summary),
-      (compact_->total_bytes + compact_->total_blob_bytes)/1e9,
       elapsed_us/1e6,
       compact_->total_bytes/1e9, double(compact_->total_bytes)/elapsed_us,
       out_raw_bytes/1e9, double(out_raw_bytes)/elapsed_us);

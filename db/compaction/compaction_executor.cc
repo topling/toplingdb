@@ -34,6 +34,7 @@ CompactionParams::~CompactionParams() {
 
 CompactionResults::CompactionResults() {
   wait_time_usec = 0;
+  work_time_usec = 0;
 }
 CompactionResults::~CompactionResults() {}
 

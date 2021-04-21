@@ -865,9 +865,9 @@ try {
   if (rpc_results.output_files.size() != num_threads) {
     size_t result_sub_num = rpc_results.output_files.size();
     // this will happen, but is rare, log it
-    ROCKS_LOG_BUFFER(log_buffer_,
-                     "job-%08d: subcompact num diff: rpc = %zd, local = %zd",
-                     job_id_, result_sub_num, num_threads);
+    ROCKS_LOG_INFO(db_options_.info_log,
+                   "job-%08d: subcompact num diff: rpc = %zd, local = %zd",
+                   job_id_, result_sub_num, num_threads);
     num_threads = result_sub_num;
     auto& sub_vec = compact_->sub_compact_states;
     while (sub_vec.size() < result_sub_num) {
@@ -877,8 +877,8 @@ try {
       sub_vec.pop_back();
     }
   }
-  ROCKS_LOG_BUFFER(log_buffer_, "job-%08d: dcompact time = %f sec",
-                   job_id_, elapsed_us/1e6);
+  ROCKS_LOG_INFO(db_options_.info_log, "job-%08d: dcompact time = %f sec",
+                 job_id_, elapsed_us/1e6);
 
   for (size_t i = 0; i < num_threads; ++i) {
     auto& sub_state = compact_->sub_compact_states[i];

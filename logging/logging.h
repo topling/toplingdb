@@ -21,6 +21,8 @@ inline const char* RocksLogShorterFileName(const char* file)
 {
   // 18 is the length of "logging/logging.h".
   // If the name of this file changed, please change this number, too.
+  if (auto p = strrchr(file, '/'))
+    return p + 1;
   return file + (sizeof(__FILE__) > 18 ? sizeof(__FILE__) - 18 : 0);
 }
 

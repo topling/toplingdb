@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include <string.h> // NOLINT
+
 // Helper macros that include information about file name and line number
 #define ROCKS_LOG_STRINGIFY(x) #x
 #define ROCKS_LOG_TOSTRING(x) ROCKS_LOG_STRINGIFY(x)

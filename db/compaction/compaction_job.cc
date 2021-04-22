@@ -957,7 +957,7 @@ try {
   LogFlush(db_options_.info_log);
   TEST_SYNC_POINT("CompactionJob::RunRemote():End");
 
-  env_->DeleteDir(rpc_results.output_dir);
+  exec->CleanFiles(rpc_params, rpc_results);
 
   compact_->status = Status::OK();
   return Status::OK();

@@ -137,6 +137,7 @@ class CompactionExecutor {
   virtual void SetParams(CompactionParams*, const Compaction*) = 0;
   virtual void NotifyResults(const CompactionResults*, const Compaction*) = 0;
   virtual Status Execute(const CompactionParams&, CompactionResults*) = 0;
+  virtual void CleanFiles(const CompactionParams&, const CompactionResults&) = 0;
 };
 
 class CompactionExecutorFactory {

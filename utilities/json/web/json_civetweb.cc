@@ -62,13 +62,21 @@ json from_query_string(const char* qry) {
   return js;
 }
 
+static time_t g_web_start_time = ::time(NULL); // NOLINT
+
 void mg_print_cur_time(mg_connection *conn) {
   char buf[64];
   time_t rawtime;
   time(&rawtime);
-  struct tm* timeinfo = localtime(&rawtime);
+  struct tm  result;
+  struct tm* timeinfo = localtime_r(&rawtime, &result);
   strftime(buf, sizeof(buf), "%F %T", timeinfo);
-  mg_printf(conn, "<p>Current Time: %s</p>\r\n", buf);
+  size_t sec = (size_t)difftime(g_web_start_time, rawtime);
+  size_t days = sec / 86400; sec %= 86400;
+  size_t hours = sec / 3600; sec %= 3600;
+  size_t minites = sec / 60; sec %= 60;
+  mg_printf(conn, "<p>Current Time: %s , Up Time: %zd-%02zd:%02zd:%02zd</p>\r\n",
+            buf, days, hours, minites, sec);
 }
 
 template<class Ptr>

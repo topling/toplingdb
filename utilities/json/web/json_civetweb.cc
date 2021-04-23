@@ -71,7 +71,7 @@ void mg_print_cur_time(mg_connection *conn) {
   struct tm  result;
   struct tm* timeinfo = localtime_r(&rawtime, &result);
   strftime(buf, sizeof(buf), "%F %T", timeinfo);
-  size_t sec = (size_t)difftime(g_web_start_time, rawtime);
+  size_t sec = (size_t)difftime(rawtime, g_web_start_time);
   size_t days = sec / 86400; sec %= 86400;
   size_t hours = sec / 3600; sec %= 3600;
   size_t minites = sec / 60; sec %= 60;

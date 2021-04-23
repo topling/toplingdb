@@ -933,12 +933,16 @@ try {
     double work_time_us = rpc_results.work_time_usec;
     if (work_time_us <= 1) work_time_us = 1;
     ROCKS_LOG_INFO(db_options_.info_log,
-      "[%s] [JOB %d] Dcompacted %s [%zd] => "
-      "wait = %6.3f sec, work = %6.3f sec, e2e = %6.3f sec, "
+      "[%s] [JOB %d] Dcompacted %s [%zd] => time sec: "
+      "curl = %6.3f, mount = %6.3f, prepare = %6.3f, "
+      "wait = %6.3f, work = %6.3f, e2e = %6.3f, "
       "out zip = %6.3f GB %8.3f MB/sec, "
       "out raw = %6.3f GB %8.3f MB/sec",
       c->column_family_data()->GetName().c_str(), job_id_,
       c->InputLevelSummary(&inputs_summary), compact_->num_output_files,
+      rpc_results.curl_time_usec/1e6,
+      rpc_results.mount_time_usec/1e6,
+      rpc_results.prepare_time_usec/1e6,
       (elapsed_us - work_time_us)/1e6, // wait is non-work
       work_time_us/1e6, elapsed_us/1e6,
       compact_->total_bytes/1e9, compact_->total_bytes/work_time_us,

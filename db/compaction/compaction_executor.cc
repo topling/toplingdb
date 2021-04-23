@@ -33,6 +33,7 @@ CompactionParams::~CompactionParams() {
 }
 
 CompactionResults::CompactionResults() {
+  curl_time_usec = 0;
   wait_time_usec = 0;
   work_time_usec = 0;
   mount_time_usec = 0;

@@ -62,6 +62,15 @@ json from_query_string(const char* qry) {
   return js;
 }
 
+void mg_print_cur_time(mg_connection *conn) {
+  char buf[64];
+  time_t rawtime;
+  time(&rawtime);
+  struct tm* timeinfo = localtime(&rawtime);
+  strftime(buf, sizeof(buf), "%F %T", timeinfo);
+  mg_printf(conn, "<p>Current Time: %s</p>\r\n", buf);
+}
+
 template<class Ptr>
 class RepoHandler : public CivetHandler {
 public:
@@ -97,14 +106,7 @@ public:
       mg_printf(conn, "ERROR: local uri is null\r\n");
       return true;
     }
-    {
-      char buf[64];
-      time_t rawtime;
-      time(&rawtime);
-      struct tm* timeinfo = localtime(&rawtime);
-      strftime(buf, sizeof(buf), "%F %T",timeinfo);
-      mg_printf(conn, "<p>Current Time: %s</p>\r\n", buf);
-    }
+    mg_print_cur_time(conn);
     while ('/' == *uri) uri++;
     size_t urilen = strlen(uri);
 //    if (urilen < m_ns.size()) {

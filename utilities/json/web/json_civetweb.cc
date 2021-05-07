@@ -84,7 +84,7 @@ class RepoHandler : public CivetHandler {
 public:
   JsonPluginRepo* m_repo;
   JsonPluginRepo::Impl::ObjMap<Ptr>* m_map;
-  //Slice m_ns;
+  Slice m_ns;
   //std::string m_clazz;
 
   RepoHandler(const char* clazz,
@@ -92,7 +92,7 @@ public:
               JsonPluginRepo::Impl::ObjMap<Ptr>* map) {
     m_repo = repo;
     //m_clazz = clazz;
-    //m_ns = m_clazz;
+    m_ns = m_clazz;
     m_map = map;
     if (JsonPluginRepo::DebugLevel() >= 2) {
       fprintf(stderr, "INFO: http: clazz: %s\n", clazz);
@@ -114,7 +114,7 @@ public:
       mg_printf(conn, "ERROR: local uri is null\r\n");
       return true;
     }
-    mg_print_cur_time(conn);
+    const bool html = JsonSmartBool(query, "html");
     while ('/' == *uri) uri++;
     size_t urilen = strlen(uri);
 //    if (urilen < m_ns.size()) {
@@ -131,8 +131,7 @@ public:
       vec.reserve(m_map->name2p->size());
       vec.assign(m_map->name2p->begin(), m_map->name2p->end());
       std::sort(vec.begin(), vec.end());
-      bool use_json = false;
-      if (query.contains("json") && query.get_to(use_json)) {
+      if (!html) {
         json djs;
         for (auto& x : vec) {
           djs.push_back(x.first);
@@ -140,12 +139,16 @@ public:
         std::string jstr = djs.dump();
         mg_write(conn, jstr.data(), jstr.size());
       }
-      mg_printf(conn, "<html><body><table border=1><tbody>\r\n");
-      for (auto& kv : vec) {
-        mg_printf(conn, "<tr><td><a href='/%.*s/%s?html=1'>%s</a></td></tr>\r\n",
-                  int(urilen), uri, kv.first.c_str(), kv.first.c_str());
+      else {
+        mg_printf(conn, "<html><title>db list</title>\n<body>\n");
+        mg_print_cur_time(conn);
+        mg_printf(conn, "<table border=1><tbody>\n");
+        for (auto& kv : vec) {
+          mg_printf(conn, "<tr><td><a href='/%.*s/%s?html=1'>%s</a></td></tr>\n",
+                    int(urilen), uri, kv.first.c_str(), kv.first.c_str());
+        }
+        mg_printf(conn, "</tbody></table></body></html>\n");
       }
-      mg_printf(conn, "</tbody></table></body></html>\r\n");
       return true;
     }
     const char* ask = strchr(slash, '?');
@@ -158,6 +161,14 @@ public:
     auto iter = m_map->name2p->find(name);
     if (m_map->name2p->end() != iter) {
       auto& p = iter->second;
+      if (html) {
+        // at least has url param html=1, so ask must not be null
+        // if (!ask) ask = slash + urilen;
+        assert(nullptr != ask);
+        mg_printf(conn, "<html><title>%.*s</title><body>\n",
+                  int(ask - slash - 1), slash + 1);
+        mg_print_cur_time(conn);
+      }
       try {
         std::string str = PluginToString(p, *m_map, query, *m_repo);
         mg_write(conn, str.data(), str.size());
@@ -168,15 +179,23 @@ public:
       catch (const std::exception& ex) {
         mg_printf(conn, "Caught std::exception: %s\n", ex.what());
       }
+      if (html)
+        mg_printf(conn, "</body></html>\n");
     }
-    else {
-      mg_printf(conn, "<html><body>\r\n");
+    else if (html) {
+      mg_printf(conn, "<html><title>ERROR</title><body>\r\n");
       mg_printf(conn, "<h1>ERROR: not found: %s</h1>\r\n", uri);
-      mg_printf(conn, "<h1><a href='%s'>see all %s</a>\r\n", uri, uri);
+      mg_printf(conn, "<h1><a href='/%.*s'>see all %.*s</a>\r\n",
+                int(slash - uri), uri,
+                int(slash - uri), uri);
       mg_printf(conn, "</body></html>\r\n");
     }
+    else {
+      mg_printf(conn, R"({status:"NotFound", namespace:"%s", objname:"%s"})",
+                m_ns.data_, name.c_str());
+    }
     return true;
-	}
+  }
 };
 
 template<class Ptr>

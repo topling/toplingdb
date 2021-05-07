@@ -1123,6 +1123,9 @@ std::string JsonToHtml(const json& obj) {
 }
 
 std::string JsonToString(const json& obj, const json& options) {
+  if (obj.is_string()) {
+    return obj.get_ref<const std::string&>();
+  }
   int indent = -1;
   auto iter = options.find("pretty");
   if (options.end() != iter) {

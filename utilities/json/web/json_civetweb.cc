@@ -92,7 +92,7 @@ public:
               JsonPluginRepo::Impl::ObjMap<Ptr>* map) {
     m_repo = repo;
     //m_clazz = clazz;
-    m_ns = m_clazz;
+    m_ns = clazz;
     m_map = map;
     if (JsonPluginRepo::DebugLevel() >= 2) {
       fprintf(stderr, "INFO: http: clazz: %s\n", clazz);

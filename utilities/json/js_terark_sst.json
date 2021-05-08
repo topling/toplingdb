@@ -94,7 +94,7 @@
       }
     },
     "dispatch" : {
-      "class": "DispatherTable",
+      "class": "DispatcherTable",
       "params": {
         "default": "block-based",
         "readers": {

@@ -9,11 +9,11 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-class DispatherTableFactory : public TableFactory {
+class DispatcherTableFactory : public TableFactory {
 public:
-  ~DispatherTableFactory() override;
-  DispatherTableFactory(const DispatherTableFactory&) = delete;
-  DispatherTableFactory(const json& js, const JsonPluginRepo& repo);
+  ~DispatcherTableFactory() override;
+  DispatcherTableFactory(const DispatcherTableFactory&) = delete;
+  DispatcherTableFactory(const json& js, const JsonPluginRepo& repo);
 
   const char* Name() const final;
 
@@ -85,7 +85,7 @@ protected:
   json m_json_obj{}; // reset to null after back patched
   mutable std::map<uint64_t, ReaderFactory> m_magic_to_factory;
   bool m_is_back_patched;
-  friend class DispatherTableBuilder;
+  friend class DispatcherTableBuilder;
 };
 
 } // ROCKSDB_NAMESPACE

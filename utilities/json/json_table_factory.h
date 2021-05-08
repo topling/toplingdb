@@ -9,7 +9,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 std::map<uint64_t, std::string>&
-GetDispatherTableMagicNumberMap();
+GetDispatcherTableMagicNumberMap();
 
 struct RegTableFactoryMagicNumber {
   RegTableFactoryMagicNumber(uint64_t, const char*);
@@ -17,7 +17,7 @@ struct RegTableFactoryMagicNumber {
 #define ROCKSDB_RegTableFactoryMagicNumber(magic,name) \
   RegTableFactoryMagicNumber g_AutoRegTF_##magic(magic, name)
 
-void DispatherTableBackPatch(TableFactory* f, const JsonPluginRepo& repo);
+void DispatcherTableBackPatch(TableFactory* f, const JsonPluginRepo& repo);
 
 } // ROCKSDB_NAMESPACE
 

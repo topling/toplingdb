@@ -252,7 +252,7 @@ struct BlockBasedTableFactory_Manip : PluginManipFunc<TableFactory> {
       return;
     }
     std::string name = p->Name();
-    THROW_InvalidArgument("Is not DispatherTable, but is: " + name);
+    THROW_InvalidArgument("Is not DispatcherTable, but is: " + name);
   }
   std::string ToString(const TableFactory& fac, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
@@ -321,7 +321,7 @@ extern const uint64_t kCuckooTableMagicNumber;
 // plugin TableFactory can using this function to register
 // its TableMagicNumber
 std::map<uint64_t, std::string>&
-GetDispatherTableMagicNumberMap() {
+GetDispatcherTableMagicNumberMap() {
   static std::map<uint64_t, std::string> map {
       {kPlainTableMagicNumber, "PlainTable"},
       {kLegacyPlainTableMagicNumber, "PlainTable"},
@@ -333,7 +333,7 @@ GetDispatherTableMagicNumberMap() {
 }
 RegTableFactoryMagicNumber::
 RegTableFactoryMagicNumber(uint64_t magic, const char* name) {
-  auto ib = GetDispatherTableMagicNumberMap().emplace(magic, name);
+  auto ib = GetDispatcherTableMagicNumberMap().emplace(magic, name);
   if (!ib.second) {
     fprintf(stderr,
         "ERROR: RegTableFactoryMagicNumber: dup: %016llX -> %s\n",
@@ -358,21 +358,21 @@ ROCKSDB_FACTORY_REG("FixedPrefix", NewFixedPrefixPartitionerFactoryJson);
 ////////////////////////////////////////////////////////////////////////////
 
 using namespace std::chrono;
-class DispatherTableFactory;
+class DispatcherTableFactory;
 
 // for hook TableBuilder::Add(key, value) to perform statistics
-class DispatherTableBuilder : public TableBuilder {
+class DispatcherTableBuilder : public TableBuilder {
  public:
   TableBuilder* tb = nullptr;
-  const DispatherTableFactory* dispatcher = nullptr;
-  using Stat = DispatherTableFactory::Stat;
+  const DispatcherTableFactory* dispatcher = nullptr;
+  using Stat = DispatcherTableFactory::Stat;
   Stat st;
   Stat st_sum;
   int  level;
-  DispatherTableBuilder(TableBuilder* tb1,
-                        const DispatherTableFactory* dtf1,
+  DispatcherTableBuilder(TableBuilder* tb1,
+                        const DispatcherTableFactory* dtf1,
                         int level1);
-  ~DispatherTableBuilder();
+  ~DispatcherTableBuilder();
   void UpdateStat();
   void Add(const Slice& key, const Slice& value) final;
   Status status() const final { return tb->status(); }
@@ -389,20 +389,20 @@ class DispatherTableBuilder : public TableBuilder {
   const char* GetFileChecksumFuncName() const final { return tb->GetFileChecksumFuncName(); }
 };
 
-DispatherTableFactory::~DispatherTableFactory() {}
+DispatcherTableFactory::~DispatcherTableFactory() {}
 
-DispatherTableFactory::
-DispatherTableFactory(const json& js, const JsonPluginRepo& repo) {
+DispatcherTableFactory::
+DispatcherTableFactory(const json& js, const JsonPluginRepo& repo) {
   m_json_obj = js; // backup
   m_json_str = js.dump();
   m_is_back_patched = false;
 }
 
-const char* DispatherTableFactory::Name() const {
-  return "DispatherTable";
+const char* DispatcherTableFactory::Name() const {
+  return "DispatcherTable";
 }
 
-Status DispatherTableFactory::NewTableReader(
+Status DispatcherTableFactory::NewTableReader(
     const ReadOptions& ro,
     const TableReaderOptions& table_reader_options,
     std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
@@ -434,7 +434,7 @@ Status DispatherTableFactory::NewTableReader(
                                    std::move(file), file_size, table,
                                    prefetch_index_and_filter_in_cache);
   }
-  auto& map = GetDispatherTableMagicNumberMap();
+  auto& map = GetDispatcherTableMagicNumberMap();
   auto iter = map.find(magic);
   if (map.end() != iter) {
     const std::string& facname = iter->second;
@@ -471,7 +471,7 @@ Status DispatherTableFactory::NewTableReader(
   return Status::NotSupported("Unidentified table format");
 }
 
-TableBuilder* DispatherTableFactory::NewTableBuilder(
+TableBuilder* DispatcherTableFactory::NewTableBuilder(
     const TableBuilderOptions& table_builder_options,
     uint32_t column_family_id, WritableFileWriter* file)
 const {
@@ -515,23 +515,23 @@ const {
         table_builder_options, column_family_id, file);
     m_writer_files[0]++;
   }
-  return new DispatherTableBuilder(builder, this, level);
+  return new DispatcherTableBuilder(builder, this, level);
 }
 
 // Sanitizes the specified DB Options.
-Status DispatherTableFactory::ValidateOptions(const DBOptions&, const ColumnFamilyOptions&)
+Status DispatcherTableFactory::ValidateOptions(const DBOptions&, const ColumnFamilyOptions&)
 const {
   return Status::OK();
 }
 
-void DispatherTableBackPatch(TableFactory* f, const JsonPluginRepo& repo) {
-  auto disptcher = dynamic_cast<DispatherTableFactory*>(f);
-  assert(nullptr != disptcher);
-  disptcher->BackPatch(repo);
+void DispatcherTableBackPatch(TableFactory* f, const JsonPluginRepo& repo) {
+  auto dispatcher = dynamic_cast<DispatcherTableFactory*>(f);
+  assert(nullptr != dispatcher);
+  dispatcher->BackPatch(repo);
 }
 
 extern bool IsCompactionWorker();
-void DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) {
+void DispatcherTableFactory::BackPatch(const JsonPluginRepo& repo) {
   if (m_is_back_patched) {
     fprintf(stderr, "FATAL: %s:%d: %s: %s\n",
             __FILE__, __LINE__, ROCKSDB_FUNC,
@@ -541,7 +541,7 @@ void DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) {
   assert(m_all.get() == nullptr);
   m_all = repo.m_impl->table_factory.name2p;
   if (!m_json_obj.is_object()) {
-    THROW_InvalidArgument("DispatherTableFactory options must be object");
+    THROW_InvalidArgument("DispatcherTableFactory options must be object");
   }
   auto iter = m_json_obj.find("default");
   if (m_json_obj.end() != iter) {
@@ -584,7 +584,7 @@ void DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) {
   }
   m_writer_files.resize(m_level_writers.size() + 1);
   std::map<std::string, std::vector<uint64_t> > name2magic;
-  for (auto& kv : GetDispatherTableMagicNumberMap()) {
+  for (auto& kv : GetDispatcherTableMagicNumberMap()) {
     name2magic[kv.second].push_back(kv.first);
     //fprintf(stderr, "DEBG: %016llX : %s\n", (long long)kv.first, kv.second.c_str());
   }
@@ -669,11 +669,11 @@ void DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) {
   m_is_back_patched = true;
 }
 
-std::string DispatherTableFactory::GetPrintableOptions() const {
+std::string DispatcherTableFactory::GetPrintableOptions() const {
   return m_json_str;
 }
 
-json DispatherTableFactory::ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
+json DispatcherTableFactory::ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
   const bool html = JsonSmartBool(dump_options, "html");
   const bool nozero = JsonSmartBool(dump_options, "nozero");
   auto& p2name = repo.m_impl->table_factory.p2name;
@@ -773,8 +773,8 @@ json DispatherTableFactory::ToJsonObj(const json& dump_options, const JsonPlugin
   js["readers"] = std::move(readers_js);
   return js;
 }
-std::string DispatherTableFactory::ToJsonStr(const json& dump_options,
-                                             const JsonPluginRepo& repo) const {
+std::string DispatcherTableFactory::ToJsonStr(const json& dump_options,
+                                              const JsonPluginRepo& repo) const {
   auto js = ToJsonObj(dump_options, repo);
   try {
     return JsonToString(js, dump_options);
@@ -784,7 +784,7 @@ std::string DispatherTableFactory::ToJsonStr(const json& dump_options,
   }
 }
 
-void DispatherTableFactory::UpdateOptions(const json& js, const JsonPluginRepo& repo) {
+void DispatcherTableFactory::UpdateOptions(const json& js, const JsonPluginRepo& repo) {
 
 }
 
@@ -797,8 +797,8 @@ static const seconds g_durations[6] = {
     seconds(1800), // 30 minutes
 };
 
-DispatherTableBuilder::DispatherTableBuilder(TableBuilder* tb1,
-                      const DispatherTableFactory* dtf1,
+DispatcherTableBuilder::DispatcherTableBuilder(TableBuilder* tb1,
+                      const DispatcherTableFactory* dtf1,
                       int level1) {
   tb = tb1;
   dispatcher = dtf1;
@@ -814,14 +814,14 @@ std::atomic<T>& as_atomic(T& x) {
     return reinterpret_cast<std::atomic<T>&>(x);
 }
 
-DispatherTableBuilder::~DispatherTableBuilder() {
+DispatcherTableBuilder::~DispatcherTableBuilder() {
   UpdateStat();
   as_atomic(dispatcher->m_stats[0][level].st.file_size)
     .fetch_add(tb->FileSize(), std::memory_order_relaxed);
   delete tb;
 }
 
-void DispatherTableBuilder::Add(const Slice& key, const Slice& value) {
+void DispatcherTableBuilder::Add(const Slice& key, const Slice& value) {
   st.entry_cnt++;
   st.key_size += key.size();
   st.val_size += value.size();
@@ -830,16 +830,16 @@ void DispatherTableBuilder::Add(const Slice& key, const Slice& value) {
   }
   tb->Add(key, value);
 }
-void DispatherTableBuilder::UpdateStat() {
+void DispatcherTableBuilder::UpdateStat() {
   st_sum.Add(st);
-  const_cast<DispatherTableFactory*>(dispatcher)->UpdateStat(level, st);
+  const_cast<DispatcherTableFactory*>(dispatcher)->UpdateStat(level, st);
   if (JsonPluginRepo::DebugLevel() >= 4) {
     fprintf(stderr, "DBUG: entry_cnt = %zd\n", st_sum.entry_cnt);
   }
   st.Reset();
 }
 
-void DispatherTableFactory::UpdateStat(size_t lev, const Stat& st) {
+void DispatcherTableFactory::UpdateStat(size_t lev, const Stat& st) {
   auto tp = steady_clock::now();
   m_mtx.lock();
   m_stats[0][lev].time = tp;
@@ -864,22 +864,22 @@ void DispatherTableFactory::UpdateStat(size_t lev, const Stat& st) {
 
 static std::shared_ptr<TableFactory>
 NewDispatcherTableFactoryJson(const json& js, const JsonPluginRepo& repo) {
-  return std::make_shared<DispatherTableFactory>(js, repo);
+  return std::make_shared<DispatcherTableFactory>(js, repo);
 }
 
 struct DispatcherTableFactory_Manip : PluginManipFunc<TableFactory> {
   void Update(TableFactory* p, const json& js,
               const JsonPluginRepo& repo) const final {
-    if (auto t = dynamic_cast<DispatherTableFactory*>(p)) {
+    if (auto t = dynamic_cast<DispatcherTableFactory*>(p)) {
       t->UpdateOptions(js, repo);
       return;
     }
     std::string name = p->Name();
-    THROW_InvalidArgument("Is not DispatherTable, but is: " + name);
+    THROW_InvalidArgument("Is not DispatcherTable, but is: " + name);
   }
   std::string ToString(const TableFactory& fac, const json& dump_options,
                        const JsonPluginRepo& repo) const final {
-    if (auto t = dynamic_cast<const DispatherTableFactory*>(&fac)) {
+    if (auto t = dynamic_cast<const DispatcherTableFactory*>(&fac)) {
       return t->ToJsonStr(dump_options, repo);
     }
     std::string name = fac.Name();
@@ -887,13 +887,13 @@ struct DispatcherTableFactory_Manip : PluginManipFunc<TableFactory> {
   }
 };
 
-ROCKSDB_REG_PluginManip("Dispath", DispatcherTableFactory_Manip);
-ROCKSDB_REG_PluginManip("Dispather", DispatcherTableFactory_Manip);
-ROCKSDB_REG_PluginManip("DispatherTable", DispatcherTableFactory_Manip);
+ROCKSDB_REG_PluginManip("Dispatch", DispatcherTableFactory_Manip);
+ROCKSDB_REG_PluginManip("Dispatcher", DispatcherTableFactory_Manip);
+ROCKSDB_REG_PluginManip("DispatcherTable", DispatcherTableFactory_Manip);
 
-ROCKSDB_FACTORY_REG("Dispath", NewDispatcherTableFactoryJson);
-ROCKSDB_FACTORY_REG("Dispather", NewDispatcherTableFactoryJson);
-ROCKSDB_FACTORY_REG("DispatherTable", NewDispatcherTableFactoryJson);
+ROCKSDB_FACTORY_REG("Dispatch", NewDispatcherTableFactoryJson);
+ROCKSDB_FACTORY_REG("Dispatcher", NewDispatcherTableFactoryJson);
+ROCKSDB_FACTORY_REG("DispatcherTable", NewDispatcherTableFactoryJson);
 
 void TableFactoryDummyFuncToPreventGccDeleteSymbols() {}
 

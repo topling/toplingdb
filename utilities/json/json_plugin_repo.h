@@ -10,7 +10,6 @@
 #include "rocksdb/rocksdb_namespace.h"
 #include "rocksdb/status.h"
 #include <memory>
-#include <unordered_map>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -91,7 +90,7 @@ class JsonPluginRepo {
   // dbmap is held by m_impl internally, if dbmap is null, user can still
   // get db by Get(dbname) -- if user knows dbname
   Status OpenAllDB();
-  std::shared_ptr<std::unordered_map<std::string, DB_Ptr>> GetAllDB() const;
+  std::shared_ptr<std::map<std::string, DB_Ptr>> GetAllDB() const;
 
   Status StartHttpServer(); // http server for inspection
   void   CloseHttpServer();

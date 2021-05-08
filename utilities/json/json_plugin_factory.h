@@ -7,7 +7,6 @@
 #pragma once
 
 #include <memory>
-#include <unordered_map>
 
 #include "json_plugin_repo.h"
 #include "web/json_civetweb.h"
@@ -47,9 +46,9 @@ struct JsonPluginRepo::Impl {
   };
   template<class Ptr>
   struct ObjMap {
-    std::unordered_map<const void*, ObjInfo> p2name;
-    std::shared_ptr<std::unordered_map<std::string, Ptr>> name2p =
-        std::make_shared<std::unordered_map<std::string, Ptr>>();
+    std::map<const void*, ObjInfo> p2name;
+    std::shared_ptr<std::map<std::string, Ptr>> name2p =
+        std::make_shared<std::map<std::string, Ptr>>();
   };
   template<class T>
   using ObjRepo = ObjMap<std::shared_ptr<T> >;
@@ -155,7 +154,7 @@ public:
     Reg(Reg&&) = delete;
     Reg& operator=(Reg&&) = delete;
     Reg& operator=(const Reg&) = delete;
-    using NameToFuncMap = std::unordered_map<std::string, Meta>;
+    using NameToFuncMap = std::map<std::string, Meta>;
     Reg(Slice class_name, AcqFunc acq, Slice base_class = "") noexcept;
     ~Reg();
     typename NameToFuncMap::iterator ipos;
@@ -308,7 +307,7 @@ using ExtraBinder = PluginFactory<const ExtraBinderFunc<Object, Extra>*>;
 template<class Ptr>
 struct PluginFactory<Ptr>::Reg::Impl {
   NameToFuncMap func_map;
-  std::unordered_map<std::string, Ptr> inst_map;
+  std::map<std::string, Ptr> inst_map;
   static Impl& s_singleton() { static Impl imp; return imp; }
 };
 

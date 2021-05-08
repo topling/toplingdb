@@ -3,12 +3,12 @@
 //
 #pragma once
 #include "rocksdb/status.h"
-#include <unordered_map>
+#include <map>
 #include <stdint.h>
 
 namespace ROCKSDB_NAMESPACE {
 
-std::unordered_map<uint64_t, std::string>&
+std::map<uint64_t, std::string>&
 GetDispatherTableMagicNumberMap();
 
 struct RegTableFactoryMagicNumber {

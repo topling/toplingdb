@@ -44,7 +44,6 @@ extern const char* rocksdb_build_compile_date;
 namespace ROCKSDB_NAMESPACE {
 
 using std::shared_ptr;
-using std::unordered_map;
 using std::vector;
 using std::string;
 
@@ -986,7 +985,7 @@ ROCKSDB_FACTORY_REG("HashLinkList", NewHashLinkListMemTableRepFactoryJson);
 //
 
 template<class Ptr>
-typename std::unordered_map<std::string, Ptr>::iterator
+typename std::map<std::string, Ptr>::iterator
 IterPluginFind(JsonPluginRepo::Impl::ObjMap<Ptr>& field, const std::string& str) {
   if ('$' != str[0]) {
     auto iter = field.name2p->find(str);
@@ -2600,7 +2599,7 @@ void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
   m_impl->http.Close();
   using view_kv_ptr = decltype(&*m_impl->props.p2name.cbegin());
   //using view_kv_ptr = const std::pair<const void* const, Impl::ObjInfo>*;
-  std::unordered_map<const void*, view_kv_ptr> cfh_to_view;
+  std::map<const void*, view_kv_ptr> cfh_to_view;
   for (auto& kv : m_impl->props.p2name) {
     auto view = (CFPropertiesWebView*)kv.first;
     cfh_to_view[view->cfh] = &kv;

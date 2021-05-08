@@ -320,9 +320,9 @@ extern const uint64_t kCuckooTableMagicNumber;
 
 // plugin TableFactory can using this function to register
 // its TableMagicNumber
-std::unordered_map<uint64_t, std::string>&
+std::map<uint64_t, std::string>&
 GetDispatherTableMagicNumberMap() {
-  static std::unordered_map<uint64_t, std::string> map {
+  static std::map<uint64_t, std::string> map {
       {kPlainTableMagicNumber, "PlainTable"},
       {kLegacyPlainTableMagicNumber, "PlainTable"},
       {kBlockBasedTableMagicNumber, "BlockBasedTable"},
@@ -583,7 +583,7 @@ void DispatherTableFactory::BackPatch(const JsonPluginRepo& repo) {
     stv.resize(m_level_writers.size() + 1);
   }
   m_writer_files.resize(m_level_writers.size() + 1);
-  std::unordered_map<std::string, std::vector<uint64_t> > name2magic;
+  std::map<std::string, std::vector<uint64_t> > name2magic;
   for (auto& kv : GetDispatherTableMagicNumberMap()) {
     name2magic[kv.second].push_back(kv.first);
     //fprintf(stderr, "DEBG: %016llX : %s\n", (long long)kv.first, kv.second.c_str());

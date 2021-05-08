@@ -78,12 +78,12 @@ protected:
   // 0s, 1s, 5s, 30s, 300s(5m), 1800(30m)
   mutable std::vector<TimeStat> m_stats[6];
   mutable std::vector<size_t> m_writer_files;
-  std::shared_ptr<std::unordered_map<std::string,
+  std::shared_ptr<std::map<std::string,
           std::shared_ptr<TableFactory>>> m_all;
   std::vector<std::pair<const void*, const json*> > m_cons_params;
   std::string m_json_str;
   json m_json_obj{}; // reset to null after back patched
-  mutable std::unordered_map<uint64_t, ReaderFactory> m_magic_to_factory;
+  mutable std::map<uint64_t, ReaderFactory> m_magic_to_factory;
   bool m_is_back_patched;
   friend class DispatherTableBuilder;
 };

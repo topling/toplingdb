@@ -25,7 +25,6 @@
 namespace ROCKSDB_NAMESPACE {
 
 using std::shared_ptr;
-using std::unordered_map;
 using std::vector;
 using std::string;
 
@@ -723,7 +722,7 @@ catch (const Status& s) {
   return Status::InvalidArgument(ROCKSDB_FUNC, s.ToString());
 }
 
-std::shared_ptr<std::unordered_map<std::string, DB_Ptr> >
+std::shared_ptr<std::map<std::string, DB_Ptr> >
 JsonPluginRepo::GetAllDB() const {
   return m_impl->db.name2p;
 }

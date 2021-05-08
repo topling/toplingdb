@@ -781,6 +781,11 @@ void JsonPluginRepo::CloseHttpServer() {
   m_impl->http.Close();
 }
 
+JsonPluginRepo::Impl::Impl() {
+}
+JsonPluginRepo::Impl::~Impl() {
+}
+
 std::string PluginParseInstID(const std::string& str_val) {
   // ${inst_id} or $inst_id
   if ('{' == str_val[1])

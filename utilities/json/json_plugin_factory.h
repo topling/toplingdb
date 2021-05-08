@@ -40,6 +40,11 @@ struct CFPropertiesWebView {
   ColumnFamilyHandle* cfh;
 };
 struct JsonPluginRepo::Impl {
+  Impl(const Impl&) = delete;
+  Impl& operator=(const Impl&) = delete;
+  Impl();
+  ~Impl();
+
   struct ObjInfo {
     std::string name;
     json params; // { class : "class_name", params : "params..." }

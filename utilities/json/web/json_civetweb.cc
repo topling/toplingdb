@@ -75,7 +75,7 @@ void mg_print_cur_time(mg_connection *conn) {
   size_t days = sec / 86400; sec %= 86400;
   size_t hours = sec / 3600; sec %= 3600;
   size_t minites = sec / 60; sec %= 60;
-  mg_printf(conn, "<p>Now: %s , UpTime: %zd-%02zd:%02zd:%02zd</p>\r\n",
+  mg_printf(conn, "<p>%s , Up: %zd-%02zd:%02zd:%02zd</p>\r\n",
             buf, days, hours, minites, sec);
 }
 

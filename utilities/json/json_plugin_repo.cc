@@ -892,7 +892,13 @@ void JsonSetSize(json& js, unsigned long long val) {
   char buf[32];
   int shift = 0;
   char unit = 'X';
-  if (val % (1LL << 40) == 0) {
+  if (val % (1LL << 60) == 0) {
+    shift = 60, unit = 'E';
+  }
+  else if (val % (1LL << 50) == 0) {
+    shift = 50, unit = 'P';
+  }
+  else if (val % (1LL << 40) == 0) {
     shift = 40, unit = 'T';
   }
   else if (val % (1LL << 30) == 0) {

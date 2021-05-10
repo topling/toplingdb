@@ -327,6 +327,10 @@ uint64_t ParseUint64(const std::string& value) {
       num <<= 30LL;
     else if (c == 't' || c == 'T')
       num <<= 40LL;
+    else if (c == 'p' || c == 'P')
+      num <<= 50LL;
+    else if (c == 'e' || c == 'E')
+      num <<= 50LL;
   }
 
   return num;

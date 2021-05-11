@@ -1178,15 +1178,14 @@ Slice MemTableRep::EncodedKeyValuePair::GetKey() const {
 }
 
 Slice MemTableRep::EncodedKeyValuePair::GetValue() const {
-  Slice key_slice = GetLengthPrefixedSlice(key_);
-  return GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
+  Slice k = GetLengthPrefixedSlice(key_);
+  return GetLengthPrefixedSlice(k.data() + k.size());
 }
 
 std::pair<Slice, Slice> MemTableRep::EncodedKeyValuePair::GetKeyValue() const {
-  Slice key_slice = GetLengthPrefixedSlice(key_);
-  Slice value_slice =
-      GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
-  return {key_slice, value_slice};
+  Slice k = GetLengthPrefixedSlice(key_);
+  Slice v = GetLengthPrefixedSlice(k.data() + k.size());
+  return {k, v};
 }
 
 Slice MemTableRep::Iterator::GetKey() const {
@@ -1196,15 +1195,14 @@ Slice MemTableRep::Iterator::GetKey() const {
 
 Slice MemTableRep::Iterator::GetValue() const {
   assert(Valid());
-  Slice key_slice = GetLengthPrefixedSlice(key());
-  return GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
+  Slice k = GetLengthPrefixedSlice(key());
+  return GetLengthPrefixedSlice(k.data() + k.size());
 }
 std::pair<Slice, Slice> MemTableRep::Iterator::GetKeyValue() const {
   assert(Valid());
-  Slice key_slice = GetLengthPrefixedSlice(key());
-  Slice value_slice =
-      GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
-  return {key_slice, value_slice};
+  Slice k = GetLengthPrefixedSlice(key());
+  Slice v = GetLengthPrefixedSlice(k.data() + k.size());
+  return {k, v};
 }
 
 void MemTable::RefLogContainingPrepSection(uint64_t log) {

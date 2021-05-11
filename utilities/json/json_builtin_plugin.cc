@@ -1155,6 +1155,20 @@ static std::string html_pre(const std::string& value) {
   str.append("</pre>");
   return str;
 }
+static std::string html_wrap(Slice txt) {
+  std::string s;
+  for (size_t i = 0; i < txt.size_; ++i) {
+    const char c = txt.data_[i];
+    if ('.' == c || '-' == c) {
+      s.append("<br/>");
+    } else {
+      s.push_back(c);
+    }
+  }
+  return s;
+}
+#define HTML_WRAP(txt) (html ? html_wrap(txt) : txt)
+
 static void
 GetAggregatedTableProperties(const DB& db, ColumnFamilyHandle* cfh,
                              json& djs, int level, bool html) {
@@ -1177,10 +1191,10 @@ GetAggregatedTableProperties(const DB& db, ColumnFamilyHandle* cfh,
       value.insert(0, "<pre>");
       value.append("</pre>");
     }
-    djs[propName] = std::move(value);
+    djs[HTML_WRAP(propName)] = std::move(value);
   }
   else {
-    djs[propName] = "GetProperty Fail";
+    djs[HTML_WRAP(propName)] = "GetProperty Fail";
   }
 }
 
@@ -1213,7 +1227,7 @@ static void
 GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
                                 json& djs, bool html, bool nozero) {
   std::string sum;
-  auto& pjs = djs[DB::Properties::kAggregatedTableProperties];
+  auto& pjs = djs[HTML_WRAP(DB::Properties::kAggregatedTableProperties)];
   if (!const_cast<DB&>(db).GetProperty(
         cfh, DB::Properties::kAggregatedTableProperties, &sum)) {
     pjs = "GetProperty Fail";
@@ -1313,7 +1327,8 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
 
 static size_t StrDateTime(char* buf, const char* fmt, time_t rawtime) {
   time(&rawtime);
-  struct tm* timeinfo = localtime(&rawtime);
+  struct tm t;
+  struct tm* timeinfo = localtime_r(&rawtime, &t);
   return strftime(buf, 64, fmt, timeinfo);
 }
 
@@ -1708,13 +1723,13 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
     std::string value;
     if (const_cast<DB&>(db).GetProperty(cfh, name, &value)) {
       if (html) {
-        stjs[name] = html_pre(value);
+        stjs[HTML_WRAP(name)] = html_pre(value);
       }
       else {
-        stjs[name] = std::move(value);
+        stjs[HTML_WRAP(name)] = std::move(value);
       }
     } else {
-      stjs[name] = "GetProperty Fail";
+      stjs[HTML_WRAP(name)] = "GetProperty Fail";
     }
   };
   for (auto pName : aStrProps) {
@@ -1726,7 +1741,7 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
   }
   else switch (arg_sst) {
     default:
-      stjs[DB::Properties::kSSTables] = "bad param 'sst'";
+      stjs[HTML_WRAP(DB::Properties::kSSTables)] = "bad param 'sst'";
       break;
     case 0:
       break;
@@ -1734,7 +1749,7 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
       prop_to_js(DB::Properties::kSSTables);
       break;
     case 2: // show as html table
-      stjs[DB::Properties::kSSTables] = Json_DB_CF_SST_HtmlTable(db, cfh);
+      stjs[HTML_WRAP(DB::Properties::kSSTables)] = Json_DB_CF_SST_HtmlTable(db, cfh);
       break;
   }
   //GetAggregatedTableProperties(db, cfh, stjs, -1, html);

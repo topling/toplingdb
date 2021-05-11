@@ -1219,9 +1219,28 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     pjs = "GetProperty Fail";
     return;
   }
+  static const std::set<Slice> ban_fields = {
+      "filter policy name",
+      "prefix extractor name",
+      "column family ID",
+      "column family name",
+      "comparator name",
+      "merge operator name",
+      "property collectors names",
+      "SST file compression options",
+      "DB identity",
+      "DB session identity",
+  };
+  auto vec_ban_fields = [](std::vector<std::pair<Slice, Slice> >& v) {
+    auto is_ban = [](const std::pair<Slice, Slice>& kv) {
+      return ban_fields.count(kv.first) != 0;
+    };
+    v.erase(std::remove_if(v.begin(), v.end(), is_ban), v.end());
+  };
   pjs = json::array();
   std::vector<std::pair<Slice, Slice> > header, fields;
   split(sum, "; ", header);
+  vec_ban_fields(header);
   std::string propName;
   propName.reserve(DB::Properties::kAggregatedTablePropertiesAtLevel.size() + 10);
   auto set_elem = [&](json& elem, Slice name, Slice value) {
@@ -1252,6 +1271,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
     elem["Level"] = level;
     if (const_cast<DB&>(db).GetProperty(cfh, propName, &value)) {
       split(value, "; ", fields);
+      vec_ban_fields(fields);
       for (auto& kv : fields) {
         set_elem(elem, kv.first, kv.second);
       }

@@ -117,9 +117,12 @@ void VectorRep::Insert(KeyHandle handle) {
 bool VectorRep::Contains(const Slice& internal_key) const {
   std::string memtable_key;
   EncodeKey(&memtable_key, internal_key);
+  const char* key = memtable_key.data();
+  auto eq = [this,key](const char* x) {
+    return this->compare_(x, key) == 0;
+  };
   ReadLock l(&rwlock_);
-  return std::find(bucket_->begin(), bucket_->end(), memtable_key.data()) !=
-         bucket_->end();
+  return std::find_if(bucket_->begin(), bucket_->end(), eq) != bucket_->end();
 }
 
 void VectorRep::MarkReadOnly() {
@@ -219,22 +222,18 @@ void VectorRep::Iterator::Seek(const Slice& user_key,
   // Do binary search to find first value not less than the target
   const char* encoded_key =
       (memtable_key != nullptr) ? memtable_key : EncodeKey(&tmp_, user_key);
-  cit_ = std::lower_bound(
-      bucket_->begin(), bucket_->end(), encoded_key,
-      [this](const char* a, const char* b) { return compare_(a, b) < 0; });
+  cit_ = std::equal_range(bucket_->begin(),
+                          bucket_->end(),
+                          encoded_key,
+                          [this] (const char* a, const char* b) {
+                            return compare_(a, b) < 0;
+                          }).first;
 }
 
 // Advance to the first entry with a key <= target
-void VectorRep::Iterator::SeekForPrev(const Slice& user_key,
-                                      const char* memtable_key) {
-  DoSort();
-  // Do binary search to find last value not greater than the target
-  const char* encoded_key =
-      (memtable_key != nullptr) ? memtable_key : EncodeKey(&tmp_, user_key);
-  cit_ = std::upper_bound(
-      bucket_->begin(), bucket_->end(), encoded_key,
-      [this](const char* a, const char* b) { return compare_(a, b) < 0; });
-  Prev();
+void VectorRep::Iterator::SeekForPrev(const Slice& /*user_key*/,
+                                      const char* /*memtable_key*/) {
+  assert(false);
 }
 
 // Position at the first entry in collection.

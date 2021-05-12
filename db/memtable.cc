@@ -701,21 +701,22 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
 
   assert(merge_context != nullptr);
 
-  Slice internal_key, value;
-  std::tie(internal_key, value) = pair->GetKeyValue();
   // Check that it belongs to same user key.  We do not check the
   // sequence number since the Seek() call above should have skipped
   // all entries with overly large sequence numbers.
-  assert(internal_key.size() >= 8);
-  Slice user_key_slice(internal_key.data(), internal_key.size() - 8);
+  Slice ikey, v;
+  std::tie(ikey, v) = pair->GetKeyValue();
+  size_t key_length = ikey.size();
+  const char* key_ptr = ikey.data();
+  assert(key_length >= 8);
+  Slice user_key_slice = Slice(key_ptr, key_length - 8);
   const Comparator* user_comparator =
       s->mem->GetInternalKeyComparator().user_comparator();
   size_t ts_sz = user_comparator->timestamp_size();
   if (user_comparator->CompareWithoutTimestamp(user_key_slice,
                                                s->key->user_key()) == 0) {
     // Correct user key
-    const uint64_t tag =
-        DecodeFixed64(internal_key.data() + internal_key.size() - 8);
+    const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
     ValueType type;
     SequenceNumber seq;
     UnPackSequenceAndType(tag, &seq, &type);
@@ -755,7 +756,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
           if (s->do_merge) {
             if (s->value != nullptr) {
               *(s->status) = MergeHelper::TimedFullMerge(
-                  merge_operator, s->key->user_key(), &value,
+                  merge_operator, s->key->user_key(), &v,
                   merge_context->GetOperands(), s->value, s->logger,
                   s->statistics, s->env_, nullptr /* result_operand */, true);
             }
@@ -763,15 +764,15 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
             // Preserve the value with the goal of returning it as part of
             // raw merge operands to the user
             merge_context->PushOperand(
-                value, s->inplace_update_support == false /* operand_pinned */);
+                v, s->inplace_update_support == false /* operand_pinned */);
           }
         } else if (!s->do_merge) {
           // Preserve the value with the goal of returning it as part of
           // raw merge operands to the user
           merge_context->PushOperand(
-              value, s->inplace_update_support == false /* operand_pinned */);
+              v, s->inplace_update_support == false /* operand_pinned */);
         } else if (s->value != nullptr) {
-          s->value->assign(value.data(), value.size());
+          s->value->assign(v.data(), v.size());
         }
         if (s->inplace_update_support) {
           s->mem->GetLock(s->key->user_key())->ReadUnlock();
@@ -817,7 +818,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
         }
         *(s->merge_in_progress) = true;
         merge_context->PushOperand(
-            value, s->inplace_update_support == false /* operand_pinned */);
+            v, s->inplace_update_support == false /* operand_pinned */);
         if (s->do_merge && merge_operator->ShouldMerge(
                                merge_context->GetOperandsDirectionBackward())) {
           *(s->status) = MergeHelper::TimedFullMerge(
@@ -1035,12 +1036,13 @@ Status MemTable::Update(SequenceNumber seq, const Slice& key,
     // all entries with overly large sequence numbers.
     Slice internal_key, prev_value;
     std::tie(internal_key, prev_value) = iter->GetKeyValue();
-    assert(internal_key.size() >= 8);
+    size_t key_length = internal_key.size();
+    const char* key_ptr = internal_key.data();
+    assert(key_length >= 8);
     if (comparator_.comparator.user_comparator()->Equal(
-            ExtractUserKey(internal_key), lkey.user_key())) {
+            Slice(key_ptr, key_length - 8), lkey.user_key())) {
       // Correct user key
-      const uint64_t tag =
-          DecodeFixed64(internal_key.data() + internal_key.size() - 8);
+      const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
       ValueType type;
       SequenceNumber existing_seq;
       UnPackSequenceAndType(tag, &existing_seq, &type);
@@ -1082,12 +1084,13 @@ Status MemTable::UpdateCallback(SequenceNumber seq, const Slice& key,
     // all entries with overly large sequence numbers.
     Slice internal_key, prev_value;
     std::tie(internal_key, prev_value) = iter->GetKeyValue();
-    assert(internal_key.size() >= 8);
+    size_t key_length = internal_key.size();
+    const char* key_ptr = internal_key.data();
+    assert(key_length >= 8);
     if (comparator_.comparator.user_comparator()->Equal(
-            ExtractUserKey(internal_key), lkey.user_key())) {
+            Slice(key_ptr, key_length - 8), lkey.user_key())) {
       // Correct user key
-      const uint64_t tag =
-          DecodeFixed64(internal_key.data() + internal_key.size() - 8);
+      const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
       ValueType type;
       uint64_t unused;
       UnPackSequenceAndType(tag, &unused, &type);
@@ -1153,13 +1156,14 @@ size_t MemTable::CountSuccessiveMergeEntries(const LookupKey& key) {
 
   for (; iter->Valid(); iter->Next()) {
     Slice internal_key = iter->GetKey();
+    size_t key_length = internal_key.size();
+    const char* iter_key_ptr = internal_key.data();
     if (!comparator_.comparator.user_comparator()->Equal(
-            ExtractUserKey(internal_key), key.user_key())) {
+            Slice(iter_key_ptr, key_length - 8), key.user_key())) {
       break;
     }
 
-    const uint64_t tag =
-        DecodeFixed64(internal_key.data() + internal_key.size() - 8);
+    const uint64_t tag = DecodeFixed64(iter_key_ptr + key_length - 8);
     ValueType type;
     uint64_t unused;
     UnPackSequenceAndType(tag, &unused, &type);

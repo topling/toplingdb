@@ -80,10 +80,10 @@ public:
  void Get(const LookupKey& k, void* callback_args,
           bool (*callback_func)(void* arg, const KeyValuePair*)) override {
    SkipListRep::Iterator iter(&skip_list_);
-   EncodedKeyValuePair pair;
+   EncodedKeyValuePair kv;
    Slice dummy_slice;
    for (iter.Seek(dummy_slice, k.memtable_key().data());
-        iter.Valid() && callback_func(callback_args, pair.SetKey(iter.key()));
+        iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
         iter.Next()) {
    }
  }

@@ -715,13 +715,13 @@ void HashLinkListRep::Get(const LookupKey& k, void* callback_args,
   auto transformed = transform_->Transform(k.user_key());
   auto bucket = GetBucket(transformed);
 
-  EncodedKeyValuePair pair;
+  EncodedKeyValuePair kv;
   auto* skip_list_header = GetSkipListBucketHeader(bucket);
   if (skip_list_header != nullptr) {
     // Is a skip list
     MemtableSkipList::Iterator iter(&skip_list_header->skip_list);
     for (iter.Seek(k.memtable_key().data());
-         iter.Valid() && callback_func(callback_args, pair.SetKey(iter.key()));
+         iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
          iter.Next()) {
     }
   } else {
@@ -729,8 +729,7 @@ void HashLinkListRep::Get(const LookupKey& k, void* callback_args,
     if (link_list_head != nullptr) {
       LinkListIterator iter(this, link_list_head);
       for (iter.Seek(k.internal_key(), nullptr);
-           iter.Valid() &&
-           callback_func(callback_args, pair.SetKey(iter.key()));
+           iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
            iter.Next()) {
       }
     }

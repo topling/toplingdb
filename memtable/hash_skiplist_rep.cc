@@ -292,10 +292,10 @@ void HashSkipListRep::Get(const LookupKey& k, void* callback_args,
   auto transformed = transform_->Transform(k.user_key());
   auto bucket = GetBucket(transformed);
   if (bucket != nullptr) {
-    EncodedKeyValuePair pair;
+    EncodedKeyValuePair kv;
     Bucket::Iterator iter(bucket);
     for (iter.Seek(k.memtable_key().data());
-         iter.Valid() && callback_func(callback_args, pair.SetKey(iter.key()));
+         iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
          iter.Next()) {
     }
   }

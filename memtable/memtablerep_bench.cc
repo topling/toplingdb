@@ -292,13 +292,15 @@ class ReadBenchmarkThread : public BenchmarkThread {
       : BenchmarkThread(table, key_gen, bytes_written, bytes_read, sequence,
                         num_ops, read_hits) {}
 
-  static bool callback(void* arg, const MemTableRep::KeyValuePair* pair) {
+  static bool callback(void* arg, const MemTableRep::KeyValuePair* kv) {
     CallbackVerifyArgs* callback_args = static_cast<CallbackVerifyArgs*>(arg);
     assert(callback_args != nullptr);
-    Slice internal_key = pair->GetKey();
+    Slice internal_key = kv->GetKey();
+    size_t key_length = internal_key.size();
+    const char* key_ptr = internal_key.data();
     if ((callback_args->comparator)
             ->user_comparator()
-            ->Equal(ExtractUserKey(internal_key),
+            ->Equal(Slice(key_ptr, key_length - 8),
                     callback_args->key->user_key())) {
       callback_args->found = true;
     }

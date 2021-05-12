@@ -67,7 +67,6 @@ class MockMemTableRep : public MemTableRep {
 
 class MockMemTableRepFactory : public MemTableRepFactory {
  public:
-  using MemTableRepFactory::CreateMemTableRep;
   MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator& cmp,
                                  Allocator* allocator,
                                  const SliceTransform* transform,

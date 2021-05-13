@@ -72,7 +72,7 @@ struct JsonPluginRepo::Impl {
   ObjRepo<FlushBlockPolicyFactory> flush_block_policy_factory;
   ObjRepo<Logger> info_log;
   ObjRepo<MemoryAllocator> memory_allocator;
-  ObjRepo<MemTableRepFactory> mem_table_rep_factory;
+  ObjRepo<MemTableRepFactory> memtable_factory;
   ObjRepo<MergeOperator> merge_operator;
   ObjRepo<RateLimiter> rate_limiter;
   ObjRepo<SstFileManager> sst_file_manager;

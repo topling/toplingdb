@@ -262,7 +262,7 @@ JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
   ADD_HANDLER(FlushBlockPolicyFactory, flush_block_policy_factory);
   ADD_HANDLER(Logger, info_log);
   ADD_HANDLER(MemoryAllocator, memory_allocator);
-  ADD_HANDLER(MemTableRepFactory, mem_table_rep_factory);
+  ADD_HANDLER(MemTableRepFactory, memtable_factory);
   ADD_HANDLER(MergeOperator, merge_operator);
   ADD_HANDLER(RateLimiter, rate_limiter);
   ADD_HANDLER(SstFileManager, sst_file_manager);

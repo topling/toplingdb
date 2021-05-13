@@ -273,7 +273,7 @@ Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
                    table_properties_collector_factory);
 
   JSON_IMPORT_REPO(MemoryAllocator         , memory_allocator);
-  JSON_IMPORT_REPO(MemTableRepFactory      , mem_table_rep_factory);
+  JSON_IMPORT_REPO(MemTableRepFactory      , memtable_factory);
   JSON_IMPORT_REPO(TableFactory            , table_factory);
   JSON_IMPORT_REPO(TransactionDBMutexFactory, txn_db_mutex_factory);
 
@@ -333,7 +333,7 @@ Status JsonPluginRepo::Export(nlohmann::json* main_js) const try {
                    table_properties_collector_factory);
 
   JSON_EXPORT_REPO(MemoryAllocator         , memory_allocator);
-  JSON_EXPORT_REPO(MemTableRepFactory      , mem_table_rep_factory);
+  JSON_EXPORT_REPO(MemTableRepFactory      , memtable_factory);
   JSON_EXPORT_REPO(TableFactory            , table_factory);
   JSON_EXPORT_REPO(TransactionDBMutexFactory, txn_db_mutex_factory);
 
@@ -430,7 +430,7 @@ JSON_REPO_TYPE_IMPL(filter_policy)
 JSON_REPO_TYPE_IMPL(flush_block_policy_factory)
 JSON_REPO_TYPE_IMPL(info_log)
 JSON_REPO_TYPE_IMPL(memory_allocator)
-JSON_REPO_TYPE_IMPL(mem_table_rep_factory)
+JSON_REPO_TYPE_IMPL(memtable_factory)
 JSON_REPO_TYPE_IMPL(merge_operator)
 JSON_REPO_TYPE_IMPL(rate_limiter)
 JSON_REPO_TYPE_IMPL(sst_file_manager)
@@ -465,7 +465,7 @@ JSON_GetConsParams(filter_policy)
 JSON_GetConsParams(flush_block_policy_factory)
 JSON_GetConsParams(info_log)
 JSON_GetConsParams(memory_allocator)
-JSON_GetConsParams(mem_table_rep_factory)
+JSON_GetConsParams(memtable_factory)
 JSON_GetConsParams(merge_operator)
 JSON_GetConsParams(rate_limiter)
 JSON_GetConsParams(sst_file_manager)

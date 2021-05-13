@@ -601,7 +601,7 @@ struct ColumnFamilyOptions_Json : ColumnFamilyOptions {
     ROCKSDB_JSON_SET_NEST(js, compaction_options_universal);
     ROCKSDB_JSON_SET_NEST(js, compaction_options_fifo);
     ROCKSDB_JSON_SET_PROP(js, max_sequential_skip_in_iterations);
-    ROCKSDB_JSON_SET_FACX(js, memtable_factory, mem_table_rep_factory);
+    ROCKSDB_JSON_SET_FACT(js, memtable_factory);
     js["table_properties_collector_factories"].clear();
     for (auto& table_properties_collector_factory :
                table_properties_collector_factories) {

@@ -889,32 +889,33 @@ void JsonSetSize(json& js, unsigned long long val) {
     js = 0;
     return;
   }
-  char buf[32];
+  char buf[64];
   int shift = 0;
   char unit = 'X';
-  if (val % (1LL << 60) == 0) {
+  if ((val >> 60) != 0) {
     shift = 60, unit = 'E';
   }
-  else if (val % (1LL << 50) == 0) {
+  else if ((val >> 50) != 0) {
     shift = 50, unit = 'P';
   }
-  else if (val % (1LL << 40) == 0) {
+  else if ((val >> 40) != 0) {
     shift = 40, unit = 'T';
   }
-  else if (val % (1LL << 30) == 0) {
+  else if ((val >> 30) != 0) {
     shift = 30, unit = 'G';
   }
-  else if (val % (1LL << 20) == 0) {
+  else if ((val >> 20) != 0) {
     shift = 20, unit = 'M';
   }
-  else if (val % (1LL << 10) == 0) {
+  else if ((val >> 10) != 0) {
     shift = 10, unit = 'K';
   }
   else {
     js = val;
     return;
   }
-  js = std::string(buf, snprintf(buf, sizeof(buf), "%llu %ciB", val >> shift, unit));
+  auto fval = double(val) / (1LL << shift);
+  js = std::string(buf, snprintf(buf, sizeof(buf), "%.3f %ciB", fval, unit));
 }
 
 bool JsonSmartBool(const json& js) {

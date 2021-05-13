@@ -351,7 +351,7 @@ PluginFactory<Ptr>::AcquirePlugin(const std::string& clazz, const json& js,
   }
   else {
     //return Ptr(nullptr);
-    THROW_NotFound("class = " + clazz + ", js = " + js.dump());
+    THROW_NotFound("class = " + clazz + ", params = " + js.dump());
   }
 }
 

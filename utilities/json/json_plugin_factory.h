@@ -593,7 +593,7 @@ const JsonPluginRepo& repoRefType();
       ROCKSDB_JSON_OPT_FACT_INNER(__iter.value(), prop); \
   }} while (0)
 
-#define ROCKSDB_JSON_SET_SIZE(js, prop) JsonSetSize(js[#prop], prop)
+#define ROCKSDB_JSON_SET_SIZE(js, prop) js[#prop] = SizeToString(prop)
 #define ROCKSDB_JSON_SET_PROP(js, prop) js[#prop] = prop
 #define ROCKSDB_JSON_SET_ENUM(js, prop) js[#prop] = enum_stdstr(prop)
 #define ROCKSDB_JSON_SET_NEST(js, prop) \
@@ -612,10 +612,10 @@ const JsonPluginRepo& repoRefType();
 
 
 bool SameVarName(const std::string&, const std::string&);
-void JsonSetSize(json&, unsigned long long);
 bool JsonSmartBool(const json& js, const char* subname);
 int  JsonSmartInt(const json& js, const char* subname, int Default);
 int64_t JsonSmartInt64(const json& js, const char* subname, int64_t Default);
+std::string SizeToString(unsigned long long val);
 
 std::string
 JsonRepoGetHtml_ahref(const char* mapname, const std::string& varname);

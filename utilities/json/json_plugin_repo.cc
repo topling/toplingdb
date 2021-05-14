@@ -884,11 +884,7 @@ int JsonPluginRepo::DebugLevel() {
   return d;
 }
 
-void JsonSetSize(json& js, unsigned long long val) {
-  if (0 == val) {
-    js = 0;
-    return;
-  }
+std::string SizeToString(unsigned long long val) {
   char buf[64];
   int shift = 0;
   char unit = 'X';
@@ -911,11 +907,10 @@ void JsonSetSize(json& js, unsigned long long val) {
     shift = 10, unit = 'K';
   }
   else {
-    js = val;
-    return;
+    return std::string(buf, snprintf(buf, sizeof(buf), "%lld B", val));
   }
   auto fval = double(val) / (1LL << shift);
-  js = std::string(buf, snprintf(buf, sizeof(buf), "%.3f %ciB", fval, unit));
+  return std::string(buf, snprintf(buf, sizeof(buf), "%.3f %ciB", fval, unit));
 }
 
 bool JsonSmartBool(const json& js) {

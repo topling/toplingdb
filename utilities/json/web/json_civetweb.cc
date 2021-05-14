@@ -64,7 +64,7 @@ json from_query_string(const char* qry) {
 
 static time_t g_web_start_time = ::time(NULL); // NOLINT
 
-void mg_print_cur_time(mg_connection *conn) {
+std::string cur_time_stat() {
   char buf[64];
   time_t rawtime;
   time(&rawtime);
@@ -75,8 +75,14 @@ void mg_print_cur_time(mg_connection *conn) {
   size_t days = sec / 86400; sec %= 86400;
   size_t hours = sec / 3600; sec %= 3600;
   size_t minites = sec / 60; sec %= 60;
-  mg_printf(conn, "<p>%s , Up: %zd-%02zd:%02zd:%02zd</p>\r\n",
-            buf, days, hours, minites, sec);
+  std::string str; str.resize(256);
+  str.resize(snprintf(&str[0], str.size(), "%s , Up: %zd-%02zd:%02zd:%02zd",
+                      buf, days, hours, minites, sec));
+  return str;
+}
+void mg_print_cur_time(mg_connection *conn) {
+  std::string str = cur_time_stat();
+  mg_printf(conn, "<p>%s</p>\r\n", cur_time_stat().c_str());
 }
 
 template<class Ptr>

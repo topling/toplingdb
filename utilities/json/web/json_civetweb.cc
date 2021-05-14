@@ -151,22 +151,12 @@ public:
       }
       return true;
     }
-    const char* ask = strchr(slash, '?');
-    std::string name;
-    if (NULL == ask)
-      name = slash + 1;
-    else
-      name.assign(slash + 1, ask);
-
+    const char* name = slash + 1;
     auto iter = m_map->name2p->find(name);
     if (m_map->name2p->end() != iter) {
       auto& p = iter->second;
       if (html) {
-        // at least has url param html=1, so ask must not be null
-        // if (!ask) ask = slash + urilen;
-        assert(nullptr != ask);
-        mg_printf(conn, "<html><title>%.*s</title><body>\n",
-                  int(ask - slash - 1), slash + 1);
+        mg_printf(conn, "<html><title>%s</title><body>\n", name);
         mg_print_cur_time(conn);
       }
       try {
@@ -192,7 +182,7 @@ public:
     }
     else {
       mg_printf(conn, R"({status:"NotFound", namespace:"%s", objname:"%s"})",
-                m_ns.data_, name.c_str());
+                m_ns.data_, name);
     }
     return true;
   }

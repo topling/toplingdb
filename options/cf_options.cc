@@ -825,6 +825,7 @@ ImmutableCFOptions::ImmutableCFOptions(const ImmutableDBOptions& db_options,
       purge_redundant_kvs_while_flush(
           cf_options.purge_redundant_kvs_while_flush),
       use_fsync(db_options.use_fsync),
+      allow_fdatasync(db_options.allow_fdatasync),
       compression_per_level(cf_options.compression_per_level),
       level_compaction_dynamic_level_bytes(
           cf_options.level_compaction_dynamic_level_bytes),

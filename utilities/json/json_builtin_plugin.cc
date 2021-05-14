@@ -152,6 +152,7 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_OPT_SIZE(js, max_total_wal_size);
     ROCKSDB_JSON_OPT_FACT(js, statistics);
     ROCKSDB_JSON_OPT_PROP(js, use_fsync);
+    ROCKSDB_JSON_OPT_PROP(js, allow_fdatasync);
     {
       auto iter = js.find("db_paths");
       if (js.end() != iter)
@@ -261,6 +262,7 @@ struct DBOptions_Json : DBOptions {
     ROCKSDB_JSON_SET_SIZE(js, max_total_wal_size);
     ROCKSDB_JSON_SET_FACT(js, statistics);
     ROCKSDB_JSON_SET_PROP(js, use_fsync);
+    ROCKSDB_JSON_SET_PROP(js, allow_fdatasync);
     if (!db_paths.empty()) {
       js["db_paths"] = DbPathVecToJson(db_paths, html);
     }

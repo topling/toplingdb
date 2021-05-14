@@ -217,6 +217,7 @@ class PosixWritableFile : public FSWritableFile {
  protected:
   const std::string filename_;
   const bool use_direct_io_;
+  const bool allow_fdatasync_;
   int fd_;
   uint64_t filesize_;
   size_t logical_sector_size_;

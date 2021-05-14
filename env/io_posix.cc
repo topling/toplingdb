@@ -1183,6 +1183,7 @@ PosixWritableFile::PosixWritableFile(const std::string& fname, int fd,
     : FSWritableFile(options),
       filename_(fname),
       use_direct_io_(options.use_direct_writes),
+      allow_fdatasync_(options.allow_fdatasync),
       fd_(fd),
       filesize_(0),
       logical_sector_size_(logical_block_size) {
@@ -1315,6 +1316,9 @@ IOStatus PosixWritableFile::Flush(const IOOptions& /*opts*/,
 
 IOStatus PosixWritableFile::Sync(const IOOptions& /*opts*/,
                                  IODebugContext* /*dbg*/) {
+  if (!allow_fdatasync_) {
+    return IOStatus::OK();
+  }
   if (fdatasync(fd_) < 0) {
     return IOError("While fdatasync", filename_, errno);
   }

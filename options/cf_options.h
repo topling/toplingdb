@@ -89,6 +89,8 @@ struct ImmutableCFOptions {
 
   bool use_fsync;
 
+  bool allow_fdatasync;
+
   std::vector<CompressionType> compression_per_level;
 
   bool level_compaction_dynamic_level_bytes;

@@ -520,6 +520,7 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       max_file_opening_threads(options.max_file_opening_threads),
       statistics(options.statistics),
       use_fsync(options.use_fsync),
+      allow_fdatasync(options.allow_fdatasync),
       db_paths(options.db_paths),
       db_log_dir(options.db_log_dir),
       wal_dir(options.wal_dir),

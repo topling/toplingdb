@@ -702,6 +702,9 @@ struct DBOptions {
   // NOT SUPPORTED ANYMORE -- this options is no longer used
   bool skip_log_error_on_recovery = false;
 
+  // If false, fdatasync() calls are bypassed
+  bool allow_fdatasync = true;
+
   // if not zero, dump rocksdb.stats to LOG every stats_dump_period_sec
   //
   // Default: 600 (10 min)

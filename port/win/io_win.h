@@ -378,6 +378,8 @@ class WinWritableFile : private WinFileData,
   virtual Status Allocate(uint64_t offset, uint64_t len) override;
 
   virtual size_t GetUniqueId(char* id, size_t max_size) const override;
+
+  virtual intptr_t FileDescriptor() const override;
 };
 
 class WinRandomRWFile : private WinFileData,

@@ -941,6 +941,10 @@ class WritableFile {
 
   // If you're adding methods here, remember to add them to
   // WritableFileWrapper too.
+  virtual intptr_t FileDescriptor() const {
+    assert(false);
+    return -1;
+  }
 
  protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
@@ -1598,6 +1602,10 @@ class WritableFileWrapper : public WritableFile {
 
   Status Allocate(uint64_t offset, uint64_t len) override {
     return target_->Allocate(offset, len);
+  }
+
+  intptr_t FileDescriptor() const override {
+    return target_->FileDescriptor();
   }
 
  private:

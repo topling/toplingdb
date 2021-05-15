@@ -281,6 +281,7 @@ class PosixWritableFile : public FSWritableFile {
 #ifdef OS_LINUX
   virtual size_t GetUniqueId(char* id, size_t max_size) const override;
 #endif
+  virtual intptr_t FileDescriptor() const override { return fd_; }
 };
 
 // mmap() based random-access

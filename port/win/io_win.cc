@@ -1005,6 +1005,10 @@ size_t WinWritableFile::GetUniqueId(char* id, size_t max_size) const {
   return GetUniqueIdFromFile(GetFileHandle(), id, max_size);
 }
 
+intptr_t WinWritableFile::FileDescriptor() const {
+  return (intptr_t)this->hFile_;
+}
+
 /////////////////////////////////////////////////////////////////////////
 /// WinRandomRWFile
 

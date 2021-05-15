@@ -944,6 +944,7 @@ class FSWritableFile {
     assert(false);
     return -1;
   }
+  virtual void SetFileSize(uint64_t) { assert(false); }
 
  protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }

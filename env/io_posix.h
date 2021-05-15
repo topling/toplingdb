@@ -282,6 +282,7 @@ class PosixWritableFile : public FSWritableFile {
   virtual size_t GetUniqueId(char* id, size_t max_size) const override;
 #endif
   virtual intptr_t FileDescriptor() const override { return fd_; }
+  virtual void SetFileSize(uint64_t fsize) override { filesize_ = fsize; }
 };
 
 // mmap() based random-access

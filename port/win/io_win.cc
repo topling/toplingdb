@@ -1009,6 +1009,10 @@ intptr_t WinWritableFile::FileDescriptor() const {
   return (intptr_t)this->hFile_;
 }
 
+void WinWritableFile::SetFileSize(uint64_t fsize) {
+  next_write_offset_ = fsize;
+}
+
 /////////////////////////////////////////////////////////////////////////
 /// WinRandomRWFile
 

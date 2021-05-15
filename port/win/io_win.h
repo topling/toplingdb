@@ -380,6 +380,7 @@ class WinWritableFile : private WinFileData,
   virtual size_t GetUniqueId(char* id, size_t max_size) const override;
 
   virtual intptr_t FileDescriptor() const override;
+  virtual void SetFileSize(uint64_t) override;
 };
 
 class WinRandomRWFile : private WinFileData,

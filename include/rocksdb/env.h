@@ -945,6 +945,7 @@ class WritableFile {
     assert(false);
     return -1;
   }
+  virtual void SetFileSize(uint64_t) { assert(false); }
 
  protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
@@ -1606,6 +1607,10 @@ class WritableFileWrapper : public WritableFile {
 
   intptr_t FileDescriptor() const override {
     return target_->FileDescriptor();
+  }
+
+  void SetFileSize(uint64_t fsize) override {
+    return target_->SetFileSize(fsize);
   }
 
  private:

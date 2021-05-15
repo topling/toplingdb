@@ -199,7 +199,7 @@ class WritableFileWriter {
     s.PermitUncheckedError();
   }
 
-  std::string file_name() const { return file_name_; }
+  const std::string& file_name() const { return file_name_; }
 
   IOStatus Append(const Slice& data);
 

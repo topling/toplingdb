@@ -216,7 +216,7 @@ struct DBOptions_Json : DBOptions {
         Json_EventListenerVec(js, repo, listeners);
     }
     ROCKSDB_JSON_OPT_PROP(js, enable_thread_tracking);
-    ROCKSDB_JSON_OPT_PROP(js, delayed_write_rate);
+    ROCKSDB_JSON_OPT_SIZE(js, delayed_write_rate);
     ROCKSDB_JSON_OPT_PROP(js, enable_pipelined_write);
     ROCKSDB_JSON_OPT_PROP(js, unordered_write);
     ROCKSDB_JSON_OPT_PROP(js, allow_concurrent_memtable_write);
@@ -321,7 +321,7 @@ struct DBOptions_Json : DBOptions {
       js["listeners"].push_back(inner);
     }
     ROCKSDB_JSON_SET_PROP(js, enable_thread_tracking);
-    ROCKSDB_JSON_SET_PROP(js, delayed_write_rate);
+    ROCKSDB_JSON_SET_SIZE(js, delayed_write_rate);
     ROCKSDB_JSON_SET_PROP(js, enable_pipelined_write);
     ROCKSDB_JSON_SET_PROP(js, unordered_write);
     ROCKSDB_JSON_SET_PROP(js, allow_concurrent_memtable_write);

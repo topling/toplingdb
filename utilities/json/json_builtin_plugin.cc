@@ -1329,7 +1329,7 @@ GetAggregatedTablePropertiesTab(const DB& db, ColumnFamilyHandle* cfh,
 
 static size_t StrDateTime(char* buf, const char* fmt, time_t rawtime) {
   time(&rawtime);
-  struct tm t;
+  struct tm t; // NOLINT
   struct tm* timeinfo = localtime_r(&rawtime, &t);
   return strftime(buf, 64, fmt, timeinfo);
 }
@@ -2248,13 +2248,13 @@ struct MultiCF_Open {
     }
     auto& db_options_js = iter.value();
     db_opt = ROCKSDB_OBTAIN_OPT(db_options, db_options_js, repo);
-    db.reset(new DB_MultiCF_Impl);
+    db.reset(new DB_MultiCF_Impl); // NOLINT
     db->m_repo = repo;
     for (auto& kv : js_cf_desc->items()) {
       const std::string& cf_name = kv.key();
       auto& cf_js = kv.value();
       auto cf_options = ROCKSDB_OBTAIN_OPT(cf_options, cf_js, repo);
-      cfdvec.push_back({cf_name, *cf_options});
+      cfdvec.emplace_back(cf_name, *cf_options);
     }
     if (cfdvec.empty()) {
       THROW_InvalidArgument("param \"column_families\" is empty");
@@ -2657,11 +2657,11 @@ void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
     if (del_rocksdb_objs)
       delete obj;
   };
-  for (auto& kv : *m_impl->db.name2p) {
+  for (const auto& kv : *m_impl->db.name2p) {
     assert(nullptr != kv.second.db);
     if (kv.second.dbm) {
       DB_MultiCF* dbm = kv.second.dbm;
-      assert(kv.second.db = dbm->db);
+      assert(kv.second.db == dbm->db);
       for (auto cfh : dbm->cf_handles) {
         del_view(cfh);
         del_rocks(cfh);

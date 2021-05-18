@@ -1012,20 +1012,23 @@ template<class Ptr>
 Ptr ObtainOPT(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
               const char* option_class, // "DBOptions" or "CFOptions"
               const json& option_js, const JsonPluginRepo& repo) {
+  auto& name2p = *field.name2p;
   if (option_js.is_string()) {
     const std::string& option_name = option_js.get_ref<const std::string&>();
     if ('$' != option_name[0]) {
-      auto iter = field.name2p->find(option_name);
-      if (field.name2p->end() == iter) {
-          THROW_NotFound("option_name = \"" + option_name + "\"");
+      auto iter = name2p.find(option_name);
+      if (name2p.end() == iter) {
+        THROW_NotFound(std::string(option_class) +
+                       " varname = \"" + option_name + "\"");
       }
       return iter->second;
     }
     else {
       const std::string inst_id = PluginParseInstID(option_name);
-      auto iter = field.name2p->find(inst_id);
-      if (field.name2p->end() == iter) {
-          THROW_NotFound("option_name = \"" + inst_id + "\"");
+      auto iter = name2p.find(inst_id);
+      if (name2p.end() == iter) {
+          THROW_NotFound(std::string(option_class) +
+                         " varname = \"" + inst_id + "\"");
       }
       return iter->second;
     }

@@ -612,6 +612,10 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
   if (!ib.second) {
     THROW_InvalidArgument("dup dbname = " + dbname);
   }
+  if (JsonPluginRepo::DebugLevel() >= 2) {
+    fprintf(stderr, "%s:%d: Impl_OpenDB_tpl(): dbname = %s, params = %s\n",
+            __FILE__, __LINE__, dbname.c_str(), params_js.dump(4).c_str());
+  }
   // will open db by calling acq func such as DB::Open
   auto db = PluginFactory<DBT*>::AcquirePlugin(method, params_js, repo);
   assert(nullptr != db);
@@ -756,7 +760,7 @@ Status JsonPluginRepo::StartHttpServer() try {
   if (http_js.is_object()) {
     m_impl->http.Init(http_js, this);
   }
-  else {
+  else if (!http_js.is_null()) {
     if (DebugLevel() >= 2) {
       fprintf(stderr, "ERROR: bad http_js = %s\n", http_js.dump().c_str());
     }

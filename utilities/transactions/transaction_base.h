@@ -53,7 +53,6 @@ class TransactionBaseImpl : public Transaction {
 
   Status PopSavePoint() override;
 
-  using Transaction::Get;
   Status Get(const ReadOptions& options, ColumnFamilyHandle* column_family,
              const Slice& key, std::string* value) override;
 

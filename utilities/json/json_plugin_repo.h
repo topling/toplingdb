@@ -62,6 +62,14 @@ struct DB_MultiCF {
   std::vector<ColumnFamilyHandle*> cf_handles;
 };
 
+struct AnyPlugin {
+  AnyPlugin(const AnyPlugin&) = delete;
+  AnyPlugin& operator=(const AnyPlugin&) = delete;
+  virtual ~AnyPlugin();
+  virtual void Update(const json&, const JsonPluginRepo&) = 0;
+  virtual std::string ToString(const json&, const JsonPluginRepo&) const = 0;
+};
+
 class JsonPluginRepo {
  public:
   JsonPluginRepo() noexcept;
@@ -109,6 +117,7 @@ class JsonPluginRepo {
   void Put(const std::string& name, DB*);
   void Put(const std::string& name, DB_MultiCF*);
 
+  void Put(const std::string& name, const std::shared_ptr<AnyPlugin>&);
   void Put(const std::string& name, const std::shared_ptr<Cache>&);
   void Put(const std::string& name, const std::shared_ptr<CompactionExecutorFactory>&);
   void Put(const std::string& name, const std::shared_ptr<CompactionFilterFactory>&);
@@ -143,6 +152,7 @@ class JsonPluginRepo {
   bool Get(const std::string& name, DB**, Status* = nullptr) const;
   bool Get(const std::string& name, DB_MultiCF**, Status* = nullptr) const;
 
+  bool Get(const std::string& name, std::shared_ptr<AnyPlugin>*) const;
   bool Get(const std::string& name, std::shared_ptr<Cache>*) const;
   bool Get(const std::string& name, std::shared_ptr<CompactionExecutorFactory>*) const;
   bool Get(const std::string& name, std::shared_ptr<CompactionFilterFactory>*) const;
@@ -188,6 +198,7 @@ class JsonPluginRepo {
   const json* GetConsParams(const std::shared_ptr<Options>&) const;
   const json* GetConsParams(const std::shared_ptr<DBOptions>&) const;
   const json* GetConsParams(const std::shared_ptr<ColumnFamilyOptions>&) const;
+  const json* GetConsParams(const std::shared_ptr<AnyPlugin>&) const;
   const json* GetConsParams(const std::shared_ptr<Cache>&) const;
   const json* GetConsParams(const std::shared_ptr<CompactionExecutorFactory>&) const;
   const json* GetConsParams(const std::shared_ptr<CompactionFilterFactory>&) const;
@@ -216,6 +227,7 @@ class JsonPluginRepo {
   const json* GetConsParams(const Options*) const;
   const json* GetConsParams(const DBOptions*) const;
   const json* GetConsParams(const ColumnFamilyOptions*) const;
+  const json* GetConsParams(const AnyPlugin*) const;
   const json* GetConsParams(const Cache*) const;
   const json* GetConsParams(const CompactionExecutorFactory*) const;
   const json* GetConsParams(const CompactionFilterFactory*) const;

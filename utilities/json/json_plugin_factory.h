@@ -58,6 +58,7 @@ struct JsonPluginRepo::Impl {
   template<class T>
   using ObjRepo = ObjMap<std::shared_ptr<T> >;
 
+  ObjRepo<AnyPlugin> any_plugin;
   ObjRepo<Cache> cache;
   ObjRepo<PersistentCache> persistent_cache;
   ObjRepo<CompactionExecutorFactory> compaction_executor_factory;

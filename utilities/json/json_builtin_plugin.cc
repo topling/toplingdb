@@ -2634,6 +2634,8 @@ ROCKSDB_FACTORY_REG("BlobDB::Open", JS_DB_MultiCF_Manip);
 DB_MultiCF::DB_MultiCF() = default;
 DB_MultiCF::~DB_MultiCF() = default;
 
+AnyPlugin::~AnyPlugin() = default;
+
 // users should ensure databases are alive when calling this function
 void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
   m_impl->http.Close();

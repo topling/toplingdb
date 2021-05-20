@@ -245,6 +245,7 @@ JsonCivetServer::Impl::Impl(const json& conf, JsonPluginRepo* repo) {
   }
   m_server.reset(new CivetServer(options));
 
+  ADD_HANDLER(AnyPlugin, any_plugin);
   ADD_HANDLER(Cache, cache);
   ADD_HANDLER(PersistentCache, persistent_cache);
   ADD_HANDLER(CompactionFilterFactory, compaction_filter_factory);

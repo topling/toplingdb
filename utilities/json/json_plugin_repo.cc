@@ -250,6 +250,7 @@ Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
   const auto& repo = *this;
 #define JSON_IMPORT_REPO(Clazz, field) \
   Impl_Import(m_impl->field, #Clazz, main_js, repo)
+  JSON_IMPORT_REPO(AnyPlugin               , any_plugin);
   JSON_IMPORT_REPO(Comparator              , comparator);
   JSON_IMPORT_REPO(Env                     , env);
   JSON_IMPORT_REPO(Logger                  , info_log);
@@ -310,6 +311,7 @@ Status JsonPluginRepo::Export(nlohmann::json* main_js) const try {
   assert(NULL != main_js);
 #define JSON_EXPORT_REPO(Clazz, field) \
   Impl_Export(m_impl->field, #Clazz, *main_js)
+  JSON_EXPORT_REPO(AnyPlugin               , AnyPlugin);
   JSON_EXPORT_REPO(Comparator              , comparator);
   JSON_EXPORT_REPO(Env                     , env);
   JSON_EXPORT_REPO(Logger                  , info_log);
@@ -416,6 +418,7 @@ const json* JsonPluginRepo::GetConsParams( \
   return Impl_GetConsParams(m_impl->field, p); \
 }
 
+JSON_REPO_TYPE_IMPL(any_plugin)
 JSON_REPO_TYPE_IMPL(cache)
 JSON_REPO_TYPE_IMPL(persistent_cache)
 JSON_REPO_TYPE_IMPL(compaction_executor_factory)
@@ -451,6 +454,7 @@ const json* JsonPluginRepo::GetConsParams( \
   return Impl_GetConsParams(m_impl->field, p); \
 }
 
+JSON_GetConsParams(any_plugin)
 JSON_GetConsParams(cache)
 JSON_GetConsParams(persistent_cache)
 JSON_GetConsParams(compaction_executor_factory)

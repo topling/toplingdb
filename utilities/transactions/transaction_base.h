@@ -64,6 +64,10 @@ class TransactionBaseImpl : public Transaction {
              std::string* value) override {
     return Get(options, db_->DefaultColumnFamily(), key, value);
   }
+  Status Get(const ReadOptions& options, const Slice& key,
+             PinnableSlice* value) override {
+    return Get(options, db_->DefaultColumnFamily(), key, value);
+  }
 
   using Transaction::GetForUpdate;
   Status GetForUpdate(const ReadOptions& options,

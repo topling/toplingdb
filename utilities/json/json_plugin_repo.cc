@@ -311,7 +311,7 @@ Status JsonPluginRepo::Export(nlohmann::json* main_js) const try {
   assert(NULL != main_js);
 #define JSON_EXPORT_REPO(Clazz, field) \
   Impl_Export(m_impl->field, #Clazz, *main_js)
-  JSON_EXPORT_REPO(AnyPlugin               , AnyPlugin);
+  JSON_EXPORT_REPO(AnyPlugin               , any_plugin);
   JSON_EXPORT_REPO(Comparator              , comparator);
   JSON_EXPORT_REPO(Env                     , env);
   JSON_EXPORT_REPO(Logger                  , info_log);

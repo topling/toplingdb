@@ -62,6 +62,7 @@ struct DB_MultiCF {
   std::vector<ColumnFamilyHandle*> cf_handles;
 };
 
+class JsonPluginRepo;
 struct AnyPlugin {
   AnyPlugin(const AnyPlugin&) = delete;
   AnyPlugin& operator=(const AnyPlugin&) = delete;

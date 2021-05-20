@@ -66,6 +66,7 @@ class JsonPluginRepo;
 struct AnyPlugin {
   AnyPlugin(const AnyPlugin&) = delete;
   AnyPlugin& operator=(const AnyPlugin&) = delete;
+  AnyPlugin() {}
   virtual ~AnyPlugin();
   virtual void Update(const json&, const JsonPluginRepo&) = 0;
   virtual std::string ToString(const json&, const JsonPluginRepo&) const = 0;

@@ -17,7 +17,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-#define THROW_STATUS(Type, msg) throw Status::Type(ROCKSDB_FUNC, msg)
+#define THROW_STATUS(Type, msg) throw rocksdb::Status::Type(ROCKSDB_FUNC, msg)
 #define THROW_InvalidArgument(msg) THROW_STATUS(InvalidArgument, msg)
 #define THROW_Corruption(msg) THROW_STATUS(Corruption, msg)
 #define THROW_NotFound(msg) THROW_STATUS(NotFound, msg)

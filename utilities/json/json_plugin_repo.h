@@ -71,6 +71,12 @@ struct AnyPlugin {
   virtual void Update(const json&, const JsonPluginRepo&) = 0;
   virtual std::string ToString(const json&, const JsonPluginRepo&) const = 0;
 };
+struct UserKeyCoder : public AnyPlugin {
+  virtual void Encode(Slice, std::string*) const = 0;
+  virtual void Decode(Slice, std::string*) const = 0;
+  std::string Encode(Slice x) const { std::string y; Encode(x, &y); return y; }
+  std::string Decode(Slice y) const { std::string x; Decode(y, &x); return x; }
+};
 
 class JsonPluginRepo {
  public:

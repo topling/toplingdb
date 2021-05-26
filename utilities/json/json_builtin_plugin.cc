@@ -1345,13 +1345,18 @@ static void Html_AppendTime(std::string& html, char* buf, uint64_t t) {
 }
 
 #define AppendFmt(...) html.append(buf, snprintf(buf, sizeof(buf), __VA_ARGS__))
-static void Html_AppendInternalKey(std::string& html, Slice ikey) {
+static void Html_AppendInternalKey(std::string& html, Slice ikey,
+                                   const UserKeyCoder* coder) {
   char buf[32];
   ParsedInternalKey pikey;
   Status s = ParseInternalKey(ikey, &pikey, true);
   if (s.ok()) {
     html.append("<td class='monoleft'>");
-    html.append(Slice(pikey.user_key).ToString(true));
+    if (coder) {
+      html.append(coder->Decode(pikey.user_key));
+    } else {
+      html.append(Slice(pikey.user_key).ToString(true));
+    }
     html.append("</td>");
     html.append("<td>");
     AppendFmt("%" PRIu64, pikey.sequence);
@@ -1370,7 +1375,9 @@ static void Html_AppendInternalKey(std::string& html, Slice ikey) {
 }
 
 std::string AggregateNames(const std::map<std::string, int>& map, const char* delim);
-static std::string Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cfh) {
+static std::string
+Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cfh,
+                         const JsonPluginRepo& repo) {
   std::string html;
 try {
   char buf[128];
@@ -1384,6 +1391,16 @@ try {
       return html;
     }
   }
+  std::string coderName = "userKeyCoderHtml:"
+                        + db.GetName() + ":" + cfh->GetName();
+  const UserKeyCoder* coder = nullptr;
+  {
+    auto& name2p = *repo.m_impl->any_plugin.name2p;
+    auto  iter = name2p.find(coderName);
+    if (name2p.end() != iter)
+      coder = dynamic_cast<const UserKeyCoder*>(iter->second.get());
+  }
+
   auto comp = cfh->GetComparator();
   struct SstProp : SstFileMetaData, TableProperties {};
   //int max_open_files = const_cast<DB&>(db).GetDBOptions().max_open_files;
@@ -1538,8 +1555,8 @@ try {
     }
     AppendFmt("<td>%" PRIu64"</td>", x.smallest_seqno);
     AppendFmt("<td>%" PRIu64"</td>", x.largest_seqno);
-    Html_AppendInternalKey(html, x.smallest_ikey);
-    Html_AppendInternalKey(html, x.largest_ikey);
+    Html_AppendInternalKey(html, x.smallest_ikey, coder);
+    Html_AppendInternalKey(html, x.largest_ikey, coder);
     Html_AppendTime(html, buf, file_creation_time);
     AppendFmt("<td>%" PRIu64"</td>", x.num_reads_sampled);
     if (fcnt >= 0) {
@@ -1708,7 +1725,8 @@ catch (const std::exception& ex) {
 
 static void
 Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
-                    bool html, const json& dump_options) {
+                    bool html, const json& dump_options,
+                    const JsonPluginRepo& repo) {
   static const std::string* aStrProps[] = {
     //&DB::Properties::kNumFilesAtLevelPrefix,
     //&DB::Properties::kCompressionRatioAtLevelPrefix,
@@ -1754,7 +1772,7 @@ Json_DB_Level_Stats(const DB& db, ColumnFamilyHandle* cfh, json& djs,
       prop_to_js(DB::Properties::kSSTables);
       break;
     case 2: // show as html table
-      stjs[HTML_WRAP(DB::Properties::kSSTables)] = Json_DB_CF_SST_HtmlTable(db, cfh);
+      stjs[HTML_WRAP(DB::Properties::kSSTables)] = Json_DB_CF_SST_HtmlTable(db, cfh, repo);
       break;
   }
   //GetAggregatedTableProperties(db, cfh, stjs, -1, html);
@@ -1861,7 +1879,7 @@ struct CFPropertiesWebView_Manip : PluginManipFunc<CFPropertiesWebView> {
       bool nozero = JsonSmartBool(dump_options, "nozero");
       Json_DB_IntProps(*cfp.db, cfp.cfh, djs, showbad, nozero);
     }
-    Json_DB_Level_Stats(*cfp.db, cfp.cfh, djs, html, dump_options);
+    Json_DB_Level_Stats(*cfp.db, cfp.cfh, djs, html, dump_options, repo);
     return JsonToString(djs, dump_options);
   }
 };

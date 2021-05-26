@@ -11,6 +11,9 @@
 #include "port/port.h"
 #include "test_util/sync_point.h"
 #include "util/random.h"
+#ifdef OS_LINUX
+  #include <sched.h>
+#endif
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -76,7 +79,13 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
     if ((state & goal_mask) != 0) {
       return state;
     }
-    port::AsmVolatilePause();
+    // keep it simple stupid: yield cpu!
+#ifdef OS_LINUX
+    sched_yield();
+#else
+    std::this_thread::yield();
+#endif
+    //port::AsmVolatilePause();
   }
 
   // This is below the fast path, so that the stat is zero when all writes are

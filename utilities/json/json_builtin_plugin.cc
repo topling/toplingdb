@@ -1374,6 +1374,14 @@ static void Html_AppendInternalKey(std::string& html, Slice ikey,
   }
 }
 
+std::string Json_dbname(const DB* db, const JsonPluginRepo& repo) {
+  auto iter = repo.m_impl->db.p2name.find(db);
+  if (repo.m_impl->db.p2name.end() == iter) {
+    THROW_NotFound("db.p2name.find(), db.path = " + db->GetName());
+  }
+  return iter->second.name;
+}
+
 std::string AggregateNames(const std::map<std::string, int>& map, const char* delim);
 static std::string
 Json_DB_CF_SST_HtmlTable(const DB& db, ColumnFamilyHandle* cfh,
@@ -1391,8 +1399,8 @@ try {
       return html;
     }
   }
-  std::string coderName = "userKeyCoderHtml:"
-                        + db.GetName() + ":" + cfh->GetName();
+  std::string dbname = Json_dbname(&db, repo);
+  std::string coderName = "userKeyCoderHtml:" + dbname + ":" + cfh->GetName();
   const UserKeyCoder* coder = nullptr;
   {
     auto& name2p = *repo.m_impl->any_plugin.name2p;
@@ -1992,14 +2000,7 @@ struct DB_Manip : PluginManipFunc<DB> {
     json djs;
     std::string dbo_name, cfo_name;
     //const std::string& dbname = db.GetName();
-    std::string dbname;
-    {
-      auto iter = repo.m_impl->db.p2name.find(&db);
-      if (repo.m_impl->db.p2name.end() == iter) {
-        THROW_NotFound("db.p2name.find(), db.path = " + db.GetName());
-      }
-      dbname = iter->second.name;
-    }
+    std::string dbname = Json_dbname(&db, repo);
     auto i1 = dbmap.p2name.find((DB*)&db);
     if (dbmap.p2name.end() == i1) {
       THROW_NotFound("db ptr is not registered in repo, dbname = " + dbname);

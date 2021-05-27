@@ -2655,6 +2655,37 @@ DB_MultiCF::~DB_MultiCF() = default;
 
 AnyPlugin::~AnyPlugin() = default;
 
+struct HtmlTextUserKeyCoder : public UserKeyCoder {
+  void Update(const json&, const JsonPluginRepo&) override {
+  }
+  std::string ToString(const json&, const JsonPluginRepo&) const override {
+    return "";
+  }
+  void Encode(Slice, std::string*) const override {
+    TERARK_DIE("Unexpected call");
+  }
+  void Decode(Slice coded, std::string* de) const override {
+    const auto src = coded.data_;
+    const auto len = coded.size_;
+    de->clear();
+    de->reserve(len);
+    for (size_t i = 0; i < len; ++i) {
+      const char c = src[i];
+      switch (c) {
+        default : de->push_back(c);    break;
+        case '<': de->append("&lt;" ); break;
+        case '>': de->append("&gt;" ); break;
+        case '&': de->append("&amp;"); break;
+      }
+    }
+  }
+};
+static std::shared_ptr<AnyPlugin>
+JS_NewHtmlTextUserKeyCoder(const json& js, const JsonPluginRepo&) {
+  return std::make_shared<HtmlTextUserKeyCoder>();
+}
+ROCKSDB_FACTORY_REG("HtmlTextUserKeyCoder", JS_NewHtmlTextUserKeyCoder);
+
 // users should ensure databases are alive when calling this function
 void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
   m_impl->http.Close();

@@ -2662,7 +2662,8 @@ struct HtmlTextUserKeyCoder : public UserKeyCoder {
     return "";
   }
   void Encode(Slice, std::string*) const override {
-    TERARK_DIE("Unexpected call");
+    assert(!"Unexpected call");
+    THROW_InvalidArgument("Unexpected call");
   }
   void Decode(Slice coded, std::string* de) const override {
     const auto src = coded.data_;

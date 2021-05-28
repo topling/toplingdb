@@ -548,6 +548,37 @@ const JsonPluginRepo& repoRefType();
   PluginFactory<decltype(Acquire(jsonRefType(),repoRefType()))>:: \
   Reg ROCKSDB_PP_CAT_3(g_reg_factory_,Acquire,__LINE__)(Name,Acquire)
 
+template<class ConcretClass, class Interface>
+std::shared_ptr<Interface>
+JS_NewDefaultConsObject(const json& js, const JsonPluginRepo&) {
+  return std::make_shared<ConcretClass>();
+}
+template<class ConcretClass, class Interface>
+std::shared_ptr<Interface>
+JS_NewJsonRepoConsObject(const json& js, const JsonPluginRepo& repo) {
+  return std::make_shared<ConcretClass>(js, repo);
+}
+#define ROCKSDB_REG_DEFAULT_CONS_3(Name, ConcretClass, Interface) \
+  PluginFactory<std::shared_ptr<Interface> >::Reg \
+      ROCKSDB_PP_CAT_3(g_reg_factory_,ConcretClass,__LINE__) \
+     (Name,  &JS_NewDefaultConsObject<ConcretClass,Interface>)
+#define ROCKSDB_REG_JSON_REPO_CONS_3(Name, ConcretClass, Interface) \
+  PluginFactory<std::shared_ptr<Interface> >::Reg \
+      ROCKSDB_PP_CAT_3(g_reg_factory_,ConcretClass,__LINE__) \
+     (Name, &JS_NewJsonRepoConsObject<ConcretClass,Interface>)
+
+#define ROCKSDB_REG_DEFAULT_CONS_2(ConcretClass, Interface) \
+        ROCKSDB_REG_DEFAULT_CONS_3(#ConcretClass, ConcretClass, Interface)
+#define ROCKSDB_REG_JSON_REPO_CONS_2(ConcretClass, Interface) \
+        ROCKSDB_REG_JSON_REPO_CONS_3(#ConcretClass, ConcretClass, Interface)
+
+// call ROCKSDB_REG_DEFAULT_CONS_${ArgNum}, ArgNum must be 2 or 3
+#define ROCKSDB_REG_DEFAULT_CONS(...) ROCKSDB_PP_CAT2 \
+       (ROCKSDB_REG_DEFAULT_CONS_,ROCKSDB_PP_ARG_N(__VA_ARGS__))(__VA_ARGS__)
+// call ROCKSDB_REG_JSON_REPO_CONS_${ArgNum}, ArgNum must be 2 or 3
+#define ROCKSDB_REG_JSON_REPO_CONS(...) ROCKSDB_PP_CAT2 \
+       (ROCKSDB_REG_JSON_REPO_CONS_,ROCKSDB_PP_ARG_N(__VA_ARGS__))(__VA_ARGS__)
+
 //////////////////////////////////////////////////////////////////////////////
 
 #define ROCKSDB_JSON_XXX_PROP(js, prop) \

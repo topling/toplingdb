@@ -111,6 +111,9 @@ static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
               ", value_js = " + value.dump());
     }
     existing = p;
+    if (value.is_string()) {
+      value = json::object({{"class", value}, {"params", {}}});
+    }
     field.p2name.emplace(GetRawPtr(p),
         JsonPluginRepo::Impl::ObjInfo{inst_id, std::move(value)});
   }

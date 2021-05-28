@@ -2655,6 +2655,17 @@ DB_MultiCF::~DB_MultiCF() = default;
 
 AnyPlugin::~AnyPlugin() = default;
 
+void HtmlAppendEscape(std::string* d, const char* s, size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    const char c = s[i];
+    switch (c) {
+      default : d->push_back(c);    break;
+      case '<': d->append("&lt;" ); break;
+      case '>': d->append("&gt;" ); break;
+      case '&': d->append("&amp;"); break;
+    }
+  }
+}
 struct HtmlTextUserKeyCoder : public UserKeyCoder {
   void Update(const json&, const JsonPluginRepo&) override {
   }
@@ -2666,19 +2677,9 @@ struct HtmlTextUserKeyCoder : public UserKeyCoder {
     THROW_InvalidArgument("Unexpected call");
   }
   void Decode(Slice coded, std::string* de) const override {
-    const auto src = coded.data_;
-    const auto len = coded.size_;
     de->clear();
-    de->reserve(len);
-    for (size_t i = 0; i < len; ++i) {
-      const char c = src[i];
-      switch (c) {
-        default : de->push_back(c);    break;
-        case '<': de->append("&lt;" ); break;
-        case '>': de->append("&gt;" ); break;
-        case '&': de->append("&amp;"); break;
-      }
-    }
+    de->reserve(coded.size_);
+    HtmlAppendEscape(de, coded.data_, coded.size_);
   }
 };
 static std::shared_ptr<AnyPlugin>

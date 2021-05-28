@@ -273,6 +273,9 @@ class JsonPluginRepo {
 ///@param obj json object to be dumped
 ///@param options options for dump(pretty,indent)
 std::string JsonToString(const json& obj, const json& options);
+void HtmlAppendEscape(std::string* d, const char* s, size_t n);
+inline void HtmlAppendEscape(std::string* d, Slice s)
+       { HtmlAppendEscape(d, s.data_, s.size_); }
 
 class ParseSizeXiB {
   long long m_val;

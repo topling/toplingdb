@@ -766,11 +766,7 @@ JS_NewJemallocNodumpAllocator(const json& js, const JsonPluginRepo& repo) {
 }
 ROCKSDB_FACTORY_REG("JemallocNodumpAllocator", JS_NewJemallocNodumpAllocator);
 #if defined(MEMKIND)
-std::shared_ptr<MemoryAllocator>
-JS_NewMemkindKmemAllocator(const json&, const JsonPluginRepo&) {
-  return std::make_shared<MemkindKmemAllocator>();
-}
-ROCKSDB_FACTORY_REG("MemkindKmemAllocator", JS_NewMemkindKmemAllocator);
+ROCKSDB_REG_DEFAULT_CONS(MemkindKmemAllocator, MemoryAllocator);
 #endif
 
 struct LRUCacheOptions_Json : LRUCacheOptions {
@@ -908,13 +904,7 @@ static Env* DefaultEnv(const json&, const JsonPluginRepo&) {
 ROCKSDB_FACTORY_REG("default", DefaultEnv);
 
 /////////////////////////////////////////////////////////////////////////////
-static shared_ptr<FlushBlockBySizePolicyFactory>
-NewFlushBlockBySizePolicyFactoryFactoryJson(const json&,
-                                            const JsonPluginRepo&) {
-  return std::make_shared<FlushBlockBySizePolicyFactory>();
-}
-ROCKSDB_FACTORY_REG("FlushBlockBySize",
-                    NewFlushBlockBySizePolicyFactoryFactoryJson);
+ROCKSDB_REG_DEFAULT_CONS(FlushBlockBySizePolicyFactory,FlushBlockPolicyFactory);
 
 /////////////////////////////////////////////////////////////////////////////
 static shared_ptr<FileChecksumGenFactory>
@@ -2682,11 +2672,7 @@ struct HtmlTextUserKeyCoder : public UserKeyCoder {
     HtmlAppendEscape(de, coded.data_, coded.size_);
   }
 };
-static std::shared_ptr<AnyPlugin>
-JS_NewHtmlTextUserKeyCoder(const json& js, const JsonPluginRepo&) {
-  return std::make_shared<HtmlTextUserKeyCoder>();
-}
-ROCKSDB_FACTORY_REG("HtmlTextUserKeyCoder", JS_NewHtmlTextUserKeyCoder);
+ROCKSDB_REG_DEFAULT_CONS(HtmlTextUserKeyCoder, AnyPlugin);
 
 // users should ensure databases are alive when calling this function
 void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {

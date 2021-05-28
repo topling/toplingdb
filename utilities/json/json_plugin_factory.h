@@ -310,6 +310,15 @@ struct ExtraBinderFunc {
 template<class Object, class Extra>
 using ExtraBinder = PluginFactory<const ExtraBinderFunc<Object, Extra>*>;
 
+struct AnyPluginManip : public PluginManipFunc<AnyPlugin> {
+  void Update(AnyPlugin*, const json&, const JsonPluginRepo&) const final;
+  std::string ToString(const AnyPlugin&, const json& dump_options,
+                       const JsonPluginRepo&) const final;
+};
+constexpr auto AnyPluginManipSingleton = &PluginManipSingleton<AnyPluginManip>;
+#define ROCKSDB_REG_AnyPluginManip(ClassName) \
+  ROCKSDB_FACTORY_REG(ClassName, AnyPluginManipSingleton)
+
 template<class Ptr>
 struct PluginFactory<Ptr>::Reg::Impl {
   NameToFuncMap func_map;

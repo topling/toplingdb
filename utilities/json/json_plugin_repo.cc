@@ -797,6 +797,16 @@ JsonPluginRepo::Impl::Impl() {
 JsonPluginRepo::Impl::~Impl() {
 }
 
+void AnyPluginManip::Update(AnyPlugin* p, const json& js,
+                            const JsonPluginRepo& repo) const {
+  p->Update(js, repo);
+}
+std::string AnyPluginManip::ToString(const AnyPlugin& ap,
+                                     const json& dump_options,
+                                     const JsonPluginRepo& repo) const {
+  return ap.ToString(dump_options, repo);
+}
+
 std::string PluginParseInstID(const std::string& str_val) {
   // ${inst_id} or $inst_id
   if ('{' == str_val[1])

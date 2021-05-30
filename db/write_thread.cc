@@ -247,7 +247,7 @@ void WriteThread::SetState(Writer* w, uint8_t new_state) {
       futex(&w->state, FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
     } else {
       old_state = w->state.load(std::memory_order_acquire);
-      fprintf(stderr, "FATAL: %s:%d: unexpected state change, real old = %d\n",
+      fprintf(stderr, "FATAL: %s:%d: unexpected state changed to = %d\n",
               __FILE__, __LINE__, old_state);
       abort();
     }
@@ -255,7 +255,7 @@ void WriteThread::SetState(Writer* w, uint8_t new_state) {
   else {
     if (!w->state.compare_exchange_strong(old_state, new_state)) {
       old_state = w->state.load(std::memory_order_acquire);
-      fprintf(stderr, "FATAL: %s:%d: unexpected state change, real old = %d\n",
+      fprintf(stderr, "FATAL: %s:%d: unexpected state changed to = %d\n",
               __FILE__, __LINE__, old_state);
       abort();
     }

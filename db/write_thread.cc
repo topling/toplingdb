@@ -78,16 +78,10 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
 #if defined(OS_LINUX)
   uint32_t  state = 0;
   while (!((state = w->state.load(std::memory_order_acquire)) & goal_mask)) {
-    if (!w->state.compare_exchange_weak(state, STATE_LOCKED_WAITING)) {
+    if (!w->state.compare_exchange_weak(state, STATE_LOCKED_WAITING))
       continue; // retry
-    }
-    if (futex(&w->state, FUTEX_WAIT, STATE_LOCKED_WAITING, NULL, NULL, 0) < 0) {
-      if (EINTR != errno) {
-        fprintf(stderr, "FATAL: %s:%d: futex(WAIT) = %s\n", __FILE__, __LINE__,
-                strerror(errno));
-        abort();
-      }
-    }
+    if (futex(&w->state, FUTEX_WAIT, STATE_LOCKED_WAITING, NULL, NULL, 0) < 0)
+      ROCKSDB_VERIFY_F(EINTR == errno, "futex(WAIT) = %s", strerror(errno));
   }
   return (uint8_t)state;
 #else
@@ -243,22 +237,14 @@ void WriteThread::SetState(Writer* w, uint8_t new_state) {
 #if defined(OS_LINUX)
   uint32_t old_state = w->state.load(std::memory_order_acquire);
   if (STATE_LOCKED_WAITING == old_state) {
-    if (w->state.compare_exchange_strong(old_state, new_state)) {
+    if (w->state.compare_exchange_strong(old_state, new_state))
       futex(&w->state, FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
-    } else {
-      old_state = w->state.load(std::memory_order_acquire);
-      fprintf(stderr, "FATAL: %s:%d: unexpected state changed to = %d\n",
-              __FILE__, __LINE__, old_state);
-      abort();
-    }
+    else
+      ROCKSDB_DIE("unexpected state changed to = %d", w->state.load());
   }
   else {
-    if (!w->state.compare_exchange_strong(old_state, new_state)) {
-      old_state = w->state.load(std::memory_order_acquire);
-      fprintf(stderr, "FATAL: %s:%d: unexpected state changed to = %d\n",
-              __FILE__, __LINE__, old_state);
-      abort();
-    }
+    if (!w->state.compare_exchange_strong(old_state, new_state))
+      ROCKSDB_DIE("unexpected state changed to = %d", w->state.load());
   }
 #else
   auto state = w->state.load(std::memory_order_acquire);

@@ -12,7 +12,16 @@
 #include "test_util/sync_point.h"
 #include "util/random.h"
 #ifdef OS_LINUX
-  #include <sched.h>
+  #include <linux/futex.h>
+  #include <sys/syscall.h>   /* For SYS_xxx definitions */
+  #include <sys/time.h>
+template<class Type>
+inline typename std::enable_if<sizeof(Type) == 4, int>::type
+futex(Type* uaddr, uint32_t op, uint32_t val, const struct timespec *timeout,
+      Type* uaddr2, uint32_t val3) {
+  return syscall(SYS_futex, uaddr, (unsigned long)op, (unsigned long)val,
+                 timeout, uaddr2, (unsigned long)val3);
+}
 #endif
 
 namespace ROCKSDB_NAMESPACE {
@@ -34,6 +43,7 @@ WriteThread::WriteThread(const ImmutableDBOptions& db_options)
       stall_mu_(),
       stall_cv_(&stall_mu_) {}
 
+#if !defined(OS_LINUX)
 uint8_t WriteThread::BlockingAwaitState(Writer* w, uint8_t goal_mask) {
   // We're going to block.  Lazily create the mutex.  We guarantee
   // propagation of this construction to the waker via the
@@ -61,9 +71,26 @@ uint8_t WriteThread::BlockingAwaitState(Writer* w, uint8_t goal_mask) {
   assert((state & goal_mask) != 0);
   return state;
 }
+#endif
 
 uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
                                 AdaptationContext* ctx) {
+#if defined(OS_LINUX)
+  uint32_t  state = 0;
+  while (!((state = w->state.load(std::memory_order_acquire)) & goal_mask)) {
+    if (!w->state.compare_exchange_weak(state, STATE_LOCKED_WAITING)) {
+      continue; // retry
+    }
+    if (futex(&w->state, FUTEX_WAIT, STATE_LOCKED_WAITING, NULL, NULL, 0) < 0) {
+      if (EINTR != errno) {
+        fprintf(stderr, "FATAL: %s:%d: futex(WAIT) = %s\n", __FILE__, __LINE__,
+                strerror(errno));
+        abort();
+      }
+    }
+  }
+  return (uint8_t)state;
+#else
   uint8_t state = 0;
 
   // 1. Busy loop using "pause" for 1 micro sec
@@ -79,13 +106,7 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
     if ((state & goal_mask) != 0) {
       return state;
     }
-    // keep it simple stupid: yield cpu!
-#ifdef OS_LINUX
-    sched_yield();
-#else
-    std::this_thread::yield();
-#endif
-    //port::AsmVolatilePause();
+    port::AsmVolatilePause();
   }
 
   // This is below the fast path, so that the stat is zero when all writes are
@@ -214,10 +235,32 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
 
   assert((state & goal_mask) != 0);
   return state;
+#endif
 }
 
 void WriteThread::SetState(Writer* w, uint8_t new_state) {
   assert(w);
+#if defined(OS_LINUX)
+  uint32_t old_state = w->state.load(std::std::memory_order_acquire);
+  if (STATE_LOCKED_WAITING == old_state) {
+    if (w->state.compare_exchange_strong(old_state, new_state)) {
+      futex(&w->state, FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
+    } else {
+      old_state = w->state.load(std::std::memory_order_acquire);
+      fprintf(stderr, "FATAL: %s:%d: unexpected state change, real old = %d\n",
+              __FILE__, __LINE__, old_state);
+      abort();
+    }
+  }
+  else {
+    if (!w->state.compare_exchange_strong(old_state, new_state)) {
+      old_state = w->state.load(std::std::memory_order_acquire);
+      fprintf(stderr, "FATAL: %s:%d: unexpected state change, real old = %d\n",
+              __FILE__, __LINE__, old_state);
+      abort();
+    }
+  }
+#else
   auto state = w->state.load(std::memory_order_acquire);
   if (state == STATE_LOCKED_WAITING ||
       !w->state.compare_exchange_strong(state, new_state)) {
@@ -228,6 +271,7 @@ void WriteThread::SetState(Writer* w, uint8_t new_state) {
     w->state.store(new_state, std::memory_order_relaxed);
     w->StateCV().notify_one();
   }
+#endif
 }
 
 bool WriteThread::LinkOne(Writer* w, std::atomic<Writer*>* newest_writer) {

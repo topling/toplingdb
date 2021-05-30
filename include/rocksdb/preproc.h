@@ -461,4 +461,61 @@
 # define ROCKSDB_FUNC "(unknown)"
 
 #endif
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+#define ROCKSDB_DIE(fmt, ...) \
+	do { \
+        fprintf(stderr, "%s:%d: %s: die: " fmt " !\n", \
+                __FILE__, __LINE__, ROCKSDB_FUNC, ##__VA_ARGS__); \
+        abort(); } while (0)
+
+/// VERIFY indicate runtime assert in release build
+#define ROCKSDB_VERIFY_F_IMP(expr, fmt, ...) \
+    do { if (UNLIKELY(!(expr))) { \
+        fprintf(stderr, "%s:%d: %s: verify(%s) failed" fmt " !\n", \
+                __FILE__, __LINE__, ROCKSDB_FUNC, #expr, ##__VA_ARGS__); \
+        abort(); }} while (0)
+
+#define ROCKSDB_VERIFY_F(expr, fmt, ...) \
+        ROCKSDB_VERIFY_F_IMP(expr, ": " fmt, ##__VA_ARGS__)
+
+#if defined(_DEBUG) || defined(DEBUG) || !defined(NDEBUG)
+#	define ROCKSDB_IF_DEBUG(Then, Else)  Then
+#	define ROCKSDB_ASSERT_F ROCKSDB_VERIFY_F
+#	define ROCKSDB_VERIFY assert
+#else
+#	define ROCKSDB_IF_DEBUG(Then, Else)  Else
+#	define ROCKSDB_ASSERT_F(...)
+#	define ROCKSDB_VERIFY(expr) ROCKSDB_VERIFY_F_IMP(expr, "")
+#endif
+
+#define ROCKSDB_ASSERT_LT(x,y) ROCKSDB_ASSERT_F(x <  y, "%lld %lld", (long long)(x), (long long)(y))
+#define ROCKSDB_ASSERT_GT(x,y) ROCKSDB_ASSERT_F(x >  y, "%lld %lld", (long long)(x), (long long)(y))
+#define ROCKSDB_ASSERT_LE(x,y) ROCKSDB_ASSERT_F(x <= y, "%lld %lld", (long long)(x), (long long)(y))
+#define ROCKSDB_ASSERT_GE(x,y) ROCKSDB_ASSERT_F(x >= y, "%lld %lld", (long long)(x), (long long)(y))
+#define ROCKSDB_ASSERT_EQ(x,y) ROCKSDB_ASSERT_F(x == y, "%lld %lld", (long long)(x), (long long)(y))
+#define ROCKSDB_ASSERT_NE(x,y) ROCKSDB_ASSERT_F(x != y, "%lld %lld", (long long)(x), (long long)(y))
+
+// _EZ: Equal To Zero
+#define ROCKSDB_ASSERT_EZ(x) ROCKSDB_ASSERT_F(x == 0, "%lld", (long long)(x))
+
+// _AL: Align, _NA: Not Align
+#define ROCKSDB_ASSERT_AL(x,a) ROCKSDB_ASSERT_F((x) % (a) == 0, "%lld %% %lld = %lld", (long long)(x), (long long)(a), (long long)((x) % (a)))
+#define ROCKSDB_ASSERT_NA(x,a) ROCKSDB_ASSERT_F((x) % (a) != 0, x)
+
+#define ROCKSDB_VERIFY_LT(x,y) ROCKSDB_VERIFY_F(x <  y, "%lld %lld", (long long)(x), (long long)(y))
+#define ROCKSDB_VERIFY_GT(x,y) ROCKSDB_VERIFY_F(x >  y, "%lld %lld", (long long)(x), (long long)(y))
+#define ROCKSDB_VERIFY_LE(x,y) ROCKSDB_VERIFY_F(x <= y, "%lld %lld", (long long)(x), (long long)(y))
+#define ROCKSDB_VERIFY_GE(x,y) ROCKSDB_VERIFY_F(x >= y, "%lld %lld", (long long)(x), (long long)(y))
+#define ROCKSDB_VERIFY_EQ(x,y) ROCKSDB_VERIFY_F(x == y, "%lld %lld", (long long)(x), (long long)(y))
+#define ROCKSDB_VERIFY_NE(x,y) ROCKSDB_VERIFY_F(x != y, "%lld %lld", (long long)(x), (long long)(y))
+
+// _EZ: Equal To Zero
+#define ROCKSDB_VERIFY_EZ(x) ROCKSDB_VERIFY_F(x == 0, "%lld", (long long)(x))
+
+// _AL: Align, _NA: Not Align
+#define ROCKSDB_VERIFY_AL(x,a) ROCKSDB_VERIFY_F((x) % (a) == 0, "%lld %% %lld = %lld", (long long)(x), (long long)(a), (long long)((x) % (a)))
+#define ROCKSDB_VERIFY_NA(x,a) ROCKSDB_VERIFY_F((x) % (a) != 0, "%lld", (long long)(x))
+
 // clang-format on

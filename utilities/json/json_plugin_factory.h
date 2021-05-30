@@ -284,11 +284,7 @@ void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
   }
   else {
     assert(bytes.empty());
-    if (!bytes.empty()) {
-      fprintf(stderr, "ERROR: %s: class = %s, bytes is not empty\n",
-              ROCKSDB_FUNC, clazz.c_str());
-      abort();
-    }
+    ROCKSDB_VERIFY_F(bytes.empty(), "class = %s", clazz.c_str());
   }
 }
 template<class Object>
@@ -331,11 +327,7 @@ PluginFactory<Ptr>::Reg::Reg(Slice class_name, AcqFunc acq, Slice base_class) no
   auto& imp = Impl::s_singleton();
   Meta meta{acq, std::string(base_class.data(), base_class.size())};
   auto ib = imp.func_map.insert(std::make_pair(class_name.ToString(), std::move(meta)));
-  if (!ib.second) {
-    fprintf(stderr, "FATAL: %s:%d: %s: duplicate class_name = %s\n"
-        , __FILE__, __LINE__, ROCKSDB_FUNC, class_name.data());
-    abort();
-  }
+  ROCKSDB_VERIFY_F(ib.second, "duplicate class_name = %s", class_name.data());
   if (JsonPluginRepo::DebugLevel() >= 1) {
     fprintf(stderr, "INFO: %s: class = %s\n", ROCKSDB_FUNC, class_name.data());
   }

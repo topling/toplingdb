@@ -2687,10 +2687,7 @@ void JsonPluginRepo::CloseAllDB(bool del_rocksdb_objs) {
   auto del_view = [&](ColumnFamilyHandle* cfh) {
     auto iter = cfh_to_view.find(cfh);
     assert(cfh_to_view.end() != iter);
-    if (cfh_to_view.end() == iter) {
-      fprintf(stderr, "Fatal: %s:%d: invariant violated\n", __FILE__, __LINE__);
-      abort();
-    }
+    ROCKSDB_VERIFY_F(cfh_to_view.end() != iter, "cfh must in cfh_to_view");
     auto view = (CFPropertiesWebView*)(iter->second->first);
     const Impl::ObjInfo& oi = iter->second->second;
     m_impl->props.p2name.erase(view);

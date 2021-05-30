@@ -635,11 +635,7 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
         { "params", std::move(params_js) }
       })
     });
-  assert(ib2.second);
-  if (!ib2.second) {
-    fprintf(stderr, "%s:%d: Unexpected\n", __FILE__, __LINE__);
-    abort();
-  }
+  ROCKSDB_VERIFY(ib2.second);
   *dbp = db;
 }
 

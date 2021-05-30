@@ -476,12 +476,7 @@ TableBuilder* DispatcherTableFactory::NewTableBuilder(
     uint32_t column_family_id, WritableFileWriter* file)
 const {
   auto info_log = table_builder_options.ioptions.info_log;
-  if (!m_is_back_patched) {
-    fprintf(stderr, "FATAL: %s:%d: %s: %s\n",
-            __FILE__, __LINE__, ROCKSDB_FUNC,
-            "BackPatch() was not called");
-    abort();
-  }
+  ROCKSDB_VERIFY_F(m_is_back_patched, "BackPatch() was not called");
   int level = std::min(table_builder_options.level,
                        int(m_level_writers.size()-1));
   TableBuilder* builder;
@@ -532,13 +527,8 @@ void DispatcherTableBackPatch(TableFactory* f, const JsonPluginRepo& repo) {
 
 extern bool IsCompactionWorker();
 void DispatcherTableFactory::BackPatch(const JsonPluginRepo& repo) {
-  if (m_is_back_patched) {
-    fprintf(stderr, "FATAL: %s:%d: %s: %s\n",
-            __FILE__, __LINE__, ROCKSDB_FUNC,
-            "BackPatch() was already called");
-    abort();
-  }
-  assert(m_all.get() == nullptr);
+  ROCKSDB_VERIFY_F(!m_is_back_patched, "BackPatch() was already called");
+  ROCKSDB_VERIFY(m_all.get() == nullptr);
   m_all = repo.m_impl->table_factory.name2p;
   if (!m_json_obj.is_object()) {
     THROW_InvalidArgument("DispatcherTableFactory options must be object");

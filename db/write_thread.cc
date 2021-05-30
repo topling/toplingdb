@@ -15,10 +15,10 @@
   #include <linux/futex.h>
   #include <sys/syscall.h>   /* For SYS_xxx definitions */
   #include <sys/time.h>
-template<class Type>
-inline typename std::enable_if<sizeof(Type) == 4, int>::type
-futex(Type* uaddr, uint32_t op, uint32_t val, const struct timespec *timeout,
-      Type* uaddr2, uint32_t val3) {
+//template<class Type>
+inline int //typename std::enable_if<sizeof(Type) == 4, int>::type
+futex(void* uaddr, uint32_t op, uint32_t val, const struct timespec *timeout,
+      void* uaddr2, uint32_t val3) {
   return syscall(SYS_futex, uaddr, (unsigned long)op, (unsigned long)val,
                  timeout, uaddr2, (unsigned long)val3);
 }
@@ -241,12 +241,12 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
 void WriteThread::SetState(Writer* w, uint8_t new_state) {
   assert(w);
 #if defined(OS_LINUX)
-  uint32_t old_state = w->state.load(std::std::memory_order_acquire);
+  uint32_t old_state = w->state.load(std::memory_order_acquire);
   if (STATE_LOCKED_WAITING == old_state) {
     if (w->state.compare_exchange_strong(old_state, new_state)) {
       futex(&w->state, FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
     } else {
-      old_state = w->state.load(std::std::memory_order_acquire);
+      old_state = w->state.load(std::memory_order_acquire);
       fprintf(stderr, "FATAL: %s:%d: unexpected state change, real old = %d\n",
               __FILE__, __LINE__, old_state);
       abort();
@@ -254,7 +254,7 @@ void WriteThread::SetState(Writer* w, uint8_t new_state) {
   }
   else {
     if (!w->state.compare_exchange_strong(old_state, new_state)) {
-      old_state = w->state.load(std::std::memory_order_acquire);
+      old_state = w->state.load(std::memory_order_acquire);
       fprintf(stderr, "FATAL: %s:%d: unexpected state change, real old = %d\n",
               __FILE__, __LINE__, old_state);
       abort();
@@ -651,7 +651,8 @@ bool WriteThread::CompleteParallelMemTableWriter(Writer* w) {
 
   auto* write_group = w->write_group;
   if (!w->status.ok()) {
-    std::lock_guard<std::mutex> guard(write_group->leader->StateMutex());
+    static std::mutex mtx;
+    std::lock_guard<std::mutex> guard(mtx);
     write_group->status = w->status;
   }
 

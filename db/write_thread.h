@@ -181,10 +181,12 @@ class WriteThread {
           link_newer(nullptr) {}
 
     ~Writer() {
+#if !defined(OS_LINUX)
       if (made_waitable) {
         StateMutex().~mutex();
         StateCV().~condition_variable();
       }
+#endif
       status.PermitUncheckedError();
       callback_status.PermitUncheckedError();
     }

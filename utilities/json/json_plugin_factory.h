@@ -316,25 +316,25 @@ struct AnyPluginManip : public PluginManipFunc<AnyPlugin> {
       ROCKSDB_PP_CAT_2(g_reg_manip_any_plugin_,__LINE__) \
      (ClassName, &PluginManipSingleton<AnyPluginManip>)
 
-/// Concret class defined non-virtual Update() & ToString()
-/// EasyManip is a proxy which forward Update() & ToString() to Concret
-template<class Concret, class Interface>
-struct EasyManip : public PluginManipFunc<Interface> {
+/// Concrete class defined non-virtual Update() & ToString()
+/// EasyProxyManip is a proxy which forward Update() & ToString() to Concrete
+template<class Concrete, class Interface>
+struct EasyProxyManip : public PluginManipFunc<Interface> {
   void Update(Interface* x, const json& j, const JsonPluginRepo& r)
   const final {
-    assert(dynamic_cast<Concret*>(x) != nullptr);
-    return static_cast<Concret*>(x)->Update(j, r);
+    assert(dynamic_cast<Concrete*>(x) != nullptr);
+    return static_cast<Concrete*>(x)->Update(j, r);
   }
   std::string ToString(const Interface& x, const json& dump_options,
                        const JsonPluginRepo& r) const final {
-    assert(dynamic_cast<const Concret*>(&x) != nullptr);
-    return static_cast<const Concret&>(x).ToString(dump_options, r);
+    assert(dynamic_cast<const Concrete*>(&x) != nullptr);
+    return static_cast<const Concrete&>(x).ToString(dump_options, r);
   }
 };
 #define ROCKSDB_REG_EasyProxyManip_3(ClassName, ClassType, Interface) \
   PluginFactory<const PluginManipFunc<Interface>*>::Reg \
       ROCKSDB_PP_CAT_3(g_reg_manip_,ClassType,__LINE__) \
-     (ClassName, &PluginManipSingleton<EasyManip<ClassType, Interface> >)
+     (ClassName, &PluginManipSingleton<EasyProxyManip<ClassType, Interface> >)
 #define ROCKSDB_REG_EasyProxyManip_2(ClassType, Interface) \
         ROCKSDB_REG_EasyProxyManip_3(#ClassType, ClassType, Interface)
 // call ROCKSDB_REG_EasyProxyManip_${ArgNum}, ArgNum must be 2 or 3

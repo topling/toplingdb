@@ -81,7 +81,8 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
     if (!w->state.compare_exchange_weak(state, STATE_LOCKED_WAITING))
       continue; // retry
     if (futex(&w->state, FUTEX_WAIT_PRIVATE, STATE_LOCKED_WAITING) < 0)
-      ROCKSDB_VERIFY_F(EINTR == errno, "futex(WAIT) = %s", strerror(errno));
+      if (!(EINTR == errno || EAGAIN == errno))
+        ROCKSDB_DIE("futex(WAIT) = %d: %s", errno, strerror(errno));
   }
   return (uint8_t)state;
 #else

@@ -889,6 +889,8 @@ try {
       std::string new_fname = TableFileName(cf_paths, file_number, path_id);
       Status st = imm_cfo->env->RenameFile(old_fname, new_fname);
       if (!st.ok()) {
+        ROCKS_LOG_ERROR(db_options_.info_log, "rename(%s, %s) = %s",
+            old_fname.c_str(), new_fname.c_str(), st.ToString().c_str());
         compact_->status = st;
         return st;
       }

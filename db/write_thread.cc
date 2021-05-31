@@ -245,7 +245,9 @@ void WriteThread::SetState(Writer* w, uint8_t new_state) {
   }
   else {
     if (!w->state.compare_exchange_strong(old_state, new_state))
-      ROCKSDB_DIE("unexpected state changed to = %d", w->state.load());
+      if (w->state.load() != new_state)
+        ROCKSDB_DIE("unexpected state changed to = %d, new_state = %d",
+                    w->state.load(), new_state);
   }
 #else
   auto state = w->state.load(std::memory_order_acquire);

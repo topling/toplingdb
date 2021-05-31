@@ -17,8 +17,8 @@
   #include <sys/time.h>
 //template<class Type>
 inline int //typename std::enable_if<sizeof(Type) == 4, int>::type
-futex(void* uaddr, uint32_t op, uint32_t val, const struct timespec *timeout,
-      void* uaddr2, uint32_t val3) {
+futex(void* uaddr, uint32_t op, uint32_t val, const timespec* timeout = NULL,
+      void* uaddr2 = NULL, uint32_t val3 = 0) {
   return syscall(SYS_futex, uaddr, (unsigned long)op, (unsigned long)val,
                  timeout, uaddr2, (unsigned long)val3);
 }
@@ -80,7 +80,7 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
   while (!((state = w->state.load(std::memory_order_acquire)) & goal_mask)) {
     if (!w->state.compare_exchange_weak(state, STATE_LOCKED_WAITING))
       continue; // retry
-    if (futex(&w->state, FUTEX_WAIT, STATE_LOCKED_WAITING, NULL, NULL, 0) < 0)
+    if (futex(&w->state, FUTEX_WAIT_PRIVATE, STATE_LOCKED_WAITING) < 0)
       ROCKSDB_VERIFY_F(EINTR == errno, "futex(WAIT) = %s", strerror(errno));
   }
   return (uint8_t)state;
@@ -238,7 +238,7 @@ void WriteThread::SetState(Writer* w, uint8_t new_state) {
   uint32_t old_state = w->state.load(std::memory_order_acquire);
   if (STATE_LOCKED_WAITING == old_state) {
     if (w->state.compare_exchange_strong(old_state, new_state))
-      futex(&w->state, FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
+      futex(&w->state, FUTEX_WAKE_PRIVATE, INT_MAX);
     else
       ROCKSDB_DIE("unexpected state changed to = %d", w->state.load());
   }

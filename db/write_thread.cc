@@ -76,13 +76,16 @@ uint8_t WriteThread::BlockingAwaitState(Writer* w, uint8_t goal_mask) {
 uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
                                 AdaptationContext* ctx) {
 #if defined(OS_LINUX)
-  uint32_t  state = 0;
-  while (!((state = w->state.load(std::memory_order_acquire)) & goal_mask)) {
-    if (!w->state.compare_exchange_weak(state, STATE_LOCKED_WAITING))
-      continue; // retry
-    if (futex(&w->state, FUTEX_WAIT_PRIVATE, STATE_LOCKED_WAITING) < 0)
-      if (!(EINTR == errno || EAGAIN == errno))
-        ROCKSDB_DIE("futex(WAIT) = %d: %s", errno, strerror(errno));
+  uint32_t state = w->state.load(std::memory_order_acquire);
+  while (!(state & goal_mask)) {
+    if (w->state.compare_exchange_weak(state, STATE_LOCKED_WAITING, std::memory_order_acq_rel)) {
+      if (futex(&w->state, FUTEX_WAIT_PRIVATE, STATE_LOCKED_WAITING) < 0) {
+        int err = errno;
+        if (!(EINTR == err || EAGAIN == err))
+          ROCKSDB_DIE("futex(WAIT) = %d: %s", err, strerror(err));
+      }
+      state = w->state.load(std::memory_order_acquire);
+    }
   }
   return (uint8_t)state;
 #else

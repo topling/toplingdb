@@ -236,19 +236,13 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
 void WriteThread::SetState(Writer* w, uint8_t new_state) {
   assert(w);
 #if defined(OS_LINUX)
-  uint32_t old_state = w->state.load(std::memory_order_acquire);
-  if (STATE_LOCKED_WAITING == old_state) {
-    if (w->state.compare_exchange_strong(old_state, new_state))
-      futex(&w->state, FUTEX_WAKE_PRIVATE, INT_MAX);
-    else
-      ROCKSDB_DIE("unexpected state changed to = %d", w->state.load());
+  uint32_t state = w->state.load(std::memory_order_acquire);
+  while (state != new_state &&
+!w->state.compare_exchange_weak(state,new_state,std::memory_order_acq_rel)){
+    // w->state may have been updated by other threads
   }
-  else {
-    if (!w->state.compare_exchange_strong(old_state, new_state))
-      if (w->state.load() != new_state)
-        ROCKSDB_DIE("unexpected state changed to = %d, new_state = %d",
-                    w->state.load(), new_state);
-  }
+  if (STATE_LOCKED_WAITING == state)
+    futex(&w->state, FUTEX_WAKE_PRIVATE, INT_MAX);
 #else
   auto state = w->state.load(std::memory_order_acquire);
   if (state == STATE_LOCKED_WAITING ||

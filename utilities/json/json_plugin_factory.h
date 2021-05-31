@@ -184,9 +184,9 @@ PluginManipSingleton(const json&, const JsonPluginRepo&) {
   return &manip;
 }
 #define ROCKSDB_REG_PluginManip(ClassName, ManipClass) \
-  constexpr auto ROCKSDB_PP_CAT2(JS_##ManipClass, __LINE__) = \
-      &PluginManipSingleton<ManipClass>; \
-  ROCKSDB_FACTORY_REG(ClassName, ROCKSDB_PP_CAT2(JS_##ManipClass, __LINE__))
+  PluginFactory<const typename ManipClass::InterfaceType*>::Reg \
+      ROCKSDB_PP_CAT_3(g_reg_manip_,ManipClass,__LINE__) \
+     (ClassName, &PluginManipSingleton<ManipClass>)
 
 template<class Object>
 using PluginManip = PluginFactory<const PluginManipFunc<Object>*>;
@@ -231,9 +231,9 @@ PluginSerDeSingleton(const json&, const JsonPluginRepo&) {
   return &singleton;
 }
 #define ROCKSDB_REG_PluginSerDe(ClassName, SerDeClass) \
-  constexpr auto ROCKSDB_PP_CAT2(JS_##SerDeClass, __LINE__) = \
-      &PluginSerDeSingleton<SerDeClass>; \
-  ROCKSDB_FACTORY_REG(ClassName, ROCKSDB_PP_CAT2(JS_##SerDeClass, __LINE__))
+  PluginFactory<const typename SerDeClass::InterfaceType*>::Reg \
+      ROCKSDB_PP_CAT_3(g_reg_serde_,SerDeClass,__LINE__) \
+     (ClassName, &PluginSerDeSingleton<SerDeClass>)
 
 template<class Object>
 using SerDeFactory = PluginFactory<const SerDeFunc<Object>*>;
@@ -311,9 +311,35 @@ struct AnyPluginManip : public PluginManipFunc<AnyPlugin> {
   std::string ToString(const AnyPlugin&, const json& dump_options,
                        const JsonPluginRepo&) const final;
 };
-constexpr auto AnyPluginManipSingleton = &PluginManipSingleton<AnyPluginManip>;
 #define ROCKSDB_REG_AnyPluginManip(ClassName) \
-  ROCKSDB_FACTORY_REG(ClassName, AnyPluginManipSingleton)
+  PluginFactory<const PluginManipFunc<AnyPlugin>*>::Reg \
+      ROCKSDB_PP_CAT_2(g_reg_manip_any_plugin_,__LINE__) \
+     (ClassName, &PluginManipSingleton<AnyPluginManip>)
+
+/// Concret class defined non-virtual Update() & ToString()
+/// EasyManip is a proxy which forward Update() & ToString() to Concret
+template<class Concret, class Interface>
+struct EasyManip : public PluginManipFunc<Interface> {
+  void Update(Interface* x, const json& j, const JsonPluginRepo& r)
+  const final {
+    assert(dynamic_cast<Concret*>(x) != nullptr);
+    return static_cast<Concret*>(x)->Update(j, r);
+  }
+  std::string ToString(const Interface& x, const json& dump_options,
+                       const JsonPluginRepo& r) const final {
+    assert(dynamic_cast<const Concret*>(&x) != nullptr);
+    return static_cast<const Concret&>(x).ToString(dump_options, r);
+  }
+};
+#define ROCKSDB_REG_EasyManip_3(ClassName, ClassType, Interface) \
+  PluginFactory<const PluginManipFunc<Interface>*>::Reg \
+      ROCKSDB_PP_CAT_3(g_reg_manip_,ClassType,__LINE__) \
+     (ClassName, &PluginManipSingleton<EasyManip<ClassType, Interface> >)
+#define ROCKSDB_REG_EasyManip_2(ClassType, Interface) \
+        ROCKSDB_REG_EasyManip_3(#ClassType, ClassType, Interface)
+// call ROCKSDB_REG_EasyManip_${ArgNum}, ArgNum must be 2 or 3
+#define ROCKSDB_REG_EasyManip(...) ROCKSDB_PP_CAT2 \
+       (ROCKSDB_REG_EasyManip_,ROCKSDB_PP_ARG_N(__VA_ARGS__))(__VA_ARGS__)
 
 template<class Ptr>
 struct PluginFactory<Ptr>::Reg::Impl {

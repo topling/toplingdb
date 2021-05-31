@@ -331,15 +331,15 @@ struct EasyManip : public PluginManipFunc<Interface> {
     return static_cast<const Concret&>(x).ToString(dump_options, r);
   }
 };
-#define ROCKSDB_REG_EasyManip_3(ClassName, ClassType, Interface) \
+#define ROCKSDB_REG_EasyProxyManip_3(ClassName, ClassType, Interface) \
   PluginFactory<const PluginManipFunc<Interface>*>::Reg \
       ROCKSDB_PP_CAT_3(g_reg_manip_,ClassType,__LINE__) \
      (ClassName, &PluginManipSingleton<EasyManip<ClassType, Interface> >)
-#define ROCKSDB_REG_EasyManip_2(ClassType, Interface) \
-        ROCKSDB_REG_EasyManip_3(#ClassType, ClassType, Interface)
-// call ROCKSDB_REG_EasyManip_${ArgNum}, ArgNum must be 2 or 3
-#define ROCKSDB_REG_EasyManip(...) ROCKSDB_PP_CAT2 \
-       (ROCKSDB_REG_EasyManip_,ROCKSDB_PP_ARG_N(__VA_ARGS__))(__VA_ARGS__)
+#define ROCKSDB_REG_EasyProxyManip_2(ClassType, Interface) \
+        ROCKSDB_REG_EasyProxyManip_3(#ClassType, ClassType, Interface)
+// call ROCKSDB_REG_EasyProxyManip_${ArgNum}, ArgNum must be 2 or 3
+#define ROCKSDB_REG_EasyProxyManip(...) ROCKSDB_PP_CAT2 \
+       (ROCKSDB_REG_EasyProxyManip_,ROCKSDB_PP_ARG_N(__VA_ARGS__))(__VA_ARGS__)
 
 template<class Ptr>
 struct PluginFactory<Ptr>::Reg::Impl {

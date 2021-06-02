@@ -9,7 +9,11 @@ namespace ROCKSDB_NAMESPACE {
 struct ObjectRpcParam {
   std::string clazz;
   std::string params; // construction json params
-  std::string serde; // serialized bytes for rpc
+  //std::string serde; // serialized bytes for rpc
+  typedef std::function<void(FILE*, const std::string& clazz)> ser_fn_t;
+  typedef std::function<void(FILE*, const ObjectRpcParam&, void* ppObj)> des_fn_t;
+  ser_fn_t ser;
+  des_fn_t des; // create object and put ptr on (*ppObj), and deserialize
 };
 struct VersionSetSerDe {
   uint64_t last_sequence;
@@ -109,16 +113,6 @@ struct CompactionResults {
     HistogramStat histograms[INTERNAL_HISTOGRAM_ENUM_MAX];
   };
 
-  // aggregated info for return to the hoster
-  std::string compaction_filter_factory;
-  std::string merge_operator;
-  std::string user_comparator;
-  std::string table_factory;
-  std::string prefix_extractor;
-  std::string sst_partitioner_factory;
-  std::vector<std::string>  int_tbl_prop_collector_factories;
-  std::vector<std::string>  event_listner;
-
   std::string output_dir;
   std::vector<std::vector<FileMinMeta> > output_files;
   InternalStats::CompactionStats compaction_stats;
@@ -136,7 +130,6 @@ class CompactionExecutor {
  public:
   virtual ~CompactionExecutor();
   virtual void SetParams(CompactionParams*, const Compaction*) = 0;
-  virtual void NotifyResults(const CompactionResults*, const Compaction*) = 0;
   virtual Status Execute(const CompactionParams&, CompactionResults*) = 0;
   virtual void CleanFiles(const CompactionParams&, const CompactionResults&) = 0;
 };

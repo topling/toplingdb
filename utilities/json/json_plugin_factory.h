@@ -220,8 +220,8 @@ PluginToString(const DB_Ptr&, const JsonPluginRepo::Impl::ObjMap<DB_Ptr>& map,
 template<class Object>
 struct SerDeFunc {
   virtual ~SerDeFunc() {}
-  virtual void Serialize(const Object&, std::string* output) const = 0;
-  virtual void DeSerialize(Object*, const Slice& input) const = 0;
+  virtual void Serialize(FILE*, const Object&) const = 0;
+  virtual void DeSerialize(FILE*, Object*) const = 0;
   using InterfaceType = SerDeFunc;
 };
 template<class SerDeClass>
@@ -240,62 +240,54 @@ using SerDeFactory = PluginFactory<const SerDeFunc<Object>*>;
 
 // Suffix 'Req' means 'required'
 template<class Object>
-std::string SerDe_SerializeReq(const std::string& clazz, const Object* obj) {
+void SerDe_SerializeReq(FILE* fp, const std::string& clazz, const Object* obj) {
   assert(nullptr != obj);
   json js; // empty js
   JsonPluginRepo repo; // empty repo
   const SerDeFunc<Object>* serde =
      SerDeFactory<Object>::AcquirePlugin(clazz, js, repo);
-  std::string bytes;
-  serde->Serialize(*obj, &bytes);
-  return bytes;
+  serde->Serialize(fp, *obj);
 }
 template<class Object>
-std::string SerDe_SerializeReq(const std::string& clazz,
-                               const std::shared_ptr<Object>& obj) {
-  return SerDe_SerializeReq(clazz, obj.get());
+void SerDe_SerializeReq(FILE* fp, const std::string& clazz,
+                        const std::shared_ptr<Object>& obj) {
+  return SerDe_SerializeReq(fp, clazz, obj.get());
 }
 
 // Suffix 'Opt' means 'optional'
 // if clazz has no SerDeFunc, obj can     be null
 // if clazz has    SerDeFunc, obj can not be null
 template<class Object>
-std::string SerDe_SerializeOpt(const std::string& clazz, const Object* obj) {
-  std::string bytes;
+void SerDe_SerializeOpt(FILE* fp, const std::string& clazz, const Object* obj) {
   const SerDeFunc<Object>* serde = SerDeFactory<Object>::NullablePlugin(clazz);
   if (serde) {
     assert(nullptr != obj);
-    serde->Serialize(*obj, &bytes);
+    serde->Serialize(fp, *obj);
   }
-  return bytes;
 }
 template<class Object>
-std::string SerDe_SerializeOpt(const std::string& clazz,
-                               const std::shared_ptr<Object>& obj) {
-  return SerDe_SerializeOpt(clazz, obj.get());
+void SerDe_SerializeOpt(FILE* fp, const std::string& clazz,
+                        const std::shared_ptr<Object>& obj) {
+  return SerDe_SerializeOpt(fp, clazz, obj.get());
 }
 
 template<class Object>
-void SerDe_DeSerialize(const std::string& clazz, Slice bytes, Object* obj) {
+void SerDe_DeSerialize(FILE* fp, const std::string& clazz, Object* obj) {
   const SerDeFunc<Object>* serde = SerDeFactory<Object>::NullablePlugin(clazz);
   if (serde) {
     assert(nullptr != obj);
-    serde->DeSerialize(obj, bytes);
-  }
-  else {
-    assert(bytes.empty());
-    ROCKSDB_VERIFY_F(bytes.empty(), "class = %s", clazz.c_str());
+    serde->DeSerialize(fp, obj);
   }
 }
 template<class Object>
-void SerDe_DeSerialize(const std::string& clazz, Slice bytes,
+void SerDe_DeSerialize(FILE* fp, const std::string& clazz,
                        const std::shared_ptr<Object>& obj) {
-  SerDe_DeSerialize(clazz, bytes, obj.get());
+  SerDe_DeSerialize(fp, clazz, obj.get());
 }
 template<class Ptr>
-void SerDe_DeSerialize(Slice bytes, const Ptr& p) {
+void SerDe_DeSerialize(FILE* fp, const Ptr& p) {
   if (p)
-    SerDe_DeSerialize(p->Name(), bytes, p);
+    SerDe_DeSerialize(fp, p->Name(), p);
 }
 
 template<class Object, class Extra>

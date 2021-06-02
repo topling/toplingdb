@@ -843,7 +843,7 @@ try {
     compact_->status = rpc_results.status;
     return rpc_results.status;
   }
-  exec->NotifyResults(&rpc_results, c);
+  //exec->NotifyResults(&rpc_results, c);
 
   // remote compact fabricates a version_set, which may cause
   // GenSubcompactionBoundaries yield different num of sub_compact_states,

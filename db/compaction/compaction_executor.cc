@@ -3,7 +3,6 @@
 //
 
 #include "compaction_executor.h"
-#include "terark/io/DataIO.hpp"
 
 namespace ROCKSDB_NAMESPACE {
 

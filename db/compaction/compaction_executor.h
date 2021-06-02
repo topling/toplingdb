@@ -10,10 +10,8 @@ struct ObjectRpcParam {
   std::string clazz;
   std::string params; // construction json params
   //std::string serde; // serialized bytes for rpc
-  typedef std::function<void(FILE*, const std::string& clazz)> ser_fn_t;
-  typedef std::function<void(FILE*, const ObjectRpcParam&, void* ppObj)> des_fn_t;
-  ser_fn_t ser;
-  des_fn_t des; // create object and put ptr on (*ppObj), and deserialize
+  typedef std::function<void(FILE*, const ObjectRpcParam&)> serde_fn_t;
+  serde_fn_t serde;
 };
 struct VersionSetSerDe {
   uint64_t last_sequence;

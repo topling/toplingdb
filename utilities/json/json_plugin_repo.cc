@@ -173,7 +173,7 @@ JsonPluginRepo& JsonPluginRepo::operator=(JsonPluginRepo&&) noexcept = default;
 Status JsonPluginRepo::ImportJsonFile(const Slice& fname) {
   std::string json_str;
   {
-    std::fstream ifs(fname.data());
+    std::ifstream ifs(fname.data());
     if (!ifs.is_open()) {
       return Status::InvalidArgument("open json file fail", fname);
     }

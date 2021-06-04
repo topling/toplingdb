@@ -457,7 +457,7 @@ ObtainPlugin(const char* varname, const char* func_name,
       Ptr p(nullptr);
       if (!repo.Get(inst_id, &p)) {
         throw Status::NotFound(func_name,
-           std::string(varname) + "inst_id = \"" + inst_id + "\"");
+           std::string(varname) + " inst_id = \"" + inst_id + "\"");
       }
       assert(!!p);
       return p;

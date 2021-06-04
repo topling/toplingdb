@@ -90,16 +90,20 @@ static void Impl_Import(JsonPluginRepo::Impl::ObjMap<Ptr>& field,
       auto old_clazz = JsonGetClassName(ROCKSDB_FUNC, oi_iter->second.params);
       auto new_clazz = JsonGetClassName(ROCKSDB_FUNC, value);
       if (new_clazz == old_clazz) {
+      #if defined(NDEBUG)
         try {
+      #endif
           PluginUpdate(existing, field, value, repo);
           oi_iter->second.params.merge_patch(value);
           continue; // done for current item
+      #if defined(NDEBUG)
         }
         catch (const Status& st) {
           // not found updater, overwrite with merged json
           oi_iter->second.params.merge_patch(value);
           value.swap(oi_iter->second.params);
         }
+      #endif
       }
       field.p2name.erase(GetRawPtr(existing));
     }
@@ -180,14 +184,22 @@ Status JsonPluginRepo::ImportJsonFile(const Slice& fname) {
   return Import(json_str);
 }
 
-Status JsonPluginRepo::Import(const string& json_str) try {
+Status JsonPluginRepo::Import(const string& json_str)
+#if defined(NDEBUG)
+try
+#endif
+{
   json js = json::parse(json_str);
   return Import(js);
 }
+#if defined(NDEBUG)
 catch (const std::exception& ex) {
   // just parse error
-  return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
+  return Status::InvalidArgument(std::string(__FILE__)
+                       + ":" ROCKSDB_PP_STR(__LINE__) ": "
+                       + ROCKSDB_FUNC, ex.what());
 }
+#endif
 
 static
 void MergeSubObject(json* target, const json& patch, const string& subname) {
@@ -245,7 +257,11 @@ static void JS_setenv(const nlohmann::json& main_js) {
   }
 }
 
-Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
+Status JsonPluginRepo::Import(const nlohmann::json& main_js)
+#if defined(NDEBUG)
+try
+#endif
+{
   JS_setenv(main_js);
   MergeSubObject(&m_impl->db_js, main_js, "databases");
   MergeSubObject(&m_impl->http_js, main_js, "http");
@@ -294,12 +310,14 @@ Status JsonPluginRepo::Import(const nlohmann::json& main_js) try {
 
   return Status::OK();
 }
+#if defined(NDEBUG)
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
 catch (const Status& s) {
   return s;
 }
+#endif
 
 template<class Ptr>
 static void Impl_Export(const JsonPluginRepo::Impl::ObjMap<Ptr>& field,
@@ -310,7 +328,11 @@ static void Impl_Export(const JsonPluginRepo::Impl::ObjMap<Ptr>& field,
     params_js = kv.second.params;
   }
 }
-Status JsonPluginRepo::Export(nlohmann::json* main_js) const try {
+Status JsonPluginRepo::Export(nlohmann::json* main_js) const
+#if defined(NDEBUG)
+try
+#endif
+{
   assert(NULL != main_js);
 #define JSON_EXPORT_REPO(Clazz, field) \
   Impl_Export(m_impl->field, #Clazz, *main_js)
@@ -344,9 +366,11 @@ Status JsonPluginRepo::Export(nlohmann::json* main_js) const try {
 
   return Status::OK();
 }
+#if defined(NDEBUG)
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
+#endif
 
 Status JsonPluginRepo::Export(string* json_str, bool pretty) const {
   assert(NULL != json_str);
@@ -563,18 +587,30 @@ Status JsonPluginRepo::OpenDB(const nlohmann::json& js, DB_MultiCF** dbp) {
   return OpenDB_tpl<DB_MultiCF>(js, dbp);
 }
 
-Status JsonPluginRepo::OpenDB(const std::string& js, DB** dbp) try {
+Status JsonPluginRepo::OpenDB(const std::string& js, DB** dbp)
+#if defined(NDEBUG)
+try
+#endif
+{
   return OpenDB_tpl<DB>(js, dbp);
 }
+#if defined(NDEBUG)
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, "bad json object");
 }
-Status JsonPluginRepo::OpenDB(const std::string& js, DB_MultiCF** dbp) try {
+#endif
+Status JsonPluginRepo::OpenDB(const std::string& js, DB_MultiCF** dbp)
+#if defined(NDEBUG)
+try
+#endif
+{
   return OpenDB_tpl<DB_MultiCF>(js, dbp);
 }
+#if defined(NDEBUG)
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, "bad json object");
 }
+#endif
 
 inline DB* GetDB(DB* db) { return db; }
 inline DB* GetDB(DB_MultiCF* db) { return db->db; }
@@ -640,7 +676,11 @@ static void Impl_OpenDB_tpl(const std::string& dbname,
 }
 
 template<class DBT>
-Status JsonPluginRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
+Status JsonPluginRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp)
+#if defined(NDEBUG)
+try
+#endif
+{
   *dbp = nullptr;
   auto open_defined_db = [&](const std::string& dbname) {
       auto iter = m_impl->db_js.find(dbname);
@@ -675,14 +715,20 @@ Status JsonPluginRepo::OpenDB_tpl(const nlohmann::json& js, DBT** dbp) try {
   }
   return Status::OK();
 }
+#if defined(NDEBUG)
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
 catch (const Status& s) {
   return s;
 }
+#endif
 
-Status JsonPluginRepo::OpenAllDB() try {
+Status JsonPluginRepo::OpenAllDB()
+#if defined(NDEBUG)
+try
+#endif
+{
   size_t num = 0;
   for (auto& item : m_impl->db_js.items()) {
     const std::string& dbname = item.key();
@@ -721,6 +767,7 @@ Status JsonPluginRepo::OpenAllDB() try {
   }
   return Status::OK();
 }
+#if defined(NDEBUG)
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
@@ -728,6 +775,7 @@ catch (const Status& s) {
   // nested Status
   return Status::InvalidArgument(ROCKSDB_FUNC, s.ToString());
 }
+#endif
 
 std::shared_ptr<std::map<std::string, DB_Ptr> >
 JsonPluginRepo::GetAllDB() const {
@@ -755,7 +803,11 @@ Status JsonPluginRepo::OpenDB(DB_MultiCF** db) {
         ROCKSDB_FUNC, "bad json[\"open\"] = " + open_js.dump());
 }
 
-Status JsonPluginRepo::StartHttpServer() try {
+Status JsonPluginRepo::StartHttpServer()
+#if defined(NDEBUG)
+try
+#endif
+{
   const auto& http_js = m_impl->http_js;
   if (JsonPluginRepo::DebugLevel() >= 2) {
     fprintf(stderr, "INFO: http_js = %s\n", http_js.dump().c_str());
@@ -772,6 +824,7 @@ Status JsonPluginRepo::StartHttpServer() try {
   }
   return Status::OK();
 }
+#if defined(NDEBUG)
 catch (const std::exception& ex) {
   return Status::InvalidArgument(ROCKSDB_FUNC, ex.what());
 }
@@ -779,6 +832,7 @@ catch (const Status& s) {
   // nested Status
   return Status::InvalidArgument(ROCKSDB_FUNC, s.ToString());
 }
+#endif
 
 void JsonPluginRepo::CloseHttpServer() {
   if (JsonPluginRepo::DebugLevel() >= 2) {

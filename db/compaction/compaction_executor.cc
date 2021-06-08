@@ -11,12 +11,14 @@ CompactionParams::CompactionParams() {
 }
 CompactionParams::~CompactionParams() {
   if (is_deserialized) {
+    /*
     for (auto& x : *inputs) {
       for (auto& e : x.atomic_compaction_unit_boundaries) {
         delete e.smallest;
         delete e.largest;
       }
     }
+    */
     for (auto meta : *grandparents) {
       delete meta;
     }

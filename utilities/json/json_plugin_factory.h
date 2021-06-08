@@ -222,12 +222,14 @@ struct SerDeFunc {
   virtual ~SerDeFunc() {}
   virtual void Serialize(FILE*, const Object&) const = 0;
   virtual void DeSerialize(FILE*, Object*) const = 0;
+  virtual bool Is_Singleton() const noexcept { return true; }
   using InterfaceType = SerDeFunc;
 };
 template<class SerDeClass>
 static const typename SerDeClass::InterfaceType*
 PluginSerDeSingleton(const json&, const JsonPluginRepo&) {
   static const SerDeClass singleton;
+  ROCKSDB_VERIFY(singleton.Is_Singleton());
   return &singleton;
 }
 #define ROCKSDB_REG_PluginSerDe(ClassName, SerDeClass) \

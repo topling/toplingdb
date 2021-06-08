@@ -248,12 +248,31 @@ void SerDe_SerializeReq(FILE* fp, const std::string& clazz, const Object* obj) {
   JsonPluginRepo repo; // empty repo
   const SerDeFunc<Object>* serde =
      SerDeFactory<Object>::AcquirePlugin(clazz, js, repo);
+  ROCKSDB_VERIFY(serde->Is_Singleton());
   serde->Serialize(fp, *obj);
 }
 template<class Object>
 void SerDe_SerializeReq(FILE* fp, const std::string& clazz,
                         const std::shared_ptr<Object>& obj) {
   return SerDe_SerializeReq(fp, clazz, obj.get());
+}
+template<class Object>
+void SerDe_SerializeReq(FILE* fp, const std::string& clazz, const Object* obj,
+                        const json& js, const JsonPluginRepo& repo) {
+  assert(nullptr != obj);
+  const SerDeFunc<Object>* serde =
+     SerDeFactory<Object>::AcquirePlugin(clazz, js, repo);
+  std::unique_ptr<SerDeFunc<Object> > del;
+  if (!serde->Is_Singleton()) {
+    del.reset(const_cast<SerDeFunc<Object>*>(serde));
+  }
+  serde->Serialize(fp, *obj);
+}
+template<class Object>
+void SerDe_SerializeReq(FILE* fp, const std::string& clazz,
+                        const std::shared_ptr<Object>& obj,
+                        const json& js, const JsonPluginRepo& repo) {
+  return SerDe_SerializeReq(fp, clazz, obj.get(), js, repo);
 }
 
 // Suffix 'Opt' means 'optional'
@@ -271,6 +290,25 @@ template<class Object>
 void SerDe_SerializeOpt(FILE* fp, const std::string& clazz,
                         const std::shared_ptr<Object>& obj) {
   return SerDe_SerializeOpt(fp, clazz, obj.get());
+}
+template<class Object>
+void SerDe_SerializeOpt(FILE* fp, const std::string& clazz, const Object* obj,
+                        const json& js, const JsonPluginRepo& repo) {
+  auto serde = SerDeFactory<Object>::NullablePlugin(clazz, js, repo);
+  if (serde) {
+    assert(nullptr != obj);
+    std::unique_ptr<SerDeFunc<Object> > del;
+    if (!serde->Is_Singleton()) {
+      del.reset(const_cast<SerDeFunc<Object>*>(serde));
+    }
+    serde->Serialize(fp, *obj);
+  }
+}
+template<class Object>
+void SerDe_SerializeOpt(FILE* fp, const std::string& clazz,
+                        const std::shared_ptr<Object>& obj,
+                        const json& js, const JsonPluginRepo& repo) {
+  return SerDe_SerializeOpt(fp, clazz, obj.get(), js, repo);
 }
 
 template<class Object>
@@ -290,6 +328,32 @@ template<class Ptr>
 void SerDe_DeSerialize(FILE* fp, const Ptr& p) {
   if (p)
     SerDe_DeSerialize(fp, p->Name(), p);
+}
+
+template<class Object>
+void SerDe_DeSerialize(FILE* fp, const std::string& clazz, Object* obj,
+                       const json& js, const JsonPluginRepo& repo) {
+  auto serde = SerDeFactory<Object>::NullablePlugin(clazz, js, repo);
+  if (serde) {
+    assert(nullptr != obj);
+    std::unique_ptr<SerDeFunc<Object> > del;
+    if (!serde->Is_Singleton()) {
+      del.reset(const_cast<SerDeFunc<Object>*>(serde));
+    }
+    serde->DeSerialize(fp, obj);
+  }
+}
+template<class Object>
+void SerDe_DeSerialize(FILE* fp, const std::string& clazz,
+                       const std::shared_ptr<Object>& obj,
+                       const json& js, const JsonPluginRepo& repo) {
+  SerDe_DeSerialize(fp, clazz, obj.get(), js, repo);
+}
+template<class Ptr>
+void SerDe_DeSerialize(FILE* fp, const Ptr& p,
+                       const json& js, const JsonPluginRepo& repo) {
+  if (p)
+    SerDe_DeSerialize(fp, p->Name(), p, js, repo);
 }
 
 template<class Object, class Extra>

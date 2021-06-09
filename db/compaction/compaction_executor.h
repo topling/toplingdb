@@ -75,6 +75,8 @@ struct CompactionParams {
   //FSDirectory* output_directory;
   //FSDirectory* blob_output_directory;
 
+  std::string smallest_user_key; // serialization must before
+  std::string largest_user_key;  // ObjectRpcParam fields
   //ObjectRpcParam compaction_filter; // don't use compaction_filter
   ObjectRpcParam compaction_filter_factory; // always use
   ObjectRpcParam merge_operator;

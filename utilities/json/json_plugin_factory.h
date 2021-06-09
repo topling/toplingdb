@@ -222,56 +222,36 @@ struct SerDeFunc {
   virtual ~SerDeFunc() {}
   virtual void Serialize(FILE*, const Object&) const = 0;
   virtual void DeSerialize(FILE*, Object*) const = 0;
-  virtual bool Is_Singleton() const noexcept { return true; }
   using InterfaceType = SerDeFunc;
 };
 template<class SerDeClass>
-static const typename SerDeClass::InterfaceType*
+static std::shared_ptr<typename SerDeClass::InterfaceType>
 PluginSerDeSingleton(const json&, const JsonPluginRepo&) {
-  static const SerDeClass singleton;
-  ROCKSDB_VERIFY(singleton.Is_Singleton());
-  return &singleton;
+  static auto singleton = std::make_shared<SerDeClass>();
+  return singleton;
 }
 #define ROCKSDB_REG_PluginSerDe(ClassName, SerDeClass) \
-  PluginFactory<const typename SerDeClass::InterfaceType*>::Reg \
+  PluginFactory<std::shared_ptr<typename SerDeClass::InterfaceType> >::Reg \
       ROCKSDB_PP_CAT_3(g_reg_serde_,SerDeClass,__LINE__) \
      (ClassName, &PluginSerDeSingleton<SerDeClass>)
 
 template<class Object>
-using SerDeFactory = PluginFactory<const SerDeFunc<Object>*>;
+using SerDeFactory = PluginFactory<std::shared_ptr<SerDeFunc<Object> > >;
 
 // Suffix 'Req' means 'required'
 template<class Object>
-void SerDe_SerializeReq(FILE* fp, const std::string& clazz, const Object* obj) {
-  assert(nullptr != obj);
-  json js; // empty js
-  JsonPluginRepo repo; // empty repo
-  const SerDeFunc<Object>* serde =
-     SerDeFactory<Object>::AcquirePlugin(clazz, js, repo);
-  ROCKSDB_VERIFY(serde->Is_Singleton());
-  serde->Serialize(fp, *obj);
-}
-template<class Object>
-void SerDe_SerializeReq(FILE* fp, const std::string& clazz,
-                        const std::shared_ptr<Object>& obj) {
-  return SerDe_SerializeReq(fp, clazz, obj.get());
-}
-template<class Object>
 void SerDe_SerializeReq(FILE* fp, const std::string& clazz, const Object* obj,
-                        const json& js, const JsonPluginRepo& repo) {
+                        const json& js = json{},
+                        const JsonPluginRepo& repo = *(JsonPluginRepo*)nullptr) {
   assert(nullptr != obj);
-  const SerDeFunc<Object>* serde =
-     SerDeFactory<Object>::AcquirePlugin(clazz, js, repo);
-  std::unique_ptr<SerDeFunc<Object> > del;
-  if (!serde->Is_Singleton()) {
-    del.reset(const_cast<SerDeFunc<Object>*>(serde));
-  }
+  auto serde = SerDeFactory<Object>::AcquirePlugin(clazz, js, repo);
   serde->Serialize(fp, *obj);
 }
 template<class Object>
 void SerDe_SerializeReq(FILE* fp, const std::string& clazz,
                         const std::shared_ptr<Object>& obj,
-                        const json& js, const JsonPluginRepo& repo) {
+                        const json& js = json{},
+                        const JsonPluginRepo& repo = *(JsonPluginRepo*)nullptr) {
   return SerDe_SerializeReq(fp, clazz, obj.get(), js, repo);
 }
 
@@ -279,79 +259,44 @@ void SerDe_SerializeReq(FILE* fp, const std::string& clazz,
 // if clazz has no SerDeFunc, obj can     be null
 // if clazz has    SerDeFunc, obj can not be null
 template<class Object>
-void SerDe_SerializeOpt(FILE* fp, const std::string& clazz, const Object* obj) {
-  const SerDeFunc<Object>* serde = SerDeFactory<Object>::NullablePlugin(clazz);
-  if (serde) {
-    assert(nullptr != obj);
-    serde->Serialize(fp, *obj);
-  }
-}
-template<class Object>
-void SerDe_SerializeOpt(FILE* fp, const std::string& clazz,
-                        const std::shared_ptr<Object>& obj) {
-  return SerDe_SerializeOpt(fp, clazz, obj.get());
-}
-template<class Object>
 void SerDe_SerializeOpt(FILE* fp, const std::string& clazz, const Object* obj,
-                        const json& js, const JsonPluginRepo& repo) {
+                        const json& js = json{},
+                        const JsonPluginRepo& repo = *(JsonPluginRepo*)nullptr) {
   auto serde = SerDeFactory<Object>::NullablePlugin(clazz, js, repo);
   if (serde) {
     assert(nullptr != obj);
-    std::unique_ptr<SerDeFunc<Object> > del;
-    if (!serde->Is_Singleton()) {
-      del.reset(const_cast<SerDeFunc<Object>*>(serde));
-    }
     serde->Serialize(fp, *obj);
   }
 }
 template<class Object>
 void SerDe_SerializeOpt(FILE* fp, const std::string& clazz,
                         const std::shared_ptr<Object>& obj,
-                        const json& js, const JsonPluginRepo& repo) {
+                        const json& js = json{},
+                        const JsonPluginRepo& repo = *(JsonPluginRepo*)nullptr) {
   return SerDe_SerializeOpt(fp, clazz, obj.get(), js, repo);
 }
 
 template<class Object>
-void SerDe_DeSerialize(FILE* fp, const std::string& clazz, Object* obj) {
-  const SerDeFunc<Object>* serde = SerDeFactory<Object>::NullablePlugin(clazz);
-  if (serde) {
-    assert(nullptr != obj);
-    serde->DeSerialize(fp, obj);
-  }
-}
-template<class Object>
-void SerDe_DeSerialize(FILE* fp, const std::string& clazz,
-                       const std::shared_ptr<Object>& obj) {
-  SerDe_DeSerialize(fp, clazz, obj.get());
-}
-template<class Ptr>
-void SerDe_DeSerialize(FILE* fp, const Ptr& p) {
-  if (p)
-    SerDe_DeSerialize(fp, p->Name(), p);
-}
-
-template<class Object>
 void SerDe_DeSerialize(FILE* fp, const std::string& clazz, Object* obj,
-                       const json& js, const JsonPluginRepo& repo) {
+                       const json& js = json{},
+                       const JsonPluginRepo& repo = *(JsonPluginRepo*)nullptr) {
   auto serde = SerDeFactory<Object>::NullablePlugin(clazz, js, repo);
   if (serde) {
     assert(nullptr != obj);
-    std::unique_ptr<SerDeFunc<Object> > del;
-    if (!serde->Is_Singleton()) {
-      del.reset(const_cast<SerDeFunc<Object>*>(serde));
-    }
     serde->DeSerialize(fp, obj);
   }
 }
 template<class Object>
 void SerDe_DeSerialize(FILE* fp, const std::string& clazz,
                        const std::shared_ptr<Object>& obj,
-                       const json& js, const JsonPluginRepo& repo) {
+                       const json& js = json{},
+                       const JsonPluginRepo& repo = *(JsonPluginRepo*)nullptr) {
   SerDe_DeSerialize(fp, clazz, obj.get(), js, repo);
 }
 template<class Ptr>
 void SerDe_DeSerialize(FILE* fp, const Ptr& p,
-                       const json& js, const JsonPluginRepo& repo) {
+                       const json& js = json{},
+                       const JsonPluginRepo& repo = *(JsonPluginRepo*)nullptr) {
   if (p)
     SerDe_DeSerialize(fp, p->Name(), p, js, repo);
 }

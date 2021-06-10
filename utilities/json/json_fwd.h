@@ -7,6 +7,31 @@
 #include <string> // string
 #include <vector> // vector
 
+#ifndef JSON_USE_STD_MAP
+#include <terark/gold_hash_map.hpp>
+
+namespace terark {
+template<class Key, class Val, class IgnoreLess, class IgnoreAlloc>
+class JsonStrMap : public gold_hash_map<Key, Val
+    , std::hash<Key>, std::equal_to<Key>
+    , node_layout<std::pair<Key, Val>, unsigned, SafeCopy, ValueOut>
+    >
+{
+public:
+    typedef IgnoreAlloc allocator_type;
+
+    template<class Iter>
+    JsonStrMap(Iter first, Iter last) {
+        for (Iter iter = first; iter != last; ++iter) {
+            this->insert_i(iter->first, iter->second);
+        }
+    }
+    JsonStrMap() {}
+};
+} // namespace terark
+
+#endif // #ifndef JSON_USE_STD_MAP
+
 /*!
 @brief namespace for Niels Lohmann
 @see https://github.com/nlohmann
@@ -25,7 +50,11 @@ template<typename T = void, typename SFINAE = void>
 struct adl_serializer;
 
 template<template<typename U, typename V, typename... Args> class ObjectType =
+#ifdef JSON_USE_STD_MAP
          std::map,
+#else
+         terark::JsonStrMap,
+#endif
          template<typename U, typename... Args> class ArrayType = std::vector,
          class StringType = std::string, class BooleanType = bool,
          class NumberIntegerType = std::int64_t,
@@ -59,7 +88,19 @@ uses the standard template types.
 
 @since version 1.0.0
 */
+#ifdef JSON_USE_STD_MAP
 using json = basic_json<>;
+#else
+typedef basic_json<terark::JsonStrMap> json;
+/*
+typedef basic_json<terark::JsonStrMap> JsonBase;
+class json : public JsonBase {
+public:
+    using JsonBase::JsonBase;
+};
+*/
+#endif
+
 }  // namespace nlohmann
 
 #endif  // INCLUDE_NLOHMANN_JSON_FWD_HPP_

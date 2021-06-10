@@ -58,6 +58,9 @@ class Slice {
   // buf must exist as long as the returned Slice exists.
   Slice(const struct SliceParts& parts, std::string* buf);
 
+  const char* begin() const { return data_; }
+  const char* end() const { return data_ + size_; }
+
   // Return a pointer to the beginning of the referenced data
   const char* data() const { return data_; }
 

@@ -27,7 +27,8 @@ struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
     Update(js, repo);
   }
   void Update(const json& js, const JsonPluginRepo& repo) {
-    ROCKSDB_JSON_OPT_FACT(js, flush_block_policy_factory);
+    if (!IsCompactionWorker())
+      ROCKSDB_JSON_OPT_FACT(js, flush_block_policy_factory);
     ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks);
     ROCKSDB_JSON_OPT_PROP(js, cache_index_and_filter_blocks_with_high_priority);
     ROCKSDB_JSON_OPT_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
@@ -54,16 +55,19 @@ struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
     ROCKSDB_JSON_OPT_PROP(js, format_version);
     ROCKSDB_JSON_OPT_PROP(js, enable_index_compression);
     ROCKSDB_JSON_OPT_PROP(js, block_align);
-    ROCKSDB_JSON_OPT_FACT(js, block_cache);
-    ROCKSDB_JSON_OPT_FACT(js, block_cache_compressed);
-    ROCKSDB_JSON_OPT_FACT(js, persistent_cache);
-    ROCKSDB_JSON_OPT_FACT(js, filter_policy);
+    if (!IsCompactionWorker()) {
+      ROCKSDB_JSON_OPT_FACT(js, block_cache);
+      ROCKSDB_JSON_OPT_FACT(js, block_cache_compressed);
+      ROCKSDB_JSON_OPT_FACT(js, persistent_cache);
+      ROCKSDB_JSON_OPT_FACT(js, filter_policy);
+    }
   }
 
   json ToJsonObj(const json& dump_options, const JsonPluginRepo& repo) const {
     bool html = JsonSmartBool(dump_options, "html");
     json js;
-    ROCKSDB_JSON_SET_FACT(js, flush_block_policy_factory);
+    if (!IsCompactionWorker())
+      ROCKSDB_JSON_SET_FACT(js, flush_block_policy_factory);
     ROCKSDB_JSON_SET_PROP(js, cache_index_and_filter_blocks);
     ROCKSDB_JSON_SET_PROP(js, cache_index_and_filter_blocks_with_high_priority);
     ROCKSDB_JSON_SET_PROP(js, pin_l0_filter_and_index_blocks_in_cache);
@@ -90,10 +94,12 @@ struct BlockBasedTableOptions_Json : BlockBasedTableOptions {
     ROCKSDB_JSON_SET_PROP(js, format_version);
     ROCKSDB_JSON_SET_PROP(js, enable_index_compression);
     ROCKSDB_JSON_SET_PROP(js, block_align);
-    ROCKSDB_JSON_SET_FACX(js, block_cache, cache);
-    ROCKSDB_JSON_SET_FACX(js, block_cache_compressed, cache);
-    ROCKSDB_JSON_SET_FACT(js, persistent_cache);
-    ROCKSDB_JSON_SET_FACT(js, filter_policy);
+    if (!IsCompactionWorker()) {
+      ROCKSDB_JSON_SET_FACX(js, block_cache, cache);
+      ROCKSDB_JSON_SET_FACX(js, block_cache_compressed, cache);
+      ROCKSDB_JSON_SET_FACT(js, persistent_cache);
+      ROCKSDB_JSON_SET_FACT(js, filter_policy);
+    }
     return js;
   }
   std::string ToJsonStr(const json& dump_options,

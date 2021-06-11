@@ -1071,6 +1071,7 @@ Options JS_Options(const json& js, const JsonPluginRepo& repo,
 
 static void Json_DB_Statistics(const Statistics* st, json& djs,
                                bool html, bool nozero) {
+  djs["histograms"]; // insert "histograms"
   json& tikers = djs["tikers"];
   json& histograms = djs["histograms"];
   if (!st) {
@@ -2088,6 +2089,8 @@ struct DB_MultiCF_Manip : PluginManipFunc<DB_MultiCF> {
     const auto& def_cfo_js = ijs.value();
     bool html = JsonSmartBool(dump_options, "html");
     if (dbo_name.empty()) dbo_name = "json varname: (defined inline)";
+    djs["CFOptions"]; // insert
+    djs["CFProps"]; // insert
     djs["DBOptions"][0] = dbo_name;
     djs["path"] = db.db->GetName();
     dbo.SaveToJson(djs["DBOptions"][1], repo, html);

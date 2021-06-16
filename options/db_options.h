@@ -33,6 +33,7 @@ struct ImmutableDBOptions {
   int max_file_opening_threads;
   std::shared_ptr<Statistics> statistics;
   bool use_fsync;
+  bool allow_fdatasync = true;
   std::vector<DbPath> db_paths;
   std::string db_log_dir;
   std::string wal_dir;
@@ -92,6 +93,7 @@ struct ImmutableDBOptions {
   int max_bgerror_resume_count;
   uint64_t bgerror_resume_retry_interval;
   bool allow_data_in_errors;
+  const class JsonPluginRepo* plugin_repo;
   std::string db_host_id;
 };
 
@@ -107,6 +109,7 @@ struct MutableDBOptions {
   int base_background_compactions;
   int max_background_compactions;
   uint32_t max_subcompactions;
+  uint32_t max_level1_subcompactions;
   bool avoid_flush_during_shutdown;
   size_t writable_file_max_buffer_size;
   uint64_t delayed_write_rate;

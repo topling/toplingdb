@@ -825,6 +825,7 @@ ImmutableCFOptions::ImmutableCFOptions(const ImmutableDBOptions& db_options,
       purge_redundant_kvs_while_flush(
           cf_options.purge_redundant_kvs_while_flush),
       use_fsync(db_options.use_fsync),
+      allow_fdatasync(db_options.allow_fdatasync),
       compression_per_level(cf_options.compression_per_level),
       level_compaction_dynamic_level_bytes(
           cf_options.level_compaction_dynamic_level_bytes),
@@ -845,7 +846,9 @@ ImmutableCFOptions::ImmutableCFOptions(const ImmutableDBOptions& db_options,
       compaction_thread_limiter(cf_options.compaction_thread_limiter),
       file_checksum_gen_factory(db_options.file_checksum_gen_factory.get()),
       sst_partitioner_factory(cf_options.sst_partitioner_factory),
+      compaction_executor_factory(cf_options.compaction_executor_factory),
       allow_data_in_errors(db_options.allow_data_in_errors),
+      plugin_repo(db_options.plugin_repo),
       db_host_id(db_options.db_host_id) {}
 
 // Multiple two operands. If they overflow, return op1.

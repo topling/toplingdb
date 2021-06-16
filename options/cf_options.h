@@ -89,6 +89,8 @@ struct ImmutableCFOptions {
 
   bool use_fsync;
 
+  bool allow_fdatasync;
+
   std::vector<CompressionType> compression_per_level;
 
   bool level_compaction_dynamic_level_bytes;
@@ -123,7 +125,11 @@ struct ImmutableCFOptions {
 
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory;
 
+  std::shared_ptr<class CompactionExecutorFactory> compaction_executor_factory;
+
   bool allow_data_in_errors;
+
+  const class JsonPluginRepo* plugin_repo;
 
   std::string db_host_id;
 };

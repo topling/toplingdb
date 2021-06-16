@@ -714,6 +714,7 @@ Status DBTestBase::TryReopen(const Options& options) {
   // clears the block cache.
   last_options_ = options;
   MaybeInstallTimeElapseOnlySleep(options);
+  system(("mkdir -p " + dbname_).c_str());
   return DB::Open(options, dbname_, &db_);
 }
 

@@ -246,7 +246,10 @@ Compaction::Compaction(VersionStorageInfo* vstorage,
     compaction_reason_ = CompactionReason::kManualCompaction;
   }
   if (max_subcompactions_ == 0) {
-    max_subcompactions_ = _mutable_db_options.max_subcompactions;
+    if (1 == output_level_ && _mutable_db_options.max_level1_subcompactions)
+      max_subcompactions_ = _mutable_db_options.max_level1_subcompactions;
+    else
+      max_subcompactions_ = _mutable_db_options.max_subcompactions;
   }
 
 #ifndef NDEBUG

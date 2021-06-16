@@ -53,7 +53,6 @@ class TransactionBaseImpl : public Transaction {
 
   Status PopSavePoint() override;
 
-  using Transaction::Get;
   Status Get(const ReadOptions& options, ColumnFamilyHandle* column_family,
              const Slice& key, std::string* value) override;
 
@@ -62,6 +61,10 @@ class TransactionBaseImpl : public Transaction {
 
   Status Get(const ReadOptions& options, const Slice& key,
              std::string* value) override {
+    return Get(options, db_->DefaultColumnFamily(), key, value);
+  }
+  Status Get(const ReadOptions& options, const Slice& key,
+             PinnableSlice* value) override {
     return Get(options, db_->DefaultColumnFamily(), key, value);
   }
 

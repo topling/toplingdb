@@ -27,6 +27,9 @@ struct CompactionFilterContext {
   // Is this compaction requested by the client (true),
   // or is it occurring as an automatic compaction process
   bool is_manual_compaction;
+  // Which column family this compaction is for.
+  //uint16_t sub_compact_idx;
+  uint32_t column_family_id;
 };
 
 // CompactionFilter allows an application to modify/delete a key-value at
@@ -52,15 +55,7 @@ class CompactionFilter {
   enum class BlobDecision { kKeep, kChangeValue, kCorruption, kIOError };
 
   // Context information of a compaction run
-  struct Context {
-    // Does this compaction run include all data files
-    bool is_full_compaction;
-    // Is this compaction requested by the client (true),
-    // or is it occurring as an automatic compaction process
-    bool is_manual_compaction;
-    // Which column family this compaction is for.
-    uint32_t column_family_id;
-  };
+  typedef CompactionFilterContext Context;
 
   virtual ~CompactionFilter() {}
 

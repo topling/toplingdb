@@ -140,12 +140,16 @@ endif
 # In that case, the compiler default (`-O0` for gcc and clang) will be used.
 OPT += $(OPTIMIZE_LEVEL)
 
+ifeq ($(WITH_FRAME_POINTER),1)
+OPT += -fno-omit-frame-pointer
+else
 # compile with -O2 if debug level is not 2
 ifneq ($(DEBUG_LEVEL), 2)
 OPT += -fno-omit-frame-pointer
 # Skip for archs that don't support -momit-leaf-frame-pointer
 ifeq (,$(shell $(CXX) -fsyntax-only -momit-leaf-frame-pointer -xc /dev/null 2>&1))
 OPT += -momit-leaf-frame-pointer
+endif
 endif
 endif
 
@@ -216,6 +220,7 @@ endif
 
 #-----------------------------------------------
 include src.mk
+LIB_SOURCES += ${EXTRA_LIB_SOURCES}
 
 AM_DEFAULT_VERBOSITY ?= 0
 
@@ -253,7 +258,7 @@ LDFLAGS += -lrados
 endif
 
 AM_LINK = $(AM_V_CCLD)$(CXX) -L. $(patsubst lib%.a, -l%, $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^)) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-AM_SHARE = $(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$@ -L. $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^) $(LDFLAGS) -o $@
+AM_SHARE = $(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$@ -L. $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^) $(EXTRA_SHARED_LIB_LIB) $(LDFLAGS) -o $@
 
 # Detect what platform we're building on.
 # Export some common variables that might have been passed as Make variables
@@ -475,6 +480,7 @@ ifeq ($(NO_THREEWAY_CRC32C), 1)
 endif
 
 CFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
+CXXFLAGS += -Isideplugin/rockside/src
 CXXFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT) -Woverloaded-virtual -Wnon-virtual-dtor -Wno-missing-field-initializers
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
@@ -506,8 +512,8 @@ endif
 
 OBJ_DIR?=.
 LIB_OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(LIB_SOURCES))
-ifeq ($(HAVE_POWER8),1)
 LIB_OBJECTS += $(patsubst %.c, $(OBJ_DIR)/%.o, $(LIB_SOURCES_C))
+ifeq ($(HAVE_POWER8),1)
 LIB_OBJECTS += $(patsubst %.S, $(OBJ_DIR)/%.o, $(LIB_SOURCES_ASM))
 endif
 
@@ -827,6 +833,7 @@ STATIC_LIBRARY = ${LIBNAME}$(LIBDEBUG).a
 STATIC_TEST_LIBRARY =  ${LIBNAME}_test$(LIBDEBUG).a
 STATIC_TOOLS_LIBRARY = ${LIBNAME}_tools$(LIBDEBUG).a
 STATIC_STRESS_LIBRARY = ${LIBNAME}_stress$(LIBDEBUG).a
+#$(error LIBDEBUG = ${LIBDEBUG} PLATFORM_SHARED_VERSIONED=${PLATFORM_SHARED_VERSIONED})
 
 ALL_STATIC_LIBS = $(STATIC_LIBRARY) $(STATIC_TEST_LIBRARY) $(STATIC_TOOLS_LIBRARY) $(STATIC_STRESS_LIBRARY)
 
@@ -860,8 +867,8 @@ default: all
 #-----------------------------------------------
 ifneq ($(PLATFORM_SHARED_EXT),)
 
-ifneq ($(PLATFORM_SHARED_VERSIONED),true)
 SHARED1 = ${LIBNAME}$(LIBDEBUG).$(PLATFORM_SHARED_EXT)
+ifneq ($(PLATFORM_SHARED_VERSIONED),true)
 SHARED2 = $(SHARED1)
 SHARED3 = $(SHARED1)
 SHARED4 = $(SHARED1)
@@ -870,7 +877,6 @@ else
 SHARED_MAJOR = $(ROCKSDB_MAJOR)
 SHARED_MINOR = $(ROCKSDB_MINOR)
 SHARED_PATCH = $(ROCKSDB_PATCH)
-SHARED1 = ${LIBNAME}.$(PLATFORM_SHARED_EXT)
 ifeq ($(PLATFORM), OS_MACOSX)
 SHARED_OSX = $(LIBNAME)$(LIBDEBUG).$(SHARED_MAJOR)
 SHARED2 = $(SHARED_OSX).$(PLATFORM_SHARED_EXT)
@@ -891,7 +897,7 @@ $(SHARED3): $(SHARED4)
 
 endif   # PLATFORM_SHARED_VERSIONED
 $(SHARED4): $(LIB_OBJECTS)
-	$(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(LIB_OBJECTS) $(LDFLAGS) -o $@
+	$(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(LIB_OBJECTS) $(EXTRA_SHARED_LIB_LIB) $(LDFLAGS) -o $@
 endif  # PLATFORM_SHARED_EXT
 
 .PHONY: blackbox_crash_test check clean coverage crash_test ldb_tests package \
@@ -1421,6 +1427,14 @@ librocksdb_env_basic_test.a: $(OBJ_DIR)/env/env_basic_test.o $(LIB_OBJECTS) $(TE
 
 db_bench: $(OBJ_DIR)/tools/db_bench.o $(BENCH_OBJECTS) $(TESTUTIL) $(LIBRARY)
 	$(AM_LINK)
+ifeq (${DEBUG_LEVEL},2)
+db_bench_dbg: $(OBJ_DIR)/tools/db_bench.o $(BENCH_OBJECTS) $(TESTUTIL) $(LIBRARY)
+	$(AM_LINK)
+endif
+ifeq (${DEBUG_LEVEL},0)
+db_bench_rls: $(OBJ_DIR)/tools/db_bench.o $(BENCH_OBJECTS) $(TESTUTIL) $(LIBRARY)
+	$(AM_LINK)
+endif
 
 trace_analyzer: $(OBJ_DIR)/tools/trace_analyzer.o $(ANALYZE_OBJECTS) $(TOOLS_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
@@ -2030,6 +2044,51 @@ io_tracer_parser_test: $(OBJ_DIR)/tools/io_tracer_parser_test.o $(OBJ_DIR)/tools
 	$(AM_LINK)
 
 io_tracer_parser: $(OBJ_DIR)/tools/io_tracer_parser.o $(TOOLS_LIBRARY) $(LIBRARY)
+#--------------------------------------------------
+ifndef ROCKSDB_USE_LIBRADOS
+  AUTO_ALL_EXCLUDE_SRC += utilities/env_librados_test.cc
+endif
+
+AUTO_ALL_TESTS_SRC := $(shell find * -name '*_test.cc' -not -path 'java/*') ${EXTRA_TESTS_SRC}
+AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC})
+AUTO_ALL_TESTS_OBJ := $(addprefix $(OBJ_DIR)/,$(AUTO_ALL_TESTS_SRC:%.cc=%.o))
+AUTO_ALL_TESTS_EXE := $(AUTO_ALL_TESTS_OBJ:%.o=%)
+
+define LN_TEST_TARGET
+t${DEBUG_LEVEL}/${1}: ${2}
+	mkdir -p $(dir $$@) && ln -sf `realpath ${2}` $$@
+
+endef
+#intentional one blank line above
+
+.PHONY: auto_all_tests
+auto_all_tests: ${AUTO_ALL_TESTS_EXE}
+
+$(OBJ_DIR)/tools/%_test: $(OBJ_DIR)/tools/%_test.o \
+                         ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/%_test: $(OBJ_DIR)/%_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(eval $(foreach test,${AUTO_ALL_TESTS_EXE},$(call LN_TEST_TARGET,$(notdir ${test}),${test})))
+
+$(OBJ_DIR)/tools/db_bench_tool_test : \
+$(OBJ_DIR)/tools/db_bench_tool_test.o \
+                         ${BENCH_OBJECTS} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/tools/trace_analyzer_test : \
+$(OBJ_DIR)/tools/trace_analyzer_test.o \
+      ${ANALYZE_OBJECTS} ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test : \
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test.o \
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/%: $(OBJ_DIR)/%.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 #-------------------------------------------------
@@ -2437,7 +2496,7 @@ $(OBJ_DIR)/%.o: %.cpp
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.o: %.c
-	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -c $< -o $@
 endif
 
 # ---------------------------------------------------------------------------
@@ -2445,7 +2504,7 @@ endif
 # ---------------------------------------------------------------------------
 
 DEPFILES = $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, $(ALL_SOURCES))
-DEPFILES+ = $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C) $(TEST_MAIN_SOURCES_C))
+DEPFILES += $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C) $(TEST_MAIN_SOURCES_C))
 ifeq ($(USE_FOLLY_DISTRIBUTED_MUTEX),1)
   DEPFILES +=$(patsubst %.cpp, $(OBJ_DIR)/%.cpp.d, $(FOLLY_SOURCES))
 endif

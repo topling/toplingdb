@@ -84,7 +84,7 @@ else()
 endif()
 
 if( NOT DEFINED CMAKE_CXX_STANDARD )
-  set(CMAKE_CXX_STANDARD 11)
+  set(CMAKE_CXX_STANDARD 14)
 endif()
 
 include(CMakeDependentOption)
@@ -170,6 +170,8 @@ else()
   endif()
 endif()
 
+include_directories(sideplugin/rockside/src)
+
 string(TIMESTAMP TS "%Y/%m/%d %H:%M:%S" UTC)
 set(GIT_DATE_TIME "${TS}" CACHE STRING "the time we first built rocksdb")
 
@@ -203,6 +205,11 @@ add_library(build_version OBJECT ${BUILD_VERSION_CC})
 target_include_directories(build_version PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/util)
 if(MSVC)
+  if(MSVC_VERSION LESS 1926)
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /experimental:preprocessor")
+  else()
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:preprocessor")
+  endif()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /EHsc /GS /Gd /GR /GF /fp:precise /Zc:wchar_t /Zc:forScope /errorReport:queue")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /d2Zi+ /W4 /wd4127 /wd4800 /wd4996 /wd4351 /wd4100 /wd4204 /wd4324")
 else()
@@ -582,6 +589,7 @@ set(SOURCES
         db/c.cc
         db/column_family.cc
         db/compacted_db_impl.cc
+        db/compaction/compaction_executor.cc
         db/compaction/compaction.cc
         db/compaction/compaction_iterator.cc
         db/compaction/compaction_picker.cc
@@ -790,6 +798,18 @@ set(SOURCES
         utilities/env_timed.cc
         utilities/fault_injection_env.cc
         utilities/fault_injection_fs.cc
+        sideplugin/rockside/src/topling/json.h
+        sideplugin/rockside/src/topling/json_fwd.h
+        sideplugin/rockside/src/topling/builtin_db_open.cc
+        sideplugin/rockside/src/topling/builtin_plugin_misc.cc
+        sideplugin/rockside/src/topling/builtin_table_factory.cc
+        sideplugin/rockside/src/topling/builtin_table_factory.h
+        sideplugin/rockside/src/topling/side_plugin_repo.cc
+        sideplugin/rockside/src/topling/side_plugin_repo.h
+        sideplugin/rockside/src/topling/web/json_civetweb.cc
+        sideplugin/rockside/src/topling/web/civetweb.c
+        sideplugin/rockside/src/topling/web/CivetServer.cc
+        sideplugin/rockside/src/topling/internal_dispather_table.h
         utilities/leveldb_options/leveldb_options.cc
         utilities/memory/memory_util.cc
         utilities/merge_operators/bytesxor.cc

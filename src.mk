@@ -19,6 +19,7 @@ LIB_SOURCES =                                                   \
   db/column_family.cc                                           \
   db/compacted_db_impl.cc                                       \
   db/compaction/compaction.cc                                   \
+  db/compaction/compaction_executor.cc                          \
   db/compaction/compaction_iterator.cc                          \
   db/compaction/compaction_job.cc                               \
   db/compaction/compaction_picker.cc                            \
@@ -231,6 +232,12 @@ LIB_SOURCES =                                                   \
   utilities/env_timed.cc                                        \
   utilities/fault_injection_env.cc                              \
   utilities/fault_injection_fs.cc                               \
+  sideplugin/rockside/src/topling/builtin_db_open.cc            \
+  sideplugin/rockside/src/topling/builtin_plugin_misc.cc        \
+  sideplugin/rockside/src/topling/builtin_table_factory.cc      \
+  sideplugin/rockside/src/topling/side_plugin_repo.cc           \
+  sideplugin/rockside/src/topling/web/json_civetweb.cc          \
+  sideplugin/rockside/src/topling/web/CivetServer.cc            \
   utilities/leveldb_options/leveldb_options.cc                  \
   utilities/memory/memory_util.cc                               \
   utilities/merge_operators/max.cc                              \
@@ -299,6 +306,7 @@ else
 LIB_SOURCES_ASM =
 LIB_SOURCES_C =
 endif
+LIB_SOURCES_C += sideplugin/rockside/src/topling/web/civetweb.c
 
 TOOL_LIB_SOURCES =                                              \
   tools/io_tracer_parser_tool.cc                                \

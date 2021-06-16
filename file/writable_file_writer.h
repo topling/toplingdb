@@ -199,7 +199,7 @@ class WritableFileWriter {
     s.PermitUncheckedError();
   }
 
-  std::string file_name() const { return file_name_; }
+  const std::string& file_name() const { return file_name_; }
 
   IOStatus Append(const Slice& data);
 
@@ -217,6 +217,7 @@ class WritableFileWriter {
   IOStatus SyncWithoutFlush(bool use_fsync);
 
   uint64_t GetFileSize() const { return filesize_; }
+  void SetFileSize(uint64_t fsize) { filesize_ = fsize; }
 
   IOStatus InvalidateCache(size_t offset, size_t length) {
     return writable_file_->InvalidateCache(offset, length);

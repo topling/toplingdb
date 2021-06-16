@@ -191,6 +191,17 @@ void TableProperties::Add(const TableProperties& tp) {
   num_deletions += tp.num_deletions;
   num_merge_operands += tp.num_merge_operands;
   num_range_deletions += tp.num_range_deletions;
+  oldest_key_time = std::min(oldest_key_time, tp.oldest_key_time);
+  auto agg_time = [](uint64_t& x, uint64_t y) {
+    if (y) {
+      if (x)
+        x = std::min(x, y);
+      else
+        x = y;
+    }
+  };
+  //agg_time(creation_time, tp.creation_time);
+  agg_time(file_creation_time, tp.file_creation_time);
 }
 
 std::map<std::string, uint64_t>

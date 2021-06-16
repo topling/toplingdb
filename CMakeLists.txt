@@ -569,8 +569,15 @@ endif()
 find_package(Threads REQUIRED)
 
 # Main library source code
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt)
+  #message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
+  include(${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt)
+else()
+  #message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
+endif()
 
 set(SOURCES
+        ${topling_rocks_src}
         cache/cache.cc
         cache/clock_cache.cc
         cache/lru_cache.cc

@@ -54,8 +54,7 @@ json from_query_string(const char* qry) {
       value_ref.push_back(value);
     }
     else {
-      assert(false);
-      abort();
+      ROCKSDB_DIE("should not goes here");
     }
     qry = sep + 1;
   }

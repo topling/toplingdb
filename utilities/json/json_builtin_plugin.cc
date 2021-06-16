@@ -134,6 +134,7 @@ static Status Json_EventListenerVec(const json& js, const JsonPluginRepo& repo,
 
 struct DBOptions_Json : DBOptions {
   DBOptions_Json(const json& js, const JsonPluginRepo& repo) {
+    write_dbid_to_manifest = true;
     Update(js, repo);
   }
   void Update(const json& js, const JsonPluginRepo& repo) {
@@ -1917,15 +1918,11 @@ static void
 JS_Add_CFPropertiesWebView_Link(json& djs, const DB& db, bool html,
                                 const JsonPluginRepo& repo) {
   auto i1 = repo.m_impl->db.p2name.find(&db);
-  if (repo.m_impl->db.p2name.end() == i1) {
-    abort();
-  }
+  ROCKSDB_VERIFY(repo.m_impl->db.p2name.end() != i1);
   const std::string& db_varname = i1->second.name;
   auto iter = repo.m_impl->props.name2p->find(db_varname + "/default");
   assert(repo.m_impl->props.name2p->end() != iter);
-  if (repo.m_impl->props.name2p->end() == iter) {
-    abort();
-  }
+  ROCKSDB_VERIFY(repo.m_impl->props.name2p->end() != iter);
   auto properties = iter->second;
   ROCKSDB_JSON_SET_FACX(djs, properties, props);
 }
@@ -1936,9 +1933,7 @@ JS_Add_CFPropertiesWebView_Link(json& djs, bool html,
                                 const JsonPluginRepo& repo) {
   auto iter = repo.m_impl->props.name2p->find(dbname + "/" + cfname);
   assert(repo.m_impl->props.name2p->end() != iter);
-  if (repo.m_impl->props.name2p->end() == iter) {
-    abort();
-  }
+  ROCKSDB_VERIFY(repo.m_impl->props.name2p->end() != iter);
   auto properties = iter->second;
   ROCKSDB_JSON_SET_FACX(djs, properties, props);
 }

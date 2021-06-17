@@ -129,7 +129,7 @@ struct ImmutableCFOptions {
 
   bool allow_data_in_errors;
 
-  const class JsonPluginRepo* plugin_repo;
+  const class SidePluginRepo* plugin_repo;
 
   std::string db_host_id;
 };

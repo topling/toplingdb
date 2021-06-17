@@ -1191,7 +1191,7 @@ struct DBOptions {
   // Default: false
   bool allow_data_in_errors = false;
 
-  const class JsonPluginRepo* plugin_repo = nullptr;
+  const class SidePluginRepo* plugin_repo = nullptr;
 
   // A string identifying the machine hosting the DB. This
   // will be written as a property in every SST file written by the DB (or

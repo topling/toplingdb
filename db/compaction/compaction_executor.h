@@ -91,7 +91,7 @@ struct CompactionParams {
   bool bottommost_level;
   bool is_deserialized;
   //std::vector<ObjectRpcParam> event_listner;
-  std::vector<ObjectRpcParam> int_tbl_prop_collector_factories;
+  std::vector<ObjectRpcParam> table_properties_collector_factories;
 };
 
 struct CompactionResults {

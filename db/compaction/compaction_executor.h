@@ -69,7 +69,7 @@ struct CompactionParams {
   std::string db_id;
   std::string db_session_id;
   std::string full_history_ts_low;
-  CompactionJobStats* compaction_job_stats = nullptr;
+  //CompactionJobStats* compaction_job_stats = nullptr; // this is out param
   //SnapshotChecker* snapshot_checker; // not used
   //FSDirectory* db_directory;
   //FSDirectory* output_directory;

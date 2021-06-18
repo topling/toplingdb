@@ -825,7 +825,7 @@ try {
   rpc_params.db_id = this->db_id_;
   rpc_params.db_session_id = this->db_session_id_;
   rpc_params.full_history_ts_low = this->full_history_ts_low_;
-  rpc_params.compaction_job_stats = this->compaction_job_stats_;
+//rpc_params.compaction_job_stats = this->compaction_job_stats_;
   rpc_params.max_subcompactions = num_threads;
 
   const uint64_t start_micros = env_->NowMicros();

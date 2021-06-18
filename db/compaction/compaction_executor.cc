@@ -11,6 +11,7 @@ CompactionParams::CompactionParams() {
 }
 CompactionParams::~CompactionParams() {
   if (is_deserialized) {
+    ROCKSDB_VERIFY(IsCompactionWorker());
     /*
     for (auto& x : *inputs) {
       for (auto& e : x.atomic_compaction_unit_boundaries) {
@@ -19,17 +20,24 @@ CompactionParams::~CompactionParams() {
       }
     }
     */
-    for (auto meta : *grandparents) {
-      delete meta;
-    }
-    delete grandparents;
-    for (auto& level_files : *inputs) {
-      for (auto meta : level_files.files)
+    if (grandparents) {
+      for (auto meta : *grandparents) {
         delete meta;
+      }
+      delete grandparents;
     }
-    delete inputs;
+    if (inputs) {
+      for (auto& level_files : *inputs) {
+        for (auto meta : level_files.files)
+          delete meta;
+      }
+      delete inputs;
+    }
     delete existing_snapshots;
-    delete compaction_job_stats;
+    //delete compaction_job_stats;
+  }
+  else {
+    ROCKSDB_VERIFY(!IsCompactionWorker());
   }
 }
 

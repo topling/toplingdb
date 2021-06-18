@@ -52,7 +52,7 @@ const char* enum_cstr(Enum v, const char* unkown = "") {
   auto values = enum_all_values((Enum*)0);
   for (size_t i = 0; i < names.second; ++i) {
     if (v == values[i])
-      return names.first[i].c_str();
+      return names.first[i].data();
   }
   return unkown;
 }

@@ -92,6 +92,8 @@ struct CompactionParams {
   bool is_deserialized;
   //std::vector<ObjectRpcParam> event_listner;
   std::vector<ObjectRpcParam> table_properties_collector_factories;
+
+  void DebugPrint(FILE*) const;
 };
 
 struct CompactionResults {

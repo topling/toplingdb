@@ -585,7 +585,6 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       max_bgerror_resume_count(options.max_bgerror_resume_count),
       bgerror_resume_retry_interval(options.bgerror_resume_retry_interval),
       allow_data_in_errors(options.allow_data_in_errors),
-      plugin_repo(options.plugin_repo),
       db_host_id(options.db_host_id) {
 }
 

@@ -93,7 +93,6 @@ struct ImmutableDBOptions {
   int max_bgerror_resume_count;
   uint64_t bgerror_resume_retry_interval;
   bool allow_data_in_errors;
-  const class SidePluginRepo* plugin_repo;
   std::string db_host_id;
 };
 

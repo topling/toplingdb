@@ -9,7 +9,6 @@ namespace ROCKSDB_NAMESPACE {
 struct ObjectRpcParam {
   std::string clazz;
   std::string params; // construction json params
-  //std::string serde; // serialized bytes for rpc
   typedef std::function<void(FILE*, const ObjectRpcParam&)> serde_fn_t;
   serde_fn_t serde;
 };

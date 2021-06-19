@@ -55,10 +55,10 @@ void CompactionParams::DebugPrint(FILE* fout) const {
                bottommost_level, enum_cstr(compaction_reason));
   fprintf(fp, "smallest_user_key = %s\n", smallest_user_key.c_str());
   fprintf(fp, "llargest_user_key = %s\n",  largest_user_key.c_str());
-  fprintf(fp, "inputs.size = %zd\n", inputs->size());
   for (size_t i = 0; i < inputs->size(); ++i) {
     auto& l = inputs->at(i);
-    fprintf(fp, "  %zd : level = %d, size = %3zd\n", i, l.level, l.size());
+    fprintf(fp, "inputs.size = %zd : %zd : level = %d, size = %3zd\n",
+            inputs->size(), i, l.level, l.size());
   }
   if (grandparents) {
     fprintf(fp, "grandparents.size = %zd\n", grandparents->size());

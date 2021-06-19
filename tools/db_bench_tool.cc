@@ -4194,6 +4194,8 @@ class Benchmark {
         db->opt_txn_db = tdb;
         db->db = tdb->GetBaseDB();
       }
+      db->num_created = FLAGS_num_column_families;
+      db->num_hot = FLAGS_num_column_families;
       DBOptions dbo = db->db->GetDBOptions();
       dbstats = dbo.statistics;
       FLAGS_db = db->db->GetName();

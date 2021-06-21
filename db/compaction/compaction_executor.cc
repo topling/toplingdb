@@ -104,7 +104,8 @@ struct MyVersionSet : VersionSet {
     min_log_number_to_keep_2pc_ = version_set.min_log_number_to_keep_2pc;
     manifest_file_number_ = version_set.manifest_file_number;
     options_file_number_ = version_set.options_file_number;
-    pending_manifest_file_number_ = version_set.pending_manifest_file_number;
+    //pending_manifest_file_number_ is temporal on running, do NOT serilize!
+    //pending_manifest_file_number_ = version_set.pending_manifest_file_number;
     prev_log_number_ = version_set.prev_log_number;
     current_version_number_ = version_set.current_version_number;
   }
@@ -118,7 +119,8 @@ struct MyVersionSet : VersionSet {
     version_set.min_log_number_to_keep_2pc = min_log_number_to_keep_2pc_;
     version_set.manifest_file_number = manifest_file_number_;
     version_set.options_file_number = options_file_number_;
-    version_set.pending_manifest_file_number = pending_manifest_file_number_;
+    //pending_manifest_file_number_ is temporal on running, do NOT serilize!
+    //version_set.pending_manifest_file_number = pending_manifest_file_number_;
     version_set.prev_log_number = prev_log_number_;
     version_set.current_version_number = current_version_number_;
   }

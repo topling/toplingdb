@@ -20,7 +20,7 @@ struct VersionSetSerDe {
   uint64_t min_log_number_to_keep_2pc;
   uint64_t manifest_file_number;
   uint64_t options_file_number;
-  uint64_t pending_manifest_file_number;
+  //uint64_t pending_manifest_file_number;
   uint64_t prev_log_number;
   uint64_t current_version_number;
   void From(const VersionSet*);

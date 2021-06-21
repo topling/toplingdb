@@ -625,7 +625,7 @@ inline std::string CompressionOptionsToString(
       .append(ToString(compression_options.zstd_max_train_bytes))
       .append("; ");
   result.append("enabled=")
-      .append(ToString(compression_options.enabled))
+      .append(ToString(int(compression_options.enabled)))
       .append("; ");
   return result;
 }

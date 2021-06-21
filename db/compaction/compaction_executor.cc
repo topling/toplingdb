@@ -37,7 +37,7 @@ CompactionParams::~CompactionParams() {
     //delete compaction_job_stats;
   }
   else {
-    ROCKSDB_VERIFY(!IsCompactionWorker());
+    //ROCKSDB_VERIFY(!IsCompactionWorker());
   }
 }
 

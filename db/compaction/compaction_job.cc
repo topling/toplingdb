@@ -878,6 +878,7 @@ try {
     }
   }
 
+  long long rename_t0 = env_->NowMicros();
   size_t out_raw_bytes = 0;
   for (size_t i = 0; i < num_threads; ++i) {
     auto& sub_state = compact_->sub_compact_states[i];
@@ -887,7 +888,7 @@ try {
       auto path_id = c->output_path_id();
       uint64_t file_number = versions_->NewFileNumber();
       std::string new_fname = TableFileName(cf_paths, file_number, path_id);
-      Status st = imm_cfo->env->RenameFile(old_fname, new_fname);
+      Status st = env_->RenameFile(old_fname, new_fname);
       if (!st.ok()) {
         ROCKS_LOG_ERROR(db_options_.info_log, "rename(%s, %s) = %s",
             old_fname.c_str(), new_fname.c_str(), st.ToString().c_str());
@@ -929,6 +930,7 @@ try {
     compact_->num_output_records += sub_state.num_output_records;
   }
   compact_->compaction->SetOutputTableProperties(std::move(tp_map));
+  long long rename_t1 = env_->NowMicros();
 
   {
     Compaction::InputLevelSummaryBuffer inputs_summary; // NOLINT
@@ -937,16 +939,16 @@ try {
     ROCKS_LOG_INFO(db_options_.info_log,
       "[%s] [JOB %d] Dcompacted %s [%zd] => time sec: "
       "curl = %6.3f, mount = %6.3f, prepare = %6.3f, "
-      "wait = %6.3f, work = %6.3f, e2e = %6.3f, "
-      "out zip = %6.3f GB %8.3f MB/sec, "
-      "out raw = %6.3f GB %8.3f MB/sec",
+      "wait = %6.3f, work = %6.3f, e2e = %6.3f, rename = %6.3f, "
+      "out zip = %9.6f GB %8.3f MB/sec, "
+      "out raw = %9.6f GB %8.3f MB/sec",
       c->column_family_data()->GetName().c_str(), job_id_,
       c->InputLevelSummary(&inputs_summary), compact_->num_output_files,
       rpc_results.curl_time_usec/1e6,
       rpc_results.mount_time_usec/1e6,
       rpc_results.prepare_time_usec/1e6,
       (elapsed_us - work_time_us)/1e6, // wait is non-work
-      work_time_us/1e6, elapsed_us/1e6,
+      work_time_us/1e6, elapsed_us/1e6, (rename_t1 - rename_t0)/1e9,
       compact_->total_bytes/1e9, compact_->total_bytes/work_time_us,
       out_raw_bytes/1e9, out_raw_bytes/work_time_us);
   }

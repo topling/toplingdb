@@ -68,4 +68,6 @@ class Cleanable {
   }
 };
 
+bool IsCompactionWorker();
+
 }  // namespace ROCKSDB_NAMESPACE

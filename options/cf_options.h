@@ -91,6 +91,8 @@ struct ImmutableCFOptions {
 
   bool use_fsync;
 
+  bool allow_fdatasync;
+
   std::vector<CompressionType> compression_per_level;
 
   bool level_compaction_dynamic_level_bytes;
@@ -124,6 +126,8 @@ struct ImmutableCFOptions {
   FileChecksumGenFactory* file_checksum_gen_factory;
 
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory;
+
+  std::shared_ptr<class CompactionExecutorFactory> compaction_executor_factory;
 
   bool allow_data_in_errors;
 

@@ -127,6 +127,8 @@ class HistogramImpl : public Histogram {
   virtual void Add(uint64_t value) override;
   virtual void Merge(const Histogram& other) override;
   void Merge(const HistogramImpl& other);
+  void Merge(const HistogramStat& stats);
+  const HistogramStat& GetHistogramStat() const { return stats_; }
 
   virtual std::string ToString() const override;
   virtual const char* Name() const override { return "HistogramImpl"; }

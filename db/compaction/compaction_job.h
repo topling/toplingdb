@@ -107,6 +107,10 @@ class CompactionJob {
   // Return the IO status
   IOStatus io_status() const { return io_status_; }
 
+  void GetSubCompactOutputs(std::vector<std::vector<const FileMetaData*> >*) const;
+  CompactionJobStats* GetCompactionJobStats() const { return compaction_job_stats_; }
+  const InternalStats::CompactionStats& GetCompactionStats() const { return compaction_stats_; }
+
  private:
   struct SubcompactionState;
 
@@ -124,7 +128,7 @@ class CompactionJob {
   void AllocateCompactionOutputFileNumbers();
   // Call compaction filter. Then iterate through input and compact the
   // kv-pairs
-  void ProcessKeyValueCompaction(SubcompactionState* sub_compact);
+  void ProcessKeyValueCompaction(size_t thread_idx);
 
   Status FinishCompactionOutputFile(
       const Status& input_status, SubcompactionState* sub_compact,
@@ -145,6 +149,9 @@ class CompactionJob {
       int* num_files, uint64_t* bytes_read, int input_level);
 
   void LogCompaction();
+
+  Status RunLocal();
+  Status RunRemote();
 
   int job_id_;
 

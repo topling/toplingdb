@@ -136,6 +136,11 @@ else
 	OPTIMIZE_LEVEL ?= -Os
 endif
 endif
+
+ifeq ($(DEBUG_LEVEL), 0)
+	OPTIMIZE_LEVEL := -Og
+endif
+
 # `OPTIMIZE_LEVEL` is empty when the user does not set it and `DEBUG_LEVEL=2`.
 # In that case, the compiler default (`-O0` for gcc and clang) will be used.
 OPT += $(OPTIMIZE_LEVEL)
@@ -295,8 +300,8 @@ $(foreach path, $(missing_make_config_paths), \
 ifeq ($(PLATFORM), OS_AIX)
 # no debug info
 else ifneq ($(PLATFORM), IOS)
-CFLAGS += -g
-CXXFLAGS += -g
+CFLAGS += -gdwarf -g3
+CXXFLAGS += -gdwarf -g3
 else
 # no debug info for IOS, that will make our library big
 OPT += -DNDEBUG

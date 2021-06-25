@@ -585,7 +585,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
   InternalKey internal_key(key, s, type);
   Slice key_slice = internal_key.Encode();
   if (kv_prot_info != nullptr) {
-    //TEST_SYNC_POINT_CALLBACK("MemTable::Add:Encoded", &encoded);
+    TEST_SYNC_POINT_CALLBACK("MemTable::Add:Encoded", &key_slice);
     Status status = VerifyEncodedEntry(key_slice, value, *kv_prot_info);
     if (!status.ok()) {
       return status;

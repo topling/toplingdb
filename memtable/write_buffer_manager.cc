@@ -48,6 +48,14 @@ struct WriteBufferManager::CacheRep {
 struct WriteBufferManager::CacheRep {};
 #endif  // ROCKSDB_LITE
 
+static const std::shared_ptr<Cache> g_null_cache;
+const std::shared_ptr<Cache>& WriteBufferManager::GetCache() const {
+  if (cache_rep_)
+    return cache_rep_->cache_;
+  else
+    return g_null_cache;
+}
+
 WriteBufferManager::WriteBufferManager(size_t _buffer_size,
                                        std::shared_ptr<Cache> cache)
     : buffer_size_(_buffer_size),

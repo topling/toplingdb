@@ -99,6 +99,8 @@ class WriteBufferManager {
     mutable_limit_.store(new_size * 7 / 8, std::memory_order_relaxed);
   }
 
+  const std::shared_ptr<Cache>& GetCache() const;
+
  private:
   std::atomic<size_t> buffer_size_;
   std::atomic<size_t> mutable_limit_;

@@ -589,7 +589,15 @@ else()
   #message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
 endif()
 
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)
+  #message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
+  include(${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)
+else()
+  #message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
+endif()
+
 set(SOURCES
+        ${rockside_src}
         ${topling_rocks_src}
         cache/cache.cc
         cache/clock_cache.cc

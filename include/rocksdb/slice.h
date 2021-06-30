@@ -265,6 +265,13 @@ inline bool operator<(const Slice& x, const Slice& y) {
   return x.compare(y) < 0;
 }
 
+inline std::string operator+(const Slice& x, const Slice& y) {
+  std::string z; z.reserve(x.size_ + y.size_);
+  z.append(x.data_, x.size_);
+  z.append(y.data_, y.size_);
+  return z;
+}
+
 inline size_t Slice::difference_offset(const Slice& b) const {
   size_t off = 0;
   const size_t len = (size_ < b.size_) ? size_ : b.size_;

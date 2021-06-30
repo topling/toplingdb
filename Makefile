@@ -198,7 +198,10 @@ endif
 
 #-----------------------------------------------
 include src.mk
-LIB_SOURCES += ${EXTRA_LIB_SOURCES}
+
+# prepend EXTRA_LIB_SOURCES to LIB_SOURCES because
+# EXTRA_LIB_SOURCES single file compiling is slow
+LIB_SOURCES := ${EXTRA_LIB_SOURCES} ${LIB_SOURCES}
 
 AM_DEFAULT_VERBOSITY ?= 0
 

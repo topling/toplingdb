@@ -270,7 +270,7 @@ $(info $(shell $(CXX) --version))
 endif
 
 missing_make_config_paths := $(shell				\
-	grep "\./\S*\|/\S*" -o $(CURDIR)/make_config.mk | 	\
+	egrep "\.+/\S*|([a-z_]*)/\S*" -o $(CURDIR)/make_config.mk | 	\
 	while read path;					\
 		do [ -e $$path ] || echo $$path; 		\
 	done | sort | uniq)

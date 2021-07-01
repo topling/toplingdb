@@ -550,7 +550,7 @@ MemTable::MemTableStats MemTable::ApproximateStats(const Slice& start_ikey,
 // encoded just contains key
 Status MemTable::VerifyEncodedEntry(Slice ikey, Slice value,
                                     const ProtectionInfoKVOTS64& kv_prot_info) {
-  uint32_t ikey_len = ikey.size();
+  size_t ikey_len = ikey.size();
   size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
   if (ikey_len < 8 + ts_sz) {
     return Status::Corruption("Internal key length too short");

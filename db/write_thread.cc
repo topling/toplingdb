@@ -16,7 +16,7 @@
   #include <sys/syscall.h>   /* For SYS_xxx definitions */
   #include <sys/time.h>
 //template<class Type>
-inline int //typename std::enable_if<sizeof(Type) == 4, int>::type
+inline long //typename std::enable_if<sizeof(Type) == 4, int>::type
 futex(void* uaddr, uint32_t op, uint32_t val, const timespec* timeout = NULL,
       void* uaddr2 = NULL, uint32_t val3 = 0) {
   return syscall(SYS_futex, uaddr, (unsigned long)op, (unsigned long)val,

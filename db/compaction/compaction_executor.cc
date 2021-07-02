@@ -84,6 +84,20 @@ void CompactionParams::DebugPrint(FILE* fout) const {
 #endif
 }
 
+// res[0] : raw
+// res[1] : zip
+void CompactionParams::InputBytes(size_t* res) const {
+  size_t raw = 0, zip = 0;
+  for (auto& eachlevel : *inputs) {
+    for (auto& eachfile : eachlevel.files) {
+      zip += eachfile->fd.file_size;
+      raw += eachfile->raw_key_size + eachfile->raw_value_size;
+    }
+  }
+  res[0] = raw;
+  res[1] = zip;
+}
+
 CompactionResults::CompactionResults() {
   curl_time_usec = 0;
   wait_time_usec = 0;

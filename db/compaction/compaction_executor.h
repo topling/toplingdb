@@ -93,6 +93,7 @@ struct CompactionParams {
   std::vector<ObjectRpcParam> table_properties_collector_factories;
 
   void DebugPrint(FILE*) const;
+  void InputBytes(size_t* res) const;
 };
 
 struct CompactionResults {

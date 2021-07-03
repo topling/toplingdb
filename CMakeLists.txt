@@ -582,19 +582,19 @@ endif()
 find_package(Threads REQUIRED)
 
 # Main library source code
-if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt)
-  #message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt)
+  message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DJSON_USE_GOLD_HASH_MAP")
-  include(${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt)
+  include(${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt)
 else()
-  #message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
 endif()
 
 if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)
-  #message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
+  message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
   include(${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)
 else()
-  #message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
 endif()
 
 set(SOURCES

@@ -62,8 +62,11 @@ struct CompactionParams {
   //VersionSet* version_set;
   SequenceNumber preserve_deletes_seqnum;
   const std::vector<SequenceNumber>* existing_snapshots = nullptr;
+  SequenceNumber smallest_seqno;
   SequenceNumber earliest_write_conflict_snapshot;
   bool paranoid_file_checks;
+  std::string hoster_root;
+  std::string instance_name;
   std::string dbname;
   std::string db_id;
   std::string db_session_id;

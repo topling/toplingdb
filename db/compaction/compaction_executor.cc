@@ -59,6 +59,10 @@ void CompactionParams::DebugPrint(FILE* fout) const {
     auto& l = inputs->at(i);
     fprintf(fp, "inputs.size = %zd : %zd : level = %d, size = %3zd\n",
             inputs->size(), i, l.level, l.size());
+    for (auto f : l.files) {
+      fprintf(fp, "  %08d.sst : seq = %8zd : %8zd\n", int(f->fd.GetNumber()),
+              size_t(f->fd.smallest_seqno), size_t(f->fd.largest_seqno));
+    }
   }
   if (grandparents) {
     fprintf(fp, "grandparents.size = %zd\n", grandparents->size());

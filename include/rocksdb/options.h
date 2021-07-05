@@ -44,6 +44,7 @@ class ConcurrentTaskLimiter;
 class Env;
 enum InfoLogLevel : unsigned char;
 class SstFileManager;
+struct FileMetaData;
 class FilterPolicy;
 class Logger;
 class MergeOperator;
@@ -1399,7 +1400,7 @@ struct ReadOptions {
   // the table will not be scanned. This option only affects Iterators and has
   // no impact on point lookups.
   // Default: empty (every table will be scanned)
-  std::function<bool(const TableProperties&)> table_filter;
+  std::function<bool(const TableProperties&, const FileMetaData&)> table_filter;
 
   // Needed to support differential snapshots. Has 2 effects:
   // 1) Iterator will skip all internal keys with seqnum < iter_start_seqnum

@@ -30,6 +30,7 @@ struct CompactionFilterContext {
   // Which column family this compaction is for.
   //uint16_t sub_compact_idx;
   uint32_t column_family_id;
+  uint64_t smallest_seqno;
 };
 
 // CompactionFilter allows an application to modify/delete a key-value at

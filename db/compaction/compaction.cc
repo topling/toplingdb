@@ -536,6 +536,7 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter() const {
   context.is_full_compaction = is_full_compaction_;
   context.is_manual_compaction = is_manual_compaction_;
   context.column_family_id = cfd_->GetID();
+  context.smallest_seqno = GetSmallestSeqno();
   return cfd_->ioptions()->compaction_filter_factory->CreateCompactionFilter(
       context);
 }
@@ -589,6 +590,16 @@ uint64_t Compaction::MinInputFileOldestAncesterTime() const {
 
 int Compaction::GetInputBaseLevel() const {
   return input_vstorage_->base_level();
+}
+
+uint64_t Compaction::GetSmallestSeqno() const {
+  uint64_t smallest_seqno = UINT64_MAX;
+  for (auto& eachlevel : inputs_) {
+    for (auto& eachfile : eachlevel.files)
+      if (smallest_seqno > eachfile->fd.smallest_seqno)
+          smallest_seqno = eachfile->fd.smallest_seqno;
+  }
+  return smallest_seqno;
 }
 
 }  // namespace ROCKSDB_NAMESPACE

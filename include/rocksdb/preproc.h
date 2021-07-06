@@ -1,6 +1,7 @@
 // created by leipeng at 2019-10-17
 // clang-format off
 #pragma once
+#include "rocksdb_namespace.h"
 
 #define ROCKSDB_PP_EMPTY
 #define ROCKSDB_PP_APPLY(func, ...) func(__VA_ARGS__)
@@ -519,5 +520,23 @@
 // _AL: Align, _NA: Not Align
 #define ROCKSDB_VERIFY_AL(x,a) ROCKSDB_VERIFY_F((x) % (a) == 0, "%lld %% %lld = %lld", (long long)(x), (long long)(a), (long long)((x) % (a)))
 #define ROCKSDB_VERIFY_NA(x,a) ROCKSDB_VERIFY_F((x) % (a) != 0, "%lld", (long long)(x))
+
+namespace ROCKSDB_NAMESPACE {
+	template<class Func>
+	class OnScopeExit {
+		const Func& on_exit;
+	public:
+		OnScopeExit(const Func& f) : on_exit(f) {}
+		~OnScopeExit() { on_exit(); }
+	};
+
+} // namespace ROCKSDB_NAMESPACE
+
+#define ROCKSDB_SCOPE_EXIT(...) \
+    auto ROCKSDB_PP_CAT2(func_on_exit_,__LINE__) = [&]() { __VA_ARGS__; }; \
+    ROCKSDB_NAMESPACE::OnScopeExit< \
+decltype(ROCKSDB_PP_CAT2(func_on_exit_,__LINE__))> \
+         ROCKSDB_PP_CAT2(call_on_exit_,__LINE__)   \
+        (ROCKSDB_PP_CAT2(func_on_exit_,__LINE__))
 
 // clang-format on

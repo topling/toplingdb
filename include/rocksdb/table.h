@@ -716,6 +716,8 @@ class TableFactory : public Customizable {
 
   // Return is delete range supported
   virtual bool IsDeleteRangeSupported() const { return false; }
+
+  virtual bool InputCompressionMatchesOutput(const class Compaction*) const;
 };
 
 #ifndef ROCKSDB_LITE

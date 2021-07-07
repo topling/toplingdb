@@ -260,6 +260,11 @@ void HistogramImpl::Merge(const HistogramImpl& other) {
   stats_.Merge(other.stats_);
 }
 
+void HistogramImpl::Merge(const HistogramStat& stats) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stats_.Merge(stats);
+}
+
 double HistogramImpl::Median() const {
   return stats_.Median();
 }

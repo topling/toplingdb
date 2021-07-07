@@ -205,6 +205,20 @@ Status TableCache::FindTable(const ReadOptions& ro,
   return Status::OK();
 }
 
+Status TableCache::FindTable(const ReadOptions& ro,
+                             const InternalKeyComparator& internal_comparator,
+                             const FileDescriptor& fd, Cache::Handle** handle,
+                             const SliceTransform* prefix_extractor,
+                             const bool no_io, bool record_read_stats,
+                             HistogramImpl* file_read_hist, bool skip_filters,
+                             int level, bool prefetch_index_and_filter_in_cache,
+                             size_t max_file_size_for_l0_meta_pin) {
+  return FindTable(ro, file_options_, internal_comparator, fd, handle,
+                   prefix_extractor, no_io, record_read_stats, file_read_hist,
+                   skip_filters, level, prefetch_index_and_filter_in_cache,
+                   max_file_size_for_l0_meta_pin);
+}
+
 InternalIterator* TableCache::NewIterator(
     const ReadOptions& options, const FileOptions& file_options,
     const InternalKeyComparator& icomparator, const FileMetaData& file_meta,
@@ -239,7 +253,7 @@ InternalIterator* TableCache::NewIterator(
   InternalIterator* result = nullptr;
   if (s.ok()) {
     if (options.table_filter &&
-        !options.table_filter(*table_reader->GetTableProperties())) {
+        !options.table_filter(*table_reader->GetTableProperties(), file_meta)) {
       result = NewEmptyInternalIterator<Slice>(arena);
     } else {
       result = table_reader->NewIterator(options, prefix_extractor, arena,

@@ -441,6 +441,8 @@ class DB {
     assert(!pinnable_val.IsPinned());
     auto s = Get(options, column_family, key, &pinnable_val);
     if (s.ok() && pinnable_val.IsPinned()) {
+      value->clear(); // will not free memory, to avoid reserve copy old data
+      value->reserve(pinnable_val.size() + 16); // reserve some extra space
       value->assign(pinnable_val.data(), pinnable_val.size());
     }  // else value is already assigned
     return s;

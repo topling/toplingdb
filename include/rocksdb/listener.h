@@ -58,7 +58,7 @@ struct TableFileCreationInfo : public TableFileCreationBriefInfo {
   std::string file_checksum_func_name;
 };
 
-enum class CompactionReason : int {
+ROCKSDB_ENUM_CLASS(CompactionReason, int,
   kUnknown = 0,
   // [Level] number of L0 files > level0_file_num_compaction_trigger
   kLevelL0FilesNum,
@@ -93,10 +93,10 @@ enum class CompactionReason : int {
   // Compaction due to SST file being too old
   kPeriodicCompaction,
   // total number of compaction reasons, new reasons must be added above this.
-  kNumOfReasons,
-};
+  kNumOfReasons
+);
 
-enum class FlushReason : int {
+ROCKSDB_ENUM_CLASS(FlushReason, int,
   kOthers = 0x00,
   kGetLiveFiles = 0x01,
   kShutDown = 0x02,
@@ -112,28 +112,28 @@ enum class FlushReason : int {
   // When set the flush reason to kErrorRecoveryRetryFlush, SwitchMemtable
   // will not be called to avoid many small immutable memtables.
   kErrorRecoveryRetryFlush = 0xc,
-  kWalFull = 0xd,
-};
+  kWalFull = 0xd
+);
 
 // TODO: In the future, BackgroundErrorReason will only be used to indicate
 // why the BG Error is happening (e.g., flush, compaction). We may introduce
 // other data structure to indicate other essential information such as
 // the file type (e.g., Manifest, SST) and special context.
-enum class BackgroundErrorReason {
+ROCKSDB_ENUM_CLASS(BackgroundErrorReason, int,
   kFlush,
   kCompaction,
   kWriteCallback,
   kMemTable,
   kManifestWrite,
   kFlushNoWAL,
-  kManifestWriteNoWAL,
-};
+  kManifestWriteNoWAL
+);
 
-enum class WriteStallCondition {
+ROCKSDB_ENUM_CLASS(WriteStallCondition, int,
   kNormal,
   kDelayed,
-  kStopped,
-};
+  kStopped
+);
 
 struct WriteStallInfo {
   // the name of the column family
@@ -158,7 +158,7 @@ struct TableFileDeletionInfo {
   Status status;
 };
 
-enum class FileOperationType {
+ROCKSDB_ENUM_CLASS(FileOperationType, int,
   kRead,
   kWrite,
   kTruncate,
@@ -167,7 +167,7 @@ enum class FileOperationType {
   kSync,
   kFsync,
   kRangeSync
-};
+);
 
 struct FileOperationInfo {
   using Duration = std::chrono::nanoseconds;

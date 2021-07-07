@@ -220,6 +220,9 @@ class MergeOperator {
   virtual bool ShouldMerge(const std::vector<Slice>& /*operands*/) const {
     return false;
   }
+
+  // used for distributed compaction
+  virtual void UpdateStats(const Slice& data) {}
 };
 
 // The simpler, associative merge operator.

@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include "rocksdb/slice.h"
+#include "enum_reflection.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -19,12 +20,12 @@ typedef uint64_t SequenceNumber;
 
 const SequenceNumber kMinUnCommittedSeq = 1;  // 0 is always committed
 
-enum class TableFileCreationReason {
+ROCKSDB_ENUM_CLASS(TableFileCreationReason, unsigned char,
   kFlush,
   kCompaction,
   kRecovery,
-  kMisc,
-};
+  kMisc
+);
 
 // The types of files RocksDB uses in a DB directory. (Available for
 // advanced options.)

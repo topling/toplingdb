@@ -41,6 +41,19 @@ CompactionParams::~CompactionParams() {
   }
 }
 
+static void PrintFileMetaData(FILE* fp, const FileMetaData* f) {
+  Slice temperature = enum_name(f->temperature);
+  fprintf(fp,
+    "  %08zd.sst : entries = %zd, del = %zd, rks = %zd, rvs = %zd, "
+    "fsize = %zd : %zd, temp = %.*s, seq = %zd : %zd , rng = %s : %s\n",
+    size_t(f->fd.GetNumber()),
+    size_t(f->num_entries), size_t(f->num_deletions),
+    size_t(f->raw_key_size), size_t(f->raw_value_size),
+    size_t(f->fd.file_size), size_t(f->compensated_file_size),
+    int(temperature.size_), temperature.data_,
+    size_t(f->fd.smallest_seqno), size_t(f->fd.largest_seqno),
+    f->smallest.user_key().data_, f->largest.user_key().data_);
+}
 void CompactionParams::DebugPrint(FILE* fout) const {
 #if defined(_GNU_SOURCE)
   size_t mem_len = 0;
@@ -59,26 +72,15 @@ void CompactionParams::DebugPrint(FILE* fout) const {
     auto& l = inputs->at(i);
     fprintf(fp, "inputs.size = %zd : %zd : level = %d, size = %3zd\n",
             inputs->size(), i, l.level, l.size());
-    for (auto f : l.files) {
-      Slice temperature = enum_name(f->temperature);
-      fprintf(fp,
-        "  %08zd.sst : entries = %zd, del = %zd, rks = %zd, rvs = %zd, "
-        "fsize = %zd : %zd, temp = %.*s, seq = %zd : %zd , rng = %s : %s\n",
-        size_t(f->fd.GetNumber()),
-        size_t(f->num_entries), size_t(f->num_deletions),
-        size_t(f->raw_key_size), size_t(f->raw_value_size),
-        size_t(f->fd.file_size), size_t(f->compensated_file_size),
-        int(temperature.size_), temperature.data_,
-        size_t(f->fd.smallest_seqno), size_t(f->fd.largest_seqno),
-        f->smallest.user_key().data_, f->largest.user_key().data_);
+    for (auto fmd : l.files) {
+      PrintFileMetaData(fp, fmd);
     }
   }
   if (grandparents) {
     fprintf(fp, "grandparents.size = %zd\n", grandparents->size());
     for (size_t i = 0; i < grandparents->size(); ++i) {
       FileMetaData* fmd = grandparents->at(i);
-      fprintf(fp, "  %zd : fnum = %zd : %08zd\n", i,
-              size_t(fmd->fd.GetPathId()), size_t(fmd->fd.GetNumber()));
+      PrintFileMetaData(fp, fmd);
     }
   }
   else {

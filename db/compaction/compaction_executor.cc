@@ -60,8 +60,17 @@ void CompactionParams::DebugPrint(FILE* fout) const {
     fprintf(fp, "inputs.size = %zd : %zd : level = %d, size = %3zd\n",
             inputs->size(), i, l.level, l.size());
     for (auto f : l.files) {
-      fprintf(fp, "  %08d.sst : seq = %8zd : %8zd\n", int(f->fd.GetNumber()),
-              size_t(f->fd.smallest_seqno), size_t(f->fd.largest_seqno));
+      Slice temperature = enum_name(f->temperature);
+      fprintf(fp,
+        "  %08zd.sst : entries = %zd, del = %zd, rks = %zd, rvs = %zd, "
+        "fsize = %zd : %zd, temp = %.*s, seq = %zd : %zd , rng = %s : %s\n",
+        size_t(f->fd.GetNumber()),
+        size_t(f->num_entries), size_t(f->num_deletions),
+        size_t(f->raw_key_size), size_t(f->raw_value_size),
+        size_t(f->fd.file_size), size_t(f->compensated_file_size),
+        int(temperature.size_), temperature.data_,
+        size_t(f->fd.smallest_seqno), size_t(f->fd.largest_seqno),
+        f->smallest.user_key().data_, f->largest.user_key().data_);
     }
   }
   if (grandparents) {

@@ -190,12 +190,12 @@ struct CompressionOptions {
 // placement and/or coding.
 // Reserve some numbers in the middle, in case we need to insert new tier
 // there.
-enum class Temperature : uint8_t {
+ROCKSDB_ENUM_CLASS(Temperature, uint8_t,
   kUnknown = 0,
   kHot = 0x04,
   kWarm = 0x08,
-  kCold = 0x0C,
-};
+  kCold = 0x0C
+);
 
 enum UpdateStatus {    // Return status For inplace update callback
   UPDATE_FAILED   = 0, // Nothing to update

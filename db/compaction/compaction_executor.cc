@@ -67,7 +67,7 @@ static void PrintFileMetaData(FILE* fp, const FileMetaData* f) {
   Slice lo = f->smallest.user_key();
   Slice hi = f->largest.user_key();
   fprintf(fp,
-    "  %08zd.sst : entries = %zd, del = %zd, rks = %zd, rvs = %zd, "
+    "  %06zd.sst : entries = %zd, del = %zd, rks = %zd, rvs = %zd, "
     "fsize = %zd : %zd, temp = %.*s, seq = %zd : %zd, rng = %.*s : %.*s\n",
     size_t(f->fd.GetNumber()),
     size_t(f->num_entries), size_t(f->num_deletions),

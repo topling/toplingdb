@@ -3839,10 +3839,12 @@ Status DBImpl::CheckConsistency() {
       uint64_t fsize = 0;
       TEST_SYNC_POINT("DBImpl::CheckConsistency:BeforeGetFileSize");
       Status s = env_->GetFileSize(file_path, &fsize);
+#ifdef ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
       if (!s.ok() &&
           env_->GetFileSize(Rocks2LevelTableFileName(file_path), &fsize).ok()) {
         s = Status::OK();
       }
+#endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
       if (!s.ok()) {
         corruption_messages +=
             "Can't access " + md.name + ": " + s.ToString() + "\n";

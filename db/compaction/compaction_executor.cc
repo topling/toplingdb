@@ -41,18 +41,41 @@ CompactionParams::~CompactionParams() {
   }
 }
 
+static void PrintVersionSetSerDe(FILE* fp, const VersionSetSerDe& v) {
+  fprintf(fp, "VersionSetSerDe\n");
+  fprintf(fp, "  last_sequence = %zd, "
+              "last_allocated_sequence = %zd, "
+              "last_published_sequence = %zd\n",
+              size_t(v.last_sequence),
+              size_t(v.last_allocated_sequence),
+              size_t(v.last_published_sequence));
+  fprintf(fp, "  next_file_number = %zd, "
+              "min_log_number_to_keep_2pc = %zd, "
+              "manifest_file_number = %zd, "
+              "options_file_number = %zd, "
+              "prev_log_number = %zd, "
+              "current_version_number = %zd\n",
+              size_t(v.next_file_number),
+              size_t(v.min_log_number_to_keep_2pc),
+              size_t(v.manifest_file_number),
+              size_t(v.options_file_number),
+              size_t(v.prev_log_number),
+              size_t(v.current_version_number));
+}
 static void PrintFileMetaData(FILE* fp, const FileMetaData* f) {
   Slice temperature = enum_name(f->temperature);
+  Slice lo = f->smallest.user_key();
+  Slice hi = f->largest.user_key();
   fprintf(fp,
     "  %08zd.sst : entries = %zd, del = %zd, rks = %zd, rvs = %zd, "
-    "fsize = %zd : %zd, temp = %.*s, seq = %zd : %zd , rng = %s : %s\n",
+    "fsize = %zd : %zd, temp = %.*s, seq = %zd : %zd, rng = %.*s : %.*s\n",
     size_t(f->fd.GetNumber()),
     size_t(f->num_entries), size_t(f->num_deletions),
     size_t(f->raw_key_size), size_t(f->raw_value_size),
     size_t(f->fd.file_size), size_t(f->compensated_file_size),
     int(temperature.size_), temperature.data_,
     size_t(f->fd.smallest_seqno), size_t(f->fd.largest_seqno),
-    f->smallest.user_key().data_, f->largest.user_key().data_);
+    int(lo.size_), lo.data_, int(hi.size_), hi.data_);
 }
 void CompactionParams::DebugPrint(FILE* fout) const {
 #if defined(_GNU_SOURCE)
@@ -92,6 +115,7 @@ void CompactionParams::DebugPrint(FILE* fout) const {
   else {
     fprintf(fp, "existing_snapshots = nullptr\n");
   }
+  PrintVersionSetSerDe(fp, version_set);
 #if defined(_GNU_SOURCE)
   fclose(fp);
   fwrite(mem_buf, 1, mem_len, fout);

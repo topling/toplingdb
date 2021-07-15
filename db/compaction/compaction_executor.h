@@ -125,7 +125,6 @@ struct CompactionResults {
   RawStatistics statistics;
   Status status;
   size_t curl_time_usec; // set by CompactionExecutor, not worker
-  size_t wait_time_usec; // wait for schedule
   size_t work_time_usec;
   size_t mount_time_usec; // mount nfs
   size_t prepare_time_usec; // open nfs params/results

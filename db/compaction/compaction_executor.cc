@@ -139,7 +139,6 @@ void CompactionParams::InputBytes(size_t* res) const {
 
 CompactionResults::CompactionResults() {
   curl_time_usec = 0;
-  wait_time_usec = 0;
   work_time_usec = 0;
   mount_time_usec = 0;
   prepare_time_usec = 0;

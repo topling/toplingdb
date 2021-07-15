@@ -95,6 +95,9 @@ struct CompactionParams {
   //std::vector<ObjectRpcParam> event_listner;
   std::vector<ObjectRpcParam> table_properties_collector_factories;
 
+  // CompactionFilterFactory ... can have individual serde files
+  mutable std::vector<std::string> extra_serde_files;
+
   void DebugPrint(FILE*) const;
   void InputBytes(size_t* res) const;
 };

@@ -933,8 +933,9 @@ try {
       TableCache* tc = cfd->table_cache();
       Cache::Handle* ch = nullptr;
       auto& icmp = cfd->internal_comparator();
+      auto& fopt = *cfd->soptions(); // file_options
       auto pref_ext = mut_cfo->prefix_extractor.get();
-      st = tc->FindTable(ReadOptions(), icmp, fd, &ch, pref_ext);
+      st = tc->FindTable(ReadOptions(), fopt, icmp, fd, &ch, pref_ext);
       if (!st.ok()) {
         compact_->status = st;
         return st;

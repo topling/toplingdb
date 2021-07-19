@@ -142,19 +142,6 @@ class TableCache {
                    bool prefetch_index_and_filter_in_cache = true,
                    size_t max_file_size_for_l0_meta_pin = 0);
 
-  // Find table reader
-  // @param skip_filters Disables loading/accessing the filter block
-  // @param level == -1 means not specified
-  Status FindTable(const ReadOptions& ro,
-                   const InternalKeyComparator& internal_comparator,
-                   const FileDescriptor& file_fd, Cache::Handle**,
-                   const SliceTransform* prefix_extractor = nullptr,
-                   const bool no_io = false, bool record_read_stats = true,
-                   HistogramImpl* file_read_hist = nullptr,
-                   bool skip_filters = false, int level = -1,
-                   bool prefetch_index_and_filter_in_cache = true,
-                   size_t max_file_size_for_l0_meta_pin = 0);
-
   // Get TableReader from a cache handle.
   TableReader* GetTableReaderFromHandle(Cache::Handle* handle);
 

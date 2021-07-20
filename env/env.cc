@@ -755,7 +755,9 @@ WritableFile::~WritableFile() {
 
 MemoryMappedFileBuffer::~MemoryMappedFileBuffer() {}
 
-Logger::~Logger() {}
+Logger::~Logger() {
+  ROCKSDB_VERIFY(closed_);
+}
 
 Status Logger::Close() {
   if (!closed_) {

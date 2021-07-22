@@ -77,14 +77,10 @@ static void PrintFileMetaData(FILE* fp, const FileMetaData* f) {
     size_t(f->fd.smallest_seqno), size_t(f->fd.largest_seqno),
     int(lo.size_), lo.data_, int(hi.size_), hi.data_);
 }
-void CompactionParams::DebugPrint(FILE* fout) const {
-#if defined(_GNU_SOURCE)
+std::string CompactionParams::DebugString() const {
   size_t mem_len = 0;
   char*  mem_buf = nullptr;
   FILE*  fp = open_memstream(&mem_buf, &mem_len);
-#else
-  FILE*  fp = fout;
-#endif
   fprintf(fp, "job_id = %d, output_level = %d, dbname = %s, cfname = %s\n",
           job_id, output_level, dbname.c_str(), cf_name.c_str());
   fprintf(fp, "bottommost_level = %d, compaction_reason = %s\n",
@@ -116,11 +112,10 @@ void CompactionParams::DebugPrint(FILE* fout) const {
     fprintf(fp, "existing_snapshots = nullptr\n");
   }
   PrintVersionSetSerDe(fp, version_set);
-#if defined(_GNU_SOURCE)
   fclose(fp);
-  fwrite(mem_buf, 1, mem_len, fout);
+  std::string result(mem_buf, mem_len);
   free(mem_buf);
-#endif
+  return result;
 }
 
 // res[0] : raw

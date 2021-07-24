@@ -898,7 +898,7 @@ try {
     size_t result_sub_num = rpc_results.output_files.size();
     // this will happen, but is rare, log it
     ROCKS_LOG_INFO(db_options_.info_log,
-                   "job-%08d: subcompact num diff: rpc = %zd, local = %zd",
+                   "job-%05d: subcompact num diff: rpc = %zd, local = %zd",
                    job_id_, result_sub_num, num_threads);
     num_threads = result_sub_num;
     auto& sub_vec = compact_->sub_compact_states;

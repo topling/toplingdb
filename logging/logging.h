@@ -25,7 +25,11 @@ inline const char* RocksLogShorterFileName(const char* file)
   // If the name of this file changed, please change this number, too.
   if (auto p = strrchr(file, '/'))
     return p + 1;
-  return file + (sizeof(__FILE__) > 18 ? sizeof(__FILE__) - 18 : 0);
+#ifdef OS_WIN
+  if (auto p = strrchr(file, '\\'))
+    return p + 1;
+#endif
+  return file;
 }
 
 // Don't inclide file/line info in HEADER level

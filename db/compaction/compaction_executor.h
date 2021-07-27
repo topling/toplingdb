@@ -98,6 +98,7 @@ struct CompactionParams {
   // CompactionFilterFactory ... can have individual serde files
   mutable std::vector<std::string> extra_serde_files;
   Logger* info_log = nullptr; // do not serialize, just for running process
+  const std::atomic<bool>* shutting_down = nullptr; // do not serialize
 
   std::string DebugString() const;
   void InputBytes(size_t* res) const;

@@ -951,6 +951,11 @@ try {
       meta.fd = fd;
       meta.smallest = min_meta.smallest_ikey;
       meta.largest = min_meta.largest_ikey;
+      meta.num_deletions = tp->num_deletions;
+      meta.num_entries = tp->num_entries;
+      meta.raw_key_size = tp->raw_key_size;
+      meta.raw_value_size = tp->raw_value_size;
+      meta.marked_for_compaction = min_meta.marked_for_compaction;
       bool enable_order_check = mut_cfo->check_flush_compaction_key_order;
       bool enable_hash = paranoid_file_checks_;
       sub_state.outputs.emplace_back(std::move(meta), icmp,

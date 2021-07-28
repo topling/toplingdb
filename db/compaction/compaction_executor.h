@@ -116,6 +116,7 @@ struct CompactionResults {
     uint64_t    largest_seqno;
     InternalKey smallest_ikey;
     InternalKey largest_ikey;
+    bool marked_for_compaction;
   };
   // collect remote statistics
   struct RawStatistics {

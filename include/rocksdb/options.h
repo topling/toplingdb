@@ -310,6 +310,7 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory = nullptr;
 
   std::shared_ptr<class CompactionExecutorFactory> compaction_executor_factory;
+  std::shared_ptr<class AnyPlugin> html_user_key_coder;
 
   // Create ColumnFamilyOptions with default values for all fields
   ColumnFamilyOptions();

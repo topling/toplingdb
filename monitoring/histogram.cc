@@ -233,7 +233,10 @@ void HistogramStat::Data(HistogramData * const data) const {
   data->standard_deviation = StandardDeviation();
   data->count = num();
   data->sum = sum();
-  data->min = static_cast<double>(min());
+  if (data->count)
+    data->min = static_cast<double>(min());
+  else
+    data->min = 0.0;
 }
 
 void HistogramImpl::Clear() {

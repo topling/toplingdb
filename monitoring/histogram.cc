@@ -65,7 +65,8 @@ void HistogramStat::Clear() {
   sum_.store(0, std::memory_order_relaxed);
   sum_squares_.store(0, std::memory_order_relaxed);
   for (unsigned int b = 0; b < num_buckets_; b++) {
-    buckets_[b].store(0, std::memory_order_relaxed);
+    buckets_[b].cnt.store(0, std::memory_order_relaxed);
+    buckets_[b].sum.store(0, std::memory_order_relaxed);
   }
 };
 
@@ -77,26 +78,22 @@ void HistogramStat::Add(uint64_t value) {
   // by concurrent threads is tolerable.
   const size_t index = bucketMapper.IndexForValue(value);
   assert(index < num_buckets_);
-  buckets_[index].store(buckets_[index].load(std::memory_order_relaxed) + 1,
-                        std::memory_order_relaxed);
+  buckets_[index].cnt.fetch_add(1, std::memory_order_relaxed);
+  buckets_[index].sum.fetch_add(value, std::memory_order_relaxed);
 
-  uint64_t old_min = min();
-  if (value < old_min) {
-    min_.store(value, std::memory_order_relaxed);
-  }
+  uint64_t old_min = min_.load(std::memory_order_relaxed);
+  while (value < old_min &&
+         !min_.compare_exchange_weak(old_min, value,
+                                     std::memory_order_relaxed)) {}
 
-  uint64_t old_max = max();
-  if (value > old_max) {
-    max_.store(value, std::memory_order_relaxed);
-  }
+  uint64_t old_max = max_.load(std::memory_order_relaxed);
+  while (value < old_max &&
+         !max_.compare_exchange_weak(old_max, value,
+                                     std::memory_order_relaxed)) {}
 
-  num_.store(num_.load(std::memory_order_relaxed) + 1,
-             std::memory_order_relaxed);
-  sum_.store(sum_.load(std::memory_order_relaxed) + value,
-             std::memory_order_relaxed);
-  sum_squares_.store(
-      sum_squares_.load(std::memory_order_relaxed) + value * value,
-      std::memory_order_relaxed);
+  num_.fetch_add(1, std::memory_order_relaxed);
+  sum_.fetch_add(value, std::memory_order_relaxed);
+  sum_squares_.fetch_add(value * value, std::memory_order_relaxed);
 }
 
 void HistogramStat::Merge(const HistogramStat& other) {
@@ -106,18 +103,23 @@ void HistogramStat::Merge(const HistogramStat& other) {
   uint64_t old_min = min();
   uint64_t other_min = other.min();
   while (other_min < old_min &&
-         !min_.compare_exchange_weak(old_min, other_min)) {}
+         !min_.compare_exchange_weak(old_min, other_min,
+                                     std::memory_order_relaxed)) {}
 
   uint64_t old_max = max();
   uint64_t other_max = other.max();
   while (other_max > old_max &&
-         !max_.compare_exchange_weak(old_max, other_max)) {}
+         !max_.compare_exchange_weak(old_max, other_max,
+                                     std::memory_order_relaxed)) {}
 
   num_.fetch_add(other.num(), std::memory_order_relaxed);
   sum_.fetch_add(other.sum(), std::memory_order_relaxed);
   sum_squares_.fetch_add(other.sum_squares(), std::memory_order_relaxed);
   for (unsigned int b = 0; b < num_buckets_; b++) {
-    buckets_[b].fetch_add(other.bucket_at(b), std::memory_order_relaxed);
+    auto other_cnt_b = other.buckets_[b].cnt.load(std::memory_order_relaxed);
+    auto other_sum_b = other.buckets_[b].sum.load(std::memory_order_relaxed);
+    buckets_[b].cnt.fetch_add(other_cnt_b, std::memory_order_relaxed);
+    buckets_[b].sum.fetch_add(other_sum_b, std::memory_order_relaxed);
   }
 }
 

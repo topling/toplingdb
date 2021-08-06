@@ -85,7 +85,7 @@ void HistogramStat::Add(uint64_t value) {
                                      std::memory_order_relaxed)) {}
 
   uint64_t old_max = max_.load(std::memory_order_relaxed);
-  while (value < old_max &&
+  while (value > old_max &&
          !max_.compare_exchange_weak(old_max, value,
                                      std::memory_order_relaxed)) {}
 

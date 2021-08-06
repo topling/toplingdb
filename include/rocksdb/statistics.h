@@ -513,7 +513,7 @@ struct HistogramData {
 // types of stats in the stats collection process.
 // Usage:
 //   options.statistics->set_stats_level(StatsLevel::kExceptTimeForMutex);
-enum StatsLevel : uint8_t {
+ROCKSDB_ENUM_PLAIN(StatsLevel, uint8_t,
   // Disable all metrics
   kDisableAll,
   // Disable tickers
@@ -531,8 +531,8 @@ enum StatsLevel : uint8_t {
   // Collect all stats, including measuring duration of mutex operations.
   // If getting time is expensive on the platform to run, it can
   // reduce scalability to more threads, especially for writes.
-  kAll,
-};
+  kAll
+);
 
 // Analyze the performance of a db by providing cumulative stats over time.
 // Usage:

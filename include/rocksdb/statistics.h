@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "rocksdb/status.h"
+#include "rocksdb/enum_reflection.h"
 
 namespace ROCKSDB_NAMESPACE {
 

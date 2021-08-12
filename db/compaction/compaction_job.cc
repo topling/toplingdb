@@ -490,6 +490,29 @@ void CompactionJob::GenSubcompactionBoundaries() {
   int start_lvl = c->start_level();
   int out_lvl = c->output_level();
 
+  auto try_add_rand_keys = [&](FileMetaData* fmd) {
+    Cache::Handle* ch = fmd->table_reader_handle;
+    if (nullptr == ch)
+      return false;
+    TableCache* tc = cfd->table_cache();
+    TableReader* tr = tc->GetTableReaderFromHandle(ch);
+    std::vector<std::string> rand_keys;
+    if (tr->GetRandomInteranlKeysAppend(59, &rand_keys) && rand_keys.size()) {
+      rand_keys.push_back(*fmd->smallest.rep());
+      rand_keys.push_back(*fmd->largest.rep());
+      auto icmp = &cfd->internal_comparator();
+      std::sort(rand_keys.begin(), rand_keys.end(),
+                [icmp](Slice x, Slice y) {
+                  return icmp->Compare(x, y) < 0;
+                });
+      for (auto& onekey : rand_keys) {
+        bounds.emplace_back(onekey);
+      }
+      rand_key_store_.push_back(std::move(rand_keys));
+    }
+    return true;
+  };
+
   // Add the starting and/or ending key of certain input files as a potential
   // boundary
   for (size_t lvl_idx = 0; lvl_idx < c->num_input_levels(); lvl_idx++) {
@@ -506,6 +529,9 @@ void CompactionJob::GenSubcompactionBoundaries() {
         // For level 0 add the starting and ending key of each file since the
         // files may have greatly differing key ranges (not range-partitioned)
         for (size_t i = 0; i < num_files; i++) {
+          if (try_add_rand_keys(flevel->files[i].file_metadata)) {
+            continue;
+          }
           bounds.emplace_back(flevel->files[i].smallest_key);
           bounds.emplace_back(flevel->files[i].largest_key);
         }

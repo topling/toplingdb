@@ -226,6 +226,8 @@ protected:
   std::string full_history_ts_low_;
   BlobFileCompletionCallback* blob_callback_;
 
+  std::vector<std::vector<std::string> > rand_key_store_;
+
   uint64_t GetCompactionId(SubcompactionState* sub_compact);
 
   // Get table file name in where it's outputting to, which should also be in

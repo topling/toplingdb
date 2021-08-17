@@ -48,7 +48,7 @@ size_t HistogramBucketMapper::IndexForValue(const uint64_t value) const {
     return std::lower_bound(beg, end, value) - beg;
 }
 
-static const HistogramBucketMapper bucketMapper;
+const HistogramBucketMapper bucketMapper;
 const uint64_t HistogramStat::num_buckets_ = bucketMapper.BucketCount();
 
 HistogramStat::HistogramStat() {

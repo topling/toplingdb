@@ -71,12 +71,16 @@ void HistogramStat::Clear() {
 
 bool HistogramStat::Empty() const { return num() == 0; }
 
+template<class T>
+inline T& NoAtomic(std::atomic<T>& x) { return reinterpret_cast<T&>(x); }
+
 void HistogramStat::Add(uint64_t value) {
   // This function is designed to be lock free, as it's in the critical path
   // of any operation. Each individual value is atomic and the order of updates
   // by concurrent threads is tolerable.
   const size_t index = bucketMapper.IndexForValue(value);
   assert(index < num_buckets_);
+#if 0
   buckets_[index].cnt.fetch_add(1, std::memory_order_relaxed);
   buckets_[index].sum.fetch_add(value, std::memory_order_relaxed);
 
@@ -93,6 +97,15 @@ void HistogramStat::Add(uint64_t value) {
   num_.fetch_add(1, std::memory_order_relaxed);
   sum_.fetch_add(value, std::memory_order_relaxed);
   sum_squares_.fetch_add(value * value, std::memory_order_relaxed);
+#else // prefer fast than 100% accuracy
+  NoAtomic(buckets_[index].cnt)++;
+  NoAtomic(buckets_[index].sum) += value;
+  if (NoAtomic(min_) > value) NoAtomic(min_) = value;
+  if (NoAtomic(max_) < value) NoAtomic(max_) = value;
+  NoAtomic(num_)++;
+  NoAtomic(sum_) += value;
+  NoAtomic(sum_squares_) += value * value;
+#endif
 }
 
 void HistogramStat::Merge(const HistogramStat& other) {

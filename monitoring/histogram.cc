@@ -17,6 +17,10 @@
 #include "port/port.h"
 #include "util/cast_util.h"
 
+#if defined(JSON_USE_GOLD_HASH_MAP) // indicate topling-core is available
+#include <terark/valvec.hpp> // for terark::lower_bound_0
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 HistogramBucketMapper::HistogramBucketMapper() {
@@ -42,10 +46,14 @@ HistogramBucketMapper::HistogramBucketMapper() {
 size_t HistogramBucketMapper::IndexForValue(const uint64_t value) const {
   auto beg = bucketValues_.begin();
   auto end = bucketValues_.end();
-  if (value >= maxBucketValue_)
+  if (UNLIKELY(value >= maxBucketValue_))
     return end - beg - 1;  // bucketValues_.size() - 1
   else
+#if defined(JSON_USE_GOLD_HASH_MAP) // indicate topling-core is available
+    return terark::lower_bound_0(beg, end - beg, value);
+#else
     return std::lower_bound(beg, end, value) - beg;
+#endif
 }
 
 extern const HistogramBucketMapper bucketMapper; // explicit declare extern

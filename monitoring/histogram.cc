@@ -46,9 +46,9 @@ HistogramBucketMapper::HistogramBucketMapper() {
 size_t HistogramBucketMapper::IndexForValue(const uint64_t value) const {
   auto beg = bucketValues_.begin();
   auto end = bucketValues_.end();
-  if (UNLIKELY(value >= maxBucketValue_))
-    return end - beg - 1;  // bucketValues_.size() - 1
-  else
+  // if (UNLIKELY(value >= maxBucketValue_))
+  //   return end - beg - 1;  // bucketValues_.size() - 1
+  // else
 #if defined(JSON_USE_GOLD_HASH_MAP) // indicate topling-core is available
     return terark::lower_bound_0(beg, end - beg, value);
 #else
@@ -75,6 +75,8 @@ void HistogramStat::Clear() {
     buckets_[b].cnt.store(0, std::memory_order_relaxed);
     buckets_[b].sum.store(0, std::memory_order_relaxed);
   }
+  overrun_.cnt.store(0, std::memory_order_relaxed);
+  overrun_.sum.store(0, std::memory_order_relaxed);
 };
 
 bool HistogramStat::Empty() const { return num() == 0; }
@@ -87,7 +89,7 @@ void HistogramStat::Add(uint64_t value) {
   // of any operation. Each individual value is atomic and the order of updates
   // by concurrent threads is tolerable.
   const size_t index = bucketMapper.IndexForValue(value);
-  assert(index < num_buckets_);
+  assert(index <= num_buckets_);
 #if 0
   buckets_[index].cnt.fetch_add(1, std::memory_order_relaxed);
   buckets_[index].sum.fetch_add(value, std::memory_order_relaxed);

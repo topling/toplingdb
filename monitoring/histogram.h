@@ -93,6 +93,7 @@ struct HistogramStat {
   std::atomic_uint_fast64_t sum_;
   std::atomic_uint_fast64_t sum_squares_;
   BucketElem buckets_[109]; // 109==BucketMapper::BucketCount()
+  BucketElem overrun_; // to simplify code changes
   static const uint64_t num_buckets_;
 };
 

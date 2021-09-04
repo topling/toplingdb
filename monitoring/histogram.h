@@ -60,6 +60,7 @@ struct HistogramStat {
   void Clear();
   bool Empty() const;
   void Add(uint64_t value);
+  void Del(uint64_t value);
   void Merge(const HistogramStat& other);
 
   inline uint64_t min() const { return min_.load(std::memory_order_relaxed); }

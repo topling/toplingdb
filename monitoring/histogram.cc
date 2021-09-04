@@ -118,6 +118,17 @@ void HistogramStat::Add(uint64_t value) {
 #endif
 }
 
+void HistogramStat::Del(uint64_t value) {
+  const size_t index = bucketMapper.IndexForValue(value);
+  assert(index <= num_buckets_);
+  NoAtomic(buckets_[index].cnt)--;
+  NoAtomic(buckets_[index].sum) -= value;
+  NoAtomic(num_)--;
+  NoAtomic(sum_) -= value;
+  NoAtomic(sum_squares_) -= value * value;
+  // ignore min_ & max_
+}
+
 void HistogramStat::Merge(const HistogramStat& other) {
   // This function needs to be performned with the outer lock acquired
   // However, atomic operation on every member is still need, since Add()

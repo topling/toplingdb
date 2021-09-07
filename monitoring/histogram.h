@@ -48,7 +48,6 @@ class HistogramBucketMapper {
   std::vector<uint64_t> bucketValues_;
   uint64_t maxBucketValue_;
   uint64_t minBucketValue_;
-  std::map<uint64_t, uint64_t> valueIndexMap_;
 };
 
 struct HistogramStat {
@@ -61,6 +60,7 @@ struct HistogramStat {
   void Clear();
   bool Empty() const;
   void Add(uint64_t value);
+  void Del(uint64_t value);
   void Merge(const HistogramStat& other);
 
   inline uint64_t min() const { return min_.load(std::memory_order_relaxed); }
@@ -71,7 +71,7 @@ struct HistogramStat {
     return sum_squares_.load(std::memory_order_relaxed);
   }
   inline uint64_t bucket_at(size_t b) const {
-    return buckets_[b].load(std::memory_order_relaxed);
+    return buckets_[b].cnt.load(std::memory_order_relaxed);
   }
 
   double Median() const;
@@ -84,13 +84,18 @@ struct HistogramStat {
   // To be able to use HistogramStat as thread local variable, it
   // cannot have dynamic allocated member. That's why we're
   // using manually values from BucketMapper
+  struct BucketElem {
+    std::atomic_uint_fast64_t cnt;
+    std::atomic_uint_fast64_t sum;
+  };
   std::atomic_uint_fast64_t min_;
   std::atomic_uint_fast64_t max_;
   std::atomic_uint_fast64_t num_;
   std::atomic_uint_fast64_t sum_;
   std::atomic_uint_fast64_t sum_squares_;
-  std::atomic_uint_fast64_t buckets_[109]; // 109==BucketMapper::BucketCount()
-  const uint64_t num_buckets_;
+  BucketElem buckets_[109]; // 109==BucketMapper::BucketCount()
+  BucketElem overrun_; // to simplify code changes
+  static const uint64_t num_buckets_;
 };
 
 class Histogram {
@@ -127,6 +132,8 @@ class HistogramImpl : public Histogram {
   virtual void Add(uint64_t value) override;
   virtual void Merge(const Histogram& other) override;
   void Merge(const HistogramImpl& other);
+  void Merge(const HistogramStat& stats);
+  const HistogramStat& GetHistogramStat() const { return stats_; }
 
   virtual std::string ToString() const override;
   virtual const char* Name() const override { return "HistogramImpl"; }

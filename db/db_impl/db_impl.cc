@@ -3902,10 +3902,12 @@ Status DBImpl::CheckConsistency() {
       uint64_t fsize = 0;
       TEST_SYNC_POINT("DBImpl::CheckConsistency:BeforeGetFileSize");
       Status s = env_->GetFileSize(file_path, &fsize);
+#ifdef ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
       if (!s.ok() &&
           env_->GetFileSize(Rocks2LevelTableFileName(file_path), &fsize).ok()) {
         s = Status::OK();
       }
+#endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
       if (!s.ok()) {
         corruption_messages +=
             "Can't access " + md.name + ": " + s.ToString() + "\n";
@@ -4166,8 +4168,18 @@ Status DestroyDB(const std::string& dbname, const Options& options,
   return result;
 }
 
+static bool g_KICK_OUT_OPTIONS_FILE = []() {
+  if (auto env = getenv("ROCKSDB_KICK_OUT_OPTIONS_FILE")) {
+    return atoi(env) != 0;
+  }
+  return false;
+}();
+
 Status DBImpl::WriteOptionsFile(bool need_mutex_lock,
                                 bool need_enter_write_thread) {
+  if (g_KICK_OUT_OPTIONS_FILE) {
+    return Status::OK();
+  }
 #ifndef ROCKSDB_LITE
   WriteThread::Writer w;
   if (need_mutex_lock) {

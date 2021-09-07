@@ -69,6 +69,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct MutableDBOptions, max_subcompactions),
           OptionType::kUInt32T, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
+        {"max_level1_subcompactions",
+         {offsetof(struct MutableDBOptions, max_level1_subcompactions),
+          OptionType::kUInt32T, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
         {"avoid_flush_during_shutdown",
          {offsetof(struct MutableDBOptions, avoid_flush_during_shutdown),
           OptionType::kBoolean, OptionVerificationType::kNormal,
@@ -590,6 +594,7 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       max_file_opening_threads(options.max_file_opening_threads),
       statistics(options.statistics),
       use_fsync(options.use_fsync),
+      allow_fdatasync(options.allow_fdatasync),
       db_paths(options.db_paths),
       db_log_dir(options.db_log_dir),
       wal_dir(options.wal_dir),
@@ -877,6 +882,7 @@ MutableDBOptions::MutableDBOptions()
       base_background_compactions(-1),
       max_background_compactions(-1),
       max_subcompactions(0),
+      max_level1_subcompactions(0),
       avoid_flush_during_shutdown(false),
       writable_file_max_buffer_size(1024 * 1024),
       delayed_write_rate(2 * 1024U * 1024U),
@@ -897,6 +903,7 @@ MutableDBOptions::MutableDBOptions(const DBOptions& options)
       base_background_compactions(options.base_background_compactions),
       max_background_compactions(options.max_background_compactions),
       max_subcompactions(options.max_subcompactions),
+      max_level1_subcompactions(options.max_level1_subcompactions),
       avoid_flush_during_shutdown(options.avoid_flush_during_shutdown),
       writable_file_max_buffer_size(options.writable_file_max_buffer_size),
       delayed_write_rate(options.delayed_write_rate),
@@ -920,6 +927,9 @@ void MutableDBOptions::Dump(Logger* log) const {
                    max_background_compactions);
   ROCKS_LOG_HEADER(log, "            Options.max_subcompactions: %" PRIu32,
                    max_subcompactions);
+  ROCKS_LOG_HEADER(
+      log, "            Options.max_level1_subcompactions: %" PRIu32,
+      max_level1_subcompactions);
   ROCKS_LOG_HEADER(log, "            Options.avoid_flush_during_shutdown: %d",
                    avoid_flush_during_shutdown);
   ROCKS_LOG_HEADER(

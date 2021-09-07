@@ -1365,7 +1365,6 @@ class DBImpl : public DB {
   friend class WriteUnpreparedTransactionTest_RecoveryTest_Test;
 #endif
 
-  struct CompactionState;
   struct PrepickedCompaction;
   struct PurgeFileInfo;
 

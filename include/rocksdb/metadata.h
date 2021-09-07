@@ -74,6 +74,8 @@ struct SstFileMetaData {
   SequenceNumber largest_seqno;   // Largest sequence number in file.
   std::string smallestkey;        // Smallest user defined key in the file.
   std::string largestkey;         // Largest user defined key in the file.
+  std::string smallest_ikey;      // Smallest internal key in the file.
+  std::string largest_ikey;       // Largest internal key in the file.
   uint64_t num_reads_sampled;     // How many times the file is read.
   bool being_compacted;  // true if the file is currently being compacted.
 

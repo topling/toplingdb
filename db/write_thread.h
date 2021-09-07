@@ -125,14 +125,20 @@ class WriteThread {
     uint64_t log_ref;   // log number that memtable insert should reference
     WriteCallback* callback;
     bool made_waitable;          // records lazy construction of mutex and cv
+#if defined(OS_LINUX)
+    std::atomic<uint32_t> state;  // write under StateMutex() or pre-link
+#else
     std::atomic<uint8_t> state;  // write under StateMutex() or pre-link
+#endif
     WriteGroup* write_group;
     SequenceNumber sequence;  // the sequence number to use for the first key
     Status status;
     Status callback_status;  // status returned by callback->Callback()
 
+#if !defined(OS_LINUX)
     std::aligned_storage<sizeof(std::mutex)>::type state_mutex_bytes;
     std::aligned_storage<sizeof(std::condition_variable)>::type state_cv_bytes;
+#endif
     Writer* link_older;  // read/write only before linking, or as leader
     Writer* link_newer;  // lazy, read/write only before linking, or as leader
 
@@ -178,10 +184,12 @@ class WriteThread {
           link_newer(nullptr) {}
 
     ~Writer() {
+#if !defined(OS_LINUX)
       if (made_waitable) {
         StateMutex().~mutex();
         StateCV().~condition_variable();
       }
+#endif
       status.PermitUncheckedError();
       callback_status.PermitUncheckedError();
     }
@@ -193,6 +201,7 @@ class WriteThread {
       return callback_status.ok();
     }
 
+#if !defined(OS_LINUX)
     void CreateMutex() {
       if (!made_waitable) {
         // Note that made_waitable is tracked separately from state
@@ -203,6 +212,7 @@ class WriteThread {
         new (&state_cv_bytes) std::condition_variable;
       }
     }
+#endif
 
     // returns the aggregate status of this Writer
     Status FinalStatus() {
@@ -236,6 +246,7 @@ class WriteThread {
       return status.ok() && !CallbackFailed() && !disable_wal;
     }
 
+#if !defined(OS_LINUX)
     // No other mutexes may be acquired while holding StateMutex(), it is
     // always last in the order
     std::mutex& StateMutex() {
@@ -248,6 +259,7 @@ class WriteThread {
       return *static_cast<std::condition_variable*>(
           static_cast<void*>(&state_cv_bytes));
     }
+#endif
   };
 
   struct AdaptationContext {
@@ -393,9 +405,11 @@ class WriteThread {
   port::Mutex stall_mu_;
   port::CondVar stall_cv_;
 
+#if !defined(OS_LINUX)
   // Waits for w->state & goal_mask using w->StateMutex().  Returns
   // the state that satisfies goal_mask.
   uint8_t BlockingAwaitState(Writer* w, uint8_t goal_mask);
+#endif
 
   // Blocks until w->state & goal_mask, returning the state value
   // that satisfied the predicate.  Uses ctx to adaptively use

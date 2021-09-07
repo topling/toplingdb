@@ -96,6 +96,8 @@
 #include <io.h>  // open/close
 #endif
 
+#include "sideplugin/rockside/src/topling/side_plugin_repo.h"
+
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
 using GFLAGS_NAMESPACE::RegisterFlagValidator;
 using GFLAGS_NAMESPACE::SetUsageMessage;
@@ -1021,6 +1023,7 @@ DEFINE_string(block_cache_trace_file, "", "Block cache trace file path.");
 DEFINE_int32(trace_replay_threads, 1,
              "The number of threads to replay, must >=1.");
 
+DEFINE_string(json, "", "json config file.");
 #endif  // ROCKSDB_LITE
 
 static enum ROCKSDB_NAMESPACE::CompressionType StringToCompressionType(
@@ -2968,6 +2971,7 @@ class Benchmark {
 #endif  // ROCKSDB_LITE
       return NewLRUCache(opts);
     }
+    return nullptr;
   }
 
  public:
@@ -3060,6 +3064,7 @@ class Benchmark {
   }
 
   void DeleteDBs() {
+    repo_.CloseHttpServer();
     db_.DeleteDBs();
     for (const DBWithColumnFamilies& dbwcf : multi_dbs_) {
       delete dbwcf.db;
@@ -3075,6 +3080,11 @@ class Benchmark {
       // this will leak, but we're shutting down so nobody cares
       cache_->DisownData();
     }
+  }
+
+  void exit(int code) {
+    this->~Benchmark();
+    ::exit(code);
   }
 
   Slice AllocateKey(std::unique_ptr<const char[]>* key_guard) {
@@ -4494,9 +4504,45 @@ class Benchmark {
     InitializeOptionsGeneral(opts);
   }
 
+  SidePluginRepo repo_;
   void OpenDb(Options options, const std::string& db_name,
       DBWithColumnFamilies* db) {
     uint64_t open_start = FLAGS_report_open_timing ? FLAGS_env->NowNanos() : 0;
+    if (!FLAGS_json.empty()) {
+      repo_.CloseAllDB(false);
+      repo_.CleanResetRepo();
+      DB_MultiCF* dbmcf = nullptr;
+      Status s = repo_.ImportJsonFile(FLAGS_json);
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: ImportJsonFile(%s): %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      s = repo_.OpenDB(&dbmcf);
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: OpenDB(): JsonFile=%s: %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      s = repo_.StartHttpServer();
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: StartHttpServer(): JsonFile=%s: %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      db->cfh = dbmcf->cf_handles;
+      db->db = dbmcf->db;
+      if (auto tdb = dynamic_cast<OptimisticTransactionDB*>(dbmcf->db)) {
+        db->opt_txn_db = tdb;
+        db->db = tdb->GetBaseDB();
+      }
+      db->num_created = FLAGS_num_column_families;
+      db->num_hot = FLAGS_num_column_families;
+      DBOptions dbo = db->db->GetDBOptions();
+      dbstats = dbo.statistics;
+      FLAGS_db = db->db->GetName();
+      return;
+    }
     Status s;
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {

@@ -150,6 +150,13 @@ void DumpSupportInfo(Logger* logger) {
 }
 }  // namespace
 
+InstrumentedMutex* Get_DB_mutex(const DB* db) {
+  db = const_cast<DB*>(db)->GetRootDB();
+  auto dbi = dynamic_cast<const DBImpl*>(db);
+  ROCKSDB_VERIFY(nullptr != dbi);
+  return dbi->mutex();
+}
+
 DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
                const bool seq_per_batch, const bool batch_per_txn,
                bool read_only)

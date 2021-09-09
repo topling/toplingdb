@@ -41,6 +41,21 @@ CompactionParams::~CompactionParams() {
   }
 }
 
+#if defined(_MSC_VER)
+static std::string html_user_key_decode(const CompactionParams&, Slice uk) {
+  return uk.ToString(true);
+}
+#else
+std::string __attribute__((weak))
+CompactionParams_html_user_key_decode(const CompactionParams&, Slice);
+static std::string html_user_key_decode(const CompactionParams& cp, Slice uk) {
+  if (CompactionParams_html_user_key_decode)
+    return CompactionParams_html_user_key_decode(cp, uk);
+  else
+    return uk.ToString(true);
+}
+#endif
+
 static void PrintVersionSetSerDe(FILE* fp, const VersionSetSerDe& v) {
   fprintf(fp, "VersionSetSerDe\n");
   fprintf(fp, "  last_sequence = %zd, "
@@ -62,10 +77,11 @@ static void PrintVersionSetSerDe(FILE* fp, const VersionSetSerDe& v) {
               size_t(v.prev_log_number),
               size_t(v.current_version_number));
 }
-static void PrintFileMetaData(FILE* fp, const FileMetaData* f) {
+static void PrintFileMetaData(const CompactionParams& cp,
+                              FILE* fp, const FileMetaData* f) {
   Slice temperature = enum_name(f->temperature);
-  Slice lo = f->smallest.user_key();
-  Slice hi = f->largest.user_key();
+  std::string lo = html_user_key_decode(cp, f->smallest.user_key());
+  std::string hi = html_user_key_decode(cp, f->largest.user_key());
   fprintf(fp,
     "  %06zd.sst : entries = %zd, del = %zd, rks = %zd, rvs = %zd, "
     "fsize = %zd : %zd, temp = %.*s, seq = %zd : %zd, rng = %.*s : %.*s\n",
@@ -75,8 +91,9 @@ static void PrintFileMetaData(FILE* fp, const FileMetaData* f) {
     size_t(f->fd.file_size), size_t(f->compensated_file_size),
     int(temperature.size_), temperature.data_,
     size_t(f->fd.smallest_seqno), size_t(f->fd.largest_seqno),
-    int(lo.size_), lo.data_, int(hi.size_), hi.data_);
+    int(lo.size()), lo.data(), int(hi.size()), hi.data());
 }
+
 std::string CompactionParams::DebugString() const {
   size_t mem_len = 0;
   char*  mem_buf = nullptr;
@@ -85,21 +102,21 @@ std::string CompactionParams::DebugString() const {
           job_id, output_level, dbname.c_str(), cf_name.c_str());
   fprintf(fp, "bottommost_level = %d, compaction_reason = %s\n",
                bottommost_level, enum_cstr(compaction_reason));
-  fprintf(fp, "smallest_user_key = %s\n", smallest_user_key.c_str());
-  fprintf(fp, "llargest_user_key = %s\n",  largest_user_key.c_str());
+  fprintf(fp, "smallest_user_key = %s\n", html_user_key_decode(*this, smallest_user_key).c_str());
+  fprintf(fp, "llargest_user_key = %s\n", html_user_key_decode(*this,  largest_user_key).c_str());
   for (size_t i = 0; i < inputs->size(); ++i) {
     auto& l = inputs->at(i);
     fprintf(fp, "inputs.size = %zd : %zd : level = %d, size = %3zd\n",
             inputs->size(), i, l.level, l.size());
     for (auto fmd : l.files) {
-      PrintFileMetaData(fp, fmd);
+      PrintFileMetaData(*this, fp, fmd);
     }
   }
   if (grandparents) {
     fprintf(fp, "grandparents.size = %zd\n", grandparents->size());
     for (size_t i = 0; i < grandparents->size(); ++i) {
       FileMetaData* fmd = grandparents->at(i);
-      PrintFileMetaData(fp, fmd);
+      PrintFileMetaData(*this, fp, fmd);
     }
   }
   else {

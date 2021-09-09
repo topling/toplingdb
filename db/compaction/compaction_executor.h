@@ -86,6 +86,7 @@ struct CompactionParams {
   ObjectRpcParam table_factory;
   ObjectRpcParam prefix_extractor;
   ObjectRpcParam sst_partitioner_factory;
+  ObjectRpcParam html_user_key_coder;
 
   //bool skip_filters;
   bool allow_ingest_behind;
@@ -98,6 +99,7 @@ struct CompactionParams {
   // CompactionFilterFactory ... can have individual serde files
   mutable std::vector<std::string> extra_serde_files;
   Logger* info_log = nullptr; // do not serialize, just for running process
+  mutable class UserKeyCoder* p_html_user_key_coder = nullptr;
   const std::atomic<bool>* shutting_down = nullptr; // do not serialize
 
   std::string DebugString() const;

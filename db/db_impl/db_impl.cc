@@ -157,6 +157,13 @@ InstrumentedMutex* Get_DB_mutex(const DB* db) {
   return dbi->mutex();
 }
 
+int Get_DB_next_job_id(const DB* db) {
+  db = const_cast<DB*>(db)->GetRootDB();
+  auto dbi = dynamic_cast<const DBImpl*>(db);
+  ROCKSDB_VERIFY(nullptr != dbi);
+  return dbi->next_job_id();
+}
+
 DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
                const bool seq_per_batch, const bool batch_per_txn,
                bool read_only)

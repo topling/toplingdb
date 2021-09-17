@@ -1116,6 +1116,10 @@ class DBImpl : public DB {
 
   static std::string GenerateDbSessionId(Env* env);
 
+  int next_job_id() const noexcept {
+    return next_job_id_.load(std::memory_order_relaxed);
+  }
+
  protected:
   const std::string dbname_;
   std::string db_id_;

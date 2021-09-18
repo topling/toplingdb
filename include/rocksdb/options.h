@@ -1708,7 +1708,7 @@ struct CompactionOptions {
 
 // For level based compaction, we can configure if we want to skip/force
 // bottommost level compaction.
-enum class BottommostLevelCompaction {
+ROCKSDB_ENUM_CLASS(BottommostLevelCompaction, int,
   // Skip bottommost level compaction
   kSkip,
   // Only compact bottommost level if there is a compaction filter
@@ -1718,8 +1718,8 @@ enum class BottommostLevelCompaction {
   kForce,
   // Always compact bottommost level but in bottommost level avoid
   // double-compacting files created in the same compaction
-  kForceOptimized,
-};
+  kForceOptimized
+);
 
 // CompactRangeOptions is used by CompactRange() call.
 struct CompactRangeOptions {

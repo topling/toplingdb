@@ -66,7 +66,7 @@ const double kGB = kMB * 1024;
 const double kMicrosInSec = 1000000.0;
 
 void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
-                           const std::string& group_by) {
+                           const char* group_by) {
   int written_size =
       snprintf(buf, len, "\n** Compaction Stats [%s] **\n", cf_name.c_str());
   written_size = std::min(written_size, static_cast<int>(len));
@@ -75,10 +75,10 @@ void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
   };
   int line_size = snprintf(
       buf + written_size, len - written_size,
-      "%s    %s   %s     %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s "
+      "%-8s %s   %s     %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s "
       "%s\n",
       // Note that we skip COMPACTED_FILES and merge it with Files column
-      group_by.c_str(), hdr(LevelStatType::NUM_FILES),
+      group_by, hdr(LevelStatType::NUM_FILES),
       hdr(LevelStatType::SIZE_BYTES), hdr(LevelStatType::SCORE),
       hdr(LevelStatType::READ_GB), hdr(LevelStatType::RN_GB),
       hdr(LevelStatType::RNP1_GB), hdr(LevelStatType::WRITE_GB),

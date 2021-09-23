@@ -1520,10 +1520,10 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
   uint64_t interval_add_file_inget =
       add_file_ingest - cf_stats_snapshot_.ingest_bytes_addfile;
   uint64_t interval_ingest =
-      interval_flush_ingest + interval_add_file_inget + 1;
+      interval_flush_ingest + interval_add_file_inget;
   CompactionStats interval_stats(compaction_stats_sum);
   interval_stats.Subtract(cf_stats_snapshot_.comp_stats);
-  double w_amp =
+  double w_amp = 0 == interval_ingest ? 0 :
       (interval_stats.bytes_written + interval_stats.bytes_written_blob) /
       static_cast<double>(interval_ingest);
   PrintLevelStats(buf, sizeof(buf), "Int", 0, 0, 0, 0, w_amp, interval_stats);

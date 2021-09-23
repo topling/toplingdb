@@ -1599,8 +1599,8 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
   }
 
   snprintf(buf, sizeof(buf),
-           "Cumulative compaction: %.2f GB write, %.2f MB/s write, "
-           "%.2f GB read, %.2f MB/s read, %.1f seconds\n",
+           "Cumulative compaction: %7.2f GB write, %7.2f MB/s write, "
+           "%7.2f GB read, %7.2f MB/s read, %7.1f seconds\n",
            compact_bytes_write / kGB, compact_bytes_write / kMB / seconds_up,
            compact_bytes_read / kGB, compact_bytes_read / kMB / seconds_up,
            compact_micros / kMicrosInSec);
@@ -1616,8 +1616,8 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
 
   snprintf(
       buf, sizeof(buf),
-      "Interval compaction: %.2f GB write, %.2f MB/s write, "
-      "%.2f GB read, %.2f MB/s read, %.1f seconds\n",
+      "Interval   compaction: %7.2f GB write, %7.2f MB/s write, "
+      "%7.2f GB read, %7.2f MB/s read, %7.1f seconds\n",
       interval_compact_bytes_write / kGB,
       interval_compact_bytes_write / kMB / std::max(interval_seconds_up, 0.001),
       interval_compact_bytes_read / kGB,

@@ -2297,6 +2297,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
 
   autovector<KeyContext, MultiGetContext::MAX_BATCH_SIZE> key_context;
   autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
+  key_context.reserve(num_keys);
   sorted_keys.resize(num_keys);
   for (size_t i = 0; i < num_keys; ++i) {
     key_context.emplace_back(column_families[i], keys[i], &values[i],
@@ -2451,6 +2452,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
   }
   autovector<KeyContext, MultiGetContext::MAX_BATCH_SIZE> key_context;
   autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
+  key_context.reserve(num_keys);
   sorted_keys.resize(num_keys);
   for (size_t i = 0; i < num_keys; ++i) {
     key_context.emplace_back(column_family, keys[i], &values[i],

@@ -142,7 +142,7 @@ MemTable::~MemTable() {
 }
 
 size_t MemTable::ApproximateMemoryUsage() {
-  autovector<size_t> usages = {
+  size_t usages[] = {
       arena_.ApproximateMemoryUsage(), table_->ApproximateMemoryUsage(),
       range_del_table_->ApproximateMemoryUsage(),
       ROCKSDB_NAMESPACE::ApproximateMemoryUsage(insert_hints_)};

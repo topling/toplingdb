@@ -2307,7 +2307,8 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
   for (size_t i = 0; i < num_keys; ++i) {
     sorted_keys[i] = &key_context[i];
   }
-  PrepareMultiGetKeys(num_keys, sorted_input, &sorted_keys);
+  bool same_cf = false;
+  PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
 
   autovector<MultiGetColumnFamilyData, MultiGetContext::MAX_BATCH_SIZE>
       multiget_cf_data;
@@ -2403,10 +2404,19 @@ struct CompareKeyContext {
   }
 };
 
+struct CompareKeyContextSameCF {
+  const Comparator* comparator;
+  inline bool operator()(const KeyContext* lhs, const KeyContext* rhs) {
+    int cmp = comparator->CompareWithoutTimestamp(
+        *(lhs->key), /*a_has_ts=*/false, *(rhs->key), /*b_has_ts=*/false);
+    return cmp < 0;
+  }
+};
+
 }  // anonymous namespace
 
 void DBImpl::PrepareMultiGetKeys(
-    size_t num_keys, bool sorted_input,
+    size_t num_keys, bool sorted_input, bool same_cf,
     autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE>* sorted_keys) {
   if (sorted_input) {
 #ifndef NDEBUG
@@ -2424,8 +2434,15 @@ void DBImpl::PrepareMultiGetKeys(
     return;
   }
 
-  std::sort(sorted_keys->begin(), sorted_keys->begin() + num_keys,
-            CompareKeyContext());
+  if (same_cf) {
+    auto uc = sorted_keys->front()->column_family->GetComparator();
+    std::sort(sorted_keys->begin(), sorted_keys->begin() + num_keys,
+              CompareKeyContextSameCF{uc});
+  }
+  else {
+    std::sort(sorted_keys->begin(), sorted_keys->begin() + num_keys,
+              CompareKeyContext());
+  }
 }
 
 void DBImpl::MultiGet(const ReadOptions& read_options,
@@ -2462,7 +2479,8 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
   for (size_t i = 0; i < num_keys; ++i) {
     sorted_keys[i] = &key_context[i];
   }
-  PrepareMultiGetKeys(num_keys, sorted_input, &sorted_keys);
+  bool same_cf = true;
+  PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
   MultiGetWithCallback(read_options, column_family, nullptr, &sorted_keys);
 }
 

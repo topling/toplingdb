@@ -1037,6 +1037,10 @@ try {
   compaction_job_stats_->Add(rpc_results.job_stats); // instead AggregateStatistics
 
   //RecordCompactionIOStats(); // update remote statistics to local -->>
+#if defined(__GNUC__)
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
   memcpy(&rpc_results.statistics.histograms[DCOMPACTION_INPUT_RAW_BYTES],
          &rpc_results.statistics.histograms[LCOMPACTION_INPUT_RAW_BYTES],
    sizeof rpc_results.statistics.histograms[LCOMPACTION_INPUT_RAW_BYTES]
@@ -1045,6 +1049,9 @@ try {
          &rpc_results.statistics.histograms[LCOMPACTION_INPUT_ZIP_BYTES],
    sizeof rpc_results.statistics.histograms[LCOMPACTION_INPUT_ZIP_BYTES]
   );
+#if defined(__GNUC__)
+  #pragma GCC diagnostic pop
+#endif
   rpc_results.statistics.histograms[LCOMPACTION_INPUT_RAW_BYTES].Clear();
   rpc_results.statistics.histograms[LCOMPACTION_INPUT_ZIP_BYTES].Clear();
 

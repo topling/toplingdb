@@ -52,8 +52,6 @@ class HistogramBucketMapper {
 
 struct HistogramStat {
   HistogramStat();
-  ~HistogramStat() {}
-
   HistogramStat(const HistogramStat&) = delete;
   HistogramStat& operator=(const HistogramStat&) = delete;
 

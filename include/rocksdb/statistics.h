@@ -508,6 +508,13 @@ enum Histograms : uint32_t {
   // Error handler statistics
   ERROR_HANDLER_AUTORESUME_RETRY_COUNT,
 
+  // LCOMPACTION: local compaction
+  // DCOMPACTION: distributed compaction
+  LCOMPACTION_INPUT_RAW_BYTES,
+  LCOMPACTION_INPUT_ZIP_BYTES,
+  DCOMPACTION_INPUT_RAW_BYTES,
+  DCOMPACTION_INPUT_ZIP_BYTES,
+
   HISTOGRAM_ENUM_MAX,
 };
 

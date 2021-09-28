@@ -690,6 +690,16 @@ Status CompactionJob::RunLocal() {
         compact_->sub_compact_states[i].compaction_job_stats.cpu_micros;
   }
 
+  uint64_t sum_raw = 0, sum_zip = 0;
+  for (auto& each_level : *compact_->compaction->inputs()) {
+    for (FileMetaData* fmd : each_level.files) {
+      sum_raw += fmd->raw_key_size + fmd->raw_value_size;
+      sum_zip += fmd->fd.file_size;
+    }
+  }
+  RecordTimeToHistogram(stats_, LCOMPACTION_INPUT_RAW_BYTES, sum_raw);
+  RecordTimeToHistogram(stats_, LCOMPACTION_INPUT_ZIP_BYTES, sum_zip);
+
   RecordTimeToHistogram(stats_, COMPACTION_TIME, compaction_stats_.micros);
   RecordTimeToHistogram(stats_, COMPACTION_CPU_TIME,
                         compaction_stats_.cpu_micros);
@@ -1027,6 +1037,17 @@ try {
   compaction_job_stats_->Add(rpc_results.job_stats); // instead AggregateStatistics
 
   //RecordCompactionIOStats(); // update remote statistics to local -->>
+  memcpy(&rpc_results.statistics.histograms[DCOMPACTION_INPUT_RAW_BYTES],
+         &rpc_results.statistics.histograms[LCOMPACTION_INPUT_RAW_BYTES],
+   sizeof rpc_results.statistics.histograms[LCOMPACTION_INPUT_RAW_BYTES]
+  );
+  memcpy(&rpc_results.statistics.histograms[DCOMPACTION_INPUT_ZIP_BYTES],
+         &rpc_results.statistics.histograms[LCOMPACTION_INPUT_ZIP_BYTES],
+   sizeof rpc_results.statistics.histograms[LCOMPACTION_INPUT_ZIP_BYTES]
+  );
+  rpc_results.statistics.histograms[LCOMPACTION_INPUT_RAW_BYTES].Clear();
+  rpc_results.statistics.histograms[LCOMPACTION_INPUT_ZIP_BYTES].Clear();
+
   stats_->Merge(rpc_results.statistics.tickers,
                 rpc_results.statistics.histograms);
 

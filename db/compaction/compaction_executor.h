@@ -65,6 +65,8 @@ struct CompactionParams {
   SequenceNumber smallest_seqno;
   SequenceNumber earliest_write_conflict_snapshot;
   bool paranoid_file_checks;
+  uint32_t    rocksdb_src_version;
+  std::string rocksdb_src_githash;
   std::string hoster_root;
   std::string instance_name;
   std::string dbname;

@@ -690,6 +690,16 @@ Status CompactionJob::RunLocal() {
         compact_->sub_compact_states[i].compaction_job_stats.cpu_micros;
   }
 
+  for (size_t i = 0; i < compact_->sub_compact_states.size(); i++) {
+    auto& sub = compact_->sub_compact_states[i];
+    for (size_t j = 0; j < sub.outputs.size(); ++j) {
+      auto& meta = sub.outputs[j].meta;
+      auto  raw = meta.raw_key_size + meta.raw_value_size;
+      auto  zip = meta.fd.file_size;
+      RecordTimeToHistogram(stats_, LCOMPACTION_OUTPUT_FILE_RAW_SIZE, raw);
+      RecordTimeToHistogram(stats_, LCOMPACTION_OUTPUT_FILE_ZIP_SIZE, zip);
+    }
+  }
   uint64_t sum_raw = 0, sum_zip = 0;
   for (auto& each_level : *compact_->compaction->inputs()) {
     for (FileMetaData* fmd : each_level.files) {
@@ -1041,19 +1051,18 @@ try {
   #pragma GCC diagnostic push
   #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
-  memcpy(&rpc_results.statistics.histograms[DCOMPACTION_INPUT_RAW_BYTES],
-         &rpc_results.statistics.histograms[LCOMPACTION_INPUT_RAW_BYTES],
-   sizeof rpc_results.statistics.histograms[LCOMPACTION_INPUT_RAW_BYTES]
-  );
-  memcpy(&rpc_results.statistics.histograms[DCOMPACTION_INPUT_ZIP_BYTES],
-         &rpc_results.statistics.histograms[LCOMPACTION_INPUT_ZIP_BYTES],
-   sizeof rpc_results.statistics.histograms[LCOMPACTION_INPUT_ZIP_BYTES]
-  );
+#define MoveHG(dst,src) \
+  memcpy(&rpc_results.statistics.histograms[dst], \
+         &rpc_results.statistics.histograms[src], \
+   sizeof rpc_results.statistics.histograms[src]), \
+  rpc_results.statistics.histograms[src].Clear()
+  MoveHG(DCOMPACTION_INPUT_RAW_BYTES, LCOMPACTION_INPUT_RAW_BYTES);
+  MoveHG(DCOMPACTION_INPUT_ZIP_BYTES, LCOMPACTION_INPUT_ZIP_BYTES);
+  MoveHG(DCOMPACTION_OUTPUT_FILE_RAW_SIZE, LCOMPACTION_OUTPUT_FILE_RAW_SIZE);
+  MoveHG(DCOMPACTION_OUTPUT_FILE_ZIP_SIZE, LCOMPACTION_OUTPUT_FILE_ZIP_SIZE);
 #if defined(__GNUC__)
   #pragma GCC diagnostic pop
 #endif
-  rpc_results.statistics.histograms[LCOMPACTION_INPUT_RAW_BYTES].Clear();
-  rpc_results.statistics.histograms[LCOMPACTION_INPUT_ZIP_BYTES].Clear();
 
   stats_->Merge(rpc_results.statistics.tickers,
                 rpc_results.statistics.histograms);

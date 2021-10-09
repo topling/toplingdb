@@ -267,6 +267,10 @@ const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {
     {LCOMPACTION_INPUT_ZIP_BYTES, "rocksdb.lcompaction.input.zip.bytes"},
     {DCOMPACTION_INPUT_RAW_BYTES, "rocksdb.dcompaction.input.raw.bytes"},
     {DCOMPACTION_INPUT_ZIP_BYTES, "rocksdb.dcompaction.input.zip.bytes"},
+    {LCOMPACTION_OUTPUT_FILE_RAW_SIZE, "rocksdb.lcompaction.output.file.raw.size"},
+    {LCOMPACTION_OUTPUT_FILE_ZIP_SIZE, "rocksdb.lcompaction.output.file.zip.size"},
+    {DCOMPACTION_OUTPUT_FILE_RAW_SIZE, "rocksdb.dcompaction.output.file.raw.size"},
+    {DCOMPACTION_OUTPUT_FILE_ZIP_SIZE, "rocksdb.dcompaction.output.file.zip.size"},
 };
 
 std::shared_ptr<Statistics> CreateDBStatistics() {

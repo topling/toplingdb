@@ -263,6 +263,7 @@ const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {
     {NUM_SST_READ_PER_LEVEL, "rocksdb.num.sst.read.per.level"},
     {ERROR_HANDLER_AUTORESUME_RETRY_COUNT,
      "rocksdb.error.handler.autoresume.retry.count"},
+    {NUMBER_PER_MULTIGET, "rocksdb.number.per.multiget"},
     {LCOMPACTION_INPUT_RAW_BYTES, "rocksdb.lcompaction.input.raw.bytes"},
     {LCOMPACTION_INPUT_ZIP_BYTES, "rocksdb.lcompaction.input.zip.bytes"},
     {DCOMPACTION_INPUT_RAW_BYTES, "rocksdb.dcompaction.input.raw.bytes"},

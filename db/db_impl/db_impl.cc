@@ -2120,6 +2120,7 @@ std::vector<Status> DBImpl::MultiGet(
   RecordTick(stats_, NUMBER_MULTIGET_KEYS_FOUND, num_found);
   RecordTick(stats_, NUMBER_MULTIGET_BYTES_READ, bytes_read);
   RecordInHistogram(stats_, BYTES_PER_MULTIGET, bytes_read);
+  RecordInHistogram(stats_, NUMBER_PER_MULTIGET, num_keys);
   PERF_COUNTER_ADD(multiget_read_bytes, bytes_read);
   PERF_TIMER_STOP(get_post_process_time);
 
@@ -2642,6 +2643,7 @@ Status DBImpl::MultiGetImpl(
   RecordTick(stats_, NUMBER_MULTIGET_KEYS_FOUND, num_found);
   RecordTick(stats_, NUMBER_MULTIGET_BYTES_READ, bytes_read);
   RecordInHistogram(stats_, BYTES_PER_MULTIGET, bytes_read);
+  RecordInHistogram(stats_, NUMBER_PER_MULTIGET, num_keys);
   PERF_COUNTER_ADD(multiget_read_bytes, bytes_read);
   PERF_TIMER_STOP(get_post_process_time);
 

@@ -2044,6 +2044,10 @@ Status CompactionJob::FinishCompactionOutputFile(
   TableProperties tp;
   if (s.ok()) {
     tp = sub_compact->builder->GetTableProperties();
+    meta->num_entries = tp.num_entries;
+    meta->num_deletions = tp.num_deletions;
+    meta->raw_key_size = tp.raw_key_size;
+    meta->raw_value_size = tp.raw_value_size;
   }
 
   if (s.ok() && current_entries == 0 && tp.num_range_deletions == 0) {

@@ -75,7 +75,7 @@ void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
   };
   int line_size = snprintf(
       buf + written_size, len - written_size,
-      "%-8s %s   %s     %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s "
+      "%-8s %s      %s     %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s "
       "%s\n",
       // Note that we skip COMPACTED_FILES and merge it with Files column
       group_by, hdr(LevelStatType::NUM_FILES),
@@ -139,8 +139,8 @@ void PrintLevelStats(char* buf, size_t len, const std::string& name,
   snprintf(
       buf, len,
       "%4s "      /*  Level */
-      "%6d/%-3d " /*  Files */
-      "%8s "      /*  Size */
+      "%6d/%-4d " /*  Files */
+      "%10s "     /*  Size */
       "%5.1f "    /*  Score */
       "%8.1f "    /*  Read(GB) */
       "%7.1f "    /*  Rn(GB) */

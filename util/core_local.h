@@ -60,7 +60,13 @@ size_t CoreLocalArray<T>::Size() const {
 
 template <typename T>
 T* CoreLocalArray<T>::Access() const {
+#if defined(OS_LINUX)
+  int cpuid = port::PhysicalCoreID();
+  size_t core_idx = static_cast<size_t>(cpuid & size_mask_);
+  return AccessAtCore(core_idx);
+#else
   return AccessElementAndIndex().first;
+#endif
 }
 
 template <typename T>

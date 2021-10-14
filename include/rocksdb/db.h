@@ -96,7 +96,10 @@ class ColumnFamilyHandle {
   // current handle.
   virtual const Comparator* GetComparator() const = 0;
 
-  virtual class ColumnFamilyData* cfd() const = 0;
+  virtual class ColumnFamilyData* cfd() const {
+    ROCKSDB_DIE("Unexpected");
+    return nullptr;
+  }
 };
 
 static const int kMajorVersion = __ROCKSDB_MAJOR__;

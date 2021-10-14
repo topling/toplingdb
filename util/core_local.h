@@ -38,6 +38,7 @@ class CoreLocalArray {
  private:
   std::unique_ptr<T[]> data_;
   int size_shift_;
+  int size_mask_;
 };
 
 template <typename T>
@@ -48,6 +49,7 @@ CoreLocalArray<T>::CoreLocalArray() {
   while (1 << size_shift_ < num_cpus) {
     ++size_shift_;
   }
+  size_mask_ = (1 << size_shift_) - 1;
   data_.reset(new T[static_cast<size_t>(1) << size_shift_]);
 }
 
@@ -69,7 +71,7 @@ std::pair<T*, size_t> CoreLocalArray<T>::AccessElementAndIndex() const {
     // cpu id unavailable, just pick randomly
     core_idx = Random::GetTLSInstance()->Uniform(1 << size_shift_);
   } else {
-    core_idx = static_cast<size_t>(cpuid & ((1 << size_shift_) - 1));
+    core_idx = static_cast<size_t>(cpuid & size_mask_);
   }
   return {AccessAtCore(core_idx), core_idx};
 }

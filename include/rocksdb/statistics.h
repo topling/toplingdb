@@ -629,14 +629,14 @@ class Statistics {
   virtual void Merge(const uint64_t* tickers, const struct HistogramStat*) = 0;
 
   void set_stats_level(StatsLevel sl) {
-    stats_level_.store(sl, std::memory_order_relaxed);
+    stats_level_ = sl;
   }
   StatsLevel get_stats_level() const {
-    return stats_level_.load(std::memory_order_relaxed);
+    return stats_level_;
   }
 
  private:
-  std::atomic<StatsLevel> stats_level_{kExceptDetailedTimers};
+  StatsLevel stats_level_{kExceptDetailedTimers};
 };
 
 // Create a concrete DBStatistics object

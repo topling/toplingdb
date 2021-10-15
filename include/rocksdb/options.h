@@ -1389,7 +1389,7 @@ struct Options : public DBOptions, public ColumnFamilyOptions {
 // Get call will process data that is already processed in the memtable or
 // the block cache. It will not page in data from the OS cache or data that
 // resides in storage.
-enum ReadTier {
+enum ReadTier : unsigned char {
   kReadAllTier = 0x0,     // data in memtable, block cache, OS cache or storage
   kBlockCacheTier = 0x1,  // data in memtable or block cache
   kPersistedTier = 0x2,   // persisted data.  When WAL is disabled, this option
@@ -1461,6 +1461,8 @@ struct ReadOptions {
   // found at the specified cache, then Status::Incomplete is returned.
   // Default: kReadAllTier
   ReadTier read_tier;
+
+  bool just_check_key_exists; // just for check existing
 
   // If true, all data read from underlying storage will be
   // verified against corresponding checksums.

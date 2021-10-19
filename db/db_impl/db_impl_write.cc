@@ -16,6 +16,7 @@
 #include "test_util/sync_point.h"
 #include "util/cast_util.h"
 
+
 namespace ROCKSDB_NAMESPACE {
 // Convenience methods
 Status DBImpl::Put(const WriteOptions& o, ColumnFamilyHandle* column_family,
@@ -160,8 +161,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     RecordTick(stats_, WRITE_WITH_WAL);
   }
 
-  StopWatch write_sw(immutable_db_options_.clock, immutable_db_options_.stats,
-                     DB_WRITE);
+  StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
   write_thread_.JoinBatchGroup(&w);
   if (w.state == WriteThread::STATE_PARALLEL_MEMTABLE_WRITER) {
@@ -471,8 +471,7 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
                                   uint64_t* log_used, uint64_t log_ref,
                                   bool disable_memtable, uint64_t* seq_used) {
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
-  StopWatch write_sw(immutable_db_options_.clock, immutable_db_options_.stats,
-                     DB_WRITE);
+  StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
   WriteContext write_context;
 
@@ -628,8 +627,7 @@ Status DBImpl::UnorderedWriteMemtable(const WriteOptions& write_options,
                                       SequenceNumber seq,
                                       const size_t sub_batch_cnt) {
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
-  StopWatch write_sw(immutable_db_options_.clock, immutable_db_options_.stats,
-                     DB_WRITE);
+  StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
   WriteThread::Writer w(write_options, my_batch, callback, log_ref,
                         false /*disable_memtable*/);
@@ -684,8 +682,7 @@ Status DBImpl::WriteImplWALOnly(
   WriteThread::Writer w(write_options, my_batch, callback, log_ref,
                         disable_memtable, sub_batch_cnt, pre_release_callback);
   RecordTick(stats_, WRITE_WITH_WAL);
-  StopWatch write_sw(immutable_db_options_.clock, immutable_db_options_.stats,
-                     DB_WRITE);
+  StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
   write_thread->JoinBatchGroup(&w);
   assert(w.state != WriteThread::STATE_PARALLEL_MEMTABLE_WRITER);
@@ -932,7 +929,10 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   if (UNLIKELY(status.ok() && !single_column_family_mode_ &&
                total_log_size_ > GetMaxTotalWalSize())) {
     WaitForPendingWrites();
+    auto beg_micro = immutable_db_options_.clock->NowMicros();
     status = SwitchWAL(write_context);
+    auto end_micro = immutable_db_options_.clock->NowMicros();
+    RecordInHistogram(stats_, SWITCH_WAL_MICROS, end_micro - beg_micro);
   }
 
   if (UNLIKELY(status.ok() && write_buffer_manager_->ShouldFlush())) {
@@ -942,16 +942,25 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
     // be flushed. We may end up with flushing much more DBs than needed. It's
     // suboptimal but still correct.
     WaitForPendingWrites();
+    auto beg_micro = immutable_db_options_.clock->NowMicros();
     status = HandleWriteBufferManagerFlush(write_context);
+    auto end_micro = immutable_db_options_.clock->NowMicros();
+    RecordInHistogram(stats_, SWITCH_WAL_MICROS, end_micro - beg_micro);
   }
 
   if (UNLIKELY(status.ok() && !trim_history_scheduler_.Empty())) {
+    auto beg_micro = immutable_db_options_.clock->NowMicros();
     status = TrimMemtableHistory(write_context);
+    auto end_micro = immutable_db_options_.clock->NowMicros();
+    RecordInHistogram(stats_, SWITCH_WAL_MICROS, end_micro - beg_micro);
   }
 
   if (UNLIKELY(status.ok() && !flush_scheduler_.Empty())) {
     WaitForPendingWrites();
+    auto beg_micro = immutable_db_options_.clock->NowMicros();
     status = ScheduleFlushes(write_context);
+    auto end_micro = immutable_db_options_.clock->NowMicros();
+    RecordInHistogram(stats_, SWITCH_WAL_MICROS, end_micro - beg_micro);
   }
 
   PERF_TIMER_STOP(write_scheduling_flushes_compactions_time);
@@ -1743,8 +1752,6 @@ void DBImpl::NotifyOnMemTableSealed(ColumnFamilyData* /*cfd*/,
 // two_write_queues_ is true (This is to simplify the reasoning.)
 Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
   mutex_.AssertHeld();
-  WriteThread::Writer nonmem_w;
-  std::unique_ptr<WritableFile> lfile;
   log::Writer* new_log = nullptr;
   MemTable* new_mem = nullptr;
   IOStatus io_s;

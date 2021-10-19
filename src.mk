@@ -6,6 +6,7 @@ LIB_SOURCES =                                                   \
   sideplugin/rockside/src/topling/builtin_table_factory.cc      \
   sideplugin/rockside/src/topling/side_plugin_tpl_inst.cc       \
   sideplugin/rockside/src/topling/side_plugin_repo.cc           \
+  sideplugin/rockside/src/topling/block_based_table_side_plugin.cc \
   sideplugin/rockside/src/topling/web/json_civetweb.cc          \
   sideplugin/rockside/src/topling/web/CivetServer.cc            \
   cache/cache.cc                                                \

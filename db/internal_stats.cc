@@ -1417,9 +1417,10 @@ void InternalStats::DumpCFMapStats(
     }
   }
   // Cumulative summary
-  double w_amp = (compaction_stats_sum->bytes_written +
+  double w_amp = (0 == curr_ingest) ? 0.0 :
+                 (compaction_stats_sum->bytes_written +
                   compaction_stats_sum->bytes_written_blob) /
-                 static_cast<double>(curr_ingest + 1);
+                 static_cast<double>(curr_ingest);
   // Stats summary across levels
   std::map<LevelStatType, double> sum_stats;
   PrepareLevelStats(&sum_stats, total_files, total_files_being_compacted,

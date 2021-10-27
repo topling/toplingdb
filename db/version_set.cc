@@ -2692,6 +2692,9 @@ void VersionStorageInfo::ComputeCompactionScore(
       }
       score = static_cast<double>(level_bytes_no_compacting) /
               MaxBytesForLevel(level);
+      if (1 == level && kCompactionStyleLevel == compaction_style_) {
+        score *= 4; // boost L1 score
+      }
     }
     compaction_level_[level] = level;
     compaction_score_[level] = score;

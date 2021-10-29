@@ -2697,7 +2697,9 @@ void VersionStorageInfo::ComputeCompactionScore(
             compaction_style_ == kCompactionStyleLevel) {
         auto& cfo = mutable_cf_options;
         if (cfo.write_buffer_size > cfo.target_file_size_base * 3/2) {
-          score = std::max(score, 1.1); // to compact all L1 files
+          bool clean_L1 = cfo.compaction_options_universal.size_ratio == 0;
+          if (clean_L1)
+            score = std::max(score, 1.1); // to compact all L1 files
         }
       }
     }

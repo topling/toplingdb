@@ -2692,6 +2692,13 @@ void VersionStorageInfo::ComputeCompactionScore(
       }
       score = static_cast<double>(level_bytes_no_compacting) /
               MaxBytesForLevel(level);
+      if (level_bytes_no_compacting && 1 == level &&
+            compaction_style_ == kCompactionStyleLevel) {
+        auto& cfo = mutable_cf_options;
+        if (cfo.write_buffer_size > cfo.target_file_size_base * 3/2) {
+          score = std::max(score, 1.1); // to compact all L1 files
+        }
+      }
     }
     compaction_level_[level] = level;
     compaction_score_[level] = score;

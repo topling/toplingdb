@@ -325,6 +325,7 @@ bool Compaction::IsTrivialMove() const {
   if (kCompactionStyleLevel == immutable_options_.compaction_style) {
     auto& cfo = mutable_cf_options_;
     if (1 == output_level_ &&
+        immutable_options_.compaction_executor_factory &&
         cfo.write_buffer_size > cfo.target_file_size_base * 3/2) {
       return false;
     }

@@ -2693,6 +2693,7 @@ void VersionStorageInfo::ComputeCompactionScore(
       score = static_cast<double>(level_bytes_no_compacting) /
               MaxBytesForLevel(level);
       if (level_bytes_no_compacting && 1 == level &&
+            immutable_options.compaction_executor_factory &&
             compaction_style_ == kCompactionStyleLevel) {
         auto& cfo = mutable_cf_options;
         if (cfo.write_buffer_size > cfo.target_file_size_base * 3/2) {

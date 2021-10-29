@@ -322,6 +322,14 @@ bool Compaction::IsTrivialMove() const {
     return false;
   }
 
+  if (kCompactionStyleLevel == immutable_options_.compaction_style) {
+    auto& cfo = mutable_cf_options_;
+    if (1 == output_level_ &&
+        cfo.write_buffer_size > cfo.target_file_size_base * 3/2) {
+      return false;
+    }
+  }
+
   // Used in universal compaction, where trivial move can be done if the
   // input files are non overlapping
   if ((mutable_cf_options_.compaction_options_universal.allow_trivial_move) &&

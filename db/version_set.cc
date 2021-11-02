@@ -2693,14 +2693,10 @@ void VersionStorageInfo::ComputeCompactionScore(
       score = static_cast<double>(level_bytes_no_compacting) /
               MaxBytesForLevel(level);
       if (level_bytes_no_compacting && 1 == level &&
-            immutable_options.compaction_executor_factory &&
             compaction_style_ == kCompactionStyleLevel) {
-        auto& cfo = mutable_cf_options;
-        if (cfo.write_buffer_size > cfo.target_file_size_base * 3/2) {
-          bool drain_L1 = cfo.compaction_options_universal.size_ratio == 0;
-          if (drain_L1)
-            score = std::max(score, 1.1); // to compact all L1 files
-        }
+        double L1_score_boost =
+            mutable_cf_options.compaction_options_universal.size_ratio;
+        score *= std::max(L1_score_boost, 1.0);
       }
     }
     compaction_level_[level] = level;

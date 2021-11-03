@@ -696,8 +696,8 @@ Status CompactionJob::RunLocal() {
       auto& meta = sub.outputs[j].meta;
       auto  raw = meta.raw_key_size + meta.raw_value_size;
       auto  zip = meta.fd.file_size;
-      RecordTimeToHistogram(stats_, LCOMPACTION_OUTPUT_FILE_RAW_SIZE, raw);
-      RecordTimeToHistogram(stats_, LCOMPACTION_OUTPUT_FILE_ZIP_SIZE, zip);
+      RecordTimeToHistogram(stats_, LCOMPACTION_OUTPUT_RAW_BYTES, raw);
+      RecordTimeToHistogram(stats_, LCOMPACTION_OUTPUT_ZIP_BYTES, zip);
     }
   }
   uint64_t sum_raw = 0, sum_zip = 0;
@@ -1058,8 +1058,8 @@ try {
   rpc_results.statistics.histograms[src].Clear()
   MoveHG(DCOMPACTION_INPUT_RAW_BYTES, LCOMPACTION_INPUT_RAW_BYTES);
   MoveHG(DCOMPACTION_INPUT_ZIP_BYTES, LCOMPACTION_INPUT_ZIP_BYTES);
-  MoveHG(DCOMPACTION_OUTPUT_FILE_RAW_SIZE, LCOMPACTION_OUTPUT_FILE_RAW_SIZE);
-  MoveHG(DCOMPACTION_OUTPUT_FILE_ZIP_SIZE, LCOMPACTION_OUTPUT_FILE_ZIP_SIZE);
+  MoveHG(DCOMPACTION_OUTPUT_RAW_BYTES, LCOMPACTION_OUTPUT_RAW_BYTES);
+  MoveHG(DCOMPACTION_OUTPUT_ZIP_BYTES, LCOMPACTION_OUTPUT_ZIP_BYTES);
 #if defined(__GNUC__)
   #pragma GCC diagnostic pop
 #endif

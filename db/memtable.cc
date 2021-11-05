@@ -562,7 +562,7 @@ Status MemTable::VerifyEncodedEntry(Slice ikey, Slice value,
   const size_t user_key_len = ikey_len - 8;
   Slice key(ikey.data(), user_key_len);
 
-  uint64_t packed = DecodeFixed64(ikey.data());
+  uint64_t packed = DecodeFixed64(key.end());
   ValueType value_type = kMaxValue;
   SequenceNumber sequence_number = kMaxSequenceNumber;
   UnPackSequenceAndType(packed, &sequence_number, &value_type);

@@ -283,6 +283,8 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
     sideplugin/topling-rocks/src/txn/cspp_memtable.cc \
     sideplugin/topling-rocks/src/misc/show_sys_info.cc \
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+else
+  $(warning NotFound sideplugin/topling-rocks, Topling SST, MemTab and Distributed Compaction are disable)
 endif
 
 ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
@@ -2543,12 +2545,14 @@ endif
 build_subset_tests: $(ROCKSDBTESTS_SUBSET)
 	$(AM_V_GEN)if [ -n "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}" ]; then echo "$(ROCKSDBTESTS_SUBSET)" > "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}"; else echo "$(ROCKSDBTESTS_SUBSET)"; fi
 
+ifneq (,$(wildcard sideplugin/topling-rocks))
 ${TOPLING_ROCKS_GIT_VER_SRC}:
 	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
 
 .PHONY: dcompact_worker
 dcompact_worker: ${SHARED1}
 	+make -C sideplugin/topling-rocks/tools/dcompact ${OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
+endif
 
 # Remove the rules for which dependencies should not be generated and see if any are left.
 #If so, include the dependencies; if not, do not include the dependency files

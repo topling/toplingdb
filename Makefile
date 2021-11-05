@@ -21,6 +21,15 @@ MACHINE ?= $(shell uname -m)
 ARFLAGS = ${EXTRA_ARFLAGS} rs
 STRIPFLAGS = -S -x
 
+# beg topling specific
+DISABLE_WARNING_AS_ERROR=1
+LIB_MODE=shared
+USE_RTTI=1
+ROCKSDB_USE_IO_URING=0
+ROCKSDB_DISABLE_TCMALLOC=1
+SKIP_FORMAT_BUCK_CHECKS=1
+# end topling specific
+
 # Transform parallel LOG output into something more readable.
 perl_command = perl -n \
   -e '@a=split("\t",$$_,-1); $$t=$$a[8];'				\
@@ -193,6 +202,115 @@ endif
 
 #-----------------------------------------------
 include src.mk
+
+# ROCKSDB_NO_DYNAMIC_EXTENSION makes dll load twice, disable it
+CXXFLAGS += -DROCKSDB_NO_DYNAMIC_EXTENSION
+
+# civetweb show server stats
+CXXFLAGS += -DUSE_SERVER_STATS=1
+CFLAGS += -DUSE_SERVER_STATS=1
+
+ifneq (,$(wildcard sideplugin/rapidyaml/src))
+  EXTRA_LIB_SOURCES += sideplugin/rockside/src/topling/rapidyaml_all.cc
+  CXXFLAGS += -Isideplugin/rapidyaml \
+              -Isideplugin/rapidyaml/src \
+              -Isideplugin/rapidyaml/ext/c4core/src \
+              -DSIDE_PLUGIN_WITH_YAML=1
+else
+  $(warning "NotFound sideplugin/rapidyaml, yaml will be disabled")
+endif
+
+# topling-core is topling private
+ifneq (,$(wildcard sideplugin/topling-core))
+  TOPLING_CORE_DIR := sideplugin/topling-core
+else
+  # topling-zip is topling public
+  ifneq (,$(wildcard sideplugin/topling-zip))
+    TOPLING_CORE_DIR := sideplugin/topling-zip
+  endif
+endif
+
+ifdef TOPLING_CORE_DIR
+  CXXFLAGS += -DJSON_USE_GOLD_HASH_MAP=1
+  COMPILER := $(shell set -e; tmpfile=`mktemp -u compiler-XXXXXX`; \
+                      ${CXX} ${TOPLING_CORE_DIR}/tools/configure/compiler.cpp -o $${tmpfile}.exe; \
+                      ./$${tmpfile}.exe && rm -f $${tmpfile}*)
+  UNAME_MachineSystem := $(shell uname -m -s | sed 's:[ /]:-:g')
+  WITH_BMI2 := $(shell bash ${TOPLING_CORE_DIR}/cpu_has_bmi2.sh)
+  BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${WITH_BMI2}
+  BUILD_ROOT := build/${BUILD_NAME}
+  ifeq (${DEBUG_LEVEL}, 0)
+    BUILD_TYPE_SIG := r
+    OBJ_DIR := ${BUILD_ROOT}/rls
+  endif
+  ifeq (${DEBUG_LEVEL}, 1)
+    BUILD_TYPE_SIG := a
+    OBJ_DIR := ${BUILD_ROOT}/afr
+  endif
+  ifeq (${DEBUG_LEVEL}, 2)
+    BUILD_TYPE_SIG := d
+    OBJ_DIR := ${BUILD_ROOT}/dbg
+  endif
+  CXXFLAGS += \
+    -I${TOPLING_CORE_DIR}/src \
+    -I${TOPLING_CORE_DIR}/boost-include \
+    -I${TOPLING_CORE_DIR}/3rdparty/zstd
+  LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
+             -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
+  export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
+else
+  $(warning "neither topling-core nor topling-zip are found, json conf may broken")
+endif
+
+ifneq (,$(wildcard sideplugin/topling-rocks))
+  CXXFLAGS   += -I sideplugin/topling-rocks/src
+  LDFLAGS    += -lstdc++fs -lcurl
+  TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
+  EXTRA_LIB_SOURCES += \
+    sideplugin/topling-rocks/src/dcompact/dcompact_cmd.cc \
+    sideplugin/topling-rocks/src/dcompact/dcompact_etcd.cc \
+    sideplugin/topling-rocks/src/dcompact/dcompact_executor.cc \
+    sideplugin/topling-rocks/src/dcompact/dispatch_table_factory_serde.cc \
+    sideplugin/topling-rocks/src/table/terark_fast_table.cc \
+    sideplugin/topling-rocks/src/table/terark_fast_table_builder.cc \
+    sideplugin/topling-rocks/src/table/terark_fast_table_reader.cc \
+    sideplugin/topling-rocks/src/table/terark_zip_common.cc \
+    sideplugin/topling-rocks/src/table/terark_zip_config.cc \
+    sideplugin/topling-rocks/src/table/terark_zip_index.cc \
+    sideplugin/topling-rocks/src/table/terark_zip_table_builder.cc \
+    sideplugin/topling-rocks/src/table/terark_zip_table.cc \
+    sideplugin/topling-rocks/src/table/terark_zip_table_reader.cc \
+    sideplugin/topling-rocks/src/table/terark_zip_table_json_plugin.cc \
+    sideplugin/topling-rocks/src/txn/cspp_memtable.cc \
+    sideplugin/topling-rocks/src/misc/show_sys_info.cc \
+    sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+endif
+
+ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
+  CXXFLAGS   += -I sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto \
+                -I sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3
+  LDFLAGS    += -L sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/src -letcd-cpp-api
+  export LD_LIBRARY_PATH:=${TOPLING_ROCKS_DIR}/3rdparty/etcd-cpp-apiv3/build/src:${LD_LIBRARY_PATH}
+  ifneq (,$(wildcard ../vcpkg/packages/grpc_x64-linux/include))
+    CXXFLAGS   += -I ../vcpkg/packages/grpc_x64-linux/include
+  else
+    $(error NotFound ../vcpkg/packages/grpc_x64-linux/include)
+  endif
+  ifneq (,$(wildcard ../vcpkg/packages/protobuf_x64-linux/include))
+    CXXFLAGS   += -I ../vcpkg/packages/protobuf_x64-linux/include
+  else
+    $(error NotFound ../vcpkg/packages/protobuf_x64-linux/include)
+  endif
+  ifneq (,$(wildcard ../vcpkg/packages/cpprestsdk_x64-linux/include))
+    CXXFLAGS   += -I ../vcpkg/packages/cpprestsdk_x64-linux/include
+  else
+    $(error NotFound ../vcpkg/packages/cpprestsdk_x64-linux/include)
+  endif
+else
+  $(warning "NotFound etcd-cpp-apiv3, disabled")
+endif
+
+export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
 
 # prepend EXTRA_LIB_SOURCES to LIB_SOURCES because
 # EXTRA_LIB_SOURCES single file compiling is slow
@@ -442,6 +560,8 @@ ifndef DISABLE_WARNING_AS_ERROR
 	WARNING_FLAGS += -Werror
 endif
 
+# topling specific WARNING_FLAGS
+WARNING_FLAGS := -Wall -Wno-shadow
 
 ifdef LUA_PATH
 
@@ -2423,6 +2543,13 @@ endif
 
 build_subset_tests: $(ROCKSDBTESTS_SUBSET)
 	$(AM_V_GEN)if [ -n "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}" ]; then echo "$(ROCKSDBTESTS_SUBSET)" > "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}"; else echo "$(ROCKSDBTESTS_SUBSET)"; fi
+
+${TOPLING_ROCKS_GIT_VER_SRC}:
+	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
+
+.PHONY: dcompact_worker
+dcompact_worker: ${SHARED1}
+	+make -C sideplugin/topling-rocks/tools/dcompact ${OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
 
 # Remove the rules for which dependencies should not be generated and see if any are left.
 #If so, include the dependencies; if not, do not include the dependency files

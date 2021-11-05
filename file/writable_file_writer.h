@@ -213,7 +213,7 @@ class WritableFileWriter {
     s.PermitUncheckedError();
   }
 
-  std::string file_name() const { return file_name_; }
+  const std::string& file_name() const { return file_name_; }
 
   // When this Append API is called, if the crc32c_checksum is not provided, we
   // will calculate the checksum internally.
@@ -233,6 +233,7 @@ class WritableFileWriter {
   IOStatus SyncWithoutFlush(bool use_fsync);
 
   uint64_t GetFileSize() const { return filesize_; }
+  void SetFileSize(uint64_t fsize) { filesize_ = fsize; }
 
   IOStatus InvalidateCache(size_t offset, size_t length) {
     return writable_file_->InvalidateCache(offset, length);

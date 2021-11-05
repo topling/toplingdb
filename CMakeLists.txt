@@ -92,7 +92,7 @@ else()
 endif()
 
 if( NOT DEFINED CMAKE_CXX_STANDARD )
-  set(CMAKE_CXX_STANDARD 11)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 
 include(CMakeDependentOption)
@@ -185,6 +185,8 @@ endif()
 string(TIMESTAMP TS "%Y-%m-%d %H:%M:%S" UTC)
 set(BUILD_DATE "${TS}" CACHE STRING "the time we first built rocksdb")
 
+include_directories(sideplugin/rockside/src)
+
 find_package(Git)
 
 if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
@@ -215,6 +217,11 @@ set(BUILD_VERSION_CC ${CMAKE_BINARY_DIR}/build_version.cc)
 configure_file(util/build_version.cc.in ${BUILD_VERSION_CC} @ONLY)
 
 if(MSVC)
+  if(MSVC_VERSION LESS 1926)
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /experimental:preprocessor")
+  else()
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:preprocessor")
+  endif()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /EHsc /GS /Gd /GR /GF /fp:precise /Zc:wchar_t /Zc:forScope /errorReport:queue")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /d2Zi+ /W4 /wd4127 /wd4800 /wd4996 /wd4351 /wd4100 /wd4204 /wd4324")
 else()
@@ -342,7 +349,7 @@ endif()
 
 # Check if -latomic is required or not
 if (NOT MSVC)
-  set(CMAKE_REQUIRED_FLAGS "--std=c++11")
+  set(CMAKE_REQUIRED_FLAGS "--std=c++17")
   CHECK_CXX_SOURCE_COMPILES("
 #include <atomic>
 std::atomic<uint64_t> x(0);
@@ -632,8 +639,24 @@ endif()
 find_package(Threads REQUIRED)
 
 # Main library source code
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt)
+  message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DJSON_USE_GOLD_HASH_MAP")
+  include(${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt)
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
+endif()
+
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)
+  message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
+  include(${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
+endif()
 
 set(SOURCES
+        ${rockside_src}
+        ${topling_rocks_src}
         cache/cache.cc
         cache/cache_entry_roles.cc
         cache/cache_reservation_manager.cc
@@ -655,6 +678,7 @@ set(SOURCES
         db/builder.cc
         db/c.cc
         db/column_family.cc
+        db/compaction/compaction_executor.cc
         db/compaction/compaction.cc
         db/compaction/compaction_iterator.cc
         db/compaction/compaction_picker.cc

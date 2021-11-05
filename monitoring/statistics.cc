@@ -273,6 +273,18 @@ const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {
     {NUM_SST_READ_PER_LEVEL, "rocksdb.num.sst.read.per.level"},
     {ERROR_HANDLER_AUTORESUME_RETRY_COUNT,
      "rocksdb.error.handler.autoresume.retry.count"},
+    {NUMBER_PER_MULTIGET, "rocksdb.number.per.multiget"},
+    {LCOMPACTION_INPUT_RAW_BYTES, "rocksdb.lcompaction.input.raw.bytes"},
+    {LCOMPACTION_INPUT_ZIP_BYTES, "rocksdb.lcompaction.input.zip.bytes"},
+    {DCOMPACTION_INPUT_RAW_BYTES, "rocksdb.dcompaction.input.raw.bytes"},
+    {DCOMPACTION_INPUT_ZIP_BYTES, "rocksdb.dcompaction.input.zip.bytes"},
+    {LCOMPACTION_OUTPUT_FILE_RAW_SIZE, "rocksdb.lcompaction.output.file.raw.size"},
+    {LCOMPACTION_OUTPUT_FILE_ZIP_SIZE, "rocksdb.lcompaction.output.file.zip.size"},
+    {DCOMPACTION_OUTPUT_FILE_RAW_SIZE, "rocksdb.dcompaction.output.file.raw.size"},
+    {DCOMPACTION_OUTPUT_FILE_ZIP_SIZE, "rocksdb.dcompaction.output.file.zip.size"},
+
+    {SWITCH_WAL_MICROS, "rocksdb.switch.wal.micros"},
+    {MEMTAB_CONSTRUCT_MICROS, "rocksdb.memtab.construct.micros"},
 };
 
 std::shared_ptr<Statistics> CreateDBStatistics() {
@@ -497,6 +509,29 @@ bool StatisticsImpl::getTickerMap(
 
 bool StatisticsImpl::HistEnabledForType(uint32_t type) const {
   return type < HISTOGRAM_ENUM_MAX;
+}
+
+void StatisticsImpl::GetAggregated(uint64_t* tickers, HistogramStat* hist) const {
+  memset(tickers, 0, sizeof(tickers[0])*TICKER_ENUM_MAX);
+  hist->Clear();
+  MutexLock lock(&aggregate_lock_);
+  for (uint32_t t = 0; t < TICKER_ENUM_MAX; ++t) {
+    tickers[t] += getTickerCountLocked(t);
+  }
+  for (uint32_t h = 0; h < HISTOGRAM_ENUM_MAX; ++h) {
+    hist[h].Clear();
+    hist[h].Merge(getHistogramImplLocked(h)->GetHistogramStat());
+  }
+}
+
+void StatisticsImpl::Merge(const uint64_t* tickers, const HistogramStat* hist) {
+  auto core = per_core_stats_.Access();
+  for (uint32_t t = 0; t < TICKER_ENUM_MAX; ++t) {
+    core->tickers_[t].fetch_add(tickers[t], std::memory_order_relaxed);
+  }
+  for (uint32_t h = 0; h < HISTOGRAM_ENUM_MAX; ++h) {
+    core->histograms_[h].Merge(hist[h]);
+  }
 }
 
 }  // namespace ROCKSDB_NAMESPACE

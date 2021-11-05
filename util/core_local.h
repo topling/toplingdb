@@ -38,6 +38,7 @@ class CoreLocalArray {
  private:
   std::unique_ptr<T[]> data_;
   int size_shift_;
+  int size_mask_;
 };
 
 template <typename T>
@@ -48,6 +49,7 @@ CoreLocalArray<T>::CoreLocalArray() {
   while (1 << size_shift_ < num_cpus) {
     ++size_shift_;
   }
+  size_mask_ = (1 << size_shift_) - 1;
   data_.reset(new T[static_cast<size_t>(1) << size_shift_]);
 }
 
@@ -58,19 +60,35 @@ size_t CoreLocalArray<T>::Size() const {
 
 template <typename T>
 T* CoreLocalArray<T>::Access() const {
+#if defined(OS_LINUX) && \
+    defined(ROCKSDB_SCHED_GETCPU_PRESENT) && defined(__x86_64__) && \
+    (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 22))
+  // cpuid never < 0
+  int cpuid = port::PhysicalCoreID();
+  size_t core_idx = static_cast<size_t>(cpuid & size_mask_);
+  return AccessAtCore(core_idx);
+#else
   return AccessElementAndIndex().first;
+#endif
 }
 
 template <typename T>
 std::pair<T*, size_t> CoreLocalArray<T>::AccessElementAndIndex() const {
   int cpuid = port::PhysicalCoreID();
+#if defined(OS_LINUX) && \
+    defined(ROCKSDB_SCHED_GETCPU_PRESENT) && defined(__x86_64__) && \
+    (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 22))
+  // cpuid never < 0
+  size_t core_idx = static_cast<size_t>(cpuid & size_mask_);
+#else
   size_t core_idx;
   if (UNLIKELY(cpuid < 0)) {
     // cpu id unavailable, just pick randomly
     core_idx = Random::GetTLSInstance()->Uniform(1 << size_shift_);
   } else {
-    core_idx = static_cast<size_t>(cpuid & ((1 << size_shift_) - 1));
+    core_idx = static_cast<size_t>(cpuid & size_mask_);
   }
+#endif
   return {AccessAtCore(core_idx), core_idx};
 }
 

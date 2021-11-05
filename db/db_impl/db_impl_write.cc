@@ -17,6 +17,7 @@
 #include "test_util/sync_point.h"
 #include "util/cast_util.h"
 
+
 namespace ROCKSDB_NAMESPACE {
 // Convenience methods
 Status DBImpl::Put(const WriteOptions& o, ColumnFamilyHandle* column_family,
@@ -923,7 +924,10 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   if (UNLIKELY(status.ok() && !single_column_family_mode_ &&
                total_log_size_ > GetMaxTotalWalSize())) {
     WaitForPendingWrites();
+    auto beg_micro = immutable_db_options_.clock->NowMicros();
     status = SwitchWAL(write_context);
+    auto end_micro = immutable_db_options_.clock->NowMicros();
+    RecordInHistogram(stats_, SWITCH_WAL_MICROS, end_micro - beg_micro);
   }
 
   if (UNLIKELY(status.ok() && write_buffer_manager_->ShouldFlush())) {
@@ -933,16 +937,25 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
     // be flushed. We may end up with flushing much more DBs than needed. It's
     // suboptimal but still correct.
     WaitForPendingWrites();
+    auto beg_micro = immutable_db_options_.clock->NowMicros();
     status = HandleWriteBufferManagerFlush(write_context);
+    auto end_micro = immutable_db_options_.clock->NowMicros();
+    RecordInHistogram(stats_, SWITCH_WAL_MICROS, end_micro - beg_micro);
   }
 
   if (UNLIKELY(status.ok() && !trim_history_scheduler_.Empty())) {
+    auto beg_micro = immutable_db_options_.clock->NowMicros();
     status = TrimMemtableHistory(write_context);
+    auto end_micro = immutable_db_options_.clock->NowMicros();
+    RecordInHistogram(stats_, SWITCH_WAL_MICROS, end_micro - beg_micro);
   }
 
   if (UNLIKELY(status.ok() && !flush_scheduler_.Empty())) {
     WaitForPendingWrites();
+    auto beg_micro = immutable_db_options_.clock->NowMicros();
     status = ScheduleFlushes(write_context);
+    auto end_micro = immutable_db_options_.clock->NowMicros();
+    RecordInHistogram(stats_, SWITCH_WAL_MICROS, end_micro - beg_micro);
   }
 
   PERF_TIMER_STOP(write_scheduling_flushes_compactions_time);

@@ -530,6 +530,7 @@ class VersionStorageInfo {
                                      int last_level, int last_l0_idx);
 
  private:
+ protected:
   const InternalKeyComparator* internal_comparator_;
   const Comparator* user_comparator_;
   int num_levels_;            // Number of levels
@@ -1227,6 +1228,7 @@ class VersionSet {
   // Create an iterator that reads over the compaction inputs for "*c".
   // The caller should delete the iterator when no longer needed.
   // @param read_options Must outlive the returned iterator.
+  static
   InternalIterator* MakeInputIterator(
       const ReadOptions& read_options, const Compaction* c,
       RangeDelAggregator* range_del_agg,

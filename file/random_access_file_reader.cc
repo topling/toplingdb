@@ -195,8 +195,12 @@ IOStatus RandomAccessFileReader::Read(const IOOptions& opts, uint64_t offset,
           // one iteration of this loop, so we don't need to check and adjust
           // the opts.timeout before calling file_->Read
           assert(!opts.timeout.count() || allowed == n);
-          io_s = file_->Read(offset + pos, allowed, opts, &tmp_result,
-                             scratch + pos, nullptr);
+          if (use_fsread_)
+            io_s = file_->FsRead(offset + pos, allowed, opts, &tmp_result,
+                            scratch + pos, nullptr);
+          else
+            io_s = file_->Read(offset + pos, allowed, opts, &tmp_result,
+                            scratch + pos, nullptr);
         }
 #ifndef ROCKSDB_LITE
         if (ShouldNotifyListeners()) {
@@ -349,7 +353,10 @@ IOStatus RandomAccessFileReader::MultiRead(const IOOptions& opts,
 
     {
       IOSTATS_CPU_TIMER_GUARD(cpu_read_nanos, clock_);
-      io_s = file_->MultiRead(fs_reqs, num_fs_reqs, opts, nullptr);
+      if (use_fsread_)
+        io_s = file_->FsMultiRead(fs_reqs, num_fs_reqs, opts, nullptr);
+      else
+        io_s = file_->MultiRead(fs_reqs, num_fs_reqs, opts, nullptr);
     }
 
 #ifndef ROCKSDB_LITE

@@ -1065,8 +1065,13 @@ uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
 
 MemTable* ColumnFamilyData::ConstructNewMemtable(
     const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
-  return new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
+  auto beg = ioptions_.clock->NowNanos();
+  auto tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
                       write_buffer_manager_, earliest_seq, id_);
+  auto end = ioptions_.clock->NowNanos();
+  auto micros = (end - beg) / 1000;
+  RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_MICROS, micros);
+  return tab;
 }
 
 void ColumnFamilyData::CreateNewMemtable(

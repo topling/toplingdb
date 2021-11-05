@@ -45,6 +45,7 @@ class ConcurrentTaskLimiter;
 class Env;
 enum InfoLogLevel : unsigned char;
 class SstFileManager;
+struct FileMetaData;
 class FilterPolicy;
 class Logger;
 class MergeOperator;
@@ -312,6 +313,9 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   // Default: nullptr
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory = nullptr;
 
+  std::shared_ptr<class CompactionExecutorFactory> compaction_executor_factory;
+  std::shared_ptr<class AnyPlugin> html_user_key_coder;
+
   // Create ColumnFamilyOptions with default values for all fields
   ColumnFamilyOptions();
   // Create ColumnFamilyOptions from Options
@@ -320,7 +324,7 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   void Dump(Logger* log) const;
 };
 
-enum class WALRecoveryMode : char {
+ROCKSDB_ENUM_CLASS(WALRecoveryMode, char,
   // Original levelDB recovery
   //
   // We tolerate the last record in any log to be incomplete due to a crash
@@ -356,8 +360,8 @@ enum class WALRecoveryMode : char {
   // possible
   // Use case : Ideal for last ditch effort to recover data or systems that
   // operate with low grade unrelated data
-  kSkipAnyCorruptedRecords = 0x03,
-};
+  kSkipAnyCorruptedRecords = 0x03
+);
 
 struct DbPath {
   std::string path;
@@ -679,6 +683,11 @@ struct DBOptions {
   // Dynamically changeable through SetDBOptions() API.
   uint32_t max_subcompactions = 1;
 
+  // L0 -> L1 compactions involves all L0 and L1 files, more subcompactions
+  // makes such compactions faster. Default 0 means ignore
+  // max_level1_subcompactions and fall back to use max_subcompactions
+  uint32_t max_level1_subcompactions = 0;
+
   // NOT SUPPORTED ANYMORE: RocksDB automatically decides this based on the
   // value of max_background_jobs. For backwards compatibility we will set
   // `max_background_jobs = max_background_compactions + max_background_flushes`
@@ -806,6 +815,9 @@ struct DBOptions {
   // NOT SUPPORTED ANYMORE -- this options is no longer used
   bool skip_log_error_on_recovery = false;
 
+  // If false, fdatasync() calls are bypassed
+  bool allow_fdatasync = true;
+
   // if not zero, dump rocksdb.stats to LOG every stats_dump_period_sec
   //
   // Default: 600 (10 min)
@@ -887,7 +899,8 @@ struct DBOptions {
   // Specify the file access pattern once a compaction is started.
   // It will be applied to all input files of a compaction.
   // Default: NORMAL
-  enum AccessHint { NONE, NORMAL, SEQUENTIAL, WILLNEED };
+  ROCKSDB_ENUM_PLAIN_INCLASS(AccessHint, int,
+      NONE, NORMAL, SEQUENTIAL, WILLNEED);
   AccessHint access_hint_on_compaction_start = NORMAL;
 
   // If true, always create a new file descriptor and new table reader
@@ -1394,7 +1407,7 @@ struct Options : public DBOptions, public ColumnFamilyOptions {
 // Get call will process data that is already processed in the memtable or
 // the block cache. It will not page in data from the OS cache or data that
 // resides in storage.
-enum ReadTier {
+enum ReadTier : unsigned char {
   kReadAllTier = 0x0,     // data in memtable, block cache, OS cache or storage
   kBlockCacheTier = 0x1,  // data in memtable or block cache
   kPersistedTier = 0x2,   // persisted data.  When WAL is disabled, this option
@@ -1466,6 +1479,8 @@ struct ReadOptions {
   // found at the specified cache, then Status::Incomplete is returned.
   // Default: kReadAllTier
   ReadTier read_tier;
+
+  bool just_check_key_exists; // just for check existing
 
   // If true, all data read from underlying storage will be
   // verified against corresponding checksums.
@@ -1545,7 +1560,7 @@ struct ReadOptions {
   // the table will not be scanned. This option only affects Iterators and has
   // no impact on point lookups.
   // Default: empty (every table will be scanned)
-  std::function<bool(const TableProperties&)> table_filter;
+  std::function<bool(const TableProperties&, const FileMetaData&)> table_filter;
 
   // Needed to support differential snapshots. Has 2 effects:
   // 1) Iterator will skip all internal keys with seqnum < iter_start_seqnum
@@ -1715,7 +1730,7 @@ struct CompactionOptions {
 
 // For level based compaction, we can configure if we want to skip/force
 // bottommost level compaction.
-enum class BottommostLevelCompaction {
+ROCKSDB_ENUM_CLASS(BottommostLevelCompaction, int,
   // Skip bottommost level compaction
   kSkip,
   // Only compact bottommost level if there is a compaction filter
@@ -1725,8 +1740,8 @@ enum class BottommostLevelCompaction {
   kForce,
   // Always compact bottommost level but in bottommost level avoid
   // double-compacting files created in the same compaction
-  kForceOptimized,
-};
+  kForceOptimized
+);
 
 // CompactRangeOptions is used by CompactRange() call.
 struct CompactRangeOptions {

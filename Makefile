@@ -210,15 +210,14 @@ CXXFLAGS += -DROCKSDB_NO_DYNAMIC_EXTENSION
 CXXFLAGS += -DUSE_SERVER_STATS=1
 CFLAGS += -DUSE_SERVER_STATS=1
 
-ifneq (,$(wildcard sideplugin/rapidyaml/src))
-  EXTRA_LIB_SOURCES += sideplugin/rockside/src/topling/rapidyaml_all.cc
-  CXXFLAGS += -Isideplugin/rapidyaml \
-              -Isideplugin/rapidyaml/src \
-              -Isideplugin/rapidyaml/ext/c4core/src \
-              -DSIDE_PLUGIN_WITH_YAML=1
-else
-  $(warning "NotFound sideplugin/rapidyaml, yaml will be disabled")
+ifeq (,$(wildcard sideplugin/rockside/3rdparty/rapidyaml))
+  $(error "NotFound sideplugin/rockside/3rdparty/rapidyaml")
 endif
+EXTRA_LIB_SOURCES += sideplugin/rockside/src/topling/rapidyaml_all.cc
+CXXFLAGS += -Isideplugin/rockside/3rdparty/rapidyaml \
+            -Isideplugin/rockside/3rdparty/rapidyaml/src \
+            -Isideplugin/rockside/3rdparty/rapidyaml/ext/c4core/src \
+            -DSIDE_PLUGIN_WITH_YAML=1
 
 # topling-core is topling private
 ifneq (,$(wildcard sideplugin/topling-core))

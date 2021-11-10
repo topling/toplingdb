@@ -157,10 +157,8 @@ void HistogramWindowingImpl::SwapHistoryBucket() {
 
     if (!stats_to_drop.Empty()) {
       for (size_t b = 0; b < stats_.num_buckets_; b++){
-        auto cnt_b = stats_to_drop.buckets_[b].cnt.load(std::memory_order_relaxed);
-        auto sum_b = stats_to_drop.buckets_[b].sum.load(std::memory_order_relaxed);
-        stats_.buckets_[b].cnt.fetch_sub(cnt_b, std::memory_order_relaxed);
-        stats_.buckets_[b].sum.fetch_sub(sum_b, std::memory_order_relaxed);
+        auto cnt_b = stats_to_drop.buckets_[b].load(std::memory_order_relaxed);
+        stats_.buckets_[b].fetch_sub(cnt_b, std::memory_order_relaxed);
       }
 
       if (stats_.min() == stats_to_drop.min()) {

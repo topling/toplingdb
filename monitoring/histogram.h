@@ -69,7 +69,7 @@ struct HistogramStat {
     return sum_squares_.load(std::memory_order_relaxed);
   }
   inline uint64_t bucket_at(size_t b) const {
-    return buckets_[b].cnt.load(std::memory_order_relaxed);
+    return buckets_[b].load(std::memory_order_relaxed);
   }
 
   double Median() const;
@@ -82,17 +82,13 @@ struct HistogramStat {
   // To be able to use HistogramStat as thread local variable, it
   // cannot have dynamic allocated member. That's why we're
   // using manually values from BucketMapper
-  struct BucketElem {
-    std::atomic_uint_fast64_t cnt;
-    std::atomic_uint_fast64_t sum;
-  };
   std::atomic_uint_fast64_t min_;
   std::atomic_uint_fast64_t max_;
   std::atomic_uint_fast64_t num_;
   std::atomic_uint_fast64_t sum_;
   std::atomic_uint_fast64_t sum_squares_;
-  BucketElem buckets_[109]; // 109==BucketMapper::BucketCount()
-  BucketElem overrun_; // to simplify code changes
+  std::atomic_uint_fast64_t buckets_[109]; // 109==BucketMapper::BucketCount()
+  std::atomic_uint_fast64_t overrun_; // to simplify code changes
   static const uint64_t num_buckets_;
 };
 

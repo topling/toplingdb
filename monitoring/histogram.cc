@@ -74,11 +74,9 @@ void HistogramStat::Clear() {
   sum_.store(0, std::memory_order_relaxed);
   sum_squares_.store(0, std::memory_order_relaxed);
   for (unsigned int b = 0; b < num_buckets_; b++) {
-    buckets_[b].cnt.store(0, std::memory_order_relaxed);
-    buckets_[b].sum.store(0, std::memory_order_relaxed);
+    buckets_[b].store(0, std::memory_order_relaxed);
   }
-  overrun_.cnt.store(0, std::memory_order_relaxed);
-  overrun_.sum.store(0, std::memory_order_relaxed);
+  overrun_.store(0, std::memory_order_relaxed);
 };
 
 bool HistogramStat::Empty() const { return num() == 0; }
@@ -93,8 +91,7 @@ void HistogramStat::Add(uint64_t value) {
   const size_t index = bucketMapper.IndexForValue(value);
   assert(index <= num_buckets_);
 #if 0
-  buckets_[index].cnt.fetch_add(1, std::memory_order_relaxed);
-  buckets_[index].sum.fetch_add(value, std::memory_order_relaxed);
+  buckets_[index].fetch_add(1, std::memory_order_relaxed);
 
   uint64_t old_min = min_.load(std::memory_order_relaxed);
   while (value < old_min &&
@@ -110,8 +107,7 @@ void HistogramStat::Add(uint64_t value) {
   sum_.fetch_add(value, std::memory_order_relaxed);
   sum_squares_.fetch_add(value * value, std::memory_order_relaxed);
 #else // prefer fast than 100% accuracy
-  NoAtomic(buckets_[index].cnt)++;
-  NoAtomic(buckets_[index].sum) += value;
+  NoAtomic(buckets_[index])++;
   if (NoAtomic(min_) > value) NoAtomic(min_) = value;
   if (NoAtomic(max_) < value) NoAtomic(max_) = value;
   NoAtomic(num_)++;
@@ -123,8 +119,7 @@ void HistogramStat::Add(uint64_t value) {
 void HistogramStat::Del(uint64_t value) {
   const size_t index = bucketMapper.IndexForValue(value);
   assert(index <= num_buckets_);
-  NoAtomic(buckets_[index].cnt)--;
-  NoAtomic(buckets_[index].sum) -= value;
+  NoAtomic(buckets_[index])--;
   NoAtomic(num_)--;
   NoAtomic(sum_) -= value;
   NoAtomic(sum_squares_) -= value * value;
@@ -151,10 +146,8 @@ void HistogramStat::Merge(const HistogramStat& other) {
   sum_.fetch_add(other.sum(), std::memory_order_relaxed);
   sum_squares_.fetch_add(other.sum_squares(), std::memory_order_relaxed);
   for (unsigned int b = 0; b < num_buckets_; b++) {
-    auto other_cnt_b = other.buckets_[b].cnt.load(std::memory_order_relaxed);
-    auto other_sum_b = other.buckets_[b].sum.load(std::memory_order_relaxed);
-    buckets_[b].cnt.fetch_add(other_cnt_b, std::memory_order_relaxed);
-    buckets_[b].sum.fetch_add(other_sum_b, std::memory_order_relaxed);
+    auto other_cnt_b = other.buckets_[b].load(std::memory_order_relaxed);
+    buckets_[b].fetch_add(other_cnt_b, std::memory_order_relaxed);
   }
 }
 

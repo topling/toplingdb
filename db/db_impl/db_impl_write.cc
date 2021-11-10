@@ -165,7 +165,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
 
     if (w.ShouldWriteToMemtable()) {
       PERF_TIMER_STOP(write_pre_and_post_process_time);
-      PERF_TIMER_GUARD(write_memtable_time);
+      PERF_TIMER_WITH_HISTOGRAM(write_memtable_time, MEMTAB_WRITE_KV_MICROS, stats_);
 
       ColumnFamilyMemTablesImpl column_family_memtables(
           versions_->GetColumnFamilySet());
@@ -320,13 +320,13 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
 
     if (!two_write_queues_) {
       if (status.ok() && !write_options.disableWAL) {
-        PERF_TIMER_GUARD(write_wal_time);
+        PERF_TIMER_WITH_HISTOGRAM(write_wal_time, WRITE_WAL_MICROS, stats_);
         io_s = WriteToWAL(write_group, log_writer, log_used, need_log_sync,
                           need_log_dir_sync, last_sequence + 1);
       }
     } else {
       if (status.ok() && !write_options.disableWAL) {
-        PERF_TIMER_GUARD(write_wal_time);
+        PERF_TIMER_WITH_HISTOGRAM(write_wal_time, WRITE_WAL_MICROS, stats_);
         // LastAllocatedSequence is increased inside WriteToWAL under
         // wal_write_mutex_ to ensure ordered events in WAL
         io_s = ConcurrentWriteToWAL(write_group, log_used, &last_sequence,
@@ -373,7 +373,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     }
 
     if (status.ok()) {
-      PERF_TIMER_GUARD(write_memtable_time);
+      PERF_TIMER_WITH_HISTOGRAM(write_memtable_time, MEMTAB_WRITE_KV_MICROS, stats_);
 
       if (!parallel) {
         // w.sequence will be set inside InsertInto
@@ -531,7 +531,7 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
     io_s.PermitUncheckedError();  // Allow io_s to be uninitialized
 
     if (w.status.ok() && !write_options.disableWAL) {
-      PERF_TIMER_GUARD(write_wal_time);
+      PERF_TIMER_WITH_HISTOGRAM(write_wal_time, WRITE_WAL_MICROS, stats_);
       stats->AddDBStats(InternalStats::kIntStatsWriteDoneBySelf, 1);
       RecordTick(stats_, WRITE_DONE_BY_SELF, 1);
       if (wal_write_group.size > 1) {
@@ -572,7 +572,7 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
   WriteThread::WriteGroup memtable_write_group;
 
   if (w.state == WriteThread::STATE_MEMTABLE_WRITER_LEADER) {
-    PERF_TIMER_GUARD(write_memtable_time);
+    PERF_TIMER_WITH_HISTOGRAM(write_memtable_time, MEMTAB_WRITE_KV_MICROS, stats_);
     assert(w.ShouldWriteToMemtable());
     write_thread_.EnterAsMemTableWriter(&w, &memtable_write_group);
     if (memtable_write_group.size > 1 &&
@@ -758,7 +758,7 @@ Status DBImpl::WriteImplWALOnly(
 
   PERF_TIMER_STOP(write_pre_and_post_process_time);
 
-  PERF_TIMER_GUARD(write_wal_time);
+  PERF_TIMER_WITH_HISTOGRAM(write_wal_time, WRITE_WAL_MICROS, stats_);
   // LastAllocatedSequence is increased inside WriteToWAL under
   // wal_write_mutex_ to ensure ordered events in WAL
   size_t seq_inc = 0 /* total_count */;

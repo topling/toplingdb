@@ -15,9 +15,11 @@ class PerfStepTimer {
   explicit PerfStepTimer(
       uint64_t* metric, SystemClock* clock = nullptr, bool use_cpu_time = false,
       PerfLevel enable_level = PerfLevel::kEnableTimeExceptForMutex,
-      Statistics* statistics = nullptr, uint32_t ticker_type = 0)
+      Statistics* statistics = nullptr, uint32_t ticker_type = UINT32_MAX,
+      uint16_t histogram_type = UINT16_MAX)
       : perf_counter_enabled_(perf_level >= enable_level),
         use_cpu_time_(use_cpu_time),
+        histogram_type_(histogram_type),
         ticker_type_(ticker_type),
         clock_((perf_counter_enabled_ || statistics != nullptr)
                    ? (clock ? clock : SystemClock::Default().get())
@@ -51,8 +53,11 @@ class PerfStepTimer {
         *metric_ += duration;
       }
 
-      if (statistics_ != nullptr) {
-        RecordTick(statistics_, ticker_type_, duration);
+      if (auto stats = statistics_) {
+        if (UINT32_MAX != ticker_type_)
+          stats->recordTick(ticker_type_, duration);
+        if (UINT16_MAX != histogram_type_)
+          stats->recordInHistogram(histogram_type_, duration);
       }
       start_ = 0;
     }
@@ -69,6 +74,7 @@ class PerfStepTimer {
 
   const bool perf_counter_enabled_;
   const bool use_cpu_time_;
+  uint16_t histogram_type_;
   uint32_t ticker_type_;
   SystemClock* const clock_;
   uint64_t start_;

@@ -285,6 +285,8 @@ const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {
 
     {SWITCH_WAL_MICROS, "rocksdb.switch.wal.micros"},
     {MEMTAB_CONSTRUCT_MICROS, "rocksdb.memtab.construct.micros"},
+    {MEMTAB_WRITE_KV_MICROS, "rocksdb.memtab.write.kv.micros"},
+    {WRITE_WAL_MICROS, "rocksdb.write.wal.micros"},
 };
 
 std::shared_ptr<Statistics> CreateDBStatistics() {

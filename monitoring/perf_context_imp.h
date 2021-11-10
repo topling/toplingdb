@@ -40,6 +40,21 @@ extern thread_local PerfContext perf_context;
 
 #define PERF_TIMER_START(metric) perf_step_timer_##metric.Start();
 
+#define PERF_TIMER_FULL_STATS(metric, ticker, histogram, stats) \
+  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), nullptr, \
+    false, kEnableTimeExceptForMutex, stats, ticker, histogram); \
+  perf_step_timer_##metric.Start();
+
+#define PERF_TIMER_WITH_HISTOGRAM(metric, histogram, stats) \
+  PERF_TIMER_FULL_STATS(metric, UINT32_MAX, histogram, stats)
+
+#define PERF_TIMER_WITH_TICKER(metric, ticker, stats, clock) \
+  PERF_TIMER_FULL_STATS(metric, ticker, UINT16_MAX, stats)
+
+#define PERF_TIMER_STOP_WITH_DURA(metric)  \
+  PERF_TIMER_STOP(metric); \
+  perf_context.metric += dura_##metric
+
 // Declare and set start time of the timer
 #define PERF_TIMER_GUARD(metric)                                  \
   PerfStepTimer perf_step_timer_##metric(&(perf_context.metric)); \

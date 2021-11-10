@@ -1,3 +1,39 @@
+## ToplingDB: A Persistent Key-Value Store for External Storage
+ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). It is built with [RocksDB](https://github.com/facebook/rocksdb).
+
+ToplingDB has many key features than RocksDB:
+1. [SidePlugin](https://github.com/topling/rockside/wiki) enables users to write a json(or yaml) to define DB instance configs
+1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, webview is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
+1. Many refactories on RocksDB, aimed for performance and extendibility
+1. [Topling**CSPP**MemTab](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)(**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling
+1. [Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable) is an SST implementation optimized for speed, aimed for MemTable flush and L0->L1 compaction.
+1. [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable) is an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which used dedicated searchable in-memory data compression algorithms.
+1. [Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction) for offload compaction on elastic computing clusters, this is more general than RocksDB Compaction Service.
+1. Builtin SidePlugin**s** for existing RocksDB components(Cache, Comparator, TableFactory, MemTableFactory...)
+1. Builtin Prometheus metrics support, this is based on [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView)
+1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
+
+## ToplingDB cloud native services
+1. Todis(Redis on ToplingDB), [Todis on aliyun](https://topling.cn/products)
+2. ToplingSQL(MySQL on ToplingDB), comming soon...
+
+## ToplingDB Open Source Repo
+Component      | Open Source Repo
+-------------- | ------------------
+SidePlugin     | [rockside](https://github.com/topling/rockside)
+Embeded Http Server | [rockside](https://github.com/topling/rockside)
+Refactories  and Enhancements  | [ToplingDB](https://github.com/topling/toplingdb)
+Topling**CSPP**MemTab| Not Yet
+Topling**Fast**Table | Not Yet
+Topling**Zip**Table | Not Yet
+Distributed Compaction | Not Yet
+Builtin SidePlugin**s** | [rockside](https://github.com/topling/rockside)
+Prometheus metrics | [rockside](https://github.com/topling/rockside)
+
+<hr/>
+<hr/>
+<hr/>
+
 ## RocksDB: A Persistent Key-Value Store for Flash and RAM Storage
 
 [![CircleCI Status](https://circleci.com/gh/facebook/rocksdb.svg?style=svg)](https://circleci.com/gh/facebook/rocksdb)

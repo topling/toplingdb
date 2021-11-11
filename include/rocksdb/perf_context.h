@@ -6,7 +6,7 @@
 #pragma once
 
 #include <stdint.h>
-#include <map>
+#include <vector>
 #include <string>
 
 #include "rocksdb/perf_level.h"

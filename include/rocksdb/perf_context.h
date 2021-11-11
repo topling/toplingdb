@@ -44,7 +44,7 @@ struct PerfContextByLevel {
 struct PerfContext {
   ~PerfContext();
 
-  PerfContext() {}
+  PerfContext() noexcept;
 
   PerfContext(const PerfContext&);
   PerfContext& operator=(const PerfContext&);
@@ -229,7 +229,7 @@ struct PerfContext {
   // Time spent in decrypting data. Populated when EncryptedEnv is used.
   uint64_t decrypt_data_nanos;
 
-  std::map<uint32_t, PerfContextByLevel>* level_to_perf_context = nullptr;
+  std::vector<PerfContextByLevel> level_to_perf_context;
   bool per_level_perf_context_enabled = false;
 };
 

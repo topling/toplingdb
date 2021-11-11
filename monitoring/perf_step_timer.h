@@ -7,6 +7,7 @@
 #include "monitoring/perf_level_imp.h"
 #include "monitoring/statistics.h"
 #include "rocksdb/system_clock.h"
+#include <time.h> // for clock_gettime
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -21,9 +22,11 @@ class PerfStepTimer {
         use_cpu_time_(use_cpu_time),
         histogram_type_(histogram_type),
         ticker_type_(ticker_type),
+#ifndef CLOCK_MONOTONIC_RAW
         clock_((perf_counter_enabled_ || statistics != nullptr)
                    ? (clock ? clock : SystemClock::Default().get())
                    : nullptr),
+#endif
         start_(0),
         metric_(metric),
         statistics_(statistics) {}
@@ -65,18 +68,26 @@ class PerfStepTimer {
 
  private:
   uint64_t time_now() {
+   #ifdef CLOCK_MONOTONIC_RAW
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    return ts.tv_sec * 1000000000 + ts.tv_nsec;
+   #else
     if (!use_cpu_time_) {
       return clock_->NowNanos();
     } else {
       return clock_->CPUNanos();
     }
+   #endif
   }
 
   const bool perf_counter_enabled_;
   const bool use_cpu_time_;
   uint16_t histogram_type_;
   uint32_t ticker_type_;
+#ifndef CLOCK_MONOTONIC_RAW
   SystemClock* const clock_;
+#endif
   uint64_t start_;
   uint64_t* metric_;
   Statistics* statistics_;

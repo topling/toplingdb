@@ -1502,8 +1502,8 @@ Status DBImpl::DelayWrite(uint64_t num_bytes,
   uint64_t time_delayed = 0;
   bool delayed = false;
   {
-    StopWatch sw(immutable_db_options_.clock, stats_, WRITE_STALL,
-                 &time_delayed);
+    StopWatchEx sw(immutable_db_options_.clock, stats_, WRITE_STALL,
+                   &time_delayed);
     uint64_t delay =
         write_controller_.GetDelay(immutable_db_options_.clock, num_bytes);
     if (delay > 0) {

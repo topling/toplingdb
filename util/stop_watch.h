@@ -16,9 +16,34 @@ namespace ROCKSDB_NAMESPACE {
 class StopWatch {
  public:
   inline
-  StopWatch(SystemClock* clock, Statistics* statistics,
-            const uint32_t hist_type, uint64_t* elapsed = nullptr,
-            bool overwrite = true, bool delay_enabled = false)
+  StopWatch(SystemClock* clock, Statistics* statistics, const uint32_t hist_type)
+      :
+#ifndef CLOCK_MONOTONIC_RAW
+        clock_(clock),
+#endif
+        statistics_(statistics),
+        hist_type_(hist_type),
+        overwrite_(false),
+        stats_enabled_(statistics &&
+                       statistics->get_stats_level() >=
+                           StatsLevel::kExceptTimers &&
+                       statistics->HistEnabledForType(hist_type)),
+        delay_enabled_(false),
+        start_time_((stats_enabled_) ? now_nanos() : 0) {}
+
+  ~StopWatch() {
+    if (stats_enabled_) {
+      statistics_->reportTimeToHistogram(
+          hist_type_, (now_nanos() - start_time_) / 1000);
+    }
+  }
+
+  uint64_t start_time() const { return start_time_ / 1000; }
+
+ protected:
+   StopWatch(SystemClock* clock, Statistics* statistics,
+            const uint32_t hist_type, uint64_t* elapsed,
+            bool overwrite, bool delay_enabled)
       :
 #ifndef CLOCK_MONOTONIC_RAW
         clock_(clock),
@@ -31,13 +56,40 @@ class StopWatch {
                            StatsLevel::kExceptTimers &&
                        statistics->HistEnabledForType(hist_type)),
         delay_enabled_(delay_enabled),
-        elapsed_(elapsed),
-        total_delay_(0),
-        delay_start_time_(0),
         start_time_((stats_enabled_ || elapsed != nullptr) ? now_nanos()
                                                            : 0) {}
+  inline static uint64_t now_nanos() {
+#ifdef CLOCK_MONOTONIC_RAW
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    return ts.tv_sec * 1000000000 + ts.tv_nsec;
+#else
+    return clock_->NowNanos();
+#endif
+  }
+#ifndef CLOCK_MONOTONIC_RAW
+  SystemClock* clock_;
+#endif
+  Statistics* statistics_;
+  const uint32_t hist_type_;
+  bool overwrite_;
+  bool stats_enabled_;
+  bool delay_enabled_;
+  const uint64_t start_time_;
+};
 
-  ~StopWatch() {
+class StopWatchEx : public StopWatch {
+public:
+  inline
+  StopWatchEx(SystemClock* clock, Statistics* statistics,
+              const uint32_t hist_type, uint64_t* elapsed = nullptr,
+              bool overwrite = true, bool delay_enabled = false)
+  : StopWatch(clock, statistics, hist_type, elapsed, overwrite, delay_enabled),
+    elapsed_(elapsed),
+    total_delay_(0),
+    delay_start_time_(0) {}
+
+  ~StopWatchEx() {
     if (elapsed_) {
       if (overwrite_) {
         *elapsed_ = (now_nanos() - start_time_) / 1000;
@@ -54,6 +106,7 @@ class StopWatch {
                           ? *elapsed_
                           : (now_nanos() - start_time_) / 1000);
     }
+    stats_enabled_ = false; // skip base class StopWatch destructor
   }
 
   void DelayStart() {
@@ -75,30 +128,10 @@ class StopWatch {
 
   uint64_t GetDelay() const { return delay_enabled_ ? total_delay_/1000 : 0; }
 
-  uint64_t start_time() const { return start_time_ / 1000; }
-
- private:
-  inline static uint64_t now_nanos() {
-#ifdef CLOCK_MONOTONIC_RAW
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-    return ts.tv_sec * 1000000000 + ts.tv_nsec;
-#else
-    return clock_->NowNanos();
-#endif
-  }
-#ifndef CLOCK_MONOTONIC_RAW
-  SystemClock* clock_;
-#endif
-  Statistics* statistics_;
-  const uint32_t hist_type_;
-  bool overwrite_;
-  bool stats_enabled_;
-  bool delay_enabled_;
+ protected:
   uint64_t* elapsed_;
   uint64_t total_delay_;
   uint64_t delay_start_time_;
-  const uint64_t start_time_;
 };
 
 // a nano second precision stopwatch

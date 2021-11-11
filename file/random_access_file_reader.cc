@@ -93,7 +93,7 @@ IOStatus RandomAccessFileReader::Read(const IOOptions& opts, uint64_t offset,
   IOStatus io_s;
   uint64_t elapsed = 0;
   {
-    StopWatch sw(clock_, stats_, hist_type_,
+    StopWatchEx sw(clock_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();
@@ -290,7 +290,7 @@ IOStatus RandomAccessFileReader::MultiRead(const IOOptions& opts,
   IOStatus io_s;
   uint64_t elapsed = 0;
   {
-    StopWatch sw(clock_, stats_, hist_type_,
+    StopWatchEx sw(clock_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();

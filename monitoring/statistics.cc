@@ -83,7 +83,8 @@ const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
     {STALL_MEMTABLE_COMPACTION_MICROS, "rocksdb.memtable.compaction.micros"},
     {STALL_L0_NUM_FILES_MICROS, "rocksdb.l0.num.files.stall.micros"},
     {STALL_MICROS, "rocksdb.stall.micros"},
-    {DB_MUTEX_WAIT_MICROS, "rocksdb.db.mutex.wait.micros"},
+    {DB_MUTEX_WAIT_NANOS, "rocksdb.db.mutex.wait.nanos"},
+    {DB_COND_WAIT_NANOS, "rocksdb.db.cond.wait.nanos"},
     {RATE_LIMIT_DELAY_MILLIS, "rocksdb.rate.limit.delay.millis"},
     {NO_ITERATORS, "rocksdb.num.iterators"},
     {NUMBER_MULTIGET_CALLS, "rocksdb.number.multiget.get"},
@@ -283,10 +284,12 @@ const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {
     {DCOMPACTION_OUTPUT_FILE_RAW_SIZE, "rocksdb.dcompaction.output.file.raw.size"},
     {DCOMPACTION_OUTPUT_FILE_ZIP_SIZE, "rocksdb.dcompaction.output.file.zip.size"},
 
-    {SWITCH_WAL_MICROS, "rocksdb.switch.wal.micros"},
-    {MEMTAB_CONSTRUCT_MICROS, "rocksdb.memtab.construct.micros"},
-    {MEMTAB_WRITE_KV_MICROS, "rocksdb.memtab.write.kv.micros"},
-    {WRITE_WAL_MICROS, "rocksdb.write.wal.micros"},
+    {SWITCH_WAL_NANOS, "rocksdb.switch.wal.nanos"},
+    {MEMTAB_CONSTRUCT_NANOS, "rocksdb.memtab.construct.nanos"},
+    {MEMTAB_WRITE_KV_NANOS, "rocksdb.memtab.write.kv.nanos"},
+    {WRITE_WAL_NANOS, "rocksdb.write.wal.nanos"},
+    {HISTOGRAM_MUTEX_WAIT_NANOS, "rocksdb.mutex.wait.nanos"},
+    {HISTOGRAM_COND_WAIT_NANOS, "rocksdb.cond.wait.nanos"},
 };
 
 std::shared_ptr<Statistics> CreateDBStatistics() {

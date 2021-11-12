@@ -18,7 +18,7 @@ class StopWatch {
   inline
   StopWatch(SystemClock* clock, Statistics* statistics, const uint32_t hist_type)
       :
-#ifndef CLOCK_MONOTONIC_RAW
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
         clock_(clock),
 #endif
         statistics_(statistics),
@@ -45,7 +45,7 @@ class StopWatch {
             const uint32_t hist_type, uint64_t* elapsed,
             bool overwrite, bool delay_enabled)
       :
-#ifndef CLOCK_MONOTONIC_RAW
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
         clock_(clock),
 #endif
         statistics_(statistics),
@@ -58,8 +58,8 @@ class StopWatch {
         delay_enabled_(delay_enabled),
         start_time_((stats_enabled_ || elapsed != nullptr) ? now_nanos()
                                                            : 0) {}
-  inline static uint64_t now_nanos() {
-#ifdef CLOCK_MONOTONIC_RAW
+  inline uint64_t now_nanos() {
+#if defined(CLOCK_MONOTONIC_RAW) && !defined(ROCKSDB_UNIT_TEST)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
     return ts.tv_sec * 1000000000 + ts.tv_nsec;
@@ -67,7 +67,7 @@ class StopWatch {
     return clock_->NowNanos();
 #endif
   }
-#ifndef CLOCK_MONOTONIC_RAW
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
   SystemClock* clock_;
 #endif
   Statistics* statistics_;
@@ -140,7 +140,7 @@ class StopWatchNano {
   inline
   explicit StopWatchNano(SystemClock* clock, bool auto_start = false)
       :
-#ifndef CLOCK_MONOTONIC_RAW
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
       clock_(clock),
 #endif
       start_(0) {
@@ -161,7 +161,7 @@ class StopWatchNano {
   }
 
   uint64_t ElapsedNanosSafe(bool reset = false) {
-#ifdef CLOCK_MONOTONIC_RAW
+#if defined(CLOCK_MONOTONIC_RAW) && !defined(ROCKSDB_UNIT_TEST)
     return ElapsedNanos(reset);
 #else
     return (clock_ != nullptr) ? ElapsedNanos(reset) : 0U;
@@ -169,8 +169,8 @@ class StopWatchNano {
   }
 
  private:
-  inline static uint64_t now_nanos() {
-#ifdef CLOCK_MONOTONIC_RAW
+  inline uint64_t now_nanos() {
+#if defined(CLOCK_MONOTONIC_RAW) && !defined(ROCKSDB_UNIT_TEST)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
     return ts.tv_sec * 1000000000 + ts.tv_nsec;
@@ -178,7 +178,7 @@ class StopWatchNano {
     return clock_->NowNanos();
 #endif
   }
-#ifndef CLOCK_MONOTONIC_RAW
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
   SystemClock* clock_;
 #endif
   uint64_t start_;

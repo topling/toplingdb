@@ -22,7 +22,7 @@ class PerfStepTimer {
         use_cpu_time_(use_cpu_time),
         histogram_type_(histogram_type),
         ticker_type_(ticker_type),
-#ifndef CLOCK_MONOTONIC_RAW
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
         clock_((perf_counter_enabled_ || statistics != nullptr)
                    ? (clock ? clock : SystemClock::Default().get())
                    : nullptr),
@@ -68,7 +68,7 @@ class PerfStepTimer {
 
  private:
   uint64_t time_now() {
-   #ifdef CLOCK_MONOTONIC_RAW
+   #if defined(CLOCK_MONOTONIC_RAW) && !defined(ROCKSDB_UNIT_TEST)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
     return ts.tv_sec * 1000000000 + ts.tv_nsec;
@@ -85,7 +85,7 @@ class PerfStepTimer {
   const bool use_cpu_time_;
   uint16_t histogram_type_;
   uint32_t ticker_type_;
-#ifndef CLOCK_MONOTONIC_RAW
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
   SystemClock* const clock_;
 #endif
   uint64_t start_;

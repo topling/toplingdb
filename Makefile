@@ -269,6 +269,11 @@ ifeq (${DEBUG_LEVEL}, 2)
   BUILD_TYPE_SIG := d
   OBJ_DIR := ${BUILD_ROOT}/dbg
 endif
+ifneq ($(filter check gen_parallel_tests %_test %_test2, $(MAKECMDGOALS)),)
+  CXXFLAGS += -DROCKSDB_UNIT_TEST
+  OBJ_DIR := $(subst build/,build-ut/,${OBJ_DIR})
+endif
+
 CXXFLAGS += \
   -DJSON_USE_GOLD_HASH_MAP=1 \
   -I${TOPLING_CORE_DIR}/src \

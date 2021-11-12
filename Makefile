@@ -211,12 +211,10 @@ CXXFLAGS += -DUSE_SERVER_STATS=1
 CFLAGS += -DUSE_SERVER_STATS=1
 
 ifeq (,$(wildcard sideplugin/rockside/3rdparty/rapidyaml))
-  $(warning "NotFound sideplugin/rockside/3rdparty/rapidyaml\nclone and init sideplugin/rockside...")
+  $(warning NotFound sideplugin/rockside/3rdparty/rapidyaml)
+  $(warning sideplugin/rockside is a submodule, auto init...)
   IsCloneOK := $(shell \
      set -x -e; \
-     cd sideplugin; \
-     git clone http://github.com/topling/rockside.git >&2; \
-     cd rockside; \
      git submodule update --init --recursive >&2; \
      echo $$?\
   )

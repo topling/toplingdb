@@ -2268,6 +2268,16 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
                   /*timestamps=*/nullptr, statuses, sorted_input);
 }
 
+template<class T>
+bool all_same(const T* a, size_t n) {
+  assert(n > 0);
+  T p = a[0];
+  for (size_t i = 1; i < n; ++i)
+    if (a[i] != p)
+      return false;
+  return true;
+}
+
 void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
                       ColumnFamilyHandle** column_families, const Slice* keys,
                       PinnableSlice* values, std::string* timestamps,
@@ -2313,7 +2323,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
   for (size_t i = 0; i < num_keys; ++i) {
     sorted_keys[i] = &key_context[i];
   }
-  bool same_cf = false;
+  bool same_cf = all_same(column_families, num_keys);
   PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
 
   autovector<MultiGetColumnFamilyData, MultiGetContext::MAX_BATCH_SIZE>

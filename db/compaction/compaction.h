@@ -320,9 +320,6 @@ class Compaction {
   }
   uint64_t GetSmallestSeqno() const;
 
-  // Does input compression match the output compression?
-  bool InputCompressionMatchesOutput() const;
-
  private:
   // mark (or clear) all files that are being compacted
   void MarkFilesBeingCompacted(bool mark_as_compacted);
@@ -392,6 +389,10 @@ class Compaction {
   // True if we can do trivial move in Universal multi level
   // compaction
   bool is_trivial_move_;
+
+  // Does input compression match the output compression?
+  bool InputCompressionMatchesOutput() const;
+  friend class TableFactory; // use InputCompressionMatchesOutput
 
   // table properties of output files
   TablePropertiesCollection output_table_properties_;

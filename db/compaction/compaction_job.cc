@@ -598,8 +598,9 @@ void CompactionJob::GenSubcompactionBoundaries() {
         bounds.emplace_back(onekey);
       }
       rand_key_store_.push_back(std::move(rand_keys));
+      return true;
     }
-    return true;
+    return false;
   };
 
   // Add the starting and/or ending key of certain input files as a potential

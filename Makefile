@@ -252,40 +252,36 @@ else
   TOPLING_CORE_DIR := sideplugin/topling-zip
 endif
 
-ifdef TOPLING_CORE_DIR
-  CXXFLAGS += -DJSON_USE_GOLD_HASH_MAP=1
-  COMPILER := $(shell set -e; tmpfile=`mktemp -u compiler-XXXXXX`; \
-                      ${CXX} ${TOPLING_CORE_DIR}/tools/configure/compiler.cpp -o $${tmpfile}.exe; \
-                      ./$${tmpfile}.exe && rm -f $${tmpfile}*)
-  UNAME_MachineSystem := $(shell uname -m -s | sed 's:[ /]:-:g')
-  WITH_BMI2 := $(shell bash ${TOPLING_CORE_DIR}/cpu_has_bmi2.sh)
-  BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${WITH_BMI2}
-  BUILD_ROOT := build/${BUILD_NAME}
-  ifeq (${DEBUG_LEVEL}, 0)
-    BUILD_TYPE_SIG := r
-    OBJ_DIR := ${BUILD_ROOT}/rls
-  endif
-  ifeq (${DEBUG_LEVEL}, 1)
-    BUILD_TYPE_SIG := a
-    OBJ_DIR := ${BUILD_ROOT}/afr
-  endif
-  ifeq (${DEBUG_LEVEL}, 2)
-    BUILD_TYPE_SIG := d
-    OBJ_DIR := ${BUILD_ROOT}/dbg
-  endif
-  CXXFLAGS += \
-    -I${TOPLING_CORE_DIR}/src \
-    -I${TOPLING_CORE_DIR}/boost-include \
-    -I${TOPLING_CORE_DIR}/3rdparty/zstd
-else
-  $(warning "neither topling-core nor topling-zip are found, json conf may broken")
+COMPILER := $(shell set -e; tmpfile=`mktemp -u compiler-XXXXXX`; \
+                    ${CXX} ${TOPLING_CORE_DIR}/tools/configure/compiler.cpp -o $${tmpfile}.exe; \
+                    ./$${tmpfile}.exe && rm -f $${tmpfile}*)
+UNAME_MachineSystem := $(shell uname -m -s | sed 's:[ /]:-:g')
+WITH_BMI2 := $(shell bash ${TOPLING_CORE_DIR}/cpu_has_bmi2.sh)
+BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${WITH_BMI2}
+BUILD_ROOT := build/${BUILD_NAME}
+ifeq (${DEBUG_LEVEL}, 0)
+  BUILD_TYPE_SIG := r
+  OBJ_DIR := ${BUILD_ROOT}/rls
 endif
+ifeq (${DEBUG_LEVEL}, 1)
+  BUILD_TYPE_SIG := a
+  OBJ_DIR := ${BUILD_ROOT}/afr
+endif
+ifeq (${DEBUG_LEVEL}, 2)
+  BUILD_TYPE_SIG := d
+  OBJ_DIR := ${BUILD_ROOT}/dbg
+endif
+CXXFLAGS += \
+  -DJSON_USE_GOLD_HASH_MAP=1 \
+  -I${TOPLING_CORE_DIR}/src \
+  -I${TOPLING_CORE_DIR}/boost-include \
+  -I${TOPLING_CORE_DIR}/3rdparty/zstd
 
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   += -I sideplugin/topling-rocks/src
   LDFLAGS    += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
-                -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
-  LDFLAGS    += -lstdc++fs -lcurl
+                -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG} \
+                -lstdc++fs -lcurl
   export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
   EXTRA_LIB_SOURCES += \
@@ -307,7 +303,7 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
     sideplugin/topling-rocks/src/misc/show_sys_info.cc \
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
 else
-  $(warning NotFound sideplugin/topling-rocks, Topling SST, MemTab and Distributed Compaction are disable)
+  $(warning NotFound sideplugin/topling-rocks, Topling SST, MemTab and Distributed Compaction are disabled)
   EXTRA_LIB_SOURCES += \
     ${TOPLING_CORE_DIR}/src/terark/fstring.cpp \
     ${TOPLING_CORE_DIR}/src/terark/hash_common.cpp \

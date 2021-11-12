@@ -40,7 +40,90 @@ PerfContext::PerfContext(PerfContext&&) noexcept = default;
 PerfContext& PerfContext::operator=(const PerfContext&) = default;
 
 void PerfContext::Reset() {
-  *this = PerfContext();
+#ifndef NPERF_CONTEXT
+  user_key_comparison_count = 0;
+  block_cache_hit_count = 0;
+  block_read_count = 0;
+  block_read_byte = 0;
+  block_read_time = 0;
+  block_cache_index_hit_count = 0;
+  index_block_read_count = 0;
+  block_cache_filter_hit_count = 0;
+  filter_block_read_count = 0;
+  compression_dict_block_read_count = 0;
+  secondary_cache_hit_count = 0;
+  block_checksum_time = 0;
+  block_decompress_time = 0;
+  get_read_bytes = 0;
+  multiget_read_bytes = 0;
+  iter_read_bytes = 0;
+  internal_key_skipped_count = 0;
+  internal_delete_skipped_count = 0;
+  internal_recent_skipped_count = 0;
+  internal_merge_count = 0;
+  write_wal_time = 0;
+
+  get_snapshot_time = 0;
+  get_from_memtable_time = 0;
+  get_from_memtable_count = 0;
+  get_post_process_time = 0;
+  get_from_output_files_time = 0;
+  seek_on_memtable_time = 0;
+  seek_on_memtable_count = 0;
+  next_on_memtable_count = 0;
+  prev_on_memtable_count = 0;
+  seek_child_seek_time = 0;
+  seek_child_seek_count = 0;
+  seek_min_heap_time = 0;
+  seek_internal_seek_time = 0;
+  find_next_user_entry_time = 0;
+  write_pre_and_post_process_time = 0;
+  write_memtable_time = 0;
+  write_delay_time = 0;
+  write_thread_wait_nanos = 0;
+  write_scheduling_flushes_compactions_time = 0;
+  db_mutex_lock_nanos = 0;
+  db_condition_wait_nanos = 0;
+  merge_operator_time_nanos = 0;
+  read_index_block_nanos = 0;
+  read_filter_block_nanos = 0;
+  new_table_block_iter_nanos = 0;
+  new_table_iterator_nanos = 0;
+  block_seek_nanos = 0;
+  find_table_nanos = 0;
+  bloom_memtable_hit_count = 0;
+  bloom_memtable_miss_count = 0;
+  bloom_sst_hit_count = 0;
+  bloom_sst_miss_count = 0;
+  key_lock_wait_time = 0;
+  key_lock_wait_count = 0;
+
+  env_new_sequential_file_nanos = 0;
+  env_new_random_access_file_nanos = 0;
+  env_new_writable_file_nanos = 0;
+  env_reuse_writable_file_nanos = 0;
+  env_new_random_rw_file_nanos = 0;
+  env_new_directory_nanos = 0;
+  env_file_exists_nanos = 0;
+  env_get_children_nanos = 0;
+  env_get_children_file_attributes_nanos = 0;
+  env_delete_file_nanos = 0;
+  env_create_dir_nanos = 0;
+  env_create_dir_if_missing_nanos = 0;
+  env_delete_dir_nanos = 0;
+  env_get_file_size_nanos = 0;
+  env_get_file_modification_time_nanos = 0;
+  env_rename_file_nanos = 0;
+  env_link_file_nanos = 0;
+  env_lock_file_nanos = 0;
+  env_unlock_file_nanos = 0;
+  env_new_logger_nanos = 0;
+  get_cpu_nanos = 0;
+  iter_next_cpu_nanos = 0;
+  iter_prev_cpu_nanos = 0;
+  iter_seek_cpu_nanos = 0;
+  level_to_perf_context.resize(0);
+#endif
 }
 
 #define PERF_CONTEXT_OUTPUT(counter)             \

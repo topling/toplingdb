@@ -269,7 +269,7 @@ ifeq (${DEBUG_LEVEL}, 2)
   BUILD_TYPE_SIG := d
   OBJ_DIR := ${BUILD_ROOT}/dbg
 endif
-ifneq ($(filter check watch-log gen_parallel_tests %_test %_test2, $(MAKECMDGOALS)),)
+ifneq ($(filter check check_0 watch-log gen_parallel_tests %_test %_test2, $(MAKECMDGOALS)),)
   CXXFLAGS += -DROCKSDB_UNIT_TEST
   OBJ_DIR := $(subst build/,build-ut/,${OBJ_DIR})
 endif
@@ -334,7 +334,7 @@ ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/
     $(error NotFound ../vcpkg/packages/cpprestsdk_x64-linux/include)
   endif
 else
-  $(warning "NotFound etcd-cpp-apiv3, disabled")
+  $(warning NotFound etcd-cpp-apiv3, disabled)
 endif
 
 #export ROCKSDB_KICK_OUT_OPTIONS_FILE=1

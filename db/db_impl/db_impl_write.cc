@@ -17,7 +17,6 @@
 #include "test_util/sync_point.h"
 #include "util/cast_util.h"
 
-
 namespace ROCKSDB_NAMESPACE {
 // Convenience methods
 Status DBImpl::Put(const WriteOptions& o, ColumnFamilyHandle* column_family,

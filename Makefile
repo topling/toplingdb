@@ -211,7 +211,18 @@ CXXFLAGS += -DUSE_SERVER_STATS=1
 CFLAGS += -DUSE_SERVER_STATS=1
 
 ifeq (,$(wildcard sideplugin/rockside/3rdparty/rapidyaml))
-  $(error "NotFound sideplugin/rockside/3rdparty/rapidyaml")
+  $(warning "NotFound sideplugin/rockside/3rdparty/rapidyaml\nclone and init sideplugin/rockside...")
+  IsCloneOK := $(shell \
+     set -x -e; \
+     cd sideplugin; \
+     git clone http://github.com/topling/rockside.git >&2; \
+     cd rockside; \
+     git submodule update --init --recursive >&2; \
+     echo $$?\
+  )
+  ifneq ("${IsCloneOK}","0")
+    $(error "IsCloneOK=${IsCloneOK} Error cloning rockside, stop!")
+  endif
 endif
 EXTRA_LIB_SOURCES += sideplugin/rockside/src/topling/rapidyaml_all.cc
 CXXFLAGS += -Isideplugin/rockside/3rdparty/rapidyaml \
@@ -226,15 +237,17 @@ else
   # topling-zip is topling public
   ifeq (,$(wildcard sideplugin/topling-zip))
     $(warning sideplugin/topling-zip is not present, clone it from github...)
-	IsCloneOK := $(shell \
-	  set -x -e; \
-	  git clone http://github.com/topling/topling-zip.git; \
-	  cd topling-zip; \
-	  git submodule update --init --recursive; \
-	  echo $$?)
-	ifneq (${IsCloneOK},0)
-	  $(error Error cloning topling-zip, stop!)
-	endif
+    IsCloneOK := $(shell \
+       set -x -e; \
+       cd sideplugin; \
+       git clone http://github.com/topling/topling-zip.git >&2; \
+       cd topling-zip; \
+       git submodule update --init --recursive >&2; \
+       echo $$?\
+    )
+    ifneq ("${IsCloneOK}","0")
+      $(error "IsCloneOK=${IsCloneOK} Error cloning topling-zip, stop!")
+    endif
   endif
   TOPLING_CORE_DIR := sideplugin/topling-zip
 endif

@@ -94,10 +94,7 @@ extern thread_local PerfContext perf_context;
 // Increase metric value
 #define PERF_COUNTER_BY_LEVEL_ADD(metric, value, level)               \
   if (perf_level >= PerfLevel::kEnableCount &&                        \
-      perf_context.per_level_perf_context_enabled && int(level) >= 0) { \
-    if (UNLIKELY(perf_context.level_to_perf_context.size() >= size_t(level))) { \
-      perf_context.level_to_perf_context.resize(level + 1);           \
-    }                                                                 \
+      perf_context.per_level_perf_context_enabled) { \
     perf_context.level_to_perf_context[level].metric += value;        \
   }
 

@@ -706,7 +706,6 @@ TEST_F(PerfContextTest, CopyAndMove) {
   {
     get_perf_context()->Reset();
     get_perf_context()->EnablePerLevelPerfContext();
-    get_perf_context()->level_to_perf_context.resize(7);
     PERF_COUNTER_BY_LEVEL_ADD(bloom_filter_useful, 1, 5);
     ASSERT_EQ(
         1,
@@ -728,7 +727,6 @@ TEST_F(PerfContextTest, CopyAndMove) {
   {
     get_perf_context()->Reset();
     get_perf_context()->EnablePerLevelPerfContext();
-    get_perf_context()->level_to_perf_context.resize(7);
     PERF_COUNTER_BY_LEVEL_ADD(bloom_filter_useful, 1, 5);
     ASSERT_EQ(
         1,
@@ -747,7 +745,6 @@ TEST_F(PerfContextTest, CopyAndMove) {
   {
     get_perf_context()->Reset();
     get_perf_context()->EnablePerLevelPerfContext();
-    get_perf_context()->level_to_perf_context.resize(7);
     PERF_COUNTER_BY_LEVEL_ADD(bloom_filter_useful, 1, 5);
     ASSERT_EQ(
         1,
@@ -767,7 +764,6 @@ TEST_F(PerfContextTest, CopyAndMove) {
 TEST_F(PerfContextTest, PerfContextDisableEnable) {
   get_perf_context()->Reset();
   get_perf_context()->EnablePerLevelPerfContext();
-  get_perf_context()->level_to_perf_context.resize(7);
   PERF_COUNTER_BY_LEVEL_ADD(bloom_filter_full_positive, 1, 0);
   get_perf_context()->DisablePerLevelPerfContext();
   PERF_COUNTER_BY_LEVEL_ADD(bloom_filter_useful, 1, 5);

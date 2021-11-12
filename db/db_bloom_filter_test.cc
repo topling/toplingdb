@@ -157,7 +157,6 @@ TEST_P(DBBloomFilterTestDefFormatVersion, KeyMayExist) {
 }
 
 TEST_F(DBBloomFilterTest, GetFilterByPrefixBloomCustomPrefixExtractor) {
-  get_perf_context()->level_to_perf_context.resize(3);
   for (bool partition_filters : {true, false}) {
     Options options = last_options_;
     options.prefix_extractor =

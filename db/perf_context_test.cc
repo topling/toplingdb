@@ -593,7 +593,7 @@ TEST_F(PerfContextTest, DBMutexLockCounter) {
   int stats_code[] = {static_cast<int>(DB_MUTEX_WAIT_NANOS)};
   for (PerfLevel perf_level_test :
        {PerfLevel::kEnableTimeExceptForMutex, PerfLevel::kEnableTime}) {
-    for (int c = 0; c < 2; ++c) {
+    for (int c = 0; c < 1; ++c) {
       InstrumentedMutex mutex(nullptr, SystemClock::Default().get());
       mutex.Lock();
       ROCKSDB_NAMESPACE::port::Thread child_thread([&] {
@@ -620,7 +620,7 @@ TEST_F(PerfContextTest, DBMutexLockCounter) {
 TEST_F(PerfContextTest, FalseDBMutexWait) {
   SetPerfLevel(kEnableTime);
   int stats_code[] = {static_cast<int>(DB_MUTEX_WAIT_NANOS)};
-  for (int c = 0; c < 2; ++c) {
+  for (int c = 0; c < 1; ++c) {
     InstrumentedMutex mutex(nullptr, SystemClock::Default().get());
     InstrumentedCondVar lock(&mutex);
     get_perf_context()->Reset();

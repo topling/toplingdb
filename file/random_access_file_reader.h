@@ -95,7 +95,7 @@ class RandomAccessFileReader {
         rate_limiter_(rate_limiter),
         listeners_(),
         file_temperature_(file_temperature) {
-    const char* env = getenv("TerarkDB_FileReaderUseFsRead");
+    const char* env = getenv("ToplingDB_FileReaderUseFsRead");
     use_fsread_ = env && atoi(env); // default false, NOLINT
 #ifndef ROCKSDB_LITE
     std::for_each(listeners.begin(), listeners.end(),

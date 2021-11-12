@@ -1648,6 +1648,8 @@ TEST_P(EnvPosixTestWithParam, LogBufferTest) {
   ASSERT_EQ(6, test_logger.log_count);
   ASSERT_EQ(6, test_logger.char_0_count);
   ASSERT_EQ(10, test_logger.char_x_count);
+
+  test_logger.Close();
 }
 
 class TestLogger2 : public Logger {
@@ -1683,6 +1685,7 @@ TEST_P(EnvPosixTestWithParam, LogBufferMaxSizeTest) {
     LogBuffer log_buffer(InfoLogLevel::INFO_LEVEL, &test_logger);
     ROCKS_LOG_BUFFER_MAX_SZ(&log_buffer, max_log_size, "%s", bytes9000);
     log_buffer.FlushBufferToLog();
+    test_logger.Close();
   }
 }
 
@@ -2145,6 +2148,7 @@ class TestEnv : public EnvWrapper {
       if (!closed_) {
         Status s = CloseHelper();
         s.PermitUncheckedError();
+        closed_ = true;
       }
     }
     void Logv(const char* /*format*/, va_list /*ap*/) override{};
@@ -2199,6 +2203,7 @@ TEST_F(EnvTest, Close) {
 
   s = env->NewLogger("", &logger);
   ASSERT_OK(s);
+  ASSERT_OK(logger.get()->Close());
   logger.reset();
   ASSERT_EQ(env->GetCloseCount(), 2);
 
@@ -2223,6 +2228,7 @@ TEST_F(EnvTest, LogvWithInfoLogLevel) {
   ROCKS_LOG_WARN(&logger, "%s", kSampleMessage.c_str());
   ROCKS_LOG_ERROR(&logger, "%s", kSampleMessage.c_str());
   ROCKS_LOG_FATAL(&logger, "%s", kSampleMessage.c_str());
+  logger.Close();
 }
 
 INSTANTIATE_TEST_CASE_P(DefaultEnvWithoutDirectIO, EnvPosixTestWithParam,

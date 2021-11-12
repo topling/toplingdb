@@ -337,7 +337,7 @@ else
   $(warning "NotFound etcd-cpp-apiv3, disabled")
 endif
 
-export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
+#export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
 
 # prepend EXTRA_LIB_SOURCES to LIB_SOURCES because
 # EXTRA_LIB_SOURCES single file compiling is slow

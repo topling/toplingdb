@@ -224,9 +224,19 @@ ifneq (,$(wildcard sideplugin/topling-core))
   TOPLING_CORE_DIR := sideplugin/topling-core
 else
   # topling-zip is topling public
-  ifneq (,$(wildcard sideplugin/topling-zip))
-    TOPLING_CORE_DIR := sideplugin/topling-zip
+  ifeq (,$(wildcard sideplugin/topling-zip))
+    $(warning sideplugin/topling-zip is not present, clone it from github...)
+	IsCloneOK := $(shell \
+	  set -x -e; \
+	  git clone http://github.com/topling/topling-zip.git; \
+	  cd topling-zip; \
+	  git submodule update --init --recursive; \
+	  echo $$?)
+	ifneq (${IsCloneOK},0)
+	  $(error Error cloning topling-zip, stop!)
+	endif
   endif
+  TOPLING_CORE_DIR := sideplugin/topling-zip
 endif
 
 ifdef TOPLING_CORE_DIR

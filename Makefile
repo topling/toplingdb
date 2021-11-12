@@ -254,16 +254,16 @@ ifdef TOPLING_CORE_DIR
     -I${TOPLING_CORE_DIR}/src \
     -I${TOPLING_CORE_DIR}/boost-include \
     -I${TOPLING_CORE_DIR}/3rdparty/zstd
-  LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
-             -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
-  export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
 else
   $(warning "neither topling-core nor topling-zip are found, json conf may broken")
 endif
 
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   += -I sideplugin/topling-rocks/src
+  LDFLAGS    += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
+                -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
   LDFLAGS    += -lstdc++fs -lcurl
+  export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
   EXTRA_LIB_SOURCES += \
     sideplugin/topling-rocks/src/dcompact/dcompact_cmd.cc \
@@ -285,6 +285,10 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
 else
   $(warning NotFound sideplugin/topling-rocks, Topling SST, MemTab and Distributed Compaction are disable)
+  EXTRA_LIB_SOURCES += \
+    ${TOPLING_CORE_DIR}/src/terark/fstring.cpp \
+    ${TOPLING_CORE_DIR}/src/terark/hash_common.cpp \
+    ${TOPLING_CORE_DIR}/src/terark/util/throw.cpp
 endif
 
 ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
@@ -601,7 +605,8 @@ CXXFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT) -Woverl
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
 
-LIB_OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(LIB_SOURCES))
+LIB_OBJECTS := $(patsubst %.cc, $(OBJ_DIR)/%.o, $(LIB_SOURCES))
+LIB_OBJECTS := $(patsubst %.cpp,$(OBJ_DIR)/%.o, $(LIB_OBJECTS))
 LIB_OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(ROCKSDB_PLUGIN_SOURCES))
 LIB_OBJECTS += $(patsubst %.c, $(OBJ_DIR)/%.o, $(LIB_SOURCES_C))
 ifeq ($(HAVE_POWER8),1)
@@ -2531,7 +2536,8 @@ endif
 # ---------------------------------------------------------------------------
 # If skip dependencies is ON, skip including the dep files
 ifneq ($(SKIP_DEPENDS), 1)
-DEPFILES = $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, $(ALL_SOURCES))
+DEPFILES := $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, $(ALL_SOURCES))
+DEPFILES := $(patsubst %.cpp,$(OBJ_DIR)/%.cpp.d,$(DEPFILES))
 DEPFILES += $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C) $(TEST_MAIN_SOURCES_C))
 ifeq ($(USE_FOLLY_DISTRIBUTED_MUTEX),1)
   DEPFILES +=$(patsubst %.cpp, $(OBJ_DIR)/%.cpp.d, $(FOLLY_SOURCES))
@@ -2546,12 +2552,12 @@ endif
 $(OBJ_DIR)/%.cc.d: %.cc
 	@mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cc=.o)' -MT'$(<:%.cc=$(OBJ_DIR)/%.o)' \
-          "$<" -o '$@'
+	      "$<" -o '$@'
 
 $(OBJ_DIR)/%.cpp.d: %.cpp
 	@mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cpp=.o)' -MT'$(<:%.cpp=$(OBJ_DIR)/%.o)' \
-          "$<" -o '$@'
+	      "$<" -o '$@'
 
 ifeq ($(HAVE_POWER8),1)
 DEPFILES_C = $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C))

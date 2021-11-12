@@ -263,7 +263,7 @@ void PerfContext::DisablePerLevelPerfContext(){
 }
 
 void PerfContext::ClearPerLevelPerfContext(){
-  for (auto& x : level_to_perf_context) x.Reset();
+  level_to_perf_context.resize(0);
   per_level_perf_context_enabled = false;
 }
 

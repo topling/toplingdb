@@ -491,6 +491,9 @@ struct BlockBasedTableOptions {
 
   PrepopulateBlockCache prepopulate_block_cache =
       PrepopulateBlockCache::kDisable;
+
+  // toplingdb specific
+  bool enable_get_random_keys = false;
 };
 
 // Table Properties that are specific to block-based table properties.

@@ -179,6 +179,10 @@ class BlockBasedTable : public TableReader {
   Status VerifyChecksum(const ReadOptions& readOptions,
                         TableReaderCaller caller) override;
 
+  // if implemented, returns true
+  bool GetRandomInteranlKeysAppend(
+      size_t num, std::vector<std::string>* output) const override;
+
   ~BlockBasedTable();
 
   bool TEST_FilterBlockInCache() const;

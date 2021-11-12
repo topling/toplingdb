@@ -802,7 +802,9 @@ WritableFile::~WritableFile() {
 MemoryMappedFileBuffer::~MemoryMappedFileBuffer() {}
 
 Logger::~Logger() {
+#if !defined(ROCKSDB_UNIT_TEST)
   ROCKSDB_VERIFY(closed_);
+#endif
 }
 
 Status Logger::Close() {

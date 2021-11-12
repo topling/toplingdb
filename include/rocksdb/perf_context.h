@@ -235,19 +235,18 @@ struct PerfContext {
   public:
     using super::begin;
     using super::end;
+    using super::size;
+    using super::operator[]; ///< const version
+    PerfContextByLevel& at(size_t idx) { return (*this)[idx]; }
     PerfContextByLevel& operator[](size_t idx) {
-      if (idx >= a.size()) {
+      if (idx >= this->size()) {
         if (intptr_t(idx) < 0) {
           abort();
         }
-        a.resize(idx + 1);
+        this->resize(idx + 1);
       }
-      return a[idx];
+      return super::operator[](idx);
     }
-    const PerfContextByLevel& operator[](size_t idx) const noexcept {
-      return a[idx];
-    }
-    size_t size() const noexcept { return a.size(); }
   };
   LevelToPerfContext level_to_perf_context;
   bool per_level_perf_context_enabled = false;

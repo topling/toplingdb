@@ -161,4 +161,17 @@ class CompactionExecutorFactory {
   virtual const char* Name() const = 0;
 };
 
+/////////////////////////////////////////////////////////////////////////////
+
+std::string GetDirFromEnv(const char* name, const char* Default = nullptr);
+bool ReplacePrefix(Slice Old, Slice New, Slice str, std::string* res);
+std::string ReplacePrefix(Slice Old, Slice New, Slice str);
+void ReplaceAll(std::string& str, Slice from, Slice to);
+std::string ReplaceAll(Slice str, Slice from, Slice to);
+std::string MakePath(std::string dir, Slice sub);
+std::string& AppendJobID(std::string& path, int job_id);
+std::string CatJobID(const std::string& path, int job_id);
+std::string& AppendAttempt(std::string& path, int attempt);
+std::string CatAttempt(const std::string& path, int attempt);
+
 } // namespace ROCKSDB_NAMESPACE

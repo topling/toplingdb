@@ -207,4 +207,100 @@ void SetAsCompactionWorker() {
   g_is_compaction_worker = true;
 }
 
+/////////////////////////////////////////////////////////////////////////////
+std::string GetDirFromEnv(const char* name, const char* Default) {
+  const char* dir = getenv(name);
+  if (nullptr == dir) {
+    ROCKSDB_VERIFY(nullptr != Default);
+    dir = Default;
+  }
+  size_t dir_name_len = strlen(dir);
+  ROCKSDB_VERIFY(dir_name_len > 0);
+  while (dir_name_len && '/' == dir[dir_name_len-1]) {
+    dir_name_len--;
+  }
+  ROCKSDB_VERIFY(dir_name_len > 0);
+  return std::string(dir, dir_name_len);
+}
+
+bool ReplacePrefix(Slice Old, Slice New, Slice str, std::string* res) {
+  ROCKSDB_VERIFY(Old.size_ > 0);
+  ROCKSDB_VERIFY(New.size_ > 0);
+  while (Old.size_ && Old.data_[Old.size_-1] == '/') {
+    --Old.size_;
+  }
+  while (New.size_ && New.data_[New.size_-1] == '/') {
+    --New.size_;
+  }
+  ROCKSDB_VERIFY(Old.size_ > 0);
+  ROCKSDB_VERIFY(New.size_ > 0);
+  if (str.starts_with(Old)) {
+    size_t suffixLen = str.size_ - Old.size_;
+    res->reserve(New.size_ + suffixLen);
+    res->assign(New.data_, New.size_);
+    res->append(str.data_ + Old.size_, suffixLen);
+    return true;
+  }
+  return false;
+}
+
+std::string ReplacePrefix(Slice Old, Slice New, Slice str) {
+  std::string res;
+  if (ReplacePrefix(Old, New, str, &res)) {
+    return res;
+  }
+  ROCKSDB_DIE("str = '%.*s' does not start with Old='%.*s'",
+              int(str.size()), str.data(), int(Old.size()), Old.data());
+}
+
+void ReplaceAll(std::string& str, Slice from, Slice to) {
+  if (from.empty()) return;
+  size_t start_pos = 0;
+  while ((start_pos = str.find(from.data(), start_pos)) != std::string::npos) {
+    str.replace(start_pos, from.size(), to.data(), to.size());
+    start_pos += to.size();
+  }
+}
+std::string ReplaceAll(Slice str, Slice from, Slice to) {
+  std::string tmp(str.data(), str.size());
+  ReplaceAll(tmp, from, to);
+  return tmp;
+}
+std::string MakePath(std::string dir, Slice sub) {
+  while (!dir.empty() && '/' == dir.back()) {
+    dir.pop_back();
+  }
+  dir.reserve(dir.size() + 1 + sub.size());
+  dir.push_back('/');
+  dir.append(sub.data(), sub.size());
+  return dir;
+}
+
+std::string& AppendJobID(std::string& dir, int job_id) {
+  while (!dir.empty() && '/' == dir.back()) {
+    dir.pop_back();
+  }
+  char buf[32];
+  dir.append(buf, snprintf(buf, sizeof(buf), "/job-%05d", job_id));
+  return dir;
+}
+std::string CatJobID(const std::string& dir, int job_id) {
+  std::string output_path = dir;
+  AppendJobID(output_path, job_id);
+  return output_path;
+}
+std::string& AppendAttempt(std::string& dir, int attempt) {
+  while (!dir.empty() && '/' == dir.back()) {
+    dir.pop_back();
+  }
+  char buf[32];
+  dir.append(buf, snprintf(buf, sizeof(buf), "/att-%02d", attempt));
+  return dir;
+}
+std::string CatAttempt(const std::string& dir, int attempt) {
+  std::string output_path = dir;
+  AppendAttempt(output_path, attempt);
+  return output_path;
+}
+
 } // namespace ROCKSDB_NAMESPACE

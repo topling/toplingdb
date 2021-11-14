@@ -288,22 +288,8 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
   export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
   EXTRA_LIB_SOURCES += \
-    sideplugin/topling-rocks/src/dcompact/dcompact_cmd.cc \
-    sideplugin/topling-rocks/src/dcompact/dcompact_etcd.cc \
-    sideplugin/topling-rocks/src/dcompact/dcompact_executor.cc \
-    sideplugin/topling-rocks/src/dcompact/dispatch_table_factory_serde.cc \
-    sideplugin/topling-rocks/src/table/single_fast_table_builder.cc \
-    sideplugin/topling-rocks/src/table/single_fast_table_reader.cc \
-    sideplugin/topling-rocks/src/table/terark_fast_table.cc \
-    sideplugin/topling-rocks/src/table/terark_fast_table_builder.cc \
-    sideplugin/topling-rocks/src/table/terark_fast_table_reader.cc \
-    sideplugin/topling-rocks/src/table/terark_zip_common.cc \
-    sideplugin/topling-rocks/src/table/terark_zip_config.cc \
-    sideplugin/topling-rocks/src/table/terark_zip_index.cc \
-    sideplugin/topling-rocks/src/table/terark_zip_table_builder.cc \
-    sideplugin/topling-rocks/src/table/terark_zip_table.cc \
-    sideplugin/topling-rocks/src/table/terark_zip_table_reader.cc \
-    sideplugin/topling-rocks/src/table/terark_zip_table_json_plugin.cc \
+    $(wildcard sideplugin/topling-rocks/src/dcompact/*.cc) \
+    $(wildcard sideplugin/topling-rocks/src/table/*.cc) \
     sideplugin/topling-rocks/src/txn/cspp_memtable.cc \
     sideplugin/topling-rocks/src/misc/show_sys_info.cc \
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}

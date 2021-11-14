@@ -292,6 +292,8 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
     sideplugin/topling-rocks/src/dcompact/dcompact_etcd.cc \
     sideplugin/topling-rocks/src/dcompact/dcompact_executor.cc \
     sideplugin/topling-rocks/src/dcompact/dispatch_table_factory_serde.cc \
+    sideplugin/topling-rocks/src/table/single_fast_table_builder.cc \
+    sideplugin/topling-rocks/src/table/single_fast_table_reader.cc \
     sideplugin/topling-rocks/src/table/terark_fast_table.cc \
     sideplugin/topling-rocks/src/table/terark_fast_table_builder.cc \
     sideplugin/topling-rocks/src/table/terark_fast_table_reader.cc \

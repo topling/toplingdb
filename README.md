@@ -30,6 +30,11 @@ Distributed Compaction | Not Yet
 Builtin SidePlugin**s** | [rockside](https://github.com/topling/rockside)
 Prometheus metrics | [rockside](https://github.com/topling/rockside)
 
+## License
+We disallow bytedance using this software, other terms are identidal with
+upstream rocksdb license, see [LICENSE.Apache](LICENSE.Apache) and
+[LICENSE.leveldb](LICENSE.leveldb).
+
 <hr/>
 <hr/>
 <hr/>

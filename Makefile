@@ -238,7 +238,7 @@ else
     IsCloneOK := $(shell \
        set -x -e; \
        cd sideplugin; \
-       git clone http://github.com/topling/topling-zip.git >&2; \
+       git clone https://github.com/topling/topling-zip.git >&2; \
        cd topling-zip; \
        git submodule update --init --recursive >&2; \
        echo $$?\

@@ -2593,7 +2593,8 @@ build_subset_tests: $(ROCKSDBTESTS_SUBSET)
 	$(AM_V_GEN)if [ -n "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}" ]; then echo "$(ROCKSDBTESTS_SUBSET)" > "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}"; else echo "$(ROCKSDBTESTS_SUBSET)"; fi
 
 ifneq (,$(wildcard sideplugin/topling-rocks))
-${TOPLING_ROCKS_GIT_VER_SRC}:
+sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
+  $(shell find sideplugin/topling-rocks/{src,tools} -name '*.cc' -o -name '*.h')
 	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
 
 .PHONY: dcompact_worker

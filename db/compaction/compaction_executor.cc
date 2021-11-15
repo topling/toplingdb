@@ -271,6 +271,11 @@ std::string MakePath(std::string dir, Slice sub) {
     dir.pop_back();
   }
   dir.reserve(dir.size() + 1 + sub.size());
+  ROCKSDB_VERIFY(!sub.empty());
+  while (!sub.empty() && '/' == sub[0]) {
+    sub.remove_prefix(1);
+  }
+  ROCKSDB_VERIFY(!sub.empty());
   dir.push_back('/');
   dir.append(sub.data(), sub.size());
   return dir;

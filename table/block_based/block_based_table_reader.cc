@@ -3651,6 +3651,7 @@ bool BlockBasedTable::GetRandomInteranlKeysAppend(
   if (!rep_->table_options.enable_get_random_keys) {
     return false;
   }
+  const bool index_key_includes_seq = rep_->index_key_includes_seq;
   size_t oldsize = output->size();
   bool disable_prefix_seek = false;
   BlockCacheLookupContext lookup_context{TableReaderCaller::kPrefetch};
@@ -3659,8 +3660,15 @@ bool BlockBasedTable::GetRandomInteranlKeysAppend(
       /*input_iter=*/nullptr, /*get_context=*/nullptr, &lookup_context));
   index_iter->SeekToFirst();
   while (index_iter->Valid()) {
-    Slice internal_key = index_iter->key();
-    output->push_back(internal_key.ToString());
+    if (index_key_includes_seq) {
+      Slice internal_key = index_iter->key();
+      output->push_back(internal_key.ToString());
+    }
+    else {
+      std::string internal_key = index_iter->key().ToString();
+      internal_key.append("\0\0\0\0\0\0\0\0", 8); // seq + type
+      output->push_back(std::move(internal_key));
+    }
     index_iter->Next();
   }
   auto beg = output->begin() + oldsize;

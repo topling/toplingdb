@@ -268,7 +268,6 @@ class BlockBasedTable : public TableReader {
   explicit BlockBasedTable(const TableReader&) = delete;
   void operator=(const TableReader&) = delete;
 
- private:
   friend class MockedBlockBasedTable;
   friend class BlockBasedTableReaderTestVerifyChecksum_ChecksumMismatch_Test;
   static std::atomic<uint64_t> next_cache_key_id_;

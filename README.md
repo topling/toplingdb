@@ -3,8 +3,8 @@ ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). It i
 
 ToplingDB has many key features than RocksDB:
 1. [SidePlugin](https://github.com/topling/rockside/wiki) enables users to write a json(or yaml) to define DB instance configs
-1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, webview is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
-1. Many refactories on RocksDB, aimed for performance and extendibility
+1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
+1. Many improves and refactories on RocksDB, aimed for performance and extendibility
 1. [Topling**CSPP**MemTab](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)(**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling
 1. [Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable) is an SST implementation optimized for speed, aimed for MemTable flush and L0->L1 compaction.
 1. [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable) is an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which used dedicated searchable in-memory data compression algorithms.
@@ -14,10 +14,15 @@ ToplingDB has many key features than RocksDB:
 1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
 
 ## ToplingDB cloud native services
-1. Todis(Redis on ToplingDB), [Todis on aliyun](https://topling.cn/products)
+1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB), [Todis on aliyun](https://topling.cn/products)
 2. ToplingSQL(MySQL on ToplingDB), comming soon...
 
-## ToplingDB Open Source Repo
+## ToplingDB Components
+With SidePlugin mechanics, plugins/components can be physically seperated from core toplingdb
+1. Compiled to a seperated dynamic lib and loaded at runtime
+2. User code need not any changes, just change json/yaml files
+3. Topling's non-open-source enterprise plugins/components are delivered in this way
+
 Component      | Open Source Repo
 -------------- | ------------------
 SidePlugin     | [rockside](https://github.com/topling/rockside)

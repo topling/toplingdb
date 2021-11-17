@@ -19,7 +19,7 @@
 #include "port/port.h"
 #include "util/cast_util.h"
 
-#if defined(JSON_USE_GOLD_HASH_MAP) // indicate topling-core is available
+#ifndef SIDE_PLUGIN_JSON_USE_STD_MAP // indicate topling-core is available
 #include <terark/valvec.hpp> // for terark::lower_bound_0
 #endif
 
@@ -51,10 +51,10 @@ size_t HistogramBucketMapper::IndexForValue(const uint64_t value) const {
   // if (UNLIKELY(value >= maxBucketValue_))
   //   return end - beg - 1;  // bucketValues_.size() - 1
   // else
-#if defined(JSON_USE_GOLD_HASH_MAP) // indicate topling-core is available
-    return terark::lower_bound_0(beg, end - beg, value);
-#else
+#ifdef SIDE_PLUGIN_JSON_USE_STD_MAP // indicate topling-core is available
     return std::lower_bound(beg, end, value) - beg;
+#else
+    return terark::lower_bound_0(beg, end - beg, value);
 #endif
 }
 

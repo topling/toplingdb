@@ -282,7 +282,6 @@ CXXFLAGS += -DZSTD \
   -I${TOPLING_CORE_DIR}/3rdparty/zstd/zstd/dictBuilder
 
 CXXFLAGS += \
-  -DJSON_USE_GOLD_HASH_MAP=1 \
   -I${TOPLING_CORE_DIR}/src \
   -I${TOPLING_CORE_DIR}/boost-include \
   -I${TOPLING_CORE_DIR}/3rdparty/zstd

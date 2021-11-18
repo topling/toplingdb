@@ -286,11 +286,12 @@ CXXFLAGS += \
   -I${TOPLING_CORE_DIR}/boost-include \
   -I${TOPLING_CORE_DIR}/3rdparty/zstd
 
+LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
+           -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
+
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   += -I sideplugin/topling-rocks/src
-  LDFLAGS    += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
-                -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG} \
-                -lstdc++fs -lcurl
+  LDFLAGS    += -lstdc++fs -lcurl
   export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
   EXTRA_LIB_SOURCES += \
@@ -301,10 +302,12 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
 else
   $(warning NotFound sideplugin/topling-rocks, Topling SST, MemTab and Distributed Compaction are disabled)
+  ifeq (1,2) # Now link libterark-{zbs,fsa,core} instead
   EXTRA_LIB_SOURCES += \
     ${TOPLING_CORE_DIR}/src/terark/fstring.cpp \
     ${TOPLING_CORE_DIR}/src/terark/hash_common.cpp \
     ${TOPLING_CORE_DIR}/src/terark/util/throw.cpp
+  endif
 endif
 
 ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
@@ -2600,6 +2603,14 @@ endif
 
 build_subset_tests: $(ROCKSDBTESTS_SUBSET)
 	$(AM_V_GEN)if [ -n "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}" ]; then echo "$(ROCKSDBTESTS_SUBSET)" > "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}"; else echo "$(ROCKSDBTESTS_SUBSET)"; fi
+
+
+TOPLING_ZBS_TARGET := ${BUILD_ROOT}/lib_shared/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.${PLATFORM_SHARED_EXT}
+${SHARED4}: ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}
+${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: CXXFLAGS =
+${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: LDFLAGS =
+${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}:
+	+make -C ${TOPLING_CORE_DIR} ${TOPLING_ZBS_TARGET}
 
 ifneq (,$(wildcard sideplugin/topling-rocks))
 sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \

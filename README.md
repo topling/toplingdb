@@ -37,7 +37,7 @@ Prometheus metrics | [rockside](https://github.com/topling/rockside)
 
 ## License
 We disallow bytedance using this software, other terms are identidal with
-upstream rocksdb license, see [LICENSE.Apache](LICENSE.Apache) and
+upstream rocksdb license, see [LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING) and
 [LICENSE.leveldb](LICENSE.leveldb).
 
 <hr/>

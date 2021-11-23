@@ -583,12 +583,12 @@ struct BlockBasedTable::Rep {
   std::unique_ptr<FilterBlockReader> filter;
   std::unique_ptr<UncompressionDictReader> uncompression_dict_reader;
 
-  enum class FilterType {
+  ROCKSDB_ENUM_CLASS_INCLASS(FilterType, int,
     kNoFilter,
     kFullFilter,
     kBlockFilter,
-    kPartitionedFilter,
-  };
+    kPartitionedFilter
+  );
   FilterType filter_type;
   BlockHandle filter_handle;
   BlockHandle compression_dict_handle;

@@ -35,6 +35,18 @@ Distributed Compaction | Not Yet
 Builtin SidePlugin**s** | [rockside](https://github.com/topling/rockside)
 Prometheus metrics | [rockside](https://github.com/topling/rockside)
 
+## Run db_bench
+```bash
+git clone https://github.com/topling/toplingdb
+cd toplingdb
+make -j`nproc` db_bench DEBUG_LEVEL=0
+cp sideplugin/rockside/src/topling/web/{style.css,index.html} ${/path/to/dbdir}
+cp sideplugin/rockside/sample-conf/lcompact_community.yaml .
+# change path items in ./lcompact_community.yaml (search nvme-shared)
+# command option -json can accept json and yaml files, here use yaml file for more human readable
+./db_bench -json lcompact_community.yaml -num 10000000 -disable_wal=true -value_size 2000 -benchmarks=fillrandom,readrandom -batch_size=10
+# you can see this db_bench is much faster than RocksDB
+```
 ## License
 We disallow bytedance using this software, other terms are identidal with
 upstream rocksdb license, see [LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING) and

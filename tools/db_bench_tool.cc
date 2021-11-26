@@ -4519,15 +4519,15 @@ class Benchmark {
       repo_.CloseAllDB(false);
       repo_.CleanResetRepo();
       DB_MultiCF* dbmcf = nullptr;
-      Status s = repo_.ImportJsonFile(FLAGS_json);
+      Status s = repo_.ImportAutoFile(FLAGS_json);
       if (!s.ok()) {
-        fprintf(stderr, "ERROR: ImportJsonFile(%s): %s\n",
+        fprintf(stderr, "ERROR: ImportAutoFile(%s): %s\n",
                 FLAGS_json.c_str(), s.ToString().c_str());
         exit(1);
       }
       s = repo_.OpenDB(&dbmcf);
       if (!s.ok()) {
-        fprintf(stderr, "ERROR: OpenDB(): JsonFile=%s: %s\n",
+        fprintf(stderr, "ERROR: OpenDB(): Config File=%s: %s\n",
                 FLAGS_json.c_str(), s.ToString().c_str());
         exit(1);
       }

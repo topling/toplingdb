@@ -289,6 +289,16 @@ CXXFLAGS += \
 LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
            -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
 
+ifeq (,$(wildcard sideplugin/topling-rocks))
+  # topling specific: just for people who has permission to topling-rocks
+  dummy := $(shell set -e -x; \
+    cd sideplugin; \
+    git clone git@github.com:rockeet/topling-rocks; \
+	cd topling-rocks; \
+	git submodule update --init --recursive \
+  )
+endif
+
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   += -I sideplugin/topling-rocks/src
   LDFLAGS    += -lstdc++fs -lcurl
@@ -310,6 +320,8 @@ else
   endif
 endif
 
+TOPLING_DCOMPACT_USE_ETCD := 0
+ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/src/libetcd-cpp-api.${PLATFORM_SHARED_EXT}))
 ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
   CXXFLAGS   += -I sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto \
                 -I sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3
@@ -330,7 +342,12 @@ ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/
   else
     $(error NotFound ../vcpkg/packages/cpprestsdk_x64-linux/include)
   endif
-else
+  CXXFLAGS += -DTOPLING_DCOMPACT_USE_ETCD
+  TOPLING_DCOMPACT_USE_ETCD := 1
+endif
+endif
+
+ifeq (${TOPLING_DCOMPACT_USE_ETCD},0)
   $(warning NotFound etcd-cpp-apiv3, disabled)
 endif
 

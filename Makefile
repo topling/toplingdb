@@ -289,6 +289,8 @@ CXXFLAGS += \
 LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
            -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
 
+AUTO_CLONE_TOPLING_ROCKS ?= 1 # default is 1, can be override
+ifeq (${AUTO_CLONE_TOPLING_ROCKS},1)
 ifeq (,$(wildcard sideplugin/topling-rocks))
   # topling specific: just for people who has permission to topling-rocks
   dummy := $(shell set -e -x; \
@@ -297,6 +299,7 @@ ifeq (,$(wildcard sideplugin/topling-rocks))
 	cd topling-rocks; \
 	git submodule update --init --recursive \
   )
+endif
 endif
 
 ifneq (,$(wildcard sideplugin/topling-rocks))

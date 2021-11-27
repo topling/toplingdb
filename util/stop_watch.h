@@ -17,7 +17,7 @@ class StopWatch {
  public:
   inline
   StopWatch(SystemClock* clock, Statistics* statistics, const uint32_t hist_type)
-      :
+  noexcept :
 #if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
         clock_(clock),
 #endif
@@ -40,11 +40,27 @@ class StopWatch {
 
   uint64_t start_time() const { return start_time_ / 1000; }
 
+#if defined(CLOCK_MONOTONIC_RAW) && !defined(ROCKSDB_UNIT_TEST)
+  inline uint64_t now_nanos() const noexcept {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    return ts.tv_sec * 1000000000 + ts.tv_nsec;
+  }
+  inline uint64_t now_micros() const noexcept {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+  }
+#else
+  inline uint64_t now_nanos() const noexcept { return clock_->NowNanos(); }
+  inline uint64_t now_micros() const noexcept { return clock_->NowNanos() / 1000; }
+#endif
+
  protected:
    StopWatch(SystemClock* clock, Statistics* statistics,
-            const uint32_t hist_type, uint64_t* elapsed,
-            bool overwrite, bool delay_enabled)
-      :
+             const uint32_t hist_type, uint64_t* elapsed,
+             bool overwrite, bool delay_enabled)
+   noexcept :
 #if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
         clock_(clock),
 #endif
@@ -58,15 +74,6 @@ class StopWatch {
         delay_enabled_(delay_enabled),
         start_time_((stats_enabled_ || elapsed != nullptr) ? now_nanos()
                                                            : 0) {}
-  inline uint64_t now_nanos() {
-#if defined(CLOCK_MONOTONIC_RAW) && !defined(ROCKSDB_UNIT_TEST)
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-    return ts.tv_sec * 1000000000 + ts.tv_nsec;
-#else
-    return clock_->NowNanos();
-#endif
-  }
 #if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
   SystemClock* clock_;
 #endif
@@ -84,6 +91,7 @@ public:
   StopWatchEx(SystemClock* clock, Statistics* statistics,
               const uint32_t hist_type, uint64_t* elapsed = nullptr,
               bool overwrite = true, bool delay_enabled = false)
+  noexcept
   : StopWatch(clock, statistics, hist_type, elapsed, overwrite, delay_enabled),
     elapsed_(elapsed),
     total_delay_(0),

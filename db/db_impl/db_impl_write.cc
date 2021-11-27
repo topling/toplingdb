@@ -1523,20 +1523,10 @@ Status DBImpl::DelayWrite(uint64_t num_bytes,
       const uint64_t kDelayInterval = 1001;
       uint64_t stall_end = sw.start_time() + delay;
       while (write_controller_.NeedsDelay()) {
-#if defined(CLOCK_MONOTONIC_RAW) && !defined(ROCKSDB_UNIT_TEST)
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-        uint64_t now = ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
-        if (now >= stall_end) {
+        if (sw.now_micros() >= stall_end) {
           // We already delayed this write `delay` microseconds
           break;
         }
-#else
-        if (immutable_db_options_.clock->NowMicros() >= stall_end) {
-          // We already delayed this write `delay` microseconds
-          break;
-        }
-#endif
 
         delayed = true;
         // Sleep for 0.001 seconds

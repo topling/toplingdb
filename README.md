@@ -36,6 +36,8 @@ Builtin SidePlugin**s** | [rockside](https://github.com/topling/rockside)
 Prometheus metrics | [rockside](https://github.com/topling/rockside)
 
 ## Run db_bench
+ToplingDB requires gcc 8.4 or newer, or new clang(in near 3 years).
+
 Even without Topling performance components, ToplingDB is much faster than upstream RocksDB:
 ```bash
 sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel

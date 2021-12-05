@@ -335,6 +335,10 @@ struct BlockBasedTableOptions {
   // Default: true
   bool use_delta_encoding = true;
 
+  // to reduce CPU time of write amp of NoZip to Zip level compaction
+  // Default: false
+  bool use_raw_size_as_estimated_file_size = false;
+
   // If non-nullptr, use the specified filter policy to reduce disk reads.
   // Many applications will benefit from passing the result of
   // NewBloomFilterPolicy() here.

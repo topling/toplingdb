@@ -82,6 +82,7 @@ const std::map<InternalStats::InternalDBStatsType, DBStatInfo>
 namespace {
 const double kMB = 1048576.0;
 const double kGB = kMB * 1024;
+const double kTB = kGB * 1024;
 const double kMicrosInSec = 1000000.0;
 
 void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
@@ -1703,9 +1704,11 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
   }
 
   snprintf(buf, sizeof(buf),
-           "Cumulative compaction: %7.2f GB write, %7.2f MB/s write, "
-           "%7.2f GB read, %7.2f MB/s read, %7.1f seconds\n",
-           compact_bytes_write / kGB,
+           "Cumulative compaction: %11.6f %s write, %7.2f MB/s write, "
+           "%11.6f GB read, %7.2f MB/s read, %7.1f seconds\n",
+           compact_bytes_write /
+          (compact_bytes_write < (1LL<<40) ? kGB  : kTB ),
+          (compact_bytes_write < (1LL<<40) ? "GB" : "TB"),
            compact_bytes_write / kMB / std::max(seconds_up, 0.001),
            compact_bytes_read / kGB,
            compact_bytes_read / kMB / std::max(seconds_up, 0.001),
@@ -1722,8 +1725,8 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
 
   snprintf(
       buf, sizeof(buf),
-      "Interval   compaction: %7.2f GB write, %7.2f MB/s write, "
-      "%7.2f GB read, %7.2f MB/s read, %7.1f seconds\n",
+      "Interval   compaction: %11.6f GB write, %7.2f MB/s write, "
+      "%11.6f GB read, %7.2f MB/s read, %7.1f seconds\n",
       interval_compact_bytes_write / kGB,
       interval_compact_bytes_write / kMB / std::max(interval_seconds_up, 0.001),
       interval_compact_bytes_read / kGB,

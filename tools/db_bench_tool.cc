@@ -3233,6 +3233,7 @@ class Benchmark {
       ErrorExit();
     }
     Open(&open_options_);
+    open_options_ = db_.db->GetOptions();
     PrintHeader(open_options_);
     std::stringstream benchmark_stream(FLAGS_benchmarks);
     std::string name;

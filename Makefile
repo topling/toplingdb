@@ -296,10 +296,27 @@ ifeq (,$(wildcard sideplugin/topling-rocks))
   dummy := $(shell set -e -x; \
     cd sideplugin; \
     git clone git@github.com:rockeet/topling-rocks; \
-	cd topling-rocks; \
-	git submodule update --init --recursive \
+    cd topling-rocks; \
+    git submodule update --init --recursive \
   )
 endif
+ifeq (,$(wildcard sideplugin/cspp-memtable))
+  # topling specific: just for people who has permission to cspp-memtable
+  dummy := $(shell set -e -x; \
+    cd sideplugin; \
+    git clone git@github.com:topling/cspp-memtable; \
+    cd cspp-memtable; \
+  )
+endif
+endif
+
+ifneq (,$(wildcard sideplugin/cspp-memtable))
+  # now we have cspp-memtable
+  CSPP_MEMTABLE_GIT_VER_SRC = ${BUILD_ROOT}/git-version-cspp_memtable.cc
+  EXTRA_LIB_SOURCES += sideplugin/cspp-memtable/cspp_memtable.cc \
+                       sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
+else
+  $(warning NotFound sideplugin/cspp-memtable, Topling CSPP MemTab is disabled)
 endif
 
 ifneq (,$(wildcard sideplugin/topling-rocks))
@@ -310,11 +327,10 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
   EXTRA_LIB_SOURCES += \
     $(wildcard sideplugin/topling-rocks/src/dcompact/*.cc) \
     $(wildcard sideplugin/topling-rocks/src/table/*.cc) \
-    sideplugin/topling-rocks/src/txn/cspp_memtable.cc \
     sideplugin/topling-rocks/src/misc/show_sys_info.cc \
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
 else
-  $(warning NotFound sideplugin/topling-rocks, Topling SST, MemTab and Distributed Compaction are disabled)
+  $(warning NotFound sideplugin/topling-rocks, Topling SST and Distributed Compaction are disabled)
   ifeq (1,2) # Now link libterark-{zbs,fsa,core} instead
   EXTRA_LIB_SOURCES += \
     ${TOPLING_CORE_DIR}/src/terark/fstring.cpp \
@@ -2640,6 +2656,13 @@ sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
 .PHONY: dcompact_worker
 dcompact_worker: ${SHARED1}
 	+make -C sideplugin/topling-rocks/tools/dcompact ${OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
+endif
+
+ifneq (,$(wildcard sideplugin/cspp-memtable))
+sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}: \
+  sideplugin/cspp-memtable/cspp_memtable.cc \
+  sideplugin/cspp-memtable/Makefile
+	+make -C sideplugin/cspp-memtable ${CSPP_MEMTABLE_GIT_VER_SRC}
 endif
 
 # Remove the rules for which dependencies should not be generated and see if any are left.

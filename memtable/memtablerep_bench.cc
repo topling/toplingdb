@@ -122,6 +122,8 @@ DEFINE_int64(seed, 0,
              "Seed base for random number generators. "
              "When 0 it is deterministic.");
 
+bool g_is_cspp = false;
+
 namespace ROCKSDB_NAMESPACE {
 
 namespace {
@@ -235,6 +237,21 @@ class FillBenchmarkThread : public BenchmarkThread {
                         num_ops, read_hits) {}
 
   void FillOne() {
+    if (g_is_cspp) {
+      auto internal_key_size = 16;
+      uint64_t key = key_gen_->Next();
+      char key_buf[16];
+      EncodeFixed64(key_buf+0, key);
+      EncodeFixed64(key_buf+8, ++(*sequence_));
+      Slice value = generator_.Generate(FLAGS_item_size);
+      table_->InsertKeyValueConcurrently(Slice(key_buf, sizeof(key_buf)), value);
+      *bytes_written_ += internal_key_size + FLAGS_item_size + 8;
+    }
+    else {
+      FillOneEncode();
+    }
+  }
+  void FillOneEncode() {
     char* buf = nullptr;
     auto internal_key_size = 16;
     auto encoded_len =
@@ -567,6 +584,11 @@ void PrintWarnings() {
 #endif
 }
 
+#ifdef HAS_TOPLING_CSPP_MEMTABLE
+namespace ROCKSDB_NAMESPACE {
+  extern MemTableRepFactory* NewCSPPMemTabForPlain(const std::string&);
+}
+#endif
 int main(int argc, char** argv) {
   ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   SetUsageMessage(std::string("\nUSAGE:\n") + std::string(argv[0]) +
@@ -580,6 +602,12 @@ int main(int argc, char** argv) {
   std::unique_ptr<ROCKSDB_NAMESPACE::MemTableRepFactory> factory;
   if (FLAGS_memtablerep == "skiplist") {
     factory.reset(new ROCKSDB_NAMESPACE::SkipListFactory);
+#ifdef HAS_TOPLING_CSPP_MEMTABLE
+  } else if (FLAGS_memtablerep.substr(0, 5) == "cspp:") {
+    std::string jstr = FLAGS_memtablerep.substr(5);
+    factory.reset(ROCKSDB_NAMESPACE::NewCSPPMemTabForPlain(jstr));
+    g_is_cspp = true;
+#endif
 #ifndef ROCKSDB_LITE
   } else if (FLAGS_memtablerep == "vector") {
     factory.reset(new ROCKSDB_NAMESPACE::VectorRepFactory);

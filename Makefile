@@ -313,6 +313,7 @@ endif
 
 ifneq (,$(wildcard sideplugin/cspp-memtable))
   # now we have cspp-memtable
+  CXXFLAGS   += -DHAS_TOPLING_CSPP_MEMTABLE
   CSPP_MEMTABLE_GIT_VER_SRC = ${BUILD_ROOT}/git-version-cspp_memtable.cc
   EXTRA_LIB_SOURCES += sideplugin/cspp-memtable/cspp_memtable.cc \
                        sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}

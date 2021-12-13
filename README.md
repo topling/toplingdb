@@ -48,7 +48,7 @@ cp sideplugin/rockside/src/topling/web/{style.css,index.html} ${/path/to/dbdir}
 cp sideplugin/rockside/sample-conf/lcompact_community.yaml .
 export LD_LIBRARY_PATH=`find sideplugin -name lib_shared`
 # change ./lcompact_community.yaml
-# 1. path items (search nvme-shared), if you have no fast disk(such as on a cloud server), use /dev/shm
+# 1. path items (search /dev/shm), if you have no fast disk(such as on a cloud server), use /dev/shm
 # 2. change max_background_compactions to your cpu core num
 # command option -json can accept json and yaml files, here use yaml file for more human readable
 ./db_bench -json lcompact_community.yaml -num 10000000 -disable_wal=true -value_size 2000 -benchmarks=fillrandom,readrandom -batch_size=10

@@ -245,7 +245,7 @@ class FillBenchmarkThread : public BenchmarkThread {
       EncodeFixed64(key_buf+8, ++(*sequence_));
       Slice value = generator_.Generate(FLAGS_item_size);
       table_->InsertKeyValueConcurrently(Slice(key_buf, sizeof(key_buf)), value);
-      *bytes_written_ += internal_key_size + FLAGS_item_size + 8;
+      *bytes_written_ += internal_key_size + FLAGS_item_size + 1;
     }
     else {
       FillOneEncode();

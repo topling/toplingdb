@@ -463,8 +463,10 @@ $(foreach path, $(missing_make_config_paths), \
 ifeq ($(PLATFORM), OS_AIX)
 # no debug info
 else ifneq ($(PLATFORM), IOS)
-CFLAGS += -gdwarf -g3
-CXXFLAGS += -gdwarf -g3
+# default disable dwarf
+DBG_DWARF ?=
+CFLAGS += ${DBG_DWARF} -g3
+CXXFLAGS += ${DBG_DWARF} -g3
 else
 # no debug info for IOS, that will make our library big
 OPT += -DNDEBUG

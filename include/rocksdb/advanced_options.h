@@ -210,10 +210,10 @@ ROCKSDB_ENUM_CLASS(Temperature, uint8_t,
 // The control option of how the cache tiers will be used. Currently rocksdb
 // support block cahe (volatile tier), secondary cache (non-volatile tier).
 // In the future, we may add more caching layers.
-enum class CacheTier : uint8_t {
+ROCKSDB_ENUM_CLASS(CacheTier, uint8_t,
   kVolatileTier = 0,
-  kNonVolatileBlockTier = 0x01,
-};
+  kNonVolatileBlockTier = 0x01
+);
 
 enum UpdateStatus {    // Return status For inplace update callback
   UPDATE_FAILED   = 0, // Nothing to update

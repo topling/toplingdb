@@ -231,7 +231,7 @@ const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {
     {MANIFEST_FILE_SYNC_MICROS, "rocksdb.manifest.file.sync.micros"},
     {TABLE_OPEN_IO_MICROS, "rocksdb.table.open.io.micros"},
     {DB_MULTIGET, "rocksdb.db.multiget.micros"},
-    {READ_BLOCK_COMPACTION_MICROS, "rocksdb.read.block.compaction.micros"},
+    {READ_ZBS_RECORD_MICROS, "rocksdb.read.zbs.record.micros"},
     {READ_BLOCK_GET_MICROS, "rocksdb.read.block.get.micros"},
     {WRITE_RAW_BLOCK_MICROS, "rocksdb.write.raw.block.micros"},
     {STALL_L0_SLOWDOWN_COUNT, "rocksdb.l0.slowdown.count"},

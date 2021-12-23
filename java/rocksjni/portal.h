@@ -5407,7 +5407,7 @@ class HistogramTypeJni {
         return 0x8;
       case ROCKSDB_NAMESPACE::Histograms::DB_MULTIGET:
         return 0x9;
-      case ROCKSDB_NAMESPACE::Histograms::READ_BLOCK_COMPACTION_MICROS:
+      case ROCKSDB_NAMESPACE::Histograms::READ_ZBS_RECORD_MICROS:
         return 0xA;
       case ROCKSDB_NAMESPACE::Histograms::READ_BLOCK_GET_MICROS:
         return 0xB;
@@ -5524,7 +5524,7 @@ class HistogramTypeJni {
       case 0x9:
         return ROCKSDB_NAMESPACE::Histograms::DB_MULTIGET;
       case 0xA:
-        return ROCKSDB_NAMESPACE::Histograms::READ_BLOCK_COMPACTION_MICROS;
+        return ROCKSDB_NAMESPACE::Histograms::READ_ZBS_RECORD_MICROS;
       case 0xB:
         return ROCKSDB_NAMESPACE::Histograms::READ_BLOCK_GET_MICROS;
       case 0xC:

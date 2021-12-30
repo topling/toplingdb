@@ -2,7 +2,7 @@
 ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). It is built with [RocksDB](https://github.com/facebook/rocksdb).
 
 ToplingDB has much more key features than RocksDB:
-1. [SidePlugin](https://github.com/topling/rockside/wiki) enables users to write a json(or yaml) to define DB instance configs
+1. [SidePlugin](https://github.com/topling/rockside/wiki) enables users to write a json(or yaml) to define DB configs
 1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
 1. Many improves and refactories on RocksDB, aimed for performance and extendibility
 1. [Topling**CSPP**MemTab](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)(**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling

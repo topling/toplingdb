@@ -30,6 +30,8 @@ With SidePlugin mechanics, plugins/components can be physically seperated from c
 [cspp-memtable](https://github.com/topling/cspp-memtable) | **private** | Auto clone in Makefile, [open for partner](https://github.com/topling/rockside/wiki/Topling-Partner). Usage [doc](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)
 [topling-rocks](https://github.com/topling/topling-rocks) | **private** | Auto clone in Makefile, contains:<ul><li>[Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable)</li><li>[Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)</li><li>[Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction)</li></ul>
 
+**private** repo**s** are auto cloned in ToplingDB's Makefile, community users has no access permission to these **private** repo**s**, so the auto clone in Makefile will fail, thus ToplingDB is built without **private** components, this is so called **community** version.
+
 ## Run db_bench
 ToplingDB requires gcc 8.4 or newer, or new clang(in near 3 years).
 

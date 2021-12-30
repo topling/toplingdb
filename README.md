@@ -23,17 +23,12 @@ With SidePlugin mechanics, plugins/components can be physically seperated from c
 2. User code need not any changes, just change json/yaml files
 3. Topling's non-open-source enterprise plugins/components are delivered in this way
 
-Component      | Open Source Repo
--------------- | ------------------
-SidePlugin     | [rockside](https://github.com/topling/rockside)
-Embeded Http Server | [rockside](https://github.com/topling/rockside)
-Refactories  and Enhancements  | [ToplingDB](https://github.com/topling/toplingdb)
-Topling**CSPP**MemTab| Not Yet
-Topling**Fast**Table | Not Yet
-Topling**Zip**Table | Not Yet
-Distributed Compaction | Not Yet
-Builtin SidePlugin**s** | [rockside](https://github.com/topling/rockside)
-Prometheus metrics | [rockside](https://github.com/topling/rockside)
+ Repository    | Permission | Description (and components)
+-------------- | ---------- | -----------
+[ToplingDB](https://github.com/topling/toplingdb) | public | Top repositry, forked from [RocksDB](https://github.com/facebook/rocksdb) with our fixes, refactories and enhancements
+[rockside](https://github.com/topling/rockside) | public | This is a submodule, contains:<ul><li>SidePlugin framework</li><li>Embeded Http Server</li><li>Prometheus metrics</li><li>Builtin SidePlugin**s**</li></ul>
+[cspp-memtable](https://github.com/topling/cspp-memtable) | **private** | Auto clone in Makefile, [open for partner](https://github.com/topling/rockside/wiki/Topling-Partner). Usage [doc](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)
+[topling-rocks](https://github.com/topling/topling-rocks) | **private** | Auto clone in Makefile, contains:<ul><li>[Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable)</li><li>[Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)</li><li>[Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction)</li></ul>
 
 ## Run db_bench
 ToplingDB requires gcc 8.4 or newer, or new clang(in near 3 years).

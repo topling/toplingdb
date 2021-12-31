@@ -35,10 +35,13 @@ class CoreLocalArray {
   // e.g., for aggregation, or if the client caches core index.
   T* AccessAtCore(size_t core_idx) const;
 
+  size_t NumCores() const { return num_cpus_; }
+
  private:
   std::unique_ptr<T[]> data_;
   int size_shift_;
-  int size_mask_;
+  uint16_t size_mask_;
+  uint16_t num_cpus_;
 };
 
 template <typename T>
@@ -49,7 +52,8 @@ CoreLocalArray<T>::CoreLocalArray() {
   while (1 << size_shift_ < num_cpus) {
     ++size_shift_;
   }
-  size_mask_ = (1 << size_shift_) - 1;
+  size_mask_ = uint16_t((1 << size_shift_) - 1);
+  num_cpus_ = num_cpus_;
   data_.reset(new T[static_cast<size_t>(1) << size_shift_]);
 }
 

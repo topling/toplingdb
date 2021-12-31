@@ -426,7 +426,7 @@ TYPED_TEST(RibbonTypeParamTest, CompactnessAndBacktrackAndFpRate) {
   const double log_max_add = std::log(
       FLAGS_max_add > 0 ? FLAGS_max_add
                         : static_cast<uint32_t>(kCoeffBits * kCoeffBits) *
-                              std::max(FLAGS_thoroughness, uint32_t{32}));
+                              std::max(uint32_t(FLAGS_thoroughness), uint32_t{32}));
 
   // This needs to be enough below the minimum number of slots to get a
   // reasonable number of samples with the minimum number of slots.

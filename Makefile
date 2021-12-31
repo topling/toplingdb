@@ -22,6 +22,15 @@ MACHINE ?= $(shell uname -m)
 ARFLAGS = ${EXTRA_ARFLAGS} rs
 STRIPFLAGS = -S -x
 
+# beg topling specific
+DISABLE_WARNING_AS_ERROR=1
+LIB_MODE=shared
+USE_RTTI=1
+ROCKSDB_USE_IO_URING=0
+ROCKSDB_DISABLE_TCMALLOC=1
+SKIP_FORMAT_BUCK_CHECKS=1
+# end topling specific
+
 # Transform parallel LOG output into something more readable.
 perl_command = perl -n \
   -e '@a=split("\t",$$_,-1); $$t=$$a[8];'				\
@@ -113,12 +122,16 @@ endif
 # In that case, the compiler default (`-O0` for gcc and clang) will be used.
 OPT += $(OPTIMIZE_LEVEL)
 
+ifeq ($(WITH_FRAME_POINTER),1)
+OPT += -fno-omit-frame-pointer
+else
 # compile with -O2 if debug level is not 2
 ifneq ($(DEBUG_LEVEL), 2)
 OPT += -fno-omit-frame-pointer
 # Skip for archs that don't support -momit-leaf-frame-pointer
 ifeq (,$(shell $(CXX) -fsyntax-only -momit-leaf-frame-pointer -xc /dev/null 2>&1))
 OPT += -momit-leaf-frame-pointer
+endif
 endif
 endif
 
@@ -190,6 +203,181 @@ endif
 #-----------------------------------------------
 include src.mk
 
+# ROCKSDB_NO_DYNAMIC_EXTENSION makes dll load twice, disable it
+CXXFLAGS += -DROCKSDB_NO_DYNAMIC_EXTENSION
+
+# civetweb show server stats
+CXXFLAGS += -DUSE_SERVER_STATS=1
+CFLAGS += -DUSE_SERVER_STATS=1
+
+ifeq (,$(wildcard sideplugin/rockside/3rdparty/rapidyaml))
+  $(warning NotFound sideplugin/rockside/3rdparty/rapidyaml)
+  $(warning sideplugin/rockside is a submodule, auto init...)
+  IsCloneOK := $(shell \
+     set -x -e; \
+     git submodule update --init --recursive >&2; \
+     echo $$?\
+  )
+  ifneq ("${IsCloneOK}","0")
+    $(error "IsCloneOK=${IsCloneOK} Error cloning rockside, stop!")
+  endif
+endif
+EXTRA_LIB_SOURCES += sideplugin/rockside/src/topling/rapidyaml_all.cc
+CXXFLAGS += -Isideplugin/rockside/3rdparty/rapidyaml \
+            -Isideplugin/rockside/3rdparty/rapidyaml/src \
+            -Isideplugin/rockside/3rdparty/rapidyaml/ext/c4core/src \
+            -DSIDE_PLUGIN_WITH_YAML=1
+
+# topling-core is topling private
+ifneq (,$(wildcard sideplugin/topling-core))
+  TOPLING_CORE_DIR := sideplugin/topling-core
+else
+  # topling-zip is topling public
+  ifeq (,$(wildcard sideplugin/topling-zip))
+    $(warning sideplugin/topling-zip is not present, clone it from github...)
+    IsCloneOK := $(shell \
+       set -x -e; \
+       cd sideplugin; \
+       git clone https://github.com/topling/topling-zip.git >&2; \
+       cd topling-zip; \
+       git submodule update --init --recursive >&2; \
+       echo $$?\
+    )
+    ifneq ("${IsCloneOK}","0")
+      $(error "IsCloneOK=${IsCloneOK} Error cloning topling-zip, stop!")
+    endif
+  endif
+  TOPLING_CORE_DIR := sideplugin/topling-zip
+endif
+
+COMPILER := $(shell set -e; tmpfile=`mktemp -u compiler-XXXXXX`; \
+                    ${CXX} ${TOPLING_CORE_DIR}/tools/configure/compiler.cpp -o $${tmpfile}.exe; \
+                    ./$${tmpfile}.exe && rm -f $${tmpfile}*)
+UNAME_MachineSystem := $(shell uname -m -s | sed 's:[ /]:-:g')
+WITH_BMI2 := $(shell bash ${TOPLING_CORE_DIR}/cpu_has_bmi2.sh)
+BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${WITH_BMI2}
+BUILD_ROOT := build/${BUILD_NAME}
+ifeq (${DEBUG_LEVEL}, 0)
+  BUILD_TYPE_SIG := r
+  OBJ_DIR := ${BUILD_ROOT}/rls
+endif
+ifeq (${DEBUG_LEVEL}, 1)
+  BUILD_TYPE_SIG := a
+  OBJ_DIR := ${BUILD_ROOT}/afr
+endif
+ifeq (${DEBUG_LEVEL}, 2)
+  BUILD_TYPE_SIG := d
+  OBJ_DIR := ${BUILD_ROOT}/dbg
+endif
+ifneq ($(filter check check_0 watch-log gen_parallel_tests %_test %_test2, $(MAKECMDGOALS)),)
+  CXXFLAGS += -DROCKSDB_UNIT_TEST
+  OBJ_DIR := $(subst build/,build-ut/,${OBJ_DIR})
+endif
+
+# 1. we define ROCKSDB_DISABLE_ZSTD=1 on build_detect_platform.
+# 2. zstd lib is included in libterark-zbs
+# 3. we alway use ZSTD
+CXXFLAGS += -DZSTD \
+  -I${TOPLING_CORE_DIR}/3rdparty/zstd/zstd \
+  -I${TOPLING_CORE_DIR}/3rdparty/zstd/zstd/dictBuilder
+
+CXXFLAGS += \
+  -I${TOPLING_CORE_DIR}/src \
+  -I${TOPLING_CORE_DIR}/boost-include \
+  -I${TOPLING_CORE_DIR}/3rdparty/zstd
+
+LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
+           -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
+
+# default is 1, can be override
+AUTO_CLONE_TOPLING_ROCKS ?= 1
+ifeq (${AUTO_CLONE_TOPLING_ROCKS},1)
+ifeq (,$(wildcard sideplugin/topling-rocks))
+  # topling specific: just for people who has permission to topling-rocks
+  dummy := $(shell set -e -x; \
+    cd sideplugin; \
+    git clone git@github.com:rockeet/topling-rocks; \
+    cd topling-rocks; \
+    git submodule update --init --recursive \
+  )
+endif
+ifeq (,$(wildcard sideplugin/cspp-memtable))
+  # topling specific: just for people who has permission to cspp-memtable
+  dummy := $(shell set -e -x; \
+    cd sideplugin; \
+    git clone git@github.com:topling/cspp-memtable; \
+    cd cspp-memtable; \
+  )
+endif
+endif
+
+ifneq (,$(wildcard sideplugin/cspp-memtable))
+  # now we have cspp-memtable
+  CXXFLAGS   += -DHAS_TOPLING_CSPP_MEMTABLE
+  CSPP_MEMTABLE_GIT_VER_SRC = ${BUILD_ROOT}/git-version-cspp_memtable.cc
+  EXTRA_LIB_SOURCES += sideplugin/cspp-memtable/cspp_memtable.cc \
+                       sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
+else
+  $(warning NotFound sideplugin/cspp-memtable, Topling CSPP MemTab is disabled)
+endif
+
+ifneq (,$(wildcard sideplugin/topling-rocks))
+  CXXFLAGS   += -I sideplugin/topling-rocks/src
+  LDFLAGS    += -lstdc++fs -lcurl
+  export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
+  TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
+  EXTRA_LIB_SOURCES += \
+    $(wildcard sideplugin/topling-rocks/src/dcompact/*.cc) \
+    $(wildcard sideplugin/topling-rocks/src/table/*.cc) \
+    sideplugin/topling-rocks/src/misc/show_sys_info.cc \
+    sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+else
+  $(warning NotFound sideplugin/topling-rocks, Topling SST and Distributed Compaction are disabled)
+  ifeq (1,2) # Now link libterark-{zbs,fsa,core} instead
+  EXTRA_LIB_SOURCES += \
+    ${TOPLING_CORE_DIR}/src/terark/fstring.cpp \
+    ${TOPLING_CORE_DIR}/src/terark/hash_common.cpp \
+    ${TOPLING_CORE_DIR}/src/terark/util/throw.cpp
+  endif
+endif
+
+TOPLING_DCOMPACT_USE_ETCD := 0
+ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/src/libetcd-cpp-api.${PLATFORM_SHARED_EXT}))
+ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
+  CXXFLAGS   += -I sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto \
+                -I sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3
+  LDFLAGS    += -L sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/src -letcd-cpp-api
+  export LD_LIBRARY_PATH:=${TOPLING_ROCKS_DIR}/3rdparty/etcd-cpp-apiv3/build/src:${LD_LIBRARY_PATH}
+  ifneq (,$(wildcard ../vcpkg/packages/grpc_x64-linux/include))
+    CXXFLAGS   += -I ../vcpkg/packages/grpc_x64-linux/include
+  else
+    $(error NotFound ../vcpkg/packages/grpc_x64-linux/include)
+  endif
+  ifneq (,$(wildcard ../vcpkg/packages/protobuf_x64-linux/include))
+    CXXFLAGS   += -I ../vcpkg/packages/protobuf_x64-linux/include
+  else
+    $(error NotFound ../vcpkg/packages/protobuf_x64-linux/include)
+  endif
+  ifneq (,$(wildcard ../vcpkg/packages/cpprestsdk_x64-linux/include))
+    CXXFLAGS   += -I ../vcpkg/packages/cpprestsdk_x64-linux/include
+  else
+    $(error NotFound ../vcpkg/packages/cpprestsdk_x64-linux/include)
+  endif
+  CXXFLAGS += -DTOPLING_DCOMPACT_USE_ETCD
+  TOPLING_DCOMPACT_USE_ETCD := 1
+endif
+endif
+
+ifeq (${TOPLING_DCOMPACT_USE_ETCD},0)
+  $(warning NotFound etcd-cpp-apiv3, disabled)
+endif
+
+#export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
+
+# prepend EXTRA_LIB_SOURCES to LIB_SOURCES because
+# EXTRA_LIB_SOURCES single file compiling is slow
+LIB_SOURCES := ${EXTRA_LIB_SOURCES} ${LIB_SOURCES}
+
 AM_DEFAULT_VERBOSITY ?= 0
 
 AM_V_GEN = $(am__v_GEN_$(V))
@@ -227,7 +415,7 @@ LDFLAGS += -lrados
 endif
 
 AM_LINK = $(AM_V_CCLD)$(CXX) -L. $(patsubst lib%.a, -l%, $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^)) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
-AM_SHARE = $(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$@ -L. $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^) $(LDFLAGS) -o $@
+AM_SHARE = $(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$@ -L. $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^) $(EXTRA_SHARED_LIB_LIB) $(LDFLAGS) -o $@
 
 # Detect what platform we're building on.
 # Export some common variables that might have been passed as Make variables
@@ -240,6 +428,9 @@ dummy := $(shell (export ROCKSDB_ROOT="$(CURDIR)"; \
                   export COMPILE_WITH_UBSAN="$(COMPILE_WITH_UBSAN)"; \
                   export PORTABLE="$(PORTABLE)"; \
                   export ROCKSDB_NO_FBCODE="$(ROCKSDB_NO_FBCODE)"; \
+                  export ROCKSDB_USE_IO_URING="$(ROCKSDB_USE_IO_URING)"; \
+                  export ROCKSDB_DISABLE_TCMALLOC="$(ROCKSDB_DISABLE_TCMALLOC)"; \
+                  export ROCKSDB_DISABLE_ZSTD=1; \
                   export USE_CLANG="$(USE_CLANG)"; \
                   "$(CURDIR)/build_tools/build_detect_platform" "$(CURDIR)/make_config.mk"))
 # this file is generated by the previous line to set build flags and sources
@@ -274,7 +465,7 @@ $(info $(shell $(CXX) --version))
 endif
 
 missing_make_config_paths := $(shell				\
-	grep "\./\S*\|/\S*" -o $(CURDIR)/make_config.mk | 	\
+	egrep "\.+/\S*|([a-z_]*)/\S*" -o $(CURDIR)/make_config.mk | 	\
 	while read path;					\
 		do [ -e $$path ] || echo $$path; 		\
 	done | sort | uniq)
@@ -285,8 +476,10 @@ $(foreach path, $(missing_make_config_paths), \
 ifeq ($(PLATFORM), OS_AIX)
 # no debug info
 else ifneq ($(PLATFORM), IOS)
-CFLAGS += -g
-CXXFLAGS += -g
+# default disable dwarf
+DBG_DWARF ?=
+CFLAGS += ${DBG_DWARF} -g3
+CXXFLAGS += ${DBG_DWARF} -g3
 else
 # no debug info for IOS, that will make our library big
 OPT += -DNDEBUG
@@ -455,6 +648,8 @@ ifndef DISABLE_WARNING_AS_ERROR
 	WARNING_FLAGS += -Werror
 endif
 
+# topling specific WARNING_FLAGS
+WARNING_FLAGS := -Wall -Wno-shadow
 
 ifdef LUA_PATH
 
@@ -487,14 +682,16 @@ ifeq ($(NO_THREEWAY_CRC32C), 1)
 endif
 
 CFLAGS += $(C_WARNING_FLAGS) $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
+CXXFLAGS += -Isideplugin/rockside/src
 CXXFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT) -Woverloaded-virtual -Wnon-virtual-dtor -Wno-missing-field-initializers
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
 
-LIB_OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(LIB_SOURCES))
+LIB_OBJECTS := $(patsubst %.cc, $(OBJ_DIR)/%.o, $(LIB_SOURCES))
+LIB_OBJECTS := $(patsubst %.cpp,$(OBJ_DIR)/%.o, $(LIB_OBJECTS))
 LIB_OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(ROCKSDB_PLUGIN_SOURCES))
-ifeq ($(HAVE_POWER8),1)
 LIB_OBJECTS += $(patsubst %.c, $(OBJ_DIR)/%.o, $(LIB_SOURCES_C))
+ifeq ($(HAVE_POWER8),1)
 LIB_OBJECTS += $(patsubst %.S, $(OBJ_DIR)/%.o, $(LIB_SOURCES_ASM))
 endif
 
@@ -659,6 +856,7 @@ STATIC_LIBRARY = ${LIBNAME}$(LIBDEBUG).a
 STATIC_TEST_LIBRARY =  ${LIBNAME}_test$(LIBDEBUG).a
 STATIC_TOOLS_LIBRARY = ${LIBNAME}_tools$(LIBDEBUG).a
 STATIC_STRESS_LIBRARY = ${LIBNAME}_stress$(LIBDEBUG).a
+#$(error LIBDEBUG = ${LIBDEBUG} PLATFORM_SHARED_VERSIONED=${PLATFORM_SHARED_VERSIONED})
 
 ALL_STATIC_LIBS = $(STATIC_LIBRARY) $(STATIC_TEST_LIBRARY) $(STATIC_TOOLS_LIBRARY) $(STATIC_STRESS_LIBRARY)
 
@@ -723,8 +921,8 @@ default: all
 #-----------------------------------------------
 ifneq ($(PLATFORM_SHARED_EXT),)
 
-ifneq ($(PLATFORM_SHARED_VERSIONED),true)
 SHARED1 = ${LIBNAME}$(LIBDEBUG).$(PLATFORM_SHARED_EXT)
+ifneq ($(PLATFORM_SHARED_VERSIONED),true)
 SHARED2 = $(SHARED1)
 SHARED3 = $(SHARED1)
 SHARED4 = $(SHARED1)
@@ -733,7 +931,6 @@ else
 SHARED_MAJOR = $(ROCKSDB_MAJOR)
 SHARED_MINOR = $(ROCKSDB_MINOR)
 SHARED_PATCH = $(ROCKSDB_PATCH)
-SHARED1 = ${LIBNAME}.$(PLATFORM_SHARED_EXT)
 ifeq ($(PLATFORM), OS_MACOSX)
 SHARED_OSX = $(LIBNAME)$(LIBDEBUG).$(SHARED_MAJOR)
 SHARED2 = $(SHARED_OSX).$(PLATFORM_SHARED_EXT)
@@ -754,7 +951,7 @@ $(SHARED3): $(SHARED4)
 
 endif   # PLATFORM_SHARED_VERSIONED
 $(SHARED4): $(LIB_OBJECTS)
-	$(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(LIB_OBJECTS) $(LDFLAGS) -o $@
+	$(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(LIB_OBJECTS) $(EXTRA_SHARED_LIB_LIB) $(LDFLAGS) -o $@
 endif  # PLATFORM_SHARED_EXT
 
 .PHONY: blackbox_crash_test check clean coverage crash_test ldb_tests package \
@@ -1322,6 +1519,14 @@ librocksdb_env_basic_test.a: $(OBJ_DIR)/env/env_basic_test.o $(LIB_OBJECTS) $(TE
 
 db_bench: $(OBJ_DIR)/tools/db_bench.o $(BENCH_OBJECTS) $(TESTUTIL) $(LIBRARY)
 	$(AM_LINK)
+ifeq (${DEBUG_LEVEL},2)
+db_bench_dbg: $(OBJ_DIR)/tools/db_bench.o $(BENCH_OBJECTS) $(TESTUTIL) $(LIBRARY)
+	$(AM_LINK)
+endif
+ifeq (${DEBUG_LEVEL},0)
+db_bench_rls: $(OBJ_DIR)/tools/db_bench.o $(BENCH_OBJECTS) $(TESTUTIL) $(LIBRARY)
+	$(AM_LINK)
+endif
 
 trace_analyzer: $(OBJ_DIR)/tools/trace_analyzer.o $(ANALYZE_OBJECTS) $(TOOLS_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
@@ -1946,6 +2151,51 @@ io_tracer_parser_test: $(OBJ_DIR)/tools/io_tracer_parser_test.o $(OBJ_DIR)/tools
 	$(AM_LINK)
 
 io_tracer_parser: $(OBJ_DIR)/tools/io_tracer_parser.o $(TOOLS_LIBRARY) $(LIBRARY)
+#--------------------------------------------------
+ifndef ROCKSDB_USE_LIBRADOS
+  AUTO_ALL_EXCLUDE_SRC += utilities/env_librados_test.cc
+endif
+
+AUTO_ALL_TESTS_SRC := $(shell find * -name '*_test.cc' -not -path 'java/*' -not -path '*/3rdparty/*') ${EXTRA_TESTS_SRC}
+AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC})
+AUTO_ALL_TESTS_OBJ := $(addprefix $(OBJ_DIR)/,$(AUTO_ALL_TESTS_SRC:%.cc=%.o))
+AUTO_ALL_TESTS_EXE := $(AUTO_ALL_TESTS_OBJ:%.o=%)
+
+define LN_TEST_TARGET
+t${DEBUG_LEVEL}/${1}: ${2}
+	mkdir -p $(dir $$@) && ln -sf `realpath ${2}` $$@
+
+endef
+#intentional one blank line above
+
+.PHONY: auto_all_tests
+auto_all_tests: ${AUTO_ALL_TESTS_EXE}
+
+$(OBJ_DIR)/tools/%_test: $(OBJ_DIR)/tools/%_test.o \
+                         ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/%_test: $(OBJ_DIR)/%_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(eval $(foreach test,${AUTO_ALL_TESTS_EXE},$(call LN_TEST_TARGET,$(notdir ${test}),${test})))
+
+$(OBJ_DIR)/tools/db_bench_tool_test : \
+$(OBJ_DIR)/tools/db_bench_tool_test.o \
+                         ${BENCH_OBJECTS} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/tools/trace_analyzer_test : \
+$(OBJ_DIR)/tools/trace_analyzer_test.o \
+      ${ANALYZE_OBJECTS} ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test : \
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer_test.o \
+$(OBJ_DIR)/tools/block_cache_analyzer/block_cache_trace_analyzer.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+$(OBJ_DIR)/%: $(OBJ_DIR)/%.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 db_blob_corruption_test: $(OBJ_DIR)/db/blob/db_blob_corruption_test.o $(TEST_LIBRARY) $(LIBRARY)
@@ -2157,7 +2407,7 @@ libsnappy.a: snappy-$(SNAPPY_VER).tar.gz
 	-rm -rf snappy-$(SNAPPY_VER)
 	tar xvzf snappy-$(SNAPPY_VER).tar.gz
 	mkdir snappy-$(SNAPPY_VER)/build
-	cd snappy-$(SNAPPY_VER)/build && CFLAGS='${JAVA_STATIC_DEPS_CCFLAGS} ${EXTRA_CFLAGS}' CXXFLAGS='${JAVA_STATIC_DEPS_CXXFLAGS} ${EXTRA_CXXFLAGS}' LDFLAGS='${JAVA_STATIC_DEPS_LDFLAGS} ${EXTRA_LDFLAGS}' cmake -DCMAKE_POSITION_INDEPENDENT_CODE=ON ${PLATFORM_CMAKE_FLAGS} .. && $(MAKE) ${SNAPPY_MAKE_TARGET}
+	cd snappy-$(SNAPPY_VER)/build && CFLAGS='${JAVA_STATIC_DEPS_CCFLAGS} ${EXTRA_CFLAGS}' CXXFLAGS='${JAVA_STATIC_DEPS_CXXFLAGS} LDFLAGS='${JAVA_STATIC_DEPS_LDFLAGS} ${EXTRA_LDFLAGS}' cmake -DCMAKE_POSITION_INDEPENDENT_CODE=ON ${PLATFORM_CMAKE_FLAGS} .. && $(MAKE) ${SNAPPY_MAKE_TARGET}
 	cp snappy-$(SNAPPY_VER)/build/libsnappy.a .
 
 lz4-$(LZ4_VER).tar.gz:
@@ -2395,7 +2645,7 @@ $(OBJ_DIR)/%.o: %.cpp
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.o: %.c
-	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -c $< -o $@
 endif
 
 # ---------------------------------------------------------------------------
@@ -2403,8 +2653,9 @@ endif
 # ---------------------------------------------------------------------------
 # If skip dependencies is ON, skip including the dep files
 ifneq ($(SKIP_DEPENDS), 1)
-DEPFILES = $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, $(ALL_SOURCES))
-DEPFILES+ = $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C) $(TEST_MAIN_SOURCES_C))
+DEPFILES := $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, $(ALL_SOURCES))
+DEPFILES := $(patsubst %.cpp,$(OBJ_DIR)/%.cpp.d,$(DEPFILES))
+DEPFILES += $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C) $(TEST_MAIN_SOURCES_C))
 ifeq ($(USE_FOLLY_DISTRIBUTED_MUTEX),1)
   DEPFILES +=$(patsubst %.cpp, $(OBJ_DIR)/%.cpp.d, $(FOLLY_SOURCES))
 endif
@@ -2418,12 +2669,12 @@ endif
 $(OBJ_DIR)/%.cc.d: %.cc
 	@mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cc=.o)' -MT'$(<:%.cc=$(OBJ_DIR)/%.o)' \
-          "$<" -o '$@'
+	      "$<" -o '$@'
 
 $(OBJ_DIR)/%.cpp.d: %.cpp
 	@mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cpp=.o)' -MT'$(<:%.cpp=$(OBJ_DIR)/%.o)' \
-          "$<" -o '$@'
+	      "$<" -o '$@'
 
 ifeq ($(HAVE_POWER8),1)
 DEPFILES_C = $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C))
@@ -2447,6 +2698,31 @@ endif
 
 build_subset_tests: $(ROCKSDBTESTS_SUBSET)
 	$(AM_V_GEN)if [ -n "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}" ]; then echo "$(ROCKSDBTESTS_SUBSET)" > "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}"; else echo "$(ROCKSDBTESTS_SUBSET)"; fi
+
+
+TOPLING_ZBS_TARGET := ${BUILD_ROOT}/lib_shared/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.${PLATFORM_SHARED_EXT}
+${SHARED4}: ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}
+${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: CXXFLAGS =
+${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: LDFLAGS =
+${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}:
+	+make -C ${TOPLING_CORE_DIR} ${TOPLING_ZBS_TARGET}
+
+ifneq (,$(wildcard sideplugin/topling-rocks))
+sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
+  $(shell find sideplugin/topling-rocks/{src,tools} -name '*.cc' -o -name '*.h')
+	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
+
+.PHONY: dcompact_worker
+dcompact_worker: ${SHARED1}
+	+make -C sideplugin/topling-rocks/tools/dcompact ${OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
+endif
+
+ifneq (,$(wildcard sideplugin/cspp-memtable))
+sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}: \
+  sideplugin/cspp-memtable/cspp_memtable.cc \
+  sideplugin/cspp-memtable/Makefile
+	+make -C sideplugin/cspp-memtable ${CSPP_MEMTABLE_GIT_VER_SRC}
+endif
 
 # Remove the rules for which dependencies should not be generated and see if any are left.
 #If so, include the dependencies; if not, do not include the dependency files

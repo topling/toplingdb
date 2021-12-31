@@ -143,6 +143,7 @@ class CacheReservationManager
   // the returned number will always be a multiple of kSizeDummyEntry
   // and cache full might happen in the middle of inserting a dummy entry.
   std::size_t GetTotalReservedCacheSize();
+  const std::shared_ptr<Cache>& GetCache() const { return cache_; }
 
   // Return the latest total memory used indicated by the most recent call of
   // UpdateCacheReservation(std::size_t new_memory_used);

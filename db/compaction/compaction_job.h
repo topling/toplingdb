@@ -108,6 +108,10 @@ class CompactionJob {
   // Return the IO status
   IOStatus io_status() const { return io_status_; }
 
+  void GetSubCompactOutputs(std::vector<std::vector<const FileMetaData*> >*) const;
+  CompactionJobStats* GetCompactionJobStats() const { return compaction_job_stats_; }
+  const InternalStats::CompactionStats& GetCompactionStats() const { return compaction_stats_; }
+
  protected:
   struct SubcompactionState;
   // CompactionJob state
@@ -121,7 +125,7 @@ class CompactionJob {
 
   // Call compaction filter. Then iterate through input and compact the
   // kv-pairs
-  void ProcessKeyValueCompaction(SubcompactionState* sub_compact);
+  void ProcessKeyValueCompaction(size_t thread_idx);
 
   CompactionState* compact_;
   InternalStats::CompactionStats compaction_stats_;
@@ -166,6 +170,9 @@ class CompactionJob {
 
   void UpdateCompactionInputStatsHelper(
       int* num_files, uint64_t* bytes_read, int input_level);
+
+  Status RunLocal();
+  Status RunRemote();
 
   uint32_t job_id_;
 
@@ -217,6 +224,8 @@ class CompactionJob {
   Env::Priority thread_pri_;
   std::string full_history_ts_low_;
   BlobFileCompletionCallback* blob_callback_;
+
+  std::vector<std::vector<std::string> > rand_key_store_;
 
   uint64_t GetCompactionId(SubcompactionState* sub_compact);
 

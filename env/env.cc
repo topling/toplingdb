@@ -789,12 +789,23 @@ SequentialFile::~SequentialFile() {
 RandomAccessFile::~RandomAccessFile() {
 }
 
+Status
+RandomAccessFile::FsRead(uint64_t offset, size_t n, Slice* result,
+              char* scratch) const {
+    Slice res;
+    return Read(offset, n, &res, (char*)scratch);
+}
+
 WritableFile::~WritableFile() {
 }
 
 MemoryMappedFileBuffer::~MemoryMappedFileBuffer() {}
 
-Logger::~Logger() {}
+Logger::~Logger() {
+#if !defined(ROCKSDB_UNIT_TEST)
+  ROCKSDB_VERIFY(closed_);
+#endif
+}
 
 Status Logger::Close() {
   if (!closed_) {
@@ -1047,6 +1058,7 @@ void AssignEnvOptions(EnvOptions* env_options, const DBOptions& options) {
   env_options->writable_file_max_buffer_size =
       options.writable_file_max_buffer_size;
   env_options->allow_fallocate = options.allow_fallocate;
+  env_options->allow_fdatasync = options.allow_fdatasync;
   env_options->strict_bytes_per_sync = options.strict_bytes_per_sync;
   options.env->SanitizeEnvOptions(env_options);
 }

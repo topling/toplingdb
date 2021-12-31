@@ -10,6 +10,7 @@
 #pragma once
 
 #include "rocksdb/customizable.h"
+#include "rocksdb/enum_reflection.h"
 #include "rocksdb/env.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
@@ -21,17 +22,17 @@ namespace ROCKSDB_NAMESPACE {
 // including data loss, unreported corruption, deadlocks, and more.
 class RateLimiter : public Customizable {
  public:
-  enum class OpType {
+  ROCKSDB_ENUM_CLASS_INCLASS(OpType, int,
     // Limitation: we currently only invoke Request() with OpType::kRead for
     // compactions when DBOptions::new_table_reader_for_compaction_inputs is set
     kRead,
-    kWrite,
-  };
-  enum class Mode {
+    kWrite
+  );
+  ROCKSDB_ENUM_CLASS_INCLASS(Mode, int,
     kReadsOnly,
     kWritesOnly,
-    kAllIo,
-  };
+    kAllIo
+  );
 
   static const char* Type() { return "RateLimiter"; }
   static Status CreateFromString(const ConfigOptions& options,

@@ -15,6 +15,7 @@
 
 #include "rocksdb/customizable.h"
 #include "rocksdb/status.h"
+#include "rocksdb/enum_reflection.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -160,7 +161,8 @@ enum Tickers : uint32_t {
   STALL_MICROS,
   // The wait time for db mutex.
   // Disabled by default. To enable it set stats level to kAll
-  DB_MUTEX_WAIT_MICROS,
+  DB_MUTEX_WAIT_NANOS,
+  DB_COND_WAIT_NANOS,
   RATE_LIMIT_DELAY_MILLIS,
   // DEPRECATED number of iterators currently open
   NO_ITERATORS,
@@ -453,7 +455,7 @@ enum Histograms : uint32_t {
   // TIME SPENT IN IO DURING TABLE OPEN
   TABLE_OPEN_IO_MICROS,
   DB_MULTIGET,
-  READ_BLOCK_COMPACTION_MICROS,
+  READ_ZBS_RECORD_MICROS,
   READ_BLOCK_GET_MICROS,
   WRITE_RAW_BLOCK_MICROS,
   STALL_L0_SLOWDOWN_COUNT,
@@ -528,6 +530,27 @@ enum Histograms : uint32_t {
   // Error handler statistics
   ERROR_HANDLER_AUTORESUME_RETRY_COUNT,
 
+  NUMBER_PER_MULTIGET,
+
+  // LCOMPACTION: local compaction
+  // DCOMPACTION: distributed compaction
+  LCOMPACTION_INPUT_RAW_BYTES,
+  LCOMPACTION_INPUT_ZIP_BYTES,
+  DCOMPACTION_INPUT_RAW_BYTES,
+  DCOMPACTION_INPUT_ZIP_BYTES,
+
+  LCOMPACTION_OUTPUT_FILE_RAW_SIZE, // size of kv raw data in each file
+  LCOMPACTION_OUTPUT_FILE_ZIP_SIZE, // size of each file on disk
+  DCOMPACTION_OUTPUT_FILE_RAW_SIZE,
+  DCOMPACTION_OUTPUT_FILE_ZIP_SIZE,
+
+  SWITCH_WAL_NANOS,
+  MEMTAB_CONSTRUCT_NANOS,
+  MEMTAB_WRITE_KV_NANOS,
+  WRITE_WAL_NANOS,
+  HISTOGRAM_MUTEX_WAIT_NANOS,
+  HISTOGRAM_COND_WAIT_NANOS,
+
   HISTOGRAM_ENUM_MAX,
 };
 
@@ -551,7 +574,7 @@ struct HistogramData {
 // types of stats in the stats collection process.
 // Usage:
 //   options.statistics->set_stats_level(StatsLevel::kExceptTimeForMutex);
-enum StatsLevel : uint8_t {
+ROCKSDB_ENUM_PLAIN(StatsLevel, uint8_t,
   // Disable all metrics
   kDisableAll,
   // Disable tickers
@@ -569,8 +592,8 @@ enum StatsLevel : uint8_t {
   // Collect all stats, including measuring duration of mutex operations.
   // If getting time is expensive on the platform to run, it can
   // reduce scalability to more threads, especially for writes.
-  kAll,
-};
+  kAll
+);
 
 // Analyze the performance of a db by providing cumulative stats over time.
 // Usage:
@@ -645,15 +668,18 @@ class Statistics : public Customizable {
   virtual bool HistEnabledForType(uint32_t type) const {
     return type < HISTOGRAM_ENUM_MAX;
   }
+  virtual void GetAggregated(uint64_t* tickers, struct HistogramStat*) const = 0;
+  virtual void Merge(const uint64_t* tickers, const struct HistogramStat*) = 0;
+
   void set_stats_level(StatsLevel sl) {
-    stats_level_.store(sl, std::memory_order_relaxed);
+    stats_level_ = sl;
   }
   StatsLevel get_stats_level() const {
-    return stats_level_.load(std::memory_order_relaxed);
+    return stats_level_;
   }
 
  private:
-  std::atomic<StatsLevel> stats_level_{kExceptDetailedTimers};
+  StatsLevel stats_level_{kExceptDetailedTimers};
 };
 
 // Create a concrete DBStatistics object

@@ -59,7 +59,7 @@ ROCKSDB_ENUM_PLAIN(ChecksumType, char,
 // `PinningTier` is used to specify which tier of block-based tables should
 // be affected by a block cache pinning setting (see
 // `MetadataCacheOptions` below).
-enum class PinningTier {
+ROCKSDB_ENUM_CLASS(PinningTier, int,
   // For compatibility, this value specifies to fallback to the behavior
   // indicated by the deprecated options,
   // `pin_l0_filter_and_index_blocks_in_cache` and
@@ -77,8 +77,8 @@ enum class PinningTier {
   kFlushedAndSimilar,
 
   // This tier contains all block-based tables.
-  kAll,
-};
+  kAll
+);
 
 // `MetadataCacheOptions` contains members indicating the desired caching
 // behavior for the different categories of metadata blocks.

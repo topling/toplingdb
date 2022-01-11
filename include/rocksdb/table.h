@@ -486,12 +486,12 @@ struct BlockBasedTableOptions {
   // This parameter can be changed dynamically by
   // DB::SetOptions({{"block_based_table_factory",
   //                  "{prepopulate_block_cache=kFlushOnly;}"}}));
-  enum class PrepopulateBlockCache : char {
+  ROCKSDB_ENUM_CLASS_INCLASS(PrepopulateBlockCache, char,
     // Disable prepopulate block cache.
     kDisable,
     // Prepopulate blocks during flush only.
-    kFlushOnly,
-  };
+    kFlushOnly
+  );
 
   PrepopulateBlockCache prepopulate_block_cache =
       PrepopulateBlockCache::kDisable;

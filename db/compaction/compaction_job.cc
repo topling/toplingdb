@@ -784,6 +784,7 @@ Status CompactionJob::RunLocal() {
       auto& meta = sub.outputs[j].meta;
       auto  raw = meta.raw_key_size + meta.raw_value_size;
       auto  zip = meta.fd.file_size;
+      RecordTick(stats_, LCOMPACT_WRITE_BYTES_RAW, raw);
       RecordTimeToHistogram(stats_, LCOMPACTION_OUTPUT_FILE_RAW_SIZE, raw);
       RecordTimeToHistogram(stats_, LCOMPACTION_OUTPUT_FILE_ZIP_SIZE, zip);
     }
@@ -1155,6 +1156,14 @@ try {
 #if defined(__GNUC__)
   #pragma GCC diagnostic pop
 #endif
+
+#define MoveTK(dst, src) \
+  rpc_results.statistics.tickers[dst] = rpc_results.statistics.tickers[src]; \
+  rpc_results.statistics.tickers[src] = 0
+
+  MoveTK(DCOMPACT_WRITE_BYTES_RAW,  LCOMPACT_WRITE_BYTES_RAW);
+  MoveTK(REMOTE_COMPACT_READ_BYTES,  COMPACT_READ_BYTES);
+  MoveTK(REMOTE_COMPACT_WRITE_BYTES, COMPACT_WRITE_BYTES);
 
   stats_->Merge(rpc_results.statistics.tickers,
                 rpc_results.statistics.histograms);

@@ -154,6 +154,7 @@ CompactionResults::CompactionResults() {
   work_time_usec = 0;
   mount_time_usec = 0;
   prepare_time_usec = 0;
+  waiting_time_usec = 0;
 }
 CompactionResults::~CompactionResults() {}
 

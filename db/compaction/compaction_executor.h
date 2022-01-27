@@ -138,6 +138,7 @@ struct CompactionResults {
   size_t work_time_usec;
   size_t mount_time_usec; // mount nfs
   size_t prepare_time_usec; // open nfs params/results
+  size_t waiting_time_usec; // wait in work queue
 
   size_t all_time_usec() const {
     return curl_time_usec + mount_time_usec + prepare_time_usec + work_time_usec;

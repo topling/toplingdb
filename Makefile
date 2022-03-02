@@ -318,7 +318,7 @@ ifneq (,$(wildcard sideplugin/cspp-memtable))
   EXTRA_LIB_SOURCES += sideplugin/cspp-memtable/cspp_memtable.cc \
                        sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
 else
-  $(warning NotFound sideplugin/cspp-memtable, Topling CSPP MemTab is disabled)
+  $(warning NotFound sideplugin/cspp-memtable, this is ok, only Topling CSPP MemTab is disabled)
 endif
 
 ifneq (,$(wildcard sideplugin/topling-rocks))
@@ -332,7 +332,7 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
     sideplugin/topling-rocks/src/misc/show_sys_info.cc \
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
 else
-  $(warning NotFound sideplugin/topling-rocks, Topling SST and Distributed Compaction are disabled)
+  $(warning NotFound sideplugin/topling-rocks, this is ok, only Topling SST and Distributed Compaction are disabled)
   ifeq (1,2) # Now link libterark-{zbs,fsa,core} instead
   EXTRA_LIB_SOURCES += \
     ${TOPLING_CORE_DIR}/src/terark/fstring.cpp \
@@ -369,7 +369,7 @@ endif
 endif
 
 ifeq (${TOPLING_DCOMPACT_USE_ETCD},0)
-  $(warning NotFound etcd-cpp-apiv3, disabled)
+  $(warning NotFound etcd-cpp-apiv3, this is ok, only etcd is disabled)
 endif
 
 #export ROCKSDB_KICK_OUT_OPTIONS_FILE=1

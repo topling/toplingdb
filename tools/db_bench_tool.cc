@@ -3090,7 +3090,7 @@ class Benchmark {
   }
 
   void DeleteDBs() {
-    repo_.CloseHttpServer();
+    repo_.CloseAllDB(false);
     db_.DeleteDBs();
     for (const DBWithColumnFamilies& dbwcf : multi_dbs_) {
       delete dbwcf.db;

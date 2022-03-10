@@ -2998,7 +2998,6 @@ class Benchmark {
 #endif  // ROCKSDB_LITE
       return NewLRUCache(opts);
     }
-    return nullptr;
   }
 
  public:

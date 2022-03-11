@@ -16,6 +16,19 @@
 #include "util/coding.h"
 
 namespace ROCKSDB_NAMESPACE {
+static const std::shared_ptr<Cache> g_null_cache;
+const std::shared_ptr<Cache>& WriteBufferManager::GetCache() const {
+#if (ROCKSDB_MAJOR * 10000 + ROCKSDB_MINOR * 10 + ROCKSDB_PATCH) >= 60280
+  if (cache_res_mgr_)
+    return cache_res_mgr_->GetCache();
+#else
+  if (cache_rev_mng_)
+    return cache_rev_mng_->GetCache();
+#endif
+  else
+    return g_null_cache;
+}
+
 WriteBufferManager::WriteBufferManager(size_t _buffer_size,
                                        std::shared_ptr<Cache> cache,
                                        bool allow_stall)

@@ -44,7 +44,7 @@ IOStatus RandomAccessFileReader::Read(const IOOptions& opts, uint64_t offset,
   IOStatus io_s;
   uint64_t elapsed = 0;
   {
-    StopWatch sw(clock_, stats_, hist_type_,
+    StopWatchEx sw(clock_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();
@@ -146,8 +146,12 @@ IOStatus RandomAccessFileReader::Read(const IOOptions& opts, uint64_t offset,
           // one iteration of this loop, so we don't need to check and adjust
           // the opts.timeout before calling file_->Read
           assert(!opts.timeout.count() || allowed == n);
-          io_s = file_->Read(offset + pos, allowed, opts, &tmp_result,
-                             scratch + pos, nullptr);
+          if (use_fsread_)
+            io_s = file_->FsRead(offset + pos, allowed, opts, &tmp_result,
+                            scratch + pos, nullptr);
+          else
+            io_s = file_->Read(offset + pos, allowed, opts, &tmp_result,
+                            scratch + pos, nullptr);
         }
 #ifndef ROCKSDB_LITE
         if (ShouldNotifyListeners()) {
@@ -217,7 +221,7 @@ IOStatus RandomAccessFileReader::MultiRead(const IOOptions& opts,
   IOStatus io_s;
   uint64_t elapsed = 0;
   {
-    StopWatch sw(clock_, stats_, hist_type_,
+    StopWatchEx sw(clock_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();
@@ -280,7 +284,10 @@ IOStatus RandomAccessFileReader::MultiRead(const IOOptions& opts,
 
     {
       IOSTATS_CPU_TIMER_GUARD(cpu_read_nanos, clock_);
-      io_s = file_->MultiRead(fs_reqs, num_fs_reqs, opts, nullptr);
+      if (use_fsread_)
+        io_s = file_->FsMultiRead(fs_reqs, num_fs_reqs, opts, nullptr);
+      else
+        io_s = file_->MultiRead(fs_reqs, num_fs_reqs, opts, nullptr);
     }
 
 #ifndef ROCKSDB_LITE

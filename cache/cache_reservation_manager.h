@@ -74,6 +74,7 @@ class CacheReservationManager {
   // On keeping dummy entries the same, it always returns Status::OK().
   Status UpdateCacheReservation(std::size_t new_memory_used);
   std::size_t GetTotalReservedCacheSize();
+  const std::shared_ptr<Cache>& GetCache() const { return cache_; }
 
  private:
   static constexpr std::size_t kSizeDummyEntry = 256 * 1024;

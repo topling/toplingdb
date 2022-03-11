@@ -142,6 +142,12 @@ class TableReader {
                                 TableReaderCaller /*caller*/) {
     return Status::NotSupported("VerifyChecksum() not supported");
   }
+
+  // if implemented, returns true
+  virtual bool GetRandomInteranlKeysAppend(
+                  size_t num, std::vector<std::string>* output) const {
+    return false; // indicate not implemented
+  }
 };
 
 }  // namespace ROCKSDB_NAMESPACE

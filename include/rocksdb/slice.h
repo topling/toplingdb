@@ -58,6 +58,9 @@ class Slice {
   // buf must exist as long as the returned Slice exists.
   Slice(const struct SliceParts& parts, std::string* buf);
 
+  const char* begin() const { return data_; }
+  const char* end() const { return data_ + size_; }
+
   // Return a pointer to the beginning of the referenced data
   const char* data() const { return data_; }
 
@@ -94,7 +97,8 @@ class Slice {
 
   // Return a string that contains the copy of the referenced data.
   // when hex is true, returns a string of twice the length hex encoded (0-9A-F)
-  std::string ToString(bool hex = false) const;
+  std::string ToString(bool hex) const;
+  std::string ToString() const { return std::string(data_, size_); }
 
 #ifdef __cpp_lib_string_view
   // Return a string_view that references the same data as this slice.
@@ -255,6 +259,17 @@ inline int Slice::compare(const Slice& b) const {
       r = +1;
   }
   return r;
+}
+
+inline bool operator<(const Slice& x, const Slice& y) {
+  return x.compare(y) < 0;
+}
+
+inline std::string operator+(const Slice& x, const Slice& y) {
+  std::string z; z.reserve(x.size_ + y.size_);
+  z.append(x.data_, x.size_);
+  z.append(y.data_, y.size_);
+  return z;
 }
 
 inline size_t Slice::difference_offset(const Slice& b) const {

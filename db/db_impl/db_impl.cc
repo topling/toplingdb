@@ -148,6 +148,20 @@ void DumpSupportInfo(Logger* logger) {
 }
 }  // namespace
 
+InstrumentedMutex* Get_DB_mutex(const DB* db) {
+  db = const_cast<DB*>(db)->GetRootDB();
+  auto dbi = dynamic_cast<const DBImpl*>(db);
+  ROCKSDB_VERIFY(nullptr != dbi);
+  return dbi->mutex();
+}
+
+int Get_DB_next_job_id(const DB* db) {
+  db = const_cast<DB*>(db)->GetRootDB();
+  auto dbi = dynamic_cast<const DBImpl*>(db);
+  ROCKSDB_VERIFY(nullptr != dbi);
+  return dbi->next_job_id();
+}
+
 DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
                const bool seq_per_batch, const bool batch_per_txn,
                bool read_only)
@@ -160,7 +174,7 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
       fs_(immutable_db_options_.fs, io_tracer_),
       mutable_db_options_(initial_db_options_),
       stats_(immutable_db_options_.stats),
-      mutex_(stats_, immutable_db_options_.clock, DB_MUTEX_WAIT_MICROS,
+      mutex_(stats_, immutable_db_options_.clock,
              immutable_db_options_.use_adaptive_mutex),
       default_cf_handle_(nullptr),
       error_handler_(this, immutable_db_options_, &mutex_),
@@ -2105,6 +2119,7 @@ std::vector<Status> DBImpl::MultiGet(
   RecordTick(stats_, NUMBER_MULTIGET_KEYS_FOUND, num_found);
   RecordTick(stats_, NUMBER_MULTIGET_BYTES_READ, bytes_read);
   RecordInHistogram(stats_, BYTES_PER_MULTIGET, bytes_read);
+  RecordInHistogram(stats_, NUMBER_PER_MULTIGET, num_keys);
   PERF_COUNTER_ADD(multiget_read_bytes, bytes_read);
   PERF_TIMER_STOP(get_post_process_time);
 
@@ -2248,6 +2263,16 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
                   /*timestamps=*/nullptr, statuses, sorted_input);
 }
 
+template<class T>
+bool all_same(const T* a, size_t n) {
+  assert(n > 0);
+  T p = a[0];
+  for (size_t i = 1; i < n; ++i)
+    if (a[i] != p)
+      return false;
+  return true;
+}
+
 void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
                       ColumnFamilyHandle** column_families, const Slice* keys,
                       PinnableSlice* values, std::string* timestamps,
@@ -2283,6 +2308,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
 
   autovector<KeyContext, MultiGetContext::MAX_BATCH_SIZE> key_context;
   autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
+  key_context.reserve(num_keys);
   sorted_keys.resize(num_keys);
   for (size_t i = 0; i < num_keys; ++i) {
     key_context.emplace_back(column_families[i], keys[i], &values[i],
@@ -2292,7 +2318,8 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
   for (size_t i = 0; i < num_keys; ++i) {
     sorted_keys[i] = &key_context[i];
   }
-  PrepareMultiGetKeys(num_keys, sorted_input, &sorted_keys);
+  bool same_cf = all_same(column_families, num_keys);
+  PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
 
   autovector<MultiGetColumnFamilyData, MultiGetContext::MAX_BATCH_SIZE>
       multiget_cf_data;
@@ -2388,10 +2415,19 @@ struct CompareKeyContext {
   }
 };
 
+struct CompareKeyContextSameCF {
+  const Comparator* comparator;
+  inline bool operator()(const KeyContext* lhs, const KeyContext* rhs) {
+    int cmp = comparator->CompareWithoutTimestamp(
+        *(lhs->key), /*a_has_ts=*/false, *(rhs->key), /*b_has_ts=*/false);
+    return cmp < 0;
+  }
+};
+
 }  // anonymous namespace
 
 void DBImpl::PrepareMultiGetKeys(
-    size_t num_keys, bool sorted_input,
+    size_t num_keys, bool sorted_input, bool same_cf,
     autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE>* sorted_keys) {
   if (sorted_input) {
 #ifndef NDEBUG
@@ -2401,8 +2437,15 @@ void DBImpl::PrepareMultiGetKeys(
     return;
   }
 
-  std::sort(sorted_keys->begin(), sorted_keys->begin() + num_keys,
-            CompareKeyContext());
+  if (same_cf) {
+    auto uc = sorted_keys->front()->column_family->GetComparator();
+    std::sort(sorted_keys->begin(), sorted_keys->begin() + num_keys,
+              CompareKeyContextSameCF{uc});
+  }
+  else {
+    std::sort(sorted_keys->begin(), sorted_keys->begin() + num_keys,
+              CompareKeyContext());
+  }
 }
 
 void DBImpl::MultiGet(const ReadOptions& read_options,
@@ -2429,6 +2472,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
   }
   autovector<KeyContext, MultiGetContext::MAX_BATCH_SIZE> key_context;
   autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
+  key_context.reserve(num_keys);
   sorted_keys.resize(num_keys);
   for (size_t i = 0; i < num_keys; ++i) {
     key_context.emplace_back(column_family, keys[i], &values[i],
@@ -2438,7 +2482,8 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
   for (size_t i = 0; i < num_keys; ++i) {
     sorted_keys[i] = &key_context[i];
   }
-  PrepareMultiGetKeys(num_keys, sorted_input, &sorted_keys);
+  bool same_cf = true;
+  PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
   MultiGetWithCallback(read_options, column_family, nullptr, &sorted_keys);
 }
 
@@ -2600,6 +2645,7 @@ Status DBImpl::MultiGetImpl(
   RecordTick(stats_, NUMBER_MULTIGET_KEYS_FOUND, num_found);
   RecordTick(stats_, NUMBER_MULTIGET_BYTES_READ, bytes_read);
   RecordInHistogram(stats_, BYTES_PER_MULTIGET, bytes_read);
+  RecordInHistogram(stats_, NUMBER_PER_MULTIGET, num_keys);
   PERF_COUNTER_ADD(multiget_read_bytes, bytes_read);
   PERF_TIMER_STOP(get_post_process_time);
 
@@ -3894,10 +3940,12 @@ Status DBImpl::CheckConsistency() {
       uint64_t fsize = 0;
       TEST_SYNC_POINT("DBImpl::CheckConsistency:BeforeGetFileSize");
       Status s = env_->GetFileSize(file_path, &fsize);
+#ifdef ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
       if (!s.ok() &&
           env_->GetFileSize(Rocks2LevelTableFileName(file_path), &fsize).ok()) {
         s = Status::OK();
       }
+#endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
       if (!s.ok()) {
         corruption_messages +=
             "Can't access " + md.name + ": " + s.ToString() + "\n";
@@ -4158,8 +4206,18 @@ Status DestroyDB(const std::string& dbname, const Options& options,
   return result;
 }
 
+static bool g_KICK_OUT_OPTIONS_FILE = []() {
+  if (auto env = getenv("ROCKSDB_KICK_OUT_OPTIONS_FILE")) {
+    return atoi(env) != 0;
+  }
+  return false;
+}();
+
 Status DBImpl::WriteOptionsFile(bool need_mutex_lock,
                                 bool need_enter_write_thread) {
+  if (g_KICK_OUT_OPTIONS_FILE) {
+    return Status::OK();
+  }
 #ifndef ROCKSDB_LITE
   WriteThread::Writer w;
   if (need_mutex_lock) {

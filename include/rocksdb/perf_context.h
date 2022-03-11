@@ -6,7 +6,7 @@
 #pragma once
 
 #include <stdint.h>
-#include <map>
+#include <vector>
 #include <string>
 
 #include "rocksdb/perf_level.h"
@@ -44,7 +44,7 @@ struct PerfContextByLevel {
 struct PerfContext {
   ~PerfContext();
 
-  PerfContext() {}
+  PerfContext() noexcept;
 
   PerfContext(const PerfContext&);
   PerfContext& operator=(const PerfContext&);
@@ -229,7 +229,26 @@ struct PerfContext {
   // Time spent in decrypting data. Populated when EncryptedEnv is used.
   uint64_t decrypt_data_nanos;
 
-  std::map<uint32_t, PerfContextByLevel>* level_to_perf_context = nullptr;
+  class LevelToPerfContext : std::vector<PerfContextByLevel> {
+    using super =  std::vector<PerfContextByLevel>;
+    friend class PerfContext;
+  public:
+    using super::begin;
+    using super::end;
+    using super::size;
+    using super::operator[]; ///< const version
+    PerfContextByLevel& at(size_t idx) { return (*this)[idx]; }
+    PerfContextByLevel& operator[](size_t idx) {
+      if (idx >= this->size()) {
+        if (intptr_t(idx) < 0) {
+          abort();
+        }
+        this->resize(idx + 1);
+      }
+      return super::operator[](idx);
+    }
+  };
+  LevelToPerfContext level_to_perf_context;
   bool per_level_perf_context_enabled = false;
 };
 

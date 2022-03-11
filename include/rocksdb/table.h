@@ -23,6 +23,7 @@
 #include <unordered_map>
 
 #include "rocksdb/customizable.h"
+#include "rocksdb/enum_reflection.h"
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
@@ -44,17 +45,17 @@ class WritableFileWriter;
 struct ConfigOptions;
 struct EnvOptions;
 
-enum ChecksumType : char {
+ROCKSDB_ENUM_PLAIN(ChecksumType, char,
   kNoChecksum = 0x0,
   kCRC32c = 0x1,
   kxxHash = 0x2,
-  kxxHash64 = 0x3,
-};
+  kxxHash64 = 0x3
+);
 
 // `PinningTier` is used to specify which tier of block-based tables should
 // be affected by a block cache pinning setting (see
 // `MetadataCacheOptions` below).
-enum class PinningTier {
+ROCKSDB_ENUM_CLASS(PinningTier, int,
   // For compatibility, this value specifies to fallback to the behavior
   // indicated by the deprecated options,
   // `pin_l0_filter_and_index_blocks_in_cache` and
@@ -72,8 +73,8 @@ enum class PinningTier {
   kFlushedAndSimilar,
 
   // This tier contains all block-based tables.
-  kAll,
-};
+  kAll
+);
 
 // `MetadataCacheOptions` contains members indicating the desired caching
 // behavior for the different categories of metadata blocks.
@@ -180,7 +181,7 @@ struct BlockBasedTableOptions {
   MetadataCacheOptions metadata_cache_options;
 
   // The index type that will be used for this table.
-  enum IndexType : char {
+  ROCKSDB_ENUM_PLAIN_INCLASS(IndexType, char,
     // A space efficient index block that is optimized for
     // binary-search-based index.
     kBinarySearch = 0x00,
@@ -203,16 +204,16 @@ struct BlockBasedTableOptions {
     //    e.g. when prefix changes.
     // Makes the index significantly bigger (2x or more), especially when keys
     // are long.
-    kBinarySearchWithFirstKey = 0x03,
-  };
+    kBinarySearchWithFirstKey = 0x03
+  );
 
   IndexType index_type = kBinarySearch;
 
   // The index type that will be used for the data block.
-  enum DataBlockIndexType : char {
+  ROCKSDB_ENUM_PLAIN_INCLASS(DataBlockIndexType, char,
     kDataBlockBinarySearch = 0,   // traditional block type
-    kDataBlockBinaryAndHash = 1,  // additional hash index
-  };
+    kDataBlockBinaryAndHash = 1  // additional hash index
+  );
 
   DataBlockIndexType data_block_index_type = kDataBlockBinarySearch;
 
@@ -329,6 +330,10 @@ struct BlockBasedTableOptions {
   // Default: true
   bool use_delta_encoding = true;
 
+  // to reduce CPU time of write amp of NoZip to Zip level compaction
+  // Default: false
+  bool use_raw_size_as_estimated_file_size = false;
+
   // If non-nullptr, use the specified filter policy to reduce disk reads.
   // Many applications will benefit from passing the result of
   // NewBloomFilterPolicy() here.
@@ -424,15 +429,15 @@ struct BlockBasedTableOptions {
   // of the highest key in the file. If it's shortened and therefore
   // overestimated, iterator is likely to unnecessarily read the last data block
   // from each file on each seek.
-  enum class IndexShorteningMode : char {
+  ROCKSDB_ENUM_CLASS_INCLASS(IndexShorteningMode, char,
     // Use full keys.
     kNoShortening,
     // Shorten index keys between blocks, but use full key for the last index
     // key, which is the upper bound of the whole file.
     kShortenSeparators,
     // Shorten both keys between blocks and key after last block.
-    kShortenSeparatorsAndSuccessor,
-  };
+    kShortenSeparatorsAndSuccessor
+  );
 
   IndexShorteningMode index_shortening =
       IndexShorteningMode::kShortenSeparators;
@@ -476,15 +481,18 @@ struct BlockBasedTableOptions {
   // This parameter can be changed dynamically by
   // DB::SetOptions({{"block_based_table_factory",
   //                  "{prepopulate_block_cache=kFlushOnly;}"}}));
-  enum class PrepopulateBlockCache : char {
+  ROCKSDB_ENUM_CLASS_INCLASS(PrepopulateBlockCache, char,
     // Disable prepopulate block cache.
     kDisable,
     // Prepopulate blocks during flush only.
-    kFlushOnly,
-  };
+    kFlushOnly
+  );
 
   PrepopulateBlockCache prepopulate_block_cache =
       PrepopulateBlockCache::kDisable;
+
+  // toplingdb specific
+  bool enable_get_random_keys = false;
 };
 
 // Table Properties that are specific to block-based table properties.
@@ -503,7 +511,7 @@ extern TableFactory* NewBlockBasedTableFactory(
 
 #ifndef ROCKSDB_LITE
 
-enum EncodingType : char {
+ROCKSDB_ENUM_PLAIN(EncodingType, char,
   // Always write full keys without any special encoding.
   kPlain,
   // Find opportunity to write the same prefix once for multiple rows.
@@ -517,8 +525,8 @@ enum EncodingType : char {
   // reopening the file, the name of the options.prefix_extractor given will be
   // bitwise compared to the prefix extractors stored in the file. An error
   // will be returned if the two don't match.
-  kPrefix,
-};
+  kPrefix
+);
 
 // Table Properties that are specific to plain table properties.
 struct PlainTablePropertyNames {
@@ -738,6 +746,8 @@ class TableFactory : public Customizable {
 
   // Return is delete range supported
   virtual bool IsDeleteRangeSupported() const { return false; }
+
+  virtual bool InputCompressionMatchesOutput(const class Compaction*) const;
 };
 
 #ifndef ROCKSDB_LITE

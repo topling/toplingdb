@@ -457,10 +457,12 @@ class Status {
   Code code_;
   SubCode subcode_;
   Severity sev_;
-  const char* state_;
 #ifdef ROCKSDB_ASSERT_STATUS_CHECKED
   mutable bool checked_ = false;
 #endif  // ROCKSDB_ASSERT_STATUS_CHECKED
+  // A nullptr state_ (which is at least the case for OK) means the extra
+  // message is empty.
+  const char* state_;
 
   explicit Status(Code _code, SubCode _subcode = kNone)
       : code_(_code), subcode_(_subcode), sev_(kNoError), state_(nullptr) {}

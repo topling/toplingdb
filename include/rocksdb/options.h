@@ -1830,14 +1830,16 @@ struct IngestExternalFileOptions {
   bool verify_file_checksum = true;
 };
 
-enum TraceFilterType : uint64_t {
+ROCKSDB_ENUM_PLAIN(TraceFilterType, uint64_t,
   // Trace all the operations
   kTraceFilterNone = 0x0,
   // Do not trace the get operations
   kTraceFilterGet = 0x1 << 0,
   // Do not trace the write operations
-  kTraceFilterWrite = 0x1 << 1
-};
+  kTraceFilterWrite = 0x1 << 1,
+
+  kTraceFilterTypeMax
+);
 
 // TraceOptions is used for StartTrace
 struct TraceOptions {
@@ -1848,7 +1850,7 @@ struct TraceOptions {
   // Default to 1 (capture every request).
   uint64_t sampling_frequency = 1;
   // Note: The filtering happens before sampling.
-  uint64_t filter = kTraceFilterNone;
+  TraceFilterType filter = kTraceFilterNone;
 };
 
 // ImportColumnFamilyOptions is used by ImportColumnFamily()

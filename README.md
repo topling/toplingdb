@@ -4,7 +4,7 @@ ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). It i
 ToplingDB has much more key features than RocksDB:
 1. [SidePlugin](https://github.com/topling/rockside/wiki) enables users to write a json(or yaml) to define DB configs
 1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
-1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to change db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...)
+1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to [online change](https://github.com/topling/rockside/wiki/Online-Change-Options) db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...) without restart the running process
 1. Many improves and refactories on RocksDB, aimed for performance and extendibility
 1. [Topling**CSPP**MemTab](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)(**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling
 1. [Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable) is an SST implementation optimized for speed, aimed for MemTable flush and L0->L1 compaction.

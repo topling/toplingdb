@@ -1861,7 +1861,7 @@ struct IngestExternalFileOptions {
   bool verify_file_checksum = true;
 };
 
-enum TraceFilterType : uint64_t {
+ROCKSDB_ENUM_PLAIN(TraceFilterType, uint64_t,
   // Trace all the operations
   kTraceFilterNone = 0x0,
   // Do not trace the get operations
@@ -1874,7 +1874,9 @@ enum TraceFilterType : uint64_t {
   kTraceFilterIteratorSeekForPrev = 0x1 << 3,
   // Do not trace the `MultiGet()` operations
   kTraceFilterMultiGet = 0x1 << 4,
-};
+
+  kTraceFilterTypeMax
+);
 
 // TraceOptions is used for StartTrace
 struct TraceOptions {
@@ -1885,7 +1887,7 @@ struct TraceOptions {
   // Default to 1 (capture every request).
   uint64_t sampling_frequency = 1;
   // Note: The filtering happens before sampling.
-  uint64_t filter = kTraceFilterNone;
+  TraceFilterType filter = kTraceFilterNone;
   // When true, the order of write records in the trace will match the order of
   // the corresponding write records in the WAL and applied to the DB. There may
   // be a performance penalty associated with preserving this ordering.

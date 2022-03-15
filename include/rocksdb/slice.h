@@ -130,6 +130,12 @@ class Slice {
             (memcmp(data_ + size_ - x.size_, x.data_, x.size_) == 0));
   }
 
+  // trim spaces
+  void trim() {
+    while (size_ && isspace((unsigned char)data_[0])) data_++, size_--;
+    while (size_ && isspace((unsigned char)data_[size_-1])) size_--;
+  }
+
   // Compare two slices and returns the first byte where they differ
   size_t difference_offset(const Slice& b) const;
 

@@ -5157,6 +5157,9 @@ void DBImpl::WaitForIngestFile() {
 Status DBImpl::StartTrace(const TraceOptions& trace_options,
                           std::unique_ptr<TraceWriter>&& trace_writer) {
   InstrumentedMutexLock lock(&trace_mutex_);
+  if (tracer_) {
+    return Status::Busy("Working tracer existed");
+  }
   tracer_.reset(new Tracer(immutable_db_options_.clock, trace_options,
                            std::move(trace_writer)));
   return Status::OK();

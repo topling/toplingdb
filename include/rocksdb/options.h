@@ -1850,7 +1850,7 @@ struct TraceOptions {
   // Default to 1 (capture every request).
   uint64_t sampling_frequency = 1;
   // Note: The filtering happens before sampling.
-  TraceFilterType filter = kTraceFilterNone;
+  uint64_t filter = kTraceFilterNone;
 };
 
 // ImportColumnFamilyOptions is used by ImportColumnFamily()

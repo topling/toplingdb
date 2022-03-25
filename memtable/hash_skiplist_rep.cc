@@ -33,7 +33,7 @@ class HashSkipListRep : public MemTableRep {
 
   size_t ApproximateMemoryUsage() override;
 
-  void Get(const LookupKey& k, void* callback_args,
+  void Get(const ReadOptions&, const LookupKey& k, void* callback_args,
            bool (*callback_func)(void* arg, const KeyValuePair*)) override;
 
   ~HashSkipListRep() override;
@@ -286,7 +286,8 @@ size_t HashSkipListRep::ApproximateMemoryUsage() {
   return 0;
 }
 
-void HashSkipListRep::Get(const LookupKey& k, void* callback_args,
+void HashSkipListRep::Get(const ReadOptions&,
+                          const LookupKey& k, void* callback_args,
                           bool (*callback_func)(void*, const KeyValuePair*)) {
   auto transformed = transform_->Transform(k.user_key());
   auto bucket = GetBucket(transformed);

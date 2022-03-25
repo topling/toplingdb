@@ -924,7 +924,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value,
     if (bloom_filter_) {
       PERF_COUNTER_ADD(bloom_memtable_hit_count, 1);
     }
-    GetFromTable(key, *max_covering_tombstone_seq, do_merge, callback,
+    GetFromTable(read_opts, key, *max_covering_tombstone_seq, do_merge, callback,
                  is_blob_index, value, timestamp, s, merge_context, seq,
                  &found_final_value, &merge_in_progress);
   }
@@ -937,7 +937,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value,
   return found_final_value;
 }
 
-void MemTable::GetFromTable(const LookupKey& key,
+void MemTable::GetFromTable(const ReadOptions& ro, const LookupKey& key,
                             SequenceNumber max_covering_tombstone_seq,
                             bool do_merge, ReadCallback* callback,
                             bool* is_blob_index, std::string* value,
@@ -964,7 +964,7 @@ void MemTable::GetFromTable(const LookupKey& key,
   saver.is_blob_index = is_blob_index;
   saver.do_merge = do_merge;
   saver.allow_data_in_errors = moptions_.allow_data_in_errors;
-  table_->Get(key, &saver, SaveValue);
+  table_->Get(ro, key, &saver, SaveValue);
   *seq = saver.seq;
 }
 
@@ -1021,7 +1021,7 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
           iter->max_covering_tombstone_seq,
           range_del_iter->MaxCoveringTombstoneSeqnum(iter->lkey->user_key()));
     }
-    GetFromTable(*(iter->lkey), iter->max_covering_tombstone_seq, true,
+    GetFromTable(read_options, *(iter->lkey), iter->max_covering_tombstone_seq, true,
                  callback, &iter->is_blob_index, iter->value->GetSelf(),
                  iter->timestamp, iter->s, &(iter->merge_context), &seq,
                  &found_final_value, &merge_in_progress);

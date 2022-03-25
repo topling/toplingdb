@@ -251,7 +251,8 @@ class MemTableRep {
   // Default:
   // Get() function with a default value of dynamically construct an iterator,
   // seek and call the call back function.
-  virtual void Get(const LookupKey& k, void* callback_args,
+  virtual void Get(const struct ReadOptions&,
+                   const LookupKey&, void* callback_args,
                    bool (*callback_func)(void* arg, const KeyValuePair*)) = 0;
 
   virtual uint64_t ApproximateNumEntries(const Slice& /*start_ikey*/,

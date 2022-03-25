@@ -639,10 +639,10 @@ class SpecialMemTableRep : public MemTableRep {
     return (num_entries_ < num_entries_flush_) ? 0 : 1024 * 1024 * 1024;
   }
 
-  virtual void Get(const LookupKey& k, void* callback_args,
+  virtual void Get(const ReadOptions& ro, const LookupKey& k, void* callback_args,
                    bool (*callback_func)(void* arg,
                                          const KeyValuePair*)) override {
-    memtable_->Get(k, callback_args, callback_func);
+    memtable_->Get(ro, k, callback_args, callback_func);
   }
 
   uint64_t ApproximateNumEntries(const Slice& start_ikey,

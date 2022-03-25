@@ -337,7 +337,7 @@ class ReadBenchmarkThread : public BenchmarkThread {
     verify_args.key = &lookup_key;
     verify_args.table = table_;
     verify_args.comparator = &internal_key_comp;
-    table_->Get(lookup_key, &verify_args, callback);
+    table_->Get(ReadOptions(), lookup_key, &verify_args, callback);
     if (verify_args.found) {
       *bytes_read_ += VarintLength(16) + 16 + FLAGS_item_size;
       ++*read_hits_;

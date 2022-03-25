@@ -81,7 +81,7 @@ public:
    return 0;
  }
 
- void Get(const LookupKey& k, void* callback_args,
+ void Get(const ReadOptions&, const LookupKey& k, void* callback_args,
           bool (*callback_func)(void* arg, const KeyValuePair*)) override {
    SkipListRep::Iterator iter(&skip_list_);
    EncodedKeyValuePair kv;

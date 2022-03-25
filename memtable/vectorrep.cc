@@ -40,7 +40,7 @@ class VectorRep : public MemTableRep {
 
   size_t ApproximateMemoryUsage() override;
 
-  void Get(const LookupKey& k, void* callback_args,
+  void Get(const ReadOptions&, const LookupKey& k, void* callback_args,
            bool (*callback_func)(void* arg, const KeyValuePair*)) override;
 
   ~VectorRep() override {}
@@ -253,7 +253,8 @@ void VectorRep::Iterator::SeekToLast() {
   }
 }
 
-void VectorRep::Get(const LookupKey& k, void* callback_args,
+void VectorRep::Get(const ReadOptions&,
+                    const LookupKey& k, void* callback_args,
                     bool (*callback_func)(void* arg, const KeyValuePair*)) {
   rwlock_.ReadLock();
   VectorRep* vector_rep;

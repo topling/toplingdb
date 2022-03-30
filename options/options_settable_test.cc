@@ -158,6 +158,8 @@ TEST_F(OptionsSettableTest, BlockBasedTableOptionsAllFieldsSettable) {
   FillWithSpecialChar(bbto_ptr, sizeof(BlockBasedTableOptions), kBbtoExcluded);
   // This option is not setable:
   bbto->use_delta_encoding = true;
+  bbto->use_raw_size_as_estimated_file_size = true; // ToplingDB specific
+  bbto->enable_get_random_keys = true; // ToplingDB specific
 
   char* new_bbto_ptr = new char[sizeof(BlockBasedTableOptions)];
   BlockBasedTableOptions* new_bbto =
@@ -416,6 +418,8 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
        sizeof(std::shared_ptr<SstPartitionerFactory>)},
       {offsetof(struct ColumnFamilyOptions, compaction_executor_factory),
        sizeof(std::shared_ptr<class CompactionExecutorFactory>)},
+      {offsetof(struct ColumnFamilyOptions, html_user_key_coder),
+       sizeof(std::shared_ptr<class AnyPlugin>)},
   };
 
   char* options_ptr = new char[sizeof(ColumnFamilyOptions)];
@@ -447,6 +451,8 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
   options->num_levels = 42;  // Initialize options for MutableCF
   options->compaction_filter = nullptr;
   options->sst_partitioner_factory = nullptr;
+  options->compaction_executor_factory = nullptr; // ToplingDB specific
+  options->html_user_key_coder = nullptr; // ToplingDB specific
 
   char* new_options_ptr = new char[sizeof(ColumnFamilyOptions)];
   ColumnFamilyOptions* new_options =

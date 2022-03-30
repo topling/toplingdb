@@ -2437,13 +2437,14 @@ void DBImpl::PrepareMultiGetKeys(
     return;
   }
 
+  ROCKSDB_VERIFY_LE(sorted_keys->size(), num_keys);
   if (same_cf) {
     auto uc = sorted_keys->front()->column_family->GetComparator();
-    std::sort(sorted_keys->begin(), sorted_keys->begin() + num_keys,
+    std::sort(sorted_keys->begin(), sorted_keys->end(),
               CompareKeyContextSameCF{uc});
   }
   else {
-    std::sort(sorted_keys->begin(), sorted_keys->begin() + num_keys,
+    std::sort(sorted_keys->begin(), sorted_keys->end(),
               CompareKeyContext());
   }
 }

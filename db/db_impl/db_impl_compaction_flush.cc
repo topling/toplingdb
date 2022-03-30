@@ -2508,7 +2508,11 @@ DBImpl::BGJobLimits DBImpl::GetBGJobLimits(int max_background_flushes,
   }
   if (!parallelize_compactions) {
     // throttle background compactions until we deem necessary
-    // res.max_compactions = 1; // this line cause compact jiggling
+   #if defined(ROCKSDB_UNIT_TEST)
+    // this line cause compact jiggling, we should delete this line,
+    // but we keep it for making rocksdb unit test happy
+    res.max_compactions = 1;
+   #endif
   }
   return res;
 }

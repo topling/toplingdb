@@ -268,6 +268,7 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
 
   options = new (options_ptr) DBOptions();
   FillWithSpecialChar(options_ptr, sizeof(DBOptions), kDBOptionsExcluded);
+  options->allow_fdatasync = true; // ToplingDB specific
 
   char* new_options_ptr = new char[sizeof(DBOptions)];
   DBOptions* new_options = new (new_options_ptr) DBOptions();

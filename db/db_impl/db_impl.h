@@ -1160,6 +1160,10 @@ class DBImpl : public DB {
   static void TEST_ResetDbSessionIdGen();
   static std::string GenerateDbSessionId(Env* env);
 
+  int next_job_id() const noexcept {
+    return next_job_id_.load(std::memory_order_relaxed);
+  }
+
  protected:
   const std::string dbname_;
   // TODO(peterd): unify with VersionSet::db_id_
@@ -1420,7 +1424,6 @@ class DBImpl : public DB {
   friend class WriteUnpreparedTransactionTest_RecoveryTest_Test;
 #endif
 
-  struct CompactionState;
   struct PrepickedCompaction;
   struct PurgeFileInfo;
 
@@ -1983,8 +1986,9 @@ class DBImpl : public DB {
 
   // Utility function to do some debug validation and sort the given vector
   // of MultiGet keys
+  static
   void PrepareMultiGetKeys(
-      const size_t num_keys, bool sorted,
+      const size_t num_keys, bool sorted, bool same_cf,
       autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE>* key_ptrs);
 
   // A structure to hold the information required to process MultiGet of keys

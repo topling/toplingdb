@@ -1410,6 +1410,24 @@ Status Version::GetPropertiesOfTablesInRange(
   return Status::OK();
 }
 
+std::string AggregateNames(const std::map<std::string, int>& map, const char* delim) {
+  std::string str;
+  size_t dlen = strlen(delim);
+  for (auto& kv : map) {
+    str.append(kv.first.empty() ? "N/A" : kv.first);
+    if (map.size() > 1) {
+      char buf[32];
+      auto len = snprintf(buf, sizeof(buf), "=%d", kv.second);
+      str.append(buf, len);
+      str.append(delim, dlen);
+    }
+  }
+  if (map.size() > 1) {
+    str.resize(str.size()-dlen); // trailing delim
+  }
+  return str;
+}
+
 Status Version::GetAggregatedTableProperties(
     std::shared_ptr<const TableProperties>* tp, int level) {
   TablePropertiesCollection props;
@@ -1424,9 +1442,14 @@ Status Version::GetAggregatedTableProperties(
   }
 
   auto* new_tp = new TableProperties();
+  new_tp->column_family_id = cfd_->GetID();
+  new_tp->column_family_name = cfd_->GetName();
+  std::map<std::string, int> algos;
   for (const auto& item : props) {
     new_tp->Add(*item.second);
+    algos[item.second->compression_name]++;
   }
+  new_tp->compression_name = AggregateNames(algos, ",");
   tp->reset(new_tp);
   return Status::OK();
 }
@@ -1484,6 +1507,9 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
           file->TryGetFileCreationTime(), file->file_checksum,
           file->file_checksum_func_name);
       files.back().num_entries = file->num_entries;
+      files.back().num_deletions = file->num_deletions;
+      files.back().smallest_ikey = file->smallest.Encode().ToString();
+      files.back().largest_ikey = file->largest.Encode().ToString();
       files.back().num_deletions = file->num_deletions;
       level_size += file->fd.GetFileSize();
     }
@@ -2796,6 +2822,16 @@ void VersionStorageInfo::ComputeCompactionScore(
       }
       score = static_cast<double>(level_bytes_no_compacting) /
               MaxBytesForLevel(level);
+      if (level_bytes_no_compacting && 1 == level &&
+            compaction_style_ == kCompactionStyleLevel) {
+        unsigned L1_score_boost =
+            mutable_cf_options.compaction_options_universal.size_ratio;
+        if (L1_score_boost > 1) {
+          if (score < 1.1 && score >= 1.0/L1_score_boost)
+            score = 1.1; // boost score in range [1.0/boost, 1.1) to 1.1
+        }
+        // score *= std::max(L1_score_boost, 1.0);
+      }
     }
     compaction_level_[level] = level;
     compaction_score_[level] = score;

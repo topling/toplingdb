@@ -618,8 +618,9 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
   }
 
   // Did not find key in batch OR could not resolve Merges.  Try DB.
+  bool same_cf = true;
   static_cast_with_check<DBImpl>(db->GetRootDB())
-      ->PrepareMultiGetKeys(key_context.size(), sorted_input, &sorted_keys);
+      ->PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
   static_cast_with_check<DBImpl>(db->GetRootDB())
       ->MultiGetWithCallback(read_options, column_family, callback,
                              &sorted_keys);

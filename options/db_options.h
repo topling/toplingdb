@@ -34,6 +34,7 @@ struct ImmutableDBOptions {
   int max_file_opening_threads;
   std::shared_ptr<Statistics> statistics;
   bool use_fsync;
+  bool allow_fdatasync = true;
   std::vector<DbPath> db_paths;
   std::string db_log_dir;
   // The wal_dir option from the file.  To determine the
@@ -122,6 +123,7 @@ struct MutableDBOptions {
   int max_background_jobs;
   int max_background_compactions;
   uint32_t max_subcompactions;
+  uint32_t max_level1_subcompactions;
   bool avoid_flush_during_shutdown;
   size_t writable_file_max_buffer_size;
   uint64_t delayed_write_rate;

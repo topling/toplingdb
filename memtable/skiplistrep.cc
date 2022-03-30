@@ -72,8 +72,8 @@ public:
  }
 
   // Returns true iff an entry that compares equal to key is in the list.
- bool Contains(const char* key) const override {
-   return skip_list_.Contains(key);
+ bool Contains(const Slice& internal_key) const override {
+   return ContainsForwardToLegacy(skip_list_, internal_key);
  }
 
  size_t ApproximateMemoryUsage() override {
@@ -81,12 +81,14 @@ public:
    return 0;
  }
 
- void Get(const LookupKey& k, void* callback_args,
-          bool (*callback_func)(void* arg, const char* entry)) override {
+ void Get(const ReadOptions&, const LookupKey& k, void* callback_args,
+          bool (*callback_func)(void* arg, const KeyValuePair*)) override {
    SkipListRep::Iterator iter(&skip_list_);
+   EncodedKeyValuePair kv;
    Slice dummy_slice;
    for (iter.Seek(dummy_slice, k.memtable_key().data());
-        iter.Valid() && callback_func(callback_args, iter.key()); iter.Next()) {
+        iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
+        iter.Next()) {
    }
  }
 

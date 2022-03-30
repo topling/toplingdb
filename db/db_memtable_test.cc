@@ -39,11 +39,11 @@ class MockMemTableRep : public MemTableRep {
     last_hint_out_ = *hint;
   }
 
-  bool Contains(const char* key) const override { return rep_->Contains(key); }
+  bool Contains(const Slice& key) const override { return rep_->Contains(key); }
 
-  void Get(const LookupKey& k, void* callback_args,
-           bool (*callback_func)(void* arg, const char* entry)) override {
-    rep_->Get(k, callback_args, callback_func);
+  void Get(const ReadOptions& ro, const LookupKey& k, void* callback_args,
+           bool (*callback_func)(void* arg, const KeyValuePair*)) override {
+    rep_->Get(ro, k, callback_args, callback_func);
   }
 
   size_t ApproximateMemoryUsage() override {

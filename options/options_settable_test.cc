@@ -282,6 +282,7 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
                              "wal_dir=path/to/wal_dir;"
                              "db_write_buffer_size=2587;"
                              "max_subcompactions=64330;"
+                             "max_level1_subcompactions=64330;"
                              "table_cache_numshardbits=28;"
                              "max_open_files=72;"
                              "max_file_opening_threads=35;"
@@ -413,6 +414,8 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
        sizeof(std::shared_ptr<ConcurrentTaskLimiter>)},
       {offsetof(struct ColumnFamilyOptions, sst_partitioner_factory),
        sizeof(std::shared_ptr<SstPartitionerFactory>)},
+      {offsetof(struct ColumnFamilyOptions, compaction_executor_factory),
+       sizeof(std::shared_ptr<class CompactionExecutorFactory>)},
   };
 
   char* options_ptr = new char[sizeof(ColumnFamilyOptions)];

@@ -2477,6 +2477,9 @@ void DBImpl::MaybeScheduleFlushOrCompaction() {
     env_->Schedule(&DBImpl::BGWorkCompaction, ca, Env::Priority::LOW, this,
                    &DBImpl::UnscheduleCompactionCallback);
   }
+  ROCKS_LOG_DEBUG(immutable_db_options_.info_log.get(),
+                 "bg_compaction_scheduled = %d, unscheduled_compactions = %d",
+                  bg_compaction_scheduled_, unscheduled_compactions_);
 }
 
 DBImpl::BGJobLimits DBImpl::GetBGJobLimits() const {
@@ -2505,7 +2508,7 @@ DBImpl::BGJobLimits DBImpl::GetBGJobLimits(int max_background_flushes,
   }
   if (!parallelize_compactions) {
     // throttle background compactions until we deem necessary
-    res.max_compactions = 1;
+    // res.max_compactions = 1; // this line cause compact jiggling
   }
   return res;
 }

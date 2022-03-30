@@ -221,6 +221,12 @@ class autovector {
     }
   }
 
+  void reserve(size_t cap) {
+    if (cap > kSize) {
+      vect_.reserve(cap - kSize);
+    }
+  }
+
   bool empty() const { return size() == 0; }
 
   const_reference operator[](size_type n) const {

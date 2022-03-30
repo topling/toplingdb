@@ -322,6 +322,7 @@ bool Compaction::IsTrivialMove() const {
     return false;
   }
 
+#if !defined(ROCKSDB_UNIT_TEST) // ToplingDB specific
   if (kCompactionStyleLevel == immutable_options_.compaction_style) {
     auto& cfo = mutable_cf_options_;
     if (1 == output_level_ &&
@@ -330,6 +331,7 @@ bool Compaction::IsTrivialMove() const {
       return false;
     }
   }
+#endif
 
   // Used in universal compaction, where trivial move can be done if the
   // input files are non overlapping
@@ -598,8 +600,11 @@ bool Compaction::ShouldFormSubcompactions() const {
 
   if (cfd_->ioptions()->compaction_style == kCompactionStyleLevel) {
     return (start_level_ == 0 || is_manual_compaction_) && output_level_ > 0 &&
-           //!IsOutputLevelEmpty();
-           true;
+      #if defined(ROCKSDB_UNIT_TEST)
+           !IsOutputLevelEmpty();
+      #else
+           true; // ToplingDB specific
+      #endif
   } else if (cfd_->ioptions()->compaction_style == kCompactionStyleUniversal) {
     return number_levels_ > 1 && output_level_ > 0;
   } else {

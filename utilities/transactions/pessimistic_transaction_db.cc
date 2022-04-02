@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "db/db_impl/db_impl.h"
+#include "db/db_impl/db_impl_secondary.h"
 #include "logging/logging.h"
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
@@ -187,6 +188,22 @@ Transaction* WriteCommittedTxnDB::BeginTransaction(
   }
 }
 
+Transaction* SecondaryTxnDB::BeginTransaction(
+    const WriteOptions& write_options, const TransactionOptions& txn_options,
+    Transaction* old_txn) {
+    
+  return nullptr;
+  
+  #if 0
+  if (old_txn != nullptr) {
+    ReinitializeTransaction(old_txn, write_options, txn_options);
+    return old_txn;
+  } else {
+    return new ReadOnlyTxn(this, write_options, txn_options);
+  }
+  #endif
+}
+
 TransactionDBOptions PessimisticTransactionDB::ValidateTxnDBOptions(
     const TransactionDBOptions& txn_db_options) {
   TransactionDBOptions validated = txn_db_options;
@@ -226,6 +243,10 @@ Status TransactionDB::Open(
     std::vector<ColumnFamilyHandle*>* handles, TransactionDB** dbptr) {
   Status s;
   DB* db = nullptr;
+  if (txn_db_options.write_policy == READ_ONLY) {
+    return Status::NotSupported(
+        "READ_ONLY is used in a secondary instance of TransactionDB");
+  }
   if (txn_db_options.write_policy == WRITE_COMMITTED &&
       db_options.unordered_write) {
     return Status::NotSupported(
@@ -269,6 +290,52 @@ Status TransactionDB::Open(
   return s;
 }
 
+Status TransactionDB::OpenAsSecondary(const Options& options,
+                           const TransactionDBOptions& txn_db_options,
+                           const std::string& dbname, const std::string& secondary_path,
+                           TransactionDB** dbptr) {
+  DBOptions db_options(options);
+  ColumnFamilyOptions cf_options(options);
+  std::vector<ColumnFamilyDescriptor> column_families;
+  column_families.push_back(
+      ColumnFamilyDescriptor(kDefaultColumnFamilyName, cf_options));
+  std::vector<ColumnFamilyHandle*> handles;
+  Status s = TransactionDB::Open(db_options, txn_db_options, dbname,
+                                 column_families, &handles, dbptr);
+
+  return s;
+}
+
+Status TransactionDB::OpenAsSecondary(
+    const DBOptions& db_options, const TransactionDBOptions& txn_db_options,
+    const std::string& dbname, const std::string& secondary_path,
+    const std::vector<ColumnFamilyDescriptor>& column_families,
+    std::vector<ColumnFamilyHandle*>* handles, TransactionDB** dbptr) {
+  Status s;
+  DB* db = nullptr;
+
+  std::vector<ColumnFamilyDescriptor> column_families_copy = column_families;
+  std::vector<size_t> compaction_enabled_cf_indices;
+  DBOptions db_options_2pc = db_options;
+  TransactionDBOptions tmp_txn_db_options = txn_db_options;
+  tmp_txn_db_options.write_policy = READ_ONLY;
+
+  PrepareWrap(&db_options_2pc, &column_families_copy,
+              &compaction_enabled_cf_indices);
+  s = DBImplSecondary::Open(db_options_2pc, dbname, column_families_copy, handles, &db);
+  if (s.ok()) {
+    ROCKS_LOG_WARN(db->GetDBOptions().info_log,
+                   "Transaction write_policy is %" PRId32,
+                   static_cast<int>(txn_db_options.write_policy));
+    // if WrapDB return non-ok, db will be deleted in WrapDB() via
+    // ~StackableDB().
+    s = WrapDB(db, tmp_txn_db_options, compaction_enabled_cf_indices, *handles,
+               dbptr);
+  }
+  return s;
+}
+
+
 void TransactionDB::PrepareWrap(
     DBOptions* db_options, std::vector<ColumnFamilyDescriptor>* column_families,
     std::vector<size_t>* compaction_enabled_cf_indices) {
@@ -305,6 +372,10 @@ Status WrapAnotherDBInternal(
   std::unique_ptr<PessimisticTransactionDB> txn_db;
   // txn_db owns object pointed to by the raw db pointer.
   switch (txn_db_options.write_policy) {
+    case READ_ONLY:
+      txn_db.reset(new SecondaryTxnDB(
+          db, PessimisticTransactionDB::ValidateTxnDBOptions(txn_db_options)));
+      break;
     case WRITE_UNPREPARED:
       txn_db.reset(new WriteUnpreparedTxnDB(
           db, PessimisticTransactionDB::ValidateTxnDBOptions(txn_db_options)));

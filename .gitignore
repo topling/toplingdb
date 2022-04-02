@@ -98,3 +98,4 @@ fuzz/crash-*
 
 cmake-build-*
 *_dbg
+sideplugin/topling-core

@@ -188,12 +188,41 @@ Transaction* WriteCommittedTxnDB::BeginTransaction(
   }
 }
 
+Status SecondaryTxnDB::Initialize(
+      const std::vector<size_t>& compaction_enabled_cf_indices,
+      const std::vector<ColumnFamilyHandle*>& handles) {
+
+  // it seems secondary instance should not do any recovered transactions.
+  auto dbimpl = static_cast_with_check<DBImpl>(GetRootDB());
+  assert(dbimpl != nullptr);
+  auto rtrxs = dbimpl->recovered_transactions();
+  assert(rtrxs.empty());
+
+  for (auto cf_ptr : handles) {
+    AddColumnFamily(cf_ptr);
+  }
+  // Verify cf options
+  for (auto handle : handles) {
+    ColumnFamilyDescriptor cfd;
+    Status s = handle->GetDescriptor(&cfd);
+    if (!s.ok()) {
+      return s;
+    }
+    s = VerifyCFOptions(cfd.options);
+    if (!s.ok()) {
+      return s;
+    }
+  }
+
+  return Status::OK();
+}
+
 Transaction* SecondaryTxnDB::BeginTransaction(
     const WriteOptions& write_options, const TransactionOptions& txn_options,
     Transaction* old_txn) {
     
   return nullptr;
-  
+
   #if 0
   if (old_txn != nullptr) {
     ReinitializeTransaction(old_txn, write_options, txn_options);
@@ -300,8 +329,8 @@ Status TransactionDB::OpenAsSecondary(const Options& options,
   column_families.push_back(
       ColumnFamilyDescriptor(kDefaultColumnFamilyName, cf_options));
   std::vector<ColumnFamilyHandle*> handles;
-  Status s = TransactionDB::Open(db_options, txn_db_options, dbname,
-                                 column_families, &handles, dbptr);
+  Status s = TransactionDB::OpenAsSecondary(db_options, txn_db_options, dbname,
+                                 secondary_path, column_families, &handles, dbptr);
 
   return s;
 }
@@ -322,7 +351,8 @@ Status TransactionDB::OpenAsSecondary(
 
   PrepareWrap(&db_options_2pc, &column_families_copy,
               &compaction_enabled_cf_indices);
-  s = DBImplSecondary::Open(db_options_2pc, dbname, column_families_copy, handles, &db);
+  s = DB::OpenAsSecondary(db_options_2pc, dbname, secondary_path,
+                            column_families_copy, handles, &db);
   if (s.ok()) {
     ROCKS_LOG_WARN(db->GetDBOptions().info_log,
                    "Transaction write_policy is %" PRId32,
@@ -390,6 +420,7 @@ Status WrapAnotherDBInternal(
           db, PessimisticTransactionDB::ValidateTxnDBOptions(txn_db_options)));
   }
   txn_db->UpdateCFComparatorMap(handles);
+
   Status s = txn_db->Initialize(compaction_enabled_cf_indices, handles);
   // In case of a failure at this point, db is deleted via the txn_db destructor
   // and set to nullptr.

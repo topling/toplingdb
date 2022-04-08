@@ -220,17 +220,12 @@ Status SecondaryTxnDB::Initialize(
 Transaction* SecondaryTxnDB::BeginTransaction(
     const WriteOptions& write_options, const TransactionOptions& txn_options,
     Transaction* old_txn) {
-    
-  return nullptr;
-
-  #if 0
-  if (old_txn != nullptr) {
+    if (old_txn != nullptr) {
     ReinitializeTransaction(old_txn, write_options, txn_options);
     return old_txn;
   } else {
     return new ReadOnlyTxn(this, write_options, txn_options);
   }
-  #endif
 }
 
 TransactionDBOptions PessimisticTransactionDB::ValidateTxnDBOptions(

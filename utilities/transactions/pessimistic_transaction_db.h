@@ -232,15 +232,15 @@ class WriteCommittedTxnDB : public PessimisticTransactionDB {
 };
 
 // A secondary instance of PessimisicTransactionDB .
-class SecondaryTxnDB : public WriteCommittedTxnDB {
+class SecondaryTxnDB : public PessimisticTransactionDB {
   public:
     explicit SecondaryTxnDB(DB* db, 
                             const TransactionDBOptions& txn_db_options)
-      : WriteCommittedTxnDB(db , txn_db_options) {}
+      : PessimisticTransactionDB(db , txn_db_options) {}
     
     explicit SecondaryTxnDB(StackableDB* db, 
                             const TransactionDBOptions& txn_db_options)
-      : WriteCommittedTxnDB(db , txn_db_options) {}
+      : PessimisticTransactionDB(db , txn_db_options) {}
     
     virtual ~SecondaryTxnDB() {}
 
@@ -252,35 +252,35 @@ class SecondaryTxnDB : public WriteCommittedTxnDB {
                                 const TransactionOptions& txn_options,
                                 Transaction* old_txn) override;
 
-    using WriteCommittedTxnDB::Put;
+    using PessimisticTransactionDB::Put;
     virtual Status Put(const WriteOptions& /*options*/,
                      ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
                      const Slice& /*val*/) override {
       return Status::NotSupported("Not supported operation in secondary mode.");
     }
 
-    using WriteCommittedTxnDB::Delete;
+    using PessimisticTransactionDB::Delete;
     virtual Status Delete(const WriteOptions& /*wopts*/,
                         ColumnFamilyHandle* /*column_family*/,
                         const Slice& /*key*/) override {
       return Status::NotSupported("Not supported operation in secondary mode.");
     }
 
-    using WriteCommittedTxnDB::SingleDelete;
+    using PessimisticTransactionDB::SingleDelete;
     virtual Status SingleDelete(const WriteOptions& /*wopt*/s,
                                 ColumnFamilyHandle* /*column_family*/,
                                 const Slice& /*key*/) override {
       return Status::NotSupported("Not supported operation in secondary mode.");
     }
 
-    using WriteCommittedTxnDB::Merge;
+    using PessimisticTransactionDB::Merge;
     virtual Status Merge(const WriteOptions& /*options*/,
                         ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
                         const Slice& /*value*/) override {
       return Status::NotSupported("Not supported operation in secondary mode.");
     }
 
-    using WriteCommittedTxnDB::Write;
+    using PessimisticTransactionDB::Write;
     virtual Status Write(const WriteOptions& /*opts*/,
                          WriteBatch* /*updates*/) override {
       return Status::NotSupported("Not supported operation in secondary mode.");

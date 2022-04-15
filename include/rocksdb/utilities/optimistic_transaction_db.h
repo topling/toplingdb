@@ -13,6 +13,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/stackable_db.h"
 
+
 namespace ROCKSDB_NAMESPACE {
 
 class Transaction;

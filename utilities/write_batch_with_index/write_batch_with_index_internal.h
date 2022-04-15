@@ -148,6 +148,7 @@ class ReadableWriteBatch : public WriteBatch {
                                 Slice* value, Slice* blob, Slice* xid) const;
 };
 
+#if 0
 class WriteBatchEntryComparator {
  public:
   WriteBatchEntryComparator(const Comparator* _default_comparator,
@@ -181,9 +182,67 @@ class WriteBatchEntryComparator {
   std::vector<const Comparator*> cf_comparators_;
   const ReadableWriteBatch* const write_batch_;
 };
+#endif 
 
-using WriteBatchEntrySkipList =
-    SkipList<WriteBatchIndexEntry*, const WriteBatchEntryComparator&>;
+class WriteBatchKeyExtractor {
+ public:
+  WriteBatchKeyExtractor(const ReadableWriteBatch* write_batch)
+      : write_batch_(write_batch) {
+  }
+
+  Slice operator()(const WriteBatchIndexEntry* entry) const;
+
+ private:
+  const ReadableWriteBatch* write_batch_;
+};
+
+class WriteBatchEntryIndex {
+ public:
+  virtual ~WriteBatchEntryIndex() {}
+
+  class Iterator {
+   public:
+    virtual ~Iterator() {}
+    virtual bool Valid() const = 0;
+    virtual void SeekToFirst() = 0;
+    virtual void SeekToLast() = 0;
+    virtual void Seek(WriteBatchIndexEntry* target) = 0;
+    virtual void SeekForPrev(WriteBatchIndexEntry* target) = 0;
+    virtual void Next() = 0;
+    virtual void Prev() = 0;
+    virtual WriteBatchIndexEntry* key() const = 0;
+  };
+  typedef WBIteratorStorage<Iterator, 24> IteratorStorage;
+
+  virtual Iterator* NewIterator() = 0;
+  // sizeof(iterator) size must less or equal than 24
+  // INCLUDE virtual table pointer
+  virtual void NewIterator(IteratorStorage& storage, bool ephemeral) = 0;
+  // return true if insert success
+  // assign key->offset to exists entry's offset otherwise
+  virtual bool Upsert(WriteBatchIndexEntry* key) = 0;
+};
+
+class WriteBatchEntryIndexContext {
+ public:
+  virtual ~WriteBatchEntryIndexContext(){};
+};
+
+class WriteBatchEntryIndexFactory {
+ public:
+  // object MUST allocated from arena, allow return nullptr
+  // context will not delete, only call destruct func
+  virtual WriteBatchEntryIndexContext* NewContext(Arena* a) const {
+    return nullptr;
+  }
+  // object MUST allocated from arena
+  // index will not delete, only call destruct func
+  virtual WriteBatchEntryIndex* New(WriteBatchEntryIndexContext* ctx,
+                                    WriteBatchKeyExtractor e,
+                                    const Comparator* c, Arena* a,
+                                    bool overwrite_key) const = 0;
+  virtual ~WriteBatchEntryIndexFactory() {}
+};
 
 class WBWIIteratorImpl : public WBWIIterator {
  public:
@@ -195,21 +254,23 @@ class WBWIIteratorImpl : public WBWIIterator {
     kError
   };
   WBWIIteratorImpl(uint32_t column_family_id,
-                   WriteBatchEntrySkipList* skip_list,
+                   WriteBatchEntryIndex* entry_index,
                    const ReadableWriteBatch* write_batch,
-                   WriteBatchEntryComparator* comparator)
+                   const Comparator* comparator,
+                   bool ephemeral)
       : column_family_id_(column_family_id),
-        skip_list_iter_(skip_list),
         write_batch_(write_batch),
-        comparator_(comparator) {}
+        comparator_(comparator) {
+          entry_index -> NewIterator(iter_, ephemeral);
+        }
 
   ~WBWIIteratorImpl() override {}
 
   bool Valid() const override {
-    if (!skip_list_iter_.Valid()) {
+    if (!iter_ -> Valid()) {
       return false;
     }
-    const WriteBatchIndexEntry* iter_entry = skip_list_iter_.key();
+    const WriteBatchIndexEntry* iter_entry = iter_ -> key();
     return (iter_entry != nullptr &&
             iter_entry->column_family == column_family_id_);
   }
@@ -218,18 +279,18 @@ class WBWIIteratorImpl : public WBWIIterator {
     WriteBatchIndexEntry search_entry(
         nullptr /* search_key */, column_family_id_,
         true /* is_forward_direction */, true /* is_seek_to_first */);
-    skip_list_iter_.Seek(&search_entry);
+    iter_ -> Seek(&search_entry);
   }
 
   void SeekToLast() override {
     WriteBatchIndexEntry search_entry(
         nullptr /* search_key */, column_family_id_ + 1,
         true /* is_forward_direction */, true /* is_seek_to_first */);
-    skip_list_iter_.Seek(&search_entry);
-    if (!skip_list_iter_.Valid()) {
-      skip_list_iter_.SeekToLast();
+    iter_ -> Seek(&search_entry);
+    if (!iter_ -> Valid()) {
+      iter_ -> SeekToLast();
     } else {
-      skip_list_iter_.Prev();
+      iter_ -> Prev();
     }
   }
 
@@ -237,19 +298,19 @@ class WBWIIteratorImpl : public WBWIIterator {
     WriteBatchIndexEntry search_entry(&key, column_family_id_,
                                       true /* is_forward_direction */,
                                       false /* is_seek_to_first */);
-    skip_list_iter_.Seek(&search_entry);
+    iter_ -> Seek(&search_entry);
   }
 
   void SeekForPrev(const Slice& key) override {
     WriteBatchIndexEntry search_entry(&key, column_family_id_,
                                       false /* is_forward_direction */,
                                       false /* is_seek_to_first */);
-    skip_list_iter_.SeekForPrev(&search_entry);
+    iter_ -> SeekForPrev(&search_entry);
   }
 
-  void Next() override { skip_list_iter_.Next(); }
+  void Next() override { iter_ -> Next(); }
 
-  void Prev() override { skip_list_iter_.Prev(); }
+  void Prev() override { iter_ -> Prev(); }
 
   WriteEntry Entry() const override;
 
@@ -260,7 +321,7 @@ class WBWIIteratorImpl : public WBWIIterator {
   }
 
   const WriteBatchIndexEntry* GetRawEntry() const {
-    return skip_list_iter_.key();
+    return iter_ -> key();
   }
 
   bool MatchesKey(uint32_t cf_id, const Slice& key);
@@ -287,9 +348,9 @@ class WBWIIteratorImpl : public WBWIIterator {
 
  private:
   uint32_t column_family_id_;
-  WriteBatchEntrySkipList::Iterator skip_list_iter_;
+  WBIteratorStorage<WriteBatchEntryIndex::Iterator, 24> iter_;
   const ReadableWriteBatch* write_batch_;
-  WriteBatchEntryComparator* comparator_;
+  const Comparator* comparator_;
 };
 
 class WriteBatchWithIndexInternal {
@@ -339,6 +400,7 @@ class WriteBatchWithIndexInternal {
   ColumnFamilyHandle* column_family_;
   MergeContext merge_context_;
 };
+
 
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // !ROCKSDB_LITE

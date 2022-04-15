@@ -14,6 +14,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/stackable_db.h"
 #include "rocksdb/utilities/transaction.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 
 // Database with Transaction support.
 //
@@ -224,6 +225,9 @@ struct TransactionDBOptions {
   // this threshold, then the transaction will implicitly flush the currently
   // pending writes into the database. A value of 0 or less means no limit.
   int64_t default_write_batch_flush_threshold = 0;
+
+  // Set index factory for WriteBatchWithIndex
+  const WriteBatchEntryIndexFactory* index_type = nullptr;
 
  private:
   // 128 entries

@@ -399,7 +399,7 @@ WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
   // TODO(agiardullo): consider adding support for reverse iteration
   if (!Valid()) {
     return result;
-  } else if (comparator_->CompareKey(column_family_id_, Entry().key, key) !=
+  } else if (comparator_->CompareWithoutTimestamp(Entry().key, false, key, false) !=
              0) {
     return result;
   } else {
@@ -417,7 +417,7 @@ WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
     // last Put or Delete, accumulating merges along the way.
     while (Valid()) {
       const WriteEntry entry = Entry();
-      if (comparator_->CompareKey(column_family_id_, entry.key, key) != 0) {
+      if (comparator_->CompareWithoutTimestamp(entry.key, false, key, false) != 0) {
         break;  // Unexpected error or we've reached a different next key
       }
 
@@ -519,6 +519,7 @@ Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
   return Status::OK();
 }
 
+#if 0
 // If both of `entry1` and `entry2` point to real entry in write batch, we
 // compare the entries as following:
 // 1. first compare the column family, the one with larger CF will be larger;
@@ -600,11 +601,12 @@ const Comparator* WriteBatchEntryComparator::GetComparator(
   }
   return default_comparator_;
 }
+#endif
 
 WriteEntry WBWIIteratorImpl::Entry() const {
   WriteEntry ret;
   Slice blob, xid;
-  const WriteBatchIndexEntry* iter_entry = skip_list_iter_.key();
+  const WriteBatchIndexEntry* iter_entry = iter_ -> key();
   // this is guaranteed with Valid()
   assert(iter_entry != nullptr &&
          iter_entry->column_family == column_family_id_);
@@ -615,8 +617,7 @@ WriteEntry WBWIIteratorImpl::Entry() const {
          ret.type == kSingleDeleteRecord || ret.type == kDeleteRangeRecord ||
          ret.type == kMergeRecord);
   // Make sure entry.key does not include user-defined timestamp.
-  const Comparator* const ucmp = comparator_->GetComparator(column_family_id_);
-  size_t ts_sz = ucmp->timestamp_size();
+  size_t ts_sz = comparator_->timestamp_size();
   if (ts_sz > 0) {
     ret.key = StripTimestampFromUserKey(ret.key, ts_sz);
   }
@@ -625,7 +626,7 @@ WriteEntry WBWIIteratorImpl::Entry() const {
 
 bool WBWIIteratorImpl::MatchesKey(uint32_t cf_id, const Slice& key) {
   if (Valid()) {
-    return comparator_->CompareKey(cf_id, key, Entry().key) == 0;
+    return comparator_->CompareWithoutTimestamp(key, false, Entry().key, false) == 0;
   } else {
     return false;
   }

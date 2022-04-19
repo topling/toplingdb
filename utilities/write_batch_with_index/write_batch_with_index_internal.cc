@@ -519,6 +519,16 @@ Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
   return Status::OK();
 }
 
+Slice WriteBatchKeyExtractor::operator()(
+    const WriteBatchIndexEntry* entry) const {
+  if (entry->search_key == nullptr) {
+    return Slice(write_batch_->Data().data() + entry->key_offset,
+                 entry->key_size);
+  } else {
+    return *(entry->search_key);
+  }
+}
+
 #if 0
 // If both of `entry1` and `entry2` point to real entry in write batch, we
 // compare the entries as following:

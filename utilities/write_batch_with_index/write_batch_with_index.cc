@@ -40,7 +40,7 @@ struct WriteBatchWithIndex::Rep {
         sub_batch_cnt(1) {
           factory_context = index_factory->NewContext(&arena);
         }
-        
+
   ~Rep() {
     for (auto& pair : entry_indices) {
       if (pair.index != nullptr) {
@@ -845,6 +845,131 @@ const Comparator* WriteBatchWithIndexInternal::GetUserComparator(
   
   return wbwi.rep->GetComparatorByCfId(cf_id);
 }
+
+
+
+const std::string kSkipListWriteBatchEntryFactoryName = "skiplist";
+
+template<bool OverwriteKey>
+struct WriteBatchEntryComparator {
+  int operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
+    int cmp = c->Compare(extractor(l), extractor(r));
+    // unnecessary comp offset if overwrite key
+    if (OverwriteKey || cmp != 0) {
+      return cmp;
+    }
+    if (l->offset > r->offset) {
+      return 1;
+    }
+    if (l->offset < r->offset) {
+      return -1;
+    }
+    return 0;
+  }
+  WriteBatchKeyExtractor extractor;
+  const Comparator* c;
+};
+
+template<bool OverwriteKey>
+class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
+ protected:
+  typedef WriteBatchEntryComparator<OverwriteKey> EntryComparator;
+  typedef SkipList<WriteBatchIndexEntry*, const EntryComparator&> Index;
+  EntryComparator comparator_;
+  Index index_;
+  bool overwrite_key_;
+
+  class SkipListIterator : public WriteBatchEntryIndex::Iterator {
+   public:
+    SkipListIterator(Index* index) : iter_(index) {}
+    typename Index::Iterator iter_;
+
+   public:
+    virtual bool Valid() const override {
+      return iter_.Valid();
+    }
+    virtual void SeekToFirst() override {
+      iter_.SeekToFirst();
+    }
+    virtual void SeekToLast() override {
+      iter_.SeekToLast();
+    }
+    virtual void Seek(WriteBatchIndexEntry* target) override {
+      iter_.Seek(target);
+    }
+    virtual void SeekForPrev(WriteBatchIndexEntry* target) override {
+      iter_.SeekForPrev(target);
+    }
+    virtual void Next() override {
+      iter_.Next();
+    }
+    virtual void Prev() override {
+      iter_.Prev();
+    }
+    virtual WriteBatchIndexEntry* key() const override {
+      return iter_.key();
+    }
+  };
+
+ public:
+  WriteBatchEntrySkipListIndex(WriteBatchKeyExtractor e, const Comparator* c,
+                               Arena* a)
+      : comparator_({e, c}),
+        index_(comparator_, a),
+        overwrite_key_(OverwriteKey) {
+  }
+
+  virtual Iterator* NewIterator() override {
+    return new SkipListIterator(&index_);
+  }
+  virtual void NewIterator(IteratorStorage& storage, bool ephemeral) override {
+    static_assert(sizeof(SkipListIterator) <= sizeof storage.buffer,
+                  "Need larger buffer for SkipListIterator");
+    storage.iter = new (storage.buffer) SkipListIterator(&index_);
+  }
+  virtual bool Upsert(WriteBatchIndexEntry* key) override {
+    if (OverwriteKey) {
+      Slice sraech_key = comparator_.extractor(key);
+      WriteBatchIndexEntry search_entry(&sraech_key, key->column_family, true, false);
+      typename Index::Iterator iter(&index_);
+      iter.Seek(&search_entry);
+      if (iter.Valid() &&
+          comparator_.c->Compare(sraech_key,
+                                 comparator_.extractor(iter.key())) == 0) {
+        // found , replace
+        std::swap(iter.key()->offset, key->offset);
+        return false;
+      }
+    }
+    index_.Insert(key);
+    return true;
+  }
+};
+
+const WriteBatchEntryIndexFactory* skip_list_WriteBatchEntryIndexFactory()
+{
+  class SkipListIndexFactory : public WriteBatchEntryIndexFactory {
+   public:
+    WriteBatchEntryIndex* New(WriteBatchEntryIndexContext* ctx,
+                              WriteBatchKeyExtractor e,
+                              const Comparator* c, Arena* a,
+                              bool overwrite_key) const override {
+      if (overwrite_key) {
+        typedef WriteBatchEntrySkipListIndex<true> index_t;
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
+      } else {
+        typedef WriteBatchEntrySkipListIndex<false> index_t;
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
+      }
+    }
+    virtual const char* Name() const override {
+      return "SkipListIndexFactory";
+    }
+  };
+
+  static SkipListIndexFactory factory;
+  return &factory;
+};
 
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // !ROCKSDB_LITE

@@ -48,12 +48,17 @@ enum WriteType {
 const WriteBatchEntryIndexFactory* skip_list_WriteBatchEntryIndexFactory();
 extern const std::string kSkipListWriteBatchEntryFactoryName; // = "skiplist";
 
+
+#if 0
+// will move to sideplugin/rockside/src/topling/builtin_plugin_basic.cc
+
 // Regist third-party factory, NOT take ownership
 void RegistWriteBatchEntryIndexFactory(const char* name,
                                        const WriteBatchEntryIndexFactory* factory);
 // name: skiplist or other names registed
 // return nullptr if invalid name
 const WriteBatchEntryIndexFactory* GetWriteBatchEntryIndexFactory(const char* name);
+#endif 
 
 // an entry for Put, Merge, Delete, or SingleDelete entry for write batches.
 // Used in WBWIIterator.

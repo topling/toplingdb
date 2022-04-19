@@ -242,6 +242,8 @@ class WriteBatchEntryIndexFactory {
                                     const Comparator* c, Arena* a,
                                     bool overwrite_key) const = 0;
   virtual ~WriteBatchEntryIndexFactory() {}
+
+  virtual const char* Name() const = 0;
 };
 
 class WBWIIteratorImpl : public WBWIIterator {

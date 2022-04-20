@@ -241,13 +241,16 @@ void AssertIterEqual(WBWIIteratorImpl* wbwii,
 
 class WBWIBaseTest : public testing::Test {
  public:
-  explicit WBWIBaseTest(bool overwrite) : db_(nullptr) {
+  explicit WBWIBaseTest(bool overwrite, const WriteBatchEntryIndexFactory* index_factory) :
+   db_(nullptr),
+   index_factory_(index_factory)
+    {
     options_.merge_operator =
         MergeOperators::CreateFromStringId("stringappend");
     options_.create_if_missing = true;
     dbname_ = test::PerThreadDBPath("write_batch_with_index_test");
     DestroyDB(dbname_, options_);
-    batch_.reset(new WriteBatchWithIndex(BytewiseComparator(), 20, overwrite));
+    batch_.reset(new WriteBatchWithIndex(BytewiseComparator(), 20, overwrite, 0, index_factory));
   }
 
   virtual ~WBWIBaseTest() {
@@ -297,21 +300,28 @@ class WBWIBaseTest : public testing::Test {
   WriteOptions write_opts_;
   ReadOptions read_opts_;
   std::unique_ptr<WriteBatchWithIndex> batch_;
+  const WriteBatchEntryIndexFactory* index_factory_;
 };
 
-class WBWIKeepTest : public WBWIBaseTest {
+class WBWIKeepTest : public WBWIBaseTest,
+                     public testing::WithParamInterface<const WriteBatchEntryIndexFactory*>  {
  public:
-  WBWIKeepTest() : WBWIBaseTest(false) {}
+  WBWIKeepTest(const WriteBatchEntryIndexFactory* index_factory = nullptr) : 
+    WBWIBaseTest(false, GetParam()) {}
 };
 
-class WBWIOverwriteTest : public WBWIBaseTest {
+class WBWIOverwriteTest : public WBWIBaseTest,
+                          public testing::WithParamInterface<const WriteBatchEntryIndexFactory*> {
  public:
-  WBWIOverwriteTest() : WBWIBaseTest(true) {}
+  WBWIOverwriteTest(const WriteBatchEntryIndexFactory* index_factory = nullptr) :
+     WBWIBaseTest(true, GetParam()) {}
 };
 class WriteBatchWithIndexTest : public WBWIBaseTest,
-                                public testing::WithParamInterface<bool> {
+                                public testing::WithParamInterface<
+                                  std::tuple<bool, const WriteBatchEntryIndexFactory*>> {
  public:
-  WriteBatchWithIndexTest() : WBWIBaseTest(GetParam()) {}
+  WriteBatchWithIndexTest() : 
+     WBWIBaseTest(std::get<0>(GetParam()), std::get<1>(GetParam())) {}
 };
 
 void TestValueAsSecondaryIndexHelper(std::vector<Entry> entries,
@@ -510,7 +520,14 @@ void TestValueAsSecondaryIndexHelper(std::vector<Entry> entries,
   }
 }
 
-TEST_F(WBWIKeepTest, TestValueAsSecondaryIndex) {
+namespace {
+using generator_type = ::testing::internal::ParamGenerator<const WriteBatchEntryIndexFactory*>;
+generator_type  WriteBatchEntryIndexFactoryGenerator() {
+  return ::testing::Values(skip_list_WriteBatchEntryIndexFactory());
+}
+}
+
+TEST_P(WBWIKeepTest, TestValueAsSecondaryIndex) {
   Entry entries[] = {
       {"aaa", "0005", kPutRecord},
       {"b", "0002", kPutRecord},
@@ -523,7 +540,7 @@ TEST_F(WBWIKeepTest, TestValueAsSecondaryIndex) {
   };
   std::vector<Entry> entries_list(entries, entries + 8);
 
-  batch_.reset(new WriteBatchWithIndex(nullptr, 20, false));
+  batch_.reset(new WriteBatchWithIndex(nullptr, 20, false, 0, index_factory_));
 
   TestValueAsSecondaryIndexHelper(entries_list, batch_.get());
 
@@ -632,7 +649,7 @@ TEST_P(WriteBatchWithIndexTest, TestComparatorForCF) {
   }
 }
 
-TEST_F(WBWIOverwriteTest, TestOverwriteKey) {
+TEST_P(WBWIOverwriteTest, TestOverwriteKey) {
   ColumnFamilyHandleImplDummy cf1(6, nullptr);
   ColumnFamilyHandleImplDummy reverse_cf(66, ReverseBytewiseComparator());
   ColumnFamilyHandleImplDummy cf2(88, BytewiseComparator());
@@ -1214,7 +1231,7 @@ TEST_P(WriteBatchWithIndexTest, TestGetFromBatchMerge) {
   }
 }
 
-TEST_F(WBWIOverwriteTest, TestGetFromBatchMerge2) {
+TEST_P(WBWIOverwriteTest, TestGetFromBatchMerge2) {
   Status s = OpenDB();
   ASSERT_OK(s);
 
@@ -1372,7 +1389,7 @@ TEST_P(WriteBatchWithIndexTest, TestGetFromBatchAndDBMerge) {
   db_->ReleaseSnapshot(snapshot);
 }
 
-TEST_F(WBWIOverwriteTest, TestGetFromBatchAndDBMerge2) {
+TEST_P(WBWIOverwriteTest, TestGetFromBatchAndDBMerge2) {
   Status s = OpenDB();
   ASSERT_OK(s);
 
@@ -1469,7 +1486,7 @@ void AssertValue(std::string value, WBWIIterator* iter) {
 
 // Tests that we can write to the WBWI while we iterate (from a single thread).
 // iteration should see the newest writes
-TEST_F(WBWIOverwriteTest, MutateWhileIteratingCorrectnessTest) {
+TEST_P(WBWIOverwriteTest, MutateWhileIteratingCorrectnessTest) {
   for (char c = 'a'; c <= 'z'; ++c) {
     ASSERT_OK(batch_->Put(std::string(1, c), std::string(1, c)));
   }
@@ -1515,8 +1532,8 @@ void AssertIterValue(std::string value, Iterator* iter) {
 }
 
 // same thing as above, but testing IteratorWithBase
-TEST_F(WBWIOverwriteTest, MutateWhileIteratingBaseCorrectnessTest) {
-  WriteBatchWithIndex batch(BytewiseComparator(), 0, true);
+TEST_P(WBWIOverwriteTest, MutateWhileIteratingBaseCorrectnessTest) {
+  WriteBatchWithIndex batch(BytewiseComparator(), 0, true, 0, index_factory_);
   for (char c = 'a'; c <= 'z'; ++c) {
     ASSERT_OK(batch_->Put(std::string(1, c), std::string(1, c)));
   }
@@ -1584,7 +1601,7 @@ TEST_F(WBWIOverwriteTest, MutateWhileIteratingBaseCorrectnessTest) {
 }
 
 // stress testing mutations with IteratorWithBase
-TEST_F(WBWIOverwriteTest, MutateWhileIteratingBaseStressTest) {
+TEST_P(WBWIOverwriteTest, MutateWhileIteratingBaseStressTest) {
   for (char c = 'a'; c <= 'z'; ++c) {
     ASSERT_OK(batch_->Put(std::string(1, c), std::string(1, c)));
   }
@@ -2136,7 +2153,7 @@ TEST_P(WriteBatchWithIndexTest, GetFromBatchAndDBAfterMerge) {
   ASSERT_EQ(value, "cc");
 }
 
-TEST_F(WBWIKeepTest, GetAfterPut) {
+TEST_P(WBWIKeepTest, GetAfterPut) {
   std::string value;
   ASSERT_OK(OpenDB());
   ColumnFamilyHandle* cf0 = db_->DefaultColumnFamily();
@@ -2228,7 +2245,7 @@ TEST_P(WriteBatchWithIndexTest, GetAfterMergeDelete) {
   ASSERT_EQ(value, "cc,dd");
 }
 
-TEST_F(WBWIOverwriteTest, TestBadMergeOperator) {
+TEST_P(WBWIOverwriteTest, TestBadMergeOperator) {
   class FailingMergeOperator : public MergeOperator {
    public:
     FailingMergeOperator() {}
@@ -2366,7 +2383,7 @@ TEST_P(WriteBatchWithIndexTest, ColumnFamilyWithTimestamp) {
 
   // Iterator
   {
-    const bool overwrite = GetParam();
+    const bool overwrite = std::get<0>(GetParam());
     std::unique_ptr<WBWIIterator> it(batch_->NewIterator(&cf2));
     uint32_t start = 0;
     for (it->SeekToFirst(); it->Valid(); it->Next(), ++start) {
@@ -2387,7 +2404,11 @@ TEST_P(WriteBatchWithIndexTest, ColumnFamilyWithTimestamp) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(WBWI, WriteBatchWithIndexTest, testing::Bool());
+INSTANTIATE_TEST_CASE_P(WBWI, WBWIKeepTest, WriteBatchEntryIndexFactoryGenerator());
+INSTANTIATE_TEST_CASE_P(WBWI, WBWIOverwriteTest, WriteBatchEntryIndexFactoryGenerator());
+INSTANTIATE_TEST_CASE_P(WBWI, WriteBatchWithIndexTest, 
+                        ::testing::Combine(testing::Bool(),
+                                           WriteBatchEntryIndexFactoryGenerator()));
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {

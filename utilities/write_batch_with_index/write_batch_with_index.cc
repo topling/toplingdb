@@ -850,6 +850,12 @@ const Comparator* WriteBatchWithIndexInternal::GetUserComparator(
 
 const std::string kSkipListWriteBatchEntryFactoryName = "skiplist";
 
+static std::unordered_map<std::string, const WriteBatchEntryIndexFactory*>
+    write_batch_entry_index_factory_info = {
+        {kSkipListWriteBatchEntryFactoryName,
+         skip_list_WriteBatchEntryIndexFactory()}
+    };
+
 template<bool OverwriteKey>
 struct WriteBatchEntryComparator {
   int operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
@@ -970,6 +976,19 @@ const WriteBatchEntryIndexFactory* skip_list_WriteBatchEntryIndexFactory()
   static SkipListIndexFactory factory;
   return &factory;
 };
+
+void RegistWriteBatchEntryIndexFactory(const char* name,
+                                       const WriteBatchEntryIndexFactory* factory) {
+  write_batch_entry_index_factory_info.emplace(name, factory);
+}
+
+const WriteBatchEntryIndexFactory* GetWriteBatchEntryIndexFactory(const char* name) {
+  auto find = write_batch_entry_index_factory_info.find(name);
+  if (find == write_batch_entry_index_factory_info.end()) {
+    return nullptr;
+  }
+  return find->second;
+}
 
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // !ROCKSDB_LITE

@@ -37,7 +37,8 @@ struct WriteBatchWithIndex::Rep {
         overwrite_key(_overwrite_key),
         last_entry_offset(0),
         last_sub_batch_offset(0),
-        sub_batch_cnt(1) {
+        sub_batch_cnt(1),
+        free_entry(nullptr) {
           factory_context = index_factory->NewContext(&arena);
         }
 
@@ -331,6 +332,7 @@ void WriteBatchWithIndex::Rep::ClearIndex() {
   last_entry_offset = 0;
   last_sub_batch_offset = 0;
   sub_batch_cnt = 1;
+  free_entry = nullptr;
 }
 
 Status WriteBatchWithIndex::Rep::ReBuildIndex() {

@@ -35,10 +35,11 @@ struct WriteBatchWithIndex::Rep {
                           ? skip_list_WriteBatchEntryIndexFactory()
                           : _index_factory),
         overwrite_key(_overwrite_key),
+        free_entry(nullptr),
         last_entry_offset(0),
         last_sub_batch_offset(0),
-        sub_batch_cnt(1),
-        free_entry(nullptr) {
+        sub_batch_cnt(1)
+        {
           factory_context = index_factory->NewContext(&arena);
         }
 
@@ -167,19 +168,15 @@ void WriteBatchWithIndex::Rep::AddOrUpdateIndex(uint32_t column_family_id,
                                      key.data() - wb_data.data(), key.size());
   if (!entry_index->Upsert(index_entry)) {
     // overwrite key
-    // 暂未处理 overwrite 和 type == kMergeRecord
-	/*
-    if (LIKELY(last_sub_batch_offset <= non_const_entry->offset)) {
+    // 暂未处理 type == kMergeRecord
+    if (LIKELY(last_sub_batch_offset <= index_entry->offset)) {
       last_sub_batch_offset = last_entry_offset;
       sub_batch_cnt++;
     }
-	*/
     free_entry = index_entry;
   } else {
     free_entry = nullptr;
   }
-
-  type;
 }
 
 
@@ -861,6 +858,19 @@ static std::unordered_map<std::string, const WriteBatchEntryIndexFactory*>
 template<bool OverwriteKey>
 struct WriteBatchEntryComparator {
   int operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
+    if(l->column_family > r->column_family) {
+      return 1;
+    } else if(l->column_family < r->column_family) {
+      return -1;
+    }
+
+    // Deal with special case of seeking to the beginning of a column family
+    if (l->is_min_in_cf()) {
+      return -1;
+    } else if (r->is_min_in_cf()) {
+      return 1;
+    }
+      
     int cmp = c->Compare(extractor(l), extractor(r));
     // unnecessary comp offset if overwrite key
     if (OverwriteKey || cmp != 0) {
@@ -885,7 +895,6 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
   typedef SkipList<WriteBatchIndexEntry*, const EntryComparator&> Index;
   EntryComparator comparator_;
   Index index_;
-  bool overwrite_key_;
 
   class SkipListIterator : public WriteBatchEntryIndex::Iterator {
    public:
@@ -923,8 +932,7 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
   WriteBatchEntrySkipListIndex(WriteBatchKeyExtractor e, const Comparator* c,
                                Arena* a)
       : comparator_({e, c}),
-        index_(comparator_, a),
-        overwrite_key_(OverwriteKey) {
+        index_(comparator_, a) {
   }
 
   virtual Iterator* NewIterator() override {

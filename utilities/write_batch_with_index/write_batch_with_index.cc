@@ -166,14 +166,22 @@ void WriteBatchWithIndex::Rep::AddOrUpdateIndex(uint32_t column_family_id,
   auto* index_entry =
       new (mem) WriteBatchIndexEntry(last_entry_offset, column_family_id,
                                      key.data() - wb_data.data(), key.size());
-  if (!entry_index->Upsert(index_entry)) {
+  
+  bool isMergeRecord = overwrite_key && type == kMergeRecord;
+  if (!entry_index->Upsert(index_entry , isMergeRecord)) {
     // overwrite key
-    // 暂未处理 type == kMergeRecord
     if (LIKELY(last_sub_batch_offset <= index_entry->offset)) {
       last_sub_batch_offset = last_entry_offset;
       sub_batch_cnt++;
     }
-    free_entry = index_entry;
+    
+    if(isMergeRecord) {
+      index_entry->offset = last_entry_offset;
+      free_entry = nullptr;
+    }
+    else {
+      free_entry = index_entry;
+    }
   } else {
     free_entry = nullptr;
   }
@@ -872,8 +880,8 @@ struct WriteBatchEntryComparator {
     }
       
     int cmp = c->Compare(extractor(l), extractor(r));
-    // unnecessary comp offset if overwrite key
-    if (OverwriteKey || cmp != 0) {
+    // comp offset is necessary for Merge if overwrite key
+    if (cmp != 0) {
       return cmp;
     }
     if (l->offset > r->offset) {
@@ -943,17 +951,40 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
                   "Need larger buffer for SkipListIterator");
     storage.iter = new (storage.buffer) SkipListIterator(&index_);
   }
-  virtual bool Upsert(WriteBatchIndexEntry* key) override {
+  virtual bool Upsert(WriteBatchIndexEntry* key , bool isMergeRecord) override {
     if (OverwriteKey) {
       Slice sraech_key = comparator_.extractor(key);
       WriteBatchIndexEntry search_entry(&sraech_key, key->column_family, true, false);
       typename Index::Iterator iter(&index_);
-      iter.Seek(&search_entry);
+
+      iter.Seek(key);
       if (iter.Valid() &&
           comparator_.c->Compare(sraech_key,
                                  comparator_.extractor(iter.key())) == 0) {
+        
+        // Move to the end of this key (NextKey-Prev)
+        while(iter.Valid() &&
+              comparator_.c->Compare(sraech_key,
+                                     comparator_.extractor(iter.key())) == 0) {
+            iter.Next();
+        } // Move to the next key
+        if (iter.Valid()) {
+          iter.Prev();  // Move back one entry
+        } else {
+          iter.SeekToLast();
+        }
+        
         // found , replace
-        std::swap(iter.key()->offset, key->offset);
+        if(isMergeRecord) {
+          auto last_same_key_offset = iter.key()->offset;
+          index_.Insert(key);
+
+           // set key->offset to update last_sub_batch_offset, and then reset to last_entry_offset
+          key->offset = last_same_key_offset;
+        }
+        else {
+          std::swap(iter.key()->offset, key->offset);
+        }
         return false;
       }
     }

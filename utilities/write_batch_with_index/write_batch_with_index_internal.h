@@ -220,7 +220,8 @@ class WriteBatchEntryIndex {
   virtual void NewIterator(IteratorStorage& storage, bool ephemeral) = 0;
   // return true if insert success
   // assign key->offset to exists entry's offset otherwise
-  virtual bool Upsert(WriteBatchIndexEntry* key) = 0;
+  // insert new entry when writetype == kMergeRecode and overwrite == true
+  virtual bool Upsert(WriteBatchIndexEntry* key, bool IgnoreOverwrite) = 0;
 };
 
 class WriteBatchEntryIndexContext {

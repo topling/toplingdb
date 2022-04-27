@@ -50,6 +50,7 @@ struct WriteBatchWithIndex::Rep {
       }
     }
     if (factory_context != nullptr) {
+      factory_context->FreeMapContent();
       factory_context->~WriteBatchEntryIndexContext();
     }
   }
@@ -303,17 +304,26 @@ const Comparator* WriteBatchWithIndex::Rep::GetComparator(
     ColumnFamilyHandle* column_family) {
   uint32_t cf_id = GetColumnFamilyID(column_family);
   if (cf_id >= entry_indices.size()) {
-    return nullptr;
+    entry_indices.resize(cf_id + 1);
   }
-  return entry_indices[cf_id].comparator;
+  auto cf_cmp = entry_indices[cf_id].comparator;
+  if (cf_cmp == nullptr) {
+    cf_cmp = GetColumnFamilyUserComparator(column_family);
+    if (cf_cmp == nullptr) {
+      cf_cmp = default_comparator;
+    }
+  }
+  entry_indices[cf_id].comparator = cf_cmp;
+  return cf_cmp;
 }
 
 const Comparator* WriteBatchWithIndex::Rep::GetComparatorByCfId(
     uint32_t cf_id) {
-  if (cf_id >= entry_indices.size()) {
-    return nullptr;
+  if(cf_id < entry_indices.size() &&
+     entry_indices[cf_id].comparator) {
+       return entry_indices[cf_id].comparator;
   }
-  return entry_indices[cf_id].comparator;
+  return default_comparator;
 }
 
 void WriteBatchWithIndex::Rep::Clear() {
@@ -322,18 +332,26 @@ void WriteBatchWithIndex::Rep::Clear() {
 }
 
 void WriteBatchWithIndex::Rep::ClearIndex() {
+  WriteBatchEntryIndexContext::map_type index_map;
   for (auto& pair : entry_indices) {
     if (pair.index != nullptr) {
       pair.index->~WriteBatchEntryIndex();
-      pair.index = nullptr;
     }
   }
   if (factory_context != nullptr) {
+    factory_context->ExportMap(&index_map);
     factory_context->~WriteBatchEntryIndexContext();
   }
   arena.~Arena();
   new (&arena) Arena();
   factory_context = index_factory->NewContext(&arena);
+  factory_context->ImportMap(index_map);
+  for (auto& pair : entry_indices) {
+    if (pair.index != nullptr) {
+      pair.index = index_factory->New(factory_context, WriteBatchKeyExtractor(&write_batch),
+                                      pair.comparator, &arena, overwrite_key, pair.index);
+    }
+  }
   last_entry_offset = 0;
   last_sub_batch_offset = 0;
   sub_batch_cnt = 1;
@@ -863,7 +881,7 @@ static std::unordered_map<std::string, const WriteBatchEntryIndexFactory*>
          skip_list_WriteBatchEntryIndexFactory()}
     };
 
-template<bool OverwriteKey>
+
 struct WriteBatchEntryComparator {
   int operator()(WriteBatchIndexEntry* l, WriteBatchIndexEntry* r) const {
     if(l->column_family > r->column_family) {
@@ -879,15 +897,18 @@ struct WriteBatchEntryComparator {
       return 1;
     }
       
-    int cmp = c->Compare(extractor(l), extractor(r));
+    int cmp = c->CompareWithoutTimestamp(extractor(l), false, extractor(r), false);
+
     // comp offset is necessary for Merge if overwrite key
+    // otherwise, we shoule ignore comp offset when overwrite key.
+    // but comparator is immutable in skiplist,
+    // it seems hard to modify a little code for both supporting Merge Operation and overwrite key
+    // so here ignore the overwrite_key option...
     if (cmp != 0) {
       return cmp;
-    }
-    if (l->offset > r->offset) {
+    } else if (l->offset > r->offset) {
       return 1;
-    }
-    if (l->offset < r->offset) {
+    } else if (l->offset < r->offset) {
       return -1;
     }
     return 0;
@@ -896,13 +917,42 @@ struct WriteBatchEntryComparator {
   const Comparator* c;
 };
 
+class SkipListIndexContext : public WriteBatchEntryIndexContext {
+ public:
+  virtual void ImportMap(const map_type& _index_map) {
+    index_map = _index_map;
+  }
+
+  virtual void ExportMap(map_type* _index_map) {
+    *_index_map = index_map;
+  }
+
+  virtual void FreeMapContent() {
+    typedef SkipList<WriteBatchIndexEntry*, const WriteBatchEntryComparator&> Index;
+    for(auto& pairs: index_map)
+      ((Index*)pairs.second)->~Index();
+  }
+
+  uint8_t* GetLastSkipListAddress(WriteBatchEntryIndex* entry_addr) {
+    auto iter = index_map.find(entry_addr);
+    assert(iter != index_map.end());
+    return iter->second;
+  }
+
+  void RegistSkipListAddress(WriteBatchEntryIndex* entry_addr, uint8_t* skip_list_addr) {
+    index_map[entry_addr] = skip_list_addr;
+  }
+
+};
+
 template<bool OverwriteKey>
 class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
  protected:
-  typedef WriteBatchEntryComparator<OverwriteKey> EntryComparator;
+  typedef WriteBatchEntryComparator EntryComparator;
   typedef SkipList<WriteBatchIndexEntry*, const EntryComparator&> Index;
+  SkipListIndexContext* ctx_;
   EntryComparator comparator_;
-  Index index_;
+  Index* index_;
 
   class SkipListIterator : public WriteBatchEntryIndex::Iterator {
    public:
@@ -937,47 +987,49 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
   };
 
  public:
-  WriteBatchEntrySkipListIndex(WriteBatchKeyExtractor e, const Comparator* c,
-                               Arena* a)
-      : comparator_({e, c}),
-        index_(comparator_, a) {
+  WriteBatchEntrySkipListIndex(WriteBatchEntryIndexContext *ctx, WriteBatchKeyExtractor e,
+                               const Comparator* c, Arena* a,
+                               WriteBatchEntryIndex* last_address)
+      : ctx_(static_cast<SkipListIndexContext*>(ctx)),
+        comparator_({e, c}) {
+          if(!last_address) {
+            index_ = new Index(comparator_, a);
+          } else {
+            index_ = new (ctx_->GetLastSkipListAddress(last_address)) Index(comparator_, a);
+          }
+      }
+
+  ~WriteBatchEntrySkipListIndex() {
+    ctx_->RegistSkipListAddress(this, (uint8_t*)index_);
   }
 
   virtual Iterator* NewIterator() override {
-    return new SkipListIterator(&index_);
+    return new SkipListIterator(index_);
   }
   virtual void NewIterator(IteratorStorage& storage, bool ephemeral) override {
     static_assert(sizeof(SkipListIterator) <= sizeof storage.buffer,
                   "Need larger buffer for SkipListIterator");
-    storage.iter = new (storage.buffer) SkipListIterator(&index_);
+    storage.iter = new (storage.buffer) SkipListIterator(index_);
   }
   virtual bool Upsert(WriteBatchIndexEntry* key , bool isMergeRecord) override {
-    if (OverwriteKey) {
+    if constexpr (OverwriteKey) {
       Slice sraech_key = comparator_.extractor(key);
       WriteBatchIndexEntry search_entry(&sraech_key, key->column_family, true, false);
-      typename Index::Iterator iter(&index_);
-
+      typename Index::Iterator iter(index_);
       iter.Seek(key);
+      if(!iter.Valid()) {
+        iter.SeekToLast();
+      } else {
+        iter.Prev();
+      }
+
       if (iter.Valid() &&
-          comparator_.c->Compare(sraech_key,
-                                 comparator_.extractor(iter.key())) == 0) {
-        
-        // Move to the end of this key (NextKey-Prev)
-        while(iter.Valid() &&
-              comparator_.c->Compare(sraech_key,
-                                     comparator_.extractor(iter.key())) == 0) {
-            iter.Next();
-        } // Move to the next key
-        if (iter.Valid()) {
-          iter.Prev();  // Move back one entry
-        } else {
-          iter.SeekToLast();
-        }
-        
+          comparator_.c->CompareWithoutTimestamp(sraech_key, false,
+                                                comparator_.extractor(iter.key()), false) == 0) {  
         // found , replace
         if(isMergeRecord) {
           auto last_same_key_offset = iter.key()->offset;
-          index_.Insert(key);
+          index_->Insert(key);
 
            // set key->offset to update last_sub_batch_offset, and then reset to last_entry_offset
           key->offset = last_same_key_offset;
@@ -988,7 +1040,7 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
         return false;
       }
     }
-    index_.Insert(key);
+    index_->Insert(key);
     return true;
   }
 };
@@ -997,16 +1049,20 @@ const WriteBatchEntryIndexFactory* skip_list_WriteBatchEntryIndexFactory()
 {
   class SkipListIndexFactory : public WriteBatchEntryIndexFactory {
    public:
+    WriteBatchEntryIndexContext* NewContext(Arena *a) const {
+      return new (a->AllocateAligned(sizeof(SkipListIndexContext))) SkipListIndexContext();
+    }
     WriteBatchEntryIndex* New(WriteBatchEntryIndexContext* ctx,
                               WriteBatchKeyExtractor e,
                               const Comparator* c, Arena* a,
-                              bool overwrite_key) const override {
+                              bool overwrite_key,
+                              WriteBatchEntryIndex* last_address = nullptr) const override {
       if (overwrite_key) {
         typedef WriteBatchEntrySkipListIndex<true> index_t;
-        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(ctx, e, c, a, last_address);
       } else {
         typedef WriteBatchEntrySkipListIndex<false> index_t;
-        return new (a->AllocateAligned(sizeof(index_t))) index_t(e, c, a);
+        return new (a->AllocateAligned(sizeof(index_t))) index_t(ctx, e, c, a, last_address);
       }
     }
     virtual const char* Name() const override {

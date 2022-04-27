@@ -221,12 +221,23 @@ class WriteBatchEntryIndex {
   // return true if insert success
   // assign key->offset to exists entry's offset otherwise
   // insert new entry when writetype == kMergeRecode and overwrite == true
-  virtual bool Upsert(WriteBatchIndexEntry* key, bool IgnoreOverwrite) = 0;
+  virtual bool Upsert(WriteBatchIndexEntry* key, bool isMergeRecord) = 0;
 };
 
 class WriteBatchEntryIndexContext {
  public:
+  WriteBatchEntryIndexContext() {};
   virtual ~WriteBatchEntryIndexContext(){};
+  
+  // store addresss of WriteBatchEntryIndex::Index to avoid iterator invalidation after Rollback()
+  // release point when calling FreeMapContent in ~WBWI::Rep()
+
+  using map_type = std::unordered_map<WriteBatchEntryIndex*, uint8_t*>;
+  map_type index_map;
+  virtual void ImportMap(const map_type&) {}
+  virtual void ExportMap(map_type*) {}
+  virtual void FreeMapContent() {}
+
 };
 
 class WriteBatchEntryIndexFactory {
@@ -238,10 +249,12 @@ class WriteBatchEntryIndexFactory {
   }
   // object MUST allocated from arena
   // index will not delete, only call destruct func
+  // add last_address as the map's index to avoid iterator invalidation, DO NOT ACCESS IT !!! 
   virtual WriteBatchEntryIndex* New(WriteBatchEntryIndexContext* ctx,
                                     WriteBatchKeyExtractor e,
                                     const Comparator* c, Arena* a,
-                                    bool overwrite_key) const = 0;
+                                    bool overwrite_key,
+                                    WriteBatchEntryIndex* last_address = nullptr) const = 0;
   virtual ~WriteBatchEntryIndexFactory() {}
 
   virtual const char* Name() const = 0;

@@ -899,11 +899,8 @@ struct WriteBatchEntryComparator {
       
     int cmp = c->CompareWithoutTimestamp(extractor(l), false, extractor(r), false);
 
-    // comp offset is necessary for Merge if overwrite key
-    // otherwise, we shoule ignore comp offset when overwrite key.
-    // but comparator is immutable in skiplist,
-    // it seems hard to modify a little code for both supporting Merge Operation and overwrite key
-    // so here ignore the overwrite_key option...
+    // To support merge, there may be many entries of the same key even if overwrite_key is true
+    // comp offset is necessary, overwrite_key makes no sense.
     if (cmp != 0) {
       return cmp;
     } else if (l->offset > r->offset) {
@@ -1013,8 +1010,7 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
   }
   virtual bool Upsert(WriteBatchIndexEntry* key , bool isMergeRecord) override {
     if constexpr (OverwriteKey) {
-      Slice sraech_key = comparator_.extractor(key);
-      WriteBatchIndexEntry search_entry(&sraech_key, key->column_family, true, false);
+      Slice search_key = comparator_.extractor(key);
       typename Index::Iterator iter(index_);
       iter.Seek(key);
       if(!iter.Valid()) {
@@ -1024,13 +1020,12 @@ class WriteBatchEntrySkipListIndex : public WriteBatchEntryIndex {
       }
 
       if (iter.Valid() &&
-          comparator_.c->CompareWithoutTimestamp(sraech_key, false,
+          comparator_.c->CompareWithoutTimestamp(search_key, false,
                                                 comparator_.extractor(iter.key()), false) == 0) {  
         // found , replace
         if(isMergeRecord) {
           auto last_same_key_offset = iter.key()->offset;
           index_->Insert(key);
-
            // set key->offset to update last_sub_batch_offset, and then reset to last_entry_offset
           key->offset = last_same_key_offset;
         }

@@ -144,6 +144,9 @@ struct CompactionResults {
   size_t prepare_time_usec; // open nfs params/results
   size_t waiting_time_usec; // wait in work queue
 
+  uint64_t output_index_size; // not serialized, just for DB side convenient
+  uint64_t output_data_size; // not serialized, just for DB side convenient
+
   size_t all_time_usec() const {
     return curl_time_usec + mount_time_usec + prepare_time_usec + work_time_usec;
   }

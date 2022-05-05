@@ -1115,6 +1115,8 @@ try {
       sub_state.outputs.back().finished = true;
       sub_state.total_bytes += min_meta.file_size;
       sub_state.num_output_records += tp->num_entries;
+      rpc_results.output_index_size += tp->index_size;
+      rpc_results.output_data_size += tp->data_size;
     }
     // instead AggregateStatistics:
     compact_->num_output_files += sub_state.outputs.size();

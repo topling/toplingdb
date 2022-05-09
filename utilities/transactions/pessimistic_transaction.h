@@ -397,10 +397,9 @@ class ReadOnlyTxn : public PessimisticTransaction {
     return Status::NotSupported("Not supported in secondary mode.");
   };
 
-  
  private:
 
-  // Get() will be operated immediately, 
+  // Get() will be operated immediately,
   // thus Prepare() , Commit() and Rollback() make no sense.
   Status PrepareInternal() override {
     return Status::OK();

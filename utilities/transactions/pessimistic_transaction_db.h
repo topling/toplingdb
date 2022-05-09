@@ -25,7 +25,6 @@
 #include "utilities/transactions/pessimistic_transaction.h"
 #include "utilities/transactions/write_prepared_txn.h"
 
-
 namespace ROCKSDB_NAMESPACE {
 
 class PessimisticTransactionDB : public TransactionDB {
@@ -234,14 +233,14 @@ class WriteCommittedTxnDB : public PessimisticTransactionDB {
 // A secondary instance of PessimisicTransactionDB .
 class SecondaryTxnDB : public PessimisticTransactionDB {
   public:
-    explicit SecondaryTxnDB(DB* db, 
+    explicit SecondaryTxnDB(DB* db,
                             const TransactionDBOptions& txn_db_options)
       : PessimisticTransactionDB(db , txn_db_options) {}
-    
-    explicit SecondaryTxnDB(StackableDB* db, 
+
+    explicit SecondaryTxnDB(StackableDB* db,
                             const TransactionDBOptions& txn_db_options)
       : PessimisticTransactionDB(db , txn_db_options) {}
-    
+
     virtual ~SecondaryTxnDB() {}
 
     virtual Status Initialize(
@@ -290,9 +289,7 @@ class SecondaryTxnDB : public PessimisticTransactionDB {
                        WriteBatch* /*updates*/) override {
       return Status::NotSupported("Not supported operation in secondary mode.");
     }
-
 };
-
 
 inline Status PessimisticTransactionDB::FailIfBatchHasTs(
     const WriteBatch* batch) {

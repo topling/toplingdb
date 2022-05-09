@@ -220,7 +220,7 @@ Status SecondaryTxnDB::Initialize(
 Transaction* SecondaryTxnDB::BeginTransaction(
     const WriteOptions& write_options, const TransactionOptions& txn_options,
     Transaction* old_txn) {
-    if (old_txn != nullptr) {
+  if (old_txn != nullptr) {
     ReinitializeTransaction(old_txn, write_options, txn_options);
     return old_txn;
   } else {
@@ -415,7 +415,6 @@ Status WrapAnotherDBInternal(
           db, PessimisticTransactionDB::ValidateTxnDBOptions(txn_db_options)));
   }
   txn_db->UpdateCFComparatorMap(handles);
-
   Status s = txn_db->Initialize(compaction_enabled_cf_indices, handles);
   // In case of a failure at this point, db is deleted via the txn_db destructor
   // and set to nullptr.

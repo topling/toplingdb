@@ -8,6 +8,12 @@
 #include "rocksdb/system_clock.h"
 #include <time.h> // for clock_gettime
 
+#if defined(__GNUC__)
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wunused-parameter"
+  // for waring: unused parameter ‘clock’ [-Wunused-parameter]
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 // Auto-scoped.
 // Records the measure time into the corresponding histogram if statistics
@@ -193,3 +199,7 @@ class StopWatchNano {
 };
 
 }  // namespace ROCKSDB_NAMESPACE
+
+#if defined(__GNUC__)
+  #pragma GCC diagnostic pop
+#endif

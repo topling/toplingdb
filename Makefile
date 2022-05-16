@@ -2129,6 +2129,7 @@ io_tracer_parser: $(OBJ_DIR)/tools/io_tracer_parser.o $(TOOLS_LIBRARY) $(LIBRARY
 #--------------------------------------------------
 ifndef ROCKSDB_USE_LIBRADOS
   AUTO_ALL_EXCLUDE_SRC += utilities/env_librados_test.cc
+  AUTO_ALL_EXCLUDE_SRC += utilities/env_mirror_test.cc
 endif
 
 AUTO_ALL_TESTS_SRC := $(shell find * -name '*_test.cc' -not -path 'java/*' -not -path '*/3rdparty/*') ${EXTRA_TESTS_SRC}

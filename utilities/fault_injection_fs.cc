@@ -412,6 +412,11 @@ size_t TestFSRandomAccessFile::GetUniqueId(char* id, size_t max_size) const {
     return target_->GetUniqueId(id, max_size);
   }
 }
+
+intptr_t TestFSRandomAccessFile::FileDescriptor() const {
+  return target_->FileDescriptor();
+}
+
 IOStatus TestFSSequentialFile::Read(size_t n, const IOOptions& options,
                                     Slice* result, char* scratch,
                                     IODebugContext* dbg) {

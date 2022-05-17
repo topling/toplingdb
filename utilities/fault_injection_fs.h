@@ -147,6 +147,8 @@ class TestFSRandomAccessFile : public FSRandomAccessFile {
 
   size_t GetUniqueId(char* id, size_t max_size) const override;
 
+  intptr_t FileDescriptor() const final;
+
  private:
   std::unique_ptr<FSRandomAccessFile> target_;
   FaultInjectionTestFS* fs_;

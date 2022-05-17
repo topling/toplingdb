@@ -194,6 +194,37 @@ class LegacyRandomAccessFileWrapper : public FSRandomAccessFile {
   IOStatus InvalidateCache(size_t offset, size_t length) override {
     return status_to_io_status(target_->InvalidateCache(offset, length));
   }
+  IOStatus FsRead(uint64_t offset, size_t n, const IOOptions&,
+                  Slice* result, char* scratch,
+                  IODebugContext*) const final {
+    Status status = target_->FsRead(offset, n, result, scratch);
+    return status_to_io_status(std::move(status));
+  }
+  IOStatus FsMultiRead(FSReadRequest* fs_reqs, size_t num_reqs,
+                       const IOOptions& /*options*/,
+                       IODebugContext* /*dbg*/) final {
+    std::vector<ReadRequest> reqs;
+    Status status;
+
+    reqs.reserve(num_reqs);
+    for (size_t i = 0; i < num_reqs; ++i) {
+      ReadRequest req;
+
+      req.offset = fs_reqs[i].offset;
+      req.len = fs_reqs[i].len;
+      req.scratch = fs_reqs[i].scratch;
+      req.status = Status::OK();
+
+      reqs.emplace_back(req);
+    }
+    status = target_->FsMultiRead(reqs.data(), num_reqs);
+    for (size_t i = 0; i < num_reqs; ++i) {
+      fs_reqs[i].result = reqs[i].result;
+      fs_reqs[i].status = status_to_io_status(std::move(reqs[i].status));
+    }
+    return status_to_io_status(std::move(status));
+  }
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
  private:
   std::unique_ptr<RandomAccessFile> target_;
@@ -847,8 +878,18 @@ RandomAccessFile::~RandomAccessFile() {
 Status
 RandomAccessFile::FsRead(uint64_t offset, size_t n, Slice* result,
               char* scratch) const {
-    Slice res;
-    return Read(offset, n, &res, (char*)scratch);
+  Slice res;
+  return Read(offset, n, &res, (char*)scratch);
+}
+
+Status
+RandomAccessFile::FsMultiRead(ReadRequest* reqs, size_t num_reqs) {
+  assert(reqs != nullptr);
+  for (size_t i = 0; i < num_reqs; ++i) {
+    ReadRequest& req = reqs[i];
+    req.status = FsRead(req.offset, req.len, &req.result, req.scratch);
+  }
+  return Status::OK();
 }
 
 WritableFile::~WritableFile() {

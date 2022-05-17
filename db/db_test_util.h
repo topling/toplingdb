@@ -440,6 +440,8 @@ class SpecialEnv : public EnvWrapper {
         return s;
       }
 
+      intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+
      private:
       std::unique_ptr<RandomAccessFile> target_;
       anon::AtomicCounter* counter_;
@@ -465,6 +467,8 @@ class SpecialEnv : public EnvWrapper {
       virtual Status Prefetch(uint64_t offset, size_t n) override {
         return target_->Prefetch(offset, n);
       }
+
+      intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
      private:
       std::unique_ptr<RandomAccessFile> target_;

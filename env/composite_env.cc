@@ -99,6 +99,34 @@ class CompositeRandomAccessFileWrapper : public RandomAccessFile {
     return target_->InvalidateCache(offset, length);
   }
 
+  Status FsRead(uint64_t offset, size_t n, Slice* result,
+                  char* scratch) const final {
+    IOOptions io_opts;
+    IODebugContext dbg;
+    return target_->FsRead(offset, n, io_opts, result, scratch, &dbg);
+  }
+  Status FsMultiRead(ReadRequest* reqs, size_t num_reqs) {
+    IOOptions io_opts;
+    IODebugContext dbg;
+    std::vector<FSReadRequest> fs_reqs;
+    Status status;
+
+    fs_reqs.resize(num_reqs);
+    for (size_t i = 0; i < num_reqs; ++i) {
+      fs_reqs[i].offset = reqs[i].offset;
+      fs_reqs[i].len = reqs[i].len;
+      fs_reqs[i].scratch = reqs[i].scratch;
+      fs_reqs[i].status = IOStatus::OK();
+    }
+    status = target_->FsMultiRead(fs_reqs.data(), num_reqs, io_opts, &dbg);
+    for (size_t i = 0; i < num_reqs; ++i) {
+      reqs[i].result = fs_reqs[i].result;
+      reqs[i].status = fs_reqs[i].status;
+    }
+    return status;
+  }
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+
  private:
   std::unique_ptr<FSRandomAccessFile> target_;
 };

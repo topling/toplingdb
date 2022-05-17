@@ -921,10 +921,7 @@ class FSRandomAccessFile {
     return IOStatus::OK();
   }
 
-  virtual intptr_t FileDescriptor() const {
-    assert(false);
-    return -1;
-  }
+  virtual intptr_t FileDescriptor() const = 0;
 };
 
 // A data structure brings the data verification information, which is
@@ -1611,6 +1608,10 @@ class FSRandomAccessFileWrapper : public FSRandomAccessFile {
   }
   Temperature GetTemperature() const override {
     return target_->GetTemperature();
+  }
+
+  intptr_t FileDescriptor() const final {
+    return target_->FileDescriptor();
   }
 
  private:

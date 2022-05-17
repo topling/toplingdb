@@ -96,6 +96,8 @@ class RandomAccessFileMirror : public RandomAccessFile {
     // NOTE: not verified
     return a_->GetUniqueId(id, max_size);
   }
+
+  intptr_t FileDescriptor() const final { return a_->FileDescriptor(); }
 };
 
 class WritableFileMirror : public WritableFile {

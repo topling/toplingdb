@@ -325,6 +325,10 @@ class MockRandomAccessFile : public FSRandomAccessFile {
       return file_->Read(offset, n, options, result, scratch, dbg);
     }
   }
+  intptr_t FileDescriptor() const final {
+    assert(false);
+    return -1;
+  }
 
  private:
   MemFile* file_;

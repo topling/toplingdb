@@ -331,6 +331,11 @@ class StringSource : public FSRandomAccessFile {
 
   void set_total_reads(int tr) { total_reads_ = tr; }
 
+  intptr_t FileDescriptor() const final {
+    assert(false);
+    return -1;
+  }
+
  private:
   std::string contents_;
   uint64_t uniq_id_;

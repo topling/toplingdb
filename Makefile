@@ -200,6 +200,10 @@ CXXFLAGS += -DROCKSDB_NO_DYNAMIC_EXTENSION
 CXXFLAGS += -DUSE_SERVER_STATS=1
 CFLAGS += -DUSE_SERVER_STATS=1
 
+# civetweb-v1.15 requires OPENSSL_API_1_1 or OPENSSL_API_1_0
+CXXFLAGS += -DOPENSSL_API_1_1=1
+CFLAGS += -DOPENSSL_API_1_1=1
+
 ifeq (,$(wildcard sideplugin/rockside/3rdparty/rapidyaml))
   $(warning NotFound sideplugin/rockside/3rdparty/rapidyaml)
   $(warning sideplugin/rockside is a submodule, auto init...)

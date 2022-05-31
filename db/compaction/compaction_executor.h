@@ -99,7 +99,7 @@ struct CompactionParams {
   bool preserve_deletes;
   bool bottommost_level;
   bool is_deserialized;
-  //std::vector<ObjectRpcParam> event_listner;
+  std::vector<ObjectRpcParam> listeners;
   std::vector<ObjectRpcParam> table_properties_collector_factories;
 
   // CompactionFilterFactory ... can have individual serde files

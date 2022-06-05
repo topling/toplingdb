@@ -691,9 +691,13 @@ WBWIIteratorImpl::Result WriteBatchWithIndexInternal::GetFromBatch(
     std::string* value, Status* s) {
   *s = Status::OK();
 
+#if 0
   std::unique_ptr<WBWIIteratorImpl> iter(
       static_cast_with_check<WBWIIteratorImpl>(
           batch->NewIterator(column_family_)));
+#else // topling: use base class WBWIIterator
+  std::unique_ptr<WBWIIterator> iter(batch->NewIterator(column_family_));
+#endif
 
   // Search the iterator for this key, and updates/merges to it.
   iter->Seek(key);

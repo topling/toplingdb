@@ -323,6 +323,11 @@ class WriteBatchWithIndex : public WriteBatchBase {
                               bool sorted_input, ReadCallback* callback);
   struct Rep;
   std::unique_ptr<Rep> rep;
+
+protected:
+  // just used for derived class such as topling CSPPWriteBatchWithIndex,
+  // in this case, rep is just a waste and always be null
+  WriteBatchWithIndex() = default;
 };
 
 class WriteBatchWithIndexFactory {

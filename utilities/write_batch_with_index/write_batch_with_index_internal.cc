@@ -21,7 +21,7 @@
 namespace ROCKSDB_NAMESPACE {
 BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
                                      Iterator* base_iterator,
-                                     WBWIIteratorImpl* delta_iterator,
+                                     WBWIIterator* delta_iterator,
                                      const Comparator* comparator,
                                      const ReadOptions* read_options)
     : forward_(true),

@@ -29,6 +29,7 @@ class ColumnFamilyHandle;
 class Comparator;
 class DB;
 class ReadCallback;
+class MergeContext;
 struct ReadOptions;
 struct DBOptions;
 
@@ -75,6 +76,35 @@ class WBWIIterator {
   virtual WriteEntry Entry() const = 0;
 
   virtual Status status() const = 0;
+
+//-------------------------------------------------------------------------
+// topling specific: copy from WBWIIteratorImpl as pure virtual,
+// to reuse BaseDeltaIterator.
+// just for reuse, many class is not required to be visiable by external code!
+  enum Result : uint8_t {
+    kFound,
+    kDeleted,
+    kNotFound,
+    kMergeInProgress,
+    kError
+  };
+
+  // Moves the iterator to first entry of the previous key.
+  virtual void PrevKey() = 0;
+  // Moves the iterator to first entry of the next key.
+  virtual void NextKey() = 0;
+
+  // Moves the iterator to the Update (Put or Delete) for the current key
+  // If there are no Put/Delete, the Iterator will point to the first entry for
+  // this key
+  // @return kFound if a Put was found for the key
+  // @return kDeleted if a delete was found for the key
+  // @return kMergeInProgress if only merges were fouund for the key
+  // @return kError if an unsupported operation was found for the key
+  // @return kNotFound if no operations were found for this key
+  //
+  virtual Result FindLatestUpdate(const Slice& key, MergeContext* merge_context) = 0;
+  virtual Result FindLatestUpdate(MergeContext* merge_context) = 0;
 };
 
 // A WriteBatchWithIndex with a binary searchable index built for all the keys

@@ -134,6 +134,8 @@ class WriteBatchWithIndex : public WriteBatchBase {
   WriteBatchWithIndex(WriteBatchWithIndex&&);
   WriteBatchWithIndex& operator=(WriteBatchWithIndex&&);
 
+  virtual const Comparator* GetUserComparator(uint32_t cf_id) const;
+
   using WriteBatchBase::Put;
   Status Put(ColumnFamilyHandle* column_family, const Slice& key,
              const Slice& value) override;

@@ -272,6 +272,10 @@ WriteBatchWithIndex::WriteBatchWithIndex(WriteBatchWithIndex&&) = default;
 WriteBatchWithIndex& WriteBatchWithIndex::operator=(WriteBatchWithIndex&&) =
     default;
 
+const Comparator* WriteBatchWithIndex::GetUserComparator(uint32_t cf_id) const {
+  return rep->comparator.GetComparator(cf_id);
+}
+
 WriteBatch* WriteBatchWithIndex::GetWriteBatch() { return &rep->write_batch; }
 
 size_t WriteBatchWithIndex::SubBatchCnt() { return rep->sub_batch_cnt; }
@@ -679,8 +683,12 @@ size_t WriteBatchWithIndex::GetDataSize() const {
 
 const Comparator* WriteBatchWithIndexInternal::GetUserComparator(
     const WriteBatchWithIndex& wbwi, uint32_t cf_id) {
+#if 0
   const WriteBatchEntryComparator& ucmps = wbwi.rep->comparator;
   return ucmps.GetComparator(cf_id);
+#else // topling
+  return wbwi.GetUserComparator(cf_id);
+#endif
 }
 
 //---------------------------------------------------------------------------

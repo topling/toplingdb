@@ -293,6 +293,16 @@ class WriteBatchWithIndex : public WriteBatchBase {
   std::unique_ptr<Rep> rep;
 };
 
+class WriteBatchWithIndexFactory {
+public:
+  virtual ~WriteBatchWithIndexFactory();
+  virtual const char* Name() const noexcept = 0;
+  virtual WriteBatchWithIndex* NewWriteBatchWithIndex(
+      const Comparator* default_comparator = BytewiseComparator(),
+      bool overwrite_key = false) const = 0;
+};
+std::shared_ptr<WriteBatchWithIndexFactory> SingleSkipListWBWIFactory();
+
 }  // namespace ROCKSDB_NAMESPACE
 
 #endif  // !ROCKSDB_LITE

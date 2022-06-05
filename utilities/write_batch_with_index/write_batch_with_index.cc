@@ -683,5 +683,23 @@ const Comparator* WriteBatchWithIndexInternal::GetUserComparator(
   return ucmps.GetComparator(cf_id);
 }
 
+//---------------------------------------------------------------------------
+
+WriteBatchWithIndexFactory::~WriteBatchWithIndexFactory() {
+  // do nothing
+}
+class SkipListWBWIFactory : public WriteBatchWithIndexFactory {
+public:
+  const char* Name() const noexcept final { return "SkipList"; }
+  WriteBatchWithIndex* NewWriteBatchWithIndex(
+      const Comparator* default_comparator, bool overwrite_key) const final {
+    return new WriteBatchWithIndex(default_comparator, 0, overwrite_key, 0);
+  }
+};
+std::shared_ptr<WriteBatchWithIndexFactory> SingleSkipListWBWIFactory() {
+  static auto fac = std::make_shared<SkipListWBWIFactory>();
+  return fac;
+}
+
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // !ROCKSDB_LITE

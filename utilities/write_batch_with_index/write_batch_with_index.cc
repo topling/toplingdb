@@ -496,10 +496,14 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(DB* db,
                            nullptr);
 }
 
+#define RepGetUserComparator(cfh) \
+    cfh ? cfh->GetComparator() : \
+    rep ? rep->comparator.GetComparator(column_family) : nullptr
+
 Status WriteBatchWithIndex::GetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const Slice& key, PinnableSlice* pinnable_val, ReadCallback* callback) {
-  const Comparator* const ucmp = rep->comparator.GetComparator(column_family);
+  const Comparator* const ucmp = RepGetUserComparator(column_family);
   size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
   if (ts_sz > 0 && !read_options.timestamp) {
     return Status::InvalidArgument("Must specify timestamp");
@@ -569,7 +573,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const size_t num_keys, const Slice* keys, PinnableSlice* values,
     Status* statuses, bool sorted_input, ReadCallback* callback) {
-  const Comparator* const ucmp = rep->comparator.GetComparator(column_family);
+  const Comparator* const ucmp = RepGetUserComparator(column_family);
   size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
   if (ts_sz > 0 && !read_options.timestamp) {
     for (size_t i = 0; i < num_keys; ++i) {

@@ -643,6 +643,22 @@ else()
   message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
 endif()
 
+set (cspp_memtab ${PROJECT_SOURCE_DIR}/sideplugin/cspp-memtable/cspp_memtable.cc)
+if (EXISTS ${cspp_memtab})
+  message(STATUS "found ${cspp_memtab}")
+  set (topling_rocks_src ${topling_rocks_src} ${cspp_memtab})
+else()
+  message(STATUS "not found ${cspp_memtab}")
+endif()
+
+set (cspp_wbwi ${PROJECT_SOURCE_DIR}/sideplugin/cspp-wbwi/cspp_wbwi.cc)
+if (EXISTS ${cspp_wbwi})
+  message(STATUS "found ${cspp_wbwi}")
+  set (topling_rocks_src ${topling_rocks_src} ${cspp_wbwi})
+else()
+  message(STATUS "not found ${cspp_wbwi}")
+endif()
+
 set(SOURCES
         ${rockside_src}
         ${topling_rocks_src}

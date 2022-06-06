@@ -443,7 +443,8 @@ Status ReadRecordFromWriteBatch(Slice* input, char* tag,
       }
       break;
     default:
-      return Status::Corruption("unknown WriteBatch tag");
+      return Status::Corruption("bad WriteBatch tag = "
+                               + enum_stdstr(ValueType(*tag)));
   }
   return Status::OK();
 }

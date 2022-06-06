@@ -381,7 +381,7 @@ void WBWIIteratorImpl::PrevKey() {
   }
 }
 
-WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
+WBWIIteratorImpl::Result WBWIIterator::FindLatestUpdate(
     MergeContext* merge_context) {
   if (Valid()) {
     Slice key = Entry().key;
@@ -392,15 +392,18 @@ WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
   }
 }
 
-WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
+bool WBWIIteratorImpl::EqualsKey(const Slice& key) const {
+  return comparator_->CompareKey(column_family_id_, Entry().key, key) == 0;
+}
+
+WBWIIteratorImpl::Result WBWIIterator::FindLatestUpdate(
     const Slice& key, MergeContext* merge_context) {
   Result result = WBWIIteratorImpl::kNotFound;
   merge_context->Clear();  // Clear any entries in the MergeContext
   // TODO(agiardullo): consider adding support for reverse iteration
   if (!Valid()) {
     return result;
-  } else if (comparator_->CompareKey(column_family_id_, Entry().key, key) !=
-             0) {
+  } else if (!EqualsKey(key)) {
     return result;
   } else {
     // We want to iterate in the reverse order that the writes were added to the
@@ -417,7 +420,7 @@ WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
     // last Put or Delete, accumulating merges along the way.
     while (Valid()) {
       const WriteEntry entry = Entry();
-      if (comparator_->CompareKey(column_family_id_, entry.key, key) != 0) {
+      if (!EqualsKey(key)) {
         break;  // Unexpected error or we've reached a different next key
       }
 

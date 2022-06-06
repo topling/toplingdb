@@ -265,6 +265,8 @@ WriteBatchWithIndex::WriteBatchWithIndex(
     : rep(new Rep(default_index_comparator, reserved_bytes, max_bytes,
                   overwrite_key)) {}
 
+WriteBatchWithIndex::WriteBatchWithIndex(Slice/*placeholder*/) {}
+
 WriteBatchWithIndex::~WriteBatchWithIndex() {}
 
 WriteBatchWithIndex::WriteBatchWithIndex(WriteBatchWithIndex&&) = default;
@@ -704,7 +706,7 @@ class SkipListWBWIFactory : public WriteBatchWithIndexFactory {
 public:
   const char* Name() const noexcept final { return "SkipList"; }
   WriteBatchWithIndex* NewWriteBatchWithIndex(
-      const Comparator* default_comparator, bool overwrite_key) const final {
+      const Comparator* default_comparator, bool overwrite_key) final {
     return new WriteBatchWithIndex(default_comparator, 0, overwrite_key, 0);
   }
 };

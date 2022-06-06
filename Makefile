@@ -303,6 +303,13 @@ ifeq (,$(wildcard sideplugin/cspp-memtable))
     cd cspp-memtable; \
   )
 endif
+ifeq (,$(wildcard sideplugin/cspp-wbwi))
+  dummy := $(shell set -e -x; \
+    cd sideplugin; \
+    git clone git@github.com:topling/cspp-wbwi; \
+    cd cspp-wbwi; \
+  )
+endif
 endif
 
 ifneq (,$(wildcard sideplugin/cspp-memtable))
@@ -313,6 +320,16 @@ ifneq (,$(wildcard sideplugin/cspp-memtable))
                        sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
 else
   $(warning NotFound sideplugin/cspp-memtable, this is ok, only Topling CSPP MemTab is disabled)
+endif
+
+ifneq (,$(wildcard sideplugin/cspp-wbwi))
+  # now we have cspp-wbwi
+  CXXFLAGS   += -DHAS_TOPLING_CSPP_WBWI
+  CSPP_WBWI_GIT_VER_SRC = ${BUILD_ROOT}/git-version-cspp_wbwi.cc
+  EXTRA_LIB_SOURCES += sideplugin/cspp-wbwi/cspp_wbwi.cc \
+                       sideplugin/cspp-wbwi/${CSPP_WBWI_GIT_VER_SRC}
+else
+  $(warning NotFound sideplugin/cspp-wbwi, this is ok, only Topling CSPP WBWI(WriteBatchWithIndex) is disabled)
 endif
 
 ifneq (,$(wildcard sideplugin/topling-rocks))
@@ -2753,6 +2770,12 @@ sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}: \
   sideplugin/cspp-memtable/cspp_memtable.cc \
   sideplugin/cspp-memtable/Makefile
 	+make -C sideplugin/cspp-memtable ${CSPP_MEMTABLE_GIT_VER_SRC}
+endif
+ifneq (,$(wildcard sideplugin/cspp-wbwi))
+sideplugin/cspp-wbwi/${CSPP_WBWI_GIT_VER_SRC}: \
+  sideplugin/cspp-wbwi/cspp_wbwi.cc \
+  sideplugin/cspp-wbwi/Makefile
+	+make -C sideplugin/cspp-wbwi ${CSPP_WBWI_GIT_VER_SRC}
 endif
 
 # Remove the rules for which dependencies should not be generated and see if any are left.

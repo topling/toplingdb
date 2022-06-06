@@ -540,6 +540,12 @@ class StringFS : public FileSystemWrapper {
       return IOStatus::OK();
     }
 
+    intptr_t FileDescriptor() const final {
+      ROCKSDB_DIE("Should not goes here");
+      return -1;
+    }
+    void SetFileSize(uint64_t fsize) final { contents_->resize(fsize); }
+
    private:
     std::string* contents_;
   };

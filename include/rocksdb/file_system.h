@@ -1728,6 +1728,9 @@ class FSWritableFileWrapper : public FSWritableFile {
     return target_->Allocate(offset, len, options, dbg);
   }
 
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
+
  private:
   FSWritableFile* target_;
 };

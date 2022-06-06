@@ -191,6 +191,7 @@ class WritableFileMirror : public WritableFile {
     assert(as == bs);
     return as;
   }
+  intptr_t FileDescriptor() const final { return a_->FileDescriptor(); }
 
  protected:
   Status Allocate(uint64_t offset, uint64_t length) override {

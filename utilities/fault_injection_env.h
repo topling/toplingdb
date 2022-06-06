@@ -99,6 +99,7 @@ class TestWritableFile : public WritableFile {
   virtual bool use_direct_io() const override {
     return target_->use_direct_io();
   };
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
  private:
   FileState state_;

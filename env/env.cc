@@ -369,6 +369,9 @@ class LegacyWritableFileWrapper : public FSWritableFile {
     return status_to_io_status(target_->Allocate(offset, len));
   }
 
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
+
  private:
   std::unique_ptr<WritableFile> target_;
 };

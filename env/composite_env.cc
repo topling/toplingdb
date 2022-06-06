@@ -242,6 +242,9 @@ class CompositeWritableFileWrapper : public WritableFile {
     return target_->Allocate(offset, len, io_opts, &dbg);
   }
 
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
+
   std::unique_ptr<FSWritableFile>* target() { return &target_; }
 
  private:

@@ -430,6 +430,15 @@ class MockWritableFile : public FSWritableFile {
     return file_->Size();
   }
 
+    intptr_t FileDescriptor() const final {
+      ROCKSDB_DIE("Should not goes here");
+      return -1;
+    }
+    void SetFileSize(uint64_t fsize) final {
+      //file_->Truncate(fsize, IOOptions(), nullptr);
+      // ignore
+    }
+
  private:
   inline size_t RequestToken(size_t bytes) {
     if (rate_limiter_ && io_priority_ < Env::IO_TOTAL) {

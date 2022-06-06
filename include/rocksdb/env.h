@@ -1073,10 +1073,7 @@ class WritableFile {
 
   // If you're adding methods here, remember to add them to
   // WritableFileWrapper too.
-  virtual intptr_t FileDescriptor() const {
-    assert(false);
-    return -1;
-  }
+  virtual intptr_t FileDescriptor() const = 0;
   virtual void SetFileSize(uint64_t) { assert(false); }
 
  protected:

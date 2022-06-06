@@ -55,6 +55,15 @@ class Slice {
 
   const char* begin() const { return data_; }
   const char* end() const { return data_ + size_; }
+  Slice substr(size_t pos) const {
+    assert(pos <= size_);
+    return Slice(data_ + pos, size_ - pos);
+  }
+  Slice substr(size_t pos, size_t len) const {
+    assert(pos <= size_);
+    assert(pos + len <= size_);
+    return Slice(data_ + pos, len);
+  }
 
   // Return a pointer to the beginning of the referenced data
   const char* data() const { return data_; }

@@ -206,9 +206,9 @@ class WriteBatchWithIndex : public WriteBatchBase {
   // time.
   //
   // The returned iterator should be deleted by the caller.
-  WBWIIterator* NewIterator(ColumnFamilyHandle* column_family);
+  virtual WBWIIterator* NewIterator(ColumnFamilyHandle* column_family);
   // Create an iterator of the default column family.
-  WBWIIterator* NewIterator();
+  virtual WBWIIterator* NewIterator();
 
   // Will create a new Iterator that will use WBWIIterator as a delta and
   // base_iterator as base.

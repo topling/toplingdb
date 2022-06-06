@@ -220,7 +220,7 @@ void AssertItersEqual(Iterator* iter1, Iterator* iter2) {
   ASSERT_EQ(iter1->Valid(), iter2->Valid());
 }
 
-void AssertIterEqual(WBWIIteratorImpl* wbwii,
+void AssertIterEqual(WBWIIterator* wbwii,
                      const std::vector<std::string>& keys) {
   wbwii->SeekToFirst();
   for (auto k : keys) {
@@ -744,10 +744,8 @@ TEST_P(WriteBatchWithIndexTest, TestWBWIIterator) {
   ASSERT_OK(batch_->Put(&cf1, "e", "e1"));
   ASSERT_OK(batch_->Put(&cf1, "e", "e2"));
   ASSERT_OK(batch_->Put(&cf1, "e", "e3"));
-  std::unique_ptr<WBWIIteratorImpl> iter1(
-      static_cast<WBWIIteratorImpl*>(batch_->NewIterator(&cf1)));
-  std::unique_ptr<WBWIIteratorImpl> iter2(
-      static_cast<WBWIIteratorImpl*>(batch_->NewIterator(&cf2)));
+  std::unique_ptr<WBWIIterator> iter1(batch_->NewIterator(&cf1));
+  std::unique_ptr<WBWIIterator> iter2(batch_->NewIterator(&cf2));
   AssertIterEqual(iter1.get(), {"a", "c", "e"});
   AssertIterEqual(iter2.get(), {});
   ASSERT_OK(batch_->Put(&cf2, "a", "a2"));

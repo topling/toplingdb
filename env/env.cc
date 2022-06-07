@@ -902,7 +902,7 @@ MemoryMappedFileBuffer::~MemoryMappedFileBuffer() {}
 
 Logger::~Logger() {
 #if !defined(ROCKSDB_UNIT_TEST)
-  ROCKSDB_VERIFY(closed_);
+  assert(closed_);
 #endif
 }
 

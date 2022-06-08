@@ -629,11 +629,11 @@ find_package(Threads REQUIRED)
 
 # Main library source code
 if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt)
-  message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
+  message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   include(${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt)
 else()
-  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeLists.txt")
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt")
 endif()
 
 if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)

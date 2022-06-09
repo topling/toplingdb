@@ -2144,6 +2144,11 @@ $(OBJ_DIR)/tools/db_bench_tool_test.o \
                          ${BENCH_OBJECTS} $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
+$(OBJ_DIR)/file/prefetch_test : \
+$(OBJ_DIR)/file/prefetch_test.o \
+$(OBJ_DIR)/tools/io_tracer_parser_tool.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
 $(OBJ_DIR)/tools/trace_analyzer_test : \
 $(OBJ_DIR)/tools/trace_analyzer_test.o \
       ${ANALYZE_OBJECTS} ${TOOLS_LIBRARY} $(TEST_LIBRARY) $(LIBRARY)

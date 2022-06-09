@@ -174,9 +174,11 @@ int PhysicalCoreID() {
   // sched_getcpu uses VDSO getcpu() syscall since 2.22. I believe Linux offers VDSO
   // support only on x86_64. This is the fastest/preferred method if available.
   int cpuno = sched_getcpu();
+/*
   if (cpuno < 0) {
     return -1;
   }
+*/
   return cpuno;
 #elif defined(__x86_64__) || defined(__i386__)
   // clang/gcc both provide cpuid.h, which defines __get_cpuid(), for x86_64 and i386.

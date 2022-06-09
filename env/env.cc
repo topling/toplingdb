@@ -193,6 +193,37 @@ class LegacyRandomAccessFileWrapper : public FSRandomAccessFile {
   IOStatus InvalidateCache(size_t offset, size_t length) override {
     return status_to_io_status(target_->InvalidateCache(offset, length));
   }
+  IOStatus FsRead(uint64_t offset, size_t n, const IOOptions&,
+                  Slice* result, char* scratch,
+                  IODebugContext*) const final {
+    Status status = target_->FsRead(offset, n, result, scratch);
+    return status_to_io_status(std::move(status));
+  }
+  IOStatus FsMultiRead(FSReadRequest* fs_reqs, size_t num_reqs,
+                       const IOOptions& /*options*/,
+                       IODebugContext* /*dbg*/) final {
+    std::vector<ReadRequest> reqs;
+    Status status;
+
+    reqs.reserve(num_reqs);
+    for (size_t i = 0; i < num_reqs; ++i) {
+      ReadRequest req;
+
+      req.offset = fs_reqs[i].offset;
+      req.len = fs_reqs[i].len;
+      req.scratch = fs_reqs[i].scratch;
+      req.status = Status::OK();
+
+      reqs.emplace_back(req);
+    }
+    status = target_->FsMultiRead(reqs.data(), num_reqs);
+    for (size_t i = 0; i < num_reqs; ++i) {
+      fs_reqs[i].result = reqs[i].result;
+      fs_reqs[i].status = status_to_io_status(std::move(reqs[i].status));
+    }
+    return status_to_io_status(std::move(status));
+  }
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
  private:
   std::unique_ptr<RandomAccessFile> target_;
@@ -336,6 +367,9 @@ class LegacyWritableFileWrapper : public FSWritableFile {
                     IODebugContext* /*dbg*/) override {
     return status_to_io_status(target_->Allocate(offset, len));
   }
+
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
 
  private:
   std::unique_ptr<WritableFile> target_;
@@ -847,12 +881,33 @@ SequentialFile::~SequentialFile() {
 RandomAccessFile::~RandomAccessFile() {
 }
 
+Status
+RandomAccessFile::FsRead(uint64_t offset, size_t n, Slice* result,
+              char* scratch) const {
+  Slice res;
+  return Read(offset, n, &res, (char*)scratch);
+}
+
+Status
+RandomAccessFile::FsMultiRead(ReadRequest* reqs, size_t num_reqs) {
+  assert(reqs != nullptr);
+  for (size_t i = 0; i < num_reqs; ++i) {
+    ReadRequest& req = reqs[i];
+    req.status = FsRead(req.offset, req.len, &req.result, req.scratch);
+  }
+  return Status::OK();
+}
+
 WritableFile::~WritableFile() {
 }
 
 MemoryMappedFileBuffer::~MemoryMappedFileBuffer() {}
 
-Logger::~Logger() {}
+Logger::~Logger() {
+#if !defined(ROCKSDB_UNIT_TEST)
+  assert(closed_);
+#endif
+}
 
 Status Logger::Close() {
   if (!closed_) {
@@ -1102,6 +1157,7 @@ void AssignEnvOptions(EnvOptions* env_options, const DBOptions& options) {
   env_options->writable_file_max_buffer_size =
       options.writable_file_max_buffer_size;
   env_options->allow_fallocate = options.allow_fallocate;
+  env_options->allow_fdatasync = options.allow_fdatasync;
   env_options->strict_bytes_per_sync = options.strict_bytes_per_sync;
   options.env->SanitizeEnvOptions(env_options);
 }

@@ -29,6 +29,7 @@ class ColumnFamilyHandle;
 class Comparator;
 class DB;
 class ReadCallback;
+class MergeContext;
 struct ReadOptions;
 struct DBOptions;
 
@@ -75,6 +76,37 @@ class WBWIIterator {
   virtual WriteEntry Entry() const = 0;
 
   virtual Status status() const = 0;
+
+//-------------------------------------------------------------------------
+// topling specific: copy from WBWIIteratorImpl as pure virtual,
+// to reuse BaseDeltaIterator.
+// just for reuse, many class is not required to be visiable by external code!
+  enum Result : uint8_t {
+    kFound,
+    kDeleted,
+    kNotFound,
+    kMergeInProgress,
+    kError
+  };
+
+  // Moves the iterator to first entry of the previous key.
+  virtual void PrevKey() = 0;
+  // Moves the iterator to first entry of the next key.
+  virtual void NextKey() = 0;
+
+  virtual bool EqualsKey(const Slice& key) const = 0;
+
+  // Moves the iterator to the Update (Put or Delete) for the current key
+  // If there are no Put/Delete, the Iterator will point to the first entry for
+  // this key
+  // @return kFound if a Put was found for the key
+  // @return kDeleted if a delete was found for the key
+  // @return kMergeInProgress if only merges were fouund for the key
+  // @return kError if an unsupported operation was found for the key
+  // @return kNotFound if no operations were found for this key
+  //
+  Result FindLatestUpdate(const Slice& key, MergeContext* merge_context);
+  Result FindLatestUpdate(MergeContext* merge_context);
 };
 
 // A WriteBatchWithIndex with a binary searchable index built for all the keys
@@ -103,6 +135,8 @@ class WriteBatchWithIndex : public WriteBatchBase {
   ~WriteBatchWithIndex() override;
   WriteBatchWithIndex(WriteBatchWithIndex&&);
   WriteBatchWithIndex& operator=(WriteBatchWithIndex&&);
+
+  virtual const Comparator* GetUserComparator(uint32_t cf_id) const;
 
   using WriteBatchBase::Put;
   Status Put(ColumnFamilyHandle* column_family, const Slice& key,
@@ -172,9 +206,9 @@ class WriteBatchWithIndex : public WriteBatchBase {
   // time.
   //
   // The returned iterator should be deleted by the caller.
-  WBWIIterator* NewIterator(ColumnFamilyHandle* column_family);
+  virtual WBWIIterator* NewIterator(ColumnFamilyHandle* column_family);
   // Create an iterator of the default column family.
-  WBWIIterator* NewIterator();
+  virtual WBWIIterator* NewIterator();
 
   // Will create a new Iterator that will use WBWIIterator as a delta and
   // base_iterator as base.
@@ -191,10 +225,12 @@ class WriteBatchWithIndex : public WriteBatchBase {
   // key() and value() of the iterator. This invalidation happens even before
   // the write batch update finishes. The state may recover after Next() is
   // called.
+  virtual
   Iterator* NewIteratorWithBase(ColumnFamilyHandle* column_family,
                                 Iterator* base_iterator,
                                 const ReadOptions* opts = nullptr);
   // default column family
+  virtual
   Iterator* NewIteratorWithBase(Iterator* base_iterator);
 
   // Similar to DB::Get() but will only read the key from this batch.
@@ -268,7 +304,7 @@ class WriteBatchWithIndex : public WriteBatchBase {
   Status PopSavePoint() override;
 
   void SetMaxBytes(size_t max_bytes) override;
-  size_t GetDataSize() const;
+  virtual size_t GetDataSize() const;
 
  private:
   friend class PessimisticTransactionDB;
@@ -291,7 +327,22 @@ class WriteBatchWithIndex : public WriteBatchBase {
                               bool sorted_input, ReadCallback* callback);
   struct Rep;
   std::unique_ptr<Rep> rep;
+
+protected:
+  // just used for derived class such as topling CSPPWriteBatchWithIndex,
+  // in this case, rep is just a waste and always be null
+  WriteBatchWithIndex(Slice/*placeholder*/);
 };
+
+class WriteBatchWithIndexFactory {
+public:
+  virtual ~WriteBatchWithIndexFactory();
+  virtual const char* Name() const noexcept = 0;
+  virtual WriteBatchWithIndex* NewWriteBatchWithIndex(
+      const Comparator* default_comparator = BytewiseComparator(),
+      bool overwrite_key = false) = 0;
+};
+std::shared_ptr<WriteBatchWithIndexFactory> SingleSkipListWBWIFactory();
 
 }  // namespace ROCKSDB_NAMESPACE
 

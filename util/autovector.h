@@ -16,7 +16,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-#ifdef ROCKSDB_LITE
+//#ifdef ROCKSDB_LITE
+#if 1 // topling specific, disable fabricated autovector
 template <class T, size_t kSize = 8>
 class autovector : public std::vector<T> {
   using std::vector<T>::vector;
@@ -218,6 +219,12 @@ class autovector {
       while (num_stack_items_ > n) {
         values_[--num_stack_items_].~value_type();
       }
+    }
+  }
+
+  void reserve(size_t cap) {
+    if (cap > kSize) {
+      vect_.reserve(cap - kSize);
     }
   }
 

@@ -2785,7 +2785,7 @@ void CompactionJob::LogCompaction() {
     ROCKS_LOG_INFO(db_options_.info_log, "[%s] Compaction start summary: %s\n",
                    cfd->GetName().c_str(), scratch);
     // build event logger report
-    auto stream = event_logger_->Log();
+    auto stream = event_logger_->LogToBuffer(log_buffer_, 64*1024);
     stream << "job" << job_id_ << "event"
            << "compaction_started"
            << "compaction_reason"

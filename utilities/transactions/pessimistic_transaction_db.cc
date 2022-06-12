@@ -198,6 +198,11 @@ TransactionDBOptions PessimisticTransactionDB::ValidateTxnDBOptions(
   return validated;
 }
 
+TransactionDBOptions::TransactionDBOptions() {
+  write_batch_with_index_factory = SingleSkipListWBWIFactory();
+}
+TransactionDBOptions::~TransactionDBOptions() = default;
+
 Status TransactionDB::Open(const Options& options,
                            const TransactionDBOptions& txn_db_options,
                            const std::string& dbname, TransactionDB** dbptr) {

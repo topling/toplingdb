@@ -936,6 +936,10 @@ IOStatus PosixRandomAccessFile::ReadAsync(
 #endif
 }
 
+intptr_t PosixRandomAccessFile::FileDescriptor() const {
+  return this->fd_;
+}
+
 /*
  * PosixMmapReadableFile
  *
@@ -985,6 +989,44 @@ void PosixMmapReadableFile::Hint(AccessPattern pattern) {
   FadviseForHint(fd_, pattern);
 }
 
+IOStatus PosixMmapReadableFile::FsRead(uint64_t offset, size_t n,
+                                       const IOOptions& /*opts*/, Slice* result,
+                                       char* scratch,
+                                       IODebugContext* /*dbg*/)
+const {
+  // copy from PosixRandomAccessFile::Read
+  IOStatus s;
+  ssize_t r = -1;
+  size_t left = n;
+  char* ptr = scratch;
+  while (left > 0) {
+    r = pread(fd_, ptr, left, static_cast<off_t>(offset));
+    if (r <= 0) {
+      if (r == -1 && errno == EINTR) {
+        continue;
+      }
+      break;
+    }
+    ptr += r;
+    offset += r;
+    left -= r;
+    if (use_direct_io() &&
+        r % static_cast<ssize_t>(GetRequiredBufferAlignment()) != 0) {
+      // Bytes reads don't fill sectors. Should only happen at the end
+      // of the file.
+      break;
+    }
+  }
+  if (r < 0) {
+    // An error: return a non-ok status
+    s = IOError(
+        "While pread offset " + std::to_string(offset) + " len " + std::to_string(n),
+        filename_, errno);
+  }
+  *result = Slice(scratch, (r < 0) ? 0 : n - left);
+  return s;
+}
+
 IOStatus PosixMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
 #ifndef OS_LINUX
   (void)offset;
@@ -1000,6 +1042,10 @@ IOStatus PosixMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
                      " len" + std::to_string(length),
                  filename_, errno);
 #endif
+}
+
+intptr_t PosixMmapReadableFile::FileDescriptor() const {
+  return this->fd_;
 }
 
 /*
@@ -1267,6 +1313,7 @@ PosixWritableFile::PosixWritableFile(const std::string& fname, int fd,
     : FSWritableFile(options),
       filename_(fname),
       use_direct_io_(options.use_direct_writes),
+      allow_fdatasync_(options.allow_fdatasync),
       fd_(fd),
       filesize_(0),
       logical_sector_size_(logical_block_size) {
@@ -1405,6 +1452,9 @@ IOStatus PosixWritableFile::Sync(const IOOptions& /*opts*/,
     return IOError("while fcntl(F_FULLFSYNC)", filename_, errno);
   }
 #else   // HAVE_FULLFSYNC
+  if (!allow_fdatasync_) {
+    return IOStatus::OK();
+  }
   if (fdatasync(fd_) < 0) {
     return IOError("While fdatasync", filename_, errno);
   }

@@ -22,12 +22,13 @@
 namespace ROCKSDB_NAMESPACE {
 
 class TransactionDBMutexFactory;
+class WriteBatchWithIndexFactory;
 
-enum TxnDBWritePolicy {
+ROCKSDB_ENUM_PLAIN(TxnDBWritePolicy, int,
   WRITE_COMMITTED = 0,  // write only the committed data
   WRITE_PREPARED,  // write data after the prepare phase of 2pc
   WRITE_UNPREPARED  // write data before the prepare phase of 2pc
-};
+);
 
 constexpr uint32_t kInitialMaxDeadlocks = 5;
 
@@ -148,6 +149,9 @@ RangeLockManagerHandle* NewRangeLockManager(
     std::shared_ptr<TransactionDBMutexFactory> mutex_factory);
 
 struct TransactionDBOptions {
+  TransactionDBOptions();
+  ~TransactionDBOptions();
+
   // Specifies the maximum number of keys that can be locked at the same time
   // per column family.
   // If the number of locked keys is greater than max_num_locks, transaction
@@ -191,6 +195,8 @@ struct TransactionDBOptions {
   // condition variable for all transaction locking instead of the default
   // mutex/condvar implementation.
   std::shared_ptr<TransactionDBMutexFactory> custom_mutex_factory;
+
+  std::shared_ptr<WriteBatchWithIndexFactory> write_batch_with_index_factory;
 
   // The policy for when to write the data into the DB. The default policy is to
   // write only the committed data (WRITE_COMMITTED). The data could be written
@@ -493,6 +499,7 @@ class TransactionDB : public StackableDB {
       TxnTimestamp ts_lb, TxnTimestamp ts_ub,
       std::vector<std::shared_ptr<const Snapshot>>& timestamped_snapshots)
       const = 0;
+  virtual const TransactionDBOptions& GetTxnDBOptions() const = 0;
 
  protected:
   // To Create an TransactionDB, call Open()

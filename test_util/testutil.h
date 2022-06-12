@@ -331,6 +331,11 @@ class StringSource : public FSRandomAccessFile {
 
   void set_total_reads(int tr) { total_reads_ = tr; }
 
+  intptr_t FileDescriptor() const final {
+    assert(false);
+    return -1;
+  }
+
  private:
   std::string contents_;
   uint64_t uniq_id_;
@@ -534,6 +539,12 @@ class StringFS : public FileSystemWrapper {
       contents_->append(slice.data(), slice.size());
       return IOStatus::OK();
     }
+
+    intptr_t FileDescriptor() const final {
+      ROCKSDB_DIE("Should not goes here");
+      return -1;
+    }
+    void SetFileSize(uint64_t fsize) final { contents_->resize(fsize); }
 
    private:
     std::string* contents_;

@@ -920,6 +920,28 @@ class FSRandomAccessFile {
 
   // If you're adding methods here, remember to add them to
   // RandomAccessFileWrapper too.
+
+  // read (distributed) filesystem by fs api, for example:
+  //   glusterfs support fuse, glfs_pread is faster than fuse pread when
+  //   cache miss, but fuse support mmap, we can read a glusterfs file by
+  //   both mmap and glfs_pread
+  virtual IOStatus FsRead(uint64_t offset, size_t n, const IOOptions& options,
+                          Slice* result, char* scratch,
+                          IODebugContext* dbg) const {
+    return Read(offset, n, options, result, scratch, dbg);
+  }
+  virtual IOStatus FsMultiRead(FSReadRequest* reqs, size_t num_reqs,
+                               const IOOptions& options, IODebugContext* dbg) {
+    assert(reqs != nullptr);
+    for (size_t i = 0; i < num_reqs; ++i) {
+      FSReadRequest& req = reqs[i];
+      req.status =
+          FsRead(req.offset, req.len, options, &req.result, req.scratch, dbg);
+    }
+    return IOStatus::OK();
+  }
+
+  virtual intptr_t FileDescriptor() const = 0;
 };
 
 // A data structure brings the data verification information, which is
@@ -1156,6 +1178,11 @@ class FSWritableFile {
 
   // If you're adding methods here, remember to add them to
   // WritableFileWrapper too.
+  virtual intptr_t FileDescriptor() const {
+    assert(false);
+    return -1;
+  }
+  virtual void SetFileSize(uint64_t) { assert(false); }
 
  protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
@@ -1615,6 +1642,10 @@ class FSRandomAccessFileWrapper : public FSRandomAccessFile {
     return target_->GetTemperature();
   }
 
+  intptr_t FileDescriptor() const final {
+    return target_->FileDescriptor();
+  }
+
  private:
   std::unique_ptr<FSRandomAccessFile> guard_;
   FSRandomAccessFile* target_;
@@ -1728,6 +1759,9 @@ class FSWritableFileWrapper : public FSWritableFile {
                     IODebugContext* dbg) override {
     return target_->Allocate(offset, len, options, dbg);
   }
+
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
 
  private:
   FSWritableFile* target_;

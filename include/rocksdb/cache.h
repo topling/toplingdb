@@ -41,10 +41,10 @@ class SecondaryCache;
 
 extern const bool kDefaultToAdaptiveMutex;
 
-enum CacheMetadataChargePolicy {
+ROCKSDB_ENUM_PLAIN(CacheMetadataChargePolicy, int,
   kDontChargeCacheMetadata,
   kFullChargeCacheMetadata
-};
+);
 const CacheMetadataChargePolicy kDefaultCacheMetadataChargePolicy =
     kFullChargeCacheMetadata;
 

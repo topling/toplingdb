@@ -230,11 +230,6 @@ const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
     {BLOCK_CHECKSUM_COMPUTE_COUNT, "rocksdb.block.checksum.compute.count"},
     {LCOMPACT_WRITE_BYTES_RAW, "rocksdb.lcompact.write.bytes.raw"},
     {DCOMPACT_WRITE_BYTES_RAW, "rocksdb.dcompact.write.bytes.raw"},
-    {ZBS_NUM_ITER_SEEK, "rocksdb.zbs.num.iter.seek"},
-    {ZBS_NUM_ITER_NEXT, "rocksdb.zbs.num.iter.next"},
-    {ZBS_NUM_ITER_PREV, "rocksdb.zbs.num.iter.prev"},
-    {ZBS_ITER_KEY_BYTES, "rocksdb.zbs.iter.key.bytes"},
-    {ZBS_ITER_VAL_BYTES, "rocksdb.zbs.iter.val.bytes"},
 };
 
 const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {

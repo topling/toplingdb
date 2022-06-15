@@ -348,6 +348,7 @@ class NullLogger : public Logger {
   using Logger::Logv;
   virtual void Logv(const char* /*format*/, va_list /*ap*/) override {}
   virtual size_t GetLogFileSize() const override { return 0; }
+  ~NullLogger() { Close(); }
 };
 
 // Corrupts key by changing the type

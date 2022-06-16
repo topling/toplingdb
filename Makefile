@@ -270,7 +270,7 @@ ifeq (${DEBUG_LEVEL}, 2)
   BUILD_TYPE_SIG := d
   OBJ_DIR := ${BUILD_ROOT}/dbg
 endif
-ifneq ($(filter check check_0 watch-log gen_parallel_tests %_test %_test2, $(MAKECMDGOALS)),)
+ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2, $(MAKECMDGOALS)),)
   CXXFLAGS += -DROCKSDB_UNIT_TEST
   OBJ_DIR := $(subst build/,build-ut/,${OBJ_DIR})
 endif

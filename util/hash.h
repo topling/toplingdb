@@ -105,10 +105,16 @@ template<class Str>
 inline uint64_t GetSliceNPHash64(const Str& s) {
   return NPHash64(s.data(), s.size());
 }
+inline uint64_t GetSliceNPHash64(const char* s) {
+  return NPHash64(s, strlen(s));
+}
 
 template<class Str>
 inline uint64_t GetSliceNPHash64(const Str& s, uint64_t seed) {
   return NPHash64(s.data(), s.size(), seed);
+}
+inline uint64_t GetSliceNPHash64(const char* s, uint64_t seed) {
+  return NPHash64(s, strlen(s), seed);
 }
 
 // Similar to `GetSliceNPHash64()` with `seed`, but input comes from

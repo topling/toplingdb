@@ -152,6 +152,8 @@ extern const Comparator* ReverseBytewiseComparator();
 
 bool IsForwardBytewiseComparator(const Comparator* cmp);
 bool IsForwardBytewiseComparator(const Slice& name);
+bool IsReverseBytewiseComparator(const Comparator* cmp);
+bool IsReverseBytewiseComparator(const Slice& name);
 
 bool IsBytewiseComparator(const Comparator* cmp);
 bool IsBytewiseComparator(const Slice& name);

@@ -389,19 +389,23 @@ bool IsForwardBytewiseComparator(const Slice& name) {
   return name == "leveldb.BytewiseComparator";
 }
 
-bool IsBytewiseComparator(const Comparator* cmp) {
-  return IsBytewiseComparator(cmp->Name());
+bool IsReverseBytewiseComparator(const Comparator* cmp) {
+  return IsReverseBytewiseComparator(cmp->Name());
 }
-bool IsBytewiseComparator(const Slice& name) {
-  if (name.starts_with("RocksDB_SE_")) {
-    return true;
-  }
+bool IsReverseBytewiseComparator(const Slice& name) {
   if (name.starts_with("rev:RocksDB_SE_")) {
     // reverse bytewise compare, needs reverse in iterator
     return true;
   }
-  return name == "leveldb.BytewiseComparator" ||
-         name == "rocksdb.ReverseBytewiseComparator";
+  return name == "rocksdb.ReverseBytewiseComparator";
+}
+
+bool IsBytewiseComparator(const Comparator* cmp) {
+  return IsBytewiseComparator(cmp->Name());
+}
+bool IsBytewiseComparator(const Slice& name) {
+  return IsForwardBytewiseComparator(name) ||
+         IsReverseBytewiseComparator(name);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

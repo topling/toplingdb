@@ -89,6 +89,52 @@ namespace ROCKSDB_NAMESPACE {
 
 namespace {
 
+#if defined(_MSC_VER) /* Visual Studio */
+#define FORCE_INLINE __forceinline
+#elif defined(__GNUC__)
+#define FORCE_INLINE __attribute__((always_inline))
+#pragma GCC diagnostic ignored "-Wattributes"
+#else
+#define inline
+#endif
+
+static FORCE_INLINE uint64_t GetUnalignedU64(const void* ptr) noexcept {
+  uint64_t x;
+  memcpy(&x, ptr, sizeof(uint64_t));
+  return x;
+}
+
+struct BytewiseCompareInternalKey {
+  FORCE_INLINE bool operator()(Slice x, Slice y) const noexcept {
+    size_t n = std::min(x.size_, y.size_) - 8;
+    int cmp = memcmp(x.data_, y.data_, n);
+    if (0 != cmp) return cmp < 0;
+    if (x.size_ != y.size_) return x.size_ < y.size_;
+    return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+  }
+};
+struct RevBytewiseCompareInternalKey {
+  FORCE_INLINE bool operator()(Slice x, Slice y) const noexcept {
+    size_t n = std::min(x.size_, y.size_) - 8;
+    int cmp = memcmp(x.data_, y.data_, n);
+    if (0 != cmp) return cmp > 0;
+    if (x.size_ != y.size_) return x.size_ > y.size_;
+    return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+  }
+};
+template<class Cmp>
+size_t FindFileInRangeTmpl(const FdWithKeyRange* a, size_t lo, size_t hi,
+                           Slice key, Cmp cmp) {
+  while (lo < hi) {
+    size_t mid = (lo + hi) / 2;
+    if (cmp(a[mid].largest_key, key))
+      lo = mid + 1;
+    else
+      hi = mid;
+  }
+  return lo;
+}
+
 // Find File in LevelFilesBrief data structure
 // Within an index range defined by left and right
 int FindFileInRange(const InternalKeyComparator& icmp,
@@ -96,6 +142,16 @@ int FindFileInRange(const InternalKeyComparator& icmp,
     const Slice& key,
     uint32_t left,
     uint32_t right) {
+  if (IsForwardBytewiseComparator(icmp.user_comparator())) {
+    ROCKSDB_ASSERT_EQ(icmp.timestamp_size(), 0);
+    BytewiseCompareInternalKey cmp;
+    return (int)FindFileInRangeTmpl(file_level.files, left, right, key, cmp);
+  }
+  else if (IsBytewiseComparator(icmp.user_comparator())) {
+    ROCKSDB_ASSERT_EQ(icmp.timestamp_size(), 0);
+    RevBytewiseCompareInternalKey cmp;
+    return (int)FindFileInRangeTmpl(file_level.files, left, right, key, cmp);
+  }
   auto cmp = [&](const FdWithKeyRange& f, const Slice& k) -> bool {
     return icmp.InternalKeyComparator::Compare(f.largest_key, k) < 0;
   };

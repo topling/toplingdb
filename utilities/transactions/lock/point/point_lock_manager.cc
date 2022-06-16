@@ -62,7 +62,11 @@ struct LockMapStripe {
 
   // Locked keys mapped to the info about the transactions that locked them.
   // TODO(agiardullo): Explore performance of other data structures.
+#if 0
   UnorderedMap<std::string, LockInfo> keys;
+#else
+  terark::hash_strmap<LockInfo> keys;
+#endif
 };
 
 // Map of #num_stripes LockMapStripes
@@ -92,7 +96,7 @@ struct LockMap {
 
   std::vector<LockMapStripe*> lock_map_stripes_;
 
-  size_t GetStripe(const std::string& key) const;
+  size_t GetStripe(const LockString& key) const;
 };
 
 namespace {
@@ -115,7 +119,7 @@ PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
                          ? opt.custom_mutex_factory
                          : std::make_shared<TransactionDBMutexFactoryImpl>()) {}
 
-size_t LockMap::GetStripe(const std::string& key) const {
+size_t LockMap::GetStripe(const LockString& key) const {
   assert(num_stripes_ > 0);
   return FastRange64(GetSliceNPHash64(key), num_stripes_);
 }
@@ -538,7 +542,7 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
 }
 
 void PointLockManager::UnLockKey(PessimisticTransaction* txn,
-                                 const std::string& key, LockMapStripe* stripe,
+                                 const LockString& key, LockMapStripe* stripe,
                                  LockMap* lock_map, Env* env) {
 #ifdef NDEBUG
   (void)env;
@@ -613,15 +617,15 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     }
 
     // Bucket keys by lock_map_ stripe
-    UnorderedMap<size_t, std::vector<const std::string*>> keys_by_stripe(
+    UnorderedMap<size_t, std::vector<LockString>> keys_by_stripe(
         lock_map->num_stripes_);
     std::unique_ptr<LockTracker::KeyIterator> key_it(
         tracker.GetKeyIterator(cf));
     assert(key_it != nullptr);
     while (key_it->HasNext()) {
-      const std::string& key = key_it->Next();
+      const auto& key = key_it->Next();
       size_t stripe_num = lock_map->GetStripe(key);
-      keys_by_stripe[stripe_num].push_back(&key);
+      keys_by_stripe[stripe_num].push_back(key);
     }
 
     // For each stripe, grab the stripe mutex and unlock all keys in this stripe
@@ -634,8 +638,8 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
 
       stripe->stripe_mutex->Lock().PermitUncheckedError();
 
-      for (const std::string* key : stripe_keys) {
-        UnLockKey(txn, *key, stripe, lock_map, env);
+      for (const auto& key : stripe_keys) {
+        UnLockKey(txn, key, stripe, lock_map, env);
       }
 
       stripe->stripe_mutex->UnLock();
@@ -667,7 +671,7 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
       for (const auto& it : j->keys) {
         struct KeyLockInfo info;
         info.exclusive = it.second.exclusive;
-        info.key = it.first;
+        info.key.assign(it.first.data(), it.first.size());
         for (const auto& id : it.second.txn_ids) {
           info.ids.push_back(id);
         }

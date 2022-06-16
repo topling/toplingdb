@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <terark/hash_strmap.hpp>
 
 #include "utilities/transactions/lock/lock_tracker.h"
 
@@ -34,7 +35,11 @@ struct TrackedKeyInfo {
   }
 };
 
+#if 0
 using TrackedKeyInfos = std::unordered_map<std::string, TrackedKeyInfo>;
+#else
+using TrackedKeyInfos = terark::hash_strmap<TrackedKeyInfo>;
+#endif
 
 using TrackedKeys = std::unordered_map<ColumnFamilyId, TrackedKeyInfos>;
 
@@ -70,7 +75,7 @@ class PointLockTracker : public LockTracker {
       const LockTracker& save_point_tracker) const override;
 
   PointLockStatus GetPointLockStatus(ColumnFamilyId column_family_id,
-                                     const std::string& key) const override;
+                                     const LockString& key) const override;
 
   uint64_t GetNumPointLocks() const override;
 

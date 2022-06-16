@@ -173,7 +173,11 @@ class PointLockManager : public LockManager {
   InstrumentedMutex lock_map_mutex_;
 
   // Map of ColumnFamilyId to locked key info
+#if 0
   using LockMaps = UnorderedMap<uint32_t, std::shared_ptr<LockMap>>;
+#else
+  using LockMaps = std::map<uint32_t, std::shared_ptr<LockMap>>;
+#endif
   LockMaps lock_maps_;
 
   // Thread-local cache of entries in lock_maps_.  This is an optimization
@@ -207,7 +211,7 @@ class PointLockManager : public LockManager {
                        LockInfo&& lock_info, uint64_t* wait_time,
                        autovector<TransactionID>* txn_ids);
 
-  void UnLockKey(PessimisticTransaction* txn, const std::string& key,
+  void UnLockKey(PessimisticTransaction* txn, const LockString& key,
                  LockMapStripe* stripe, LockMap* lock_map, Env* env);
 
   bool IncrementWaiters(const PessimisticTransaction* txn,

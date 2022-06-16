@@ -75,7 +75,7 @@ class TransactionUtil {
   // operation for `key` with timestamp greater than `ts` exists.
   static Status CheckKey(DBImpl* db_impl, SuperVersion* sv,
                          SequenceNumber earliest_seq, SequenceNumber snap_seq,
-                         const std::string& key, const std::string* const ts,
+                         const LockString& key, const std::string* const ts,
                          bool cache_only, ReadCallback* snap_checker = nullptr,
                          SequenceNumber min_uncommitted = kMaxSequenceNumber);
 };

@@ -50,7 +50,7 @@ Status TransactionUtil::CheckKeyForConflicts(
 Status TransactionUtil::CheckKey(DBImpl* db_impl, SuperVersion* sv,
                                  SequenceNumber earliest_seq,
                                  SequenceNumber snap_seq,
-                                 const std::string& key,
+                                 const LockString& key0,
                                  const std::string* const read_ts,
                                  bool cache_only, ReadCallback* snap_checker,
                                  SequenceNumber min_uncommitted) {
@@ -60,6 +60,7 @@ Status TransactionUtil::CheckKey(DBImpl* db_impl, SuperVersion* sv,
   // So `snap_checker` must be provided.
   assert(min_uncommitted == kMaxSequenceNumber || snap_checker != nullptr);
 
+  const Slice key(key0.data(), key0.size());
   Status result;
   bool need_to_read_sst = false;
 
@@ -177,7 +178,7 @@ Status TransactionUtil::CheckKeysForConflicts(DBImpl* db_impl,
         tracker.GetKeyIterator(cf));
     assert(key_it != nullptr);
     while (key_it->HasNext()) {
-      const std::string& key = key_it->Next();
+      const auto& key = key_it->Next();
       PointLockStatus status = tracker.GetPointLockStatus(cf, key);
       const SequenceNumber key_seq = status.seq;
 

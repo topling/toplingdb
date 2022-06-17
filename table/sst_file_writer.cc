@@ -110,7 +110,7 @@ struct SstFileWriter::Rep {
     file_info.num_entries++;
     if (!sst_support_auto_sort)
       file_info.largest_key.assign(user_key.data(), user_key.size());
-    file_info.file_size = builder->FileSize();
+    file_info.file_size = builder->EstimatedFileSize();
 
     //InvalidatePageCache(false /* closing */).PermitUncheckedError();
     return builder->status();
@@ -180,9 +180,9 @@ struct SstFileWriter::Rep {
 
     // update file info
     file_info.num_range_del_entries++;
-    file_info.file_size = builder->FileSize();
+    file_info.file_size = builder->EstimatedFileSize();
 
-    InvalidatePageCache(false /* closing */).PermitUncheckedError();
+    //InvalidatePageCache(false /* closing */).PermitUncheckedError();
     return Status::OK();
   }
 

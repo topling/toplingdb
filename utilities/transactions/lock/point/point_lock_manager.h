@@ -172,12 +172,14 @@ class PointLockManager : public LockManager {
   // Must be held when accessing/modifying lock_maps_.
   InstrumentedMutex lock_map_mutex_;
 
+ public:
   // Map of ColumnFamilyId to locked key info
 #if 0
   using LockMaps = UnorderedMap<uint32_t, std::shared_ptr<LockMap>>;
 #else
   using LockMaps = std::map<uint32_t, std::shared_ptr<LockMap>>;
 #endif
+ private:
   LockMaps lock_maps_;
 
   // Thread-local cache of entries in lock_maps_.  This is an optimization

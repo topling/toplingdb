@@ -102,8 +102,7 @@ struct LockMap {
 namespace {
 void UnrefLockMapsCache(void* ptr) {
   // Called when a thread exits or a ThreadLocalPtr gets destroyed.
-  auto lock_maps_cache =
-      static_cast<UnorderedMap<uint32_t, std::shared_ptr<LockMap>>*>(ptr);
+  auto lock_maps_cache = static_cast<PointLockManager::LockMaps*>(ptr);
   delete lock_maps_cache;
 }
 }  // anonymous namespace

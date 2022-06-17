@@ -891,6 +891,8 @@ class TableFactory : public Customizable {
   virtual bool IsDeleteRangeSupported() const { return false; }
 
   virtual bool InputCompressionMatchesOutput(const class Compaction*) const;
+
+  virtual bool SupportAutoSort() const { return false; }
 };
 
 #ifndef ROCKSDB_LITE

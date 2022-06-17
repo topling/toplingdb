@@ -40,6 +40,7 @@ struct SstFileWriter::Rep {
         cfh(_cfh),
         invalidate_page_cache(_invalidate_page_cache),
         skip_filters(_skip_filters),
+        sst_support_auto_sort(options.table_factory->SupportAutoSort()),
         db_session_id(_db_session_id) {}
 
   std::unique_ptr<WritableFileWriter> file_writer;
@@ -60,6 +61,7 @@ struct SstFileWriter::Rep {
   // cached pages from page cache.
   uint64_t last_fadvise_size = 0;
   bool skip_filters;
+  bool sst_support_auto_sort = false;
   std::string db_session_id;
   uint64_t next_file_number = 1;
 
@@ -69,7 +71,21 @@ struct SstFileWriter::Rep {
       return Status::InvalidArgument("File is not opened");
     }
 
-    if (file_info.num_entries == 0) {
+    if (sst_support_auto_sort) {
+      // now auto sort just support bytewise comparator
+      // we use Slice default compare to omit comparator virtual call
+      if (file_info.num_entries == 0) {
+        file_info.smallest_key.assign(user_key.data(), user_key.size());
+        file_info.largest_key.assign(user_key.data(), user_key.size());
+      }
+      else {
+        if (file_info.largest_key < user_key)
+          file_info.largest_key.assign(user_key.data(), user_key.size());
+        else if (user_key < file_info.smallest_key)
+          file_info.smallest_key.assign(user_key.data(), user_key.size());
+      }
+    }
+    else if (file_info.num_entries == 0) {
       file_info.smallest_key.assign(user_key.data(), user_key.size());
     } else {
       if (internal_comparator.user_comparator()->Compare(
@@ -92,11 +108,12 @@ struct SstFileWriter::Rep {
 
     // update file info
     file_info.num_entries++;
-    file_info.largest_key.assign(user_key.data(), user_key.size());
+    if (!sst_support_auto_sort)
+      file_info.largest_key.assign(user_key.data(), user_key.size());
     file_info.file_size = builder->FileSize();
 
-    InvalidatePageCache(false /* closing */).PermitUncheckedError();
-    return Status::OK();
+    //InvalidatePageCache(false /* closing */).PermitUncheckedError();
+    return builder->status();
   }
 
   Status Add(const Slice& user_key, const Slice& value, ValueType value_type) {

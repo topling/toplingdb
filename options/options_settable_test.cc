@@ -252,6 +252,8 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
        sizeof(FileTypeSet)},
       {offsetof(struct DBOptions, compaction_service),
        sizeof(std::shared_ptr<CompactionService>)},
+      {offsetof(struct DBOptions, wbwi_factory),
+       sizeof(std::shared_ptr<class WriteBatchWithIndexFactory>)},
   };
 
   char* options_ptr = new char[sizeof(DBOptions)];

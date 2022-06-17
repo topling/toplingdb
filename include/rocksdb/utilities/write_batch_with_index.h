@@ -315,7 +315,7 @@ class WriteBatchWithIndex : public WriteBatchBase {
   // Returns the number of sub-batches inside the write batch. A sub-batch
   // starts right before inserting a key that is a duplicate of a key in the
   // last sub-batch.
-  size_t SubBatchCnt();
+  virtual size_t SubBatchCnt();
 
   Status GetFromBatchAndDB(DB* db, const ReadOptions& read_options,
                            ColumnFamilyHandle* column_family, const Slice& key,

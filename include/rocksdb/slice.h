@@ -270,7 +270,12 @@ inline int Slice::compare(const Slice& b) const {
 }
 
 inline bool operator<(const Slice& x, const Slice& y) {
-  return x.compare(y) < 0;
+  const size_t min_len = (x.size_ < y.size_) ? x.size_ : y.size_;
+  int r = memcmp(x.data_, y.data_, min_len);
+  if (r != 0)
+    return r < 0;
+  else
+    return x.size_ < y.size_;
 }
 
 inline std::string operator+(const Slice& x, const Slice& y) {

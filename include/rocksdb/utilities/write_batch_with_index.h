@@ -334,15 +334,15 @@ protected:
   WriteBatchWithIndex(Slice/*placeholder*/);
 };
 
-class WriteBatchWithIndexFactory {
+class WBWIFactory {
 public:
-  virtual ~WriteBatchWithIndexFactory();
+  virtual ~WBWIFactory();
   virtual const char* Name() const noexcept = 0;
   virtual WriteBatchWithIndex* NewWriteBatchWithIndex(
       const Comparator* default_comparator = BytewiseComparator(),
       bool overwrite_key = false) = 0;
 };
-std::shared_ptr<WriteBatchWithIndexFactory> SingleSkipListWBWIFactory();
+std::shared_ptr<WBWIFactory> SingleSkipListWBWIFactory();
 
 }  // namespace ROCKSDB_NAMESPACE
 

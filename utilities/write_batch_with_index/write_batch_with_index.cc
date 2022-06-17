@@ -700,10 +700,10 @@ const Comparator* WriteBatchWithIndexInternal::GetUserComparator(
 
 //---------------------------------------------------------------------------
 
-WriteBatchWithIndexFactory::~WriteBatchWithIndexFactory() {
+WBWIFactory::~WBWIFactory() {
   // do nothing
 }
-class SkipListWBWIFactory : public WriteBatchWithIndexFactory {
+class SkipListWBWIFactory : public WBWIFactory {
 public:
   const char* Name() const noexcept final { return "SkipList"; }
   WriteBatchWithIndex* NewWriteBatchWithIndex(
@@ -711,7 +711,7 @@ public:
     return new WriteBatchWithIndex(default_comparator, 0, overwrite_key, 0);
   }
 };
-std::shared_ptr<WriteBatchWithIndexFactory> SingleSkipListWBWIFactory() {
+std::shared_ptr<WBWIFactory> SingleSkipListWBWIFactory() {
   static auto fac = std::make_shared<SkipListWBWIFactory>();
   return fac;
 }

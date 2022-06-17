@@ -139,6 +139,15 @@ struct MutableDBOptions {
   uint64_t wal_bytes_per_sync;
   bool strict_bytes_per_sync;
   size_t compaction_readahead_size;
+
+
+  // with rocksdb's principle, this should be immutable options, but with
+  // toplingdb, wbwi_factory has a use_cnt in SidePluginRepo,
+  // it is safe to change wbwi_factory without mutex,
+  // one day we will add http online update wbwi_factory
+  // by json request
+  std::shared_ptr<class WBWIFactory> wbwi_factory;
+
   int max_background_flushes;
 };
 

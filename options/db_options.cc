@@ -21,6 +21,7 @@
 #include "rocksdb/statistics.h"
 #include "rocksdb/system_clock.h"
 #include "rocksdb/utilities/options_type.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 #include "rocksdb/wal_filter.h"
 #include "util/string_util.h"
 
@@ -1017,6 +1018,7 @@ MutableDBOptions::MutableDBOptions(const DBOptions& options)
       wal_bytes_per_sync(options.wal_bytes_per_sync),
       strict_bytes_per_sync(options.strict_bytes_per_sync),
       compaction_readahead_size(options.compaction_readahead_size),
+      wbwi_factory(options.wbwi_factory),
       max_background_flushes(options.max_background_flushes) {}
 
 void MutableDBOptions::Dump(Logger* log) const {

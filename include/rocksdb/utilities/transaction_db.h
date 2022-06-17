@@ -22,7 +22,6 @@
 namespace ROCKSDB_NAMESPACE {
 
 class TransactionDBMutexFactory;
-class WriteBatchWithIndexFactory;
 
 ROCKSDB_ENUM_PLAIN(TxnDBWritePolicy, int,
   WRITE_COMMITTED = 0,  // write only the committed data
@@ -195,8 +194,6 @@ struct TransactionDBOptions {
   // condition variable for all transaction locking instead of the default
   // mutex/condvar implementation.
   std::shared_ptr<TransactionDBMutexFactory> custom_mutex_factory;
-
-  std::shared_ptr<WriteBatchWithIndexFactory> write_batch_with_index_factory;
 
   // The policy for when to write the data into the DB. The default policy is to
   // write only the committed data (WRITE_COMMITTED). The data could be written

@@ -27,7 +27,7 @@
 #if defined(HAS_TOPLING_CSPP_WBWI)
 #include <terark/fstring.hpp>
 namespace ROCKSDB_NAMESPACE {
-WriteBatchWithIndexFactory* NewCSPP_WBWIForPlain(const std::string& jstr);
+WBWIFactory* NewCSPP_WBWIForPlain(const std::string& jstr);
 }
 #endif
 

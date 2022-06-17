@@ -1380,6 +1380,11 @@ struct DBOptions {
   // of the contract leads to undefined behaviors with high possibility of data
   // inconsistency, e.g. deleted old data become visible again, etc.
   bool enforce_single_del_contracts = true;
+
+  // topling specific:
+  // just for TransactionDB, it should be in TransactionDBOptions, but that
+  // needs many code changes, so we put it here, to minimize code changes
+  std::shared_ptr<class WBWIFactory> wbwi_factory;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)

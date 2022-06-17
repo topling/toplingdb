@@ -67,7 +67,7 @@ TransactionBaseImpl::TransactionBaseImpl(
       cmp_(GetColumnFamilyUserComparator(db->DefaultColumnFamily())),
       lock_tracker_factory_(lock_tracker_factory),
       start_time_(dbimpl_->GetSystemClock()->NowMicros()),
-      write_batch_(cmp_, 0, true, 0),
+      write_batch_(*dbimpl_->mutable_db_options_.wbwi_factory->NewWriteBatchWithIndex(cmp_, true)),
       tracked_locks_(lock_tracker_factory_.Create()),
       indexing_enabled_(true) {
   assert(dynamic_cast<DBImpl*>(db_) != nullptr);
@@ -80,6 +80,7 @@ TransactionBaseImpl::TransactionBaseImpl(
 TransactionBaseImpl::~TransactionBaseImpl() {
   // Release snapshot if snapshot is set
   SetSnapshotInternal(nullptr);
+  delete &write_batch_; // weired for minimize code change
 }
 
 void TransactionBaseImpl::Clear() {

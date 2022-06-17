@@ -338,7 +338,7 @@ class TransactionBaseImpl : public Transaction {
   };
 
   // Records writes pending in this transaction
-  WriteBatchWithIndex write_batch_;
+  WriteBatchWithIndex& write_batch_;
 
   // For Pessimistic Transactions this is the set of acquired locks.
   // Optimistic Transactions will keep note the requested locks (not actually

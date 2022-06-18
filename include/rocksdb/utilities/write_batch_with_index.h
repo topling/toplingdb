@@ -133,8 +133,8 @@ class WriteBatchWithIndex : public WriteBatchBase {
       size_t max_bytes = 0);
 
   ~WriteBatchWithIndex() override;
-  WriteBatchWithIndex(WriteBatchWithIndex&&);
-  WriteBatchWithIndex& operator=(WriteBatchWithIndex&&);
+  WriteBatchWithIndex(const WriteBatchWithIndex&) = delete;
+  WriteBatchWithIndex& operator=(const WriteBatchWithIndex&) = delete;
 
   virtual const Comparator* GetUserComparator(uint32_t cf_id) const;
 

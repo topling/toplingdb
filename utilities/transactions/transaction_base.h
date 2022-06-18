@@ -338,6 +338,8 @@ class TransactionBaseImpl : public Transaction {
   };
 
   // Records writes pending in this transaction
+  // topling spec: should use union{ptr,ref}, but ref can not be in union
+  WriteBatchWithIndex* write_batch_pre_ = nullptr;
   WriteBatchWithIndex& write_batch_;
 
   // For Pessimistic Transactions this is the set of acquired locks.

@@ -270,11 +270,6 @@ WriteBatchWithIndex::WriteBatchWithIndex(Slice/*placeholder*/) {}
 
 WriteBatchWithIndex::~WriteBatchWithIndex() {}
 
-WriteBatchWithIndex::WriteBatchWithIndex(WriteBatchWithIndex&&) = default;
-
-WriteBatchWithIndex& WriteBatchWithIndex::operator=(WriteBatchWithIndex&&) =
-    default;
-
 const Comparator* WriteBatchWithIndex::GetUserComparator(uint32_t cf_id) const {
   return rep->comparator.GetComparator(cf_id);
 }

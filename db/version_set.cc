@@ -147,7 +147,7 @@ int FindFileInRange(const InternalKeyComparator& icmp,
     BytewiseCompareInternalKey cmp;
     return (int)FindFileInRangeTmpl(file_level.files, left, right, key, cmp);
   }
-  else if (IsBytewiseComparator(icmp.user_comparator())) {
+  else if (IsReverseBytewiseComparator(icmp.user_comparator())) {
     ROCKSDB_ASSERT_EQ(icmp.timestamp_size(), 0);
     RevBytewiseCompareInternalKey cmp;
     return (int)FindFileInRangeTmpl(file_level.files, left, right, key, cmp);

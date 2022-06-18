@@ -317,6 +317,7 @@ class WriteBatchWithIndex : public WriteBatchBase {
   // last sub-batch.
   virtual size_t SubBatchCnt();
 
+  virtual
   Status GetFromBatchAndDB(DB* db, const ReadOptions& read_options,
                            ColumnFamilyHandle* column_family, const Slice& key,
                            PinnableSlice* value, ReadCallback* callback);

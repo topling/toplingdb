@@ -156,6 +156,11 @@ struct TableBuilderOptions {
   // want to skip filters, that should be (for example) null filter_policy
   // in the table options of the ioptions.table_factory
   bool skip_filters = false;
+
+  // 0 means var key len, keep same with TableProperties::fixed_key_len
+  int fixed_key_len = 0;
+  int fixed_value_len = -1; // -1 means var len, because 0 is a valid value len
+
   const uint64_t cur_file_num;
 };
 

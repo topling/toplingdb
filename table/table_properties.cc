@@ -295,6 +295,8 @@ const std::string TablePropertiesNames::kFormatVersion =
     "rocksdb.format.version";
 const std::string TablePropertiesNames::kFixedKeyLen =
     "rocksdb.fixed.key.length";
+const std::string TablePropertiesNames::kFixedValueLen =
+    "rocksdb.fixed.value.length";
 const std::string TablePropertiesNames::kColumnFamilyId =
     "rocksdb.column.family.id";
 const std::string TablePropertiesNames::kColumnFamilyName =

@@ -64,27 +64,4 @@ class HashMap {
   }
 };
 
-// Key is size_t as index
-template<class SomePtr>
-class VecorIndexMap {
-  std::vector<SomePtr> m_vec;
-  SomePtr& grow_to_idx(size_t key) {
-    m_vec.resize(key+1);
-    return m_vec[key];
-  }
-public:
-  const SomePtr* find(size_t key) const noexcept {
-    if (key < m_vec.size())
-      return &m_vec[key];
-    else
-      return nullptr;
-  }
-  SomePtr& operator[](size_t key) {
-    if (key < m_vec.size())
-      return m_vec[key];
-    else
-      return grow_to_idx(key);
-  }
-};
-
 }  // namespace ROCKSDB_NAMESPACE

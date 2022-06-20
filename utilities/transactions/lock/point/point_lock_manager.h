@@ -21,6 +21,8 @@
 #include "utilities/transactions/lock/lock_manager.h"
 #include "utilities/transactions/lock/point/point_lock_tracker.h"
 
+#include <terark/util/vec_idx_map.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 class ColumnFamilyHandle;
@@ -177,7 +179,8 @@ class PointLockManager : public LockManager {
 #if 0
   using LockMaps = UnorderedMap<uint32_t, std::shared_ptr<LockMap>>;
 #else
-  using LockMaps = std::map<uint32_t, std::shared_ptr<LockMap>>;
+//using LockMaps = std::map<uint32_t, std::shared_ptr<LockMap>>;
+  using LockMaps = terark::VecorIndexMap<uint32_t, std::shared_ptr<LockMap> >;
 #endif
  private:
   LockMaps lock_maps_;

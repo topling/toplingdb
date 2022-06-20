@@ -31,7 +31,7 @@ class Comparator : public Customizable {
 
   Comparator(size_t ts_sz) : timestamp_size_(ts_sz) {}
 
-  Comparator(const Comparator& orig) : timestamp_size_(orig.timestamp_size_) {}
+  Comparator(const Comparator&) = default;
 
   Comparator& operator=(const Comparator& rhs) {
     if (this != &rhs) {
@@ -137,8 +137,14 @@ class Comparator : public Customizable {
            CompareWithoutTimestamp(a, /*a_has_ts=*/true, b, /*b_has_ts=*/true);
   }
 
- private:
-  size_t timestamp_size_;
+  bool IsForwardBytewise() const noexcept { return 0 == opt_cmp_type_; }
+  bool IsReverseBytewise() const noexcept { return 1 == opt_cmp_type_; }
+  bool IsBytewise() const noexcept { return opt_cmp_type_ <= 1; }
+
+ protected:
+  uint16_t timestamp_size_;
+  // 0: forward bytewise, 1: rev byitewise, others: unknown
+  uint8_t opt_cmp_type_ = 255;
 };
 
 // Return a builtin comparator that uses lexicographic byte-wise
@@ -150,12 +156,21 @@ extern const Comparator* BytewiseComparator();
 // ordering.
 extern const Comparator* ReverseBytewiseComparator();
 
-bool IsForwardBytewiseComparator(const Comparator* cmp);
 bool IsForwardBytewiseComparator(const Slice& name);
-bool IsReverseBytewiseComparator(const Comparator* cmp);
 bool IsReverseBytewiseComparator(const Slice& name);
-
-bool IsBytewiseComparator(const Comparator* cmp);
 bool IsBytewiseComparator(const Slice& name);
+
+inline bool IsForwardBytewiseComparator(const Comparator* cmp) {
+  assert(cmp->IsForwardBytewise() == IsForwardBytewiseComparator(cmp->Name()));
+  return cmp->IsForwardBytewise();
+}
+inline bool IsReverseBytewiseComparator(const Comparator* cmp) {
+  assert(cmp->IsReverseBytewise() == IsReverseBytewiseComparator(cmp->Name()));
+  return cmp->IsReverseBytewise();
+}
+inline bool IsBytewiseComparator(const Comparator* cmp) {
+  assert(cmp->IsBytewise() == IsBytewiseComparator(cmp->Name()));
+  return cmp->IsBytewise();
+}
 
 }  // namespace ROCKSDB_NAMESPACE

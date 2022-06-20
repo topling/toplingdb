@@ -29,7 +29,7 @@ namespace ROCKSDB_NAMESPACE {
 namespace {
 class BytewiseComparatorImpl : public Comparator {
  public:
-  BytewiseComparatorImpl() { }
+  BytewiseComparatorImpl() { opt_cmp_type_ = 0; }
   static const char* kClassName() { return "leveldb.BytewiseComparator"; }
   const char* Name() const override { return kClassName(); }
 
@@ -147,7 +147,7 @@ class BytewiseComparatorImpl : public Comparator {
 
 class ReverseBytewiseComparatorImpl : public BytewiseComparatorImpl {
  public:
-  ReverseBytewiseComparatorImpl() { }
+  ReverseBytewiseComparatorImpl() { opt_cmp_type_ = 1; }
 
   static const char* kClassName() {
     return "rocksdb.ReverseBytewiseComparator";
@@ -379,9 +379,6 @@ Status Comparator::CreateFromString(const ConfigOptions& config_options,
   return status;
 }
 
-bool IsForwardBytewiseComparator(const Comparator* cmp) {
-  return IsForwardBytewiseComparator(cmp->Name());
-}
 bool IsForwardBytewiseComparator(const Slice& name) {
   if (name.starts_with("RocksDB_SE_")) {
     return true;
@@ -389,9 +386,6 @@ bool IsForwardBytewiseComparator(const Slice& name) {
   return name == "leveldb.BytewiseComparator";
 }
 
-bool IsReverseBytewiseComparator(const Comparator* cmp) {
-  return IsReverseBytewiseComparator(cmp->Name());
-}
 bool IsReverseBytewiseComparator(const Slice& name) {
   if (name.starts_with("rev:RocksDB_SE_")) {
     // reverse bytewise compare, needs reverse in iterator
@@ -400,9 +394,6 @@ bool IsReverseBytewiseComparator(const Slice& name) {
   return name == "rocksdb.ReverseBytewiseComparator";
 }
 
-bool IsBytewiseComparator(const Comparator* cmp) {
-  return IsBytewiseComparator(cmp->Name());
-}
 bool IsBytewiseComparator(const Slice& name) {
   return IsForwardBytewiseComparator(name) ||
          IsReverseBytewiseComparator(name);

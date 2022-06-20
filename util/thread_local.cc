@@ -11,6 +11,7 @@
 #include "util/mutexlock.h"
 #include "port/likely.h"
 #include <stdlib.h>
+#include <terark/gold_hash_map.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -135,7 +136,11 @@ private:
   // call UnrefHandler for it.
   ThreadData head_;
 
+#if 0
   std::unordered_map<uint32_t, UnrefHandler> handler_map_;
+#else
+  terark::gold_hash_map<uint32_t, UnrefHandler> handler_map_;
+#endif
 
   // The private mutex.  Developers should always use Mutex() instead of
   // using this variable directly.

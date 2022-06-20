@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <terark/hash_strmap.hpp>
+#include <terark/util/vec_idx_map.hpp>
 
 #include "utilities/transactions/lock/lock_tracker.h"
 
@@ -41,7 +42,7 @@ using TrackedKeyInfos = std::unordered_map<std::string, TrackedKeyInfo>;
 using TrackedKeyInfos = terark::hash_strmap<TrackedKeyInfo>;
 #endif
 
-using TrackedKeys = std::unordered_map<ColumnFamilyId, TrackedKeyInfos>;
+using TrackedKeys = terark::VectorIndexMap<ColumnFamilyId, TrackedKeyInfos>;
 
 // Tracks point locks on single keys.
 class PointLockTracker : public LockTracker {

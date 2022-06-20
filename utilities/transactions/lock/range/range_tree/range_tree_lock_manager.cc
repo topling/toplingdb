@@ -252,7 +252,7 @@ namespace {
 void UnrefLockTreeMapsCache(void* ptr) {
   // Called when a thread exits or a ThreadLocalPtr gets destroyed.
   auto lock_tree_map_cache = static_cast<
-      std::unordered_map<ColumnFamilyId, std::shared_ptr<toku::locktree>>*>(
+      terark::VectorIndexMap<ColumnFamilyId, std::shared_ptr<toku::locktree>>*>(
       ptr);
   delete lock_tree_map_cache;
 }

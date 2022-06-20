@@ -616,8 +616,13 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     }
 
     // Bucket keys by lock_map_ stripe
+#if 0
     UnorderedMap<size_t, std::vector<LockString>> keys_by_stripe(
         lock_map->num_stripes_);
+#else
+    terark::VectorIndexMap<size_t, std::vector<LockString> > keys_by_stripe(
+        lock_map->num_stripes_);
+#endif
     std::unique_ptr<LockTracker::KeyIterator> key_it(
         tracker.GetKeyIterator(cf));
     assert(key_it != nullptr);

@@ -106,7 +106,7 @@ class RangeTreeLockManager : public RangeLockManagerBase,
   // Map from cf_id to locktree*. Can only be accessed while holding the
   // ltree_map_mutex_. Must use a custom deleter that calls ltm_.release_lt
   using LockTreeMap =
-      std::unordered_map<ColumnFamilyId, std::shared_ptr<toku::locktree>>;
+      terark::VectorIndexMap<ColumnFamilyId, std::shared_ptr<toku::locktree>>;
   LockTreeMap ltree_map_;
 
   InstrumentedMutex ltree_map_mutex_;

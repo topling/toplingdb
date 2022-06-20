@@ -17,6 +17,8 @@
 #include "lib/locktree/lock_request.h"
 #include "lib/locktree/locktree.h"
 
+#include <terark/util/vec_idx_map.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 class RangeTreeLockManager;
@@ -53,7 +55,7 @@ class RangeLockList {
     buffers_.clear();
   }
 
-  std::unordered_map<ColumnFamilyId, std::shared_ptr<toku::range_buffer>>
+  terark::VectorIndexMap<ColumnFamilyId, std::shared_ptr<toku::range_buffer>>
       buffers_;
   port::Mutex mutex_;
   std::atomic<bool> releasing_locks_;

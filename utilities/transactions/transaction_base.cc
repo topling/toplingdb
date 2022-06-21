@@ -641,7 +641,7 @@ void TransactionBaseImpl::UndoGetForUpdate(ColumnFamilyHandle* column_family,
                                            const Slice& key) {
   PointLockRequest r;
   r.column_family_id = GetColumnFamilyID(column_family);
-  r.key = key.ToString();
+  r.key = key;
   r.read_only = true;
 
   bool can_untrack = false;

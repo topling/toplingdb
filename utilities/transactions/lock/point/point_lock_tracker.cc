@@ -211,7 +211,7 @@ LockTracker* PointLockTracker::GetTrackedLocksSinceSavePoint(
         // All the reads/writes to this key were done in the last savepoint.
         PointLockRequest r;
         r.column_family_id = cf;
-        r.key.assign(key.data(), key.size());
+        r.key = Slice(key.data(), key.size());
         r.seq = info.seq;
         r.read_only = (num_writes == 0);
         r.exclusive = info.exclusive;

@@ -26,7 +26,7 @@ struct PointLockRequest {
   // The id of the key's column family.
   ColumnFamilyId column_family_id = 0;
   // The key to lock.
-  std::string key;
+  Slice key;
   // The sequence number from which there is no concurrent update to key.
   SequenceNumber seq = 0;
   // Whether the lock is acquired only for read.

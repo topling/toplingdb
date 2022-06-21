@@ -267,7 +267,7 @@ class TransactionBaseImpl : public Transaction {
   //
   // seqno is the earliest seqno this key was involved with this transaction.
   // readonly should be set to true if no data was written for this key
-  void TrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
+  void TrackKey(uint32_t cfh_id, const Slice& key, SequenceNumber seqno,
                 bool readonly, bool exclusive);
 
   // Called when UndoGetForUpdate determines that this key can be unlocked.

@@ -595,7 +595,7 @@ uint64_t TransactionBaseImpl::GetNumKeys() const {
   return tracked_locks_->GetNumPointLocks();
 }
 
-void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,
+void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const Slice& key,
                                    SequenceNumber seq, bool read_only,
                                    bool exclusive) {
   PointLockRequest r;

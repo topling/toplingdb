@@ -224,7 +224,7 @@ bool PointLockManager::IsLockExpired(TransactionID txn_id,
 
 Status PointLockManager::TryLock(PessimisticTransaction* txn,
                                  ColumnFamilyId column_family_id,
-                                 const std::string& key, Env* env,
+                                 const Slice& key, Env* env,
                                  bool exclusive) {
   // Lookup lock map for this column family id
   LockMap* lock_map = GetLockMap(column_family_id);
@@ -251,7 +251,7 @@ Status PointLockManager::TryLock(PessimisticTransaction* txn,
 // Helper function for TryLock().
 Status PointLockManager::AcquireWithTimeout(
     PessimisticTransaction* txn, LockMap* lock_map, LockMapStripe* stripe,
-    ColumnFamilyId column_family_id, const std::string& key, Env* env,
+    ColumnFamilyId column_family_id, const Slice& key, Env* env,
     int64_t timeout, LockInfo&& lock_info) {
   Status result;
   uint64_t end_time = 0;
@@ -374,7 +374,7 @@ void PointLockManager::DecrementWaitersImpl(
 
 bool PointLockManager::IncrementWaiters(
     const PessimisticTransaction* txn,
-    const autovector<TransactionID>& wait_ids, const std::string& key,
+    const autovector<TransactionID>& wait_ids, const Slice& key,
     const uint32_t& cf_id, const bool& exclusive, Env* const env) {
   auto id = txn->GetID();
   std::vector<int> queue_parents(static_cast<size_t>(txn->GetDeadlockDetectDepth()));
@@ -426,7 +426,7 @@ bool PointLockManager::IncrementWaiters(
         auto extracted_info = wait_txn_map_.Get(queue_values[head]);
         path.push_back({queue_values[head], extracted_info.m_cf_id,
                         extracted_info.m_exclusive,
-                        extracted_info.m_waiting_key});
+                        extracted_info.m_waiting_key.ToString()});
         head = queue_parents[head];
       }
       if (!env->GetCurrentTime(&deadlock_time).ok()) {
@@ -438,7 +438,7 @@ bool PointLockManager::IncrementWaiters(
         deadlock_time = 0;
       }
       std::reverse(path.begin(), path.end());
-      dlock_buffer_.AddNewPath(DeadlockPath(path, deadlock_time));
+      dlock_buffer_.AddNewPath(DeadlockPath(std::move(path), deadlock_time));
       deadlock_time = 0;
       DecrementWaitersImpl(txn, wait_ids);
       return true;
@@ -470,7 +470,7 @@ bool PointLockManager::IncrementWaiters(
 //  or 0 if no expiration.
 // REQUIRED:  Stripe mutex must be held.
 Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
-                                       const std::string& key, Env* env,
+                                       const Slice& key, Env* env,
                                        LockInfo&& txn_lock_info,
                                        uint64_t* expire_time,
                                        autovector<TransactionID>* txn_ids) {
@@ -575,7 +575,7 @@ void PointLockManager::UnLockKey(PessimisticTransaction* txn,
 
 void PointLockManager::UnLock(PessimisticTransaction* txn,
                               ColumnFamilyId column_family_id,
-                              const std::string& key, Env* env) {
+                              const Slice& key, Env* env) {
   LockMap* lock_map = GetLockMap(column_family_id);
   if (lock_map == nullptr) {
     // Column Family must have been dropped.

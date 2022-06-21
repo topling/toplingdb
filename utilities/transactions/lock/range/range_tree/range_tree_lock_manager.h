@@ -47,7 +47,7 @@ class RangeTreeLockManager : public RangeLockManagerBase,
   void UnLock(PessimisticTransaction* txn, const LockTracker& tracker,
               Env* env) override;
   void UnLock(PessimisticTransaction* txn, ColumnFamilyId column_family_id,
-              const std::string& key, Env* env) override;
+              const Slice& key, Env* env) override;
   void UnLock(PessimisticTransaction*, ColumnFamilyId, const Endpoint&,
               const Endpoint&, Env*) override {
     // TODO: range unlock does nothing...

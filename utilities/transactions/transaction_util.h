@@ -41,7 +41,7 @@ class TransactionUtil {
   // status for any unexpected errors.
   static Status CheckKeyForConflicts(
       DBImpl* db_impl, ColumnFamilyHandle* column_family,
-      const std::string& key, SequenceNumber snap_seq,
+      const LockString& key, SequenceNumber snap_seq,
       const std::string* const ts, bool cache_only,
       ReadCallback* snap_checker = nullptr,
       SequenceNumber min_uncommitted = kMaxSequenceNumber);

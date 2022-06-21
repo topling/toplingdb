@@ -1054,7 +1054,7 @@ Status WriteUnpreparedTxn::ValidateSnapshot(ColumnFamilyHandle* column_family,
       wupt_db_, snap_seq, min_uncommitted, unprep_seqs_, kBackedByDBSnapshot);
   // TODO(yanqin): Support user-defined timestamp.
   return TransactionUtil::CheckKeyForConflicts(
-      db_impl_, cfh, key.ToString(), snap_seq, /*ts=*/nullptr,
+      db_impl_, cfh, key, snap_seq, /*ts=*/nullptr,
       false /* cache_only */, &snap_checker, min_uncommitted);
 }
 

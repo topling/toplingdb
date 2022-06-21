@@ -20,7 +20,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 Status TransactionUtil::CheckKeyForConflicts(
-    DBImpl* db_impl, ColumnFamilyHandle* column_family, const std::string& key,
+    DBImpl* db_impl, ColumnFamilyHandle* column_family, const LockString& key,
     SequenceNumber snap_seq, const std::string* const read_ts, bool cache_only,
     ReadCallback* snap_checker, SequenceNumber min_uncommitted) {
   Status result;

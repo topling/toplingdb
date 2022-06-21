@@ -1131,7 +1131,7 @@ Status PessimisticTransaction::ValidateSnapshot(
   }
 
   return TransactionUtil::CheckKeyForConflicts(
-      db_impl_, cfh, key.ToString(), snap_seq, ts_sz == 0 ? nullptr : &ts_buf,
+      db_impl_, cfh, key, snap_seq, ts_sz == 0 ? nullptr : &ts_buf,
       false /* cache_only */);
 }
 

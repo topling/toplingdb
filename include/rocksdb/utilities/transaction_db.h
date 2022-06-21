@@ -365,7 +365,7 @@ struct DeadlockPath {
 
   explicit DeadlockPath(std::vector<DeadlockInfo> path_entry,
                         const int64_t& dl_time)
-      : path(path_entry), limit_exceeded(false), deadlock_time(dl_time) {}
+      : path(std::move(path_entry)), limit_exceeded(false), deadlock_time(dl_time) {}
 
   // empty path, limit exceeded constructor and default constructor
   explicit DeadlockPath(const int64_t& dl_time = 0, bool limit = false)

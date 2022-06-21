@@ -39,7 +39,13 @@ struct TrackedKeyInfo {
 #if 0
 using TrackedKeyInfos = std::unordered_map<std::string, TrackedKeyInfo>;
 #else
-using TrackedKeyInfos = terark::hash_strmap<TrackedKeyInfo>;
+struct TrackedKeyInfos : terark::hash_strmap<TrackedKeyInfo> {
+  TrackedKeyInfos() {
+    size_t cap = 8;
+    size_t strpool_cap = 1024;
+    this->reserve(cap, strpool_cap);
+  }
+};
 #endif
 
 using TrackedKeys = terark::VectorIndexMap<ColumnFamilyId, TrackedKeyInfos>;

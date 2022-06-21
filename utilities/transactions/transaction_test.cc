@@ -354,7 +354,7 @@ TEST_P(TransactionTest, WaitingTxn) {
 
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
       "PointLockManager::AcquireWithTimeout:WaitingTxn", [&](void* /*arg*/) {
-        Slice key;
+        std::string key;
         uint32_t cf_id;
         std::vector<TransactionID> wait = txn2->GetWaitingTxns(&cf_id, &key);
         ASSERT_EQ(key, "foo");

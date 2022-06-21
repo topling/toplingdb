@@ -70,17 +70,18 @@ class PessimisticTransaction : public TransactionBaseImpl {
   TransactionID GetID() const override { return txn_id_; }
 
   std::vector<TransactionID> GetWaitingTxns(uint32_t* column_family_id,
-                                            Slice* key) const override {
+                                            std::string* key) const override {
     std::lock_guard<std::mutex> lock(wait_mutex_);
     std::vector<TransactionID> ids(waiting_txn_ids_.size());
-    if (key) *key = waiting_key_ ? *waiting_key_ : "";
+    if (key) *key = waiting_key_ ? waiting_key_->ToString() : "";
     if (column_family_id) *column_family_id = waiting_cf_id_;
     std::copy(waiting_txn_ids_.begin(), waiting_txn_ids_.end(), ids.begin());
     return ids;
   }
 
-  void SetWaitingTxn(autovector<TransactionID> ids, uint32_t column_family_id,
+  void SetWaitingTxn(const autovector<TransactionID>& ids, uint32_t column_family_id,
                      const Slice* key) {
+    waiting_txn_ids_.reserve(ids.size());
     std::lock_guard<std::mutex> lock(wait_mutex_);
     waiting_txn_ids_ = ids;
     waiting_cf_id_ = column_family_id;

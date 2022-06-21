@@ -293,7 +293,7 @@ TEST_P(AnyLockManagerTest, GetWaitingTxns_MultipleTxns) {
   // Ok, now txn3 is waiting for lock on "k", which is owned by two
   // transactions. Check that GetWaitingTxns reports this correctly
   uint32_t wait_cf_id;
-  Slice wait_key;
+  std::string wait_key;
   auto waiters = txn3->GetWaitingTxns(&wait_cf_id, &wait_key);
 
   ASSERT_EQ(wait_cf_id, 1u);

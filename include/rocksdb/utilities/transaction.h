@@ -616,7 +616,7 @@ class Transaction {
   virtual bool IsDeadlockDetect() const { return false; }
 
   virtual std::vector<TransactionID> GetWaitingTxns(
-      uint32_t* /*column_family_id*/, Slice* /*key*/) const {
+      uint32_t* /*column_family_id*/, std::string* /*key*/) const {
     assert(false);
     return std::vector<TransactionID>();
   }

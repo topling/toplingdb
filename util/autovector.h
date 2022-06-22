@@ -76,7 +76,6 @@ class autovector {
     iterator_impl(TAutoVector* vect, size_t index)
         : vect_(vect), index_(index) {};
     iterator_impl(const iterator_impl&) = default;
-    ~iterator_impl() {}
     iterator_impl& operator=(const iterator_impl&) = default;
 
     // -- Advancement
@@ -221,12 +220,6 @@ class autovector {
       while (num_stack_items_ > n) {
         values_[--num_stack_items_].~value_type();
       }
-    }
-  }
-
-  void reserve(size_t cap) {
-    if (cap > kSize) {
-      vect_.reserve(cap - kSize);
     }
   }
 

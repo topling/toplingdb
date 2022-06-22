@@ -884,6 +884,9 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
   return false;
 }
 
+#if defined(__GNUC__)
+__attribute__((flatten))
+#endif
 bool MemTable::Get(const LookupKey& key, std::string* value,
                    std::string* timestamp, Status* s,
                    MergeContext* merge_context,

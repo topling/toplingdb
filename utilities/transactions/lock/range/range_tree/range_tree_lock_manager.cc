@@ -82,7 +82,7 @@ Status RangeTreeLockManager::TryLock(PessimisticTransaction* txn,
 
   // Put the key waited on into request's m_extra. See
   // wait_callback_for_locktree for details.
-  std::string wait_key(start_endp.slice.data(), start_endp.slice.size());
+  Slice wait_key(start_endp.slice.data(), start_endp.slice.size());
 
   request.set(lt.get(), (TXNID)txn, &start_key_dbt, &end_key_dbt,
               exclusive ? toku::lock_request::WRITE : toku::lock_request::READ,
@@ -160,7 +160,7 @@ void wait_callback_for_locktree(void*, toku::lock_wait_infos* infos) {
     for (auto waitee : wait_info.waitees) {
       waitee_ids.push_back(waitee);
     }
-    txn->SetWaitingTxn(waitee_ids, cf_id, (std::string*)wait_info.m_extra);
+    txn->SetWaitingTxn(waitee_ids, cf_id, (Slice*)wait_info.m_extra);
   }
 
   // Here we can assume that the locktree code will now wait for some lock
@@ -169,7 +169,7 @@ void wait_callback_for_locktree(void*, toku::lock_wait_infos* infos) {
 
 void RangeTreeLockManager::UnLock(PessimisticTransaction* txn,
                                   ColumnFamilyId column_family_id,
-                                  const std::string& key, Env*) {
+                                  const Slice& key, Env*) {
   auto locktree = GetLockTreeForCF(column_family_id);
   std::string endp_image;
   serialize_endpoint({key.data(), key.size(), false}, &endp_image);

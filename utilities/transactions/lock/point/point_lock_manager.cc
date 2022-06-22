@@ -31,7 +31,7 @@ struct LockInfo {
   uint64_t expiration_time;
 
   LockInfo(TransactionID id, uint64_t time, bool ex)
-      : exclusive(ex), expiration_time(time) {
+      : exclusive(ex), txn_ids(0), expiration_time(time) {
     txn_ids.push_back(id);
   }
   LockInfo(const LockInfo& lock_info)
@@ -275,7 +275,7 @@ Status PointLockManager::AcquireWithTimeout(
 
   // Acquire lock if we are able to
   uint64_t expire_time_hint = 0;
-  autovector<TransactionID> wait_ids;
+  autovector<TransactionID> wait_ids(0); // init to size and cap = 0
   result = AcquireLocked(lock_map, stripe, key, env, std::move(lock_info),
                          &expire_time_hint, &wait_ids);
 
@@ -478,10 +478,31 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
 
   Status result;
   // Check if this key is already locked
+//#define NO_TOPLING_lazy_insert_i_with_pre_check
+#if !defined(NO_TOPLING_lazy_insert_i_with_pre_check)
+  // topling: use lazy_insert_i(key, cons, check) reduce a find
+  auto cons = terark::MoveConsFunc<LockInfo>(std::move(txn_lock_info));
+  auto check = [this,&result,lock_map](auto/*keys*/) {
+    // max_num_locks_ is signed int64_t
+    if (0 != max_num_locks_) {
+      if (max_num_locks_ > 0 &&
+          lock_map->lock_cnt.load(std::memory_order_acquire) >= max_num_locks_) {
+        result = Status::Busy(Status::SubCode::kLockLimit);
+        return false; // can not insert the key
+      }
+      lock_map->lock_cnt.fetch_add(1, std::memory_order_relaxed);
+    }
+    return true; // ok, insert the key
+  };
+  auto [idx, miss] = stripe->keys.lazy_insert_i(key, cons, check);
+  if (!miss) {
+    LockInfo& lock_info = stripe->keys.val(idx);
+#else
   auto stripe_iter = stripe->keys.find(key);
   if (stripe_iter != stripe->keys.end()) {
     // Lock already held
     LockInfo& lock_info = stripe_iter->second;
+#endif
     assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
 
     if (lock_info.exclusive || txn_lock_info.exclusive) {
@@ -517,6 +538,9 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
           std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
     }
   } else {  // Lock not held.
+#if !defined(NO_TOPLING_lazy_insert_i_with_pre_check)
+  // do nothing
+#else
     // Check lock limit
     if (max_num_locks_ > 0 &&
         lock_map->lock_cnt.load(std::memory_order_acquire) >= max_num_locks_) {
@@ -530,6 +554,7 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
         lock_map->lock_cnt++;
       }
     }
+#endif
   }
 
   return result;

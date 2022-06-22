@@ -27,6 +27,7 @@ class autovector : public std::vector<T> {
     // Make sure the initial vector has space for kSize elements
     std::vector<T>::reserve(kSize);
   }
+  explicit autovector(size_t sz) : std::vector<T>(sz) {}
 };
 #else
 // A vector that leverages pre-allocated stack-based array to achieve better
@@ -190,6 +191,7 @@ class autovector {
       push_back(item);
     }
   }
+  explicit autovector(size_t sz) { this->resize(sz); }
 
   ~autovector() { clear(); }
 

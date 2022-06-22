@@ -187,7 +187,7 @@ class PointLockManager : public LockManager {
 
   // Thread-local cache of entries in lock_maps_.  This is an optimization
   // to avoid acquiring a mutex in order to look up a LockMap
-  std::unique_ptr<ThreadLocalPtr> lock_maps_cache_;
+  ThreadLocalPtr lock_maps_cache_;
 
   // Must be held when modifying wait_txn_map_ and rev_wait_txn_map_.
   std::mutex wait_txn_map_mutex_;

@@ -112,7 +112,7 @@ PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
     : txn_db_impl_(txn_db),
       default_num_stripes_(opt.num_stripes),
       max_num_locks_(opt.max_num_locks),
-      lock_maps_cache_(new ThreadLocalPtr(&UnrefLockMapsCache)),
+      lock_maps_cache_(&UnrefLockMapsCache),
       dlock_buffer_(opt.max_num_deadlocks),
       mutex_factory_(opt.custom_mutex_factory
                          ? opt.custom_mutex_factory
@@ -148,7 +148,7 @@ void PointLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cf) {
 
   // Clear all thread-local caches
   autovector<void*> local_caches;
-  lock_maps_cache_->Scrape(&local_caches, nullptr);
+  lock_maps_cache_.Scrape(&local_caches, nullptr);
   for (auto cache : local_caches) {
     delete static_cast<LockMaps*>(cache);
   }
@@ -160,10 +160,10 @@ void PointLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cf) {
 LockMap* PointLockManager::GetLockMap(
     ColumnFamilyId column_family_id) {
   // First check thread-local cache
-  auto lock_maps_cache = static_cast<LockMaps*>(lock_maps_cache_->Get());
+  auto lock_maps_cache = static_cast<LockMaps*>(lock_maps_cache_.Get());
   if (lock_maps_cache == nullptr) {
     lock_maps_cache = new LockMaps();
-    lock_maps_cache_->Reset(lock_maps_cache);
+    lock_maps_cache_.Reset(lock_maps_cache);
   }
 
   auto lock_map_iter = lock_maps_cache->find(column_family_id);

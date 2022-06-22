@@ -33,8 +33,7 @@ Status TransactionUtil::CheckKeyForConflicts(
     result = Status::InvalidArgument("Could not access column family " +
                                      cfh->GetName());
   }
-
-  if (result.ok()) {
+  else {
     SequenceNumber earliest_seq =
         db_impl->GetEarliestMemTableSequenceNumber(sv, true);
 

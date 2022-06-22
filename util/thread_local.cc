@@ -11,7 +11,6 @@
 #include "util/mutexlock.h"
 #include "port/likely.h"
 #include <stdlib.h>
-#include <terark/gold_hash_map.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -136,10 +135,11 @@ private:
   // call UnrefHandler for it.
   ThreadData head_;
 
-#if 0
-  std::unordered_map<uint32_t, UnrefHandler> handler_map_;
+  // handler_map_.size() never shrink
+#if defined(NDEBUG)
+  std::vector<UnrefHandler> handler_map_{256}; // initial size 256
 #else
-  terark::gold_hash_map<uint32_t, UnrefHandler> handler_map_;
+  std::vector<UnrefHandler> handler_map_;
 #endif
 
   // The private mutex.  Developers should always use Mutex() instead of
@@ -454,16 +454,16 @@ uint32_t ThreadLocalPtr::TEST_PeekId() {
 
 void ThreadLocalPtr::StaticMeta::SetHandler(uint32_t id, UnrefHandler handler) {
   MutexLock l(Mutex());
+  if (UNLIKELY(id >= handler_map_.size())) {
+    handler_map_.resize(id+1, nullptr);
+  }
   handler_map_[id] = handler;
 }
 
 UnrefHandler ThreadLocalPtr::StaticMeta::GetHandler(uint32_t id) {
   Mutex()->AssertHeld();
-  auto iter = handler_map_.find(id);
-  if (iter == handler_map_.end()) {
-    return nullptr;
-  }
-  return iter->second;
+  ROCKSDB_ASSERT_LT(id, handler_map_.size());
+  return handler_map_[id];
 }
 
 uint32_t ThreadLocalPtr::StaticMeta::GetId() {
@@ -489,7 +489,7 @@ void ThreadLocalPtr::StaticMeta::ReclaimId(uint32_t id) {
   // This id is not used, go through all thread local data and release
   // corresponding value
   MutexLock l(Mutex());
-  auto unref = GetHandler(id);
+  auto unref = handler_map_[id];
   for (ThreadData* t = head_.next; t != &head_; t = t->next) {
     if (id < t->entries.size()) {
       void* ptr = t->entries[id].ptr.exchange(nullptr);
@@ -504,9 +504,8 @@ void ThreadLocalPtr::StaticMeta::ReclaimId(uint32_t id) {
 
 ThreadLocalPtr::ThreadLocalPtr(UnrefHandler handler)
     : id_(Instance()->GetId()) {
-  if (handler != nullptr) {
-    Instance()->SetHandler(id_, handler);
-  }
+  // always SetHandler, even handler is nullptr
+  Instance()->SetHandler(id_, handler);
 }
 
 ThreadLocalPtr::~ThreadLocalPtr() {

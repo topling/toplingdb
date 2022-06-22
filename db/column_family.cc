@@ -538,7 +538,7 @@ ColumnFamilyData::ColumnFamilyData(
            ioptions_.max_write_buffer_size_to_maintain),
       super_version_(nullptr),
       super_version_number_(0),
-      local_sv_(new ThreadLocalPtr(&SuperVersionUnrefHandle)),
+      local_sv_(&SuperVersionUnrefHandle),
       next_(nullptr),
       prev_(nullptr),
       log_number_(0),
@@ -706,7 +706,7 @@ bool ColumnFamilyData::UnrefAndTryDelete() {
     super_version_ = nullptr;
 
     // Release SuperVersion references kept in ThreadLocalPtr.
-    local_sv_.reset();
+    local_sv_.Reset(nullptr);
 
     if (sv->Unref()) {
       // Note: sv will delete this ColumnFamilyData during Cleanup()
@@ -1229,7 +1229,7 @@ SuperVersion* ColumnFamilyData::GetThreadLocalSuperVersion(DBImpl* db) {
   // have swapped in kSVObsolete. We re-check the value at when returning
   // SuperVersion back to thread local, with an atomic compare and swap.
   // The superversion will need to be released if detected to be stale.
-  void* ptr = local_sv_->Swap(SuperVersion::kSVInUse);
+  void* ptr = local_sv_.Swap(SuperVersion::kSVInUse);
   // Invariant:
   // (1) Scrape (always) installs kSVObsolete in ThreadLocal storage
   // (2) the Swap above (always) installs kSVInUse, ThreadLocal storage
@@ -1270,7 +1270,7 @@ bool ColumnFamilyData::ReturnThreadLocalSuperVersion(SuperVersion* sv) {
   assert(sv != nullptr);
   // Put the SuperVersion back
   void* expected = SuperVersion::kSVInUse;
-  if (local_sv_->CompareAndSwap(static_cast<void*>(sv), expected)) {
+  if (local_sv_.CompareAndSwap(static_cast<void*>(sv), expected)) {
     // When we see kSVInUse in the ThreadLocal, we are sure ThreadLocal
     // storage has not been altered and no Scrape has happened. The
     // SuperVersion is still current.
@@ -1329,7 +1329,7 @@ void ColumnFamilyData::InstallSuperVersion(
 
 void ColumnFamilyData::ResetThreadLocalSuperVersions() {
   autovector<void*> sv_ptrs;
-  local_sv_->Scrape(&sv_ptrs, SuperVersion::kSVObsolete);
+  local_sv_.Scrape(&sv_ptrs, SuperVersion::kSVObsolete);
   for (auto ptr : sv_ptrs) {
     assert(ptr);
     if (ptr == SuperVersion::kSVInUse) {

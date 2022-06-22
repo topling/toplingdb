@@ -518,7 +518,7 @@ class ColumnFamilyData {
     return full_history_ts_low_;
   }
 
-  ThreadLocalPtr* TEST_GetLocalSV() { return local_sv_.get(); }
+  ThreadLocalPtr* TEST_GetLocalSV() { return &local_sv_; }
   WriteBufferManager* write_buffer_mgr() { return write_buffer_manager_; }
 
   static const uint32_t kDummyColumnFamilyDataId;
@@ -574,7 +574,7 @@ class ColumnFamilyData {
 
   // Thread's local copy of SuperVersion pointer
   // This needs to be destructed before mutex_
-  std::unique_ptr<ThreadLocalPtr> local_sv_;
+  ThreadLocalPtr local_sv_;
 
   // pointers for a circular linked list. we use it to support iterations over
   // all column families that are alive (note: dropped column families can also

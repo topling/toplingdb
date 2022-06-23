@@ -773,6 +773,9 @@ endif
 # range_tree is not compatible with non GNU libc on ppc64
 # see https://jira.percona.com/browse/PS-7559
 ifneq ($(PPC_LIBC_IS_GNU),0)
+  # topling: should move this line above and delete LIB_OBJECTS += .., add here for min-diff principle
+  # add to LIB_SOURCES to generate *.cc.d dependency rules
+  LIB_SOURCES += ${RANGE_TREE_SOURCES}
   LIB_OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(RANGE_TREE_SOURCES))
 endif
 

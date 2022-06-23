@@ -113,7 +113,7 @@ class RangeTreeLockManager : public RangeLockManagerBase,
 
   // Per-thread cache of ltree_map_.
   // (uses the same approach as TransactionLockMgr::lock_maps_cache_)
-  std::unique_ptr<ThreadLocalPtr> ltree_lookup_cache_;
+  ThreadLocalPtr ltree_lookup_cache_;
 
   RangeDeadlockInfoBuffer dlock_buffer_;
 

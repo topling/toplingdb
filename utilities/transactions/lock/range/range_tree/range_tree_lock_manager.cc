@@ -261,7 +261,7 @@ void UnrefLockTreeMapsCache(void* ptr) {
 RangeTreeLockManager::RangeTreeLockManager(
     std::shared_ptr<TransactionDBMutexFactory> mutex_factory)
     : mutex_factory_(mutex_factory),
-      ltree_lookup_cache_(new ThreadLocalPtr(&UnrefLockTreeMapsCache)),
+      ltree_lookup_cache_(&UnrefLockTreeMapsCache),
       dlock_buffer_(10) {
   ltm_.create(on_create, on_destroy, on_escalate, nullptr, mutex_factory_);
 }
@@ -327,7 +327,7 @@ void RangeTreeLockManager::on_escalate(TXNID txnid, const toku::locktree* lt,
 
 RangeTreeLockManager::~RangeTreeLockManager() {
   autovector<void*> local_caches;
-  ltree_lookup_cache_->Scrape(&local_caches, nullptr);
+  ltree_lookup_cache_.Scrape(&local_caches, nullptr);
   for (auto cache : local_caches) {
     delete static_cast<LockTreeMap*>(cache);
   }
@@ -414,7 +414,7 @@ void RangeTreeLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cfh) {
   }  // lock_map_mutex_
 
   autovector<void*> local_caches;
-  ltree_lookup_cache_->Scrape(&local_caches, nullptr);
+  ltree_lookup_cache_.Scrape(&local_caches, nullptr);
   for (auto cache : local_caches) {
     delete static_cast<LockTreeMap*>(cache);
   }
@@ -423,11 +423,11 @@ void RangeTreeLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cfh) {
 std::shared_ptr<toku::locktree> RangeTreeLockManager::GetLockTreeForCF(
     ColumnFamilyId column_family_id) {
   // First check thread-local cache
-  if (ltree_lookup_cache_->Get() == nullptr) {
-    ltree_lookup_cache_->Reset(new LockTreeMap());
+  auto ltree_map_cache = static_cast<LockTreeMap*>(ltree_lookup_cache_.Get());
+  if (ltree_map_cache == nullptr) {
+    ltree_map_cache = new LockTreeMap();
+    ltree_lookup_cache_.Reset(ltree_map_cache);
   }
-
-  auto ltree_map_cache = static_cast<LockTreeMap*>(ltree_lookup_cache_->Get());
 
   auto it = ltree_map_cache->find(column_family_id);
   if (it != ltree_map_cache->end()) {

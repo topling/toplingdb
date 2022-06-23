@@ -344,7 +344,7 @@ class autovector {
 
   autovector& operator=(const autovector& other) { return assign(other); }
 
-  autovector(autovector&& other) noexcept : vect_(other.vect_) {
+  autovector(autovector&& other) noexcept : vect_(std::move(other.vect_)) {
     num_stack_items_ = other.num_stack_items_;
     std::uninitialized_move_n(other.values_, other.num_stack_items_, values_);
     other.num_stack_items_ = 0;

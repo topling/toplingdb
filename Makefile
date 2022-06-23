@@ -272,6 +272,7 @@ ifeq (${DEBUG_LEVEL}, 2)
 endif
 ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2, $(MAKECMDGOALS)),)
   CXXFLAGS += -DROCKSDB_UNIT_TEST
+  MAKE_UNIT_TEST := 1
   OBJ_DIR := $(subst build/,build-ut/,${OBJ_DIR})
 endif
 
@@ -799,6 +800,13 @@ ALL_SOURCES += $(ROCKSDB_PLUGIN_SOURCES)
 
 TESTS = $(patsubst %.cc, %, $(notdir $(TEST_MAIN_SOURCES)))
 TESTS += $(patsubst %.c, %, $(notdir $(TEST_MAIN_SOURCES_C)))
+ifeq (${MAKE_UNIT_TEST},1)
+  ifeq (cspp,$(patsubst cspp:%,cspp,${DefaultWBWIFactory}))
+    # cspp WBWI does not support txn with ts(timestamp)
+    $(warning "test with CSPP_WBWI, skip write_committed_transaction_ts_test")
+    TESTS := $(filter-out write_committed_transaction_ts_test,${TESTS})
+  endif
+endif
 
 # `make check-headers` to very that each header file includes its own
 # dependencies

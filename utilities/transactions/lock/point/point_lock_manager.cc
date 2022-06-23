@@ -31,7 +31,7 @@ struct LockInfo {
   uint64_t expiration_time;
 
   LockInfo(TransactionID id, uint64_t time, bool ex)
-      : exclusive(ex), txn_ids(0), expiration_time(time) {
+      : exclusive(ex), expiration_time(time) {
     txn_ids.push_back(id);
   }
   LockInfo(const LockInfo& lock_info)
@@ -65,7 +65,15 @@ struct LockMapStripe {
 #if 0
   UnorderedMap<std::string, LockInfo> keys;
 #else
-  terark::hash_strmap<LockInfo> keys;
+  struct KeyStrMap : terark::hash_strmap<LockInfo> {
+    KeyStrMap() {
+      size_t cap = 8;
+      size_t strpool_cap = 1024;
+      this->reserve(cap, strpool_cap);
+      this->enable_freelist();
+    }
+  };
+  KeyStrMap keys;
 #endif
 };
 
@@ -518,7 +526,7 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
         if (IsLockExpired(txn_lock_info.txn_ids[0], lock_info, env,
                           expire_time)) {
           // lock is expired, can steal it
-          lock_info.txn_ids = txn_lock_info.txn_ids;
+          lock_info.txn_ids = std::move(txn_lock_info.txn_ids);
           lock_info.exclusive = txn_lock_info.exclusive;
           lock_info.expiration_time = txn_lock_info.expiration_time;
           // lock_cnt does not change

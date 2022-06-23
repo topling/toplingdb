@@ -79,6 +79,7 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
   uint32_t state = w->state.load(std::memory_order_acquire);
   while (!(state & goal_mask)) {
     if (w->state.compare_exchange_weak(state, STATE_LOCKED_WAITING, std::memory_order_acq_rel)) {
+      TEST_SYNC_POINT_CALLBACK("WriteThread::AwaitState:BlockingWaiting", w);
       if (futex(&w->state, FUTEX_WAIT_PRIVATE, STATE_LOCKED_WAITING) < 0) {
         int err = errno;
         if (!(EINTR == err || EAGAIN == err))

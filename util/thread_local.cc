@@ -128,7 +128,7 @@ private:
   uint32_t next_instance_id_;
   // Used to recycle Ids in case ThreadLocalPtr is instantiated and destroyed
   // frequently. This also prevents it from blowing up the vector space.
-  autovector<uint32_t> free_instance_ids_;
+  std::vector<uint32_t> free_instance_ids_;
   // Chain all thread local structure together. This is necessary since
   // when one ThreadLocalPtr gets destroyed, we need to loop over each
   // thread's version of pointer corresponding to that instance and
@@ -309,6 +309,7 @@ ThreadLocalPtr::StaticMeta::StaticMeta()
   if (pthread_key_create(&pthread_key_, &OnThreadExit) != 0) {
     abort();
   }
+  free_instance_ids_.reserve(128);
 
   // OnThreadExit is not getting called on the main thread.
   // Call through the static destructor mechanism to avoid memory leak.
@@ -519,26 +520,32 @@ ThreadLocalPtr::~ThreadLocalPtr() {
   Instance()->ReclaimId(id_);
 }
 
+ROCKSDB_FLATTEN
 void* ThreadLocalPtr::Get() const {
   return Instance()->Get(id_);
 }
 
+ROCKSDB_FLATTEN
 void ThreadLocalPtr::Reset(void* ptr) {
   Instance()->Reset(id_, ptr);
 }
 
+ROCKSDB_FLATTEN
 void* ThreadLocalPtr::Swap(void* ptr) {
   return Instance()->Swap(id_, ptr);
 }
 
+ROCKSDB_FLATTEN
 bool ThreadLocalPtr::CompareAndSwap(void* ptr, void*& expected) {
   return Instance()->CompareAndSwap(id_, ptr, expected);
 }
 
+ROCKSDB_FLATTEN
 void ThreadLocalPtr::Scrape(autovector<void*>* ptrs, void* const replacement) {
   Instance()->Scrape(id_, ptrs, replacement);
 }
 
+ROCKSDB_FLATTEN
 void ThreadLocalPtr::Fold(FoldFunc func, void* res) {
   Instance()->Fold(id_, func, res);
 }

@@ -432,6 +432,7 @@
    (defined(__ICC) && (__ICC >= 600)) || defined(__ghs__) || defined(__clang__)
 
 # define ROCKSDB_FUNC __PRETTY_FUNCTION__
+# define ROCKSDB_FLATTEN __attribute__((flatten))
 
 #elif defined(__DMC__) && (__DMC__ >= 0x810)
 
@@ -461,6 +462,10 @@
 
 # define ROCKSDB_FUNC "(unknown)"
 
+#endif
+
+#if !defined(ROCKSDB_FLATTEN)
+# define ROCKSDB_FLATTEN
 #endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

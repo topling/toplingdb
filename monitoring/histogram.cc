@@ -85,6 +85,7 @@ bool HistogramStat::Empty() const { return num() == 0; }
 template<class T>
 inline T& NoAtomic(std::atomic<T>& x) { return reinterpret_cast<T&>(x); }
 
+ROCKSDB_FLATTEN
 void HistogramStat::Add(uint64_t value) {
   // This function is designed to be lock free, as it's in the critical path
   // of any operation. Each individual value is atomic and the order of updates

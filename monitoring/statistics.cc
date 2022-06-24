@@ -438,6 +438,7 @@ uint64_t StatisticsImpl::getAndResetTickerCount(uint32_t tickerType) {
   return sum;
 }
 
+ROCKSDB_FLATTEN
 void StatisticsImpl::recordTick(uint32_t tickerType, uint64_t count) {
   if (get_stats_level() <= StatsLevel::kExceptTickers) {
     return;
@@ -453,6 +454,7 @@ void StatisticsImpl::recordTick(uint32_t tickerType, uint64_t count) {
   }
 }
 
+ROCKSDB_FLATTEN
 void StatisticsImpl::recordInHistogram(uint32_t histogramType, uint64_t value) {
   assert(histogramType < HISTOGRAM_ENUM_MAX);
   if (get_stats_level() <= StatsLevel::kExceptHistogramOrTimers) {

@@ -687,13 +687,17 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
   // ascending order.
   InstrumentedMutexLock l(&lock_map_mutex_);
 
-  std::vector<uint32_t> cf_ids;
+  // cf num is generally small, very large cf num is ill
+  auto cf_ids = (uint32_t*)alloca(sizeof(uint32_t) * lock_maps_.size());
+  size_t cf_num = 0;
   for (const auto& map : lock_maps_) {
-    cf_ids.push_back(map.first);
+    cf_ids[cf_num++] = map.first;
   }
-  std::sort(cf_ids.begin(), cf_ids.end());
+  ROCKSDB_ASSERT_EQ(cf_num, lock_maps_.size());
+  std::sort(cf_ids, cf_ids + cf_num);
 
-  for (auto i : cf_ids) {
+  for (size_t k = 0; k < cf_num; ++k) {
+    auto i = cf_ids[k];
     const auto& stripes = lock_maps_[i]->lock_map_stripes_;
     // Iterate and lock all stripes in ascending order.
     for (const auto& j : stripes) {
@@ -711,7 +715,8 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
   }
 
   // Unlock everything. Unlocking order is not important.
-  for (auto i : cf_ids) {
+  for (size_t k = 0; k < cf_num; ++k) {
+    auto i = cf_ids[k];
     const auto& stripes = lock_maps_[i]->lock_map_stripes_;
     for (const auto& j : stripes) {
       j->stripe_mutex->UnLock();

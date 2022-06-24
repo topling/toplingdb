@@ -191,6 +191,8 @@ class ColumnFamilyHandleInternal : public ColumnFamilyHandleImpl {
 
   void SetCFD(ColumnFamilyData* _cfd) { internal_cfd_ = _cfd; }
   virtual ColumnFamilyData* cfd() const override { return internal_cfd_; }
+  uint32_t GetID() const final;
+  const std::string& GetName() const final;
 
  private:
   ColumnFamilyData* internal_cfd_;

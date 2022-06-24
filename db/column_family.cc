@@ -80,10 +80,10 @@ ColumnFamilyHandleImpl::~ColumnFamilyHandleImpl() {
   }
 }
 
-uint32_t ColumnFamilyHandleImpl::GetID() const { return cfd()->GetID(); }
+uint32_t ColumnFamilyHandleImpl::GetID() const { return cfd_->GetID(); }
 
 const std::string& ColumnFamilyHandleImpl::GetName() const {
-  return cfd()->GetName();
+  return cfd_->GetName();
 }
 
 Status ColumnFamilyHandleImpl::GetDescriptor(ColumnFamilyDescriptor* desc) {
@@ -100,6 +100,13 @@ Status ColumnFamilyHandleImpl::GetDescriptor(ColumnFamilyDescriptor* desc) {
 
 const Comparator* ColumnFamilyHandleImpl::GetComparator() const {
   return cfd()->user_comparator();
+}
+
+uint32_t ColumnFamilyHandleInternal::GetID() const {
+  return internal_cfd_->GetID();
+}
+const std::string& ColumnFamilyHandleInternal::GetName() const {
+  return internal_cfd_->GetName();
 }
 
 void GetIntTblPropCollectorFactory(

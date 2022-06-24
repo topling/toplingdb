@@ -124,6 +124,7 @@ private:
   void RemoveThreadData(ThreadData* d);
 
   static ThreadData* GetThreadLocal();
+  static ThreadData* NewThreadLocal();
 
   uint32_t next_instance_id_;
   // Used to recycle Ids in case ThreadLocalPtr is instantiated and destroyed
@@ -241,10 +242,14 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD dwReason, PVOID pv) {
 #endif
 }  // extern "C"
 
+#define __always_inline __forceinline
+#define __attribute_noinline__  __declspec(noinline)
+
 #endif  // OS_WIN
 
 void ThreadLocalPtr::InitSingletons() { ThreadLocalPtr::Instance(); }
 
+__always_inline
 ThreadLocalPtr::StaticMeta* ThreadLocalPtr::Instance() {
   // Here we prefer function static variable instead of global
   // static variable as function static variable is initialized
@@ -359,26 +364,33 @@ void ThreadLocalPtr::StaticMeta::RemoveThreadData(
   d->next = d->prev = d;
 }
 
+__always_inline
 ThreadData* ThreadLocalPtr::StaticMeta::GetThreadLocal() {
-  if (UNLIKELY(tls_ == nullptr)) {
-    auto* inst = Instance();
-    tls_ = new ThreadData(inst);
+  ThreadData* tls = tls_;
+  if (LIKELY(tls != nullptr))
+    return tls;
+  else
+    return NewThreadLocal();
+}
+__attribute_noinline__
+ThreadData* ThreadLocalPtr::StaticMeta::NewThreadLocal() {
+  auto* inst = Instance();
+  tls_ = new ThreadData(inst);
+  {
+    // Register it in the global chain, needs to be done before thread exit
+    // handler registration
+    MutexLock l(Mutex());
+    inst->AddThreadData(tls_);
+  }
+  // Even it is not OS_MACOSX, need to register value for pthread_key_ so that
+  // its exit handler will be triggered.
+  if (pthread_setspecific(inst->pthread_key_, tls_) != 0) {
     {
-      // Register it in the global chain, needs to be done before thread exit
-      // handler registration
       MutexLock l(Mutex());
-      inst->AddThreadData(tls_);
+      inst->RemoveThreadData(tls_);
     }
-    // Even it is not OS_MACOSX, need to register value for pthread_key_ so that
-    // its exit handler will be triggered.
-    if (pthread_setspecific(inst->pthread_key_, tls_) != 0) {
-      {
-        MutexLock l(Mutex());
-        inst->RemoveThreadData(tls_);
-      }
-      delete tls_;
-      abort();
-    }
+    delete tls_;
+    abort();
   }
   return tls_;
 }

@@ -188,6 +188,31 @@ Status OverlapWithIterator(const Comparator* ucmp,
   return iter->status();
 }
 
+static FORCE_INLINE int BytewiseCompare(Slice x, Slice y) noexcept {
+  size_t n = std::min(x.size_, y.size_);
+  int cmp = memcmp(x.data_, y.data_, n);
+  if (cmp)
+    return cmp;
+  else
+    return int(x.size_ - y.size_); // ignore key len larger than 2G-1
+}
+struct ForwardBytewiseCompareUserKey {
+  FORCE_INLINE int operator()(Slice x, Slice y) const noexcept {
+    return BytewiseCompare(x, y);
+  }
+};
+struct ReverseBytewiseCompareUserKey {
+  FORCE_INLINE int operator()(Slice x, Slice y) const noexcept {
+    return BytewiseCompare(y, x);
+  }
+};
+struct VirtualFunctionCompareUserKey {
+  FORCE_INLINE int operator()(Slice x, Slice y) const noexcept {
+    return cmp->CompareWithoutTimestamp(x, y);
+  }
+  const Comparator* cmp;
+};
+
 // Class to help choose the next file to search for the particular key.
 // Searches and returns files level by level.
 // We can search level-by-level since entries never hop across
@@ -230,6 +255,15 @@ class FilePicker {
   int GetCurrentLevel() const { return curr_level_; }
 
   FdWithKeyRange* GetNextFile() {
+    if (IsForwardBytewiseComparator(user_comparator_))
+      return GetNextFileTmpl(ForwardBytewiseCompareUserKey());
+    else if (IsReverseBytewiseComparator(user_comparator_))
+      return GetNextFileTmpl(ReverseBytewiseCompareUserKey());
+    else
+      return GetNextFileTmpl(VirtualFunctionCompareUserKey{user_comparator_});
+  }
+  template<class Compare>
+  FdWithKeyRange* GetNextFileTmpl(Compare cmp) {
     while (!search_ended_) {  // Loops over different levels.
       while (curr_index_in_curr_level_ < curr_file_level_->num_files) {
         // Loops over all files in current level.
@@ -253,14 +287,11 @@ class FilePicker {
           // range.
           assert(curr_level_ == 0 ||
                  curr_index_in_curr_level_ == start_index_in_curr_level_ ||
-                 user_comparator_->CompareWithoutTimestamp(
-                     user_key_, ExtractUserKey(f->smallest_key)) <= 0);
+                 cmp(user_key_, ExtractUserKey(f->smallest_key)) <= 0);
 
-          int cmp_smallest = user_comparator_->CompareWithoutTimestamp(
-              user_key_, ExtractUserKey(f->smallest_key));
+          int cmp_smallest = cmp(user_key_, ExtractUserKey(f->smallest_key));
           if (cmp_smallest >= 0) {
-            cmp_largest = user_comparator_->CompareWithoutTimestamp(
-                user_key_, ExtractUserKey(f->largest_key));
+            cmp_largest = cmp(user_key_, ExtractUserKey(f->largest_key));
           }
 
           // Setup file search bound for the next level based on the

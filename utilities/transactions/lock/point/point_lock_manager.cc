@@ -667,7 +667,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     while (key_it->HasNext()) {
       const auto& key = key_it->Next();
       size_t stripe_num = lock_map->GetStripe(key);
-      keys_by_stripe[stripe_num].reserve(8); // quick return if 8 <= capacity
+      keys_by_stripe[stripe_num].reserve(16); // quick return if 16 <= capacity
       keys_by_stripe[stripe_num].push_back(key);
     }
 

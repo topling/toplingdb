@@ -587,7 +587,7 @@ void PointLockManager::UnLockKey(PessimisticTransaction* txn,
       if (txns.size() == 1) {
         stripe->keys.erase(stripe_iter);
       } else {
-        *txn_it = txns.back();
+        *txn_it = std::move(txns.back());
         txns.pop_back();
       }
 

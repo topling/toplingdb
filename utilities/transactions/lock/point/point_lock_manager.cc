@@ -21,6 +21,8 @@
 #include "utilities/transactions/pessimistic_transaction_db.h"
 #include "utilities/transactions/transaction_db_mutex_impl.h"
 
+#include <terark/valvec32.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 struct LockInfo {
@@ -646,7 +648,20 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     UnorderedMap<size_t, std::vector<LockString>> keys_by_stripe(
         lock_map->num_stripes_);
 #else
+/* faster than UnorderedMap but slower than vector/valvec32
     terark::VectorIndexMap<size_t, std::vector<LockString> > keys_by_stripe(
+        lock_map->num_stripes_);
+*/
+    // in many cases, stripe count is large, but not all stripes have keys
+    // when key count is much smaller than stripe count,
+    // some_map<stripe_num, Keys> use less memory but it is always slow,
+    // when key count is comparable to stripe count, some_map<stripe_num, Keys>
+    // not only slow but also use more memory than vector, we use vector, and
+    // use terark::valvec32 for smaller sizeof(vector), which reduce construct
+    // for keys_by_stripe
+    static_assert(sizeof(std::vector<LockString>) == 24);
+    static_assert(sizeof(terark::valvec32<LockString>) == 16);
+    terark::valvec32<terark::valvec32<LockString> > keys_by_stripe(
         lock_map->num_stripes_);
 #endif
     std::unique_ptr<LockTracker::KeyIterator> key_it(
@@ -659,10 +674,17 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     }
 
     // For each stripe, grab the stripe mutex and unlock all keys in this stripe
+#if 0
+    // old code iterate some_map
     for (auto& stripe_iter : keys_by_stripe) {
       size_t stripe_num = stripe_iter.first;
       auto& stripe_keys = stripe_iter.second;
-
+#else
+    // new code iterate valvec32
+    for (size_t stripe_num = 0; stripe_num < keys_by_stripe.size(); stripe_num++) {
+      auto& stripe_keys = keys_by_stripe[stripe_num];
+      if (stripe_keys.empty()) continue; // equivalent to not exists in map
+#endif
       assert(lock_map->lock_map_stripes_.size() > stripe_num);
       LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
 

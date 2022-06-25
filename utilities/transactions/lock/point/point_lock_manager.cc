@@ -22,6 +22,7 @@
 #include "utilities/transactions/transaction_db_mutex_impl.h"
 
 #include <terark/valvec32.hpp>
+#include "point_lock_tracker.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -642,6 +643,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
 
     // Bucket keys by lock_map_ stripe
 #if 0
+#if 0
     UnorderedMap<size_t, std::vector<LockString>> keys_by_stripe(
         lock_map->num_stripes_);
 #else
@@ -697,6 +699,37 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
       // Signal waiting threads to retry locking
       stripe->stripe_cv->NotifyAll();
     }
+#else
+    // use single linked list instead of vector to store stripe(partition)
+    // this just needs 2 fixed size uint32 vector(valvec)
+    auto& ptracker = static_cast<const PointLockTracker&>(tracker);
+    const uint32_t nil = UINT32_MAX;
+    using namespace terark;
+    const TrackedKeyInfos& keyinfos = ptracker.tracked_keys_.at(cf);
+    const size_t max_key_idx = keyinfos.end_i();
+    valvec<uint32_t> stripe_heads(lock_map->num_stripes_, nil);
+    valvec<uint32_t> keys_link(max_key_idx, valvec_no_init());
+    for (size_t idx = 0; idx < max_key_idx; idx++) {
+      if (!keyinfos.is_deleted(idx)) {
+        const fstring key = keyinfos.key(idx);
+        size_t stripe_num = lock_map->GetStripe(key);
+        keys_link[idx] = stripe_heads[stripe_num]; // insert to single
+        stripe_heads[stripe_num] = idx;            // list front
+      }
+    }
+    for (size_t stripe_num = 0; stripe_num < stripe_heads.size(); stripe_num++) {
+      uint32_t head = stripe_heads[stripe_num];
+      if (nil == head) continue;
+      LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
+      stripe->stripe_mutex->Lock().PermitUncheckedError();
+      for (uint32_t idx = head; nil != idx; idx = keys_link[idx]) {
+        const fstring key = keyinfos.key(idx);
+        UnLockKey(txn, key, stripe, lock_map, env);
+      }
+      stripe->stripe_mutex->UnLock();
+      stripe->stripe_cv->NotifyAll();
+    }
+#endif
   }
 }
 

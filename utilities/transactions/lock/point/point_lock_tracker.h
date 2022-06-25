@@ -91,7 +91,7 @@ class PointLockTracker : public LockTracker {
 
   KeyIterator* GetKeyIterator(ColumnFamilyId column_family_id) const override;
 
- private:
+ //private:
   TrackedKeys tracked_keys_;
 };
 

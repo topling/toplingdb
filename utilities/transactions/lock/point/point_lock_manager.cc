@@ -630,6 +630,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
 
 void PointLockManager::UnLock(PessimisticTransaction* txn,
                               const LockTracker& tracker, Env* env) {
+#if 0
   std::unique_ptr<LockTracker::ColumnFamilyIterator> cf_it(
       tracker.GetColumnFamilyIterator());
   assert(cf_it != nullptr);
@@ -642,7 +643,6 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     }
 
     // Bucket keys by lock_map_ stripe
-#if 0
 #if 0
     UnorderedMap<size_t, std::vector<LockString>> keys_by_stripe(
         lock_map->num_stripes_);
@@ -699,13 +699,16 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
       // Signal waiting threads to retry locking
       stripe->stripe_cv->NotifyAll();
     }
+  }
 #else
-    // use single linked list instead of vector to store stripe(partition)
-    // this just needs 2 fixed size uint32 vector(valvec)
-    auto& ptracker = static_cast<const PointLockTracker&>(tracker);
+  // use single linked list instead of vector to store stripe(partition)
+  // this just needs 2 fixed size uint32 vector(valvec)
+  auto& ptracker = static_cast<const PointLockTracker&>(tracker);
+  for (auto& [cf_id, keyinfos] : ptracker.tracked_keys_) {
+    LockMap* lock_map = GetLockMap(cf_id);
+    if (!lock_map) continue;
     const uint32_t nil = UINT32_MAX;
     using namespace terark;
-    const TrackedKeyInfos& keyinfos = ptracker.tracked_keys_.at(cf);
     const size_t max_key_idx = keyinfos.end_i();
     valvec<uint32_t> stripe_heads(lock_map->num_stripes_, nil);
     valvec<uint32_t> keys_link(max_key_idx, valvec_no_init());
@@ -729,8 +732,8 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
       stripe->stripe_mutex->UnLock();
       stripe->stripe_cv->NotifyAll();
     }
-#endif
   }
+#endif
 }
 
 PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {

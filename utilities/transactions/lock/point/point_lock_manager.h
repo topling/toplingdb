@@ -180,7 +180,7 @@ class PointLockManager : public LockManager {
   using LockMaps = UnorderedMap<uint32_t, std::shared_ptr<LockMap>>;
 #else
 //using LockMaps = std::map<uint32_t, std::shared_ptr<LockMap>>;
-  using LockMaps = terark::VectorPtrMap<uint32_t, std::shared_ptr<LockMap> >;
+  using LockMaps = terark::VectorIndexMap<uint32_t, std::shared_ptr<LockMap> >;
 #endif
  private:
   LockMaps lock_maps_;

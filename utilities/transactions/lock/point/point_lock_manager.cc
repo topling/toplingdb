@@ -648,7 +648,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
         lock_map->num_stripes_);
 #else
 /* faster than UnorderedMap but slower than vector/valvec32
-    terark::VectorPtrMap<size_t, std::vector<LockString> > keys_by_stripe(
+    terark::VectorIndexMap<size_t, std::vector<LockString> > keys_by_stripe(
         lock_map->num_stripes_);
 */
     // in many cases, stripe count is large, but not all stripes have keys
@@ -676,7 +676,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     // For each stripe, grab the stripe mutex and unlock all keys in this stripe
 #if 0
     // old code iterate some_map
-    for (const auto& stripe_iter : keys_by_stripe) {
+    for (auto& stripe_iter : keys_by_stripe) {
       size_t stripe_num = stripe_iter.first;
       auto& stripe_keys = stripe_iter.second;
 #else
@@ -704,7 +704,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
   // use single linked list instead of vector to store stripe(partition)
   // this just needs 2 fixed size uint32 vector(valvec)
   auto& ptracker = static_cast<const PointLockTracker&>(tracker);
-  for (const auto& [cf_id, keyinfos] : ptracker.tracked_keys_) {
+  for (auto& [cf_id, keyinfos] : ptracker.tracked_keys_) {
     LockMap* lock_map = GetLockMap(cf_id);
     if (!lock_map) continue;
     const uint32_t nil = UINT32_MAX;

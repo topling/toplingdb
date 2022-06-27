@@ -55,7 +55,7 @@ class RangeLockList {
     buffers_.clear();
   }
 
-  terark::VectorIndexMap<ColumnFamilyId, std::shared_ptr<toku::range_buffer>>
+  terark::VectorPtrMap<ColumnFamilyId, std::shared_ptr<toku::range_buffer>>
       buffers_;
   port::Mutex mutex_;
   std::atomic<bool> releasing_locks_;

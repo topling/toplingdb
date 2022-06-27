@@ -49,7 +49,7 @@ struct TrackedKeyInfos : terark::hash_strmap<TrackedKeyInfo> {
 };
 #endif
 
-using TrackedKeys = terark::VectorIndexMap<ColumnFamilyId, TrackedKeyInfos>;
+using TrackedKeys = terark::VectorPtrMap<ColumnFamilyId, TrackedKeyInfos>;
 
 // Tracks point locks on single keys.
 class PointLockTracker : public LockTracker {

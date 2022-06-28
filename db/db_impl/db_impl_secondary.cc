@@ -583,6 +583,10 @@ Status DBImplSecondary::CheckConsistency() {
          s.IsPathNotFound())) {
       s = Status::OK();
     }
+#else
+    if (s.IsPathNotFound()) {
+      s = Status::OK();
+    }
 #endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
     if (!s.ok()) {
       corruption_messages +=

@@ -496,7 +496,7 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(DB* db,
 
 #define RepGetUserComparator(cfh) \
     cfh ? cfh->GetComparator() : \
-    rep ? rep->comparator.GetComparator(column_family) : nullptr
+    rep ? rep->comparator.GetComparator(cfh) : nullptr
 
 Status WriteBatchWithIndex::GetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,

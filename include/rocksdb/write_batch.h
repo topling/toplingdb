@@ -437,6 +437,19 @@ class WriteBatch : public WriteBatchBase {
   // more details.
   bool is_latest_persistent_state_ = false;
 
+  // False if all keys are from column families that disable user-defined
+  // timestamp OR UpdateTimestamps() has been called at least once.
+  // This flag will be set to true if any of the above Put(), Delete(),
+  // SingleDelete(), etc. APIs are called at least once.
+  // Calling Put(ts), Delete(ts), SingleDelete(ts), etc. will not set this flag
+  // to true because the assumption is that these APIs have already set the
+  // timestamps to desired values.
+  bool needs_in_place_update_ts_ = false;
+
+  // True if the write batch contains at least one key from a column family
+  // that enables user-defined timestamp.
+  bool has_key_with_ts_ = false;
+
   // For HasXYZ.  Mutable to allow lazy computation of results
 #if 0
   mutable std::atomic<uint32_t> content_flags_;
@@ -453,19 +466,6 @@ class WriteBatch : public WriteBatchBase {
   std::unique_ptr<ProtectionInfo> prot_info_;
 
   size_t default_cf_ts_sz_ = 0;
-
-  // False if all keys are from column families that disable user-defined
-  // timestamp OR UpdateTimestamps() has been called at least once.
-  // This flag will be set to true if any of the above Put(), Delete(),
-  // SingleDelete(), etc. APIs are called at least once.
-  // Calling Put(ts), Delete(ts), SingleDelete(ts), etc. will not set this flag
-  // to true because the assumption is that these APIs have already set the
-  // timestamps to desired values.
-  bool needs_in_place_update_ts_ = false;
-
-  // True if the write batch contains at least one key from a column family
-  // that enables user-defined timestamp.
-  bool has_key_with_ts_ = false;
 
  protected:
   std::string rep_;  // See comment in write_batch.cc for the format of rep_

@@ -112,18 +112,6 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       oldest_key_time_(std::numeric_limits<uint64_t>::max()),
       atomic_flush_seqno_(kMaxSequenceNumber),
       approximate_memory_usage_(0) {
-  if (!table_) {
-    // ioptions.memtable_factory may be a plugin, it may be failed, for
-    // example, patricia trie does not support user comparator, it will
-    // fail for non-bytewise comparator.
-    //
-    // ioptions.memtable_factory->CreateMemTableRep() failed, try skiplist
-    assert(Slice("SkipListFactory") != ioptions.memtable_factory->Name());
-    table_.reset(SkipListFactory().CreateMemTableRep(comparator_,
-        &arena_, mutable_cf_options.prefix_extractor.get(),
-        ioptions.info_log.get(), column_family_id));
-    assert(table_.get() != nullptr); // SkipListFactory never fail
-  }
   UpdateFlushState();
   // something went wrong if we need to flush before inserting anything
   assert(!ShouldScheduleFlush());

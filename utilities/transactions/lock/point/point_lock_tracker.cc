@@ -136,9 +136,7 @@ void PointLockTracker::Merge(const LockTracker& tracker) {
           current_info->second.Merge(info);
         }
       #else
-        auto [idx, success] = current_keys.lazy_insert_i(key, [&](void* mem) {
-          new(mem)TrackedKeyInfo(info);
-        });
+        auto [idx, success] = current_keys.insert_i(key, info);
         if (!success) {
           current_keys.val(idx).Merge(info);
         }

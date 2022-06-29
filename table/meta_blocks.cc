@@ -102,7 +102,9 @@ void PropertyBlockBuilder::AddTableProperty(const TableProperties& props) {
   Add(TablePropertiesNames::kFilterSize, props.filter_size);
   Add(TablePropertiesNames::kFormatVersion, props.format_version);
   Add(TablePropertiesNames::kFixedKeyLen, props.fixed_key_len);
-  Add(TablePropertiesNames::kFixedValueLen, props.fixed_value_len);
+  if (int64_t(props.fixed_value_len) >= 0) {
+    Add(TablePropertiesNames::kFixedValueLen, props.fixed_value_len);
+  }
   Add(TablePropertiesNames::kColumnFamilyId, props.column_family_id);
   Add(TablePropertiesNames::kCreationTime, props.creation_time);
   Add(TablePropertiesNames::kOldestKeyTime, props.oldest_key_time);

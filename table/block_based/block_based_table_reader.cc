@@ -441,11 +441,13 @@ bool IsFeatureSupported(const TableProperties& table_properties,
   }
   return true;
 }
+}  // namespace
 
 // Caller has to ensure seqno is not nullptr.
 Status GetGlobalSequenceNumber(const TableProperties& table_properties,
                                SequenceNumber largest_seqno,
                                SequenceNumber* seqno) {
+#if defined(ROCKSDB_UNIT_TEST)
   const auto& props = table_properties.user_collected_properties;
   const auto version_pos = props.find(ExternalSstFilePropertyNames::kVersion);
   const auto seqno_pos = props.find(ExternalSstFilePropertyNames::kGlobalSeqno);
@@ -512,10 +514,15 @@ Status GetGlobalSequenceNumber(const TableProperties& table_properties,
              version, static_cast<unsigned long long>(global_seqno));
     return Status::Corruption(msg_buf.data());
   }
+#else
+  if (largest_seqno < kMaxSequenceNumber)
+    *seqno =  largest_seqno;
+  else
+    *seqno = 0;
+#endif
 
   return Status::OK();
 }
-}  // namespace
 
 void BlockBasedTable::SetupBaseCacheKey(const TableProperties* properties,
                                         const std::string& cur_db_session_id,

@@ -608,6 +608,14 @@ Status ExternalSstFileIngestionJob::GetIngestedFileInfo(
 
   // Get the external file properties
   auto props = table_reader->GetTableProperties();
+
+#if defined(ROCKSDB_UNIT_TEST)
+  // ToplingDB: now rocksdb store global_seqno in manifest file, we does not
+  // need to read global_seqno from sst, so version and global_seqno are
+  // all not needed, so we skip it!
+  // if we does not skip it, the ingest will failed when ingest sst files
+  // from MergeTables!
+  // Now global_seqno are load from TableReaderOptions::largest_seqno
   const auto& uprops = props->user_collected_properties;
 
   // Get table version
@@ -645,6 +653,8 @@ Status ExternalSstFileIngestionJob::GetIngestedFileInfo(
   } else {
     return Status::InvalidArgument("External file version is not supported");
   }
+#endif
+
   // Get number of entries in table
   file_to_ingest->num_entries = props->num_entries;
   file_to_ingest->num_range_deletions = props->num_range_deletions;

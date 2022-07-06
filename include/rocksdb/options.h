@@ -1952,6 +1952,9 @@ struct IngestExternalFileOptions {
   //
   // ingest_behind takes precedence over fail_if_not_bottommost_level.
   bool fail_if_not_bottommost_level = false;
+
+  // ToplingDB: sync file can be optional
+  bool sync_file = true;
 };
 
 ROCKSDB_ENUM_PLAIN(TraceFilterType, uint64_t,

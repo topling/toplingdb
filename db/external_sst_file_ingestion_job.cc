@@ -112,7 +112,11 @@ Status ExternalSstFileIngestionJob::Prepare(
     if (ingestion_options_.move_files) {
       status =
           fs_->LinkFile(path_outside_db, path_inside_db, IOOptions(), nullptr);
-      if (status.ok()) {
+      if (!status.ok()) {
+        status = fs_->RenameFile(
+          path_outside_db, path_inside_db, IOOptions(), nullptr);
+      }
+      if (status.ok() && ingestion_options_.sync_file) {
         // It is unsafe to assume application had sync the file and file
         // directory before ingest the file. For integrity of RocksDB we need
         // to sync the file.
@@ -139,6 +143,8 @@ Status ExternalSstFileIngestionJob::Prepare(
             }
           }
         }
+      } else if (status.ok()) {
+        // ToplingDB: ingestion_options_.sync_file is false, do nothing
       } else if (status.IsNotSupported() &&
                  ingestion_options_.failed_move_fall_back_to_copy) {
         // Original file is on a different FS, use copy instead of hard linking.

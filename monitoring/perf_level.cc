@@ -10,7 +10,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 #if !defined(ROCKSDB_NON_TLS_PERF_LEVEL)
-thread_local PerfLevel perf_level = kEnableCount;
+thread_local PerfLevel perf_level ROCKSDB_STATIC_TLS = kEnableCount;
 #else
 PerfLevel perf_level = kEnableCount;
 #endif

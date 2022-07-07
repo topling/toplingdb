@@ -5,12 +5,14 @@
 //
 #pragma once
 #include "rocksdb/perf_level.h"
+#include "port/lang.h"
 #include "port/port.h"
+
 
 namespace ROCKSDB_NAMESPACE {
 
 #if !defined(ROCKSDB_NON_TLS_PERF_LEVEL)
-extern thread_local PerfLevel perf_level;
+extern thread_local PerfLevel perf_level ROCKSDB_STATIC_TLS;
 #else
 extern PerfLevel perf_level;
 #endif

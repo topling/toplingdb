@@ -10,7 +10,12 @@
 #include "util/thread_local.h"
 #include "util/mutexlock.h"
 #include "port/likely.h"
+#include "port/port.h"
 #include <stdlib.h>
+#include <atomic>
+#include <memory>
+#include <vector>
+
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -147,7 +152,7 @@ private:
   // using this variable directly.
   port::Mutex mutex_;
   // Thread local storage
-  static thread_local ThreadData* tls_;
+  static thread_local ThreadData* tls_ ROCKSDB_STATIC_TLS;
 
   // Used to make thread exit trigger possible if !defined(OS_MACOSX).
   // Otherwise, used to retrieve thread data.

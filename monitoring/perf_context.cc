@@ -14,7 +14,7 @@ namespace ROCKSDB_NAMESPACE {
 // Put here just to make get_perf_context() simple without ifdef.
 PerfContext perf_context;
 #else
-thread_local PerfContext perf_context;
+thread_local PerfContext perf_context ROCKSDB_STATIC_TLS;
 #endif
 
 PerfContext* get_perf_context() {

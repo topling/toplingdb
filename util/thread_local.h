@@ -9,14 +9,8 @@
 
 #pragma once
 
-#include <atomic>
 #include <functional>
-#include <memory>
-#include <unordered_map>
-#include <vector>
-
 #include "util/autovector.h"
-#include "port/port.h"
 
 namespace ROCKSDB_NAMESPACE {
 

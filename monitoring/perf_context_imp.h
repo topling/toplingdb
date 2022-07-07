@@ -5,6 +5,7 @@
 //
 #pragma once
 #include "monitoring/perf_step_timer.h"
+#include "port/lang.h"
 #include "rocksdb/perf_context.h"
 #include "util/stop_watch.h"
 
@@ -16,7 +17,7 @@ extern PerfContext perf_context;
 extern thread_local PerfContext perf_context_;
 #define perf_context (*get_perf_context())
 #else
-extern thread_local PerfContext perf_context;
+extern thread_local PerfContext perf_context ROCKSDB_STATIC_TLS;
 #endif
 #endif
 

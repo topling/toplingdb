@@ -17,8 +17,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-static thread_local Random tls_instance(
-  std::hash<std::thread::id>()(std::this_thread::get_id())) ROCKSDB_STATIC_TLS;
+static thread_local ROCKSDB_STATIC_TLS Random tls_instance(
+  std::hash<std::thread::id>()(std::this_thread::get_id()));
 
 Random* Random::GetTLSInstance() {
   return &tls_instance;

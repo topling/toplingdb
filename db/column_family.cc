@@ -759,7 +759,11 @@ uint64_t ColumnFamilyData::OldestLogToKeep() {
   return current_log;
 }
 
+#if 0
 const double kIncSlowdownRatio = 0.8;
+#else
+const double kIncSlowdownRatio = 0.97; // topling specific
+#endif
 const double kDecSlowdownRatio = 1 / kIncSlowdownRatio;
 const double kNearStopSlowdownRatio = 0.6;
 const double kDelayRecoverSlowdownRatio = 1.4;

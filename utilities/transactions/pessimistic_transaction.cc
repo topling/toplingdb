@@ -961,7 +961,10 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   if (UNLIKELY(skip_concurrency_control_)) {
     return s;
   }
-  uint32_t cfh_id = GetColumnFamilyID(column_family);
+  const ColumnFamilyHandle* const cfh =
+      column_family ? column_family : db_impl_->DefaultColumnFamily();
+  assert(cfh);
+  uint32_t cfh_id = cfh->GetID();
 
   PointLockStatus status;
   bool lock_upgrade;
@@ -983,9 +986,6 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
     s = txn_db_impl_->TryLock(this, cfh_id, key, exclusive);
   }
 
-  const ColumnFamilyHandle* const cfh =
-      column_family ? column_family : db_impl_->DefaultColumnFamily();
-  assert(cfh);
   const Comparator* const ucmp = cfh->GetComparator();
   assert(ucmp);
   size_t ts_sz = ucmp->timestamp_size();
@@ -1075,7 +1075,7 @@ Status PessimisticTransaction::GetRangeLock(ColumnFamilyHandle* column_family,
                                             const Endpoint& end_endp) {
   ColumnFamilyHandle* cfh =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
-  uint32_t cfh_id = GetColumnFamilyID(cfh);
+  uint32_t cfh_id = cfh->GetID();
 
   Status s = txn_db_impl_->TryRangeLock(this, cfh_id, start_endp, end_endp);
 

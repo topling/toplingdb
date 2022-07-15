@@ -146,6 +146,59 @@ void DumpSupportInfo(Logger* logger) {
   ROCKS_LOG_HEADER(logger, "Fast CRC32 supported: %s",
                    crc32c::IsFastCrc32Supported().c_str());
 }
+
+// A structure to hold the information required to process MultiGet of keys
+// belonging to one column family. For a multi column family MultiGet, there
+// will be a container of these objects.
+struct MultiGetColumnFamilyData {
+  ColumnFamilyHandle* cf;
+  ColumnFamilyData* cfd;
+
+  // For the batched MultiGet which relies on sorted keys, start specifies
+  // the index of first key belonging to this column family in the sorted
+  // list.
+  size_t start;
+
+  // For the batched MultiGet case, num_keys specifies the number of keys
+  // belonging to this column family in the sorted list
+  size_t num_keys;
+
+  // SuperVersion for the column family obtained in a manner that ensures a
+  // consistent view across all column families in the DB
+  SuperVersion* super_version;
+  MultiGetColumnFamilyData(ColumnFamilyHandle* column_family,
+                            SuperVersion* sv)
+      : cf(column_family),
+        cfd(static_cast<ColumnFamilyHandleImpl*>(cf)->cfd()),
+        start(0),
+        num_keys(0),
+        super_version(sv) {}
+
+  MultiGetColumnFamilyData(ColumnFamilyHandle* column_family, size_t first,
+                            size_t count, SuperVersion* sv)
+      : cf(column_family),
+        cfd(static_cast<ColumnFamilyHandleImpl*>(cf)->cfd()),
+        start(first),
+        num_keys(count),
+        super_version(sv) {}
+
+  MultiGetColumnFamilyData() = default;
+};
+
+template<class Iter>
+static inline
+auto iter_deref_func(const Iter& i) ->
+std::common_type_t<MultiGetColumnFamilyData*, decltype(&i->second)> {
+  return &i->second;
+}
+
+template<class Iter>
+static inline
+auto iter_deref_func(const Iter& i) ->
+std::common_type_t<MultiGetColumnFamilyData*, decltype(&*i)> {
+  return &*i;
+}
+
 }  // namespace
 
 InstrumentedMutex* Get_DB_mutex(const DB* db) {
@@ -1997,15 +2050,19 @@ std::vector<Status> DBImpl::MultiGet(
   std::vector<Status> stat_list(num_keys);
 
   bool should_fail = false;
-  for (size_t i = 0; i < num_keys; ++i) {
-    assert(column_family[i]);
-    if (read_options.timestamp) {
+  if (auto ts = read_options.timestamp) {
+    for (size_t i = 0; i < num_keys; ++i) {
+      assert(column_family[i]);
       stat_list[i] = FailIfTsMismatchCf(
-          column_family[i], *(read_options.timestamp), /*ts_for_read=*/true);
+          column_family[i], *ts, /*ts_for_read=*/true);
       if (!stat_list[i].ok()) {
         should_fail = true;
       }
-    } else {
+    }
+  }
+  else {
+    for (size_t i = 0; i < num_keys; ++i) {
+      assert(column_family[i]);
       stat_list[i] = FailIfCfHasTs(column_family[i]);
       if (!stat_list[i].ok()) {
         should_fail = true;
@@ -2046,15 +2103,7 @@ std::vector<Status> DBImpl::MultiGet(
     }
   }
 
-  std::function<MultiGetColumnFamilyData*(
-      UnorderedMap<uint32_t, MultiGetColumnFamilyData>::iterator&)>
-      iter_deref_lambda =
-          [](UnorderedMap<uint32_t, MultiGetColumnFamilyData>::iterator&
-                 cf_iter) { return &cf_iter->second; };
-
-  bool unref_only =
-      MultiCFSnapshot<UnorderedMap<uint32_t, MultiGetColumnFamilyData>>(
-          read_options, nullptr, iter_deref_lambda, &multiget_cf_data,
+  bool unref_only = MultiCFSnapshot(read_options, nullptr, &multiget_cf_data,
           &consistent_seqnum);
 
   TEST_SYNC_POINT("DBImpl::MultiGet:AfterGetSeqNum1");
@@ -2189,8 +2238,6 @@ std::vector<Status> DBImpl::MultiGet(
 template <class T>
 bool DBImpl::MultiCFSnapshot(
     const ReadOptions& read_options, ReadCallback* callback,
-    std::function<MultiGetColumnFamilyData*(typename T::iterator&)>&
-        iter_deref_func,
     T* cf_list, SequenceNumber* snapshot) {
   PERF_TIMER_GUARD(get_snapshot_time);
 
@@ -2401,19 +2448,8 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
 
   multiget_cf_data.emplace_back(cf, cf_start, num_keys - cf_start, nullptr);
 
-  std::function<MultiGetColumnFamilyData*(
-      autovector<MultiGetColumnFamilyData,
-                 MultiGetContext::MAX_BATCH_SIZE>::iterator&)>
-      iter_deref_lambda =
-          [](autovector<MultiGetColumnFamilyData,
-                        MultiGetContext::MAX_BATCH_SIZE>::iterator& cf_iter) {
-            return &(*cf_iter);
-          };
-
   SequenceNumber consistent_seqnum;
-  bool unref_only = MultiCFSnapshot<
-      autovector<MultiGetColumnFamilyData, MultiGetContext::MAX_BATCH_SIZE>>(
-      read_options, nullptr, iter_deref_lambda, &multiget_cf_data,
+  bool unref_only = MultiCFSnapshot(read_options, nullptr, &multiget_cf_data,
       &consistent_seqnum);
 
   GetWithTimestampReadCallback timestamp_read_callback(0);
@@ -2558,17 +2594,10 @@ void DBImpl::MultiGetWithCallback(
     autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE>* sorted_keys) {
   std::array<MultiGetColumnFamilyData, 1> multiget_cf_data;
   multiget_cf_data[0] = MultiGetColumnFamilyData(column_family, nullptr);
-  std::function<MultiGetColumnFamilyData*(
-      std::array<MultiGetColumnFamilyData, 1>::iterator&)>
-      iter_deref_lambda =
-          [](std::array<MultiGetColumnFamilyData, 1>::iterator& cf_iter) {
-            return &(*cf_iter);
-          };
 
   size_t num_keys = sorted_keys->size();
   SequenceNumber consistent_seqnum;
-  bool unref_only = MultiCFSnapshot<std::array<MultiGetColumnFamilyData, 1>>(
-      read_options, callback, iter_deref_lambda, &multiget_cf_data,
+  bool unref_only = MultiCFSnapshot(read_options, callback, &multiget_cf_data,
       &consistent_seqnum);
 #ifndef NDEBUG
   assert(!unref_only);

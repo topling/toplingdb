@@ -2795,7 +2795,11 @@ sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
 
 .PHONY: dcompact_worker
 dcompact_worker: ${SHARED1}
+ifeq (${MAKE_UNIT_TEST},1)
+	@echo rocksdb unit test, skip dcompact_worker
+else
 	+make -C sideplugin/topling-rocks/tools/dcompact ${OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
+endif
 endif
 
 ifneq (,$(wildcard sideplugin/cspp-memtable))

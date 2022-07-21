@@ -310,6 +310,7 @@ void CompactionJob::GenSubcompactionBoundaries() {
   int out_lvl = c->output_level();
 
   auto try_add_rand_keys = [&](FileMetaData* fmd) {
+   #if !defined(ROCKSDB_UNIT_TEST)
     Cache::Handle* ch = fmd->table_reader_handle;
     if (nullptr == ch)
       return false;
@@ -330,6 +331,7 @@ void CompactionJob::GenSubcompactionBoundaries() {
       rand_key_store_.push_back(std::move(rand_keys));
       return true;
     }
+   #endif
     return false;
   };
 

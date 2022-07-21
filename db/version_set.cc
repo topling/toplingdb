@@ -2895,6 +2895,7 @@ void VersionStorageInfo::ComputeCompactionScore(
         total_downcompact_bytes +=
             static_cast<double>(level_total_bytes - MaxBytesForLevel(level));
       }
+     #if !defined(ROCKSDB_UNIT_TEST)
       if (level_bytes_no_compacting && 1 == level &&
             compaction_style_ == kCompactionStyleLevel) {
         unsigned L1_score_boost =
@@ -2905,6 +2906,7 @@ void VersionStorageInfo::ComputeCompactionScore(
         }
         // score *= std::max(L1_score_boost, 1.0);
       }
+     #endif
     }
     compaction_level_[level] = level;
     compaction_score_[level] = score;

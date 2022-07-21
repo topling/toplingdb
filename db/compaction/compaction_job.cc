@@ -1152,7 +1152,7 @@ try {
   // these were run on remote compaction worker node
   //AggregateStatistics();
   //UpdateCompactionStats();
-  compaction_job_stats_->Add(rpc_results.job_stats); // instead AggregateStatistics
+  //compaction_job_stats_->Add(rpc_results.job_stats); // instead AggregateStatistics
 
   //RecordCompactionIOStats(); // update remote statistics to local -->>
 #if defined(__GNUC__)

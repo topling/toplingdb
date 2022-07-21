@@ -112,10 +112,12 @@ Status ExternalSstFileIngestionJob::Prepare(
     if (ingestion_options_.move_files) {
       status =
           fs_->LinkFile(path_outside_db, path_inside_db, IOOptions(), nullptr);
+     #if !defined(ROCKSDB_UNIT_TEST)
       if (!status.ok()) {
         status = fs_->RenameFile(
           path_outside_db, path_inside_db, IOOptions(), nullptr);
       }
+     #endif
       if (status.ok() && ingestion_options_.sync_file) {
         // It is unsafe to assume application had sync the file and file
         // directory before ingest the file. For integrity of RocksDB we need

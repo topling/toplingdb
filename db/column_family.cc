@@ -759,7 +759,7 @@ uint64_t ColumnFamilyData::OldestLogToKeep() {
   return current_log;
 }
 
-#if 0
+#if defined(ROCKSDB_UNIT_TEST)
 const double kIncSlowdownRatio = 0.8;
 #else
 const double kIncSlowdownRatio = 0.97; // topling specific

@@ -55,6 +55,7 @@ struct TablePropertiesNames {
   static const std::string kNumRangeDeletions;
   static const std::string kFormatVersion;
   static const std::string kFixedKeyLen;
+  static const std::string kFixedValueLen;
   static const std::string kFilterPolicy;
   static const std::string kColumnFamilyName;
   static const std::string kColumnFamilyId;
@@ -213,6 +214,8 @@ struct TableProperties {
   uint64_t format_version = 0;
   // If 0, key is variable length. Otherwise number of bytes for each key.
   uint64_t fixed_key_len = 0;
+  // If UINT64_MAX, value is variable length. Otherwise number of bytes for each value.
+  uint64_t fixed_value_len = UINT64_MAX;
   // ID of column family for this SST file, corresponding to the CF identified
   // by column_family_name.
   uint64_t column_family_id = ROCKSDB_NAMESPACE::

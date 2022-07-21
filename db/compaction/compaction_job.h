@@ -189,6 +189,10 @@ class CompactionJob {
   // Return the IO status
   IOStatus io_status() const { return io_status_; }
 
+  void GetSubCompactOutputs(std::vector<std::vector<const FileMetaData*> >*) const;
+  CompactionJobStats* GetCompactionJobStats() const { return compaction_job_stats_; }
+  const InternalStats::CompactionStatsFull& GetCompactionStats() const { return compaction_stats_; }
+
  protected:
   void UpdateCompactionStats();
   void LogCompaction();
@@ -250,6 +254,9 @@ class CompactionJob {
 
   void NotifyOnSubcompactionCompleted(SubcompactionState* sub_compact);
 
+  Status RunLocal();
+  Status RunRemote();
+
   uint32_t job_id_;
 
   // DBImpl state
@@ -310,6 +317,8 @@ class CompactionJob {
   // it will be placed on the penultimate_level and seqnuence number won't be
   // zeroed out.
   SequenceNumber penultimate_level_cutoff_seqno_ = kMaxSequenceNumber;
+
+  std::vector<std::vector<std::string> > rand_key_store_;
 
   // Get table file name in where it's outputting to, which should also be in
   // `output_directory_`.

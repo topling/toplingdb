@@ -73,14 +73,15 @@ class PessimisticTransaction : public TransactionBaseImpl {
                                             std::string* key) const override {
     std::lock_guard<std::mutex> lock(wait_mutex_);
     std::vector<TransactionID> ids(waiting_txn_ids_.size());
-    if (key) *key = waiting_key_ ? *waiting_key_ : "";
+    if (key) *key = waiting_key_ ? waiting_key_->ToString() : "";
     if (column_family_id) *column_family_id = waiting_cf_id_;
     std::copy(waiting_txn_ids_.begin(), waiting_txn_ids_.end(), ids.begin());
     return ids;
   }
 
-  void SetWaitingTxn(autovector<TransactionID> ids, uint32_t column_family_id,
-                     const std::string* key) {
+  void SetWaitingTxn(const autovector<TransactionID>& ids, uint32_t column_family_id,
+                     const Slice* key) {
+    waiting_txn_ids_.reserve(ids.size());
     std::lock_guard<std::mutex> lock(wait_mutex_);
     waiting_txn_ids_ = ids;
     waiting_cf_id_ = column_family_id;
@@ -188,7 +189,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
   // function. At that point, the key string object is one of the function
   // parameters.
   uint32_t waiting_cf_id_;
-  const std::string* waiting_key_;
+  const Slice* waiting_key_;
 
   // Mutex protecting waiting_txn_ids_, waiting_cf_id_ and waiting_key_.
   mutable std::mutex wait_mutex_;

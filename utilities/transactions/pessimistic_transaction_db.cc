@@ -198,6 +198,9 @@ TransactionDBOptions PessimisticTransactionDB::ValidateTxnDBOptions(
   return validated;
 }
 
+TransactionDBOptions::TransactionDBOptions() {}
+TransactionDBOptions::~TransactionDBOptions() = default;
+
 Status TransactionDB::Open(const Options& options,
                            const TransactionDBOptions& txn_db_options,
                            const std::string& dbname, TransactionDB** dbptr) {
@@ -398,7 +401,7 @@ Status PessimisticTransactionDB::DropColumnFamily(
 
 Status PessimisticTransactionDB::TryLock(PessimisticTransaction* txn,
                                          uint32_t cfh_id,
-                                         const std::string& key,
+                                         const Slice& key,
                                          bool exclusive) {
   return lock_manager_->TryLock(txn, cfh_id, key, GetEnv(), exclusive);
 }
@@ -417,7 +420,7 @@ void PessimisticTransactionDB::UnLock(PessimisticTransaction* txn,
 }
 
 void PessimisticTransactionDB::UnLock(PessimisticTransaction* txn,
-                                      uint32_t cfh_id, const std::string& key) {
+                                      uint32_t cfh_id, const Slice& key) {
   lock_manager_->UnLock(txn, cfh_id, key, GetEnv());
 }
 

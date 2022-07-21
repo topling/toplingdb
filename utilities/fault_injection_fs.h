@@ -95,6 +95,8 @@ class TestFSWritableFile : public FSWritableFile {
   virtual bool use_direct_io() const override {
     return target_->use_direct_io();
   };
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
 
  private:
   FSFileState state_;
@@ -149,6 +151,8 @@ class TestFSRandomAccessFile : public FSRandomAccessFile {
   bool use_direct_io() const override { return target_->use_direct_io(); }
 
   size_t GetUniqueId(char* id, size_t max_size) const override;
+
+  intptr_t FileDescriptor() const final;
 
  private:
   std::unique_ptr<FSRandomAccessFile> target_;

@@ -573,7 +573,7 @@ class VersionStorageInfo {
                                      const Slice& largest_user_key,
                                      int last_level, int last_l0_idx);
 
- private:
+ protected:
   void ComputeCompensatedSizes();
   void UpdateNumNonEmptyLevels();
   void CalculateBaseBytes(const ImmutableOptions& ioptions,
@@ -1332,6 +1332,7 @@ class VersionSet {
   // The caller should delete the iterator when no longer needed.
   // @param read_options Must outlive the returned iterator.
   // @param start, end indicates compaction range
+  static
   InternalIterator* MakeInputIterator(
       const ReadOptions& read_options, const Compaction* c,
       RangeDelAggregator* range_del_agg,

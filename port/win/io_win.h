@@ -151,10 +151,13 @@ class WinMmapReadableFile : private WinFileData, public FSRandomAccessFile {
   IOStatus Read(uint64_t offset, size_t n, const IOOptions& options,
                 Slice* result, char* scratch,
                 IODebugContext* dbg) const override;
+  virtual Status FsRead(uint64_t offset, size_t len, void* buf) const override;
 
   virtual IOStatus InvalidateCache(size_t offset, size_t length) override;
 
   virtual size_t GetUniqueId(char* id, size_t max_size) const override;
+
+  virtual intptr_t FileDescriptor() const override;
 };
 
 // We preallocate and use memcpy to append new
@@ -414,6 +417,9 @@ class WinWritableFile : private WinFileData,
                     IODebugContext* dbg) override;
 
   virtual size_t GetUniqueId(char* id, size_t max_size) const override;
+
+  virtual intptr_t FileDescriptor() const override;
+  virtual void SetFileSize(uint64_t) override;
 };
 
 class WinRandomRWFile : private WinFileData,

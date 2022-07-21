@@ -74,10 +74,16 @@ class PosixLogger : public Logger {
   virtual void Flush() override {
     TEST_SYNC_POINT("PosixLogger::Flush:Begin1");
     TEST_SYNC_POINT("PosixLogger::Flush:Begin2");
+  #if defined(ROCKSDB_UNIT_TEST)
+    // keep this code to make rockdb unit tests happy
     if (flush_pending_) {
       flush_pending_ = false;
       fflush(file_);
     }
+  #else
+    // Keep It Simple Stupid: always flush, and keep code change minimal
+    fflush(file_);
+  #endif
     last_flush_micros_ = env_->NowMicros();
   }
 

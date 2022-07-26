@@ -18,7 +18,6 @@
 #include "util/coding.h"
 
 namespace ROCKSDB_NAMESPACE {
-
 WriteBufferManager::WriteBufferManager(size_t _buffer_size,
                                        std::shared_ptr<Cache> cache,
                                        bool allow_stall)

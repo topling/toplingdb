@@ -929,6 +929,9 @@ ifeq ($(LIBNAME),)
 # we should only run rocksdb in production with DEBUG_LEVEL 0
 ifneq ($(DEBUG_LEVEL),0)
   LIBDEBUG=_debug
+  ifeq (${MAKE_UNIT_TEST},1)
+    LIBDEBUG=_debug_ut
+  endif
 endif
 endif
 STATIC_LIBRARY = ${LIBNAME}$(LIBDEBUG).a

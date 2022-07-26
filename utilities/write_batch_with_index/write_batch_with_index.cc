@@ -589,6 +589,9 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
   autovector<std::pair<WBWIIteratorImpl::Result, MergeContext>,
              MultiGetContext::MAX_BATCH_SIZE>
       merges;
+  key_context.reserve(num_keys);
+  sorted_keys.reserve(num_keys);
+  merges.reserve(num_keys);
   // Since the lifetime of the WriteBatch is the same as that of the transaction
   // we cannot pin it as otherwise the returned value will not be available
   // after the transaction finishes.

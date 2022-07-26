@@ -437,11 +437,13 @@ bool IsFeatureSupported(const TableProperties& table_properties,
   }
   return true;
 }
+}  // namespace
 
 // Caller has to ensure seqno is not nullptr.
 Status GetGlobalSequenceNumber(const TableProperties& table_properties,
                                SequenceNumber largest_seqno,
                                SequenceNumber* seqno) {
+#if defined(ROCKSDB_UNIT_TEST)
   const auto& props = table_properties.user_collected_properties;
   const auto version_pos = props.find(ExternalSstFilePropertyNames::kVersion);
   const auto seqno_pos = props.find(ExternalSstFilePropertyNames::kGlobalSeqno);
@@ -508,10 +510,15 @@ Status GetGlobalSequenceNumber(const TableProperties& table_properties,
              version, static_cast<unsigned long long>(global_seqno));
     return Status::Corruption(msg_buf.data());
   }
+#else
+  if (largest_seqno < kMaxSequenceNumber)
+    *seqno =  largest_seqno;
+  else
+    *seqno = 0;
+#endif
 
   return Status::OK();
 }
-}  // namespace
 
 void BlockBasedTable::SetupBaseCacheKey(const TableProperties* properties,
                                         const std::string& cur_db_session_id,
@@ -3018,6 +3025,46 @@ void BlockBasedTable::DumpKeyValue(const Slice& key, const Slice& value,
 
   out_stream << "  ASCII  " << res_key << ": " << res_value << "\n";
   out_stream << "  ------\n";
+}
+
+// if implemented, returns true
+bool BlockBasedTable::GetRandomInteranlKeysAppend(
+      size_t num, std::vector<std::string>* output) const {
+  if (!rep_->table_options.enable_get_random_keys) {
+    return false;
+  }
+  const bool index_key_includes_seq = rep_->index_key_includes_seq;
+  size_t oldsize = output->size();
+  bool disable_prefix_seek = false;
+  BlockCacheLookupContext lookup_context{TableReaderCaller::kPrefetch};
+  std::unique_ptr<InternalIteratorBase<IndexValue>> index_iter(NewIndexIterator(
+      ReadOptions(), disable_prefix_seek,
+      /*input_iter=*/nullptr, /*get_context=*/nullptr, &lookup_context));
+  index_iter->SeekToFirst();
+  while (index_iter->Valid()) {
+    if (index_key_includes_seq) {
+      Slice internal_key = index_iter->key();
+      output->push_back(internal_key.ToString());
+    }
+    else {
+      std::string internal_key = index_iter->key().ToString();
+      internal_key.append("\0\0\0\0\0\0\0\0", 8); // seq + type
+      output->push_back(std::move(internal_key));
+    }
+    index_iter->Next();
+  }
+  auto beg = output->begin() + oldsize;
+  auto end = output->end();
+  if (size_t(end - beg) > num) {
+    // set seed as a random number
+    size_t seed = output->size() + size_t(rep_)
+                + size_t(rep_->file_size)
+                + size_t(rep_->file->file_name().data())
+                + size_t(beg->data()) + size_t(end[-1].data());
+    std::shuffle(beg, end, std::mt19937(seed));
+    output->resize(oldsize + num);
+  }
+  return beg != end;
 }
 
 }  // namespace ROCKSDB_NAMESPACE

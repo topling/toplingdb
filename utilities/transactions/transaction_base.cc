@@ -67,7 +67,9 @@ TransactionBaseImpl::TransactionBaseImpl(
       cmp_(GetColumnFamilyUserComparator(db->DefaultColumnFamily())),
       lock_tracker_factory_(lock_tracker_factory),
       start_time_(dbimpl_->GetSystemClock()->NowMicros()),
-      write_batch_(cmp_, 0, true, 0, write_options.protection_bytes_per_key),
+      write_batch_(*dbimpl_->mutable_db_options_.wbwi_factory->
+            NewWriteBatchWithIndex(cmp_, true,
+                    write_options.protection_bytes_per_key)),
       tracked_locks_(lock_tracker_factory_.Create()),
       commit_time_batch_(0 /* reserved_bytes */, 0 /* max_bytes */,
                          write_options.protection_bytes_per_key,
@@ -83,6 +85,7 @@ TransactionBaseImpl::TransactionBaseImpl(
 TransactionBaseImpl::~TransactionBaseImpl() {
   // Release snapshot if snapshot is set
   SetSnapshotInternal(nullptr);
+  delete &write_batch_; // weired for minimize code change
 }
 
 void TransactionBaseImpl::Clear() {
@@ -603,7 +606,7 @@ uint64_t TransactionBaseImpl::GetNumKeys() const {
   return tracked_locks_->GetNumPointLocks();
 }
 
-void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,
+void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const Slice& key,
                                    SequenceNumber seq, bool read_only,
                                    bool exclusive) {
   PointLockRequest r;
@@ -649,7 +652,7 @@ void TransactionBaseImpl::UndoGetForUpdate(ColumnFamilyHandle* column_family,
                                            const Slice& key) {
   PointLockRequest r;
   r.column_family_id = GetColumnFamilyID(column_family);
-  r.key = key.ToString();
+  r.key = key;
   r.read_only = true;
 
   bool can_untrack = false;

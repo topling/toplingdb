@@ -267,12 +267,13 @@ WriteBatchWithIndex::WriteBatchWithIndex(
     : rep(new Rep(default_index_comparator, reserved_bytes, max_bytes,
                   overwrite_key, protection_bytes_per_key)) {}
 
+WriteBatchWithIndex::WriteBatchWithIndex(Slice/*placeholder*/) {}
+
 WriteBatchWithIndex::~WriteBatchWithIndex() {}
 
-WriteBatchWithIndex::WriteBatchWithIndex(WriteBatchWithIndex&&) = default;
-
-WriteBatchWithIndex& WriteBatchWithIndex::operator=(WriteBatchWithIndex&&) =
-    default;
+const Comparator* WriteBatchWithIndex::GetUserComparator(uint32_t cf_id) const {
+  return rep->comparator.GetComparator(cf_id);
+}
 
 WriteBatch* WriteBatchWithIndex::GetWriteBatch() { return &rep->write_batch; }
 
@@ -494,10 +495,14 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(DB* db,
                            nullptr);
 }
 
+#define RepGetUserComparator(cfh) \
+    cfh ? cfh->GetComparator() : \
+    rep ? rep->comparator.GetComparator(cfh) : nullptr
+
 Status WriteBatchWithIndex::GetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const Slice& key, PinnableSlice* pinnable_val, ReadCallback* callback) {
-  const Comparator* const ucmp = rep->comparator.GetComparator(column_family);
+  const Comparator* const ucmp = RepGetUserComparator(column_family);
   size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
   if (ts_sz > 0 && !read_options.timestamp) {
     return Status::InvalidArgument("Must specify timestamp");
@@ -567,7 +572,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const size_t num_keys, const Slice* keys, PinnableSlice* values,
     Status* statuses, bool sorted_input, ReadCallback* callback) {
-  const Comparator* const ucmp = rep->comparator.GetComparator(column_family);
+  const Comparator* const ucmp = RepGetUserComparator(column_family);
   size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
   if (ts_sz > 0 && !read_options.timestamp) {
     for (size_t i = 0; i < num_keys; ++i) {
@@ -620,8 +625,9 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
   }
 
   // Did not find key in batch OR could not resolve Merges.  Try DB.
+  bool same_cf = true;
   static_cast_with_check<DBImpl>(db->GetRootDB())
-      ->PrepareMultiGetKeys(key_context.size(), sorted_input, &sorted_keys);
+      ->PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
   static_cast_with_check<DBImpl>(db->GetRootDB())
       ->MultiGetWithCallback(read_options, column_family, callback,
                              &sorted_keys);
@@ -680,8 +686,31 @@ size_t WriteBatchWithIndex::GetDataSize() const {
 
 const Comparator* WriteBatchWithIndexInternal::GetUserComparator(
     const WriteBatchWithIndex& wbwi, uint32_t cf_id) {
+#if 0
   const WriteBatchEntryComparator& ucmps = wbwi.rep->comparator;
   return ucmps.GetComparator(cf_id);
+#else // topling
+  return wbwi.GetUserComparator(cf_id);
+#endif
+}
+
+//---------------------------------------------------------------------------
+
+WBWIFactory::~WBWIFactory() {
+  // do nothing
+}
+class SkipListWBWIFactory : public WBWIFactory {
+public:
+  const char* Name() const noexcept final { return "SkipList"; }
+  WriteBatchWithIndex* NewWriteBatchWithIndex(
+      const Comparator* default_comparator, bool overwrite_key,
+      size_t prot) final {
+    return new WriteBatchWithIndex(default_comparator, 0, overwrite_key, 0, prot);
+  }
+};
+std::shared_ptr<WBWIFactory> SingleSkipListWBWIFactory() {
+  static auto fac = std::make_shared<SkipListWBWIFactory>();
+  return fac;
 }
 
 }  // namespace ROCKSDB_NAMESPACE

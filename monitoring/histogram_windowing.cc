@@ -75,8 +75,7 @@ void HistogramWindowingImpl::Merge(const HistogramWindowingImpl& other) {
   std::lock_guard<std::mutex> lock(mutex_);
   stats_.Merge(other.stats_);
 
-  if (stats_.num_buckets_ != other.stats_.num_buckets_ ||
-      micros_per_window_ != other.micros_per_window_) {
+  if (micros_per_window_ != other.micros_per_window_) {
     return;
   }
 
@@ -158,8 +157,8 @@ void HistogramWindowingImpl::SwapHistoryBucket() {
 
     if (!stats_to_drop.Empty()) {
       for (size_t b = 0; b < stats_.num_buckets_; b++){
-        stats_.buckets_[b].fetch_sub(
-            stats_to_drop.bucket_at(b), std::memory_order_relaxed);
+        auto cnt_b = stats_to_drop.buckets_[b].load(std::memory_order_relaxed);
+        stats_.buckets_[b].fetch_sub(cnt_b, std::memory_order_relaxed);
       }
 
       if (stats_.min() == stats_to_drop.min()) {

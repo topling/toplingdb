@@ -226,6 +226,8 @@ class SpecialEnv : public EnvWrapper {
       size_t GetUniqueId(char* id, size_t max_size) const override {
         return base_->GetUniqueId(id, max_size);
       }
+      intptr_t FileDescriptor() const final { return base_->FileDescriptor(); }
+      void SetFileSize(uint64_t fsize) final { base_->SetFileSize(fsize); }
     };
     class ManifestFile : public WritableFile {
      public:
@@ -263,6 +265,9 @@ class SpecialEnv : public EnvWrapper {
       Status Allocate(uint64_t offset, uint64_t len) override {
         return base_->Allocate(offset, len);
       }
+
+      intptr_t FileDescriptor() const final { return base_->FileDescriptor(); }
+      void SetFileSize(uint64_t fsize) { base_->SetFileSize(fsize); }
 
      private:
       SpecialEnv* env_;
@@ -338,6 +343,8 @@ class SpecialEnv : public EnvWrapper {
       Status Allocate(uint64_t offset, uint64_t len) override {
         return base_->Allocate(offset, len);
       }
+      intptr_t FileDescriptor() const final { return base_->FileDescriptor(); }
+      void SetFileSize(uint64_t fsize) { base_->SetFileSize(fsize); }
 
      private:
       SpecialEnv* env_;
@@ -367,6 +374,8 @@ class SpecialEnv : public EnvWrapper {
       Status Allocate(uint64_t offset, uint64_t len) override {
         return base_->Allocate(offset, len);
       }
+      intptr_t FileDescriptor() const final { return base_->FileDescriptor(); }
+      void SetFileSize(uint64_t fsize) { base_->SetFileSize(fsize); }
 
      private:
       SpecialEnv* env_;
@@ -443,6 +452,8 @@ class SpecialEnv : public EnvWrapper {
         return s;
       }
 
+      intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+
      private:
       std::unique_ptr<RandomAccessFile> target_;
       anon::AtomicCounter* counter_;
@@ -468,6 +479,8 @@ class SpecialEnv : public EnvWrapper {
       virtual Status Prefetch(uint64_t offset, size_t n) override {
         return target_->Prefetch(offset, n);
       }
+
+      intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
      private:
       std::unique_ptr<RandomAccessFile> target_;

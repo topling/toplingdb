@@ -26,6 +26,8 @@ class StderrLogger : public Logger {
     vfprintf(stderr, format, ap);
     fprintf(stderr, "\n");
   }
+
+  ~StderrLogger() { closed_ = true; }
 };
 
 }  // namespace ROCKSDB_NAMESPACE

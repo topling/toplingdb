@@ -23,11 +23,11 @@ namespace ROCKSDB_NAMESPACE {
 
 class TransactionDBMutexFactory;
 
-enum TxnDBWritePolicy {
+ROCKSDB_ENUM_PLAIN(TxnDBWritePolicy, int,
   WRITE_COMMITTED = 0,  // write only the committed data
   WRITE_PREPARED,  // write data after the prepare phase of 2pc
   WRITE_UNPREPARED  // write data before the prepare phase of 2pc
-};
+);
 
 constexpr uint32_t kInitialMaxDeadlocks = 5;
 
@@ -73,7 +73,7 @@ struct RangeDeadlockPath {
 
   explicit RangeDeadlockPath(std::vector<RangeDeadlockInfo> path_entry,
                              const int64_t& dl_time)
-      : path(path_entry), limit_exceeded(false), deadlock_time(dl_time) {}
+      : path(std::move(path_entry)), limit_exceeded(false), deadlock_time(dl_time) {}
 
   // empty path, limit exceeded constructor and default constructor
   explicit RangeDeadlockPath(const int64_t& dl_time = 0, bool limit = false)
@@ -148,6 +148,9 @@ RangeLockManagerHandle* NewRangeLockManager(
     std::shared_ptr<TransactionDBMutexFactory> mutex_factory);
 
 struct TransactionDBOptions {
+  TransactionDBOptions();
+  ~TransactionDBOptions();
+
   // Specifies the maximum number of keys that can be locked at the same time
   // per column family.
   // If the number of locked keys is greater than max_num_locks, transaction
@@ -362,7 +365,7 @@ struct DeadlockPath {
 
   explicit DeadlockPath(std::vector<DeadlockInfo> path_entry,
                         const int64_t& dl_time)
-      : path(path_entry), limit_exceeded(false), deadlock_time(dl_time) {}
+      : path(std::move(path_entry)), limit_exceeded(false), deadlock_time(dl_time) {}
 
   // empty path, limit exceeded constructor and default constructor
   explicit DeadlockPath(const int64_t& dl_time = 0, bool limit = false)
@@ -493,6 +496,7 @@ class TransactionDB : public StackableDB {
       TxnTimestamp ts_lb, TxnTimestamp ts_ub,
       std::vector<std::shared_ptr<const Snapshot>>& timestamped_snapshots)
       const = 0;
+  virtual const TransactionDBOptions& GetTxnDBOptions() const = 0;
 
  protected:
   // To Create an TransactionDB, call Open()

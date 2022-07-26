@@ -53,7 +53,6 @@ class TransactionBaseImpl : public Transaction {
 
   Status PopSavePoint() override;
 
-  using Transaction::Get;
   Status Get(const ReadOptions& options, ColumnFamilyHandle* column_family,
              const Slice& key, std::string* value) override;
 
@@ -62,6 +61,10 @@ class TransactionBaseImpl : public Transaction {
 
   Status Get(const ReadOptions& options, const Slice& key,
              std::string* value) override {
+    return Get(options, db_->DefaultColumnFamily(), key, value);
+  }
+  Status Get(const ReadOptions& options, const Slice& key,
+             PinnableSlice* value) override {
     return Get(options, db_->DefaultColumnFamily(), key, value);
   }
 
@@ -264,7 +267,7 @@ class TransactionBaseImpl : public Transaction {
   //
   // seqno is the earliest seqno this key was involved with this transaction.
   // readonly should be set to true if no data was written for this key
-  void TrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
+  void TrackKey(uint32_t cfh_id, const Slice& key, SequenceNumber seqno,
                 bool readonly, bool exclusive);
 
   // Called when UndoGetForUpdate determines that this key can be unlocked.
@@ -335,7 +338,9 @@ class TransactionBaseImpl : public Transaction {
   };
 
   // Records writes pending in this transaction
-  WriteBatchWithIndex write_batch_;
+  // topling spec: should use union{ptr,ref}, but ref can not be in union
+  WriteBatchWithIndex* write_batch_pre_ = nullptr;
+  WriteBatchWithIndex& write_batch_;
 
   // For Pessimistic Transactions this is the set of acquired locks.
   // Optimistic Transactions will keep note the requested locks (not actually

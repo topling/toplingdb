@@ -109,7 +109,7 @@ Status OptimisticTransaction::CommitWithParallelValidate() {
         tracked_locks_->GetKeyIterator(cf));
     assert(key_it != nullptr);
     while (key_it->HasNext()) {
-      const std::string& key = key_it->Next();
+      const auto& key = key_it->Next();
       lk_idxes.insert(FastRange64(GetSliceNPHash64(key), space));
     }
   }

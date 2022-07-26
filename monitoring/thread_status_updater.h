@@ -38,6 +38,7 @@
 
 #include "rocksdb/status.h"
 #include "rocksdb/thread_status.h"
+#include "port/lang.h"
 #include "port/port.h"
 #include "util/thread_operation.h"
 
@@ -196,7 +197,7 @@ class ThreadStatusUpdater {
  protected:
 #ifdef ROCKSDB_USING_THREAD_STATUS
   // The thread-local variable for storing thread status.
-  static thread_local ThreadStatusData* thread_status_data_;
+  static thread_local ThreadStatusData* thread_status_data_ ROCKSDB_STATIC_TLS;
 
   // Returns the pointer to the thread status data only when the
   // thread status data is non-null and has enable_tracking == true.

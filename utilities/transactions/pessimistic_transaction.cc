@@ -961,14 +961,16 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   if (UNLIKELY(skip_concurrency_control_)) {
     return s;
   }
-  uint32_t cfh_id = GetColumnFamilyID(column_family);
-  std::string key_str = key.ToString();
+  const ColumnFamilyHandle* const cfh =
+      column_family ? column_family : db_impl_->DefaultColumnFamily();
+  assert(cfh);
+  uint32_t cfh_id = cfh->GetID();
 
   PointLockStatus status;
   bool lock_upgrade;
   bool previously_locked;
   if (tracked_locks_->IsPointLockSupported()) {
-    status = tracked_locks_->GetPointLockStatus(cfh_id, key_str);
+    status = tracked_locks_->GetPointLockStatus(cfh_id, key);
     previously_locked = status.locked;
     lock_upgrade = previously_locked && exclusive && !status.exclusive;
   } else {
@@ -981,12 +983,9 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   // Lock this key if this transactions hasn't already locked it or we require
   // an upgrade.
   if (!previously_locked || lock_upgrade) {
-    s = txn_db_impl_->TryLock(this, cfh_id, key_str, exclusive);
+    s = txn_db_impl_->TryLock(this, cfh_id, key, exclusive);
   }
 
-  const ColumnFamilyHandle* const cfh =
-      column_family ? column_family : db_impl_->DefaultColumnFamily();
-  assert(cfh);
   const Comparator* const ucmp = cfh->GetComparator();
   assert(ucmp);
   size_t ts_sz = ucmp->timestamp_size();
@@ -1032,7 +1031,7 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
       // Failed to validate key
       // Unlock key we just locked
       if (lock_upgrade) {
-        s = txn_db_impl_->TryLock(this, cfh_id, key_str, false /* exclusive */);
+        s = txn_db_impl_->TryLock(this, cfh_id, key, false /* exclusive */);
         assert(s.ok());
       } else if (!previously_locked) {
         txn_db_impl_->UnLock(this, cfh_id, key.ToString());
@@ -1054,12 +1053,12 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
     // setting, and at a lower sequence number, so skipping here should be
     // safe.
     if (!assume_tracked) {
-      TrackKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
+      TrackKey(cfh_id, key, tracked_at_seq, read_only, exclusive);
     } else {
 #ifndef NDEBUG
       if (tracked_locks_->IsPointLockSupported()) {
         PointLockStatus lock_status =
-            tracked_locks_->GetPointLockStatus(cfh_id, key_str);
+            tracked_locks_->GetPointLockStatus(cfh_id, key);
         assert(lock_status.locked);
         assert(lock_status.seq <= tracked_at_seq);
         assert(lock_status.exclusive == exclusive);
@@ -1076,7 +1075,7 @@ Status PessimisticTransaction::GetRangeLock(ColumnFamilyHandle* column_family,
                                             const Endpoint& end_endp) {
   ColumnFamilyHandle* cfh =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
-  uint32_t cfh_id = GetColumnFamilyID(cfh);
+  uint32_t cfh_id = cfh->GetID();
 
   Status s = txn_db_impl_->TryRangeLock(this, cfh_id, start_endp, end_endp);
 
@@ -1131,7 +1130,7 @@ Status PessimisticTransaction::ValidateSnapshot(
   }
 
   return TransactionUtil::CheckKeyForConflicts(
-      db_impl_, cfh, key.ToString(), snap_seq, ts_sz == 0 ? nullptr : &ts_buf,
+      db_impl_, cfh, key, snap_seq, ts_sz == 0 ? nullptr : &ts_buf,
       false /* cache_only */);
 }
 

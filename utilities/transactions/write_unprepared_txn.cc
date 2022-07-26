@@ -472,7 +472,9 @@ Status WriteUnpreparedTxn::FlushWriteBatchWithSavePointToDB() {
   std::swap(wb, write_batch_);
 #else
   auto ucmp = wpt_db_->DefaultColumnFamily()->GetComparator();
-  auto wbwi = dbimpl_->mutable_db_options_.wbwi_factory->NewWriteBatchWithIndex(ucmp, true);
+  auto wfac = dbimpl_->mutable_db_options_.wbwi_factory.get();
+  auto prot = write_options_.protection_bytes_per_key;
+  auto wbwi = wfac->NewWriteBatchWithIndex(ucmp, true, prot);
   std::swap(wbwi, (&write_batch_pre_)[1]); // note trick!
   std::unique_ptr<WriteBatchWithIndex> wbwi_up(wbwi);
   auto& wb = *wbwi;

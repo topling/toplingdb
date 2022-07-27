@@ -489,8 +489,6 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
 
   Status result;
   // Check if this key is already locked
-//#define NO_TOPLING_lazy_insert_i_with_pre_check
-#if !defined(NO_TOPLING_lazy_insert_i_with_pre_check)
   // topling: use lazy_insert_i(key, cons, check) reduce a find
   auto cons = terark::MoveConsFunc<LockInfo>(std::move(txn_lock_info));
   auto check = [this,&result,lock_map](auto/*keys*/) {
@@ -508,12 +506,6 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
   auto [idx, miss] = stripe->keys.lazy_insert_i(key, cons, check);
   if (!miss) {
     LockInfo& lock_info = stripe->keys.val(idx);
-#else
-  auto stripe_iter = stripe->keys.find(key);
-  if (stripe_iter != stripe->keys.end()) {
-    // Lock already held
-    LockInfo& lock_info = stripe_iter->second;
-#endif
     assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
 
     if (lock_info.exclusive || txn_lock_info.exclusive) {
@@ -549,23 +541,7 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
           std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
     }
   } else {  // Lock not held.
-#if !defined(NO_TOPLING_lazy_insert_i_with_pre_check)
   // do nothing
-#else
-    // Check lock limit
-    if (max_num_locks_ > 0 &&
-        lock_map->lock_cnt.load(std::memory_order_acquire) >= max_num_locks_) {
-      result = Status::Busy(Status::SubCode::kLockLimit);
-    } else {
-      // acquire lock
-      stripe->keys.emplace(key, std::move(txn_lock_info));
-
-      // Maintain lock count if there is a limit on the number of locks
-      if (max_num_locks_) {
-        lock_map->lock_cnt++;
-      }
-    }
-#endif
   }
 
   return result;
@@ -630,77 +606,6 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
 
 void PointLockManager::UnLock(PessimisticTransaction* txn,
                               const LockTracker& tracker, Env* env) {
-#if 0
-  std::unique_ptr<LockTracker::ColumnFamilyIterator> cf_it(
-      tracker.GetColumnFamilyIterator());
-  assert(cf_it != nullptr);
-  while (cf_it->HasNext()) {
-    ColumnFamilyId cf = cf_it->Next();
-    LockMap* lock_map = GetLockMap(cf);
-    if (!lock_map) {
-      // Column Family must have been dropped.
-      return;
-    }
-
-    // Bucket keys by lock_map_ stripe
-#if 0
-    UnorderedMap<size_t, std::vector<LockString>> keys_by_stripe(
-        lock_map->num_stripes_);
-#else
-/* faster than UnorderedMap but slower than vector/valvec32
-    terark::VectorIndexMap<size_t, std::vector<LockString> > keys_by_stripe(
-        lock_map->num_stripes_);
-*/
-    // in many cases, stripe count is large, but not all stripes have keys
-    // when key count is much smaller than stripe count,
-    // some_map<stripe_num, Keys> use less memory but it is always slow,
-    // when key count is comparable to stripe count, some_map<stripe_num, Keys>
-    // not only slow but also use more memory than vector, we use vector, and
-    // use terark::valvec32 for smaller sizeof(vector), which reduce construct
-    // for keys_by_stripe
-    static_assert(sizeof(std::vector<LockString>) == 24);
-    static_assert(sizeof(terark::valvec32<LockString>) == 16);
-    terark::valvec32<terark::valvec32<LockString> > keys_by_stripe(
-        lock_map->num_stripes_);
-#endif
-    std::unique_ptr<LockTracker::KeyIterator> key_it(
-        tracker.GetKeyIterator(cf));
-    assert(key_it != nullptr);
-    while (key_it->HasNext()) {
-      const auto& key = key_it->Next();
-      size_t stripe_num = lock_map->GetStripe(key);
-      keys_by_stripe[stripe_num].reserve(16); // quick return if 16 <= capacity
-      keys_by_stripe[stripe_num].push_back(key);
-    }
-
-    // For each stripe, grab the stripe mutex and unlock all keys in this stripe
-#if 0
-    // old code iterate some_map
-    for (auto& stripe_iter : keys_by_stripe) {
-      size_t stripe_num = stripe_iter.first;
-      auto& stripe_keys = stripe_iter.second;
-#else
-    // new code iterate valvec32
-    for (size_t stripe_num = 0; stripe_num < keys_by_stripe.size(); stripe_num++) {
-      auto& stripe_keys = keys_by_stripe[stripe_num];
-      if (stripe_keys.empty()) continue; // equivalent to not exists in map
-#endif
-      assert(lock_map->lock_map_stripes_.size() > stripe_num);
-      LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
-
-      stripe->stripe_mutex->Lock().PermitUncheckedError();
-
-      for (const auto& key : stripe_keys) {
-        UnLockKey(txn, key, stripe, lock_map, env);
-      }
-
-      stripe->stripe_mutex->UnLock();
-
-      // Signal waiting threads to retry locking
-      stripe->stripe_cv->NotifyAll();
-    }
-  }
-#else
   // use single linked list instead of vector to store stripe(partition)
   // this just needs 2 fixed size uint32 vector(valvec)
   auto& ptracker = static_cast<const PointLockTracker&>(tracker);
@@ -733,7 +638,6 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
       stripe->stripe_cv->NotifyAll();
     }
   }
-#endif
 }
 
 PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {

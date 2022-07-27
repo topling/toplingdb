@@ -1872,6 +1872,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
 
   assert(get_impl_options.column_family);
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (read_options.timestamp) {
     const Status s = FailIfTsMismatchCf(get_impl_options.column_family,
                                         *(read_options.timestamp),
@@ -1893,6 +1894,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
   }
 
   GetWithTimestampReadCallback read_cb(0);  // Will call Refresh
+#endif
 
   PERF_CPU_TIMER_GUARD(get_cpu_nanos, immutable_db_options_.clock);
   StopWatch sw(immutable_db_options_.clock, stats_, DB_GET);
@@ -1953,6 +1955,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
       snapshot = get_impl_options.callback->max_visible_seq();
     }
   }
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   // If timestamp is used, we use read callback to ensure <key,t,s> is returned
   // only if t <= read_opts.timestamp and s <= snapshot.
   // HACK: temporarily overwrite input struct field but restore
@@ -1965,6 +1968,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
     read_cb.Refresh(snapshot);
     get_impl_options.callback = &read_cb;
   }
+#endif
   TEST_SYNC_POINT("DBImpl::GetImpl:3");
   TEST_SYNC_POINT("DBImpl::GetImpl:4");
 
@@ -1983,7 +1987,11 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
                         has_unpersisted_data_.load(std::memory_order_relaxed));
   bool done = false;
   std::string* timestamp =
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
       ucmp->timestamp_size() > 0 ? get_impl_options.timestamp : nullptr;
+#else
+      nullptr;
+#endif
   if (!skip_memtable) {
     // Get value associated with key
     if (get_impl_options.get_value) {
@@ -2097,6 +2105,7 @@ std::vector<Status> DBImpl::MultiGet(
   assert(column_family.size() == num_keys);
   std::vector<Status> stat_list(num_keys);
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   bool should_fail = false;
   if (auto ts = read_options.timestamp) {
     for (size_t i = 0; i < num_keys; ++i) {
@@ -2126,6 +2135,7 @@ std::vector<Status> DBImpl::MultiGet(
     }
     return stat_list;
   }
+#endif
 
   if (tracer_) {
     // TODO: This mutex should be removed later, to improve performance when
@@ -2161,9 +2171,11 @@ std::vector<Status> DBImpl::MultiGet(
 
   // Note: this always resizes the values array
   values->resize(num_keys);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (timestamps) {
     timestamps->resize(num_keys);
   }
+#endif
 
   // Keep track of bytes that we read for statistics-recording later
   uint64_t bytes_read = 0;
@@ -2177,18 +2189,26 @@ std::vector<Status> DBImpl::MultiGet(
   size_t keys_read;
   uint64_t curr_value_size = 0;
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   GetWithTimestampReadCallback timestamp_read_callback(0);
   ReadCallback* read_callback = nullptr;
   if (read_options.timestamp && read_options.timestamp->size() > 0) {
     timestamp_read_callback.Refresh(consistent_seqnum);
     read_callback = &timestamp_read_callback;
   }
+#else
+  ReadCallback* read_callback = nullptr;
+#endif
 
   for (keys_read = 0; keys_read < num_keys; ++keys_read) {
     merge_context.Clear();
     Status& s = stat_list[keys_read];
     std::string* value = &(*values)[keys_read];
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::string* timestamp = timestamps ? &(*timestamps)[keys_read] : nullptr;
+#else
+    std::string* timestamp = nullptr;
+#endif
 
     LookupKey lkey(keys[keys_read], consistent_seqnum, read_options.timestamp);
     auto cfh =
@@ -2427,6 +2447,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
     return;
   }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   bool should_fail = false;
   for (size_t i = 0; i < num_keys; ++i) {
     ColumnFamilyHandle* cfh = column_families[i];
@@ -2453,6 +2474,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
     }
     return;
   }
+#endif
 
   if (tracer_) {
     // TODO: This mutex should be removed later, to improve performance when
@@ -2500,12 +2522,16 @@ void DBImpl::MultiGet(const ReadOptions& read_options, const size_t num_keys,
   bool unref_only = MultiCFSnapshot(read_options, nullptr, &multiget_cf_data,
                                     &consistent_seqnum);
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   GetWithTimestampReadCallback timestamp_read_callback(0);
   ReadCallback* read_callback = nullptr;
   if (read_options.timestamp && read_options.timestamp->size() > 0) {
     timestamp_read_callback.Refresh(consistent_seqnum);
     read_callback = &timestamp_read_callback;
   }
+#else
+  ReadCallback* read_callback = nullptr;
+#endif
 
   Status s;
   auto cf_iter = multiget_cf_data.begin();
@@ -2674,6 +2700,7 @@ void DBImpl::MultiGetWithCallback(
     consistent_seqnum = callback->max_visible_seq();
   }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   GetWithTimestampReadCallback timestamp_read_callback(0);
   ReadCallback* read_callback = callback;
   if (read_options.timestamp && read_options.timestamp->size() > 0) {
@@ -2681,6 +2708,9 @@ void DBImpl::MultiGetWithCallback(
     timestamp_read_callback.Refresh(consistent_seqnum);
     read_callback = &timestamp_read_callback;
   }
+#else
+  ReadCallback* read_callback = callback;
+#endif
 
   Status s = MultiGetImpl(read_options, 0, num_keys, sorted_keys,
                           multiget_cf_data[0].super_version, consistent_seqnum,
@@ -2708,6 +2738,7 @@ Status DBImpl::MultiGetImpl(
   StopWatch sw(immutable_db_options_.clock, stats_, DB_MULTIGET);
 
   assert(sorted_keys);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   // Clear the timestamps for returning results so that we can distinguish
   // between tombstone or key that has never been written
   for (auto* kctx : *sorted_keys) {
@@ -2716,6 +2747,7 @@ Status DBImpl::MultiGetImpl(
       kctx->timestamp->clear();
     }
   }
+#endif
 
   // For each of the given keys, apply the entire "get" process as follows:
   // First look in the memtable, then in the immutable memtable (if any).

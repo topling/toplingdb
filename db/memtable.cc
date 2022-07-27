@@ -582,8 +582,12 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
       return status;
     }
   }
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
   Slice key_without_ts = StripTimestampFromUserKey(key, ts_sz);
+#else
+  const Slice& key_without_ts = key;
+#endif
 
   size_t encoded_len = MemTableRep::EncodeKeyValueSize(key_slice, value);
   if (!allow_concurrent) {
@@ -733,7 +737,9 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
   Slice user_key_slice = Slice(key_ptr, key_length - 8);
   const Comparator* user_comparator =
       s->mem->GetInternalKeyComparator().user_comparator();
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   size_t ts_sz = user_comparator->timestamp_size();
+#endif
   if (user_comparator->EqualWithoutTimestamp(user_key_slice,
                                              s->key->user_key())) {
     // Correct user key
@@ -815,10 +821,12 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
           *(s->is_blob_index) = (type == kTypeBlobIndex);
         }
 
+      #if defined(TOPLINGDB_WITH_TIMESTAMP)
         if (ts_sz > 0 && s->timestamp != nullptr) {
           Slice ts = ExtractTimestampFromUserKey(user_key_slice, ts_sz);
           s->timestamp->assign(ts.data(), ts.size());
         }
+      #endif
         return false;
       }
       case kTypeDeletion:
@@ -834,10 +842,12 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
           }
         } else {
           *(s->status) = Status::NotFound();
+      #if defined(TOPLINGDB_WITH_TIMESTAMP)
           if (ts_sz > 0 && s->timestamp != nullptr) {
             Slice ts = ExtractTimestampFromUserKey(user_key_slice, ts_sz);
             s->timestamp->assign(ts.data(), ts.size());
           }
+      #endif
         }
         *(s->found_final_value) = true;
         return false;
@@ -914,8 +924,12 @@ bool MemTable::Get(const LookupKey& key, std::string* value,
   bool found_final_value = false;
   bool merge_in_progress = s->IsMergeInProgress();
   bool may_contain = true;
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
   Slice user_key_without_ts = StripTimestampFromUserKey(key.user_key(), ts_sz);
+#else
+  Slice user_key_without_ts = key.user_key();
+#endif
   bool bloom_checked = false;
   if (bloom_filter_) {
     // when both memtable_whole_key_filtering and prefix_extractor_ are set,

@@ -573,8 +573,9 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                      MemTablePostProcessInfo* post_process_info, void** hint) {
   std::unique_ptr<MemTableRep>& table =
       type == kTypeRangeDeletion ? range_del_table_ : table_;
-  InternalKey internal_key(key, s, type);
-  Slice key_slice = internal_key.Encode();
+  Slice key_slice((char*)alloca(key.size_ + 8), key.size_ + 8);
+  memcpy((char*)key_slice.data_, key.data_, key.size_);
+  PutUnaligned((uint64_t*)(key_slice.data_ + key.size_), PackSequenceAndType(s, type));
   if (kv_prot_info != nullptr) {
     TEST_SYNC_POINT_CALLBACK("MemTable::Add:Encoded", &key_slice);
     Status status = VerifyEncodedEntry(key_slice, value, *kv_prot_info);

@@ -615,20 +615,22 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     const uint32_t nil = UINT32_MAX;
     using namespace terark;
     const size_t max_key_idx = keyinfos.end_i();
-    valvec<uint32_t> stripe_heads(lock_map->num_stripes_, nil);
+    const size_t num_stripes = lock_map->num_stripes_;
+    auto stripe_heads = (uint32_t*)alloca(sizeof(uint32_t) * num_stripes);
+    std::fill_n(stripe_heads, num_stripes, nil);
     valvec<uint32_t> keys_link(max_key_idx, valvec_no_init());
     for (size_t idx = 0; idx < max_key_idx; idx++) {
       if (!keyinfos.is_deleted(idx)) {
         const fstring key = keyinfos.key(idx);
-        size_t stripe_num = lock_map->GetStripe(key);
-        keys_link[idx] = stripe_heads[stripe_num]; // insert to single
-        stripe_heads[stripe_num] = idx;            // list front
+        size_t strip_idx = lock_map->GetStripe(key);
+        keys_link[idx] = stripe_heads[strip_idx]; // insert to single
+        stripe_heads[strip_idx] = idx;            // list front
       }
     }
-    for (size_t stripe_num = 0; stripe_num < stripe_heads.size(); stripe_num++) {
-      uint32_t head = stripe_heads[stripe_num];
+    for (size_t strip_idx = 0; strip_idx < num_stripes; strip_idx++) {
+      uint32_t head = stripe_heads[strip_idx];
       if (nil == head) continue;
-      LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
+      LockMapStripe* stripe = lock_map->lock_map_stripes_[strip_idx];
       stripe->stripe_mutex->Lock().PermitUncheckedError();
       for (uint32_t idx = head; nil != idx; idx = keys_link[idx]) {
         const fstring key = keyinfos.key(idx);

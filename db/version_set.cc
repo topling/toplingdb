@@ -128,6 +128,7 @@ size_t FindFileInRangeTmpl(const FdWithKeyRange* a, size_t lo, size_t hi,
                            Slice key, Cmp cmp) {
   while (lo < hi) {
     size_t mid = (lo + hi) / 2;
+    __builtin_prefetch(a[mid].largest_key.data_);
     if (cmp(a[mid].largest_key, key))
       lo = mid + 1;
     else

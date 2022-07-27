@@ -261,7 +261,13 @@ LockTracker::KeyIterator* PointLockTracker::GetKeyIterator(
   return new TrackedKeysIterator(tracked_keys_, column_family_id);
 }
 
-void PointLockTracker::Clear() { tracked_keys_.clear(); }
+void PointLockTracker::Clear() {
+  tracked_keys_.clear();
+  for (auto& [cf_id, tk_info] : tracked_keys_) {
+    //tk_info.clear(); // will free memory
+    tk_info.erase_all(); // will not free memory
+  }
+}
 
 }  // namespace ROCKSDB_NAMESPACE
 

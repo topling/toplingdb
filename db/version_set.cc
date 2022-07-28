@@ -113,6 +113,9 @@ struct BytewiseCompareInternalKey {
     if (x.size_ != y.size_) return x.size_ < y.size_;
     return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
   }
+  FORCE_INLINE bool operator()(uint64_t x, uint64_t y) const noexcept {
+    return x < y;
+  }
 };
 struct RevBytewiseCompareInternalKey {
   FORCE_INLINE bool operator()(Slice x, Slice y) const noexcept {
@@ -122,10 +125,25 @@ struct RevBytewiseCompareInternalKey {
     if (x.size_ != y.size_) return x.size_ > y.size_;
     return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
   }
+  FORCE_INLINE bool operator()(uint64_t x, uint64_t y) const noexcept {
+    return x > y;
+  }
 };
 template<class Cmp>
-size_t FindFileInRangeTmpl(const FdWithKeyRange* a, size_t lo, size_t hi,
+size_t FindFileInRangeTmpl(const LevelFilesBrief& brief, size_t lo, size_t hi,
                            Slice key, Cmp cmp) {
+  const uint64_t* pxcache = brief.prefix_cache;
+  const uint64_t  key_prefix = HostPrefixCache(key);
+  while (lo < hi) {
+    size_t mid = (lo + hi) / 2;
+    if (cmp(pxcache[mid], key_prefix))
+      lo = mid + 1;
+    else if (cmp(key_prefix, pxcache[mid]))
+      hi = mid;
+    else
+      break;
+  }
+  const FdWithKeyRange* a = brief.files;
   while (lo < hi) {
     size_t mid = (lo + hi) / 2;
     __builtin_prefetch(a[mid].largest_key.data_);
@@ -147,12 +165,12 @@ int FindFileInRange(const InternalKeyComparator& icmp,
   if (IsForwardBytewiseComparator(icmp.user_comparator())) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     BytewiseCompareInternalKey cmp;
-    return (int)FindFileInRangeTmpl(file_level.files, left, right, key, cmp);
+    return (int)FindFileInRangeTmpl(file_level, left, right, key, cmp);
   }
   else if (IsReverseBytewiseComparator(icmp.user_comparator())) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     RevBytewiseCompareInternalKey cmp;
-    return (int)FindFileInRangeTmpl(file_level.files, left, right, key, cmp);
+    return (int)FindFileInRangeTmpl(file_level, left, right, key, cmp);
   }
   auto cmp = [&](const FdWithKeyRange& f, const Slice& k) -> bool {
     return icmp.InternalKeyComparator::Compare(f.largest_key, k) < 0;
@@ -887,11 +905,14 @@ void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
   size_t num = files.size();
   file_level->num_files = num;
   char* mem = arena->AllocateAligned(num * sizeof(FdWithKeyRange));
+  auto pxcache = (uint64_t*)arena->AllocateAligned(num * sizeof(uint64_t));
   file_level->files = new (mem)FdWithKeyRange[num];
+  file_level->prefix_cache = pxcache;
 
   for (size_t i = 0; i < num; i++) {
     Slice smallest_key = files[i]->smallest.Encode();
     Slice largest_key = files[i]->largest.Encode();
+    pxcache[i] = HostPrefixCache(largest_key);
 
     // Copy key slice to sequential memory
     size_t smallest_size = smallest_key.size();

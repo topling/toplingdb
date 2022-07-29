@@ -1119,6 +1119,7 @@ Status PessimisticTransaction::ValidateSnapshot(
   ColumnFamilyHandle* cfh =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   assert(cfh);
   const Comparator* const ucmp = cfh->GetComparator();
   assert(ucmp);
@@ -1128,9 +1129,14 @@ Status PessimisticTransaction::ValidateSnapshot(
     assert(ts_sz == sizeof(read_timestamp_));
     PutFixed64(&ts_buf, read_timestamp_);
   }
+#endif
 
   return TransactionUtil::CheckKeyForConflicts(
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
       db_impl_, cfh, key, snap_seq, ts_sz == 0 ? nullptr : &ts_buf,
+#else
+      db_impl_, cfh, key, snap_seq, nullptr,
+#endif
       false /* cache_only */);
 }
 

@@ -50,9 +50,13 @@ Status TransactionUtil::CheckKey(DBImpl* db_impl, SuperVersion* sv,
                                  SequenceNumber earliest_seq,
                                  SequenceNumber snap_seq,
                                  const LockString& key0,
-                                 const std::string* const read_ts,
+                                 const std::string* read_ts,
                                  bool cache_only, ReadCallback* snap_checker,
                                  SequenceNumber min_uncommitted) {
+#if !defined(TOPLINGDB_WITH_TIMESTAMP)
+  read_ts = nullptr; // let compiler optimize out null check
+#endif
+
   // When `min_uncommitted` is provided, keys are not always committed
   // in sequence number order, and `snap_checker` is used to check whether
   // specific sequence number is in the database is visible to the transaction.

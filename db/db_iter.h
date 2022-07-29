@@ -377,7 +377,11 @@ class DBIter final : public Iterator {
   ColumnFamilyData* cfd_;
   const Slice* const timestamp_ub_;
   const Slice* const timestamp_lb_;
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const size_t timestamp_size_;
+#else
+  static constexpr size_t timestamp_size_ = 0;
+#endif
   std::string saved_timestamp_;
 
   // Used only if timestamp_lb_ is not nullptr.

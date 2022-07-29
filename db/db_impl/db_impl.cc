@@ -4850,6 +4850,7 @@ Status DBImpl::GetLatestSequenceForKey(
   ReadOptions read_options;
   SequenceNumber current_seq = versions_->LastSequence();
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   ColumnFamilyData* cfd = sv->cfd;
   assert(cfd);
   const Comparator* const ucmp = cfd->user_comparator();
@@ -4865,6 +4866,10 @@ Status DBImpl::GetLatestSequenceForKey(
   Slice ts(ts_buf);
 
   LookupKey lkey(key, current_seq, ts_sz == 0 ? nullptr : &ts);
+#else
+  constexpr size_t ts_sz = 0;
+  LookupKey lkey(key, current_seq, nullptr);
+#endif
 
   *seq = kMaxSequenceNumber;
   *found_record_for_key = false;

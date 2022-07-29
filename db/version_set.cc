@@ -134,18 +134,22 @@ size_t FindFileInRangeTmpl(const LevelFilesBrief& brief, size_t lo, size_t hi,
                            Slice key, Cmp cmp) {
   const uint64_t* pxcache = brief.prefix_cache;
   const uint64_t  key_prefix = HostPrefixCache(key);
+  const FdWithKeyRange* a = brief.files;
+  size_t mid;
   while (lo < hi) {
-    size_t mid = (lo + hi) / 2;
+    mid = (lo + hi) / 2;
     if (cmp(pxcache[mid], key_prefix))
       lo = mid + 1;
     else if (cmp(key_prefix, pxcache[mid]))
       hi = mid;
     else
-      break;
+      goto exact_search;
   }
-  const FdWithKeyRange* a = brief.files;
+  return lo;
+
   while (lo < hi) {
-    size_t mid = (lo + hi) / 2;
+    mid = (lo + hi) / 2;
+  exact_search:
     __builtin_prefetch(a[mid].largest_key.data_);
     if (cmp(a[mid].largest_key, key))
       lo = mid + 1;

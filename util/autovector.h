@@ -27,6 +27,7 @@ class autovector : public std::vector<T> {
     std::vector<T>::reserve(kSize);
   }
   explicit autovector(size_t sz) : std::vector<T>(sz) {}
+  size_type num_stack_items() const { return this->size(); }
 };
 #else
 
@@ -208,6 +209,7 @@ class autovector {
   }
 
   size_type size() const { return num_stack_items_ + vect_.size(); }
+  size_type num_stack_items() const { return num_stack_items_; }
 
   // resize does not guarantee anything about the contents of the newly
   // available elements

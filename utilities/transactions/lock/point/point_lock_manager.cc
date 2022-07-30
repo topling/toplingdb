@@ -311,7 +311,7 @@ Status PointLockManager::AcquireWithTimeout(
 
       // We are dependent on a transaction to finish, so perform deadlock
       // detection.
-      if (wait_ids.size() != 0) {
+      if (!wait_ids.empty()) {
         if (txn->IsDeadlockDetect()) {
           if (IncrementWaiters(txn, wait_ids, key, column_family_id,
                                lock_info.exclusive, env)) {
@@ -335,7 +335,7 @@ Status PointLockManager::AcquireWithTimeout(
         }
       }
 
-      if (wait_ids.size() != 0) {
+      if (!wait_ids.empty()) {
         txn->ClearWaitingTxn();
         if (txn->IsDeadlockDetect()) {
           DecrementWaiters(txn, wait_ids);
@@ -509,7 +509,7 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
     assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
 
     if (lock_info.exclusive || txn_lock_info.exclusive) {
-      if (lock_info.txn_ids.size() == 1 &&
+      if (lock_info.txn_ids.num_stack_items() == 1 &&
           lock_info.txn_ids[0] == txn_lock_info.txn_ids[0]) {
         // The list contains one txn and we're it, so just take it.
         lock_info.exclusive = txn_lock_info.exclusive;
@@ -561,7 +561,7 @@ void PointLockManager::UnLockKey(PessimisticTransaction* txn,
     auto txn_it = std::find(txns.begin(), txns.end(), txn_id);
     // Found the key we locked.  unlock it.
     if (txn_it != txns.end()) {
-      if (txns.size() == 1) {
+      if (txns.num_stack_items() == 1) {
         stripe->keys.erase(stripe_iter);
       } else {
         *txn_it = std::move(txns.back());

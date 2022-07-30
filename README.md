@@ -7,6 +7,8 @@ ToplingDB has much more key features than RocksDB:
 1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to [online change](https://github.com/topling/rockside/wiki/Online-Change-Options) db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...) without restart the running process
 1. Many improves and refactories on RocksDB, aimed for performance and extendibility
 1. [Topling**CSPP**MemTab](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)(**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling
+1. Topling **CSPP**WBWI(**W**rite**B**atch**W**ith**I**ndex), with CSPP and carefully coding, **CSPP_WBWI** is 20x faster than rocksdb SkipList based WBWI
+1. Topling transaction lock management, 5x faster than rocksdb
 1. [Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable) is an SST implementation optimized for speed, aimed for MemTable flush and L0->L1 compaction.
 1. [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable) is an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which used dedicated searchable in-memory data compression algorithms.
 1. [Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction) for offload compactions on elastic computing clusters, this is more general than RocksDB Compaction Service.

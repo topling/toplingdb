@@ -172,13 +172,13 @@ LockMap* PointLockManager::GetLockMap(
     ColumnFamilyId column_family_id) {
   // First check thread-local cache
   auto lock_maps_cache = static_cast<LockMaps*>(lock_maps_cache_.Get());
-  if (lock_maps_cache == nullptr) {
+  if (UNLIKELY(lock_maps_cache == nullptr)) {
     lock_maps_cache = new LockMaps();
     lock_maps_cache_.Reset(lock_maps_cache);
   }
 
   auto lock_map_iter = lock_maps_cache->find(column_family_id);
-  if (lock_map_iter != lock_maps_cache->end()) {
+  if (LIKELY(lock_map_iter != lock_maps_cache->end())) {
     // Found lock map for this column family.
     return lock_map_iter->second.get();
   }

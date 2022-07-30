@@ -12,6 +12,7 @@ ToplingDB has much more key features than RocksDB:
 1. [Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable) is an SST implementation optimized for speed, aimed for MemTable flush and L0->L1 compaction.
 1. [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable) is an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which used dedicated searchable in-memory data compression algorithms.
 1. [Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction) for offload compactions on elastic computing clusters, this is more general than RocksDB Compaction Service.
+1. Topling dynamic de-virtualization, dynamic de-virtualize hotspot (virtual) functions, 10x improvements on hotspot funcions
 1. Builtin SidePlugin**s** for existing RocksDB components(Cache, Comparator, TableFactory, MemTableFactory...)
 1. Builtin Prometheus metrics support, this is based on [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView)
 1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)

@@ -231,7 +231,7 @@ class autovector {
     }
   }
 
-  bool empty() const { return size() == 0; }
+  bool empty() const { return num_stack_items_ == 0; }
 
   size_type capacity() const { return kSize + vect_.capacity(); }
 
@@ -291,18 +291,20 @@ class autovector {
 
   // -- Mutable Operations
   void push_back(T&& item) {
-    if (num_stack_items_ < kSize) {
-      new ((void*)(&values_[num_stack_items_])) value_type();
-      values_[num_stack_items_++] = std::move(item);
+    size_t oldsize = num_stack_items_;
+    if (oldsize < kSize) {
+      new (&values_[oldsize]) T (std::move(item));
+      num_stack_items_ = oldsize + 1;
     } else {
       vect_.push_back(item);
     }
   }
 
   void push_back(const T& item) {
-    if (num_stack_items_ < kSize) {
-      new ((void*)(&values_[num_stack_items_])) value_type();
-      values_[num_stack_items_++] = item;
+    size_t oldsize = num_stack_items_;
+    if (oldsize < kSize) {
+      new (&values_[oldsize]) T (item);
+      num_stack_items_ = oldsize + 1;
     } else {
       vect_.push_back(item);
     }
@@ -310,9 +312,10 @@ class autovector {
 
   template <class... Args>
   void emplace_back(Args&&... args) {
-    if (num_stack_items_ < kSize) {
-      new ((void*)(&values_[num_stack_items_++]))
-          value_type(std::forward<Args>(args)...);
+    size_t oldsize = num_stack_items_;
+    if (oldsize < kSize) {
+      new ((void*)(&values_[oldsize])) T (std::forward<Args>(args)...);
+      num_stack_items_ = oldsize + 1;
     } else {
       vect_.emplace_back(std::forward<Args>(args)...);
     }

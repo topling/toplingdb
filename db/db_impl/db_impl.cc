@@ -4867,7 +4867,9 @@ Status DBImpl::GetLatestSequenceForKey(
 
   LookupKey lkey(key, current_seq, ts_sz == 0 ? nullptr : &ts);
 #else
+ #if !defined(NDEBUG)
   constexpr size_t ts_sz = 0;
+ #endif
   LookupKey lkey(key, current_seq, nullptr);
 #endif
 

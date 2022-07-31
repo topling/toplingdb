@@ -224,21 +224,16 @@ PointLockStatus PointLockTracker::GetPointLockStatus(
     ColumnFamilyId column_family_id, const LockString& key) const {
   assert(IsPointLockSupported());
   PointLockStatus status;
-  auto it = tracked_keys_.find(column_family_id);
-  if (it == tracked_keys_.end()) {
-    return status;
+  auto keys = tracked_keys_.get_value_ptr(column_family_id);
+  if (LIKELY(nullptr != keys)) {
+    auto idx = keys->find_i(key);
+    if (LIKELY(idx < keys->end_i())) {
+      const TrackedKeyInfo& key_info = keys->val(idx);
+      status.locked = true;
+      status.exclusive = key_info.exclusive;
+      status.seq = key_info.seq;
+    }
   }
-
-  const auto& keys = it->second;
-  auto key_it = keys.find(key);
-  if (key_it == keys.end()) {
-    return status;
-  }
-
-  const TrackedKeyInfo& key_info = key_it->second;
-  status.locked = true;
-  status.exclusive = key_info.exclusive;
-  status.seq = key_info.seq;
   return status;
 }
 

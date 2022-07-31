@@ -159,6 +159,7 @@ private:
   pthread_key_t pthread_key_;
 };
 
+ROCKSDB_STATIC_TLS
 thread_local ThreadData* ThreadLocalPtr::StaticMeta::tls_ = nullptr;
 
 // Windows doesn't support a per-thread destructor with its

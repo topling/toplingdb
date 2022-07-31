@@ -257,7 +257,7 @@ Status PointLockManager::TryLock(PessimisticTransaction* txn,
   // Need to lock the mutex for the stripe that this key hashes to
   size_t stripe_num = lock_map->GetStripe(key);
   assert(lock_map->lock_map_stripes_.size() > stripe_num);
-  LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
+  LockMapStripe* stripe = lock_map->lock_map_stripes_[stripe_num];
 
   LockInfo lock_info(txn->GetID(), txn->GetExpirationTime(), exclusive);
   int64_t timeout = txn->GetLockTimeout();
@@ -601,7 +601,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
   // Lock the mutex for the stripe that this key hashes to
   size_t stripe_num = lock_map->GetStripe(key);
   assert(lock_map->lock_map_stripes_.size() > stripe_num);
-  LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
+  LockMapStripe* stripe = lock_map->lock_map_stripes_[stripe_num];
 
   stripe->stripe_mutex->Lock().PermitUncheckedError();
   UnLockKey(txn, key, stripe, lock_map, env);

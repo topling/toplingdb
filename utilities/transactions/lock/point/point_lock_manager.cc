@@ -73,7 +73,7 @@ struct LockMapStripe {
       size_t cap = 8;
       size_t strpool_cap = 1024;
       this->reserve(cap, strpool_cap);
-      //this->enable_freelist();
+      this->enable_freelist();
     }
   };
   KeyStrMap keys;

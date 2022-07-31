@@ -389,6 +389,13 @@ Status PessimisticTransactionDB::CreateColumnFamilies(
     const ColumnFamilyOptions& options,
     const std::vector<std::string>& column_family_names,
     std::vector<ColumnFamilyHandle*>* handles) {
+#if !defined(ROCKSDB_DYNAMIC_CREATE_CF)
+  DBImpl* impl = dynamic_cast<DBImpl*>(this->GetRootDB());
+  ROCKSDB_VERIFY(nullptr != impl);
+  if (impl->opened_successfully()) {
+    ROCKSDB_DIE("Not Supported after db is opened, because ROCKSDB_DYNAMIC_CREATE_CF is not defined");
+  }
+#endif
   InstrumentedMutexLock l(&column_family_mutex_);
 
   Status s = VerifyCFOptions(options);
@@ -410,6 +417,13 @@ Status PessimisticTransactionDB::CreateColumnFamilies(
 Status PessimisticTransactionDB::CreateColumnFamilies(
     const std::vector<ColumnFamilyDescriptor>& column_families,
     std::vector<ColumnFamilyHandle*>* handles) {
+#if !defined(ROCKSDB_DYNAMIC_CREATE_CF)
+  DBImpl* impl = dynamic_cast<DBImpl*>(this->GetRootDB());
+  ROCKSDB_VERIFY(nullptr != impl);
+  if (impl->opened_successfully()) {
+    ROCKSDB_DIE("Not Supported after db is opened, because ROCKSDB_DYNAMIC_CREATE_CF is not defined");
+  }
+#endif
   InstrumentedMutexLock l(&column_family_mutex_);
 
   for (auto& cf_desc : column_families) {

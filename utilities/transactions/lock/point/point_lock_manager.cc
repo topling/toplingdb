@@ -50,7 +50,7 @@ struct LockInfo {
 };
 
 struct LockMapStripe {
-  explicit LockMapStripe(std::shared_ptr<TransactionDBMutexFactory> factory) {
+  explicit LockMapStripe(TransactionDBMutexFactory* factory) {
     stripe_mutex = factory->AllocateMutex();
     stripe_cv = factory->AllocateCondVar();
     assert(stripe_mutex);
@@ -82,8 +82,7 @@ struct LockMapStripe {
 
 // Map of #num_stripes LockMapStripes
 struct LockMap {
-  explicit LockMap(size_t num_stripes,
-                   std::shared_ptr<TransactionDBMutexFactory> factory)
+  explicit LockMap(size_t num_stripes, TransactionDBMutexFactory* factory)
       : num_stripes_(num_stripes) {
     lock_map_stripes_.reserve(num_stripes);
     for (size_t i = 0; i < num_stripes; i++) {
@@ -139,7 +138,7 @@ void PointLockManager::AddColumnFamily(const ColumnFamilyHandle* cf) {
 
   auto& lock_map = lock_maps_[cf->GetID()];
   if (!lock_map) {
-    lock_map = std::make_shared<LockMap>(default_num_stripes_, mutex_factory_);
+    lock_map = std::make_shared<LockMap>(default_num_stripes_, mutex_factory_.get());
   } else {
     // column_family already exists in lock map
     assert(false);
@@ -168,8 +167,10 @@ void PointLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cf) {
 // Look up the LockMap std::shared_ptr for a given column_family_id.
 // Note:  The LockMap is only valid as long as the caller is still holding on
 //   to the returned std::shared_ptr.
+inline
 LockMap* PointLockManager::GetLockMap(
     ColumnFamilyId column_family_id) {
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
   // First check thread-local cache
   auto lock_maps_cache = static_cast<LockMaps*>(lock_maps_cache_.Get());
   if (UNLIKELY(lock_maps_cache == nullptr)) {
@@ -196,6 +197,12 @@ LockMap* PointLockManager::GetLockMap(
 
     return lock_map.get();
   }
+#else
+  if (auto result = lock_maps_.get_value_ptr(column_family_id))
+    return result->get();
+  else
+    return nullptr;
+#endif
 }
 
 // Returns true if this lock has expired and can be acquired by another

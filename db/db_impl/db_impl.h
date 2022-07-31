@@ -207,6 +207,8 @@ class DBImpl : public DB {
 
   virtual ~DBImpl();
 
+  bool opened_successfully() const { return this->opened_successfully_; }
+
   // ---- Implementations of the DB interface ----
 
   using DB::Resume;

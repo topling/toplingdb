@@ -617,7 +617,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
                               ColumnFamilyId column_family_id,
                               const Slice& key, Env* env) {
   LockMap* lock_map = GetLockMap(column_family_id);
-  if (lock_map == nullptr) {
+  if (UNLIKELY(lock_map == nullptr)) {
     // Column Family must have been dropped.
     return;
   }

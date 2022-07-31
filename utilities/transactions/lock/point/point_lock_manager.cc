@@ -184,6 +184,10 @@ void PointLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cf) {
   }
 }
 
+template<class T>
+static terark_returns_nonnull
+inline T* get_ptr_nonnull(const std::shared_ptr<T>& p) { return p.get(); }
+
 // Look up the LockMap std::shared_ptr for a given column_family_id.
 // Note:  The LockMap is only valid as long as the caller is still holding on
 //   to the returned std::shared_ptr.
@@ -219,7 +223,7 @@ LockMap* PointLockManager::GetLockMap(
   }
 #else
   if (auto result = lock_maps_.get_value_ptr(column_family_id))
-    return result->get();
+    return get_ptr_nonnull(*result);
   else
     return nullptr;
 #endif

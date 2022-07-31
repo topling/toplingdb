@@ -167,6 +167,7 @@ inline Status WriteCommittedTxn::GetForUpdateImpl(
   column_family =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
   assert(column_family);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (!read_options.timestamp) {
     const Comparator* const ucmp = column_family->GetComparator();
     assert(ucmp);
@@ -209,6 +210,10 @@ inline Status WriteCommittedTxn::GetForUpdateImpl(
   }
   return TransactionBaseImpl::GetForUpdate(read_options, column_family, key,
                                            value, exclusive, do_validate);
+#else
+  return TransactionBaseImpl::GetForUpdate(read_options, column_family, key,
+                                            value, exclusive, do_validate);
+#endif
 }
 
 Status WriteCommittedTxn::Put(ColumnFamilyHandle* column_family,
@@ -398,6 +403,7 @@ Status WriteCommittedTxn::Operate(ColumnFamilyHandle* column_family,
   column_family =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
   assert(column_family);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = column_family->GetComparator();
   assert(ucmp);
   size_t ts_sz = ucmp->timestamp_size();
@@ -408,6 +414,7 @@ Status WriteCommittedTxn::Operate(ColumnFamilyHandle* column_family,
           column_family->GetID());
     }
   }
+#endif
   return operation();
 }
 
@@ -986,9 +993,13 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
     s = txn_db_impl_->TryLock(this, cfh_id, key, exclusive);
   }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = cfh->GetComparator();
   assert(ucmp);
   size_t ts_sz = ucmp->timestamp_size();
+#else
+  constexpr size_t ts_sz = 0;
+#endif
 
   SetSnapshotIfNeeded();
 

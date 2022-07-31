@@ -43,17 +43,17 @@ Status Transaction::CommitAndTryCreateSnapshot(
       return Status::InvalidArgument("Different commit ts specified");
     }
   }
-  SetSnapshotOnNextOperation(notifier);
+  SetSnapshotOnNextOperation(std::move(notifier));
   Status s = Commit();
   if (!s.ok()) {
     return s;
   }
   assert(s.ok());
   // If we reach here, we must return ok status for this function.
-  std::shared_ptr<const Snapshot> new_snapshot = GetTimestampedSnapshot();
+  // std::shared_ptr<const Snapshot> new_snapshot = GetTimestampedSnapshot();
 
   if (snapshot) {
-    *snapshot = new_snapshot;
+    *snapshot = GetTimestampedSnapshot();
   }
   return Status::OK();
 }
@@ -139,7 +139,7 @@ void TransactionBaseImpl::SetSnapshotInternal(const Snapshot* snapshot) {
 void TransactionBaseImpl::SetSnapshotOnNextOperation(
     std::shared_ptr<TransactionNotifier> notifier) {
   snapshot_needed_ = true;
-  snapshot_notifier_ = notifier;
+  snapshot_notifier_ = std::move(notifier);
 }
 
 void TransactionBaseImpl::SetSnapshotIfNeeded() {

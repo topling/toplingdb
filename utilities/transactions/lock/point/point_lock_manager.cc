@@ -82,10 +82,16 @@ struct LockMapStripe {
 
 // Map of #num_stripes LockMapStripes
 struct LockMap {
-  explicit LockMap(size_t num_stripes, TransactionDBMutexFactory* factory)
-      : num_stripes_(num_stripes) {
+  explicit LockMap(uint16_t key_prefix_len, uint16_t super_stripes,
+                   size_t num_stripes, TransactionDBMutexFactory* factory) {
+    key_prefix_len_ = std::min<uint16_t>(8, key_prefix_len);
+    if (0 == key_prefix_len)
+      super_stripes_ = 1;
+    else
+      super_stripes_ = std::max<uint16_t>(1, super_stripes);
+    num_stripes_ = std::max<size_t>(1, num_stripes);
     lock_map_stripes_.reserve(num_stripes);
-    for (size_t i = 0; i < num_stripes; i++) {
+    for (size_t i = 0; i < num_stripes * super_stripes; i++) {
       LockMapStripe* stripe = new LockMapStripe(factory);
       lock_map_stripes_.push_back(stripe);
     }
@@ -98,7 +104,9 @@ struct LockMap {
   }
 
   // Number of sepearate LockMapStripes to create, each with their own Mutex
-  const size_t num_stripes_;
+  uint16_t key_prefix_len_;
+  uint16_t super_stripes_;
+  uint32_t num_stripes_;
 
   // Count of keys that are currently locked in this column family.
   // (Only maintained if PointLockManager::max_num_locks_ is positive.)
@@ -120,6 +128,8 @@ void UnrefLockMapsCache(void* ptr) {
 PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
                                    const TransactionDBOptions& opt)
     : txn_db_impl_(txn_db),
+      key_prefix_len_(opt.key_prefix_len),
+      super_stripes_(opt.super_stripes),
       default_num_stripes_(opt.num_stripes),
       max_num_locks_(opt.max_num_locks),
       lock_maps_cache_(&UnrefLockMapsCache),
@@ -130,7 +140,15 @@ PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
 
 size_t LockMap::GetStripe(const LockString& key) const {
   assert(num_stripes_ > 0);
-  return FastRange64(GetSliceNPHash64(key), num_stripes_);
+  if (1 == super_stripes_) {
+    return FastRange64(GetSliceNPHash64(key), num_stripes_);
+  } else {
+    auto col = FastRange64(GetSliceNPHash64(key), num_stripes_);
+    uint64_t pref = 0;
+    memcpy(&pref, key.data(), std::min<size_t>(key_prefix_len_, key.size()));
+    size_t row = FastRange64(pref, super_stripes_);
+    return row * num_stripes_ + col;
+  }
 }
 
 void PointLockManager::AddColumnFamily(const ColumnFamilyHandle* cf) {
@@ -138,7 +156,8 @@ void PointLockManager::AddColumnFamily(const ColumnFamilyHandle* cf) {
 
   auto& lock_map = lock_maps_[cf->GetID()];
   if (!lock_map) {
-    lock_map = std::make_shared<LockMap>(default_num_stripes_, mutex_factory_.get());
+    lock_map = std::make_shared<LockMap>(key_prefix_len_,
+        super_stripes_, default_num_stripes_, mutex_factory_.get());
   } else {
     // column_family already exists in lock map
     assert(false);
@@ -622,7 +641,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     const uint32_t nil = UINT32_MAX;
     using namespace terark;
     const size_t max_key_idx = keyinfos.end_i();
-    const size_t num_stripes = lock_map->num_stripes_;
+    const size_t num_stripes = lock_map->lock_map_stripes_.size();
     auto stripe_heads = (uint32_t*)alloca(sizeof(uint32_t) * num_stripes);
     std::fill_n(stripe_heads, num_stripes, nil);
     valvec<uint32_t> keys_link(max_key_idx, valvec_no_init());

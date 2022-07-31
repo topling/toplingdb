@@ -161,6 +161,13 @@ struct TransactionDBOptions {
   // Stores the number of latest deadlocks to track
   uint32_t max_num_deadlocks = kInitialMaxDeadlocks;
 
+  // used for compute stripe index(= hash(key) % num_stripes)
+  uint16_t key_prefix_len = 0;
+
+  // for multiple tables, hash key of same table to same super stripe
+  // super_stripe_index = hash(prefix) % super_stripes
+  uint16_t super_stripes = 1;
+
   // Increasing this value will increase the concurrency by dividing the lock
   // table (per column family) into more sub-tables, each with their own
   // separate mutex.

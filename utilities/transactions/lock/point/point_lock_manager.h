@@ -159,6 +159,9 @@ class PointLockManager : public LockManager {
  private:
   PessimisticTransactionDB* txn_db_impl_;
 
+  const uint16_t key_prefix_len_;
+  const uint16_t super_stripes_;
+
   // Default number of lock map stripes per column family
   const size_t default_num_stripes_;
 

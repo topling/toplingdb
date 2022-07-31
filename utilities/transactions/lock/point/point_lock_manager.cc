@@ -138,15 +138,16 @@ PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
                          ? opt.custom_mutex_factory
                          : std::make_shared<TransactionDBMutexFactoryImpl>()) {}
 
+terark_forceinline
 size_t LockMap::GetStripe(const LockString& key) const {
   assert(num_stripes_ > 0);
+  auto col = GetSliceNPHash64(key) % num_stripes_;
   if (1 == super_stripes_) {
-    return FastRange64(GetSliceNPHash64(key), num_stripes_);
+    return col;
   } else {
-    auto col = FastRange64(GetSliceNPHash64(key), num_stripes_);
     uint64_t pref = 0;
-    memcpy(&pref, key.data(), std::min<size_t>(key_prefix_len_, key.size()));
-    size_t row = FastRange64(pref, super_stripes_);
+    memcpy(&pref, key.data(), std::min(size_t(key_prefix_len_), key.size()));
+    size_t row = pref % super_stripes_;
     return row * num_stripes_ + col;
   }
 }
@@ -265,7 +266,7 @@ Status PointLockManager::TryLock(PessimisticTransaction* txn,
                                  bool exclusive) {
   // Lookup lock map for this column family id
   LockMap* lock_map = GetLockMap(column_family_id);
-  if (lock_map == nullptr) {
+  if (UNLIKELY(lock_map == nullptr)) {
     char msg[255];
     snprintf(msg, sizeof(msg), "Column family id not found: %" PRIu32,
              column_family_id);

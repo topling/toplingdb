@@ -199,27 +199,27 @@ Status WriteUnpreparedTxn::RebuildFromWriteBatch(WriteBatch* wb) {
         : txn_(txn), rollback_merge_operands_(rollback_merge_operands) {}
 
     Status PutCF(uint32_t cf, const Slice& key, const Slice&) override {
-      txn_->TrackKey(cf, key, kMaxSequenceNumber,
-                     false /* read_only */, true /* exclusive */);
+      txn_->TrackKey({cf, key, kMaxSequenceNumber,
+                      false /* read_only */, true /* exclusive */});
       return Status::OK();
     }
 
     Status DeleteCF(uint32_t cf, const Slice& key) override {
-      txn_->TrackKey(cf, key, kMaxSequenceNumber,
-                     false /* read_only */, true /* exclusive */);
+      txn_->TrackKey({cf, key, kMaxSequenceNumber,
+                      false /* read_only */, true /* exclusive */});
       return Status::OK();
     }
 
     Status SingleDeleteCF(uint32_t cf, const Slice& key) override {
-      txn_->TrackKey(cf, key, kMaxSequenceNumber,
-                     false /* read_only */, true /* exclusive */);
+      txn_->TrackKey({cf, key, kMaxSequenceNumber,
+                      false /* read_only */, true /* exclusive */});
       return Status::OK();
     }
 
     Status MergeCF(uint32_t cf, const Slice& key, const Slice&) override {
       if (rollback_merge_operands_) {
-        txn_->TrackKey(cf, key, kMaxSequenceNumber,
-                       false /* read_only */, true /* exclusive */);
+        txn_->TrackKey({cf, key, kMaxSequenceNumber,
+                        false /* read_only */, true /* exclusive */});
       }
       return Status::OK();
     }

@@ -162,9 +162,7 @@ Status OptimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
     seq = db_->GetLatestSequenceNumber();
   }
 
-  std::string key_str = key.ToString();
-
-  TrackKey(cfh_id, key_str, seq, read_only, exclusive);
+  TrackKey({cfh_id, key, seq, read_only, exclusive});
 
   // Always return OK. Confilct checking will happen at commit time.
   return Status::OK();

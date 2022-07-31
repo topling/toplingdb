@@ -271,6 +271,7 @@ ifeq (${DEBUG_LEVEL}, 2)
 endif
 ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2, $(MAKECMDGOALS)),)
   CXXFLAGS += -DROCKSDB_UNIT_TEST
+  CXXFLAGS += -DROCKSDB_DYNAMIC_CREATE_CF
   CXXFLAGS += -DTOPLINGDB_WITH_TIMESTAMP
   MAKE_UNIT_TEST := 1
   OBJ_DIR := $(subst build/,build-ut/,${OBJ_DIR})

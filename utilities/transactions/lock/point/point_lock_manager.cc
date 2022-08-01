@@ -108,11 +108,13 @@ struct LockMap {
   uint16_t super_stripes_;
   uint32_t num_stripes_;
 
+  terark::valvec<LockMapStripe*> lock_map_stripes_;
+
+  char padding[48] = {0}; // to avoid false sharing on lock_cnt
+
   // Count of keys that are currently locked in this column family.
   // (Only maintained if PointLockManager::max_num_locks_ is positive.)
   std::atomic<int64_t> lock_cnt{0};
-
-  terark::valvec<LockMapStripe*> lock_map_stripes_;
 
   size_t GetStripe(const LockString& key) const;
 };

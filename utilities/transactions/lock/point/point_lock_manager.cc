@@ -112,7 +112,7 @@ struct LockMap {
   // (Only maintained if PointLockManager::max_num_locks_ is positive.)
   std::atomic<int64_t> lock_cnt{0};
 
-  std::vector<LockMapStripe*> lock_map_stripes_;
+  terark::valvec<LockMapStripe*> lock_map_stripes_;
 
   size_t GetStripe(const LockString& key) const;
 };

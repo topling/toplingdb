@@ -30,10 +30,9 @@ namespace ROCKSDB_NAMESPACE {
 #if defined(_MSC_VER) /* Visual Studio */
 #define FORCE_INLINE __forceinline
 #elif defined(__GNUC__)
-#define FORCE_INLINE __attribute__((always_inline))
-#pragma GCC diagnostic ignored "-Wattributes"
+#define FORCE_INLINE inline __attribute__((always_inline))
 #else
-#define inline
+#define FORCE_INLINE inline
 #endif
 
 static FORCE_INLINE uint64_t GetUnalignedU64(const void* ptr) noexcept {

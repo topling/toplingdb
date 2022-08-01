@@ -42,8 +42,13 @@ extern thread_local PerfContext perf_context ROCKSDB_STATIC_TLS;
 
 #define PERF_TIMER_START(metric) perf_step_timer_##metric.Start();
 
+#define PerfStepTimerDecl(metric, clock, use_cpu_time, enable_level, ...) \
+  PerfStepTimer perf_step_timer_##metric( \
+   perf_level >= enable_level ? &perf_context.metric : nullptr, \
+   clock, use_cpu_time, enable_level, ##__VA_ARGS__)
+
 #define PERF_TIMER_FULL_STATS(metric, ticker, histogram, stats) \
-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), nullptr, \
+  PerfStepTimerDecl(metric, nullptr, \
     false, kEnableTimeExceptForMutex, stats, ticker, histogram); \
   perf_step_timer_##metric.Start();
 
@@ -55,29 +60,28 @@ extern thread_local PerfContext perf_context ROCKSDB_STATIC_TLS;
 
 // Declare and set start time of the timer
 #define PERF_TIMER_GUARD(metric)                                  \
-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric)); \
+  PerfStepTimerDecl(metric, nullptr, false, PerfLevel::kEnableTimeExceptForMutex); \
   perf_step_timer_##metric.Start();
 
 // Declare and set start time of the timer
 #define PERF_TIMER_GUARD_WITH_CLOCK(metric, clock)                       \
-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), clock); \
+  PerfStepTimerDecl(metric, clock, false, PerfLevel::kEnableTimeExceptForMutex); \
   perf_step_timer_##metric.Start();
 
 // Declare and set start time of the timer
 #define PERF_CPU_TIMER_GUARD(metric, clock)            \
-  PerfStepTimer perf_step_timer_##metric(              \
-      &(perf_context.metric), clock, true,             \
+  PerfStepTimerDecl(metric, clock, true, \
       PerfLevel::kEnableTimeAndCPUTimeExceptForMutex); \
   perf_step_timer_##metric.Start();
 
 #define PERF_TIMER_MUTEX_WAIT_GUARD(metric, stats)                 \
-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), nullptr,\
+  PerfStepTimerDecl(metric, nullptr, \
       false, PerfLevel::kEnableTime, stats, DB_MUTEX_WAIT_NANOS,         \
       HISTOGRAM_MUTEX_WAIT_NANOS);                                       \
   perf_step_timer_##metric.Start();
 
 #define PERF_TIMER_COND_WAIT_GUARD(metric, stats)                         \
-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), nullptr, \
+  PerfStepTimerDecl(metric, nullptr, \
       false, PerfLevel::kEnableTime, stats, DB_COND_WAIT_NANOS,           \
       HISTOGRAM_COND_WAIT_NANOS);                                         \
   perf_step_timer_##metric.Start();

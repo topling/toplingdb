@@ -46,7 +46,9 @@ class PerfStepTimer {
   void Measure() {
     if (start_) {
       uint64_t now = time_now();
-      *metric_ += now - start_;
+      if (metric_) {
+        *metric_ += now - start_;
+      }
       start_ = now;
     }
   }

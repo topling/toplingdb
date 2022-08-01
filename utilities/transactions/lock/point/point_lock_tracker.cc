@@ -98,7 +98,7 @@ UntrackStatus PointLockTracker::Untrack(const PointLockRequest& r) {
   if (info.num_reads == 0 && info.num_writes == 0) {
     keys.erase(it);
     if (keys.empty()) {
-      tracked_keys_.erase(cf_keys);
+      keys.erase_all(); // set to clean state and keep memory
     }
     removed = true;
   }

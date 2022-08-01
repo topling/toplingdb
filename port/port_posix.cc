@@ -28,6 +28,8 @@
 #include <fstream>
 #include <string>
 
+#include <terark/util/fast_getcpu.hpp>
+
 #include "util/string_util.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -171,15 +173,17 @@ void RWMutex::WriteUnlock() { PthreadCall("write unlock", pthread_rwlock_unlock(
 int PhysicalCoreID() {
 #if defined(ROCKSDB_SCHED_GETCPU_PRESENT) && defined(__x86_64__) && \
     (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 22))
+ #if 0
   // sched_getcpu uses VDSO getcpu() syscall since 2.22. I believe Linux offers VDSO
   // support only on x86_64. This is the fastest/preferred method if available.
   int cpuno = sched_getcpu();
-/*
   if (cpuno < 0) {
     return -1;
   }
-*/
   return cpuno;
+ #else
+  return terark::fast_getcpu();
+ #endif
 #elif defined(__x86_64__) || defined(__i386__)
   // clang/gcc both provide cpuid.h, which defines __get_cpuid(), for x86_64 and i386.
   unsigned eax, ebx = 0, ecx, edx;

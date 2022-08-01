@@ -3954,9 +3954,11 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
     return Status::InvalidArgument("Invalid options");
   }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = column_family->GetComparator();
   assert(ucmp);
   size_t ts_sz = ucmp->timestamp_size();
+#endif
 
   Version* v;
   auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
@@ -3968,6 +3970,7 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
     Slice start = range[i].start;
     Slice limit = range[i].limit;
 
+  #if defined(TOPLINGDB_WITH_TIMESTAMP)
     // Add timestamp if needed
     std::string start_with_ts, limit_with_ts;
     if (ts_sz > 0) {
@@ -3979,6 +3982,7 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
       start = start_with_ts;
       limit = limit_with_ts;
     }
+  #endif
     // Convert user_key into a corresponding internal key.
     InternalKey k1(start, kMaxSequenceNumber, kValueTypeForSeek);
     InternalKey k2(limit, kMaxSequenceNumber, kValueTypeForSeek);

@@ -502,11 +502,13 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(DB* db,
 Status WriteBatchWithIndex::GetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const Slice& key, PinnableSlice* pinnable_val, ReadCallback* callback) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = RepGetUserComparator(column_family);
   size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
   if (ts_sz > 0 && !read_options.timestamp) {
     return Status::InvalidArgument("Must specify timestamp");
   }
+#endif
 
   Status s;
   WriteBatchWithIndexInternal wbwii(db, column_family);
@@ -572,6 +574,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const size_t num_keys, const Slice* keys, PinnableSlice* values,
     Status* statuses, bool sorted_input, ReadCallback* callback) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = RepGetUserComparator(column_family);
   size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
   if (ts_sz > 0 && !read_options.timestamp) {
@@ -580,6 +583,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     }
     return;
   }
+#endif
 
   WriteBatchWithIndexInternal wbwii(db, column_family);
 

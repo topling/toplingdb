@@ -1348,6 +1348,7 @@ bool DBIter::TooManyInternalKeysSkipped(bool increment) {
   return false;
 }
 
+__always_inline
 bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
                        bool* more_recent) {
   // Remember that comparator orders preceding timestamp as larger.
@@ -1362,15 +1363,14 @@ bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
        user_comparator_.CompareTimestamp(ts, *timestamp_ub_) <= 0) &&
       (timestamp_lb_ == nullptr ||
        user_comparator_.CompareTimestamp(ts, *timestamp_lb_) >= 0);
+#endif
 
   if (more_recent) {
     *more_recent = !visible_by_seq;
   }
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   return visible_by_seq && visible_by_ts;
 #else
-  if (more_recent) {
-    *more_recent = !visible_by_seq;
-  }
   return visible_by_seq;
 #endif
 }

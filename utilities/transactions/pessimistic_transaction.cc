@@ -208,12 +208,9 @@ inline Status WriteCommittedTxn::GetForUpdateImpl(
   if (ts != read_timestamp_) {
     return Status::InvalidArgument("Must read from the same read_timestamp");
   }
+#endif
   return TransactionBaseImpl::GetForUpdate(read_options, column_family, key,
                                            value, exclusive, do_validate);
-#else
-  return TransactionBaseImpl::GetForUpdate(read_options, column_family, key,
-                                            value, exclusive, do_validate);
-#endif
 }
 
 Status WriteCommittedTxn::Put(ColumnFamilyHandle* column_family,

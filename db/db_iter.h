@@ -375,11 +375,13 @@ class DBIter final : public Iterator {
   ROCKSDB_FIELD_UNUSED
 #endif
   ColumnFamilyData* cfd_;
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Slice* const timestamp_ub_;
   const Slice* const timestamp_lb_;
-#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const size_t timestamp_size_;
 #else
+  static constexpr const Slice* const timestamp_ub_ = nullptr;
+  static constexpr const Slice* const timestamp_lb_ = nullptr;
   static constexpr size_t timestamp_size_ = 0;
 #endif
   std::string saved_timestamp_;

@@ -32,6 +32,7 @@
 #include "util/mutexlock.h"
 #include "util/string_util.h"
 #include "util/user_comparator_wrapper.h"
+#include <terark/config.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -78,12 +79,12 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       range_del_agg_(&ioptions.internal_comparator, s),
       db_impl_(db_impl),
       cfd_(cfd),
-      timestamp_ub_(read_options.timestamp),
-      timestamp_lb_(read_options.iter_start_ts)
     #if defined(TOPLINGDB_WITH_TIMESTAMP)
-      , timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0)
+      timestamp_ub_(read_options.timestamp),
+      timestamp_lb_(read_options.iter_start_ts),
+      timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0),
     #endif
-{
+      saved_ikey_() {
   RecordTick(statistics_, NO_ITERATOR_CREATED);
   if (pin_thru_lifetime_) {
     pinned_iters_mgr_.StartPinning();
@@ -115,9 +116,10 @@ Status DBIter::GetProperty(std::string prop_name, std::string* prop) {
   return Status::InvalidArgument("Unidentified property.");
 }
 
+__always_inline
 bool DBIter::ParseKey(ParsedInternalKey* ikey) {
   Status s = ParseInternalKey(iter_.key(), ikey, false /* log_err_key */);
-  if (!s.ok()) {
+  if (UNLIKELY(!s.ok())) {
     status_ = Status::Corruption("In DBIter: ", s.getState());
     valid_ = false;
     ROCKS_LOG_ERROR(logger_, "In DBIter: %s", status_.getState());
@@ -271,7 +273,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
     // Will update is_key_seqnum_zero_ as soon as we parsed the current key
     // but we need to save the previous value to be used in the loop.
     bool is_prev_key_seqnum_zero = is_key_seqnum_zero_;
-    if (!ParseKey(&ikey_)) {
+    if (UNLIKELY(!ParseKey(&ikey_))) {
       is_key_seqnum_zero_ = false;
       return false;
     }
@@ -1336,6 +1338,7 @@ bool DBIter::FindUserKeyBeforeSavedKey() {
   return true;
 }
 
+__always_inline
 bool DBIter::TooManyInternalKeysSkipped(bool increment) {
   if ((max_skippable_internal_keys_ > 0) &&
       (num_internal_keys_skipped_ > max_skippable_internal_keys_)) {

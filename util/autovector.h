@@ -28,6 +28,9 @@ class autovector : public std::vector<T> {
   }
   explicit autovector(size_t sz) : std::vector<T>(sz) {}
   size_type num_stack_items() const { return this->size(); }
+  const T& top() const noexcept { return this->back(); }
+  T& top() noexcept { return this->back(); }
+  void pop() { this->pop_back(); }
 };
 #else
 
@@ -271,22 +274,22 @@ class autovector {
     return (*this)[n];
   }
 
-  reference front() {
+  reference front() noexcept {
     assert(!empty());
     return values_[0];
   }
 
-  const_reference front() const {
+  const_reference front() const noexcept {
     assert(!empty());
     return values_[0];
   }
 
-  reference back() {
+  reference back() noexcept {
     assert(!empty());
     return vect_.empty() ? values_[num_stack_items_-1] : vect_.back();
   }
 
-  const_reference back() const {
+  const_reference back() const noexcept {
     assert(!empty());
     return vect_.empty() ? values_[num_stack_items_-1] : vect_.back();
   }
@@ -376,6 +379,10 @@ class autovector {
   const_reverse_iterator rend() const {
     return const_reverse_iterator(begin());
   }
+
+  const T& top() const noexcept { return back(); }
+  T& top() noexcept { return back(); }
+  void pop() { pop_back(); }
 
  private:
   static void destroy(value_type* p, size_t n) {

@@ -167,7 +167,7 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
       ColumnFamilyData* cfd, DBImpl* db, InstrumentedMutex* mutex);
   // destroy without mutex
   virtual ~ColumnFamilyHandleImpl();
-  virtual ColumnFamilyData* cfd() const { return cfd_; }
+  virtual ColumnFamilyData* cfd() const override { return cfd_; }
 
   virtual uint32_t GetID() const override;
   virtual const std::string& GetName() const override;

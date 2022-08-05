@@ -89,7 +89,9 @@ TransactionBaseImpl::~TransactionBaseImpl() {
 }
 
 void TransactionBaseImpl::Clear() {
-  save_points_.reset(nullptr);
+  if (save_points_) {
+    save_points_->clear();
+  }
   write_batch_.Clear();
   commit_time_batch_.Clear();
   tracked_locks_->Clear();
@@ -174,11 +176,9 @@ Status TransactionBaseImpl::TryLock(ColumnFamilyHandle* column_family,
 
 void TransactionBaseImpl::SetSavePoint() {
   if (save_points_ == nullptr) {
-    save_points_.reset(
-        new std::stack<TransactionBaseImpl::SavePoint,
-                       autovector<TransactionBaseImpl::SavePoint>>());
+    save_points_.reset(new autovector<TransactionBaseImpl::SavePoint>());
   }
-  save_points_->emplace(snapshot_, snapshot_needed_, snapshot_notifier_,
+  save_points_->emplace_back(snapshot_, snapshot_needed_, snapshot_notifier_,
                         num_puts_, num_deletes_, num_merges_,
                         lock_tracker_factory_);
   write_batch_.SetSavePoint();

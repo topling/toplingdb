@@ -320,8 +320,8 @@ class TransactionBaseImpl : public Transaction {
     // Record all locks tracked since the last savepoint
     std::shared_ptr<LockTracker> new_locks_;
 
-    SavePoint(std::shared_ptr<const Snapshot> snapshot, bool snapshot_needed,
-              std::shared_ptr<TransactionNotifier> snapshot_notifier,
+    SavePoint(const std::shared_ptr<const Snapshot>& snapshot, bool snapshot_needed,
+              const std::shared_ptr<TransactionNotifier>& snapshot_notifier,
               uint64_t num_puts, uint64_t num_deletes, uint64_t num_merges,
               const LockTrackerFactory& lock_tracker_factory)
         : snapshot_(snapshot),
@@ -349,9 +349,7 @@ class TransactionBaseImpl : public Transaction {
 
   // Stack of the Snapshot saved at each save point. Saved snapshots may be
   // nullptr if there was no snapshot at the time SetSavePoint() was called.
-  std::unique_ptr<std::stack<TransactionBaseImpl::SavePoint,
-                             autovector<TransactionBaseImpl::SavePoint>>>
-      save_points_;
+  std::unique_ptr<autovector<SavePoint>> save_points_;
 
  private:
   friend class WriteCommittedTxn;

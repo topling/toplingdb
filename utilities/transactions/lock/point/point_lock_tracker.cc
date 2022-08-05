@@ -46,6 +46,9 @@ class TrackedKeysIterator : public LockTracker::KeyIterator {
 
 }  // namespace
 
+PointLockTracker::PointLockTracker() : tracked_keys_(0) {
+}
+
 void PointLockTracker::Track(const PointLockRequest& r) {
   auto& keys = tracked_keys_[r.column_family_id];
   auto result = keys.try_emplace(r.key, r.seq);

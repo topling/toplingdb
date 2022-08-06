@@ -165,7 +165,7 @@ class BinaryHeap {
   }
 
   Compare cmp_;
-  autovector<T> data_;
+  autovector<T, 16> data_;
   // Used to reduce number of cmp_ calls in downheap()
   size_t root_cmp_cache_ = std::numeric_limits<size_t>::max();
 };

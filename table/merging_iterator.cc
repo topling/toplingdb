@@ -155,8 +155,8 @@ class MergingIterTmpl final : public MergingIterator {
         direction_(kForward),
         comparator_(comparator),
         current_(nullptr),
-        minHeap_(comparator_),
-        pinned_iters_mgr_(nullptr) {
+        pinned_iters_mgr_(nullptr),
+        minHeap_(comparator_) {
     children_.resize(n);
     for (int i = 0; i < n; i++) {
       children_[i].Set(children[i]);
@@ -421,7 +421,6 @@ class MergingIterTmpl final : public MergingIterator {
   enum Direction : uint8_t { kForward, kReverse };
   Direction direction_;
   const InternalKeyComparator* comparator_;
-  autovector<IteratorWrapper, kNumIterReserve> children_;
 
   // Cached pointer to child iterator with the current key, or nullptr if no
   // child iterators are valid.  This is the top of minHeap_ or maxHeap_
@@ -429,12 +428,14 @@ class MergingIterTmpl final : public MergingIterator {
   HeapElem current_;
   // If any of the children have non-ok status, this is one of them.
   Status status_;
+  PinnedIteratorsManager* pinned_iters_mgr_;
+
+  autovector<IteratorWrapper, kNumIterReserve> children_;
+
   union {
     MergerMinIterHeap minHeap_;
     MergerMaxIterHeap maxHeap_;
   };
-
-  PinnedIteratorsManager* pinned_iters_mgr_;
 
   // In forward direction, process a child that is not in the min heap.
   // If valid, add to the min heap. Otherwise, check status.

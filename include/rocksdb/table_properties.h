@@ -170,6 +170,8 @@ class TablePropertiesCollectorFactory : public Customizable {
   // configuration info that will // be logged to the info log when the
   // DB is opened
   virtual std::string ToString() const { return Name(); }
+
+  virtual std::string UserPropToString(const UserCollectedProperties&) const;
 };
 
 // TableProperties contains a bunch of read-only properties of its associated

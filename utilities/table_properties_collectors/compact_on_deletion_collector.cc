@@ -224,4 +224,23 @@ Status TablePropertiesCollectorFactory::CreateFromString(
                                                            nullptr, result);
 }
 
+std::string TablePropertiesCollectorFactory::UserPropToString
+(const UserCollectedProperties& uprops) const {
+  std::string str;
+  if (uprops.empty()) {
+    str = "{}";
+  } else {
+    str.append("{");
+    for (auto& [name, value] : uprops) {
+      str.append("\"");
+      str.append(name);
+      str.append("\": \"");
+      str.append(name);
+      str.append("\",");
+    }
+    str.back() = '}';
+  }
+  return str;
+}
+
 }  // namespace ROCKSDB_NAMESPACE

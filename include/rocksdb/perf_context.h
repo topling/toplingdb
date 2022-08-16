@@ -240,7 +240,7 @@ struct PerfContext {
 
   class LevelToPerfContext : std::vector<PerfContextByLevel> {
     using super =  std::vector<PerfContextByLevel>;
-    friend class PerfContext;
+    friend struct PerfContext;
   public:
     using super::begin;
     using super::end;

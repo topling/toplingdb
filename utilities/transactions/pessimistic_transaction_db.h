@@ -130,7 +130,7 @@ class PessimisticTransactionDB : public TransactionDB {
   static TransactionDBOptions ValidateTxnDBOptions(
       const TransactionDBOptions& txn_db_options);
 
-  const TransactionDBOptions& GetTxnDBOptions() const {
+  const TransactionDBOptions& GetTxnDBOptions() const override {
     return txn_db_options_;
   }
 

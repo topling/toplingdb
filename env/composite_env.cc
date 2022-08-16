@@ -106,7 +106,7 @@ class CompositeRandomAccessFileWrapper : public RandomAccessFile {
     IODebugContext dbg;
     return target_->FsRead(offset, n, io_opts, result, scratch, &dbg);
   }
-  Status FsMultiRead(ReadRequest* reqs, size_t num_reqs) {
+  Status FsMultiRead(ReadRequest* reqs, size_t num_reqs) override {
     IOOptions io_opts;
     IODebugContext dbg;
     std::vector<FSReadRequest> fs_reqs;

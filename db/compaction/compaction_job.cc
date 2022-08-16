@@ -983,7 +983,7 @@ try {
   //compaction_job_stats_->Add(rpc_results.job_stats); // instead AggregateStatistics
 
   //RecordCompactionIOStats(); // update remote statistics to local -->>
-#if defined(__GNUC__)
+#if defined(__GNUC__) && !defined(__clang__)
   #pragma GCC diagnostic push
   #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
@@ -996,7 +996,7 @@ try {
   MoveHG(DCOMPACTION_INPUT_ZIP_BYTES, LCOMPACTION_INPUT_ZIP_BYTES);
   MoveHG(DCOMPACTION_OUTPUT_FILE_RAW_SIZE, LCOMPACTION_OUTPUT_FILE_RAW_SIZE);
   MoveHG(DCOMPACTION_OUTPUT_FILE_ZIP_SIZE, LCOMPACTION_OUTPUT_FILE_ZIP_SIZE);
-#if defined(__GNUC__)
+#if defined(__GNUC__) && !defined(__clang__)
   #pragma GCC diagnostic pop
 #endif
 

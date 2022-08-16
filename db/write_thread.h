@@ -376,8 +376,10 @@ class WriteThread {
 
  private:
   // See AwaitState.
+#if !defined(OS_LINUX)
   const uint64_t max_yield_usec_;
   const uint64_t slow_yield_usec_;
+#endif
 
   // Allow multiple writers write to memtable concurrently.
   const bool allow_concurrent_memtable_write_;

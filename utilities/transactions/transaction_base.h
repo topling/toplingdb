@@ -45,7 +45,7 @@ class TransactionBaseImpl : public Transaction {
   virtual Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
                          bool read_only, bool exclusive,
                          const bool do_validate = true,
-                         const bool assume_tracked = false) = 0;
+                         const bool assume_tracked = false) override = 0;
 
   void SetSavePoint() override;
 

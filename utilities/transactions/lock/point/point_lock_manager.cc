@@ -89,7 +89,7 @@ struct LockMap {
       super_stripes_ = 1;
     else
       super_stripes_ = std::max<uint16_t>(1, super_stripes);
-    num_stripes_ = std::max<size_t>(1, num_stripes);
+    num_stripes_ = uint32_t(std::max<size_t>(1, num_stripes));
     lock_map_stripes_.reserve(num_stripes);
     for (size_t i = 0; i < num_stripes * super_stripes; i++) {
       LockMapStripe* stripe = new LockMapStripe(factory);
@@ -657,7 +657,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
         const fstring key = keyinfos.key(idx);
         size_t strip_idx = lock_map->GetStripe(key);
         keys_link[idx] = stripe_heads[strip_idx]; // insert to single
-        stripe_heads[strip_idx] = idx;            // list front
+        stripe_heads[strip_idx] = uint32_t(idx);  // list front
       }
     }
     for (size_t strip_idx = 0; strip_idx < num_stripes; strip_idx++) {

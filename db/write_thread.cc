@@ -27,10 +27,14 @@ futex(void* uaddr, uint32_t op, uint32_t val, const timespec* timeout = NULL,
 namespace ROCKSDB_NAMESPACE {
 
 WriteThread::WriteThread(const ImmutableDBOptions& db_options)
+#if !defined(OS_LINUX)
     : max_yield_usec_(db_options.enable_write_thread_adaptive_yield
                           ? db_options.write_thread_max_yield_usec
                           : 0),
       slow_yield_usec_(db_options.write_thread_slow_yield_usec),
+#else
+    :
+#endif
       allow_concurrent_memtable_write_(
           db_options.allow_concurrent_memtable_write),
       enable_pipelined_write_(db_options.enable_pipelined_write),

@@ -53,7 +53,7 @@ CoreLocalArray<T>::CoreLocalArray() {
     ++size_shift_;
   }
   size_mask_ = uint16_t((1 << size_shift_) - 1);
-  num_cpus_ = num_cpus_;
+  num_cpus_ = num_cpus;
   data_.reset(new T[static_cast<size_t>(1) << size_shift_]);
 }
 

@@ -73,6 +73,7 @@ PessimisticTransactionDB::~PessimisticTransactionDB() {
 
 Status PessimisticTransactionDB::VerifyCFOptions(
     const ColumnFamilyOptions& cf_options) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = cf_options.comparator;
   assert(ucmp);
   size_t ts_sz = ucmp->timestamp_size();
@@ -89,6 +90,7 @@ Status PessimisticTransactionDB::VerifyCFOptions(
   if (txn_db_options_.write_policy != WRITE_COMMITTED) {
     return Status::NotSupported("Only WriteCommittedTxn supports timestamp");
   }
+#endif
   return Status::OK();
 }
 

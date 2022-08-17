@@ -665,6 +665,7 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
   WriteBatch* wb = wbwi->GetWriteBatch();
   assert(wb);
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const bool needs_ts = WriteBatchInternal::HasKeyWithTimestamp(*wb);
   if (needs_ts && commit_timestamp_ == kMaxTxnTimestamp) {
     return Status::InvalidArgument("Must assign a commit timestamp");
@@ -691,6 +692,7 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
       return s;
     }
   }
+#endif
 
   uint64_t seq_used = kMaxSequenceNumber;
   SnapshotCreationCallback snapshot_creation_cb(db_impl_, commit_timestamp_,
@@ -733,7 +735,11 @@ Status WriteCommittedTxn::CommitInternal() {
   WriteBatch* wb = wbwi->GetWriteBatch();
   assert(wb);
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const bool needs_ts = WriteBatchInternal::HasKeyWithTimestamp(*wb);
+#else
+  const bool needs_ts = false; // let compiler do optimization
+#endif
   if (needs_ts && commit_timestamp_ == kMaxTxnTimestamp) {
     return Status::InvalidArgument("Must assign a commit timestamp");
   }

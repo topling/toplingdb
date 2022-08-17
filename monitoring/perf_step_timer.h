@@ -15,8 +15,8 @@ class PerfStepTimer {
  public:
   explicit PerfStepTimer(
       uint64_t* metric,
-      SystemClock* clock  __attribute__((__unused__)) = nullptr,
-      bool use_cpu_time = false,
+      SystemClock* clock __attribute__((__unused__)) = nullptr,
+      bool use_cpu_time __attribute__((__unused__)) = false,
       PerfLevel enable_level = PerfLevel::kEnableTimeExceptForMutex,
       Statistics* statistics = nullptr, uint32_t ticker_type = UINT32_MAX,
       uint16_t histogram_type = UINT16_MAX)

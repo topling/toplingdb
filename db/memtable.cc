@@ -573,8 +573,8 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                      MemTablePostProcessInfo* post_process_info, void** hint) {
   std::unique_ptr<MemTableRep>& table =
       type == kTypeRangeDeletion ? range_del_table_ : table_;
-  Slice key_slice((char*)alloca(key.size_ + 8), key.size_ + 8);
-  memcpy((char*)key_slice.data_, key.data_, key.size_);
+  Slice key_slice((char*)memcpy(alloca(key.size_ + 8), key.data_, key.size_),
+                  key.size_ + 8);
   PutUnaligned((uint64_t*)(key_slice.data_ + key.size_), PackSequenceAndType(s, type));
   if (kv_prot_info != nullptr) {
     TEST_SYNC_POINT_CALLBACK("MemTable::Add:Encoded", &key_slice);

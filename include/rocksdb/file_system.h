@@ -1659,6 +1659,12 @@ class FSRandomAccessFileOwnerWrapper : public FSRandomAccessFileWrapper {
       std::unique_ptr<FSRandomAccessFile>&& t)
       : FSRandomAccessFileWrapper(t.get()), guard_(std::move(t)) {}
 
+  FSRandomAccessFile* exchange(FSRandomAccessFile* p) {
+    auto old = guard_.release();
+    guard_.reset(p);
+    return old;
+  }
+
  private:
   std::unique_ptr<FSRandomAccessFile> guard_;
 };

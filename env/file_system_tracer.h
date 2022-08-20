@@ -280,6 +280,10 @@ class FSRandomAccessFilePtr {
     }
   }
 
+  FSRandomAccessFile* exchange(FSRandomAccessFile* p) {
+     return fs_tracer_.exchange(p);
+  }
+
  private:
   std::shared_ptr<IOTracer> io_tracer_;
   FSRandomAccessFileTracingWrapper fs_tracer_;

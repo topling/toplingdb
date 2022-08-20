@@ -1646,8 +1646,7 @@ class FSRandomAccessFileWrapper : public FSRandomAccessFile {
     return target_->FileDescriptor();
   }
 
- private:
-  std::unique_ptr<FSRandomAccessFile> guard_;
+ protected:
   FSRandomAccessFile* target_;
 };
 
@@ -1657,16 +1656,14 @@ class FSRandomAccessFileOwnerWrapper : public FSRandomAccessFileWrapper {
   // ownership of the object
   explicit FSRandomAccessFileOwnerWrapper(
       std::unique_ptr<FSRandomAccessFile>&& t)
-      : FSRandomAccessFileWrapper(t.get()), guard_(std::move(t)) {}
+      : FSRandomAccessFileWrapper(t.release()) {}
 
+  ~FSRandomAccessFileOwnerWrapper() { delete target(); }
   FSRandomAccessFile* exchange(FSRandomAccessFile* p) {
-    auto old = guard_.release();
-    guard_.reset(p);
+    auto old = target_;
+    target_ = p;
     return old;
   }
-
- private:
-  std::unique_ptr<FSRandomAccessFile> guard_;
 };
 
 class FSWritableFileWrapper : public FSWritableFile {
@@ -1778,10 +1775,8 @@ class FSWritableFileOwnerWrapper : public FSWritableFileWrapper {
   // Creates a FileWrapper around the input File object and takes
   // ownership of the object
   explicit FSWritableFileOwnerWrapper(std::unique_ptr<FSWritableFile>&& t)
-      : FSWritableFileWrapper(t.get()), guard_(std::move(t)) {}
-
- private:
-  std::unique_ptr<FSWritableFile> guard_;
+      : FSWritableFileWrapper(t.release()) {}
+  ~FSWritableFileOwnerWrapper() { delete target(); }
 };
 
 class FSRandomRWFileWrapper : public FSRandomRWFile {

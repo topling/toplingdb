@@ -107,6 +107,8 @@
 #include "util/stop_watch.h"
 #include "util/string_util.h"
 #include "utilities/trace/replayer_impl.h"
+#include <terark/thread/fiber_yield.hpp>
+#include <boost/fiber/all.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -114,6 +116,120 @@ const std::string kDefaultColumnFamilyName("default");
 const std::string kPersistentStatsColumnFamilyName(
     "___rocksdb_stats_history___");
 void DumpRocksDBBuildVersion(Logger* log);
+
+struct SimpleFiberTls {
+  static constexpr intptr_t MAX_QUEUE_LEN = 256;
+  static constexpr intptr_t DEFAULT_FIBER_CNT = 16;
+  typedef std::function<void()> task_t;
+  intptr_t fiber_count = 0;
+  intptr_t pending_count = 0;
+  terark::FiberYield m_fy;
+  boost::fibers::buffered_channel<task_t> channel;
+
+  SimpleFiberTls(boost::fibers::context** activepp)
+      : m_fy(activepp), channel(MAX_QUEUE_LEN) {
+    update_fiber_count(DEFAULT_FIBER_CNT);
+  }
+
+  void fiber_proc(intptr_t fiber_idx) {
+    using boost::fibers::channel_op_status;
+    task_t task;
+    while (fiber_idx < fiber_count &&
+           channel.pop(task) == channel_op_status::success) {
+      task();
+      pending_count--;
+    }
+  }
+
+  void update_fiber_count(intptr_t count) {
+    if (count <= 0) {
+      return;
+    }
+    count = std::min<intptr_t>(count, +MAX_QUEUE_LEN);
+    for (intptr_t i = fiber_count; i < count; ++i) {
+      boost::fibers::fiber([this, i]() { this->fiber_proc(i); }).detach();
+    }
+    fiber_count = count;
+  }
+
+  void push(task_t&& task) {
+    channel.push(std::move(task));
+    pending_count++;
+  }
+
+  bool try_push(const task_t& task) {
+    using boost::fibers::channel_op_status;
+    if (channel.try_push(task) == channel_op_status::success) {
+      pending_count++;
+      return true;
+    }
+    return false;
+  }
+
+#if 0
+  int wait(int timeout_us) {
+    intptr_t old_pending_count = pending_count;
+    if (old_pending_count == 0) {
+      return 0;
+    }
+
+    using namespace std::chrono;
+
+    // do not use sleep_for, because we want to return as soon as possible
+    // boost::this_fiber::sleep_for(microseconds(timeout_us));
+    // return tls->pending_count - old_pending_count;
+
+    auto start = std::chrono::system_clock::now();
+    while (true) {
+      // boost::this_fiber::yield(); // wait once
+      m_fy.unchecked_yield();
+      if (pending_count > 0) {
+        auto now = system_clock::now();
+        auto dur = duration_cast<microseconds>(now - start).count();
+        if (dur >= timeout_us) {
+          return int(pending_count - old_pending_count - 1);  // negtive
+        }
+      } else {
+        break;
+      }
+    }
+    return int(old_pending_count);
+  }
+#endif
+
+  int wait() {
+    intptr_t cnt = pending_count;
+    while (pending_count > 0) {
+      // boost::this_fiber::yield(); // wait once
+      m_fy.unchecked_yield();
+    }
+    return int(cnt);
+  }
+};
+
+// ensure fiber thread locals are constructed first
+// because SimpleFiberTls.channel must be destructed first
+static thread_local SimpleFiberTls gt_fibers(
+    boost::fibers::context::active_pp());
+struct ToplingMGetCtx {
+  MergeContext merge_context;
+  SequenceNumber max_covering_tombstone_seq = 0;
+  bool done = false;
+  bool lkey_initialized = false;
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+  std::string* timestamp = nullptr;
+#endif
+  union {
+    LookupKey lkey;
+  };
+  void InitLookupKey(const Slice& user_key, SequenceNumber seq,
+                     const Slice* ts) {
+    new(&lkey)LookupKey(user_key, seq, ts);
+    lkey_initialized = true;
+  }
+  ToplingMGetCtx() {}
+  ~ToplingMGetCtx() { if (lkey_initialized) lkey.~LookupKey(); }
+};
 
 CompressionType GetCompressionFlush(
     const ImmutableCFOptions& ioptions,
@@ -2645,6 +2761,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
       tracer_->MultiGet(num_keys, column_family, keys).PermitUncheckedError();
     }
   }
+#if defined(ROCKSDB_UNIT_TEST)
   autovector<KeyContext, MultiGetContext::MAX_BATCH_SIZE> key_context;
   autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
   key_context.reserve(num_keys);
@@ -2661,6 +2778,153 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
   bool same_cf = true;
   PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
   MultiGetWithCallback(read_options, column_family, nullptr, &sorted_keys);
+
+#else // topling MultiGet with fiber
+
+  // copy from GetImpl with modify
+
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+  if (read_options.timestamp) {
+    const Status s = FailIfTsMismatchCf(column_family,
+                                        *(read_options.timestamp),
+                                        /*ts_for_read=*/true);
+    if (!s.ok()) {
+      return s;
+    }
+  } else {
+    const Status s = FailIfCfHasTs(column_family);
+    if (!s.ok()) {
+      return s;
+    }
+  }
+
+  // Clear the timestamps for returning results so that we can distinguish
+  // between tombstone or key that has never been written
+  if (timestamp) {
+    for (size_t i = 0; i < num_keys; i++)
+      timestamp[i].clear();
+  }
+
+  GetWithTimestampReadCallback read_cb(0);  // Will call Refresh
+#endif
+
+  PERF_CPU_TIMER_GUARD(get_cpu_nanos, immutable_db_options_.clock);
+  StopWatch sw(immutable_db_options_.clock, stats_, DB_MULTIGET);
+  PERF_TIMER_GUARD(get_snapshot_time);
+
+  auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
+  auto cfd = cfh->cfd();
+
+  // Acquire SuperVersion
+  SuperVersion* sv = GetAndRefSuperVersion(cfd);
+
+//  TEST_SYNC_POINT("DBImpl::MultiGet:1");
+//  TEST_SYNC_POINT("DBImpl::MultiGet:2");
+
+  SequenceNumber snapshot;
+  if (read_options.snapshot != nullptr) {
+    snapshot = static_cast<const SnapshotImpl*>(read_options.snapshot)->number_;
+  } else {
+    snapshot = GetLastPublishedSequence();
+  }
+
+  //TEST_SYNC_POINT("DBImpl::GetImpl:3");
+  //TEST_SYNC_POINT("DBImpl::GetImpl:4");
+
+  // First look in the memtable, then in the immutable memtable (if any).
+  // s is both in/out. When in, s could either be OK or MergeInProgress.
+  // merge_operands will contain the sequence of merges in the latter case.
+  PERF_TIMER_STOP(get_snapshot_time);
+  std::vector<ToplingMGetCtx> ctx_vec(num_keys);
+  for (size_t i = 0; i < num_keys; i++) {
+    ctx_vec[i].InitLookupKey(keys[i], snapshot, read_options.timestamp);
+  }
+  for (size_t i = 0; i < num_keys; i++) values[i].Reset();
+  for (size_t i = 0; i < num_keys; i++) statuses[i] = Status::OK();
+
+  bool skip_memtable = (read_options.read_tier == kPersistedTier &&
+                        has_unpersisted_data_.load(std::memory_order_relaxed));
+
+  std::string* timestamp = nullptr;
+  ReadCallback* callback = nullptr;
+  bool* is_blob_index = nullptr;
+  if (!skip_memtable) {
+    size_t hits = 0;
+    for (size_t i = 0; i < num_keys; i++) {
+      auto& max_covering_tombstone_seq = ctx_vec[i].max_covering_tombstone_seq;
+      MergeContext& merge_context = ctx_vec[i].merge_context;
+      Status& s = statuses[i];
+      if (sv->mem->Get(ctx_vec[i].lkey, values[i].GetSelf(), timestamp, &s,
+                       &merge_context, &max_covering_tombstone_seq,
+                       read_options, callback, is_blob_index)) {
+        ctx_vec[i].done = true;
+        values[i].PinSelf();
+        hits++;
+      } else if ((s.ok() || s.IsMergeInProgress()) &&
+                sv->imm->Get(ctx_vec[i].lkey, values[i].GetSelf(),
+                             timestamp, &s, &merge_context,
+                             &max_covering_tombstone_seq, read_options,
+                             callback, is_blob_index)) {
+        ctx_vec[i].done = true;
+        values[i].PinSelf();
+        hits++;
+      }
+    }
+    RecordTick(stats_, MEMTABLE_HIT, hits);
+  }
+  //TEST_SYNC_POINT("DBImpl::GetImpl:PostMemTableGet:0");
+  //TEST_SYNC_POINT("DBImpl::GetImpl:PostMemTableGet:1");
+  size_t counting = 0;
+  auto get_one = [&](size_t i) {
+    MergeContext& merge_context = ctx_vec[i].merge_context;
+    PinnedIteratorsManager pinned_iters_mgr;
+    auto& max_covering_tombstone_seq = ctx_vec[i].max_covering_tombstone_seq;
+    //PERF_TIMER_GUARD(get_from_output_files_time);
+    bool* value_found = nullptr;
+    bool get_value = true;
+    sv->current->Get(
+        read_options, ctx_vec[i].lkey, &values[i], timestamp, &statuses[i],
+        &merge_context, &max_covering_tombstone_seq, &pinned_iters_mgr,
+        value_found,
+        nullptr, nullptr,
+        callback,
+        is_blob_index,
+        get_value);
+    counting++;
+  };
+  if (read_options.async_io) {
+    gt_fibers.update_fiber_count(read_options.async_queue_depth);
+  }
+  size_t memtab_miss = 0;
+  for (size_t i = 0; i < num_keys; i++) {
+    if (!ctx_vec[i].done) {
+      if (read_options.async_io) {
+        gt_fibers.push([=]{ get_one(i); });
+      } else {
+        get_one(i);
+      }
+      memtab_miss++;
+    }
+  }
+  while (counting < memtab_miss) {
+    gt_fibers.m_fy.unchecked_yield();
+  }
+
+  RecordTick(stats_, MEMTABLE_MISS, memtab_miss);
+  //PERF_TIMER_GUARD(get_post_process_time);
+  size_t sum_size = 0;
+  for (size_t i = 0; i < num_keys; i++) {
+    size_t size = values[i].size();
+    sum_size += size;
+    RecordInHistogram(stats_, BYTES_PER_READ, size);
+  }
+  RecordTick(stats_, NUMBER_KEYS_READ, num_keys);
+  RecordTick(stats_, BYTES_READ, sum_size);
+  PERF_COUNTER_ADD(get_read_bytes, sum_size);
+
+  ReturnAndCleanupSuperVersion(cfd, sv);
+
+#endif
 }
 
 void DBImpl::MultiGetWithCallback(

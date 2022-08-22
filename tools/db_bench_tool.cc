@@ -1632,6 +1632,9 @@ DEFINE_bool(avoid_flush_during_recovery,
 DEFINE_int64(multiread_stride, 0,
              "Stride length for the keys in a MultiGet batch");
 DEFINE_bool(multiread_batched, false, "Use the new MultiGet API");
+DEFINE_bool(multiread_check, false, "check MultiGet result with Get");
+DEFINE_bool(multiread_async, false, "MultiGet async");
+DEFINE_int64(multiread_async_qd, 32, "MultiGet async queue depth");
 
 DEFINE_string(memtablerep, "skip_list", "");
 DEFINE_int64(hash_bucket_count, 1024 * 1024, "hash bucket count");
@@ -6142,8 +6145,29 @@ class Benchmark {
           }
         }
       } else {
+        options.async_io = FLAGS_multiread_async;
+        options.async_queue_depth = FLAGS_multiread_async_qd;
         db->MultiGet(options, db->DefaultColumnFamily(), keys.size(),
                      keys.data(), pin_values, stat_list.data());
+
+        if (FLAGS_multiread_check) {
+          options.async_io = false; // single Get do not use async_io
+          std::string value;
+          for (size_t i = 0; i < keys.size(); i++) {
+            Status s = db->Get(options, keys[i], &value);
+            if (stat_list[i].ok()) {
+              TERARK_VERIFY_S(s.ok(), "%s", s.ToString());
+            } else {
+              TERARK_VERIFY_S(!s.ok(), "mget: %s", stat_list[i].ToString());
+            }
+            if (value != pin_values[i]) {
+              ROCKSDB_DIE("%zd: %s : get = [%zd] %s , mget = [%zd] %s", i,
+                keys[i].data(), value.size(), value.data(),
+                pin_values[i].size(), pin_values[i].data());
+            }
+            TERARK_VERIFY_S_EQ(value, pin_values[i]);
+          }
+        }
 
         read += entries_per_batch_;
         num_multireads++;

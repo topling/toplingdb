@@ -566,8 +566,92 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const size_t num_keys, const Slice* keys, PinnableSlice* values,
     Status* statuses, bool sorted_input) {
+#if 0
   MultiGetFromBatchAndDB(db, read_options, column_family, num_keys, keys,
                          values, statuses, sorted_input, nullptr);
+
+#else // use Topling fiber async DBImpl::MultiGet
+
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+  const Comparator* const ucmp = RepGetUserComparator(column_family);
+  size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
+  if (ts_sz > 0 && !read_options.timestamp) {
+    for (size_t i = 0; i < num_keys; ++i) {
+      statuses[i] = Status::InvalidArgument("Must specify timestamp");
+    }
+    return;
+  }
+#endif
+  WriteBatchWithIndexInternal wbwii(db, column_family);
+  Slice* db_keys = new Slice[num_keys];
+  struct Elem {
+    WBWIIteratorImpl::Result wbwi_result;
+    uint32_t full_index;
+    MergeContext merge_context;
+  };
+  std::vector<Elem> merges;
+  merges.reserve(num_keys);
+  for (size_t i = 0; i < num_keys; ++i) {
+    MergeContext merge_context;
+    std::string batch_value;
+    Status* s = &statuses[i];
+    PinnableSlice* pinnable_val = &values[i];
+    pinnable_val->Reset();
+    auto result =
+        wbwii.GetFromBatch(this, keys[i], &merge_context, &batch_value, s);
+    if (result == WBWIIteratorImpl::kFound) {
+      *pinnable_val->GetSelf() = std::move(batch_value);
+      pinnable_val->PinSelf();
+      continue;
+    }
+    if (result == WBWIIteratorImpl::kDeleted) {
+      *s = Status::NotFound();
+      continue;
+    }
+    if (result == WBWIIteratorImpl::kError) {
+      continue;
+    }
+    assert(result == WBWIIteratorImpl::kMergeInProgress ||
+           result == WBWIIteratorImpl::kNotFound);
+    db_keys[merges.size()] = keys[i];
+    merges.push_back({result, uint32_t(i), std::move(merge_context)});
+  }
+  auto db_values = new PinnableSlice[merges.size()];
+  auto db_statuses = new Status[merges.size()];
+
+  // Did not find key in batch OR could not resolve Merges.  Try DB.
+  DBImpl* rdb = static_cast_with_check<DBImpl>(db->GetRootDB());
+  rdb->MultiGet(read_options, column_family,
+                merges.size(), db_keys, db_values, db_statuses);
+
+  for (size_t index = 0; index < merges.size(); index++) {
+    size_t full_index = merges[index].full_index;
+    const Slice& key = db_keys[index];
+    Status& s = statuses[full_index] = std::move(db_statuses[index]);
+    if (s.ok() || s.IsNotFound()) { // DB Get Succeeded
+      auto& mg = merges[index];
+      if (mg.wbwi_result == WBWIIteratorImpl::kMergeInProgress) {
+        std::string merged_value;
+        // Merge result from DB with merges in Batch
+        PinnableSlice* db_value = s.ok() ? &db_values[index] : nullptr;
+        s = wbwii.MergeKey(key, db_value, mg.merge_context, &merged_value);
+        if (s.ok()) {
+          values[full_index].Reset();
+          *values[full_index].GetSelf() = std::move(merged_value);
+          values[full_index].PinSelf();
+        }
+      }
+      else {
+        values[full_index].Reset();
+        *values[full_index].GetSelf() = std::move(*db_values[index].GetSelf());
+        values[full_index].PinSelf();
+      }
+    }
+  }
+  delete[] db_statuses;
+  delete[] db_values;
+  delete[] db_keys;
+#endif
 }
 
 void WriteBatchWithIndex::MultiGetFromBatchAndDB(

@@ -108,6 +108,7 @@
 #include "util/string_util.h"
 #include "utilities/trace/replayer_impl.h"
 #include <terark/thread/fiber_yield.hpp>
+#include <terark/util/function.hpp>
 #include <boost/fiber/all.hpp>
 
 namespace ROCKSDB_NAMESPACE {
@@ -120,7 +121,11 @@ void DumpRocksDBBuildVersion(Logger* log);
 struct SimpleFiberTls {
   static constexpr intptr_t MAX_QUEUE_LEN = 256;
   static constexpr intptr_t DEFAULT_FIBER_CNT = 16;
-  typedef std::function<void()> task_t;
+  struct task_t {
+    void (*func)(void* arg1, size_t arg2);
+    void* arg1;
+    size_t arg2;
+  };
   intptr_t fiber_count = 0;
   intptr_t pending_count = 0;
   terark::FiberYield m_fy;
@@ -136,7 +141,7 @@ struct SimpleFiberTls {
     task_t task;
     while (fiber_idx < fiber_count &&
            channel.pop(task) == channel_op_status::success) {
-      task();
+      task.func(task.arg1, task.arg2);
       pending_count--;
     }
   }
@@ -2899,7 +2904,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
   for (size_t i = 0; i < num_keys; i++) {
     if (!ctx_vec[i].done) {
       if (read_options.async_io) {
-        gt_fibers.push([=]{ get_one(i); });
+        gt_fibers.push({TERARK_C_CALLBACK(get_one), i});
       } else {
         get_one(i);
       }

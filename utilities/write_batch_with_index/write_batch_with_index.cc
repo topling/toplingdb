@@ -643,10 +643,11 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
         }
       }
       else {
-        values[full_index].Reset();
-        *values[full_index].GetSelf() = std::move(*db_values[index].GetSelf());
-        values[full_index].PinSelf();
+        values[full_index] = std::move(db_values[index]);
       }
+    }
+    else {
+      values[full_index] = std::move(db_values[index]);
     }
   }
   delete[] db_statuses;

@@ -214,7 +214,7 @@ struct SimpleFiberTls {
 
 // ensure fiber thread locals are constructed first
 // because SimpleFiberTls.channel must be destructed first
-static thread_local SimpleFiberTls gt_fibers(
+static ROCKSDB_STATIC_TLS thread_local SimpleFiberTls gt_fibers(
     boost::fibers::context::active_pp());
 struct ToplingMGetCtx {
   MergeContext merge_context;

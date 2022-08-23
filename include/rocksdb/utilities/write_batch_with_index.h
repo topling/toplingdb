@@ -260,6 +260,18 @@ class WriteBatchWithIndex : public WriteBatchBase {
     return GetFromBatch(nullptr, options, key, value);
   }
 
+  virtual WBWIIterator::Result
+  GetFromBatchRaw(DB*, ColumnFamilyHandle*, const Slice& key,
+                  MergeContext*, std::string* value, Status*);
+
+  static Status MergeKey(DB*, ColumnFamilyHandle*,
+                         const Slice& key, const Slice* origin_value,
+                         std::string* merge_result, const MergeContext&);
+
+  static Status MergeKey(const DBOptions&, ColumnFamilyHandle*,
+                         const Slice& key, const Slice* origin_value,
+                         std::string* merge_result, const MergeContext&);
+
   // Similar to DB::Get() but will also read writes from this batch.
   //
   // This function will query both this batch and the DB and then merge

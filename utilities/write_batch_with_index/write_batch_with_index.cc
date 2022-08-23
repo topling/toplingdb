@@ -447,6 +447,57 @@ Status WriteBatchWithIndex::GetFromBatch(ColumnFamilyHandle* column_family,
   return s;
 }
 
+WBWIIterator::Result
+WriteBatchWithIndex::GetFromBatchRaw(DB* db, ColumnFamilyHandle* cfh,
+    const Slice& key, MergeContext* merge_context, std::string* value,
+    Status* s) {
+  WriteBatchWithIndexInternal wbwii(db, cfh);
+  return wbwii.GetFromBatch(this, key, merge_context, value, s);
+}
+
+Status WriteBatchWithIndex::MergeKey(
+          DB* db, ColumnFamilyHandle* column_family,
+          const Slice& key, const Slice* origin_value,
+          std::string* result, const MergeContext& mgcontext) {
+  if (UNLIKELY(nullptr == column_family)) {
+    return Status::InvalidArgument("Must provide a column_family");
+  }
+  auto cfh = static_cast<ColumnFamilyHandleImpl*>(column_family);
+  const auto merge_operator = cfh->cfd()->ioptions()->merge_operator.get();
+  if (UNLIKELY(merge_operator == nullptr)) {
+    return Status::InvalidArgument(
+        "Merge_operator must be set for column_family");
+  }
+  auto& idbo = static_cast<DBImpl*>(db->GetRootDB())->immutable_db_options();
+  auto* statistics = idbo.statistics.get();
+  auto* logger = idbo.info_log.get();
+  auto* clock = idbo.clock;
+  return MergeHelper::TimedFullMerge(merge_operator, key, origin_value,
+                                      mgcontext.GetOperands(), result, logger,
+                                      statistics, clock);
+}
+
+Status WriteBatchWithIndex::MergeKey(
+          const DBOptions& options, ColumnFamilyHandle* column_family,
+          const Slice& key, const Slice* origin_value,
+          std::string* result, const MergeContext& mgcontext) {
+  if (UNLIKELY(nullptr == column_family)) {
+    return Status::InvalidArgument("Must provide a column_family");
+  }
+  auto cfh = static_cast<ColumnFamilyHandleImpl*>(column_family);
+  const auto merge_operator = cfh->cfd()->ioptions()->merge_operator.get();
+  if (UNLIKELY(merge_operator == nullptr)) {
+    return Status::InvalidArgument(
+        "Merge_operator must be set for column_family");
+  }
+  auto* statistics = options.statistics.get();
+  auto* logger = options.info_log.get();
+  auto* clock = options.env->GetSystemClock().get();
+  return MergeHelper::TimedFullMerge(merge_operator, key, origin_value,
+                                      mgcontext.GetOperands(), result, logger,
+                                      statistics, clock);
+}
+
 Status WriteBatchWithIndex::GetFromBatchAndDB(DB* db,
                                               const ReadOptions& read_options,
                                               const Slice& key,
@@ -582,7 +633,6 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     return;
   }
 #endif
-  WriteBatchWithIndexInternal wbwii(db, column_family);
   Slice* db_keys = new Slice[num_keys];
   struct Elem {
     WBWIIteratorImpl::Result wbwi_result;
@@ -597,8 +647,8 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     Status* s = &statuses[i];
     PinnableSlice* pinnable_val = &values[i];
     pinnable_val->Reset();
-    auto result =
-        wbwii.GetFromBatch(this, keys[i], &merge_context, &batch_value, s);
+    auto result = GetFromBatchRaw(db, column_family, keys[i],
+                                  &merge_context, &batch_value, s);
     if (result == WBWIIteratorImpl::kFound) {
       *pinnable_val->GetSelf() = std::move(batch_value);
       pinnable_val->PinSelf();
@@ -635,7 +685,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
         std::string merged_value;
         // Merge result from DB with merges in Batch
         PinnableSlice* db_value = s.ok() ? &db_values[index] : nullptr;
-        s = wbwii.MergeKey(key, db_value, mg.merge_context, &merged_value);
+        s = MergeKey(db, column_family, key, db_value, &merged_value, mg.merge_context);
         if (s.ok()) {
           values[full_index].Reset();
           *values[full_index].GetSelf() = std::move(merged_value);

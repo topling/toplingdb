@@ -631,6 +631,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     if (s.ok() || s.IsNotFound()) { // DB Get Succeeded
       auto& mg = merges[index];
       if (mg.wbwi_result == WBWIIteratorImpl::kMergeInProgress) {
+        // topling comment: prev MergeKey() in wbwii.GetFromBatch is a waste
         std::string merged_value;
         // Merge result from DB with merges in Batch
         PinnableSlice* db_value = s.ok() ? &db_values[index] : nullptr;

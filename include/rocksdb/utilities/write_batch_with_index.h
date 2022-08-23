@@ -247,6 +247,7 @@ class WriteBatchWithIndex : public WriteBatchBase {
   // Similar to DB::Get() but will only read the key from this batch.
   // If the batch does not have enough data to resolve Merge operations,
   // MergeInProgress status may be returned.
+  virtual
   Status GetFromBatch(ColumnFamilyHandle* column_family,
                       const DBOptions& options, const Slice& key,
                       std::string* value);

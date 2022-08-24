@@ -107,9 +107,8 @@
 #include "util/stop_watch.h"
 #include "util/string_util.h"
 #include "utilities/trace/replayer_impl.h"
-#include <terark/thread/fiber_yield.hpp>
+#include <terark/thread/fiber_pool.hpp>
 #include <terark/util/function.hpp>
-#include <boost/fiber/all.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -118,103 +117,9 @@ const std::string kPersistentStatsColumnFamilyName(
     "___rocksdb_stats_history___");
 void DumpRocksDBBuildVersion(Logger* log);
 
-struct SimpleFiberTls {
-  static constexpr intptr_t MAX_QUEUE_LEN = 256;
-  static constexpr intptr_t DEFAULT_FIBER_CNT = 16;
-  struct task_t {
-    void (*func)(void* arg1, size_t arg2);
-    void* arg1;
-    size_t arg2;
-  };
-  intptr_t fiber_count = 0;
-  intptr_t pending_count = 0;
-  terark::FiberYield m_fy;
-  boost::fibers::buffered_channel<task_t> channel;
-
-  SimpleFiberTls(boost::fibers::context** activepp)
-      : m_fy(activepp), channel(MAX_QUEUE_LEN) {
-    update_fiber_count(DEFAULT_FIBER_CNT);
-  }
-
-  void fiber_proc(intptr_t fiber_idx) {
-    using boost::fibers::channel_op_status;
-    task_t task;
-    while (fiber_idx < fiber_count &&
-           channel.pop(task) == channel_op_status::success) {
-      task.func(task.arg1, task.arg2);
-      pending_count--;
-    }
-  }
-
-  void update_fiber_count(intptr_t count) {
-    if (count <= 0) {
-      return;
-    }
-    count = std::min<intptr_t>(count, +MAX_QUEUE_LEN);
-    for (intptr_t i = fiber_count; i < count; ++i) {
-      boost::fibers::fiber([this, i]() { this->fiber_proc(i); }).detach();
-    }
-    fiber_count = count;
-  }
-
-  void push(task_t&& task) {
-    channel.push(std::move(task));
-    pending_count++;
-  }
-
-  bool try_push(const task_t& task) {
-    using boost::fibers::channel_op_status;
-    if (channel.try_push(task) == channel_op_status::success) {
-      pending_count++;
-      return true;
-    }
-    return false;
-  }
-
-#if 0
-  int wait(int timeout_us) {
-    intptr_t old_pending_count = pending_count;
-    if (old_pending_count == 0) {
-      return 0;
-    }
-
-    using namespace std::chrono;
-
-    // do not use sleep_for, because we want to return as soon as possible
-    // boost::this_fiber::sleep_for(microseconds(timeout_us));
-    // return tls->pending_count - old_pending_count;
-
-    auto start = std::chrono::system_clock::now();
-    while (true) {
-      // boost::this_fiber::yield(); // wait once
-      m_fy.unchecked_yield();
-      if (pending_count > 0) {
-        auto now = system_clock::now();
-        auto dur = duration_cast<microseconds>(now - start).count();
-        if (dur >= timeout_us) {
-          return int(pending_count - old_pending_count - 1);  // negtive
-        }
-      } else {
-        break;
-      }
-    }
-    return int(old_pending_count);
-  }
-#endif
-
-  int wait() {
-    intptr_t cnt = pending_count;
-    while (pending_count > 0) {
-      // boost::this_fiber::yield(); // wait once
-      m_fy.unchecked_yield();
-    }
-    return int(cnt);
-  }
-};
-
 // ensure fiber thread locals are constructed first
-// because SimpleFiberTls.channel must be destructed first
-static ROCKSDB_STATIC_TLS thread_local SimpleFiberTls gt_fibers(
+// because FiberPool.m_channel must be destructed first
+static ROCKSDB_STATIC_TLS thread_local terark::FiberPool gt_fibers(
     boost::fibers::context::active_pp());
 struct ToplingMGetCtx {
   MergeContext merge_context;
@@ -2880,7 +2785,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
   //TEST_SYNC_POINT("DBImpl::GetImpl:PostMemTableGet:0");
   //TEST_SYNC_POINT("DBImpl::GetImpl:PostMemTableGet:1");
   size_t counting = 0;
-  auto get_one = [&](size_t i) {
+  auto get_one = [&](size_t i, size_t/*unused*/ = 0) {
     MergeContext& merge_context = ctx_vec[i].merge_context;
     PinnedIteratorsManager pinned_iters_mgr;
     auto& max_covering_tombstone_seq = ctx_vec[i].max_covering_tombstone_seq;
@@ -2912,7 +2817,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
     }
   }
   while (counting < memtab_miss) {
-    gt_fibers.m_fy.unchecked_yield();
+    gt_fibers.unchecked_yield();
   }
 
   RecordTick(stats_, MEMTABLE_MISS, memtab_miss);

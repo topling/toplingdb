@@ -1702,7 +1702,7 @@ struct ReadOptions {
   // Default: false
   bool async_io;
 
-  size_t async_queue_depth = 16;
+  int async_queue_depth = 16;
 
   ReadOptions();
   ReadOptions(bool cksum, bool cache);

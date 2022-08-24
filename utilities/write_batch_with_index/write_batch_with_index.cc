@@ -22,6 +22,8 @@
 #include "util/string_util.h"
 #include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 
+#include <terark/util/function.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 struct WriteBatchWithIndex::Rep {
   explicit Rep(const Comparator* index_comparator, size_t reserved_bytes = 0,
@@ -633,14 +635,14 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     return;
   }
 #endif
-  Slice* db_keys = new Slice[num_keys];
   struct Elem {
     WBWIIteratorImpl::Result wbwi_result;
     uint32_t full_index;
     MergeContext merge_context;
   };
-  std::vector<Elem> merges;
-  merges.reserve(num_keys);
+  TERARK_FAST_ALLOC(Elem, merges, num_keys);
+  TERARK_FAST_ALLOC(Slice, db_keys, num_keys);
+  size_t num_get_db = 0;
   for (size_t i = 0; i < num_keys; ++i) {
     MergeContext merge_context;
     std::string batch_value;
@@ -663,18 +665,19 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     }
     assert(result == WBWIIteratorImpl::kMergeInProgress ||
            result == WBWIIteratorImpl::kNotFound);
-    db_keys[merges.size()] = keys[i];
-    merges.push_back({result, uint32_t(i), std::move(merge_context)});
+    db_keys[num_get_db] = keys[i];
+    new(merges + num_get_db)Elem{result, uint32_t(i), std::move(merge_context)};
+    num_get_db++;
   }
-  auto db_values = new PinnableSlice[merges.size()];
-  auto db_statuses = new Status[merges.size()];
+  TERARK_FAST_ARRAY(PinnableSlice, db_values, num_get_db);
+  TERARK_FAST_ARRAY(Status, db_statuses, num_get_db);
 
   // Did not find key in batch OR could not resolve Merges.  Try DB.
   DBImpl* rdb = static_cast_with_check<DBImpl>(db->GetRootDB());
   rdb->MultiGet(read_options, column_family,
-                merges.size(), db_keys, db_values, db_statuses);
+                num_get_db, db_keys, db_values, db_statuses);
 
-  for (size_t index = 0; index < merges.size(); index++) {
+  for (size_t index = 0; index < num_get_db; index++) {
     size_t full_index = merges[index].full_index;
     const Slice& key = db_keys[index];
     Status& s = statuses[full_index] = std::move(db_statuses[index]);
@@ -700,9 +703,10 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
       values[full_index] = std::move(db_values[index]);
     }
   }
-  delete[] db_statuses;
-  delete[] db_values;
-  delete[] db_keys;
+  TERARK_FAST_CLEAN(db_statuses, num_get_db, num_get_db);
+  TERARK_FAST_CLEAN(db_values, num_get_db, num_get_db);
+  TERARK_FAST_CLEAN(db_keys, num_get_db, num_keys);
+  TERARK_FAST_CLEAN(merges, num_get_db, num_keys);
 #endif
 }
 

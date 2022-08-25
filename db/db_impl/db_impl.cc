@@ -119,7 +119,7 @@ void DumpRocksDBBuildVersion(Logger* log);
 
 // ensure fiber thread locals are constructed first
 // because FiberPool.m_channel must be destructed first
-static ROCKSDB_STATIC_TLS thread_local terark::FiberPool gt_fibers(
+static ROCKSDB_STATIC_TLS thread_local terark::FiberPool gt_fiber_pool(
     boost::fibers::context::active_pp());
 struct ToplingMGetCtx {
   MergeContext merge_context;
@@ -2785,7 +2785,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
   //TEST_SYNC_POINT("DBImpl::GetImpl:PostMemTableGet:0");
   //TEST_SYNC_POINT("DBImpl::GetImpl:PostMemTableGet:1");
   size_t counting = 0;
-  auto get_one = [&](size_t i, size_t/*unused*/ = 0) {
+  auto get_in_sst = [&](size_t i, size_t/*unused*/ = 0) {
     MergeContext& merge_context = ctx_vec[i].merge_context;
     PinnedIteratorsManager pinned_iters_mgr;
     auto& max_covering_tombstone_seq = ctx_vec[i].max_covering_tombstone_seq;
@@ -2803,21 +2803,21 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
     counting++;
   };
   if (read_options.async_io) {
-    gt_fibers.update_fiber_count(read_options.async_queue_depth);
+    gt_fiber_pool.update_fiber_count(read_options.async_queue_depth);
   }
   size_t memtab_miss = 0;
   for (size_t i = 0; i < num_keys; i++) {
     if (!ctx_vec[i].done) {
       if (read_options.async_io) {
-        gt_fibers.push({TERARK_C_CALLBACK(get_one), i});
+        gt_fiber_pool.push({TERARK_C_CALLBACK(get_in_sst), i});
       } else {
-        get_one(i);
+        get_in_sst(i);
       }
       memtab_miss++;
     }
   }
   while (counting < memtab_miss) {
-    gt_fibers.unchecked_yield();
+    gt_fiber_pool.unchecked_yield();
   }
 
   RecordTick(stats_, MEMTABLE_MISS, memtab_miss);

@@ -73,6 +73,7 @@ PessimisticTransactionDB::~PessimisticTransactionDB() {
 
 Status PessimisticTransactionDB::VerifyCFOptions(
     const ColumnFamilyOptions& cf_options) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = cf_options.comparator;
   assert(ucmp);
   size_t ts_sz = ucmp->timestamp_size();
@@ -89,6 +90,7 @@ Status PessimisticTransactionDB::VerifyCFOptions(
   if (txn_db_options_.write_policy != WRITE_COMMITTED) {
     return Status::NotSupported("Only WriteCommittedTxn supports timestamp");
   }
+#endif
   return Status::OK();
 }
 
@@ -197,6 +199,9 @@ TransactionDBOptions PessimisticTransactionDB::ValidateTxnDBOptions(
 
   return validated;
 }
+
+TransactionDBOptions::TransactionDBOptions() {}
+TransactionDBOptions::~TransactionDBOptions() = default;
 
 Status TransactionDB::Open(const Options& options,
                            const TransactionDBOptions& txn_db_options,
@@ -386,6 +391,13 @@ Status PessimisticTransactionDB::CreateColumnFamilies(
     const ColumnFamilyOptions& options,
     const std::vector<std::string>& column_family_names,
     std::vector<ColumnFamilyHandle*>* handles) {
+#if !defined(ROCKSDB_DYNAMIC_CREATE_CF)
+  DBImpl* impl = dynamic_cast<DBImpl*>(this->GetRootDB());
+  ROCKSDB_VERIFY(nullptr != impl);
+  if (impl->opened_successfully()) {
+    ROCKSDB_DIE("Not Supported after db is opened, because ROCKSDB_DYNAMIC_CREATE_CF is not defined");
+  }
+#endif
   InstrumentedMutexLock l(&column_family_mutex_);
 
   Status s = VerifyCFOptions(options);
@@ -407,6 +419,13 @@ Status PessimisticTransactionDB::CreateColumnFamilies(
 Status PessimisticTransactionDB::CreateColumnFamilies(
     const std::vector<ColumnFamilyDescriptor>& column_families,
     std::vector<ColumnFamilyHandle*>* handles) {
+#if !defined(ROCKSDB_DYNAMIC_CREATE_CF)
+  DBImpl* impl = dynamic_cast<DBImpl*>(this->GetRootDB());
+  ROCKSDB_VERIFY(nullptr != impl);
+  if (impl->opened_successfully()) {
+    ROCKSDB_DIE("Not Supported after db is opened, because ROCKSDB_DYNAMIC_CREATE_CF is not defined");
+  }
+#endif
   InstrumentedMutexLock l(&column_family_mutex_);
 
   for (auto& cf_desc : column_families) {
@@ -457,7 +476,7 @@ Status PessimisticTransactionDB::DropColumnFamilies(
 
 Status PessimisticTransactionDB::TryLock(PessimisticTransaction* txn,
                                          uint32_t cfh_id,
-                                         const std::string& key,
+                                         const Slice& key,
                                          bool exclusive) {
   return lock_manager_->TryLock(txn, cfh_id, key, GetEnv(), exclusive);
 }
@@ -476,7 +495,7 @@ void PessimisticTransactionDB::UnLock(PessimisticTransaction* txn,
 }
 
 void PessimisticTransactionDB::UnLock(PessimisticTransaction* txn,
-                                      uint32_t cfh_id, const std::string& key) {
+                                      uint32_t cfh_id, const Slice& key) {
   lock_manager_->UnLock(txn, cfh_id, key, GetEnv());
 }
 

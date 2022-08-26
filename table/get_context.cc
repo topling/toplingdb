@@ -359,6 +359,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             }
           }
         }
+      #if defined(TOPLINGDB_WITH_TIMESTAMP)
         if (state_ == kFound) {
           size_t ts_sz = ucmp_->timestamp_size();
           if (ts_sz > 0 && timestamp_ != nullptr) {
@@ -366,6 +367,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             timestamp_->assign(ts.data(), ts.size());
           }
         }
+      #endif
         return false;
 
       case kTypeDeletion:
@@ -377,11 +379,13 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         assert(state_ == kNotFound || state_ == kMerge);
         if (kNotFound == state_) {
           state_ = kDeleted;
+      #if defined(TOPLINGDB_WITH_TIMESTAMP)
           size_t ts_sz = ucmp_->timestamp_size();
           if (ts_sz > 0 && timestamp_ != nullptr) {
             Slice ts = ExtractTimestampFromUserKey(parsed_key.user_key, ts_sz);
             timestamp_->assign(ts.data(), ts.size());
           }
+      #endif
         } else if (kMerge == state_) {
           state_ = kFound;
           Merge(nullptr);

@@ -1,3 +1,72 @@
+## ToplingDB: A Persistent Key-Value Store for External Storage
+ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). It is built with [RocksDB](https://github.com/facebook/rocksdb).
+
+ToplingDB has much more key features than RocksDB:
+1. [SidePlugin](https://github.com/topling/rockside/wiki) enables users to write a json(or yaml) to define DB configs
+1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
+1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to [online change](https://github.com/topling/rockside/wiki/Online-Change-Options) db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...) without restart the running process
+1. Many improves and refactories on RocksDB, aimed for performance and extendibility
+1. [Topling**CSPP**MemTab](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)(**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling
+1. Topling **CSPP**WBWI(**W**rite**B**atch**W**ith**I**ndex), with CSPP and carefully coding, **CSPP_WBWI** is 20x faster than rocksdb SkipList based WBWI
+1. Topling transaction lock management, 5x faster than rocksdb
+1. [Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable) is an SST implementation optimized for speed, aimed for MemTable flush and L0->L1 compaction.
+1. [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable) is an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which used dedicated searchable in-memory data compression algorithms.
+1. [Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction) for offload compactions on elastic computing clusters, this is more general than RocksDB Compaction Service.
+1. MultiGet with concurrent IO by fiber/coroutine + io_uring, much faster than RocksDB's MultiGet
+1. Topling de-virtualization, de-virtualize hotspot (virtual) functions, 10x improvements on hotspot funcions
+1. Builtin SidePlugin**s** for existing RocksDB components(Cache, Comparator, TableFactory, MemTableFactory...)
+1. Builtin Prometheus metrics support, this is based on [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView)
+1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
+
+## ToplingDB cloud native services
+1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB), [Todis on aliyun](https://topling.cn/products)
+2. ToplingSQL(MySQL on ToplingDB), comming soon...
+
+## ToplingDB Components
+With SidePlugin mechanics, plugins/components can be physically seperated from core toplingdb
+1. Compiled to a seperated dynamic lib and loaded at runtime
+2. User code need not any changes, just change json/yaml files
+3. Topling's non-open-source enterprise plugins/components are delivered in this way
+
+ Repository    | Permission | Description (and components)
+-------------- | ---------- | -----------
+[ToplingDB](https://github.com/topling/toplingdb) | public | Top repositry, forked from [RocksDB](https://github.com/facebook/rocksdb) with our fixes, refactories and enhancements
+[rockside](https://github.com/topling/rockside) | public | This is a submodule, contains:<ul><li>SidePlugin framework</li><li>Embeded Http Server</li><li>Prometheus metrics</li><li>Builtin SidePlugin**s**</li></ul>
+[cspp-wbwi<br>(**W**rite**B**atch**W**ith**I**ndex)](https://github.com/topling/cspp-wbwi) | public | Auto clone in Makefile
+[cspp-memtable](https://github.com/topling/cspp-memtable) | **private** | Auto clone in Makefile, [open for partner](https://github.com/topling/rockside/wiki/Topling-Partner). Usage [doc](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)
+[topling-rocks](https://github.com/topling/topling-rocks) | **private** | Auto clone in Makefile, contains:<ul><li>[Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable)</li><li>[Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)</li><li>[Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction)</li></ul>
+
+**private** repo**s** are auto cloned in ToplingDB's Makefile, community users has no access permission to these **private** repo**s**, so the auto clone in Makefile will fail, thus ToplingDB is built without **private** components, this is so called **community** version.
+
+## Run db_bench
+ToplingDB requires gcc 8.4 or newer, or new clang(in near 3 years).
+
+Even without Topling performance components, ToplingDB is much faster than upstream RocksDB:
+```bash
+sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel
+git clone https://github.com/topling/toplingdb
+cd toplingdb
+make -j`nproc` db_bench DEBUG_LEVEL=0
+cp sideplugin/rockside/src/topling/web/{style.css,index.html} ${/path/to/dbdir}
+cp sideplugin/rockside/sample-conf/lcompact_community.yaml .
+export LD_LIBRARY_PATH=`find sideplugin -name lib_shared`
+# change ./lcompact_community.yaml
+# 1. path items (search /dev/shm), if you have no fast disk(such as on a cloud server), use /dev/shm
+# 2. change max_background_compactions to your cpu core num
+# command option -json can accept json and yaml files, here use yaml file for more human readable
+./db_bench -json lcompact_community.yaml -num 10000000 -disable_wal=true -value_size 2000 -benchmarks=fillrandom,readrandom -batch_size=10
+# you can access http://127.0.0.1:8081 to see webview
+# you can see this db_bench is much faster than RocksDB
+```
+## License
+We disallow bytedance using this software, other terms are identidal with
+upstream rocksdb license, see [LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING) and
+[LICENSE.leveldb](LICENSE.leveldb).
+
+<hr/>
+<hr/>
+<hr/>
+
 ## RocksDB: A Persistent Key-Value Store for Flash and RAM Storage
 
 [![CircleCI Status](https://circleci.com/gh/facebook/rocksdb.svg?style=svg)](https://circleci.com/gh/facebook/rocksdb)

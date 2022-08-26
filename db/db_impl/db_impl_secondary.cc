@@ -581,11 +581,17 @@ Status DBImplSecondary::CheckConsistency() {
 
     uint64_t fsize = 0;
     s = env_->GetFileSize(file_path, &fsize);
+#ifdef ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
     if (!s.ok() &&
         (env_->GetFileSize(Rocks2LevelTableFileName(file_path), &fsize).ok() ||
          s.IsPathNotFound())) {
       s = Status::OK();
     }
+#else
+    if (s.IsPathNotFound()) {
+      s = Status::OK();
+    }
+#endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
     if (!s.ok()) {
       corruption_messages +=
           "Can't access " + md.name + ": " + s.ToString() + "\n";

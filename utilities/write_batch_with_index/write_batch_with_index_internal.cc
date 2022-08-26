@@ -21,7 +21,7 @@
 namespace ROCKSDB_NAMESPACE {
 BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
                                      Iterator* base_iterator,
-                                     WBWIIteratorImpl* delta_iterator,
+                                     WBWIIterator* delta_iterator,
                                      const Comparator* comparator,
                                      const ReadOptions* read_options)
     : forward_(true),
@@ -381,7 +381,7 @@ void WBWIIteratorImpl::PrevKey() {
   }
 }
 
-WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
+WBWIIteratorImpl::Result WBWIIterator::FindLatestUpdate(
     MergeContext* merge_context) {
   if (Valid()) {
     Slice key = Entry().key;
@@ -392,15 +392,18 @@ WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
   }
 }
 
-WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
+bool WBWIIteratorImpl::EqualsKey(const Slice& key) const {
+  return comparator_->CompareKey(column_family_id_, Entry().key, key) == 0;
+}
+
+WBWIIteratorImpl::Result WBWIIterator::FindLatestUpdate(
     const Slice& key, MergeContext* merge_context) {
   Result result = WBWIIteratorImpl::kNotFound;
   merge_context->Clear();  // Clear any entries in the MergeContext
   // TODO(agiardullo): consider adding support for reverse iteration
   if (!Valid()) {
     return result;
-  } else if (comparator_->CompareKey(column_family_id_, Entry().key, key) !=
-             0) {
+  } else if (!EqualsKey(key)) {
     return result;
   } else {
     // We want to iterate in the reverse order that the writes were added to the
@@ -417,7 +420,7 @@ WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
     // last Put or Delete, accumulating merges along the way.
     while (Valid()) {
       const WriteEntry entry = Entry();
-      if (comparator_->CompareKey(column_family_id_, entry.key, key) != 0) {
+      if (!EqualsKey(key)) {
         break;  // Unexpected error or we've reached a different next key
       }
 
@@ -614,12 +617,14 @@ WriteEntry WBWIIteratorImpl::Entry() const {
   assert(ret.type == kPutRecord || ret.type == kDeleteRecord ||
          ret.type == kSingleDeleteRecord || ret.type == kDeleteRangeRecord ||
          ret.type == kMergeRecord);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   // Make sure entry.key does not include user-defined timestamp.
   const Comparator* const ucmp = comparator_->GetComparator(column_family_id_);
   size_t ts_sz = ucmp->timestamp_size();
   if (ts_sz > 0) {
     ret.key = StripTimestampFromUserKey(ret.key, ts_sz);
   }
+#endif
   return ret;
 }
 
@@ -691,9 +696,13 @@ WBWIIteratorImpl::Result WriteBatchWithIndexInternal::GetFromBatch(
     std::string* value, Status* s) {
   *s = Status::OK();
 
+#if 0
   std::unique_ptr<WBWIIteratorImpl> iter(
       static_cast_with_check<WBWIIteratorImpl>(
           batch->NewIterator(column_family_)));
+#else // topling: use base class WBWIIterator
+  std::unique_ptr<WBWIIterator> iter(batch->NewIterator(column_family_));
+#endif
 
   // Search the iterator for this key, and updates/merges to it.
   iter->Seek(key);

@@ -40,7 +40,7 @@ void MemTableListVersion::UnrefMemTable(autovector<MemTable*>* to_delete,
                                         MemTable* m) {
   if (m->Unref()) {
     to_delete->push_back(m);
-    assert(*parent_memtable_list_memory_usage_ >= m->ApproximateMemoryUsage());
+    ROCKSDB_ASSERT_GE(*parent_memtable_list_memory_usage_, m->ApproximateMemoryUsage());
     *parent_memtable_list_memory_usage_ -= m->ApproximateMemoryUsage();
   }
 }

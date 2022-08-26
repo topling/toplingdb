@@ -12,6 +12,7 @@
 #include <vector>
 #include "db/dbformat.h"
 #include "db/pinned_iterators_manager.h"
+#include "db/version_edit.h" // for HostPrefixCache
 #include "memory/arena.h"
 #include "monitoring/perf_context_imp.h"
 #include "rocksdb/comparator.h"
@@ -26,17 +27,127 @@
 #include "util/stop_watch.h"
 
 namespace ROCKSDB_NAMESPACE {
-// Without anonymous namespace here, we fail the warning -Wmissing-prototypes
-namespace {
-using MergerMaxIterHeap = BinaryHeap<IteratorWrapper*, MaxIteratorComparator>;
-using MergerMinIterHeap = BinaryHeap<IteratorWrapper*, MinIteratorComparator>;
-}  // namespace
 
-const size_t kNumIterReserve = 4;
+#if defined(_MSC_VER) /* Visual Studio */
+#define FORCE_INLINE __forceinline
+#elif defined(__GNUC__)
+#define FORCE_INLINE inline __attribute__((always_inline))
+#else
+#define FORCE_INLINE inline
+#endif
+
+struct MgHeapElem {
+  IteratorWrapper* iter;
+  uint64_t key_prefix;
+  MgHeapElem() : iter(nullptr), key_prefix(0) {}
+  MgHeapElem(std::nullptr_t) : iter(nullptr), key_prefix(0) {}
+  MgHeapElem(IteratorWrapper* i) : iter(i) {
+    key_prefix = HostPrefixCache(i->key());
+  }
+  IteratorWrapper* operator->() const noexcept { return iter; }
+};
+inline bool operator==(const MgHeapElem& x, const MgHeapElem& y) {
+  return x.iter == y.iter;
+}
+inline bool operator!=(IteratorWrapper* x, const MgHeapElem& y) {
+  return x != y.iter;
+}
+inline bool operator!=(const MgHeapElem& y, IteratorWrapper* x) {
+  return x != y.iter;
+}
+inline static void UpdateIterElem(MgHeapElem& x) {
+  x.key_prefix = HostPrefixCache(x.iter->key());
+}
+inline static void UpdateIterElem(IteratorWrapper*) {} // do nothing
+
+static FORCE_INLINE uint64_t GetUnalignedU64(const void* ptr) noexcept {
+  uint64_t x;
+  memcpy(&x, ptr, sizeof(uint64_t));
+  return x;
+}
+
+static FORCE_INLINE bool BytewiseCompareInternalKey(Slice x, Slice y) noexcept {
+  size_t n = std::min(x.size_, y.size_) - 8;
+  int cmp = memcmp(x.data_, y.data_, n);
+  if (0 != cmp) return cmp < 0;
+  if (x.size_ != y.size_) return x.size_ < y.size_;
+  return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+}
+
+static FORCE_INLINE bool RevBytewiseCompareInternalKey(Slice x,
+                                                       Slice y) noexcept {
+  size_t n = std::min(x.size_, y.size_) - 8;
+  int cmp = memcmp(x.data_, y.data_, n);
+  if (0 != cmp) return cmp > 0;
+  if (x.size_ != y.size_) return x.size_ > y.size_;
+  return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+}
+
+struct MaxInlineBytewiseComp {
+  FORCE_INLINE
+  bool operator()(const MgHeapElem& a, const MgHeapElem& b) const noexcept {
+    if (a.key_prefix < b.key_prefix)
+      return true;
+    else if (a.key_prefix > b.key_prefix)
+      return false;
+    else
+      return BytewiseCompareInternalKey(a->key(), b->key());
+  }
+  MaxInlineBytewiseComp(const InternalKeyComparator*) {}
+};
+
+struct MinInlineBytewiseComp {
+  FORCE_INLINE
+  bool operator()(const MgHeapElem& a, const MgHeapElem& b) const noexcept {
+    if (a.key_prefix > b.key_prefix)
+      return true;
+    else if (a.key_prefix < b.key_prefix)
+      return false;
+    else
+      return BytewiseCompareInternalKey(b->key(), a->key());
+  }
+  MinInlineBytewiseComp(const InternalKeyComparator*) {}
+};
+
+struct MaxInlineRevBytewiseComp {
+  FORCE_INLINE
+  bool operator()(const MgHeapElem& a, const MgHeapElem& b) const noexcept {
+    if (a.key_prefix > b.key_prefix)
+      return true;
+    else if (a.key_prefix < b.key_prefix)
+      return false;
+    else
+      return RevBytewiseCompareInternalKey(a->key(), b->key());
+  }
+  MaxInlineRevBytewiseComp(const InternalKeyComparator*) {}
+};
+struct MinInlineRevBytewiseComp {
+  FORCE_INLINE
+  bool operator()(const MgHeapElem& a, const MgHeapElem& b) const noexcept {
+    if (a.key_prefix < b.key_prefix)
+      return true;
+    else if (a.key_prefix > b.key_prefix)
+      return false;
+    else
+      return RevBytewiseCompareInternalKey(b->key(), a->key());
+  }
+  MinInlineRevBytewiseComp(const InternalKeyComparator*) {}
+};
+
+const size_t kNumIterReserve = 16;
 
 class MergingIterator : public InternalIterator {
  public:
-  MergingIterator(const InternalKeyComparator* comparator,
+  virtual void AddIterator(InternalIterator* iter) = 0;
+};
+
+template <class MinHeapComparator, class MaxHeapComparator, class HeapElem = MgHeapElem>
+class MergingIterTmpl final : public MergingIterator {
+  using MergerMaxIterHeap = BinaryHeap<HeapElem, MaxHeapComparator>;
+  using MergerMinIterHeap = BinaryHeap<HeapElem, MinHeapComparator>;
+
+ public:
+  MergingIterTmpl(const InternalKeyComparator* comparator,
                   InternalIterator** children, int n, bool is_arena_mode,
                   bool prefix_seek_mode)
       : is_arena_mode_(is_arena_mode),
@@ -44,8 +155,8 @@ class MergingIterator : public InternalIterator {
         direction_(kForward),
         comparator_(comparator),
         current_(nullptr),
-        minHeap_(comparator_),
-        pinned_iters_mgr_(nullptr) {
+        pinned_iters_mgr_(nullptr),
+        minHeap_(comparator_) {
     children_.resize(n);
     for (int i = 0; i < n; i++) {
       children_[i].Set(children[i]);
@@ -58,7 +169,7 @@ class MergingIterator : public InternalIterator {
     }
   }
 
-  virtual void AddIterator(InternalIterator* iter) {
+  void AddIterator(InternalIterator* iter) override {
     children_.emplace_back(iter);
     if (pinned_iters_mgr_) {
       iter->SetPinnedItersMgr(pinned_iters_mgr_);
@@ -68,11 +179,12 @@ class MergingIterator : public InternalIterator {
     current_ = nullptr;
   }
 
-  ~MergingIterator() override {
+  ~MergingIterTmpl() override {
     for (auto& child : children_) {
       child.DeleteIter(is_arena_mode_);
     }
     status_.PermitUncheckedError();
+    minHeap_.~MergerMinIterHeap();
   }
 
   bool Valid() const override { return current_ != nullptr && status_.ok(); }
@@ -80,7 +192,7 @@ class MergingIterator : public InternalIterator {
   Status status() const override { return status_; }
 
   void SeekToFirst() override {
-    ClearHeaps();
+    InitMinHeap();
     status_ = Status::OK();
     for (auto& child : children_) {
       child.SeekToFirst();
@@ -91,7 +203,6 @@ class MergingIterator : public InternalIterator {
   }
 
   void SeekToLast() override {
-    ClearHeaps();
     InitMaxHeap();
     status_ = Status::OK();
     for (auto& child : children_) {
@@ -103,7 +214,7 @@ class MergingIterator : public InternalIterator {
   }
 
   void Seek(const Slice& target) override {
-    ClearHeaps();
+    InitMinHeap();
     status_ = Status::OK();
     for (auto& child : children_) {
       {
@@ -147,7 +258,6 @@ class MergingIterator : public InternalIterator {
   }
 
   void SeekForPrev(const Slice& target) override {
-    ClearHeaps();
     InitMaxHeap();
     status_ = Status::OK();
 
@@ -190,6 +300,7 @@ class MergingIterator : public InternalIterator {
     // as the current points to the current record. move the iterator forward.
     current_->Next();
     if (current_->Valid()) {
+      UpdateIterElem(current_);
       // current is still valid after the Next() call above.  Call
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
@@ -232,15 +343,16 @@ class MergingIterator : public InternalIterator {
 
     current_->Prev();
     if (current_->Valid()) {
+      UpdateIterElem(current_);
       // current is still valid after the Prev() call above.  Call
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
-      maxHeap_->replace_top(current_);
+      maxHeap_.replace_top(current_);
     } else {
       // current stopped being valid, remove it from the heap.
       considerStatus(current_->status());
-      maxHeap_->pop();
+      maxHeap_.pop();
     }
     current_ = CurrentReverse();
   }
@@ -300,11 +412,8 @@ class MergingIterator : public InternalIterator {
   }
 
  private:
-  // Clears heaps for both directions, used when changing direction or seeking
-  void ClearHeaps();
-  // Ensures that maxHeap_ is initialized when starting to go in the reverse
-  // direction
   void InitMaxHeap();
+  void InitMinHeap();
 
   bool is_arena_mode_;
   bool prefix_seek_mode_;
@@ -312,20 +421,21 @@ class MergingIterator : public InternalIterator {
   enum Direction : uint8_t { kForward, kReverse };
   Direction direction_;
   const InternalKeyComparator* comparator_;
-  autovector<IteratorWrapper, kNumIterReserve> children_;
 
   // Cached pointer to child iterator with the current key, or nullptr if no
   // child iterators are valid.  This is the top of minHeap_ or maxHeap_
   // depending on the direction.
-  IteratorWrapper* current_;
+  HeapElem current_;
   // If any of the children have non-ok status, this is one of them.
   Status status_;
-  MergerMinIterHeap minHeap_;
-
-  // Max heap is used for reverse iteration, which is way less common than
-  // forward.  Lazily initialize it to save memory.
-  std::unique_ptr<MergerMaxIterHeap> maxHeap_;
   PinnedIteratorsManager* pinned_iters_mgr_;
+
+  autovector<IteratorWrapper, kNumIterReserve> children_;
+
+  union {
+    MergerMinIterHeap minHeap_;
+    MergerMaxIterHeap maxHeap_;
+  };
 
   // In forward direction, process a child that is not in the min heap.
   // If valid, add to the min heap. Otherwise, check status.
@@ -341,19 +451,20 @@ class MergingIterator : public InternalIterator {
   // position. Iterator should still be valid.
   void SwitchToBackward();
 
-  IteratorWrapper* CurrentForward() const {
+  HeapElem CurrentForward() const {
     assert(direction_ == kForward);
     return !minHeap_.empty() ? minHeap_.top() : nullptr;
   }
 
-  IteratorWrapper* CurrentReverse() const {
+  HeapElem CurrentReverse() const {
     assert(direction_ == kReverse);
-    assert(maxHeap_);
-    return !maxHeap_->empty() ? maxHeap_->top() : nullptr;
+    return !maxHeap_.empty() ? maxHeap_.top() : nullptr;
   }
 };
 
-void MergingIterator::AddToMinHeapOrCheckStatus(IteratorWrapper* child) {
+template <class MinHeapComparator, class MaxHeapComparator, class HeapElem>
+void MergingIterTmpl<MinHeapComparator, MaxHeapComparator, HeapElem>::
+    AddToMinHeapOrCheckStatus(IteratorWrapper* child) {
   if (child->Valid()) {
     assert(child->status().ok());
     minHeap_.push(child);
@@ -362,19 +473,23 @@ void MergingIterator::AddToMinHeapOrCheckStatus(IteratorWrapper* child) {
   }
 }
 
-void MergingIterator::AddToMaxHeapOrCheckStatus(IteratorWrapper* child) {
+template <class MinHeapComparator, class MaxHeapComparator, class HeapElem>
+void MergingIterTmpl<MinHeapComparator, MaxHeapComparator, HeapElem>::MergingIterTmpl::
+    AddToMaxHeapOrCheckStatus(IteratorWrapper* child) {
   if (child->Valid()) {
     assert(child->status().ok());
-    maxHeap_->push(child);
+    maxHeap_.push(child);
   } else {
     considerStatus(child->status());
   }
 }
 
-void MergingIterator::SwitchToForward() {
+template <class MinHeapComparator, class MaxHeapComparator, class HeapElem>
+void MergingIterTmpl<MinHeapComparator,
+                     MaxHeapComparator, HeapElem>::MergingIterTmpl::SwitchToForward() {
   // Otherwise, advance the non-current children.  We advance current_
   // just after the if-block.
-  ClearHeaps();
+  InitMinHeap();
   Slice target = key();
   for (auto& child : children_) {
     if (&child != current_) {
@@ -408,8 +523,9 @@ void MergingIterator::SwitchToForward() {
   direction_ = kForward;
 }
 
-void MergingIterator::SwitchToBackward() {
-  ClearHeaps();
+template <class MinHeapComparator, class MaxHeapComparator, class HeapElem>
+void MergingIterTmpl<MinHeapComparator,
+                     MaxHeapComparator, HeapElem>::MergingIterTmpl::SwitchToBackward() {
   InitMaxHeap();
   Slice target = key();
   for (auto& child : children_) {
@@ -434,17 +550,17 @@ void MergingIterator::SwitchToBackward() {
   assert(current_ == CurrentReverse());
 }
 
-void MergingIterator::ClearHeaps() {
+template <class MinHeapComparator, class MaxHeapComparator, class HeapElem>
+void MergingIterTmpl<MinHeapComparator,
+                     MaxHeapComparator, HeapElem>::MergingIterTmpl::InitMinHeap() {
   minHeap_.clear();
-  if (maxHeap_) {
-    maxHeap_->clear();
-  }
 }
 
-void MergingIterator::InitMaxHeap() {
-  if (!maxHeap_) {
-    maxHeap_.reset(new MergerMaxIterHeap(comparator_));
-  }
+template <class MinHeapComparator, class MaxHeapComparator, class HeapElem>
+void MergingIterTmpl<MinHeapComparator,
+                     MaxHeapComparator, HeapElem>::MergingIterTmpl::InitMaxHeap() {
+  // use InitMinHeap(), because maxHeap_ and minHeap_ are physical identical
+  InitMinHeap();
 }
 
 InternalIterator* NewMergingIterator(const InternalKeyComparator* cmp,
@@ -455,12 +571,33 @@ InternalIterator* NewMergingIterator(const InternalKeyComparator* cmp,
     return NewEmptyInternalIterator<Slice>(arena);
   } else if (n == 1) {
     return list[0];
-  } else {
+  } else if (IsForwardBytewiseComparator(cmp->user_comparator())) {
+    using MergingIterInst =
+        MergingIterTmpl<MinInlineBytewiseComp, MaxInlineBytewiseComp>;
     if (arena == nullptr) {
-      return new MergingIterator(cmp, list, n, false, prefix_seek_mode);
+      return new MergingIterInst(cmp, list, n, false, prefix_seek_mode);
     } else {
-      auto mem = arena->AllocateAligned(sizeof(MergingIterator));
-      return new (mem) MergingIterator(cmp, list, n, true, prefix_seek_mode);
+      auto mem = arena->AllocateAligned(sizeof(MergingIterInst));
+      return new (mem) MergingIterInst(cmp, list, n, true, prefix_seek_mode);
+    }
+  } else if (IsBytewiseComparator(
+                 cmp->user_comparator())) {  // must is rev bytewise
+    using MergingIterInst =
+        MergingIterTmpl<MinInlineRevBytewiseComp, MaxInlineRevBytewiseComp>;
+    if (arena == nullptr) {
+      return new MergingIterInst(cmp, list, n, false, prefix_seek_mode);
+    } else {
+      auto mem = arena->AllocateAligned(sizeof(MergingIterInst));
+      return new (mem) MergingIterInst(cmp, list, n, true, prefix_seek_mode);
+    }
+  } else {
+    using MergingIterInst =
+        MergingIterTmpl<MinIteratorComparator, MaxIteratorComparator, IteratorWrapper*>;
+    if (arena == nullptr) {
+      return new MergingIterInst(cmp, list, n, false, prefix_seek_mode);
+    } else {
+      auto mem = arena->AllocateAligned(sizeof(MergingIterInst));
+      return new (mem) MergingIterInst(cmp, list, n, true, prefix_seek_mode);
     }
   }
 }
@@ -468,9 +605,26 @@ InternalIterator* NewMergingIterator(const InternalKeyComparator* cmp,
 MergeIteratorBuilder::MergeIteratorBuilder(
     const InternalKeyComparator* comparator, Arena* a, bool prefix_seek_mode)
     : first_iter(nullptr), use_merging_iter(false), arena(a) {
-  auto mem = arena->AllocateAligned(sizeof(MergingIterator));
-  merge_iter =
-      new (mem) MergingIterator(comparator, nullptr, 0, true, prefix_seek_mode);
+  if (IsForwardBytewiseComparator(comparator->user_comparator())) {
+    using MergingIterInst =
+        MergingIterTmpl<MinInlineBytewiseComp, MaxInlineBytewiseComp>;
+    auto mem = arena->AllocateAligned(sizeof(MergingIterInst));
+    merge_iter = new (mem)
+        MergingIterInst(comparator, nullptr, 0, true, prefix_seek_mode);
+  } else if (IsBytewiseComparator(comparator->user_comparator())) {
+    // must is rev bytewise
+    using MergingIterInst =
+        MergingIterTmpl<MinInlineRevBytewiseComp, MaxInlineRevBytewiseComp>;
+    auto mem = arena->AllocateAligned(sizeof(MergingIterInst));
+    merge_iter = new (mem)
+        MergingIterInst(comparator, nullptr, 0, true, prefix_seek_mode);
+  } else {
+    using MergingIterInst =
+        MergingIterTmpl<MinIteratorComparator, MaxIteratorComparator, IteratorWrapper*>;
+    auto mem = arena->AllocateAligned(sizeof(MergingIterInst));
+    merge_iter = new (mem)
+        MergingIterInst(comparator, nullptr, 0, true, prefix_seek_mode);
+  }
 }
 
 MergeIteratorBuilder::~MergeIteratorBuilder() {

@@ -33,7 +33,11 @@ class TrackedKeysIterator : public LockTracker::KeyIterator {
 
   bool HasNext() const override { return it_ != key_infos_.end(); }
 
+#if 0
   const std::string& Next() override { return (it_++)->first; }
+#else
+  const terark::fstring Next() override { return (it_++)->first; }
+#endif
 
  private:
   const TrackedKeyInfos& key_infos_;
@@ -41,6 +45,9 @@ class TrackedKeysIterator : public LockTracker::KeyIterator {
 };
 
 }  // namespace
+
+PointLockTracker::PointLockTracker() : tracked_keys_(0) {
+}
 
 void PointLockTracker::Track(const PointLockRequest& r) {
   auto& keys = tracked_keys_[r.column_family_id];
@@ -94,7 +101,7 @@ UntrackStatus PointLockTracker::Untrack(const PointLockRequest& r) {
   if (info.num_reads == 0 && info.num_writes == 0) {
     keys.erase(it);
     if (keys.empty()) {
-      tracked_keys_.erase(cf_keys);
+      keys.erase_all(); // set to clean state and keep memory
     }
     removed = true;
   }
@@ -120,16 +127,23 @@ void PointLockTracker::Merge(const LockTracker& tracker) {
     } else {
       auto& current_keys = current_cf_keys->second;
       for (const auto& key_info : keys) {
-        const std::string& key = key_info.first;
+        const auto& key = key_info.first;
         const TrackedKeyInfo& info = key_info.second;
         // If key was not previously tracked, just copy the whole struct over.
         // Otherwise, some merging needs to occur.
+      #if 0
         auto current_info = current_keys.find(key);
         if (current_info == current_keys.end()) {
           current_keys.emplace(key_info);
         } else {
           current_info->second.Merge(info);
         }
+      #else
+        auto [idx, success] = current_keys.insert_i(key, info);
+        if (!success) {
+          current_keys.val(idx).Merge(info);
+        }
+      #endif
       }
     }
   }
@@ -143,7 +157,7 @@ void PointLockTracker::Subtract(const LockTracker& tracker) {
 
     auto& current_keys = tracked_keys_.at(cf);
     for (const auto& key_info : keys) {
-      const std::string& key = key_info.first;
+      const auto& key = key_info.first;
       const TrackedKeyInfo& info = key_info.second;
       uint32_t num_reads = info.num_reads;
       uint32_t num_writes = info.num_writes;
@@ -183,7 +197,7 @@ LockTracker* PointLockTracker::GetTrackedLocksSinceSavePoint(
 
     auto& current_keys = tracked_keys_.at(cf);
     for (const auto& key_info : keys) {
-      const std::string& key = key_info.first;
+      const auto& key = key_info.first;
       const TrackedKeyInfo& info = key_info.second;
       uint32_t num_reads = info.num_reads;
       uint32_t num_writes = info.num_writes;
@@ -198,7 +212,7 @@ LockTracker* PointLockTracker::GetTrackedLocksSinceSavePoint(
         // All the reads/writes to this key were done in the last savepoint.
         PointLockRequest r;
         r.column_family_id = cf;
-        r.key = key;
+        r.key = Slice(key.data(), key.size());
         r.seq = info.seq;
         r.read_only = (num_writes == 0);
         r.exclusive = info.exclusive;
@@ -210,24 +224,19 @@ LockTracker* PointLockTracker::GetTrackedLocksSinceSavePoint(
 }
 
 PointLockStatus PointLockTracker::GetPointLockStatus(
-    ColumnFamilyId column_family_id, const std::string& key) const {
+    ColumnFamilyId column_family_id, const LockString& key) const {
   assert(IsPointLockSupported());
   PointLockStatus status;
-  auto it = tracked_keys_.find(column_family_id);
-  if (it == tracked_keys_.end()) {
-    return status;
+  auto keys = tracked_keys_.get_value_ptr(column_family_id);
+  if (LIKELY(nullptr != keys)) {
+    auto idx = keys->find_i(key);
+    if (LIKELY(idx < keys->end_i())) {
+      const TrackedKeyInfo& key_info = keys->val(idx);
+      status.locked = true;
+      status.exclusive = key_info.exclusive;
+      status.seq = key_info.seq;
+    }
   }
-
-  const auto& keys = it->second;
-  auto key_it = keys.find(key);
-  if (key_it == keys.end()) {
-    return status;
-  }
-
-  const TrackedKeyInfo& key_info = key_it->second;
-  status.locked = true;
-  status.exclusive = key_info.exclusive;
-  status.seq = key_info.seq;
   return status;
 }
 
@@ -250,7 +259,15 @@ LockTracker::KeyIterator* PointLockTracker::GetKeyIterator(
   return new TrackedKeysIterator(tracked_keys_, column_family_id);
 }
 
-void PointLockTracker::Clear() { tracked_keys_.clear(); }
+void PointLockTracker::Clear() {
+  tracked_keys_.clear();
+  for (auto& [cf_id, tk_info] : tracked_keys_) {
+    if (tk_info.bucket_size() > 1000)
+      tk_info.clear(); // will free memory
+    else
+      tk_info.erase_all(); // will not free memory
+  }
+}
 
 }  // namespace ROCKSDB_NAMESPACE
 

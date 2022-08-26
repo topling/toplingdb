@@ -20,17 +20,15 @@ class InstrumentedCondVar;
 class InstrumentedMutex {
  public:
   explicit InstrumentedMutex(bool adaptive = false)
-      : mutex_(adaptive), stats_(nullptr), clock_(nullptr), stats_code_(0) {}
+      : mutex_(adaptive), stats_(nullptr), clock_(nullptr) {}
 
   explicit InstrumentedMutex(SystemClock* clock, bool adaptive = false)
-      : mutex_(adaptive), stats_(nullptr), clock_(clock), stats_code_(0) {}
+      : mutex_(adaptive), stats_(nullptr), clock_(clock) {}
 
-  InstrumentedMutex(Statistics* stats, SystemClock* clock, int stats_code,
-                    bool adaptive = false)
+  InstrumentedMutex(Statistics* stats, SystemClock* clock, bool adaptive = false)
       : mutex_(adaptive),
         stats_(stats),
-        clock_(clock),
-        stats_code_(stats_code) {}
+        clock_(clock) {}
 
   void Lock();
 
@@ -48,7 +46,6 @@ class InstrumentedMutex {
   port::Mutex mutex_;
   Statistics* stats_;
   SystemClock* clock_;
-  int stats_code_;
 };
 
 class ALIGN_AS(CACHE_LINE_SIZE) CacheAlignedInstrumentedMutex
@@ -96,8 +93,7 @@ class InstrumentedCondVar {
   explicit InstrumentedCondVar(InstrumentedMutex* instrumented_mutex)
       : cond_(&(instrumented_mutex->mutex_)),
         stats_(instrumented_mutex->stats_),
-        clock_(instrumented_mutex->clock_),
-        stats_code_(instrumented_mutex->stats_code_) {}
+        clock_(instrumented_mutex->clock_) {}
 
   void Wait();
 
@@ -117,7 +113,6 @@ class InstrumentedCondVar {
   port::CondVar cond_;
   Statistics* stats_;
   SystemClock* clock_;
-  int stats_code_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

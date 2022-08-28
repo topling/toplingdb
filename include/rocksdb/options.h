@@ -1536,6 +1536,8 @@ struct ReadOptions {
 
   bool just_check_key_exists; // just for check existing
 
+  bool cache_sst_file_iter;
+
   // If true, all data read from underlying storage will be
   // verified against corresponding checksums.
   // Default: true

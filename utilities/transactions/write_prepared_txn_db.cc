@@ -346,7 +346,7 @@ static void CleanupWritePreparedTxnDBIterator(void* arg1, void* /*arg2*/) {
 Iterator* WritePreparedTxnDB::NewIterator(const ReadOptions& options,
                                           ColumnFamilyHandle* column_family) {
   constexpr bool expose_blob_index = false;
-  constexpr bool allow_refresh = false;
+  constexpr bool allow_refresh = true;
   std::shared_ptr<ManagedSnapshot> own_snapshot = nullptr;
   SequenceNumber snapshot_seq = kMaxSequenceNumber;
   SequenceNumber min_uncommitted = 0;

@@ -100,6 +100,11 @@ class Iterator : public Cleanable {
     return Status::NotSupported("Refresh() is not supported");
   }
 
+  Status RefreshKeepSnapshot() {
+    auto KEEP_SNAPSHOT = reinterpret_cast<const class Snapshot*>(16);
+    return Refresh(KEEP_SNAPSHOT);
+  }
+
   // Property "rocksdb.iterator.is-key-pinned":
   //   If returning "1", this means that the Slice returned by key() is valid
   //   as long as the iterator is not deleted.

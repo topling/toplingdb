@@ -207,6 +207,7 @@ class DBIter final : public Iterator {
   void SeekToFirst() final override;
   void SeekToLast() final override;
   Env* env() const { return env_; }
+  uint64_t get_sequence() const { return sequence_; }
   void set_sequence(uint64_t s) {
     sequence_ = s;
     if (read_callback_) {

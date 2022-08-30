@@ -4140,6 +4140,7 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
   SuperVersion* sv = GetAndRefSuperVersion(cfd);
   v = sv->current;
 
+  InternalKey k1, k2;
   for (int i = 0; i < n; i++) {
     Slice start = range[i].start;
     Slice limit = range[i].limit;
@@ -4158,8 +4159,8 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
     }
   #endif
     // Convert user_key into a corresponding internal key.
-    InternalKey k1(start, kMaxSequenceNumber, kValueTypeForSeek);
-    InternalKey k2(limit, kMaxSequenceNumber, kValueTypeForSeek);
+    SetInternalKey(k1.rep(), start, kMaxSequenceNumber, kValueTypeForSeek);
+    SetInternalKey(k2.rep(), limit, kMaxSequenceNumber, kValueTypeForSeek);
     sizes[i] = 0;
     if (options.include_files) {
       sizes[i] += versions_->ApproximateSize(

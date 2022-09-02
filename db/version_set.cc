@@ -130,8 +130,8 @@ struct RevBytewiseCompareInternalKey {
   }
 };
 template<class Cmp>
-size_t FindFileInRangeTmpl(const LevelFilesBrief& brief, size_t lo, size_t hi,
-                           Slice key, Cmp cmp) {
+size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
+                           Slice key, size_t lo, size_t hi) {
   const uint64_t* pxcache = brief.prefix_cache;
   const uint64_t  key_prefix = HostPrefixCache(key);
   const FdWithKeyRange* a = brief.files;
@@ -159,6 +159,27 @@ size_t FindFileInRangeTmpl(const LevelFilesBrief& brief, size_t lo, size_t hi,
   return lo;
 }
 
+struct FallbackVirtCmp {
+  bool operator()(Slice x, Slice y) const {
+    return icmp->Compare(x, y) < 0;
+  }
+  const InternalKeyComparator* icmp;
+};
+
+static
+size_t FindFileInRangeTmpl(FallbackVirtCmp cmp, const LevelFilesBrief& brief,
+                           Slice key, size_t lo, size_t hi) {
+  const FdWithKeyRange* a = brief.files;
+  while (lo < hi) {
+    size_t mid = (lo + hi) / 2;
+    if (cmp(a[mid].largest_key, key))
+      lo = mid + 1;
+    else
+      hi = mid;
+  }
+  return lo;
+}
+
 // Find File in LevelFilesBrief data structure
 // Within an index range defined by left and right
 int FindFileInRange(const InternalKeyComparator& icmp,
@@ -169,19 +190,17 @@ int FindFileInRange(const InternalKeyComparator& icmp,
   if (IsForwardBytewiseComparator(icmp.user_comparator())) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     BytewiseCompareInternalKey cmp;
-    return (int)FindFileInRangeTmpl(file_level, left, right, key, cmp);
+    return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
   }
   else if (IsReverseBytewiseComparator(icmp.user_comparator())) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     RevBytewiseCompareInternalKey cmp;
-    return (int)FindFileInRangeTmpl(file_level, left, right, key, cmp);
+    return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
   }
-  auto cmp = [&](const FdWithKeyRange& f, const Slice& k) -> bool {
-    return icmp.InternalKeyComparator::Compare(f.largest_key, k) < 0;
-  };
-  const auto &b = file_level.files;
-  return static_cast<int>(std::lower_bound(b + left,
-                                           b + right, key, cmp) - b);
+  else {
+    FallbackVirtCmp cmp{&icmp};
+    return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
+  }
 }
 
 Status OverlapWithIterator(const Comparator* ucmp,
@@ -5806,9 +5825,31 @@ uint64_t VersionSet::ApproximateSize(const SizeApproximationOptions& options,
                                      const Slice& end, int start_level,
                                      int end_level, TableReaderCaller caller) {
   const auto& icmp = v->cfd_->internal_comparator();
+  if (IsForwardBytewiseComparator(icmp.user_comparator())) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    BytewiseCompareInternalKey cmp;
+    return ApproximateSizeTmpl(options, v, start, end, start_level, end_level, caller, cmp);
+  }
+  else if (IsReverseBytewiseComparator(icmp.user_comparator())) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    RevBytewiseCompareInternalKey cmp;
+    return ApproximateSizeTmpl(options, v, start, end, start_level, end_level, caller, cmp);
+  }
+  else {
+    FallbackVirtCmp cmp{&icmp};
+    return ApproximateSizeTmpl(options, v, start, end, start_level, end_level, caller, cmp);
+  }
+}
 
+template<class IternalCmp>
+uint64_t
+VersionSet::ApproximateSizeTmpl(const SizeApproximationOptions& options,
+                                Version* v, const Slice& start,
+                                const Slice& end, int start_level,
+                                int end_level, TableReaderCaller caller,
+                                IternalCmp cmp) {
   // pre-condition
-  assert(icmp.Compare(start, end) <= 0);
+  assert(!cmp(end, start));
 
   uint64_t total_full_size = 0;
   const auto* vstorage = v->storage_info();
@@ -5859,16 +5900,16 @@ uint64_t VersionSet::ApproximateSize(const SizeApproximationOptions& options,
 
     // identify the file position for start key
     const int idx_start =
-        FindFileInRange(icmp, files_brief, start, 0,
-                        static_cast<uint32_t>(files_brief.num_files - 1));
+        FindFileInRangeTmpl(cmp, files_brief, start, 0,
+                            static_cast<uint32_t>(files_brief.num_files - 1));
     assert(static_cast<size_t>(idx_start) < files_brief.num_files);
 
     // identify the file position for end key
     int idx_end = idx_start;
-    if (icmp.Compare(files_brief.files[idx_end].largest_key, end) < 0) {
+    if (cmp(files_brief.files[idx_end].largest_key, end)) {
       idx_end =
-          FindFileInRange(icmp, files_brief, end, idx_start,
-                          static_cast<uint32_t>(files_brief.num_files - 1));
+          FindFileInRangeTmpl(cmp, files_brief, end, idx_start,
+                              static_cast<uint32_t>(files_brief.num_files - 1));
     }
     assert(idx_end >= idx_start &&
            static_cast<size_t>(idx_end) < files_brief.num_files);
@@ -5916,7 +5957,7 @@ uint64_t VersionSet::ApproximateSize(const SizeApproximationOptions& options,
     // Estimate for all the first files (might also be last files), at each
     // level
     for (const auto file_ptr : first_files) {
-      total_full_size += ApproximateSize(v, *file_ptr, start, end, caller);
+      total_full_size += ApproximateSizeTmpl(v, *file_ptr, start, end, caller, cmp);
     }
 
     // Estimate for all the last files, at each level
@@ -5936,12 +5977,33 @@ uint64_t VersionSet::ApproximateOffsetOf(Version* v, const FdWithKeyRange& f,
   // pre-condition
   assert(v);
   const auto& icmp = v->cfd_->internal_comparator();
+  if (IsForwardBytewiseComparator(icmp.user_comparator())) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    BytewiseCompareInternalKey cmp;
+    return ApproximateOffsetOfTmpl(v, f, key, caller, cmp);
+  }
+  else if (IsReverseBytewiseComparator(icmp.user_comparator())) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    RevBytewiseCompareInternalKey cmp;
+    return ApproximateOffsetOfTmpl(v, f, key, caller, cmp);
+  }
+  else {
+    FallbackVirtCmp cmp{&icmp};
+    return ApproximateOffsetOfTmpl(v, f, key, caller, cmp);
+  }
+}
 
+template<class InternalCmp>
+uint64_t VersionSet::ApproximateOffsetOfTmpl(Version* v,
+                                             const FdWithKeyRange& f,
+                                             const Slice& key,
+                                             TableReaderCaller caller,
+                                             InternalCmp cmp) {
   uint64_t result = 0;
-  if (icmp.Compare(f.largest_key, key) <= 0) {
+  if (!cmp(key, f.largest_key)) {
     // Entire file is before "key", so just add the file size
     result = f.fd.GetFileSize();
-  } else if (icmp.Compare(f.smallest_key, key) > 0) {
+  } else if (cmp(key, f.smallest_key)) {
     // Entire file is after "key", so ignore
     result = 0;
   } else {
@@ -5949,6 +6011,7 @@ uint64_t VersionSet::ApproximateOffsetOf(Version* v, const FdWithKeyRange& f,
     // approximate offset of "key" within the table.
     TableCache* table_cache = v->cfd_->table_cache();
     if (table_cache != nullptr) {
+      const auto& icmp = v->cfd_->internal_comparator();
       result = table_cache->ApproximateOffsetOf(
           key, f.file_metadata->fd, caller, icmp,
           v->GetMutableCFOptions().prefix_extractor);
@@ -5963,23 +6026,42 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   // pre-condition
   assert(v);
   const auto& icmp = v->cfd_->internal_comparator();
-  assert(icmp.Compare(start, end) <= 0);
+  if (IsForwardBytewiseComparator(icmp.user_comparator())) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    BytewiseCompareInternalKey cmp;
+    return ApproximateSizeTmpl(v, f, start, end, caller, cmp);
+  }
+  else if (IsReverseBytewiseComparator(icmp.user_comparator())) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    RevBytewiseCompareInternalKey cmp;
+    return ApproximateSizeTmpl(v, f, start, end, caller, cmp);
+  }
+  else {
+    FallbackVirtCmp cmp{&icmp};
+    return ApproximateSizeTmpl(v, f, start, end, caller, cmp);
+  }
+}
 
-  if (icmp.Compare(f.largest_key, start) <= 0 ||
-      icmp.Compare(f.smallest_key, end) > 0) {
+template<class InternalCmp>
+uint64_t VersionSet::ApproximateSizeTmpl(Version* v, const FdWithKeyRange& f,
+                                         const Slice& start, const Slice& end,
+                                         TableReaderCaller caller, InternalCmp cmp) {
+  assert(!cmp(end, start));
+
+  if (!cmp(start, f.largest_key) || cmp(end, f.smallest_key)) {
     // Entire file is before or after the start/end keys range
     return 0;
   }
 
-  if (icmp.Compare(f.smallest_key, start) >= 0) {
+  if (!cmp(f.smallest_key, start)) {
     // Start of the range is before the file start - approximate by end offset
-    return ApproximateOffsetOf(v, f, end, caller);
+    return ApproximateOffsetOfTmpl(v, f, end, caller, cmp);
   }
 
-  if (icmp.Compare(f.largest_key, end) < 0) {
+  if (cmp(f.largest_key, end)) {
     // End of the range is after the file end - approximate by subtracting
     // start offset from the file size
-    uint64_t start_offset = ApproximateOffsetOf(v, f, start, caller);
+    uint64_t start_offset = ApproximateOffsetOfTmpl(v, f, start, caller, cmp);
     assert(f.fd.GetFileSize() >= start_offset);
     return f.fd.GetFileSize() - start_offset;
   }
@@ -5989,6 +6071,7 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   if (table_cache == nullptr) {
     return 0;
   }
+  const auto& icmp = v->cfd_->internal_comparator();
   return table_cache->ApproximateSize(
       start, end, f.file_metadata->fd, caller, icmp,
       v->GetMutableCFOptions().prefix_extractor);

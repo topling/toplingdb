@@ -308,14 +308,14 @@ ifeq (,$(wildcard sideplugin/cspp-memtable))
   # topling specific: just for people who has permission to cspp-memtable
   dummy := $(shell set -e -x; \
     cd sideplugin; \
-    git clone git@github.com:topling/cspp-memtable; \
+    git clone https://github.com/topling/cspp-memtable; \
     cd cspp-memtable; \
   )
 endif
 ifeq (,$(wildcard sideplugin/cspp-wbwi))
   dummy := $(shell set -e -x; \
     cd sideplugin; \
-    git clone git@github.com:topling/cspp-wbwi; \
+    git clone https://github.com/topling/cspp-wbwi; \
     cd cspp-wbwi; \
   )
 endif

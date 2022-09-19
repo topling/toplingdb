@@ -241,6 +241,8 @@ class DBIter final : public Iterator {
   bool FindNextUserEntry(bool skipping_saved_key, const Slice* prefix);
   // Internal implementation of FindNextUserEntry().
   bool FindNextUserEntryInternal(bool skipping_saved_key, const Slice* prefix);
+  template<class CmpNoTS>
+  bool FindNextUserEntryInternalTmpl(bool, const Slice* prefix, CmpNoTS);
   bool ParseKey(ParsedInternalKey* key);
   bool MergeValuesNewToOld();
 
@@ -363,6 +365,7 @@ class DBIter final : public Iterator {
   bool expose_blob_index_;
   bool is_blob_;
   bool arena_mode_;
+  bool enable_perf_timer_;
   // List of operands for merge operator.
   MergeContext merge_context_;
   ReadRangeDelAggregator range_del_agg_;

@@ -92,6 +92,7 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
   if (iter_.iter()) {
     iter_.iter()->SetPinnedItersMgr(&pinned_iters_mgr_);
   }
+  enable_perf_timer_ = perf_level >= PerfLevel::kEnableTimeExceptForMutex;
   assert(timestamp_size_ == user_comparator_.timestamp_size());
 }
 
@@ -235,13 +236,55 @@ bool DBIter::SetWideColumnValueIfNeeded(const Slice& /* wide_columns_slice */) {
 // within the prefix, and the iterator needs to be made invalid, if no
 // more entry for the prefix can be found.
 bool DBIter::FindNextUserEntry(bool skipping_saved_key, const Slice* prefix) {
-  PERF_TIMER_GUARD(find_next_user_entry_time);
-  return FindNextUserEntryInternal(skipping_saved_key, prefix);
+  if (enable_perf_timer_) {
+    PERF_TIMER_GUARD(find_next_user_entry_time);
+    return FindNextUserEntryInternal(skipping_saved_key, prefix);
+  } else {
+    return FindNextUserEntryInternal(skipping_saved_key, prefix);
+  }
 }
+
+struct BytewiseCmpNoTS {
+  bool operator()(const Slice& x, const Slice& y) const { return x < y; }
+  int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
+};
+
+struct RevBytewiseCmpNoTS {
+  bool operator()(const Slice& x, const Slice& y) const { return y < x; }
+  int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
+};
+
+struct VirtualCmpNoTS {
+  bool operator()(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, false, y, false) < 0;
+  }
+  int compare(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, y);
+  }
+  const Comparator* cmp;
+};
 
 // Actual implementation of DBIter::FindNextUserEntry()
 bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                                        const Slice* prefix) {
+  if (user_comparator_.IsForwardBytewise()) {
+    ROCKSDB_ASSERT_EZ(user_comparator_.timestamp_size());
+    BytewiseCmpNoTS cmp;
+    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+  } else if (user_comparator_.IsReverseBytewise()) {
+    ROCKSDB_ASSERT_EZ(user_comparator_.timestamp_size());
+    RevBytewiseCmpNoTS cmp;
+    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+  } else {
+    VirtualCmpNoTS cmp{&user_comparator_};
+    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+  }
+}
+
+template<class CmpNoTS>
+bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
+                                           const Slice* prefix,
+                                           CmpNoTS cmpNoTS) {
   // Loop until we hit an acceptable entry to yield
   assert(iter_.Valid());
   assert(status_.ok());
@@ -289,9 +332,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                /*b_has_ts=*/false) < 0);
     if (iterate_upper_bound_ != nullptr &&
         iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
-        user_comparator_.CompareWithoutTimestamp(
-            user_key_without_ts, /*a_has_ts=*/false, *iterate_upper_bound_,
-            /*b_has_ts=*/false) >= 0) {
+        !cmpNoTS(user_key_without_ts, *iterate_upper_bound_)) {
       break;
     }
 
@@ -435,7 +476,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
       // This key was inserted after our snapshot was taken or skipped by
       // timestamp range. If this happens too many times in a row for the same
       // user key, we want to seek to the target sequence number.
-      int cmp = user_comparator_.CompareWithoutTimestamp(
+      int cmp = cmpNoTS.compare(
           ikey_.user_key, saved_key_.GetUserKey());
       if (cmp == 0 || (skipping_saved_key && cmp < 0)) {
         num_skipped++;

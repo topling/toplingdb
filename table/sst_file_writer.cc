@@ -117,10 +117,11 @@ struct SstFileWriter::Rep {
   }
 
   Status Add(const Slice& user_key, const Slice& value, ValueType value_type) {
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (internal_comparator.user_comparator()->timestamp_size() != 0) {
       return Status::InvalidArgument("Timestamp size mismatch");
     }
-
+   #endif
     return AddImpl(user_key, value, value_type);
   }
 

@@ -281,7 +281,7 @@ bool BaseDeltaIterator::DeltaValid() const { return delta_iterator_->Valid(); }
 void BaseDeltaIterator::UpdateCurrent() {
 // Suppress false positive clang analyzer warnings.
 #ifndef __clang_analyzer__
-  status_ = Status::OK();
+  status_.SetAsOK();
   while (true) {
     auto delta_result = WBWIIteratorImpl::kNotFound;
     WriteEntry delta_entry;
@@ -698,7 +698,7 @@ Status WriteBatchWithIndexInternal::MergeKey(const Slice& key,
 WBWIIteratorImpl::Result WriteBatchWithIndexInternal::GetFromBatch(
     WriteBatchWithIndex* batch, const Slice& key, MergeContext* context,
     std::string* value, Status* s) {
-  *s = Status::OK();
+  s->SetAsOK();
 
 #if 0
   std::unique_ptr<WBWIIteratorImpl> iter(

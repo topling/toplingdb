@@ -2750,7 +2750,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
     ctx_vec[i].InitLookupKey(keys[i], snapshot, read_options.timestamp);
   }
   for (size_t i = 0; i < num_keys; i++) values[i].Reset();
-  for (size_t i = 0; i < num_keys; i++) statuses[i] = Status::OK();
+  for (size_t i = 0; i < num_keys; i++) statuses[i].SetAsOK();
 
   bool skip_memtable = (read_options.read_tier == kPersistedTier &&
                         has_unpersisted_data_.load(std::memory_order_relaxed));

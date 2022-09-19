@@ -51,7 +51,6 @@ struct SstFileWriter::Rep {
   Env::IOPriority io_priority;
   InternalKeyComparator internal_comparator;
   ExternalSstFileInfo file_info;
-  InternalKey ikey;
   std::string column_family_name;
   ColumnFamilyHandle* cfh;
   // If true, We will give the OS a hint that this file pages is not needed
@@ -102,9 +101,10 @@ struct SstFileWriter::Rep {
 
     constexpr SequenceNumber sequence_number = 0;
 
-    ikey.Set(user_key, sequence_number, value_type);
+    char* ikey_buf = (char*)alloca(user_key.size_ + 8);
+    SetInternalKey(ikey_buf, user_key, sequence_number, value_type);
 
-    builder->Add(ikey.Encode(), value);
+    builder->Add({ikey_buf, user_key.size_ + 8}, value);
 
     // update file info
     file_info.num_entries++;

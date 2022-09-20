@@ -33,7 +33,7 @@ struct Options;
 // * current_at_base_ <=> base_iterator < delta_iterator
 // always:
 // * equal_keys_ <=> base_iterator == delta_iterator
-class BaseDeltaIterator : public Iterator {
+class BaseDeltaIterator final : public Iterator {
  public:
   BaseDeltaIterator(ColumnFamilyHandle* column_family, Iterator* base_iterator,
                     WBWIIterator* delta_iterator,

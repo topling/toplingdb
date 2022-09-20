@@ -64,9 +64,10 @@ struct SstFileWriter::Rep {
   std::string db_session_id;
   uint64_t next_file_number = 1;
 
+  ROCKSDB_FLATTEN
   Status AddImpl(const Slice& user_key, const Slice& value,
                  ValueType value_type) {
-    if (!builder) {
+    if (UNLIKELY(!builder)) {
       return Status::InvalidArgument("File is not opened");
     }
 

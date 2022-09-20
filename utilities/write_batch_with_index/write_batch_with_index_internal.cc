@@ -37,6 +37,7 @@ BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
   wbwii_.reset(new WriteBatchWithIndexInternal(column_family));
 }
 
+ROCKSDB_FLATTEN
 bool BaseDeltaIterator::Valid() const {
   return status_.ok() ? (current_at_base_ ? BaseValid() : DeltaValid()) : false;
 }
@@ -70,12 +71,12 @@ void BaseDeltaIterator::SeekForPrev(const Slice& k) {
 }
 
 void BaseDeltaIterator::Next() {
-  if (!Valid()) {
+  if (UNLIKELY(!Valid())) {
     status_ = Status::NotSupported("Next() on invalid iterator");
     return;
   }
 
-  if (!forward_) {
+  if (UNLIKELY(!forward_)) {
     // Need to change direction
     // if our direction was backward and we're not equal, we have two states:
     // * both iterators are valid: we're already in a good state (current
@@ -107,12 +108,12 @@ void BaseDeltaIterator::Next() {
 }
 
 void BaseDeltaIterator::Prev() {
-  if (!Valid()) {
+  if (UNLIKELY(!Valid())) {
     status_ = Status::NotSupported("Prev() on invalid iterator");
     return;
   }
 
-  if (forward_) {
+  if (UNLIKELY(forward_)) {
     // Need to change direction
     // if our direction was backward and we're not equal, we have two states:
     // * both iterators are valid: we're already in a good state (current

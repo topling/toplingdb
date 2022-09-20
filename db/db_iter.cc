@@ -282,6 +282,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
 }
 
 template<class CmpNoTS>
+ROCKSDB_FLATTEN
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                            const Slice* prefix,
                                            CmpNoTS cmpNoTS) {

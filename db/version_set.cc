@@ -1182,11 +1182,27 @@ class LevelIterator final : public InternalIterator {
   void CheckMayBeOutOfLowerBound() {
     if (read_options_.iterate_lower_bound != nullptr &&
         file_index_ < flevel_->num_files) {
-      may_be_out_of_lower_bound_ =
-          user_comparator_.CompareWithoutTimestamp(
+      switch (opt_cmp_type_) {
+      case 0: // IsForwardBytewise()
+        CompareNoTS_x1_y0(BytewiseCompareInternalKey());
+        break;
+      case 1: // IsReverseBytewise()
+        CompareNoTS_x1_y0(RevBytewiseCompareInternalKey());
+      default:
+        CompareNoTS_x1_y0([&](Slice x, Slice y) {
+          return user_comparator_.CompareWithoutTimestamp(
               ExtractUserKey(file_smallest_key(file_index_)), /*a_has_ts=*/true,
               *read_options_.iterate_lower_bound, /*b_has_ts=*/false) < 0;
+        });
+        break;
+      }
     }
+  }
+  template<class Cmp>
+  void CompareNoTS_x1_y0(Cmp cmp) {
+    may_be_out_of_lower_bound_ =
+        cmp(ExtractUserKey(file_smallest_key(file_index_)),
+            *read_options_.iterate_lower_bound);
   }
 
   TableCache* table_cache_;
@@ -1258,7 +1274,7 @@ void LevelIterator::Seek(const Slice& target) {
     // blocks has been submitted. So it should return at this point and Seek
     // should be called again to retrieve the requested block and execute the
     // remaining code.
-    if (file_iter_.status() == Status::TryAgain()) {
+    if (file_iter_.status().IsTryAgain()) {
       return;
     }
   }

@@ -6,6 +6,7 @@
 #ifndef ROCKSDB_LITE
 
 #include "utilities/transactions/lock/point/point_lock_tracker.h"
+#include <port/likely.h>
 
 namespace ROCKSDB_NAMESPACE {
 

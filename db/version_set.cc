@@ -1034,6 +1034,7 @@ class LevelIterator final : public InternalIterator {
         caller_(caller),
         skip_filters_(skip_filters),
         allow_unprepared_value_(allow_unprepared_value),
+        opt_cmp_type_(icomparator.user_comparator()->opt_cmp_type()),
         file_index_(flevel_->num_files),
         level_(level),
         range_del_agg_(range_del_agg),
@@ -1206,6 +1207,7 @@ class LevelIterator final : public InternalIterator {
   bool skip_filters_;
   bool allow_unprepared_value_;
   bool may_be_out_of_lower_bound_ = true;
+  uint8_t opt_cmp_type_;
   size_t file_index_;
   int level_;
   RangeDelAggregator* range_del_agg_;
@@ -1225,13 +1227,23 @@ void LevelIterator::Seek(const Slice& target) {
   bool need_to_reseek = true;
   if (file_iter_.iter() != nullptr && file_index_ < flevel_->num_files) {
     const FdWithKeyRange& cur_file = flevel_->files[file_index_];
-    if (icomparator_.InternalKeyComparator::Compare(
-            target, cur_file.largest_key) <= 0 &&
-        icomparator_.InternalKeyComparator::Compare(
-            target, cur_file.smallest_key) >= 0) {
-      need_to_reseek = false;
-      assert(static_cast<size_t>(FindFile(icomparator_, *flevel_, target)) ==
-             file_index_);
+    auto check_need_to_reseek = [&](auto cmp) {
+      if (!cmp(cur_file.largest_key, target) &&
+          !cmp(target, cur_file.smallest_key)) {
+        need_to_reseek = false;
+        assert(static_cast<size_t>(FindFile(icomparator_, *flevel_, target)) ==
+              file_index_);
+      }
+    };
+    switch (opt_cmp_type_) {
+    case 0: // IsForwardBytewise()
+      check_need_to_reseek(BytewiseCompareInternalKey());
+      break;
+    case 1: // IsReverseBytewise()
+      check_need_to_reseek(RevBytewiseCompareInternalKey());
+    default:
+      check_need_to_reseek(FallbackVirtCmp{&icomparator_});
+      break;
     }
   }
   if (need_to_reseek) {

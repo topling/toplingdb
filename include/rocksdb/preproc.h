@@ -470,7 +470,13 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "port/likely.h"
+#if defined(__GNUC__) && __GNUC__ >= 4
+#define TOPLINGDB_LIKELY(x)   (__builtin_expect((x), 1))
+#define TOPLINGDB_UNLIKELY(x) (__builtin_expect((x), 0))
+#else
+#define TOPLINGDB_LIKELY(x)   (x)
+#define TOPLINGDB_UNLIKELY(x) (x)
+#endif
 
 #define ROCKSDB_DIE(fmt, ...) \
 	do { \
@@ -480,7 +486,7 @@
 
 /// VERIFY indicate runtime assert in release build
 #define ROCKSDB_VERIFY_F_IMP(expr, fmt, ...) \
-    do { if (UNLIKELY(!(expr))) { \
+    do { if (TOPLINGDB_UNLIKELY(!(expr))) { \
         fprintf(stderr, "%s:%d: %s: verify(%s) failed" fmt " !\n", \
                 __FILE__, __LINE__, ROCKSDB_FUNC, #expr, ##__VA_ARGS__); \
         abort(); }} while (0)

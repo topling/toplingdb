@@ -118,6 +118,16 @@ struct ParsedInternalKey {
   // u contains timestamp if user timestamp feature is enabled.
   ParsedInternalKey(const Slice& u, const SequenceNumber& seq, ValueType t)
       : user_key(u), sequence(seq), type(t) {}
+  ParsedInternalKey(const Slice& u, uint64_t seqvt)
+      : user_key(u), sequence(seqvt >> 8), type(ValueType(seqvt)) {}
+  explicit ParsedInternalKey(const Slice& ik)
+      : user_key(ik.data_, ik.size_ - 8) {
+    ROCKSDB_ASSERT_GE(ik.size_, 8);
+    uint64_t seqvt;
+    GetUnaligned((const uint64_t*)(ik.data_ + ik.size_ - 8), &seqvt);
+    sequence = seqvt >> 8;
+    type = ValueType(seqvt);
+  }
   std::string DebugString(bool log_err_key, bool hex) const;
 
   void clear() {

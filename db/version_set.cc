@@ -1127,7 +1127,7 @@ class LevelIterator final : public InternalIterator {
   void SetFileIterator(InternalIterator* iter);
   void InitFileIterator(size_t new_file_index);
 
-  const Slice& file_smallest_key(size_t file_index) {
+  const Slice& file_smallest_key(size_t file_index) const {
     assert(file_index < flevel_->num_files);
     return flevel_->files[file_index].smallest_key;
   }
@@ -1184,25 +1184,35 @@ class LevelIterator final : public InternalIterator {
         file_index_ < flevel_->num_files) {
       switch (opt_cmp_type_) {
       case 0: // IsForwardBytewise()
-        CompareNoTS_x1_y0(BytewiseCompareInternalKey());
+        may_be_out_of_lower_bound_ =
+            ExtractUserKey(file_smallest_key(file_index_)) <
+                *read_options_.iterate_lower_bound;
         break;
       case 1: // IsReverseBytewise()
-        CompareNoTS_x1_y0(RevBytewiseCompareInternalKey());
-      default:
-        CompareNoTS_x1_y0([&](Slice x, Slice y) {
-          return user_comparator_.CompareWithoutTimestamp(
-              ExtractUserKey(file_smallest_key(file_index_)), /*a_has_ts=*/true,
-              *read_options_.iterate_lower_bound, /*b_has_ts=*/false) < 0;
-        });
+        may_be_out_of_lower_bound_ =
+            ExtractUserKey(file_smallest_key(file_index_)) >
+                *read_options_.iterate_lower_bound;
         break;
+      default:
+        may_be_out_of_lower_bound_ =
+            user_comparator_.CompareWithoutTimestamp(
+                ExtractUserKey(file_smallest_key(file_index_)), /*a_has_ts=*/true,
+                *read_options_.iterate_lower_bound, /*b_has_ts=*/false) < 0;
       }
     }
   }
-  template<class Cmp>
-  void CompareNoTS_x1_y0(Cmp cmp) {
-    may_be_out_of_lower_bound_ =
-        cmp(ExtractUserKey(file_smallest_key(file_index_)),
-            *read_options_.iterate_lower_bound);
+  bool FileIsOutOfLowerBound(size_t file_index) const {
+    Slice file_largest_ukey = ExtractUserKey(flevel_->files[file_index].largest_key);
+    switch (opt_cmp_type_) {
+    case 0: // IsForwardBytewise()
+      return file_largest_ukey < *read_options_.iterate_lower_bound;
+    case 1: // IsReverseBytewise()
+      return file_largest_ukey > *read_options_.iterate_lower_bound;
+    default:
+      return user_comparator_.CompareWithoutTimestamp(
+              file_largest_ukey, /*a_has_ts=*/true,
+              *read_options_.iterate_lower_bound, /*b_has_ts=*/false) < 0;
+    }
   }
 
   TableCache* table_cache_;
@@ -1265,6 +1275,12 @@ void LevelIterator::Seek(const Slice& target) {
   if (need_to_reseek) {
     TEST_SYNC_POINT("LevelIterator::Seek:BeforeFindFile");
     size_t new_file_index = FindFile(icomparator_, *flevel_, target);
+    if (new_file_index >= flevel_->num_files ||
+             (read_options_.iterate_lower_bound != nullptr &&
+              FileIsOutOfLowerBound(new_file_index))) {
+      file_iter_.Set(nullptr);
+      return;
+    }
     InitFileIterator(new_file_index);
   }
 
@@ -1274,7 +1290,7 @@ void LevelIterator::Seek(const Slice& target) {
     // blocks has been submitted. So it should return at this point and Seek
     // should be called again to retrieve the requested block and execute the
     // remaining code.
-    if (file_iter_.status().IsTryAgain()) {
+    if (UNLIKELY(file_iter_.status().IsTryAgain())) {
       return;
     }
   }

@@ -1201,17 +1201,17 @@ class LevelIterator final : public InternalIterator {
       }
     }
   }
-  bool FileIsOutOfLowerBound(size_t file_index) const {
-    Slice file_largest_ukey = ExtractUserKey(flevel_->files[file_index].largest_key);
+  bool FileIsOutOfUpperBound(size_t file_index) const {
+    Slice file_smallest_ukey = ExtractUserKey(file_smallest_key(file_index));
     switch (opt_cmp_type_) {
     case 0: // IsForwardBytewise()
-      return file_largest_ukey < *read_options_.iterate_lower_bound;
+      return !(file_smallest_ukey < *read_options_.iterate_upper_bound);
     case 1: // IsReverseBytewise()
-      return file_largest_ukey > *read_options_.iterate_lower_bound;
+      return !(file_smallest_ukey > *read_options_.iterate_upper_bound);
     default:
       return user_comparator_.CompareWithoutTimestamp(
-              file_largest_ukey, /*a_has_ts=*/true,
-              *read_options_.iterate_lower_bound, /*b_has_ts=*/false) < 0;
+              *read_options_.iterate_upper_bound, /*b_has_ts=*/false,
+              file_smallest_ukey, /*a_has_ts=*/true) <= 0;
     }
   }
 
@@ -1275,9 +1275,12 @@ void LevelIterator::Seek(const Slice& target) {
   if (need_to_reseek) {
     TEST_SYNC_POINT("LevelIterator::Seek:BeforeFindFile");
     size_t new_file_index = FindFile(icomparator_, *flevel_, target);
-    if (new_file_index >= flevel_->num_files ||
-             (read_options_.iterate_lower_bound != nullptr &&
-              FileIsOutOfLowerBound(new_file_index))) {
+    if (UNLIKELY(new_file_index >= flevel_->num_files)) {
+      file_iter_.Set(nullptr);
+      return;
+    }
+    if (read_options_.iterate_upper_bound != nullptr &&
+              FileIsOutOfUpperBound(new_file_index)) {
       file_iter_.Set(nullptr);
       return;
     }

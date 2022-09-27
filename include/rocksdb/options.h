@@ -1706,6 +1706,9 @@ struct ReadOptions {
 
   int async_queue_depth = 16;
 
+  // used for ToplingDB fiber MultiGet
+  mutable class ReadCallback* read_callback = nullptr;
+
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
 };

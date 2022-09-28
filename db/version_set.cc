@@ -1105,6 +1105,9 @@ class LevelIterator final : public InternalIterator {
 
   void SetPinnedItersMgr(PinnedIteratorsManager* pinned_iters_mgr) override {
     pinned_iters_mgr_ = pinned_iters_mgr;
+    if (file_iter_cache_) {
+      return;
+    }
     if (file_iter_.iter()) {
       file_iter_.SetPinnedItersMgr(pinned_iters_mgr);
     }
@@ -1165,11 +1168,11 @@ class LevelIterator final : public InternalIterator {
         /*arena=*/nullptr, skip_filters_, level_,
         /*max_file_size_for_l0_meta_pin=*/0, smallest_compaction_key,
         largest_compaction_key, allow_unprepared_value_);
-      if (pinned_iters_mgr_) {
-        iter->SetPinnedItersMgr(pinned_iters_mgr_);
-      }
       if (file_iter_cache_) {
         file_iter_cache_[file_index_] = iter;
+      }
+      else if (pinned_iters_mgr_) {
+        iter->SetPinnedItersMgr(pinned_iters_mgr_);
       }
     }
     return iter;

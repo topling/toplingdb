@@ -1541,6 +1541,8 @@ struct ReadOptions {
 
   bool just_check_key_exists; // just for check existing
 
+  bool cache_sst_file_iter;
+
   // If true, all data read from underlying storage will be
   // verified against corresponding checksums.
   // Default: true
@@ -1719,6 +1721,9 @@ struct ReadOptions {
   bool optimize_multiget_for_io;
 
   int async_queue_depth = 16;
+
+  // used for ToplingDB fiber MultiGet
+  mutable class ReadCallback* read_callback = nullptr;
 
   ReadOptions();
   ReadOptions(bool cksum, bool cache);

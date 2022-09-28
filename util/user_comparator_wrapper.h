@@ -22,7 +22,9 @@ class UserComparatorWrapper final : public Comparator {
   UserComparatorWrapper() : user_comparator_(nullptr) {}
 
   explicit UserComparatorWrapper(const Comparator* const user_cmp)
-      : Comparator(user_cmp->timestamp_size()), user_comparator_(user_cmp) {}
+      : Comparator(user_cmp->timestamp_size()), user_comparator_(user_cmp) {
+    this->opt_cmp_type_ = user_cmp->opt_cmp_type();
+  }
 
   ~UserComparatorWrapper() = default;
 

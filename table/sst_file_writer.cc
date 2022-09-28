@@ -51,7 +51,6 @@ struct SstFileWriter::Rep {
   Env::IOPriority io_priority;
   InternalKeyComparator internal_comparator;
   ExternalSstFileInfo file_info;
-  InternalKey ikey;
   std::string column_family_name;
   ColumnFamilyHandle* cfh;
   // If true, We will give the OS a hint that this file pages is not needed
@@ -65,9 +64,10 @@ struct SstFileWriter::Rep {
   std::string db_session_id;
   uint64_t next_file_number = 1;
 
+  ROCKSDB_FLATTEN
   Status AddImpl(const Slice& user_key, const Slice& value,
                  ValueType value_type) {
-    if (!builder) {
+    if (UNLIKELY(!builder)) {
       return Status::InvalidArgument("File is not opened");
     }
 
@@ -102,9 +102,10 @@ struct SstFileWriter::Rep {
 
     constexpr SequenceNumber sequence_number = 0;
 
-    ikey.Set(user_key, sequence_number, value_type);
+    char* ikey_buf = (char*)alloca(user_key.size_ + 8);
+    SetInternalKey(ikey_buf, user_key, sequence_number, value_type);
 
-    builder->Add(ikey.Encode(), value);
+    builder->Add({ikey_buf, user_key.size_ + 8}, value);
 
     // update file info
     file_info.num_entries++;
@@ -117,10 +118,11 @@ struct SstFileWriter::Rep {
   }
 
   Status Add(const Slice& user_key, const Slice& value, ValueType value_type) {
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (internal_comparator.user_comparator()->timestamp_size() != 0) {
       return Status::InvalidArgument("Timestamp size mismatch");
     }
-
+   #endif
     return AddImpl(user_key, value, value_type);
   }
 

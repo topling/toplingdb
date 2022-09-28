@@ -619,12 +619,15 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const size_t num_keys, const Slice* keys, PinnableSlice* values,
     Status* statuses, bool sorted_input) {
-#if 0
   MultiGetFromBatchAndDB(db, read_options, column_family, num_keys, keys,
-                         values, statuses, sorted_input, nullptr);
+                         values, statuses, sorted_input,
+                         read_options.read_callback);
+}
 
-#else // use Topling fiber async DBImpl::MultiGet
-
+void WriteBatchWithIndex::MultiGetFromBatchAndDB(
+    DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
+    const size_t num_keys, const Slice* keys, PinnableSlice* values,
+    Status* statuses, bool sorted_input, ReadCallback* callback) {
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = RepGetUserComparator(column_family);
   size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
@@ -674,8 +677,13 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
 
   // Did not find key in batch OR could not resolve Merges.  Try DB.
   DBImpl* rdb = static_cast_with_check<DBImpl>(db->GetRootDB());
+
+  // patch: read_options.read_callback is not thread-safe
+  ReadCallback* old_callback = read_options.read_callback;
+  read_options.read_callback = callback;
   rdb->MultiGet(read_options, column_family,
                 num_get_db, db_keys, db_values, db_statuses);
+  read_options.read_callback = old_callback;
 
   for (size_t index = 0; index < num_get_db; index++) {
     size_t full_index = merges[index].full_index;
@@ -707,102 +715,6 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
   TERARK_FAST_CLEAN(db_values, num_get_db, num_get_db);
   TERARK_FAST_CLEAN(db_keys, num_get_db, num_keys);
   TERARK_FAST_CLEAN(merges, num_get_db, num_keys);
-#endif
-}
-
-void WriteBatchWithIndex::MultiGetFromBatchAndDB(
-    DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
-    const size_t num_keys, const Slice* keys, PinnableSlice* values,
-    Status* statuses, bool sorted_input, ReadCallback* callback) {
-#if defined(TOPLINGDB_WITH_TIMESTAMP)
-  const Comparator* const ucmp = RepGetUserComparator(column_family);
-  size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
-  if (ts_sz > 0 && !read_options.timestamp) {
-    for (size_t i = 0; i < num_keys; ++i) {
-      statuses[i] = Status::InvalidArgument("Must specify timestamp");
-    }
-    return;
-  }
-#endif
-
-  WriteBatchWithIndexInternal wbwii(db, column_family);
-
-  autovector<KeyContext, MultiGetContext::MAX_BATCH_SIZE> key_context;
-  autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
-  // To hold merges from the write batch
-  autovector<std::pair<WBWIIteratorImpl::Result, MergeContext>,
-             MultiGetContext::MAX_BATCH_SIZE>
-      merges;
-  key_context.reserve(num_keys);
-  sorted_keys.reserve(num_keys);
-  merges.reserve(num_keys);
-  // Since the lifetime of the WriteBatch is the same as that of the transaction
-  // we cannot pin it as otherwise the returned value will not be available
-  // after the transaction finishes.
-  for (size_t i = 0; i < num_keys; ++i) {
-    MergeContext merge_context;
-    std::string batch_value;
-    Status* s = &statuses[i];
-    PinnableSlice* pinnable_val = &values[i];
-    pinnable_val->Reset();
-    auto result =
-        wbwii.GetFromBatch(this, keys[i], &merge_context, &batch_value, s);
-
-    if (result == WBWIIteratorImpl::kFound) {
-      *pinnable_val->GetSelf() = std::move(batch_value);
-      pinnable_val->PinSelf();
-      continue;
-    }
-    if (result == WBWIIteratorImpl::kDeleted) {
-      *s = Status::NotFound();
-      continue;
-    }
-    if (result == WBWIIteratorImpl::kError) {
-      continue;
-    }
-    assert(result == WBWIIteratorImpl::kMergeInProgress ||
-           result == WBWIIteratorImpl::kNotFound);
-    key_context.emplace_back(column_family, keys[i], &values[i],
-                             /*timestamp*/ nullptr, &statuses[i]);
-    merges.emplace_back(result, std::move(merge_context));
-  }
-
-  for (KeyContext& key : key_context) {
-    sorted_keys.emplace_back(&key);
-  }
-
-  // Did not find key in batch OR could not resolve Merges.  Try DB.
-  bool same_cf = true;
-  static_cast_with_check<DBImpl>(db->GetRootDB())
-      ->PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
-  static_cast_with_check<DBImpl>(db->GetRootDB())
-      ->MultiGetWithCallback(read_options, column_family, callback,
-                             &sorted_keys);
-
-  for (auto iter = key_context.begin(); iter != key_context.end(); ++iter) {
-    KeyContext& key = *iter;
-    if (key.s->ok() || key.s->IsNotFound()) {  // DB Get Succeeded
-      size_t index = iter - key_context.begin();
-      std::pair<WBWIIteratorImpl::Result, MergeContext>& merge_result =
-          merges[index];
-      if (merge_result.first == WBWIIteratorImpl::kMergeInProgress) {
-        std::string merged_value;
-        // Merge result from DB with merges in Batch
-        if (key.s->ok()) {
-          *key.s = wbwii.MergeKey(*key.key, iter->value, merge_result.second,
-                                  &merged_value);
-        } else {  // Key not present in db (s.IsNotFound())
-          *key.s = wbwii.MergeKey(*key.key, nullptr, merge_result.second,
-                                  &merged_value);
-        }
-        if (key.s->ok()) {
-          key.value->Reset();
-          *key.value->GetSelf() = std::move(merged_value);
-          key.value->PinSelf();
-        }
-      }
-    }
-  }
 }
 
 void WriteBatchWithIndex::SetSavePoint() { rep->write_batch.SetSavePoint(); }

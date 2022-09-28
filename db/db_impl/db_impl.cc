@@ -107,6 +107,7 @@
 #include "util/stop_watch.h"
 #include "util/string_util.h"
 #include "utilities/trace/replayer_impl.h"
+#include <terark/fstring.hpp>
 #include <terark/thread/fiber_pool.hpp>
 #include <terark/util/function.hpp>
 
@@ -2857,6 +2858,12 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
                   /*timestamp=*/nullptr, statuses, sorted_input);
 }
 
+#if defined(ROCKSDB_UNIT_TEST)
+static bool const g_MultiGetUseFiber = false;
+#else
+static bool const g_MultiGetUseFiber = terark::getEnvBool("MultiGetUseFiber", true);
+#endif
+
 void DBImpl::MultiGet(const ReadOptions& read_options,
                       ColumnFamilyHandle* column_family, const size_t num_keys,
                       const Slice* keys, PinnableSlice* values,
@@ -2871,7 +2878,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
       tracer_->MultiGet(num_keys, column_family, keys).PermitUncheckedError();
     }
   }
-#if defined(ROCKSDB_UNIT_TEST)
+if (UNLIKELY(!g_MultiGetUseFiber)) {
   autovector<KeyContext, MultiGetContext::MAX_BATCH_SIZE> key_context;
   autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
   key_context.reserve(num_keys);
@@ -2886,10 +2893,11 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
     sorted_keys[i] = &key_context[i];
   }
   bool same_cf = true;
+  auto callback = read_options.read_callback;
   PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
-  MultiGetWithCallback(read_options, column_family, nullptr, &sorted_keys);
+  MultiGetWithCallback(read_options, column_family, callback, &sorted_keys);
 
-#else // topling MultiGet with fiber
+} else { // topling MultiGet with fiber
 
   // copy from GetImpl with modify
 
@@ -2899,20 +2907,22 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
                                         *(read_options.timestamp),
                                         /*ts_for_read=*/true);
     if (!s.ok()) {
-      return s;
+      for (size_t i = 0; i < num_keys; ++i) statuses[i] = s;
+      return;
     }
   } else {
     const Status s = FailIfCfHasTs(column_family);
     if (!s.ok()) {
-      return s;
+      for (size_t i = 0; i < num_keys; ++i) statuses[i] = s;
+      return;
     }
   }
 
   // Clear the timestamps for returning results so that we can distinguish
   // between tombstone or key that has never been written
-  if (timestamp) {
+  if (timestamps) {
     for (size_t i = 0; i < num_keys; i++)
-      timestamp[i].clear();
+      timestamps[i].clear();
   }
 
   GetWithTimestampReadCallback read_cb(0);  // Will call Refresh
@@ -2932,11 +2942,56 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
 //  TEST_SYNC_POINT("DBImpl::MultiGet:2");
 
   SequenceNumber snapshot;
+  ReadCallback* callback = read_options.read_callback;
+// begin copied from GetImpl
   if (read_options.snapshot != nullptr) {
-    snapshot = static_cast<const SnapshotImpl*>(read_options.snapshot)->number_;
+    if (callback) {
+      // Already calculated based on read_options.snapshot
+      snapshot = callback->max_visible_seq();
+    } else {
+      snapshot =
+          reinterpret_cast<const SnapshotImpl*>(read_options.snapshot)->number_;
+    }
   } else {
+    // Note that the snapshot is assigned AFTER referencing the super
+    // version because otherwise a flush happening in between may compact away
+    // data for the snapshot, so the reader would see neither data that was be
+    // visible to the snapshot before compaction nor the newer data inserted
+    // afterwards.
     snapshot = GetLastPublishedSequence();
+    if (callback) {
+      // The unprep_seqs are not published for write unprepared, so it could be
+      // that max_visible_seq is larger. Seek to the std::max of the two.
+      // However, we still want our callback to contain the actual snapshot so
+      // that it can do the correct visibility filtering.
+      callback->Refresh(snapshot);
+
+      // Internally, WriteUnpreparedTxnReadCallback::Refresh would set
+      // max_visible_seq = max(max_visible_seq, snapshot)
+      //
+      // Currently, the commented out assert is broken by
+      // InvalidSnapshotReadCallback, but if write unprepared recovery followed
+      // the regular transaction flow, then this special read callback would not
+      // be needed.
+      //
+      // assert(callback->max_visible_seq() >= snapshot);
+      snapshot = callback->max_visible_seq();
+    }
   }
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+  // If timestamp is used, we use read callback to ensure <key,t,s> is returned
+  // only if t <= read_opts.timestamp and s <= snapshot.
+  // HACK: temporarily overwrite input struct field but restore
+  SaveAndRestore<ReadCallback*> restore_callback(&callback);
+  const Comparator* ucmp = cfh->GetComparator();
+  assert(ucmp);
+  if (ucmp->timestamp_size() > 0) {
+    assert(!callback);  // timestamp with callback is not supported
+    read_cb.Refresh(snapshot);
+    callback = &read_cb;
+  }
+#endif
+// end copied from GetImpl
 
   //TEST_SYNC_POINT("DBImpl::GetImpl:3");
   //TEST_SYNC_POINT("DBImpl::GetImpl:4");
@@ -2950,13 +3005,12 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
     ctx_vec[i].InitLookupKey(keys[i], snapshot, read_options.timestamp);
   }
   for (size_t i = 0; i < num_keys; i++) values[i].Reset();
-  for (size_t i = 0; i < num_keys; i++) statuses[i] = Status::OK();
+  for (size_t i = 0; i < num_keys; i++) statuses[i].SetAsOK();
 
   bool skip_memtable = (read_options.read_tier == kPersistedTier &&
                         has_unpersisted_data_.load(std::memory_order_relaxed));
 
   std::string* timestamp = nullptr;
-  ReadCallback* callback = nullptr;
   bool* is_blob_index = nullptr;
   if (!skip_memtable) {
     size_t hits = 0;
@@ -3033,8 +3087,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
   PERF_COUNTER_ADD(get_read_bytes, sum_size);
 
   ReturnAndCleanupSuperVersion(cfd, sv);
-
-#endif
+} // g_MultiGetUseFiber
 }
 
 void DBImpl::MultiGetWithCallback(
@@ -3629,7 +3682,7 @@ ArenaWrappedDBIter* DBImpl::NewIteratorImpl(const ReadOptions& read_options,
       env_, read_options, *cfd->ioptions(), sv->mutable_cf_options, sv->current,
       snapshot, sv->mutable_cf_options.max_sequential_skip_in_iterations,
       sv->version_number, read_callback, this, cfd, expose_blob_index,
-      read_options.snapshot != nullptr ? false : allow_refresh);
+      allow_refresh);
 
   InternalIterator* internal_iter = NewInternalIterator(
       db_iter->GetReadOptions(), cfd, sv, db_iter->GetArena(),
@@ -4323,6 +4376,9 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
   if (!options.include_memtables && !options.include_files) {
     return Status::InvalidArgument("Invalid options");
   }
+  if (UNLIKELY(n <= 0)) {
+    return Status::OK();
+  }
 
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = column_family->GetComparator();
@@ -4335,6 +4391,19 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
   auto cfd = cfh->cfd();
   SuperVersion* sv = GetAndRefSuperVersion(cfd);
   v = sv->current;
+
+  size_t len1 = range[0].start.size_;
+  size_t len2 = range[0].limit.size_;
+  for (int i = 1; i < n; i++) {
+    len1 = std::max(len1, range[i].start.size_);
+    len2 = std::max(len2, range[i].limit.size_);
+  }
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+  len1 += ts_sz;
+  len2 += ts_sz;
+#endif
+  char* k1 = (char*)alloca(len1 + 8);
+  char* k2 = (char*)alloca(len2 + 8);
 
   for (int i = 0; i < n; i++) {
     Slice start = range[i].start;
@@ -4354,17 +4423,19 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
     }
   #endif
     // Convert user_key into a corresponding internal key.
-    InternalKey k1(start, kMaxSequenceNumber, kValueTypeForSeek);
-    InternalKey k2(limit, kMaxSequenceNumber, kValueTypeForSeek);
+    SetInternalKey(k1, start, kMaxSequenceNumber, kValueTypeForSeek);
+    SetInternalKey(k2, limit, kMaxSequenceNumber, kValueTypeForSeek);
     sizes[i] = 0;
+    Slice ik1(k1, start.size_ + 8);
+    Slice ik2(k2, limit.size_ + 8);
     if (options.include_files) {
       sizes[i] += versions_->ApproximateSize(
-          options, v, k1.Encode(), k2.Encode(), /*start_level=*/0,
+          options, v, ik1, ik2, /*start_level=*/0,
           /*end_level=*/-1, TableReaderCaller::kUserApproximateSize);
     }
     if (options.include_memtables) {
-      sizes[i] += sv->mem->ApproximateStats(k1.Encode(), k2.Encode()).size;
-      sizes[i] += sv->imm->ApproximateStats(k1.Encode(), k2.Encode()).size;
+      sizes[i] += sv->mem->ApproximateStats(ik1, ik2).size;
+      sizes[i] += sv->imm->ApproximateStats(ik1, ik2).size;
     }
   }
 

@@ -33,6 +33,7 @@
 #include "rocksdb/wal_filter.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "util/compression.h"
+#include <terark/fstring.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -683,6 +684,9 @@ DBOptions* DBOptions::IncreaseParallelism(int total_threads) {
 
 #endif  // !ROCKSDB_LITE
 
+static const bool g_cache_sst_file_iter =
+    terark::getEnvBool("TOPLINGDB_CACHE_SST_FILE_ITER", false);
+
 ReadOptions::ReadOptions()
     : snapshot(nullptr),
       iterate_lower_bound(nullptr),
@@ -691,6 +695,7 @@ ReadOptions::ReadOptions()
       max_skippable_internal_keys(0),
       read_tier(kReadAllTier),
       just_check_key_exists(false),
+      cache_sst_file_iter(g_cache_sst_file_iter),
       verify_checksums(true),
       fill_cache(true),
       tailing(false),
@@ -718,6 +723,7 @@ ReadOptions::ReadOptions(bool cksum, bool cache)
       max_skippable_internal_keys(0),
       read_tier(kReadAllTier),
       just_check_key_exists(false),
+      cache_sst_file_iter(g_cache_sst_file_iter),
       verify_checksums(cksum),
       fill_cache(cache),
       tailing(false),

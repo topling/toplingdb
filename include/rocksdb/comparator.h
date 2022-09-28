@@ -151,6 +151,7 @@ class Comparator : public Customizable, public CompareInterface {
   bool IsForwardBytewise() const noexcept { return 0 == opt_cmp_type_; }
   bool IsReverseBytewise() const noexcept { return 1 == opt_cmp_type_; }
   bool IsBytewise() const noexcept { return opt_cmp_type_ <= 1; }
+  uint8_t opt_cmp_type() const noexcept { return opt_cmp_type_; }
 
  protected:
   uint16_t timestamp_size_;

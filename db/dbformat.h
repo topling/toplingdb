@@ -118,6 +118,16 @@ struct ParsedInternalKey {
   // u contains timestamp if user timestamp feature is enabled.
   ParsedInternalKey(const Slice& u, const SequenceNumber& seq, ValueType t)
       : user_key(u), sequence(seq), type(t) {}
+  ParsedInternalKey(const Slice& u, uint64_t seqvt)
+      : user_key(u), sequence(seqvt >> 8), type(ValueType(seqvt)) {}
+  explicit ParsedInternalKey(const Slice& ik)
+      : user_key(ik.data_, ik.size_ - 8) {
+    ROCKSDB_ASSERT_GE(ik.size_, 8);
+    uint64_t seqvt;
+    GetUnaligned((const uint64_t*)(ik.data_ + ik.size_ - 8), &seqvt);
+    sequence = seqvt >> 8;
+    type = ValueType(seqvt);
+  }
   std::string DebugString(bool log_err_key, bool hex) const;
 
   void clear() {
@@ -159,6 +169,28 @@ inline void UnPackSequenceAndType(uint64_t packed, uint64_t* seq,
 }
 
 EntryType GetEntryType(ValueType value_type);
+
+inline void SetInternalKey(std::string* result, Slice ukey, uint64_t seqvt) {
+  result->assign(ukey.data(), ukey.size());
+  PutFixed64(result, seqvt);
+}
+inline void SetInternalKey(std::string* result, Slice ukey,
+                           SequenceNumber seq, ValueType vt) {
+  result->assign(ukey.data(), ukey.size());
+  PutFixed64(result, PackSequenceAndType(seq, vt));
+}
+
+// user code should ensure buf size is at least ukey.size() + 8
+inline void SetInternalKey(char* buf, Slice ukey,
+                           SequenceNumber seq, ValueType vt) {
+  memcpy(buf, ukey.data_, ukey.size_);
+  auto value = PackSequenceAndType(seq, vt);
+  if (port::kLittleEndian) {
+    memcpy(buf + ukey.size_, &value, sizeof(value));
+  } else {
+    EncodeFixed64(buf + ukey.size_, value);
+  }
+}
 
 // Append the serialization of "key" to *result.
 extern void AppendInternalKey(std::string* result,
@@ -354,7 +386,7 @@ inline Status ParseInternalKey(const Slice& internal_key,
                                ParsedInternalKey* result, bool log_err_key) {
   const size_t n = internal_key.size();
 
-  if (n < kNumInternalBytes) {
+  if (UNLIKELY(n < kNumInternalBytes)) {
     return Status::Corruption("Corrupted Key: Internal Key too small. Size=" +
                               std::to_string(n) + ". ");
   }
@@ -366,7 +398,7 @@ inline Status ParseInternalKey(const Slice& internal_key,
   assert(result->type <= ValueType::kMaxValue);
   result->user_key = Slice(internal_key.data(), n - kNumInternalBytes);
 
-  if (IsExtendedValueType(result->type)) {
+  if (LIKELY(IsExtendedValueType(result->type))) {
     return Status::OK();
   } else {
     return Status::Corruption("Corrupted Key",
@@ -580,7 +612,7 @@ class IterKey {
   const char* key_;
   size_t key_size_;
   size_t buf_size_;
-  char space_[32];  // Avoid allocation for short keys
+  char space_[39];  // Avoid allocation for short keys
   bool is_user_key_;
 
   Slice SetKeyImpl(const Slice& key, bool copy) {

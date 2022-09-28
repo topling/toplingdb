@@ -21,12 +21,12 @@ class PerfStepTimer {
       Statistics* statistics = nullptr, uint32_t ticker_type = UINT32_MAX,
       uint16_t histogram_type = UINT16_MAX)
       : perf_counter_enabled_(perf_level >= enable_level),
-#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
         use_cpu_time_(use_cpu_time),
 #endif
         histogram_type_(histogram_type),
         ticker_type_(ticker_type),
-#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
         clock_((perf_counter_enabled_ || statistics != nullptr)
                    ? (clock ? clock : SystemClock::Default().get())
                    : nullptr),
@@ -74,9 +74,9 @@ class PerfStepTimer {
 
  private:
   uint64_t time_now() {
-   #if defined(CLOCK_MONOTONIC_RAW) && !defined(ROCKSDB_UNIT_TEST)
+   #if defined(CLOCK_MONOTONIC) && !defined(ROCKSDB_UNIT_TEST)
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000000000 + ts.tv_nsec;
    #else
     if (!use_cpu_time_) {
@@ -88,12 +88,12 @@ class PerfStepTimer {
   }
 
   const bool perf_counter_enabled_;
-#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
   const bool use_cpu_time_;
 #endif
   uint16_t histogram_type_;
   uint32_t ticker_type_;
-#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
   SystemClock* const clock_;
 #endif
   uint64_t start_;

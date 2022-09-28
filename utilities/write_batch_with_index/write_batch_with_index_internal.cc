@@ -37,6 +37,7 @@ BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
   wbwii_.reset(new WriteBatchWithIndexInternal(column_family));
 }
 
+ROCKSDB_FLATTEN
 bool BaseDeltaIterator::Valid() const {
   return status_.ok() ? (current_at_base_ ? BaseValid() : DeltaValid()) : false;
 }
@@ -70,12 +71,12 @@ void BaseDeltaIterator::SeekForPrev(const Slice& k) {
 }
 
 void BaseDeltaIterator::Next() {
-  if (!Valid()) {
+  if (UNLIKELY(!Valid())) {
     status_ = Status::NotSupported("Next() on invalid iterator");
     return;
   }
 
-  if (!forward_) {
+  if (UNLIKELY(!forward_)) {
     // Need to change direction
     // if our direction was backward and we're not equal, we have two states:
     // * both iterators are valid: we're already in a good state (current
@@ -107,12 +108,12 @@ void BaseDeltaIterator::Next() {
 }
 
 void BaseDeltaIterator::Prev() {
-  if (!Valid()) {
+  if (UNLIKELY(!Valid())) {
     status_ = Status::NotSupported("Prev() on invalid iterator");
     return;
   }
 
-  if (forward_) {
+  if (UNLIKELY(forward_)) {
     // Need to change direction
     // if our direction was backward and we're not equal, we have two states:
     // * both iterators are valid: we're already in a good state (current
@@ -186,6 +187,10 @@ Status BaseDeltaIterator::status() const {
     return base_iterator_->status();
   }
   return delta_iterator_->status();
+}
+
+Status BaseDeltaIterator::Refresh(const Snapshot* snap) {
+  return base_iterator_->Refresh(snap);
 }
 
 void BaseDeltaIterator::Invalidate(Status s) { status_ = s; }
@@ -277,7 +282,7 @@ bool BaseDeltaIterator::DeltaValid() const { return delta_iterator_->Valid(); }
 void BaseDeltaIterator::UpdateCurrent() {
 // Suppress false positive clang analyzer warnings.
 #ifndef __clang_analyzer__
-  status_ = Status::OK();
+  status_.SetAsOK();
   while (true) {
     auto delta_result = WBWIIteratorImpl::kNotFound;
     WriteEntry delta_entry;
@@ -694,7 +699,7 @@ Status WriteBatchWithIndexInternal::MergeKey(const Slice& key,
 WBWIIteratorImpl::Result WriteBatchWithIndexInternal::GetFromBatch(
     WriteBatchWithIndex* batch, const Slice& key, MergeContext* context,
     std::string* value, Status* s) {
-  *s = Status::OK();
+  s->SetAsOK();
 
 #if 0
   std::unique_ptr<WBWIIteratorImpl> iter(

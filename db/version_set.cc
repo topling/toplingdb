@@ -1171,9 +1171,6 @@ class LevelIterator final : public InternalIterator {
       if (file_iter_cache_) {
         file_iter_cache_[file_index_] = iter;
       }
-      else if (pinned_iters_mgr_) {
-        iter->SetPinnedItersMgr(pinned_iters_mgr_);
-      }
     }
     return iter;
   }
@@ -1441,6 +1438,10 @@ void LevelIterator::SkipEmptyFileBackward() {
 }
 
 void LevelIterator::SetFileIterator(InternalIterator* iter) {
+  if (pinned_iters_mgr_ && iter && !file_iter_cache_) {
+    iter->SetPinnedItersMgr(pinned_iters_mgr_);
+  }
+
   InternalIterator* old_iter = file_iter_.Set(iter);
 
   // Update the read pattern for PrefetchBuffer.

@@ -1276,12 +1276,12 @@ void LevelIterator::Seek(const Slice& target) {
     TEST_SYNC_POINT("LevelIterator::Seek:BeforeFindFile");
     size_t new_file_index = FindFile(icomparator_, *flevel_, target);
     if (UNLIKELY(new_file_index >= flevel_->num_files)) {
-      file_iter_.Set(nullptr);
+      SetFileIterator(nullptr);
       return;
     }
     if (read_options_.iterate_upper_bound != nullptr &&
               FileIsOutOfUpperBound(new_file_index)) {
-      file_iter_.Set(nullptr);
+      SetFileIterator(nullptr);
       return;
     }
     InitFileIterator(new_file_index);

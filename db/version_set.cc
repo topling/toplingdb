@@ -1373,7 +1373,7 @@ void LevelIterator::Next() {
 bool LevelIterator::NextAndGetResult(IterateResult* result) {
   assert(Valid());
   bool is_valid = file_iter_.NextAndGetResult(result);
-  if (!is_valid) {
+  if (UNLIKELY(!is_valid)) {
     is_next_read_sequential_ = true;
     SkipEmptyFileForward();
     is_next_read_sequential_ = false;

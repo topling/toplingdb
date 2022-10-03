@@ -321,6 +321,11 @@ class InternalKeyComparator
   // value `kDisableGlobalSequenceNumber`.
   int Compare(const Slice& a, SequenceNumber a_global_seqno, const Slice& b,
               SequenceNumber b_global_seqno) const;
+
+  uint8_t opt_cmp_type() const noexcept { return user_comparator_.opt_cmp_type(); }
+  bool IsForwardBytewise() const noexcept { return 0 == opt_cmp_type(); }
+  bool IsReverseBytewise() const noexcept { return 1 == opt_cmp_type(); }
+  bool IsBytewise() const noexcept { return opt_cmp_type() <= 1; }
 };
 
 // The class represent the internal key in encoded form.

@@ -72,6 +72,7 @@ struct SstFileWriter::Rep {
     }
 
     if (sst_support_auto_sort) {
+      assert(internal_comparator.IsBytewise());
       // now auto sort just support bytewise comparator
       // we use Slice default compare to omit comparator virtual call
       if (file_info.num_entries == 0) {

@@ -221,6 +221,10 @@ class TableBuilder {
   // Returns table properties
   virtual TableProperties GetTableProperties() const = 0;
 
+  virtual Status GetBoundaryUserKey(std::string*, std::string*) const {
+    return Status::NotSupported("Only supported by auto sort sst");
+  }
+
   // Return file checksum
   virtual std::string GetFileChecksum() const = 0;
 

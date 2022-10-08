@@ -323,9 +323,9 @@ class InternalKeyComparator
               SequenceNumber b_global_seqno) const;
 
   uint8_t opt_cmp_type() const noexcept { return user_comparator_.opt_cmp_type(); }
-  bool IsForwardBytewise() const noexcept { return 0 == opt_cmp_type(); }
-  bool IsReverseBytewise() const noexcept { return 1 == opt_cmp_type(); }
-  bool IsBytewise() const noexcept { return opt_cmp_type() <= 1; }
+  bool IsForwardBytewise() const noexcept { return user_comparator_.IsForwardBytewise(); }
+  bool IsReverseBytewise() const noexcept { return user_comparator_.IsReverseBytewise(); }
+  bool IsBytewise() const noexcept { return user_comparator_.IsBytewise(); }
 };
 
 // The class represent the internal key in encoded form.

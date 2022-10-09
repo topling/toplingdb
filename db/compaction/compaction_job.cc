@@ -1030,6 +1030,10 @@ catch (const Status& s) {
 
 Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   assert(compact_);
+#if 0
+  // this fails unit test:
+  // DBCompactionTestBlobError/DBCompactionTestBlobError.CompactionError/1
+  // and does not help for error checking
   if (!compact_->status.ok()) { // caller does not check retval of Run()
     ColumnFamilyData* cfd = compact_->compaction->column_family_data();
     assert(cfd);
@@ -1040,6 +1044,7 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
     CleanupCompaction();
     return s;
   }
+#endif
 
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_INSTALL);

@@ -6703,7 +6703,7 @@ TEST_P(DBCompactionTestBlobError, CompactionError) {
   } else {
     // SST file writing succeeded; blob file writing failed (during Finish)
     ASSERT_EQ(compaction_stats[1].bytes_read_blob, 0);
-    //ASSERT_GT(compaction_stats[1].bytes_written, 0); // ToplingDB, known issue
+    ASSERT_GT(compaction_stats[1].bytes_written, 0);
     ASSERT_EQ(compaction_stats[1].bytes_written_blob, 0);
     ASSERT_EQ(compaction_stats[1].num_output_files, 1);
     ASSERT_EQ(compaction_stats[1].num_output_files_blob, 0);

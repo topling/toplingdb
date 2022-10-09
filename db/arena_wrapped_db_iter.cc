@@ -77,13 +77,13 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap) {
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:2");
   while (true) {
     if (sv_number_ != cur_sv_number) {
+      SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
       Env* env = db_iter_->env();
       db_iter_->~DBIter();
       arena_.~Arena();
       new (&arena_) Arena();
 
       SuperVersion* sv = cfd_->GetReferencedSuperVersion(db_impl_);
-      SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
       if (read_callback_) {
         read_callback_->Refresh(latest_seq);
       }

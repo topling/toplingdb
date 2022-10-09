@@ -1105,9 +1105,6 @@ class LevelIterator final : public InternalIterator {
 
   void SetPinnedItersMgr(PinnedIteratorsManager* pinned_iters_mgr) override {
     pinned_iters_mgr_ = pinned_iters_mgr;
-    if (file_iter_cache_) {
-      return;
-    }
     if (file_iter_.iter()) {
       file_iter_.SetPinnedItersMgr(pinned_iters_mgr);
     }
@@ -1438,7 +1435,7 @@ void LevelIterator::SkipEmptyFileBackward() {
 }
 
 void LevelIterator::SetFileIterator(InternalIterator* iter) {
-  if (pinned_iters_mgr_ && iter && !file_iter_cache_) {
+  if (pinned_iters_mgr_ && iter) {
     iter->SetPinnedItersMgr(pinned_iters_mgr_);
   }
 

@@ -2875,7 +2875,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   }
 
   RecordTick(stats_, MEMTABLE_MISS, memtab_miss);
-  //PERF_TIMER_GUARD(get_post_process_time);
+  PERF_TIMER_GUARD(get_post_process_time);
   size_t sum_size = 0;
   for (size_t i = 0; i < num_keys; i++) {
     size_t size = values[i].size();

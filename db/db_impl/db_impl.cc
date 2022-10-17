@@ -2874,17 +2874,25 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
     gt_fiber_pool.unchecked_yield();
   }
 
+  // Post processing (decrement reference counts and record statistics)
   RecordTick(stats_, MEMTABLE_MISS, memtab_miss);
   PERF_TIMER_GUARD(get_post_process_time);
-  size_t sum_size = 0;
-  for (size_t i = 0; i < num_keys; i++) {
-    size_t size = values[i].size();
-    sum_size += size;
-    RecordInHistogram(stats_, BYTES_PER_READ, size);
+  size_t num_found = 0;
+  uint64_t bytes_read = 0;
+  for (size_t i = 0; i < num_keys; ++i) {
+    if (statuses[i].ok()) {
+      bytes_read += values[i].size();
+      num_found++;
+    }
   }
-  RecordTick(stats_, NUMBER_KEYS_READ, num_keys);
-  RecordTick(stats_, BYTES_READ, sum_size);
-  PERF_COUNTER_ADD(get_read_bytes, sum_size);
+  RecordTick(stats_, NUMBER_MULTIGET_CALLS);
+  RecordTick(stats_, NUMBER_MULTIGET_KEYS_READ, num_keys);
+  RecordTick(stats_, NUMBER_MULTIGET_KEYS_FOUND, num_found);
+  RecordTick(stats_, NUMBER_MULTIGET_BYTES_READ, bytes_read);
+  RecordInHistogram(stats_, BYTES_PER_MULTIGET, bytes_read);
+  RecordInHistogram(stats_, NUMBER_PER_MULTIGET, num_keys);
+  PERF_COUNTER_ADD(multiget_read_bytes, bytes_read);
+  PERF_TIMER_STOP(get_post_process_time);
 
   ReturnAndCleanupSuperVersion(cfd, sv);
 } // g_MultiGetUseFiber

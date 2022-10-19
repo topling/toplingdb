@@ -2252,6 +2252,7 @@ install-shared: install-headers $(SHARED4)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED2)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED1)
+	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/* $(INSTALL_LIBDIR)
 
 # install static by default + install shared if it exists
 install: install-static

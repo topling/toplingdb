@@ -406,11 +406,11 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
             if (timestamp_lb_) {
               saved_key_.SetInternalKey(ikey_);
 
-              if (ikey_.type == kTypeBlobIndex) {
+              if (UNLIKELY(ikey_.type == kTypeBlobIndex)) {
                 if (!SetBlobValueIfNeeded(ikey_.user_key, iter_.value())) {
                   return false;
                 }
-              } else if (ikey_.type == kTypeWideColumnEntity) {
+              } else if (UNLIKELY(ikey_.type == kTypeWideColumnEntity)) {
                 if (!SetWideColumnValueIfNeeded(iter_.value())) {
                   return false;
                 }
@@ -431,11 +431,11 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                 reseek_done = false;
                 PERF_COUNTER_ADD(internal_delete_skipped_count, 1);
               } else {
-                if (ikey_.type == kTypeBlobIndex) {
+                if (UNLIKELY(ikey_.type == kTypeBlobIndex)) {
                   if (!SetBlobValueIfNeeded(ikey_.user_key, iter_.value())) {
                     return false;
                   }
-                } else if (ikey_.type == kTypeWideColumnEntity) {
+                } else if (UNLIKELY(ikey_.type == kTypeWideColumnEntity)) {
                   if (!SetWideColumnValueIfNeeded(iter_.value())) {
                     return false;
                   }

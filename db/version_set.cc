@@ -187,12 +187,12 @@ int FindFileInRange(const InternalKeyComparator& icmp,
     const Slice& key,
     uint32_t left,
     uint32_t right) {
-  if (IsForwardBytewiseComparator(icmp.user_comparator())) {
+  if (icmp.IsForwardBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     BytewiseCompareInternalKey cmp;
     return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
   }
-  else if (IsReverseBytewiseComparator(icmp.user_comparator())) {
+  else if (icmp.IsReverseBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     RevBytewiseCompareInternalKey cmp;
     return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
@@ -1166,9 +1166,6 @@ class LevelIterator final : public InternalIterator {
 
   void SetPinnedItersMgr(PinnedIteratorsManager* pinned_iters_mgr) override {
     pinned_iters_mgr_ = pinned_iters_mgr;
-    if (file_iter_cache_) {
-      return;
-    }
     if (file_iter_.iter()) {
       file_iter_.SetPinnedItersMgr(pinned_iters_mgr);
     }
@@ -1231,9 +1228,6 @@ class LevelIterator final : public InternalIterator {
         largest_compaction_key, allow_unprepared_value_);
       if (file_iter_cache_) {
         file_iter_cache_[file_index_] = iter;
-      }
-      else if (pinned_iters_mgr_) {
-        iter->SetPinnedItersMgr(pinned_iters_mgr_);
       }
     }
     return iter;
@@ -1340,12 +1334,12 @@ void LevelIterator::Seek(const Slice& target) {
     TEST_SYNC_POINT("LevelIterator::Seek:BeforeFindFile");
     size_t new_file_index = FindFile(icomparator_, *flevel_, target);
     if (UNLIKELY(new_file_index >= flevel_->num_files)) {
-      file_iter_.Set(nullptr);
+      SetFileIterator(nullptr);
       return;
     }
     if (read_options_.iterate_upper_bound != nullptr &&
               FileIsOutOfUpperBound(new_file_index)) {
-      file_iter_.Set(nullptr);
+      SetFileIterator(nullptr);
       return;
     }
     InitFileIterator(new_file_index);
@@ -1437,7 +1431,7 @@ void LevelIterator::Next() {
 bool LevelIterator::NextAndGetResult(IterateResult* result) {
   assert(Valid());
   bool is_valid = file_iter_.NextAndGetResult(result);
-  if (!is_valid) {
+  if (UNLIKELY(!is_valid)) {
     is_next_read_sequential_ = true;
     SkipEmptyFileForward();
     is_next_read_sequential_ = false;
@@ -1502,6 +1496,10 @@ void LevelIterator::SkipEmptyFileBackward() {
 }
 
 void LevelIterator::SetFileIterator(InternalIterator* iter) {
+  if (pinned_iters_mgr_ && iter) {
+    iter->SetPinnedItersMgr(pinned_iters_mgr_);
+  }
+
   InternalIterator* old_iter = file_iter_.Set(iter);
 
   // Update the read pattern for PrefetchBuffer.
@@ -6191,12 +6189,12 @@ uint64_t VersionSet::ApproximateSize(const SizeApproximationOptions& options,
                                      const Slice& end, int start_level,
                                      int end_level, TableReaderCaller caller) {
   const auto& icmp = v->cfd_->internal_comparator();
-  if (IsForwardBytewiseComparator(icmp.user_comparator())) {
+  if (icmp.IsForwardBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     BytewiseCompareInternalKey cmp;
     return ApproximateSizeTmpl(options, v, start, end, start_level, end_level, caller, cmp);
   }
-  else if (IsReverseBytewiseComparator(icmp.user_comparator())) {
+  else if (icmp.IsReverseBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     RevBytewiseCompareInternalKey cmp;
     return ApproximateSizeTmpl(options, v, start, end, start_level, end_level, caller, cmp);
@@ -6392,12 +6390,12 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   // pre-condition
   assert(v);
   const auto& icmp = v->cfd_->internal_comparator();
-  if (IsForwardBytewiseComparator(icmp.user_comparator())) {
+  if (icmp.IsForwardBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     BytewiseCompareInternalKey cmp;
     return ApproximateSizeTmpl(v, f, start, end, caller, cmp);
   }
-  else if (IsReverseBytewiseComparator(icmp.user_comparator())) {
+  else if (icmp.IsReverseBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     RevBytewiseCompareInternalKey cmp;
     return ApproximateSizeTmpl(v, f, start, end, caller, cmp);

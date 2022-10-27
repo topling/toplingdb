@@ -19,10 +19,11 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+static constexpr size_t KEEP_SNAPSHOT = 16;
+
 inline static
 SequenceNumber GetSeqNum(const DBImpl* db, const Snapshot* s, const DBIter* i) {
-  auto KEEP_SNAPSHOT = reinterpret_cast<const class Snapshot*>(16);
-  if (s == KEEP_SNAPSHOT)
+  if (size_t(s) == KEEP_SNAPSHOT)
     return i->get_sequence();
   else if (s)
     //return static_cast_with_check<const SnapshotImpl>(s)->number_;
@@ -77,13 +78,13 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap) {
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:2");
   while (true) {
     if (sv_number_ != cur_sv_number) {
+      SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
       Env* env = db_iter_->env();
       db_iter_->~DBIter();
       arena_.~Arena();
       new (&arena_) Arena();
 
       SuperVersion* sv = cfd_->GetReferencedSuperVersion(db_impl_);
-      SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
       if (read_callback_) {
         read_callback_->Refresh(latest_seq);
       }
@@ -127,6 +128,9 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap) {
       }
       break;
     }
+  }
+  if (size_t(snap) > KEEP_SNAPSHOT) {
+    this->read_options_.snapshot = snap;
   }
   return Status::OK();
 }

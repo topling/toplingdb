@@ -571,7 +571,7 @@ InternalIterator* NewMergingIterator(const InternalKeyComparator* cmp,
     return NewEmptyInternalIterator<Slice>(arena);
   } else if (n == 1) {
     return list[0];
-  } else if (IsForwardBytewiseComparator(cmp->user_comparator())) {
+  } else if (cmp->IsForwardBytewise()) {
     using MergingIterInst =
         MergingIterTmpl<MinInlineBytewiseComp, MaxInlineBytewiseComp>;
     if (arena == nullptr) {
@@ -580,8 +580,7 @@ InternalIterator* NewMergingIterator(const InternalKeyComparator* cmp,
       auto mem = arena->AllocateAligned(sizeof(MergingIterInst));
       return new (mem) MergingIterInst(cmp, list, n, true, prefix_seek_mode);
     }
-  } else if (IsBytewiseComparator(
-                 cmp->user_comparator())) {  // must is rev bytewise
+  } else if (cmp->IsReverseBytewise()) {
     using MergingIterInst =
         MergingIterTmpl<MinInlineRevBytewiseComp, MaxInlineRevBytewiseComp>;
     if (arena == nullptr) {

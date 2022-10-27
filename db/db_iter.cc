@@ -122,6 +122,7 @@ Status DBIter::GetProperty(std::string prop_name, std::string* prop) {
 
 __always_inline
 bool DBIter::ParseKey(ParsedInternalKey* ikey) {
+#if 0
   Status s = ParseInternalKey(iter_.key(), ikey, false /* log_err_key */);
   if (UNLIKELY(!s.ok())) {
     status_ = Status::Corruption("In DBIter: ", s.getState());
@@ -131,6 +132,10 @@ bool DBIter::ParseKey(ParsedInternalKey* ikey) {
   } else {
     return true;
   }
+#else
+  ikey->FastParseInternalKey(iter_.key());
+  return true;
+#endif
 }
 
 void DBIter::Next() {
@@ -425,11 +430,11 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
             if (timestamp_lb_) {
               saved_key_.SetInternalKey(ikey_);
 
-              if (ikey_.type == kTypeBlobIndex) {
+              if (UNLIKELY(ikey_.type == kTypeBlobIndex)) {
                 if (!SetBlobValueIfNeeded(ikey_.user_key, iter_.value())) {
                   return false;
                 }
-              } else if (ikey_.type == kTypeWideColumnEntity) {
+              } else if (UNLIKELY(ikey_.type == kTypeWideColumnEntity)) {
                 if (!SetWideColumnValueIfNeeded(iter_.value())) {
                   return false;
                 }
@@ -450,11 +455,11 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                 reseek_done = false;
                 PERF_COUNTER_ADD(internal_delete_skipped_count, 1);
               } else {
-                if (ikey_.type == kTypeBlobIndex) {
+                if (UNLIKELY(ikey_.type == kTypeBlobIndex)) {
                   if (!SetBlobValueIfNeeded(ikey_.user_key, iter_.value())) {
                     return false;
                   }
-                } else if (ikey_.type == kTypeWideColumnEntity) {
+                } else if (UNLIKELY(ikey_.type == kTypeWideColumnEntity)) {
                   if (!SetWideColumnValueIfNeeded(iter_.value())) {
                     return false;
                   }

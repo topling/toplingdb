@@ -72,6 +72,8 @@ struct SstFileWriter::Rep {
     }
 
     if (sst_support_auto_sort) {
+     #if 0 // now we use GetBoundaryUserKey after Finish
+      assert(internal_comparator.IsBytewise());
       // now auto sort just support bytewise comparator
       // we use Slice default compare to omit comparator virtual call
       if (file_info.num_entries == 0) {
@@ -84,6 +86,7 @@ struct SstFileWriter::Rep {
         else if (user_key < file_info.smallest_key)
           file_info.smallest_key.assign(user_key.data(), user_key.size());
       }
+     #endif
     }
     else if (file_info.num_entries == 0) {
       file_info.smallest_key.assign(user_key.data(), user_key.size());
@@ -386,6 +389,12 @@ Status SstFileWriter::Finish(ExternalSstFileInfo* file_info) {
     if (s.ok()) {
       s = r->file_writer->Close();
     }
+  }
+  if (s.ok() && rep_->sst_support_auto_sort) {
+    // this reduced comparing user keys with smallest_key & largest_key.
+    auto& fi = r->file_info;
+    s = r->builder->GetBoundaryUserKey(&fi.smallest_key, &fi.largest_key);
+    ROCKSDB_VERIFY_F(s.ok(), "GetBoundaryUserKey = %s", s.ToString().c_str());
   }
   if (s.ok()) {
     r->file_info.file_checksum = r->file_writer->GetFileChecksum();

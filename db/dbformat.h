@@ -128,6 +128,16 @@ struct ParsedInternalKey {
     sequence = seqvt >> 8;
     type = ValueType(seqvt);
   }
+  // same as cons ParsedInternalKey(const Slice& ik)
+  inline void FastParseInternalKey(const Slice& ik) {
+    user_key.data_ = ik.data_;
+    user_key.size_ = ik.size_ - 8;
+    ROCKSDB_ASSERT_GE(ik.size_, 8);
+    uint64_t seqvt;
+    GetUnaligned((const uint64_t*)(ik.data_ + ik.size_ - 8), &seqvt);
+    sequence = seqvt >> 8;
+    type = ValueType(seqvt);
+  }
   std::string DebugString(bool log_err_key, bool hex) const;
 
   void clear() {
@@ -311,6 +321,11 @@ class InternalKeyComparator
   // value `kDisableGlobalSequenceNumber`.
   int Compare(const Slice& a, SequenceNumber a_global_seqno, const Slice& b,
               SequenceNumber b_global_seqno) const;
+
+  uint8_t opt_cmp_type() const noexcept { return user_comparator_.opt_cmp_type(); }
+  bool IsForwardBytewise() const noexcept { return user_comparator_.IsForwardBytewise(); }
+  bool IsReverseBytewise() const noexcept { return user_comparator_.IsReverseBytewise(); }
+  bool IsBytewise() const noexcept { return user_comparator_.IsBytewise(); }
 };
 
 // The class represent the internal key in encoded form.

@@ -41,7 +41,7 @@ class SecondaryCache;
 
 extern const bool kDefaultToAdaptiveMutex;
 
-enum CacheMetadataChargePolicy {
+ROCKSDB_ENUM_PLAIN(CacheMetadataChargePolicy, int,
   // Only the `charge` of each entry inserted into a Cache counts against
   // the `capacity`
   kDontChargeCacheMetadata,
@@ -49,7 +49,7 @@ enum CacheMetadataChargePolicy {
   // Cache (in bytes) also count against `capacity`. These space overheads
   // are for supporting fast Lookup and managing the lifetime of entries.
   kFullChargeCacheMetadata
-};
+);
 const CacheMetadataChargePolicy kDefaultCacheMetadataChargePolicy =
     kFullChargeCacheMetadata;
 

@@ -59,6 +59,8 @@ class TestRandomAccessFile : public RandomAccessFile {
 
   Status MultiRead(ReadRequest* reqs, size_t num_reqs) override;
 
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+
  private:
   std::unique_ptr<RandomAccessFile> target_;
   FaultInjectionTestEnv* env_;
@@ -96,6 +98,7 @@ class TestWritableFile : public WritableFile {
   virtual bool use_direct_io() const override {
     return target_->use_direct_io();
   };
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
  private:
   FileState state_;

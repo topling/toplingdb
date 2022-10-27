@@ -9,7 +9,9 @@
 #include "port/sys_time.h"
 
 namespace ROCKSDB_NAMESPACE {
-StderrLogger::~StderrLogger() {}
+StderrLogger::~StderrLogger() {
+  closed_ = true;
+}
 
 void StderrLogger::Logv(const char* format, va_list ap) {
   const uint64_t thread_id = Env::Default()->GetThreadID();

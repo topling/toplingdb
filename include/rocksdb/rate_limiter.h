@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "rocksdb/enum_reflection.h"
 #include "rocksdb/env.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
@@ -20,16 +21,15 @@ namespace ROCKSDB_NAMESPACE {
 // including data loss, unreported corruption, deadlocks, and more.
 class RateLimiter {
  public:
-  enum class OpType {
+  ROCKSDB_ENUM_CLASS_INCLASS(OpType, int,
     kRead,
-    kWrite,
-  };
-
-  enum class Mode {
+    kWrite
+  );
+  ROCKSDB_ENUM_CLASS_INCLASS(Mode, int,
     kReadsOnly,
     kWritesOnly,
-    kAllIo,
-  };
+    kAllIo
+  );
 
   // For API compatibility, default to rate-limiting writes only.
   explicit RateLimiter(Mode mode = Mode::kWritesOnly) : mode_(mode) {}

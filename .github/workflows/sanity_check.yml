@@ -37,8 +37,8 @@ jobs:
       with:
         args: https://raw.githubusercontent.com/llvm/llvm-project/release/12.x/clang/tools/clang-format/clang-format-diff.py
 
-    - name: Check format
-      run: VERBOSE_CHECK=1 make check-format
+        #- name: Check format
+        #run: VERBOSE_CHECK=1 make check-format
 
     - name: Compare buckify output
       run: make check-buck-targets

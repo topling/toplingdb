@@ -130,17 +130,18 @@ class BinaryHeap {
     T v = std::move(data_[index]);
 
     size_t picked_child = std::numeric_limits<size_t>::max();
+    size_t heap_size = data_.size();
     while (1) {
       const size_t left_child = get_left(index);
-      if (get_left(index) >= data_.size()) {
+      if (left_child >= heap_size) {
         break;
       }
       const size_t right_child = left_child + 1;
       assert(right_child == get_right(index));
       picked_child = left_child;
-      if (index == 0 && root_cmp_cache_ < data_.size()) {
+      if (index == 0 && root_cmp_cache_ < heap_size) {
         picked_child = root_cmp_cache_;
-      } else if (right_child < data_.size() &&
+      } else if (right_child < heap_size &&
                  cmp_(data_[left_child], data_[right_child])) {
         picked_child = right_child;
       }
@@ -166,7 +167,7 @@ class BinaryHeap {
   }
 
   Compare cmp_;
-  autovector<T> data_;
+  autovector<T, 16> data_;
   // Used to reduce number of cmp_ calls in downheap()
   size_t root_cmp_cache_ = std::numeric_limits<size_t>::max();
 };

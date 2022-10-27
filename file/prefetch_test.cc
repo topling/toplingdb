@@ -1633,7 +1633,8 @@ TEST_P(PrefetchTest, ReadAsyncWithPosixFS) {
           ASSERT_EQ(async_read_bytes.count, 0);
           ASSERT_EQ(get_perf_context()->number_async_seek, 0);
         }
-        ASSERT_GT(prefetched_bytes_discarded.count, 0);
+        if (!ro.cache_sst_file_iter)
+          ASSERT_GT(prefetched_bytes_discarded.count, 0);
       }
     }
   }

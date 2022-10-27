@@ -234,12 +234,30 @@ IOStatus WinMmapReadableFile::Read(uint64_t offset, size_t n,
   return s;
 }
 
+Status WinMmapReadableFile::FsRead(uint64_t offset, size_t len, void* buf)
+const {
+  size_t bytes_read = 0;
+  Status s = pread(this, (char*)buf, len, offset, bytes_read);
+  if (bytes_read != len) {
+    s = IOError(
+        "PosixMmapReadableFile::FsRead(): pread(\"file = " + filename_
+            + "\", offset = " + ToString(offset)
+            + ", len = " + ToString(len) + ") = " + ToString(bytes_read),
+        errno);
+  }
+  return s;
+}
+
 IOStatus WinMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
   return IOStatus::OK();
 }
 
 size_t WinMmapReadableFile::GetUniqueId(char* id, size_t max_size) const {
   return GetUniqueIdFromFile(hFile_, id, max_size);
+}
+
+intptr_t WinMmapReadableFile::FileDescriptor() const {
+  return (intptr_t)this->hFile_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -985,6 +1003,14 @@ IOStatus WinWritableFile::Allocate(uint64_t offset, uint64_t len,
 
 size_t WinWritableFile::GetUniqueId(char* id, size_t max_size) const {
   return GetUniqueIdFromFile(GetFileHandle(), id, max_size);
+}
+
+intptr_t WinWritableFile::FileDescriptor() const {
+  return (intptr_t)this->hFile_;
+}
+
+void WinWritableFile::SetFileSize(uint64_t fsize) {
+  next_write_offset_ = fsize;
 }
 
 /////////////////////////////////////////////////////////////////////////

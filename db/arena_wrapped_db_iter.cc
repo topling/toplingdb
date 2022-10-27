@@ -8,6 +8,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/arena_wrapped_db_iter.h"
+#include "db/snapshot_impl.h"
 #include "memory/arena.h"
 #include "rocksdb/env.h"
 #include "rocksdb/iterator.h"
@@ -17,6 +18,19 @@
 #include "util/user_comparator_wrapper.h"
 
 namespace ROCKSDB_NAMESPACE {
+
+static constexpr size_t KEEP_SNAPSHOT = 16;
+
+inline static
+SequenceNumber GetSeqNum(const DBImpl* db, const Snapshot* s, const DBIter* i) {
+  if (size_t(s) == KEEP_SNAPSHOT)
+    return i->get_sequence();
+  else if (s)
+    //return static_cast_with_check<const SnapshotImpl>(s)->number_;
+    return s->GetSequenceNumber();
+  else
+    return db->GetLatestSequenceNumber();
+}
 
 Status ArenaWrappedDBIter::GetProperty(std::string prop_name,
                                        std::string* prop) {
@@ -49,6 +63,10 @@ void ArenaWrappedDBIter::Init(
 }
 
 Status ArenaWrappedDBIter::Refresh() {
+  return Refresh(nullptr);
+}
+
+Status ArenaWrappedDBIter::Refresh(const Snapshot* snap) {
   if (cfd_ == nullptr || db_impl_ == nullptr || !allow_refresh_) {
     return Status::NotSupported("Creating renew iterator is not allowed.");
   }
@@ -60,13 +78,13 @@ Status ArenaWrappedDBIter::Refresh() {
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:1");
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:2");
   auto reinit_internal_iter = [&]() {
+    SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
     Env* env = db_iter_->env();
     db_iter_->~DBIter();
     arena_.~Arena();
     new (&arena_) Arena();
 
     SuperVersion* sv = cfd_->GetReferencedSuperVersion(db_impl_);
-    SequenceNumber latest_seq = db_impl_->GetLatestSequenceNumber();
     if (read_callback_) {
       read_callback_->Refresh(latest_seq);
     }
@@ -86,7 +104,10 @@ Status ArenaWrappedDBIter::Refresh() {
       reinit_internal_iter();
       break;
     } else {
-      SequenceNumber latest_seq = db_impl_->GetLatestSequenceNumber();
+      SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
+      if (latest_seq == db_iter_->get_sequence()) {
+        break;
+      }
       // Refresh range-tombstones in MemTable
       if (!read_options_.ignore_range_deletions) {
         SuperVersion* sv = cfd_->GetThreadLocalSuperVersion(db_impl_);
@@ -135,6 +156,9 @@ Status ArenaWrappedDBIter::Refresh() {
       }
       break;
     }
+  }
+  if (size_t(snap) > KEEP_SNAPSHOT) {
+    this->read_options_.snapshot = snap;
   }
   return Status::OK();
 }

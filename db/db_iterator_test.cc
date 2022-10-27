@@ -2400,7 +2400,9 @@ TEST_P(DBIteratorTest, RefreshWithSnapshot) {
 
   ASSERT_OK(iter->status());
   Status s = iter->Refresh();
-  ASSERT_TRUE(s.IsNotSupported());
+  ASSERT_TRUE(s.ok());
+  s = iter->Refresh(snapshot);
+  ASSERT_TRUE(s.ok());
   db_->ReleaseSnapshot(snapshot);
   delete iter;
 }
@@ -2470,7 +2472,7 @@ TEST_P(DBIteratorTest, TableFilter) {
   {
     std::set<uint64_t> unseen{1, 2, 3};
     ReadOptions opts;
-    opts.table_filter = [&](const TableProperties& props) {
+    opts.table_filter = [&](const TableProperties& props, const FileMetaData&) {
       auto it = unseen.find(props.num_entries);
       if (it == unseen.end()) {
         ADD_FAILURE() << "saw table properties with an unexpected "
@@ -2503,7 +2505,7 @@ TEST_P(DBIteratorTest, TableFilter) {
   // during iteration.
   {
     ReadOptions opts;
-    opts.table_filter = [](const TableProperties& props) {
+    opts.table_filter = [](const TableProperties& props, const FileMetaData&) {
       return props.num_entries != 2;
     };
     auto iter = NewIterator(opts);

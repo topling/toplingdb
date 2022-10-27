@@ -493,7 +493,7 @@ ArenaWrappedDBIter* DBImplSecondary::NewIteratorImpl(
       super_version->current, snapshot,
       super_version->mutable_cf_options.max_sequential_skip_in_iterations,
       super_version->version_number, read_callback, this, cfd,
-      expose_blob_index, read_options.snapshot ? false : allow_refresh);
+      expose_blob_index, allow_refresh);
   auto internal_iter = NewInternalIterator(
       db_iter->GetReadOptions(), cfd, super_version, db_iter->GetArena(),
       snapshot, /* allow_unprepared_value */ true, db_iter);
@@ -583,11 +583,17 @@ Status DBImplSecondary::CheckConsistency() {
 
     uint64_t fsize = 0;
     s = env_->GetFileSize(file_path, &fsize);
+#ifdef ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
     if (!s.ok() &&
         (env_->GetFileSize(Rocks2LevelTableFileName(file_path), &fsize).ok() ||
          s.IsPathNotFound())) {
       s = Status::OK();
     }
+#else
+    if (s.IsPathNotFound()) {
+      s = Status::OK();
+    }
+#endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
     if (!s.ok()) {
       corruption_messages +=
           "Can't access " + md.name + ": " + s.ToString() + "\n";

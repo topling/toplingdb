@@ -53,6 +53,18 @@ class Slice {
   // buf must exist as long as the returned Slice exists.
   Slice(const struct SliceParts& parts, std::string* buf);
 
+  const char* begin() const { return data_; }
+  const char* end() const { return data_ + size_; }
+  Slice substr(size_t pos) const {
+    assert(pos <= size_);
+    return Slice(data_ + pos, size_ - pos);
+  }
+  Slice substr(size_t pos, size_t len) const {
+    assert(pos <= size_);
+    assert(pos + len <= size_);
+    return Slice(data_ + pos, len);
+  }
+
   // Return a pointer to the beginning of the referenced data
   const char* data() const { return data_; }
 
@@ -89,7 +101,8 @@ class Slice {
 
   // Return a string that contains the copy of the referenced data.
   // when hex is true, returns a string of twice the length hex encoded (0-9A-F)
-  std::string ToString(bool hex = false) const;
+  std::string ToString(bool hex) const;
+  std::string ToString() const { return std::string(data_, size_); }
 
   // Return a string_view that references the same data as this slice.
   std::string_view ToStringView() const {
@@ -117,6 +130,12 @@ class Slice {
   bool ends_with(const Slice& x) const {
     return ((size_ >= x.size_) &&
             (memcmp(data_ + size_ - x.size_, x.data_, x.size_) == 0));
+  }
+
+  // trim spaces
+  void trim() {
+    while (size_ && isspace((unsigned char)data_[0])) data_++, size_--;
+    while (size_ && isspace((unsigned char)data_[size_-1])) size_--;
   }
 
   // Compare two slices and returns the first byte where they differ
@@ -250,6 +269,23 @@ inline int Slice::compare(const Slice& b) const {
       r = +1;
   }
   return r;
+}
+
+inline bool operator<(const Slice& x, const Slice& y) {
+  const size_t min_len = (x.size_ < y.size_) ? x.size_ : y.size_;
+  int r = memcmp(x.data_, y.data_, min_len);
+  if (r != 0)
+    return r < 0;
+  else
+    return x.size_ < y.size_;
+}
+inline bool operator>(const Slice& x, const Slice& y) { return y < x; }
+
+inline std::string operator+(const Slice& x, const Slice& y) {
+  std::string z; z.reserve(x.size_ + y.size_);
+  z.append(x.data_, x.size_);
+  z.append(y.data_, y.size_);
+  return z;
 }
 
 inline size_t Slice::difference_offset(const Slice& b) const {

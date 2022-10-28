@@ -65,8 +65,7 @@ size_t CoreLocalArray<T>::Size() const {
 template <typename T>
 T* CoreLocalArray<T>::Access() const {
 #if defined(OS_LINUX) && \
-    defined(ROCKSDB_SCHED_GETCPU_PRESENT) && defined(__x86_64__) && \
-    (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 22))
+    defined(ROCKSDB_SCHED_GETCPU_PRESENT) && defined(__x86_64__)
   // cpuid never < 0
   int cpuid = port::PhysicalCoreID();
   size_t core_idx = static_cast<size_t>(cpuid & size_mask_);
@@ -80,8 +79,7 @@ template <typename T>
 std::pair<T*, size_t> CoreLocalArray<T>::AccessElementAndIndex() const {
   int cpuid = port::PhysicalCoreID();
 #if defined(OS_LINUX) && \
-    defined(ROCKSDB_SCHED_GETCPU_PRESENT) && defined(__x86_64__) && \
-    (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 22))
+    defined(ROCKSDB_SCHED_GETCPU_PRESENT) && defined(__x86_64__)
   // cpuid never < 0
   size_t core_idx = static_cast<size_t>(cpuid & size_mask_);
 #else

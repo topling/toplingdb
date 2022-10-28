@@ -18,7 +18,6 @@
 using std::cout;
 using std::endl;
 
-#define ROCKSDB_LITE // topling: autovector disabled, make the ut happy
 namespace ROCKSDB_NAMESPACE {
 
 class AutoVectorTest : public testing::Test {};

@@ -741,7 +741,8 @@ bool ColumnFamilyData::UnrefAndTryDelete() {
     super_version_ = nullptr;
 
     // Release SuperVersion references kept in ThreadLocalPtr.
-    local_sv_.Reset(nullptr);
+    local_sv_.~ThreadLocalPtr();
+    new(&local_sv_)ThreadLocalPtr(&SuperVersionUnrefHandle);
 
     if (sv->Unref()) {
       // Note: sv will delete this ColumnFamilyData during Cleanup()

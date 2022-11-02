@@ -304,6 +304,8 @@ ifeq (,$(wildcard sideplugin/topling-rocks))
     git submodule update --init --recursive \
   )
 endif
+endif
+
 ifeq (,$(wildcard sideplugin/cspp-memtable))
   # topling specific: just for people who has permission to cspp-memtable
   dummy := $(shell set -e -x; \
@@ -318,7 +320,6 @@ ifeq (,$(wildcard sideplugin/cspp-wbwi))
     git clone https://github.com/topling/cspp-wbwi; \
     cd cspp-wbwi; \
   )
-endif
 endif
 
 ifneq (,$(wildcard sideplugin/cspp-memtable))

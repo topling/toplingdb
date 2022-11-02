@@ -414,8 +414,7 @@ void PointLockManager::DecrementWaitersImpl(
   wait_txn_map_.Delete(id);
 
   for (auto wait_id : wait_ids) {
-    rev_wait_txn_map_.Get(wait_id)--;
-    if (rev_wait_txn_map_.Get(wait_id) == 0) {
+    if (--rev_wait_txn_map_.Get(wait_id) == 0) {
       rev_wait_txn_map_.Delete(wait_id);
     }
   }
@@ -426,8 +425,17 @@ bool PointLockManager::IncrementWaiters(
     const autovector<TransactionID>& wait_ids, const Slice& key,
     const uint32_t& cf_id, const bool& exclusive, Env* const env) {
   auto id = txn->GetID();
+#if 0
   std::vector<int> queue_parents(static_cast<size_t>(txn->GetDeadlockDetectDepth()));
   std::vector<TransactionID> queue_values(static_cast<size_t>(txn->GetDeadlockDetectDepth()));
+#else
+ #define T_alloca_z(T, n) (T*)memset(alloca(sizeof(T)*n), 0, sizeof(T)*n)
+  auto depth = txn->GetDeadlockDetectDepth();
+  auto queue_parents = T_alloca_z(int, depth);
+  auto queue_values = T_alloca_z(TransactionID, depth);
+  // if TransactionID is not trivially_destructible, destruct is required
+  static_assert(std::is_trivially_destructible<TransactionID>::value);
+#endif
   std::lock_guard<std::mutex> lock(wait_txn_map_mutex_);
   assert(!wait_txn_map_.Contains(id));
 

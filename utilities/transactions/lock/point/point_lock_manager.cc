@@ -177,7 +177,7 @@ void PointLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cf) {
   {
     InstrumentedMutexLock l(&lock_map_mutex_);
     if (!lock_maps_.erase(cf->GetID())) {
-      return; // note existed and erase did nothing, return immediately
+      return; // not existed and erase did nothing, return immediately
     }
   }  // lock_map_mutex_
 

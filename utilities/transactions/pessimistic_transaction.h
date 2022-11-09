@@ -73,7 +73,12 @@ class PessimisticTransaction : public TransactionBaseImpl {
                                             std::string* key) const override {
     std::lock_guard<std::mutex> lock(wait_mutex_);
     std::vector<TransactionID> ids(waiting_txn_ids_.size());
-    if (key) *key = waiting_key_ ? waiting_key_->ToString() : "";
+    if (key) {
+      if (waiting_key_)
+        key->assign(waiting_key_->data(), waiting_key_->size());
+      else
+        key->clear();
+    }
     if (column_family_id) *column_family_id = waiting_cf_id_;
     std::copy(waiting_txn_ids_.begin(), waiting_txn_ids_.end(), ids.begin());
     return ids;

@@ -188,9 +188,11 @@ class PointLockManager : public LockManager {
  private:
   LockMaps lock_maps_;
 
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
   // Thread-local cache of entries in lock_maps_.  This is an optimization
   // to avoid acquiring a mutex in order to look up a LockMap
   ThreadLocalPtr lock_maps_cache_;
+#endif
 
   // Must be held when modifying wait_txn_map_ and rev_wait_txn_map_.
   std::mutex wait_txn_map_mutex_;

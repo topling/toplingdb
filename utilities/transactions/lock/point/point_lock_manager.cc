@@ -21,7 +21,6 @@
 #include "utilities/transactions/pessimistic_transaction_db.h"
 #include "utilities/transactions/transaction_db_mutex_impl.h"
 
-#include <terark/valvec32.hpp>
 #include "point_lock_tracker.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -119,6 +118,7 @@ struct LockMap {
   size_t GetStripe(const LockString& key) const;
 };
 
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
 namespace {
 void UnrefLockMapsCache(void* ptr) {
   // Called when a thread exits or a ThreadLocalPtr gets destroyed.
@@ -126,6 +126,7 @@ void UnrefLockMapsCache(void* ptr) {
   delete lock_maps_cache;
 }
 }  // anonymous namespace
+#endif
 
 PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
                                    const TransactionDBOptions& opt)
@@ -134,7 +135,9 @@ PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
       super_stripes_(opt.super_stripes),
       default_num_stripes_(opt.num_stripes),
       max_num_locks_(opt.max_num_locks),
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
       lock_maps_cache_(&UnrefLockMapsCache),
+#endif
       dlock_buffer_(opt.max_num_deadlocks),
       mutex_factory_(opt.custom_mutex_factory
                          ? opt.custom_mutex_factory
@@ -174,16 +177,18 @@ void PointLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cf) {
   {
     InstrumentedMutexLock l(&lock_map_mutex_);
     if (!lock_maps_.erase(cf->GetID())) {
-      return; // note existed and erase did nothing, return immediately
+      return; // not existed and erase did nothing, return immediately
     }
   }  // lock_map_mutex_
 
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
   // Clear all thread-local caches
   autovector<void*> local_caches;
   lock_maps_cache_.Scrape(&local_caches, nullptr);
   for (auto cache : local_caches) {
     delete static_cast<LockMaps*>(cache);
   }
+#endif
 }
 
 template<class T>
@@ -409,8 +414,7 @@ void PointLockManager::DecrementWaitersImpl(
   wait_txn_map_.Delete(id);
 
   for (auto wait_id : wait_ids) {
-    rev_wait_txn_map_.Get(wait_id)--;
-    if (rev_wait_txn_map_.Get(wait_id) == 0) {
+    if (--rev_wait_txn_map_.Get(wait_id) == 0) {
       rev_wait_txn_map_.Delete(wait_id);
     }
   }
@@ -421,10 +425,19 @@ bool PointLockManager::IncrementWaiters(
     const autovector<TransactionID>& wait_ids, const Slice& key,
     const uint32_t& cf_id, const bool& exclusive, Env* const env) {
   auto id = txn->GetID();
+#if 0
   std::vector<int> queue_parents(
       static_cast<size_t>(txn->GetDeadlockDetectDepth()));
   std::vector<TransactionID> queue_values(
       static_cast<size_t>(txn->GetDeadlockDetectDepth()));
+#else
+ #define T_alloca_z(T, n) (T*)memset(alloca(sizeof(T)*n), 0, sizeof(T)*n)
+  auto depth = txn->GetDeadlockDetectDepth();
+  auto queue_parents = T_alloca_z(int, depth);
+  auto queue_values = T_alloca_z(TransactionID, depth);
+  // if TransactionID is not trivially_destructible, destruct is required
+  static_assert(std::is_trivially_destructible<TransactionID>::value);
+#endif
   std::lock_guard<std::mutex> lock(wait_txn_map_mutex_);
   assert(!wait_txn_map_.Contains(id));
 

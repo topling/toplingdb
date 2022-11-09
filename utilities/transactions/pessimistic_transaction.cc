@@ -1051,7 +1051,7 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
         s = txn_db_impl_->TryLock(this, cfh_id, key, false /* exclusive */);
         assert(s.ok());
       } else if (!previously_locked) {
-        txn_db_impl_->UnLock(this, cfh_id, key.ToString());
+        txn_db_impl_->UnLock(this, cfh_id, key);
       }
     }
   }
@@ -1166,7 +1166,7 @@ bool PessimisticTransaction::TryStealingLocks() {
 
 void PessimisticTransaction::UnlockGetForUpdate(
     ColumnFamilyHandle* column_family, const Slice& key) {
-  txn_db_impl_->UnLock(this, GetColumnFamilyID(column_family), key.ToString());
+  txn_db_impl_->UnLock(this, GetColumnFamilyID(column_family), key);
 }
 
 Status PessimisticTransaction::SetName(const TransactionName& name) {

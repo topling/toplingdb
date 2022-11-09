@@ -1839,12 +1839,14 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
 
   snprintf(buf, sizeof(buf),
            "Cumulative compaction: %11.6f %s write, %7.2f MB/s write, "
-           "%11.6f GB read, %7.2f MB/s read, %7.1f seconds\n",
+           "%11.6f %s read, %7.2f MB/s read, %7.1f seconds\n",
            compact_bytes_write /
           (compact_bytes_write < (1LL<<40) ? kGB  : kTB ),
           (compact_bytes_write < (1LL<<40) ? "GB" : "TB"),
            compact_bytes_write / kMB / std::max(seconds_up, 0.001),
-           compact_bytes_read / kGB,
+           compact_bytes_read /
+          (compact_bytes_read < (1LL<<40) ? kGB  : kTB ),
+          (compact_bytes_read < (1LL<<40) ? "GB" : "TB"),
            compact_bytes_read / kMB / std::max(seconds_up, 0.001),
            compact_micros / kMicrosInSec);
   value->append(buf);

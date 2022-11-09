@@ -78,6 +78,11 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap) {
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:2");
   while (true) {
     if (sv_number_ != cur_sv_number) {
+      std::string curr_key;
+      bool is_valid = this->Valid();
+      if (is_valid) {
+        curr_key = this->key().ToString();
+      }
       SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
       Env* env = db_iter_->env();
       db_iter_->~DBIter();
@@ -98,6 +103,10 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap) {
           read_options_, cfd_, sv, &arena_, db_iter_->GetRangeDelAggregator(),
           latest_seq, /* allow_unprepared_value */ true);
       SetIterUnderDBIter(internal_iter);
+      if (is_valid) {
+        this->Seek(curr_key);
+        ROCKSDB_VERIFY(this->Valid());
+      }
       break;
     } else {
       SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
@@ -117,7 +126,7 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap) {
       }
       // Refresh latest sequence number
       db_iter_->set_sequence(latest_seq);
-      db_iter_->set_valid(false);
+      // db_iter_->set_valid(false); // comment out for ToplingDB
       // Check again if the latest super version number is changed
       uint64_t latest_sv_number = cfd_->GetSuperVersionNumber();
       if (latest_sv_number != cur_sv_number) {

@@ -528,7 +528,16 @@ ThreadLocalPtr::ThreadLocalPtr(UnrefHandler handler)
 }
 
 ThreadLocalPtr::~ThreadLocalPtr() {
+  if (UNLIKELY(UINT32_MAX == id_)) {
+    return;
+  }
   Instance()->ReclaimId(id_);
+}
+
+void ThreadLocalPtr::Destroy() {
+  ROCKSDB_VERIFY_NE(id_, UINT32_MAX);
+  Instance()->ReclaimId(id_);
+  const_cast<uint32_t&>(id_) = UINT32_MAX;
 }
 
 ROCKSDB_FLATTEN

@@ -44,6 +44,9 @@ class ThreadLocalPtr {
 
   ~ThreadLocalPtr();
 
+  // if 'this' have been destroyed, destructor will do nothing
+  void Destroy();
+
   // Return the current pointer stored in thread local
   void* Get() const;
 

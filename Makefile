@@ -344,7 +344,7 @@ else
   $(warning NotFound sideplugin/cspp-wbwi, this is ok, only Topling CSPP WBWI(WriteBatchWithIndex) is disabled)
 endif
 
-ifeq (ddd,$(wildcard sideplugin/topling-sst/src/table))
+ifeq (,$(wildcard sideplugin/topling-sst/src/table))
   dummy := $(shell set -e -x; \
     cd sideplugin; \
     git clone https://github.com/topling/topling-sst; \

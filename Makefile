@@ -231,7 +231,9 @@ CXXFLAGS += -Isideplugin/rockside/3rdparty/rapidyaml \
 # topling-core is topling private
 ifneq (,$(wildcard sideplugin/topling-core))
   TOPLING_CORE_DIR := sideplugin/topling-core
+  CXXFLAGS += -DGITHUB_TOPLING_ZIP='"https://github.com/rockeet/topling-core"'
 else
+  CXXFLAGS += -DGITHUB_TOPLING_ZIP='"https://github.com/topling/topling-zip"'
   # topling-zip is topling public
   ifeq (,$(wildcard sideplugin/topling-zip))
     $(warning sideplugin/topling-zip is not present, clone it from github...)
@@ -351,7 +353,7 @@ ifeq (ddd,$(wildcard sideplugin/topling-sst/src/table))
 endif
 ifneq (,$(wildcard sideplugin/topling-sst/src/table))
   # now we have topling-sst
-  CXXFLAGS   += -DHAS_TOPLING_SST
+  CXXFLAGS   += -DHAS_TOPLING_SST -Isideplugin/topling-sst/src
   TOPLING_SST_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_sst.cc
   EXTRA_LIB_SOURCES += $(wildcard sideplugin/topling-sst/src/table/*.cc) \
                        sideplugin/topling-sst/${TOPLING_SST_GIT_VER_SRC}

@@ -482,8 +482,13 @@ Status WriteBatchWithIndex::MergeKey(
   auto* logger = idbo.info_log.get();
   auto* clock = idbo.clock;
   return MergeHelper::TimedFullMerge(merge_operator, key, origin_value,
-                                      mgcontext.GetOperands(), result, logger,
-                                      statistics, clock);
+                                     mgcontext.GetOperands(), result, logger,
+                                     statistics, clock
+#if (ROCKSDB_MAJOR * 10000 + ROCKSDB_MINOR * 10 + ROCKSDB_PATCH) >= 70090
+                                     , nullptr // result_operand
+                                     , true // update_num_ops_stats
+#endif
+                                     );
 }
 
 Status WriteBatchWithIndex::MergeKey(
@@ -504,7 +509,12 @@ Status WriteBatchWithIndex::MergeKey(
   auto* clock = options.env->GetSystemClock().get();
   return MergeHelper::TimedFullMerge(merge_operator, key, origin_value,
                                       mgcontext.GetOperands(), result, logger,
-                                      statistics, clock);
+                                      statistics, clock
+#if (ROCKSDB_MAJOR * 10000 + ROCKSDB_MINOR * 10 + ROCKSDB_PATCH) >= 70090
+                                     , nullptr // result_operand
+                                     , true // update_num_ops_stats
+#endif
+                                     );
 }
 
 Status WriteBatchWithIndex::GetFromBatchAndDB(DB* db,

@@ -236,7 +236,7 @@ const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
     {BLOB_DB_CACHE_BYTES_READ, "rocksdb.blobdb.cache.bytes.read"},
     {BLOB_DB_CACHE_BYTES_WRITE, "rocksdb.blobdb.cache.bytes.write"},
     {READ_ASYNC_MICROS, "rocksdb.read.async.micros"},
-    {ASYNC_READ_ERROR_COUNT, "rocksdb.async.read.error.count"}};
+    {ASYNC_READ_ERROR_COUNT, "rocksdb.async.read.error.count"},
     {LCOMPACT_WRITE_BYTES_RAW, "rocksdb.lcompact.write.bytes.raw"},
     {DCOMPACT_WRITE_BYTES_RAW, "rocksdb.dcompact.write.bytes.raw"},
 };

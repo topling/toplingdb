@@ -19,6 +19,10 @@
 #include "port/port.h"
 #include "util/cast_util.h"
 
+#ifndef SIDE_PLUGIN_JSON_USE_STD_MAP // indicate topling-core is available
+#include <terark/valvec.hpp> // for terark::lower_bound_0
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 HistogramBucketMapper::HistogramBucketMapper() {
@@ -45,17 +49,21 @@ HistogramBucketMapper::HistogramBucketMapper() {
 size_t HistogramBucketMapper::IndexForValue(const uint64_t value) const {
   auto beg = bucketValues_.begin();
   auto end = bucketValues_.end();
-  if (value >= maxBucketValue_)
-    return end - beg - 1;  // bucketValues_.size() - 1
-  else
+  // if (UNLIKELY(value >= maxBucketValue_))
+  //   return end - beg - 1;  // bucketValues_.size() - 1
+  // else
+#ifdef SIDE_PLUGIN_JSON_USE_STD_MAP // indicate topling-core is available
     return std::lower_bound(beg, end, value) - beg;
+#else
+    return terark::lower_bound_0(beg, end - beg, value);
+#endif
 }
 
-namespace {
+extern const HistogramBucketMapper bucketMapper; // explicit declare extern
 const HistogramBucketMapper bucketMapper;
-}
+const uint64_t HistogramStat::num_buckets_ = bucketMapper.BucketCount();
 
-HistogramStat::HistogramStat() : num_buckets_(bucketMapper.BucketCount()) {
+HistogramStat::HistogramStat() {
   assert(num_buckets_ == sizeof(buckets_) / sizeof(*buckets_));
   Clear();
 }
@@ -69,36 +77,55 @@ void HistogramStat::Clear() {
   for (unsigned int b = 0; b < num_buckets_; b++) {
     buckets_[b].store(0, std::memory_order_relaxed);
   }
+  overrun_.store(0, std::memory_order_relaxed);
 };
 
 bool HistogramStat::Empty() const { return num() == 0; }
 
+template<class T>
+inline T& NoAtomic(std::atomic<T>& x) { return reinterpret_cast<T&>(x); }
+
+ROCKSDB_FLATTEN
 void HistogramStat::Add(uint64_t value) {
   // This function is designed to be lock free, as it's in the critical path
   // of any operation. Each individual value is atomic and the order of updates
   // by concurrent threads is tolerable.
   const size_t index = bucketMapper.IndexForValue(value);
-  assert(index < num_buckets_);
-  buckets_[index].store(buckets_[index].load(std::memory_order_relaxed) + 1,
-                        std::memory_order_relaxed);
+  assert(index <= num_buckets_);
+#if 0
+  buckets_[index].fetch_add(1, std::memory_order_relaxed);
 
-  uint64_t old_min = min();
-  if (value < old_min) {
-    min_.store(value, std::memory_order_relaxed);
-  }
+  uint64_t old_min = min_.load(std::memory_order_relaxed);
+  while (value < old_min &&
+         !min_.compare_exchange_weak(old_min, value,
+                                     std::memory_order_relaxed)) {}
 
-  uint64_t old_max = max();
-  if (value > old_max) {
-    max_.store(value, std::memory_order_relaxed);
-  }
+  uint64_t old_max = max_.load(std::memory_order_relaxed);
+  while (value > old_max &&
+         !max_.compare_exchange_weak(old_max, value,
+                                     std::memory_order_relaxed)) {}
 
-  num_.store(num_.load(std::memory_order_relaxed) + 1,
-             std::memory_order_relaxed);
-  sum_.store(sum_.load(std::memory_order_relaxed) + value,
-             std::memory_order_relaxed);
-  sum_squares_.store(
-      sum_squares_.load(std::memory_order_relaxed) + value * value,
-      std::memory_order_relaxed);
+  num_.fetch_add(1, std::memory_order_relaxed);
+  sum_.fetch_add(value, std::memory_order_relaxed);
+  sum_squares_.fetch_add(value * value, std::memory_order_relaxed);
+#else // prefer fast than 100% accuracy
+  NoAtomic(buckets_[index])++;
+  if (NoAtomic(min_) > value) NoAtomic(min_) = value;
+  if (NoAtomic(max_) < value) NoAtomic(max_) = value;
+  NoAtomic(num_)++;
+  NoAtomic(sum_) += value;
+  NoAtomic(sum_squares_) += value * value;
+#endif
+}
+
+void HistogramStat::Del(uint64_t value) {
+  const size_t index = bucketMapper.IndexForValue(value);
+  assert(index <= num_buckets_);
+  NoAtomic(buckets_[index])--;
+  NoAtomic(num_)--;
+  NoAtomic(sum_) -= value;
+  NoAtomic(sum_squares_) -= value * value;
+  // ignore min_ & max_
 }
 
 void HistogramStat::Merge(const HistogramStat& other) {
@@ -121,7 +148,8 @@ void HistogramStat::Merge(const HistogramStat& other) {
   sum_.fetch_add(other.sum(), std::memory_order_relaxed);
   sum_squares_.fetch_add(other.sum_squares(), std::memory_order_relaxed);
   for (unsigned int b = 0; b < num_buckets_; b++) {
-    buckets_[b].fetch_add(other.bucket_at(b), std::memory_order_relaxed);
+    auto other_cnt_b = other.buckets_[b].load(std::memory_order_relaxed);
+    buckets_[b].fetch_add(other_cnt_b, std::memory_order_relaxed);
   }
 }
 
@@ -228,7 +256,10 @@ void HistogramStat::Data(HistogramData* const data) const {
   data->standard_deviation = StandardDeviation();
   data->count = num();
   data->sum = sum();
-  data->min = static_cast<double>(min());
+  if (data->count)
+    data->min = static_cast<double>(min());
+  else
+    data->min = 0.0;
 }
 
 void HistogramImpl::Clear() {
@@ -252,6 +283,10 @@ void HistogramImpl::Merge(const HistogramImpl& other) {
 }
 
 double HistogramImpl::Median() const { return stats_.Median(); }
+void HistogramImpl::Merge(const HistogramStat& stats) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stats_.Merge(stats);
+}
 
 double HistogramImpl::Percentile(double p) const {
   return stats_.Percentile(p);

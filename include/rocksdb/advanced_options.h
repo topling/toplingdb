@@ -23,7 +23,7 @@ class TablePropertiesCollectorFactory;
 class TableFactory;
 struct Options;
 
-enum CompactionStyle : char {
+ROCKSDB_ENUM_PLAIN(CompactionStyle, char,
   // level based compaction style
   kCompactionStyleLevel = 0x0,
   // Universal compaction style
@@ -35,13 +35,13 @@ enum CompactionStyle : char {
   // Disable background compaction. Compaction jobs are submitted
   // via CompactFiles().
   // Not supported in ROCKSDB_LITE
-  kCompactionStyleNone = 0x3,
-};
+  kCompactionStyleNone = 0x3
+);
 
 // In Level-based compaction, it Determines which file from a level to be
 // picked to merge to the next level. We suggest people try
 // kMinOverlappingRatio first when you tune your database.
-enum CompactionPri : char {
+ROCKSDB_ENUM_PLAIN(CompactionPri, char,
   // Slightly prioritize larger files by size compensated by #deletes
   kByCompensatedSize = 0x0,
   // First compact files whose data's latest update time is oldest.
@@ -59,8 +59,8 @@ enum CompactionPri : char {
   // compacted before, and always picks the next files (key range) in that
   // level. The file picking process will cycle through all the files in a
   // round-robin manner.
-  kRoundRobin = 0x4,
-};
+  kRoundRobin = 0x4
+);
 
 struct CompactionOptionsFIFO {
   // once the total sum of table files reaches this, we will delete the oldest
@@ -224,21 +224,21 @@ struct CompressionOptions {
 // placement and/or coding.
 // Reserve some numbers in the middle, in case we need to insert new tier
 // there.
-enum class Temperature : uint8_t {
+ROCKSDB_ENUM_CLASS(Temperature, uint8_t,
   kUnknown = 0,
   kHot = 0x04,
   kWarm = 0x08,
   kCold = 0x0C,
-  kLastTemperature,
-};
+  kLastTemperature
+);
 
 // The control option of how the cache tiers will be used. Currently rocksdb
 // support block cache (volatile tier), secondary cache (non-volatile tier).
 // In the future, we may add more caching layers.
-enum class CacheTier : uint8_t {
+ROCKSDB_ENUM_CLASS(CacheTier, uint8_t,
   kVolatileTier = 0,
-  kNonVolatileBlockTier = 0x01,
-};
+  kNonVolatileBlockTier = 0x01
+);
 
 enum UpdateStatus {     // Return status For inplace update callback
   UPDATE_FAILED = 0,    // Nothing to update

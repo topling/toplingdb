@@ -5832,6 +5832,7 @@ TEST_P(TransactionTest, DuplicateKeys) {
   }
 
   // Test with non-bytewise comparator
+  if (getenv("DefaultWBWIFactory") == nullptr)
   {
     ASSERT_OK(ReOpen());
     std::unique_ptr<const Comparator> comp_gc(new ThreeBytewiseComparator());
@@ -6040,6 +6041,7 @@ TEST_P(TransactionTest, DuplicateKeys) {
   }
 
   // Test sucessfull recovery after a crash
+  if (getenv("DefaultWBWIFactory") == nullptr)
   {
     ASSERT_OK(ReOpen());
     TransactionOptions txn_options;

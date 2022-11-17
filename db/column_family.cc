@@ -81,10 +81,10 @@ ColumnFamilyHandleImpl::~ColumnFamilyHandleImpl() {
   }
 }
 
-uint32_t ColumnFamilyHandleImpl::GetID() const { return cfd()->GetID(); }
+uint32_t ColumnFamilyHandleImpl::GetID() const { return cfd_->GetID(); }
 
 const std::string& ColumnFamilyHandleImpl::GetName() const {
-  return cfd()->GetName();
+  return cfd_->GetName();
 }
 
 Status ColumnFamilyHandleImpl::GetDescriptor(ColumnFamilyDescriptor* desc) {
@@ -100,7 +100,17 @@ Status ColumnFamilyHandleImpl::GetDescriptor(ColumnFamilyDescriptor* desc) {
 }
 
 const Comparator* ColumnFamilyHandleImpl::GetComparator() const {
-  return cfd()->user_comparator();
+  return cfd_->user_comparator();
+}
+
+uint32_t ColumnFamilyHandleInternal::GetID() const {
+  return internal_cfd_->GetID();
+}
+const std::string& ColumnFamilyHandleInternal::GetName() const {
+  return internal_cfd_->GetName();
+}
+const Comparator* ColumnFamilyHandleInternal::GetComparator() const {
+  return internal_cfd_->user_comparator();
 }
 
 void GetIntTblPropCollectorFactory(
@@ -553,7 +563,7 @@ ColumnFamilyData::ColumnFamilyData(
            ioptions_.max_write_buffer_size_to_maintain),
       super_version_(nullptr),
       super_version_number_(0),
-      local_sv_(new ThreadLocalPtr(&SuperVersionUnrefHandle)),
+      local_sv_(&SuperVersionUnrefHandle),
       next_(nullptr),
       prev_(nullptr),
       log_number_(0),
@@ -731,7 +741,12 @@ bool ColumnFamilyData::UnrefAndTryDelete() {
     super_version_ = nullptr;
 
     // Release SuperVersion references kept in ThreadLocalPtr.
-    local_sv_.reset();
+   #if 0
+    local_sv_.~ThreadLocalPtr();
+    new(&local_sv_)ThreadLocalPtr(&SuperVersionUnrefHandle);
+   #else
+    local_sv_.Destroy();
+   #endif
 
     if (sv->Unref()) {
       // Note: sv will delete this ColumnFamilyData during Cleanup()
@@ -777,7 +792,11 @@ uint64_t ColumnFamilyData::OldestLogToKeep() {
   return current_log;
 }
 
+#if defined(ROCKSDB_UNIT_TEST)
 const double kIncSlowdownRatio = 0.8;
+#else
+const double kIncSlowdownRatio = 0.97; // topling specific
+#endif
 const double kDecSlowdownRatio = 1 / kIncSlowdownRatio;
 const double kNearStopSlowdownRatio = 0.6;
 const double kDelayRecoverSlowdownRatio = 1.4;
@@ -1107,8 +1126,16 @@ uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
 
 MemTable* ColumnFamilyData::ConstructNewMemtable(
     const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
-  return new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
+#if !defined(ROCKSDB_UNIT_TEST)
+  auto beg = ioptions_.clock->NowNanos();
+#endif
+  auto tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
                       write_buffer_manager_, earliest_seq, id_);
+#if !defined(ROCKSDB_UNIT_TEST)
+  auto end = ioptions_.clock->NowNanos();
+  RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
+#endif
+  return tab;
 }
 
 void ColumnFamilyData::CreateNewMemtable(
@@ -1251,7 +1278,7 @@ SuperVersion* ColumnFamilyData::GetThreadLocalSuperVersion(DBImpl* db) {
   // have swapped in kSVObsolete. We re-check the value at when returning
   // SuperVersion back to thread local, with an atomic compare and swap.
   // The superversion will need to be released if detected to be stale.
-  void* ptr = local_sv_->Swap(SuperVersion::kSVInUse);
+  void* ptr = local_sv_.Swap(SuperVersion::kSVInUse);
   // Invariant:
   // (1) Scrape (always) installs kSVObsolete in ThreadLocal storage
   // (2) the Swap above (always) installs kSVInUse, ThreadLocal storage
@@ -1292,7 +1319,7 @@ bool ColumnFamilyData::ReturnThreadLocalSuperVersion(SuperVersion* sv) {
   assert(sv != nullptr);
   // Put the SuperVersion back
   void* expected = SuperVersion::kSVInUse;
-  if (local_sv_->CompareAndSwap(static_cast<void*>(sv), expected)) {
+  if (local_sv_.CompareAndSwap(static_cast<void*>(sv), expected)) {
     // When we see kSVInUse in the ThreadLocal, we are sure ThreadLocal
     // storage has not been altered and no Scrape has happened. The
     // SuperVersion is still current.
@@ -1360,7 +1387,7 @@ void ColumnFamilyData::InstallSuperVersion(
 
 void ColumnFamilyData::ResetThreadLocalSuperVersions() {
   autovector<void*> sv_ptrs;
-  local_sv_->Scrape(&sv_ptrs, SuperVersion::kSVObsolete);
+  local_sv_.Scrape(&sv_ptrs, SuperVersion::kSVObsolete);
   for (auto ptr : sv_ptrs) {
     assert(ptr);
     if (ptr == SuperVersion::kSVInUse) {

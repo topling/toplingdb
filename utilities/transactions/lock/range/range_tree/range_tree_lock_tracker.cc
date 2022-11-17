@@ -44,7 +44,7 @@ void RangeTreeLockTracker::Track(const RangeLockRequest &lock_req) {
 }
 
 PointLockStatus RangeTreeLockTracker::GetPointLockStatus(
-    ColumnFamilyId /*cf_id*/, const std::string & /*key*/) const {
+    ColumnFamilyId /*cf_id*/, const LockString & /*key*/) const {
   // This function is not expected to be called as RangeTreeLockTracker::
   // IsPointLockSupported() returns false. Return the status which indicates
   // the point is not locked.

@@ -1366,6 +1366,7 @@ BaseReferencedVersionBuilder::BaseReferencedVersionBuilder(
 }
 
 BaseReferencedVersionBuilder::~BaseReferencedVersionBuilder() {
+ if (!IsCompactionWorker()) // workaround double free bug in dcompact
   version_->Unref();
 }
 

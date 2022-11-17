@@ -319,6 +319,8 @@ class VersionStorageInfo {
     return files_[level];
   }
 
+  int FindFileInRange(int level, const Slice& key, uint32_t left, uint32_t right) const;
+
   class FileLocation {
    public:
     FileLocation() = default;
@@ -579,7 +581,7 @@ class VersionStorageInfo {
                                      const Slice& largest_user_key,
                                      int last_level, int last_l0_idx);
 
- private:
+ protected:
   void ComputeCompensatedSizes();
   void UpdateNumNonEmptyLevels();
   void CalculateBaseBytes(const ImmutableOptions& ioptions,
@@ -1364,6 +1366,7 @@ class VersionSet {
   // The caller should delete the iterator when no longer needed.
   // @param read_options Must outlive the returned iterator.
   // @param start, end indicates compaction range
+  static
   InternalIterator* MakeInputIterator(
       const ReadOptions& read_options, const Compaction* c,
       RangeDelAggregator* range_del_agg,
@@ -1388,6 +1391,11 @@ class VersionSet {
                            const Slice& start, const Slice& end,
                            int start_level, int end_level,
                            TableReaderCaller caller);
+  template<class IternalCmp>
+  uint64_t ApproximateSizeTmpl(const SizeApproximationOptions& options, Version* v,
+                               const Slice& start, const Slice& end,
+                               int start_level, int end_level,
+                               TableReaderCaller, IternalCmp);
 
   // Return the size of the current manifest file
   uint64_t manifest_file_size() const { return manifest_file_size_; }
@@ -1476,11 +1484,21 @@ class VersionSet {
   uint64_t ApproximateOffsetOf(Version* v, const FdWithKeyRange& f,
                                const Slice& key, TableReaderCaller caller);
 
+  template<class InternalCmp>
+  uint64_t ApproximateOffsetOfTmpl(Version* v, const FdWithKeyRange& f,
+                                   const Slice& key, TableReaderCaller,
+                                   InternalCmp);
+
   // Returns approximated data size between start and end keys in a file
   // for a given version.
   uint64_t ApproximateSize(Version* v, const FdWithKeyRange& f,
                            const Slice& start, const Slice& end,
                            TableReaderCaller caller);
+
+  template<class InternalCmp>
+  uint64_t ApproximateSizeTmpl(Version* v, const FdWithKeyRange& f,
+                               const Slice& start, const Slice& end,
+                               TableReaderCaller, InternalCmp);
 
   struct MutableCFState {
     uint64_t log_number;

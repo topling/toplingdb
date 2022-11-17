@@ -90,16 +90,117 @@ namespace ROCKSDB_NAMESPACE {
 
 namespace {
 
+#if defined(_MSC_VER) /* Visual Studio */
+#define FORCE_INLINE __forceinline
+#elif defined(__GNUC__)
+#define FORCE_INLINE __attribute__((always_inline))
+#pragma GCC diagnostic ignored "-Wattributes"
+#else
+#define inline
+#endif
+
+static FORCE_INLINE uint64_t GetUnalignedU64(const void* ptr) noexcept {
+  uint64_t x;
+  memcpy(&x, ptr, sizeof(uint64_t));
+  return x;
+}
+
+struct BytewiseCompareInternalKey {
+  FORCE_INLINE bool operator()(Slice x, Slice y) const noexcept {
+    size_t n = std::min(x.size_, y.size_) - 8;
+    int cmp = memcmp(x.data_, y.data_, n);
+    if (0 != cmp) return cmp < 0;
+    if (x.size_ != y.size_) return x.size_ < y.size_;
+    return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+  }
+  FORCE_INLINE bool operator()(uint64_t x, uint64_t y) const noexcept {
+    return x < y;
+  }
+};
+struct RevBytewiseCompareInternalKey {
+  FORCE_INLINE bool operator()(Slice x, Slice y) const noexcept {
+    size_t n = std::min(x.size_, y.size_) - 8;
+    int cmp = memcmp(x.data_, y.data_, n);
+    if (0 != cmp) return cmp > 0;
+    if (x.size_ != y.size_) return x.size_ > y.size_;
+    return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+  }
+  FORCE_INLINE bool operator()(uint64_t x, uint64_t y) const noexcept {
+    return x > y;
+  }
+};
+template<class Cmp>
+size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
+                           Slice key, size_t lo, size_t hi) {
+  const uint64_t* pxcache = brief.prefix_cache;
+  const uint64_t  key_prefix = HostPrefixCache(key);
+  const FdWithKeyRange* a = brief.files;
+  size_t mid;
+  while (lo < hi) {
+    mid = (lo + hi) / 2;
+    if (cmp(pxcache[mid], key_prefix))
+      lo = mid + 1;
+    else if (cmp(key_prefix, pxcache[mid]))
+      hi = mid;
+    else
+      goto exact_search;
+  }
+  return lo;
+
+  while (lo < hi) {
+    mid = (lo + hi) / 2;
+  exact_search:
+    __builtin_prefetch(a[mid].largest_key.data_);
+    if (cmp(a[mid].largest_key, key))
+      lo = mid + 1;
+    else
+      hi = mid;
+  }
+  return lo;
+}
+
+struct FallbackVirtCmp {
+  bool operator()(Slice x, Slice y) const {
+    return icmp->Compare(x, y) < 0;
+  }
+  const InternalKeyComparator* icmp;
+};
+
+static
+size_t FindFileInRangeTmpl(FallbackVirtCmp cmp, const LevelFilesBrief& brief,
+                           Slice key, size_t lo, size_t hi) {
+  const FdWithKeyRange* a = brief.files;
+  while (lo < hi) {
+    size_t mid = (lo + hi) / 2;
+    if (cmp(a[mid].largest_key, key))
+      lo = mid + 1;
+    else
+      hi = mid;
+  }
+  return lo;
+}
+
 // Find File in LevelFilesBrief data structure
 // Within an index range defined by left and right
 int FindFileInRange(const InternalKeyComparator& icmp,
-                    const LevelFilesBrief& file_level, const Slice& key,
-                    uint32_t left, uint32_t right) {
-  auto cmp = [&](const FdWithKeyRange& f, const Slice& k) -> bool {
-    return icmp.InternalKeyComparator::Compare(f.largest_key, k) < 0;
-  };
-  const auto& b = file_level.files;
-  return static_cast<int>(std::lower_bound(b + left, b + right, key, cmp) - b);
+    const LevelFilesBrief& file_level,
+    const Slice& key,
+    uint32_t left,
+    uint32_t right) {
+  if (icmp.IsForwardBytewise()) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    BytewiseCompareInternalKey cmp;
+    return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
+  }
+  else if (icmp.IsReverseBytewise()) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    RevBytewiseCompareInternalKey cmp;
+    return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
+  }
+  else {
+    FallbackVirtCmp cmp{&icmp};
+    return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
+  }
 }
 
 Status OverlapWithIterator(const Comparator* ucmp,
@@ -128,6 +229,31 @@ Status OverlapWithIterator(const Comparator* ucmp,
 
   return iter->status();
 }
+
+static FORCE_INLINE int BytewiseCompare(Slice x, Slice y) noexcept {
+  size_t n = std::min(x.size_, y.size_);
+  int cmp = memcmp(x.data_, y.data_, n);
+  if (cmp)
+    return cmp;
+  else
+    return int(x.size_ - y.size_); // ignore key len larger than 2G-1
+}
+struct ForwardBytewiseCompareUserKey {
+  FORCE_INLINE int operator()(Slice x, Slice y) const noexcept {
+    return BytewiseCompare(x, y);
+  }
+};
+struct ReverseBytewiseCompareUserKey {
+  FORCE_INLINE int operator()(Slice x, Slice y) const noexcept {
+    return BytewiseCompare(y, x);
+  }
+};
+struct VirtualFunctionCompareUserKey {
+  FORCE_INLINE int operator()(Slice x, Slice y) const noexcept {
+    return cmp->CompareWithoutTimestamp(x, y);
+  }
+  const Comparator* cmp;
+};
 
 // Class to help choose the next file to search for the particular key.
 // Searches and returns files level by level.
@@ -171,6 +297,15 @@ class FilePicker {
   int GetCurrentLevel() const { return curr_level_; }
 
   FdWithKeyRange* GetNextFile() {
+    if (IsForwardBytewiseComparator(user_comparator_))
+      return GetNextFileTmpl(ForwardBytewiseCompareUserKey());
+    else if (IsReverseBytewiseComparator(user_comparator_))
+      return GetNextFileTmpl(ReverseBytewiseCompareUserKey());
+    else
+      return GetNextFileTmpl(VirtualFunctionCompareUserKey{user_comparator_});
+  }
+  template<class Compare>
+  FdWithKeyRange* GetNextFileTmpl(Compare cmp) {
     while (!search_ended_) {  // Loops over different levels.
       while (curr_index_in_curr_level_ < curr_file_level_->num_files) {
         // Loops over all files in current level.
@@ -194,14 +329,11 @@ class FilePicker {
           // range.
           assert(curr_level_ == 0 ||
                  curr_index_in_curr_level_ == start_index_in_curr_level_ ||
-                 user_comparator_->CompareWithoutTimestamp(
-                     user_key_, ExtractUserKey(f->smallest_key)) <= 0);
+                 cmp(user_key_, ExtractUserKey(f->smallest_key)) <= 0);
 
-          int cmp_smallest = user_comparator_->CompareWithoutTimestamp(
-              user_key_, ExtractUserKey(f->smallest_key));
+          int cmp_smallest = cmp(user_key_, ExtractUserKey(f->smallest_key));
           if (cmp_smallest >= 0) {
-            cmp_largest = user_comparator_->CompareWithoutTimestamp(
-                user_key_, ExtractUserKey(f->largest_key));
+            cmp_largest = cmp(user_key_, ExtractUserKey(f->largest_key));
           }
 
           // Setup file search bound for the next level based on the
@@ -854,11 +986,14 @@ void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
   size_t num = files.size();
   file_level->num_files = num;
   char* mem = arena->AllocateAligned(num * sizeof(FdWithKeyRange));
+  auto pxcache = (uint64_t*)arena->AllocateAligned(num * sizeof(uint64_t));
   file_level->files = new (mem) FdWithKeyRange[num];
+  file_level->prefix_cache = pxcache;
 
   for (size_t i = 0; i < num; i++) {
     Slice smallest_key = files[i]->smallest.Encode();
     Slice largest_key = files[i]->largest.Encode();
+    pxcache[i] = HostPrefixCache(largest_key);
 
     // Copy key slice to sequential memory
     size_t smallest_size = smallest_key.size();
@@ -957,6 +1092,7 @@ class LevelIterator final : public InternalIterator {
         caller_(caller),
         skip_filters_(skip_filters),
         allow_unprepared_value_(allow_unprepared_value),
+        opt_cmp_type_(icomparator.user_comparator()->opt_cmp_type()),
         file_index_(flevel_->num_files),
         level_(level),
         range_del_agg_(range_del_agg),
@@ -970,9 +1106,25 @@ class LevelIterator final : public InternalIterator {
     if (range_tombstone_iter_ptr_) {
       *range_tombstone_iter_ptr_ = &range_tombstone_iter_;
     }
+    if (read_options.cache_sst_file_iter) {
+      file_iter_cache_ = new InternalIterator*[flevel->num_files]();
+    } else {
+      file_iter_cache_ = nullptr;
+    }
   }
 
-  ~LevelIterator() override { delete file_iter_.Set(nullptr); }
+  ~LevelIterator() override {
+    if (file_iter_cache_) {
+      for (size_t i = 0, n = flevel_->num_files; i < n; i++) {
+        auto iter = file_iter_cache_[i];
+        if (UNLIKELY(nullptr != iter))
+          delete iter;
+      }
+      delete file_iter_cache_;
+    } else {
+      delete file_iter_.Set(nullptr);
+    }
+  }
 
   // Seek to the first file with a key >= target.
   // If range_tombstone_iter_ is not nullptr, then we pretend that file
@@ -1058,7 +1210,7 @@ class LevelIterator final : public InternalIterator {
   void SetFileIterator(InternalIterator* iter);
   void InitFileIterator(size_t new_file_index);
 
-  const Slice& file_smallest_key(size_t file_index) {
+  const Slice& file_smallest_key(size_t file_index) const {
     assert(file_index < flevel_->num_files);
     return flevel_->files[file_index].smallest_key;
   }
@@ -1099,14 +1251,25 @@ class LevelIterator final : public InternalIterator {
       largest_compaction_key = (*compaction_boundaries_)[file_index_].largest;
     }
     CheckMayBeOutOfLowerBound();
+
     ClearRangeTombstoneIter();
-    return table_cache_->NewIterator(
+    InternalIterator* iter = nullptr;
+    if (file_iter_cache_) {
+      iter = file_iter_cache_[file_index_];
+    }
+    if (!iter) {
+      iter = table_cache_->NewIterator(
         read_options_, file_options_, icomparator_, *file_meta.file_metadata,
         range_del_agg_, prefix_extractor_,
         nullptr /* don't need reference to table */, file_read_hist_, caller_,
         /*arena=*/nullptr, skip_filters_, level_,
         /*max_file_size_for_l0_meta_pin=*/0, smallest_compaction_key,
         largest_compaction_key, allow_unprepared_value_, range_tombstone_iter_);
+      if (file_iter_cache_) {
+        file_iter_cache_[file_index_] = iter;
+      }
+    }
+    return iter;
   }
 
   // Check if current file being fully within iterate_lower_bound.
@@ -1116,10 +1279,36 @@ class LevelIterator final : public InternalIterator {
   void CheckMayBeOutOfLowerBound() {
     if (read_options_.iterate_lower_bound != nullptr &&
         file_index_ < flevel_->num_files) {
-      may_be_out_of_lower_bound_ =
-          user_comparator_.CompareWithoutTimestamp(
-              ExtractUserKey(file_smallest_key(file_index_)), /*a_has_ts=*/true,
-              *read_options_.iterate_lower_bound, /*b_has_ts=*/false) < 0;
+      switch (opt_cmp_type_) {
+      case 0: // IsForwardBytewise()
+        may_be_out_of_lower_bound_ =
+            ExtractUserKey(file_smallest_key(file_index_)) <
+                *read_options_.iterate_lower_bound;
+        break;
+      case 1: // IsReverseBytewise()
+        may_be_out_of_lower_bound_ =
+            ExtractUserKey(file_smallest_key(file_index_)) >
+                *read_options_.iterate_lower_bound;
+        break;
+      default:
+        may_be_out_of_lower_bound_ =
+            user_comparator_.CompareWithoutTimestamp(
+                ExtractUserKey(file_smallest_key(file_index_)), /*a_has_ts=*/true,
+                *read_options_.iterate_lower_bound, /*b_has_ts=*/false) < 0;
+      }
+    }
+  }
+  bool FileIsOutOfUpperBound(size_t file_index) const {
+    Slice file_smallest_ukey = ExtractUserKey(file_smallest_key(file_index));
+    switch (opt_cmp_type_) {
+    case 0: // IsForwardBytewise()
+      return !(file_smallest_ukey < *read_options_.iterate_upper_bound);
+    case 1: // IsReverseBytewise()
+      return !(file_smallest_ukey > *read_options_.iterate_upper_bound);
+    default:
+      return user_comparator_.CompareWithoutTimestamp(
+              *read_options_.iterate_upper_bound, /*b_has_ts=*/false,
+              file_smallest_ukey, /*a_has_ts=*/true) <= 0;
     }
   }
 
@@ -1141,11 +1330,13 @@ class LevelIterator final : public InternalIterator {
   bool skip_filters_;
   bool allow_unprepared_value_;
   bool may_be_out_of_lower_bound_ = true;
+  uint8_t opt_cmp_type_;
   size_t file_index_;
   int level_;
   RangeDelAggregator* range_del_agg_;
   IteratorWrapper file_iter_;  // May be nullptr
   PinnedIteratorsManager* pinned_iters_mgr_;
+  InternalIterator** file_iter_cache_;
 
   // To be propagated to RangeDelAggregator in order to safely truncate range
   // tombstones.
@@ -1201,18 +1392,37 @@ void LevelIterator::Seek(const Slice& target) {
   bool need_to_reseek = true;
   if (file_iter_.iter() != nullptr && file_index_ < flevel_->num_files) {
     const FdWithKeyRange& cur_file = flevel_->files[file_index_];
-    if (icomparator_.InternalKeyComparator::Compare(
-            target, cur_file.largest_key) <= 0 &&
-        icomparator_.InternalKeyComparator::Compare(
-            target, cur_file.smallest_key) >= 0) {
-      need_to_reseek = false;
-      assert(static_cast<size_t>(FindFile(icomparator_, *flevel_, target)) ==
-             file_index_);
+    auto check_need_to_reseek = [&](auto cmp) {
+      if (!cmp(cur_file.largest_key, target) &&
+          !cmp(target, cur_file.smallest_key)) {
+        need_to_reseek = false;
+        assert(static_cast<size_t>(FindFile(icomparator_, *flevel_, target)) ==
+              file_index_);
+      }
+    };
+    switch (opt_cmp_type_) {
+    case 0: // IsForwardBytewise()
+      check_need_to_reseek(BytewiseCompareInternalKey());
+      break;
+    case 1: // IsReverseBytewise()
+      check_need_to_reseek(RevBytewiseCompareInternalKey());
+    default:
+      check_need_to_reseek(FallbackVirtCmp{&icomparator_});
+      break;
     }
   }
   if (need_to_reseek) {
     TEST_SYNC_POINT("LevelIterator::Seek:BeforeFindFile");
     size_t new_file_index = FindFile(icomparator_, *flevel_, target);
+    if (UNLIKELY(new_file_index >= flevel_->num_files)) {
+      SetFileIterator(nullptr);
+      return;
+    }
+    if (read_options_.iterate_upper_bound != nullptr &&
+              FileIsOutOfUpperBound(new_file_index)) {
+      SetFileIterator(nullptr);
+      return;
+    }
     InitFileIterator(new_file_index);
   }
 
@@ -1222,7 +1432,7 @@ void LevelIterator::Seek(const Slice& target) {
     // blocks has been submitted. So it should return at this point and Seek
     // should be called again to retrieve the requested block and execute the
     // remaining code.
-    if (file_iter_.status() == Status::TryAgain()) {
+    if (UNLIKELY(file_iter_.status().IsTryAgain())) {
       return;
     }
     if (!file_iter_.Valid() && file_iter_.status().ok() &&
@@ -1372,7 +1582,7 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
   assert(Valid());
   // file_iter_ is at EOF already when to_return_sentinel_
   bool is_valid = !to_return_sentinel_ && file_iter_.NextAndGetResult(result);
-  if (!is_valid) {
+  if (UNLIKELY(!is_valid)) {
     if (to_return_sentinel_) {
       ClearSentinel();
     } else if (range_tombstone_iter_) {
@@ -1493,6 +1703,10 @@ void LevelIterator::SetFileIterator(InternalIterator* iter) {
   // Update the read pattern for PrefetchBuffer.
   if (is_next_read_sequential_) {
     file_iter_.UpdateReadaheadState(old_iter);
+  }
+
+  if (file_iter_cache_) {
+    return; // don't PinIterator or delete old_iter
   }
 
   if (pinned_iters_mgr_ && pinned_iters_mgr_->PinningEnabled()) {
@@ -1699,6 +1913,24 @@ Status Version::GetPropertiesOfTablesInRange(
   return Status::OK();
 }
 
+std::string AggregateNames(const std::map<std::string, int>& map, const char* delim) {
+  std::string str;
+  size_t dlen = strlen(delim);
+  for (auto& kv : map) {
+    str.append(kv.first.empty() ? "N/A" : kv.first);
+    if (map.size() > 1) {
+      char buf[32];
+      auto len = snprintf(buf, sizeof(buf), "=%d", kv.second);
+      str.append(buf, len);
+      str.append(delim, dlen);
+    }
+  }
+  if (map.size() > 1) {
+    str.resize(str.size()-dlen); // trailing delim
+  }
+  return str;
+}
+
 Status Version::GetAggregatedTableProperties(
     std::shared_ptr<const TableProperties>* tp, int level) {
   TablePropertiesCollection props;
@@ -1713,9 +1945,14 @@ Status Version::GetAggregatedTableProperties(
   }
 
   auto* new_tp = new TableProperties();
+  new_tp->column_family_id = cfd_->GetID();
+  new_tp->column_family_name = cfd_->GetName();
+  std::map<std::string, int> algos;
   for (const auto& item : props) {
     new_tp->Add(*item.second);
+    algos[item.second->compression_name]++;
   }
+  new_tp->compression_name = AggregateNames(algos, ",");
   tp->reset(new_tp);
   return Status::OK();
 }
@@ -1774,6 +2011,9 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
           file->TryGetFileCreationTime(), file->file_checksum,
           file->file_checksum_func_name);
       files.back().num_entries = file->num_entries;
+      files.back().num_deletions = file->num_deletions;
+      files.back().smallest_ikey = file->smallest.Encode().ToString();
+      files.back().largest_ikey = file->largest.Encode().ToString();
       files.back().num_deletions = file->num_deletions;
       level_size += file->fd.GetFileSize();
     }
@@ -3327,6 +3567,18 @@ void VersionStorageInfo::ComputeCompactionScore(
         total_downcompact_bytes +=
             static_cast<double>(level_total_bytes - MaxBytesForLevel(level));
       }
+     #if !defined(ROCKSDB_UNIT_TEST)
+      if (level_bytes_no_compacting && 1 == level &&
+            compaction_style_ == kCompactionStyleLevel) {
+        unsigned L1_score_boost =
+            mutable_cf_options.compaction_options_universal.size_ratio;
+        if (L1_score_boost > 1) {
+          if (score < 1.1 && score >= 1.0/L1_score_boost)
+            score = 1.1; // boost score in range [1.0/boost, 1.1) to 1.1
+        }
+        // score *= std::max(L1_score_boost, 1.0);
+      }
+     #endif
     }
     compaction_level_[level] = level;
     compaction_score_[level] = score;
@@ -4210,6 +4462,12 @@ uint64_t VersionStorageInfo::NumLevelBytes(int level) const {
   assert(level >= 0);
   assert(level < num_levels());
   return TotalFileSize(files_[level]);
+}
+
+int VersionStorageInfo::FindFileInRange(int level, const Slice& key,
+                                        uint32_t left, uint32_t right) const {
+  return ROCKSDB_NAMESPACE::FindFileInRange(*internal_comparator_,
+            level_files_brief_[level], key, left, right);
 }
 
 const char* VersionStorageInfo::LevelSummary(
@@ -6158,9 +6416,31 @@ uint64_t VersionSet::ApproximateSize(const SizeApproximationOptions& options,
                                      const Slice& end, int start_level,
                                      int end_level, TableReaderCaller caller) {
   const auto& icmp = v->cfd_->internal_comparator();
+  if (icmp.IsForwardBytewise()) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    BytewiseCompareInternalKey cmp;
+    return ApproximateSizeTmpl(options, v, start, end, start_level, end_level, caller, cmp);
+  }
+  else if (icmp.IsReverseBytewise()) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    RevBytewiseCompareInternalKey cmp;
+    return ApproximateSizeTmpl(options, v, start, end, start_level, end_level, caller, cmp);
+  }
+  else {
+    FallbackVirtCmp cmp{&icmp};
+    return ApproximateSizeTmpl(options, v, start, end, start_level, end_level, caller, cmp);
+  }
+}
 
+template<class IternalCmp>
+uint64_t
+VersionSet::ApproximateSizeTmpl(const SizeApproximationOptions& options,
+                                Version* v, const Slice& start,
+                                const Slice& end, int start_level,
+                                int end_level, TableReaderCaller caller,
+                                IternalCmp cmp) {
   // pre-condition
-  assert(icmp.Compare(start, end) <= 0);
+  assert(!cmp(end, start));
 
   uint64_t total_full_size = 0;
   const auto* vstorage = v->storage_info();
@@ -6211,16 +6491,16 @@ uint64_t VersionSet::ApproximateSize(const SizeApproximationOptions& options,
 
     // identify the file position for start key
     const int idx_start =
-        FindFileInRange(icmp, files_brief, start, 0,
-                        static_cast<uint32_t>(files_brief.num_files - 1));
+        FindFileInRangeTmpl(cmp, files_brief, start, 0,
+                            static_cast<uint32_t>(files_brief.num_files - 1));
     assert(static_cast<size_t>(idx_start) < files_brief.num_files);
 
     // identify the file position for end key
     int idx_end = idx_start;
-    if (icmp.Compare(files_brief.files[idx_end].largest_key, end) < 0) {
+    if (cmp(files_brief.files[idx_end].largest_key, end)) {
       idx_end =
-          FindFileInRange(icmp, files_brief, end, idx_start,
-                          static_cast<uint32_t>(files_brief.num_files - 1));
+          FindFileInRangeTmpl(cmp, files_brief, end, idx_start,
+                              static_cast<uint32_t>(files_brief.num_files - 1));
     }
     assert(idx_end >= idx_start &&
            static_cast<size_t>(idx_end) < files_brief.num_files);
@@ -6268,7 +6548,7 @@ uint64_t VersionSet::ApproximateSize(const SizeApproximationOptions& options,
     // Estimate for all the first files (might also be last files), at each
     // level
     for (const auto file_ptr : first_files) {
-      total_full_size += ApproximateSize(v, *file_ptr, start, end, caller);
+      total_full_size += ApproximateSizeTmpl(v, *file_ptr, start, end, caller, cmp);
     }
 
     // Estimate for all the last files, at each level
@@ -6288,12 +6568,33 @@ uint64_t VersionSet::ApproximateOffsetOf(Version* v, const FdWithKeyRange& f,
   // pre-condition
   assert(v);
   const auto& icmp = v->cfd_->internal_comparator();
+  if (IsForwardBytewiseComparator(icmp.user_comparator())) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    BytewiseCompareInternalKey cmp;
+    return ApproximateOffsetOfTmpl(v, f, key, caller, cmp);
+  }
+  else if (IsReverseBytewiseComparator(icmp.user_comparator())) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    RevBytewiseCompareInternalKey cmp;
+    return ApproximateOffsetOfTmpl(v, f, key, caller, cmp);
+  }
+  else {
+    FallbackVirtCmp cmp{&icmp};
+    return ApproximateOffsetOfTmpl(v, f, key, caller, cmp);
+  }
+}
 
+template<class InternalCmp>
+uint64_t VersionSet::ApproximateOffsetOfTmpl(Version* v,
+                                             const FdWithKeyRange& f,
+                                             const Slice& key,
+                                             TableReaderCaller caller,
+                                             InternalCmp cmp) {
   uint64_t result = 0;
-  if (icmp.Compare(f.largest_key, key) <= 0) {
+  if (!cmp(key, f.largest_key)) {
     // Entire file is before "key", so just add the file size
     result = f.fd.GetFileSize();
-  } else if (icmp.Compare(f.smallest_key, key) > 0) {
+  } else if (cmp(key, f.smallest_key)) {
     // Entire file is after "key", so ignore
     result = 0;
   } else {
@@ -6301,6 +6602,7 @@ uint64_t VersionSet::ApproximateOffsetOf(Version* v, const FdWithKeyRange& f,
     // approximate offset of "key" within the table.
     TableCache* table_cache = v->cfd_->table_cache();
     if (table_cache != nullptr) {
+      const auto& icmp = v->cfd_->internal_comparator();
       result = table_cache->ApproximateOffsetOf(
           key, *f.file_metadata, caller, icmp,
           v->GetMutableCFOptions().prefix_extractor);
@@ -6315,23 +6617,42 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   // pre-condition
   assert(v);
   const auto& icmp = v->cfd_->internal_comparator();
-  assert(icmp.Compare(start, end) <= 0);
+  if (icmp.IsForwardBytewise()) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    BytewiseCompareInternalKey cmp;
+    return ApproximateSizeTmpl(v, f, start, end, caller, cmp);
+  }
+  else if (icmp.IsReverseBytewise()) {
+    ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    RevBytewiseCompareInternalKey cmp;
+    return ApproximateSizeTmpl(v, f, start, end, caller, cmp);
+  }
+  else {
+    FallbackVirtCmp cmp{&icmp};
+    return ApproximateSizeTmpl(v, f, start, end, caller, cmp);
+  }
+}
 
-  if (icmp.Compare(f.largest_key, start) <= 0 ||
-      icmp.Compare(f.smallest_key, end) > 0) {
+template<class InternalCmp>
+uint64_t VersionSet::ApproximateSizeTmpl(Version* v, const FdWithKeyRange& f,
+                                         const Slice& start, const Slice& end,
+                                         TableReaderCaller caller, InternalCmp cmp) {
+  assert(!cmp(end, start));
+
+  if (!cmp(start, f.largest_key) || cmp(end, f.smallest_key)) {
     // Entire file is before or after the start/end keys range
     return 0;
   }
 
-  if (icmp.Compare(f.smallest_key, start) >= 0) {
+  if (!cmp(f.smallest_key, start)) {
     // Start of the range is before the file start - approximate by end offset
-    return ApproximateOffsetOf(v, f, end, caller);
+    return ApproximateOffsetOfTmpl(v, f, end, caller, cmp);
   }
 
-  if (icmp.Compare(f.largest_key, end) < 0) {
+  if (cmp(f.largest_key, end)) {
     // End of the range is after the file end - approximate by subtracting
     // start offset from the file size
-    uint64_t start_offset = ApproximateOffsetOf(v, f, start, caller);
+    uint64_t start_offset = ApproximateOffsetOfTmpl(v, f, start, caller, cmp);
     assert(f.fd.GetFileSize() >= start_offset);
     return f.fd.GetFileSize() - start_offset;
   }
@@ -6341,6 +6662,7 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   if (table_cache == nullptr) {
     return 0;
   }
+  const auto& icmp = v->cfd_->internal_comparator();
   return table_cache->ApproximateSize(
       start, end, *f.file_metadata, caller, icmp,
       v->GetMutableCFOptions().prefix_extractor);

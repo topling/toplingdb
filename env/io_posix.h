@@ -414,9 +414,6 @@ class PosixMmapReadableFile : public FSRandomAccessFile {
                 char* scratch, IODebugContext* dbg) const override;
   void Hint(AccessPattern pattern) override;
   IOStatus InvalidateCache(size_t offset, size_t length) override;
-  virtual IOStatus FsRead(uint64_t offset, size_t n, const IOOptions& opts,
-                          Slice* result, char* scratch,
-                          IODebugContext* dbg) const override;
   virtual intptr_t FileDescriptor() const override;
 };
 

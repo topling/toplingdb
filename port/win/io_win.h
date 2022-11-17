@@ -150,7 +150,6 @@ class WinMmapReadableFile : private WinFileData, public FSRandomAccessFile {
   IOStatus Read(uint64_t offset, size_t n, const IOOptions& options,
                 Slice* result, char* scratch,
                 IODebugContext* dbg) const override;
-  virtual Status FsRead(uint64_t offset, size_t len, void* buf) const override;
 
   virtual IOStatus InvalidateCache(size_t offset, size_t length) override;
 

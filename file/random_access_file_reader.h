@@ -86,7 +86,6 @@ class RandomAccessFileReader {
   SystemClock* clock_;
   Statistics* stats_;
   uint32_t hist_type_;
-  bool     use_fsread_;
   HistogramImpl* file_read_hist_;
   RateLimiter* rate_limiter_;
   std::vector<std::shared_ptr<EventListener>> listeners_;
@@ -143,8 +142,6 @@ class RandomAccessFileReader {
         listeners_(),
         file_temperature_(file_temperature),
         is_last_level_(is_last_level) {
-    const char* env = getenv("ToplingDB_FileReaderUseFsRead");
-    use_fsread_ = env && atoi(env); // default false, NOLINT
 #ifndef ROCKSDB_LITE
     std::for_each(listeners.begin(), listeners.end(),
                   [this](const std::shared_ptr<EventListener>& e) {
@@ -210,8 +207,6 @@ class RandomAccessFileReader {
 
   const std::string& file_name() const { return file_name_; }
 
-  void set_use_fsread(bool b) { use_fsread_ = b; }
-  bool use_fsread() const { return use_fsread_; }
   bool use_direct_io() const { return file_->use_direct_io(); }
 
   IOStatus PrepareIOOptions(const ReadOptions& ro, IOOptions& opts);

@@ -201,12 +201,8 @@ IOStatus RandomAccessFileReader::Read(
           // one iteration of this loop, so we don't need to check and adjust
           // the opts.timeout before calling file_->Read
           assert(!opts.timeout.count() || allowed == n);
-          if (use_fsread_)
-            io_s = file_->FsRead(offset + pos, allowed, opts, &tmp_result,
-                            scratch + pos, nullptr);
-          else
-            io_s = file_->Read(offset + pos, allowed, opts, &tmp_result,
-                            scratch + pos, nullptr);
+          io_s = file_->Read(offset + pos, allowed, opts, &tmp_result,
+                             scratch + pos, nullptr);
         }
 #ifndef ROCKSDB_LITE
         if (ShouldNotifyListeners()) {

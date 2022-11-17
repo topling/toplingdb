@@ -246,7 +246,9 @@ CXXFLAGS += -Isideplugin/rockside/3rdparty/rapidyaml \
 # topling-core is topling private
 ifneq (,$(wildcard sideplugin/topling-core))
   TOPLING_CORE_DIR := sideplugin/topling-core
+  CXXFLAGS += -DGITHUB_TOPLING_ZIP='"https://github.com/rockeet/topling-core"'
 else
+  CXXFLAGS += -DGITHUB_TOPLING_ZIP='"https://github.com/topling/topling-zip"'
   # topling-zip is topling public
   ifeq (,$(wildcard sideplugin/topling-zip))
     $(warning sideplugin/topling-zip is not present, clone it from github...)
@@ -357,6 +359,23 @@ else
   $(warning NotFound sideplugin/cspp-wbwi, this is ok, only Topling CSPP WBWI(WriteBatchWithIndex) is disabled)
 endif
 
+ifeq (,$(wildcard sideplugin/topling-sst/src/table))
+  dummy := $(shell set -e -x; \
+    cd sideplugin; \
+    git clone https://github.com/topling/topling-sst; \
+    cd topling-sst; \
+  )
+endif
+ifneq (,$(wildcard sideplugin/topling-sst/src/table))
+  # now we have topling-sst
+  CXXFLAGS   += -DHAS_TOPLING_SST -Isideplugin/topling-sst/src
+  TOPLING_SST_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_sst.cc
+  EXTRA_LIB_SOURCES += $(wildcard sideplugin/topling-sst/src/table/*.cc) \
+                       sideplugin/topling-sst/${TOPLING_SST_GIT_VER_SRC}
+else
+  $(warning NotFound sideplugin/topling-sst, this is ok, only Topling Open SST(s) are disabled)
+endif
+
 export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   += -I sideplugin/topling-rocks/src
@@ -364,8 +383,7 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
   EXTRA_LIB_SOURCES += \
     $(wildcard sideplugin/topling-rocks/src/dcompact/*.cc) \
-    $(wildcard sideplugin/topling-rocks/src/table/*.cc) \
-    sideplugin/topling-rocks/src/misc/show_sys_info.cc \
+    $(wildcard sideplugin/topling-rocks/src/table/*_zip_*.cc) \
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
 else
   $(warning NotFound sideplugin/topling-rocks, this is ok, only Topling SST and Distributed Compaction are disabled)
@@ -2914,6 +2932,13 @@ sideplugin/cspp-wbwi/${CSPP_WBWI_GIT_VER_SRC}: \
   sideplugin/cspp-wbwi/cspp_wbwi.cc \
   sideplugin/cspp-wbwi/Makefile
 	+make -C sideplugin/cspp-wbwi ${CSPP_WBWI_GIT_VER_SRC}
+endif
+ifneq (,$(wildcard sideplugin/topling-sst/src/table))
+sideplugin/topling-sst/${TOPLING_SST_GIT_VER_SRC}: \
+  $(wildcard sideplugin/topling-sst/src/table/*.h) \
+  $(wildcard sideplugin/topling-sst/src/table/*.cc) \
+  sideplugin/topling-sst/Makefile
+	+make -C sideplugin/topling-sst ${TOPLING_SST_GIT_VER_SRC}
 endif
 
 # Remove the rules for which dependencies should not be generated and see if any are left.

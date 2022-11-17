@@ -33,8 +33,9 @@ With SidePlugin mechanics, plugins/components can be physically seperated from c
 [ToplingDB](https://github.com/topling/toplingdb) | public | Top repositry, forked from [RocksDB](https://github.com/facebook/rocksdb) with our fixes, refactories and enhancements
 [rockside](https://github.com/topling/rockside) | public | This is a submodule, contains:<ul><li>SidePlugin framework</li><li>Embeded Http Server</li><li>Prometheus metrics</li><li>Builtin SidePlugin**s**</li></ul>
 [cspp-wbwi<br>(**W**rite**B**atch**W**ith**I**ndex)](https://github.com/topling/cspp-wbwi) | public | Auto clone in Makefile
-[cspp-memtable](https://github.com/topling/cspp-memtable) | pulbic | Auto clone in Makefile, [open for partner](https://github.com/topling/rockside/wiki/Topling-Partner). Usage [doc](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)
-[topling-rocks](https://github.com/topling/topling-rocks) | **private** | Auto clone in Makefile, contains:<ul><li>[Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable)</li><li>[Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)</li><li>[Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction)</li></ul>
+[cspp-memtable](https://github.com/topling/cspp-memtable) | pulbic | Auto clone in Makefile. Usage [doc](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)
+[topling-sst](https://github.com/topling/topling-sst) | pulbic | Auto clone in Makefile. Contains:<ul> <li>SingleFastTable(designed for L0 and L1)</li><li>VecAutoSortTable(designed for MyTopling bulk_load).</li><li>Deprecated ToplingFastTable, CSPPAutoSortTable</li></ul>
+[topling-rocks](https://github.com/topling/topling-rocks) | **private** | Auto clone in Makefile, contains:<ul><li>[Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)</li><li>[Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction)</li></ul>
 
 **private** repo**s** are auto cloned in ToplingDB's Makefile, community users has no access permission to these **private** repo**s**, so the auto clone in Makefile will fail, thus ToplingDB is built without **private** components, this is so called **community** version.
 

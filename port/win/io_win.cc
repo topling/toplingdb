@@ -234,20 +234,6 @@ IOStatus WinMmapReadableFile::Read(uint64_t offset, size_t n,
   return s;
 }
 
-Status WinMmapReadableFile::FsRead(uint64_t offset, size_t len, void* buf)
-const {
-  size_t bytes_read = 0;
-  Status s = pread(this, (char*)buf, len, offset, bytes_read);
-  if (bytes_read != len) {
-    s = IOError(
-        "PosixMmapReadableFile::FsRead(): pread(\"file = " + filename_
-            + "\", offset = " + ToString(offset)
-            + ", len = " + ToString(len) + ") = " + ToString(bytes_read),
-        errno);
-  }
-  return s;
-}
-
 IOStatus WinMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
   return IOStatus::OK();
 }

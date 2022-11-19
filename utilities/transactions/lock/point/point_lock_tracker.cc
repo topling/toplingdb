@@ -101,11 +101,9 @@ UntrackStatus PointLockTracker::Untrack(const PointLockRequest& r) {
   bool removed = false;
   if (info.num_reads == 0 && info.num_writes == 0) {
     keys.erase(it);
-   #if 0 // erase_all() is slow when keys has big cap
     if (keys.empty()) {
       keys.erase_all(); // set to clean state and keep memory
     }
-   #endif
     removed = true;
   }
 

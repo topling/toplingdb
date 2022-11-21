@@ -2181,10 +2181,7 @@ std::vector<Status> DBImpl::MultiGet(
   for (auto cf : column_family) {
     auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(cf);
     auto cfd = cfh->cfd();
-    if (multiget_cf_data.find(cfd->GetID()) == multiget_cf_data.end()) {
-      multiget_cf_data.emplace(cfd->GetID(),
-                               MultiGetColumnFamilyData(cfh, nullptr));
-    }
+    multiget_cf_data.try_emplace(cfd->GetID(), cfh, nullptr);
   }
 
   bool unref_only = MultiCFSnapshot(read_options, nullptr, &multiget_cf_data,

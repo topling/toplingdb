@@ -119,13 +119,10 @@ UntrackStatus PointLockTracker::Untrack(const PointLockRequest& r) {
 void PointLockTracker::Merge(const LockTracker& tracker) {
   const PointLockTracker& t = static_cast<const PointLockTracker&>(tracker);
   for (const auto& cf_keys : t.tracked_keys_) {
-    ColumnFamilyId cf = cf_keys.first;
     const auto& keys = cf_keys.second;
 
-    auto current_cf_keys = tracked_keys_.find(cf);
-    if (current_cf_keys == tracked_keys_.end()) {
-      tracked_keys_.emplace(cf_keys);
-    } else {
+    auto [current_cf_keys, insert_cf_ok] = tracked_keys_.emplace(cf_keys);
+    if (!insert_cf_ok) { // cf existed, do merge
       auto& current_keys = current_cf_keys->second;
       for (const auto& key_info : keys) {
         const auto& key = key_info.first;

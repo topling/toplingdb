@@ -19,8 +19,8 @@ ToplingDB has much more key features than RocksDB:
 1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
 
 ## ToplingDB cloud native services
-1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB), [Todis on aliyun](https://topling.cn/products)
-2. ToplingSQL(MySQL on ToplingDB), comming soon...
+1. [MyTopling](https://github.com/topling/mytopling)(MySQL on ToplingDB), [Managed MyTopling on aliyun](https://topling.cn/products/mytopling/)
+1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB), [Managed Todis on aliyun](https://topling.cn/products/todis-enterprise/)
 
 ## ToplingDB Components
 With SidePlugin mechanics, plugins/components can be physically seperated from core toplingdb
@@ -35,7 +35,8 @@ With SidePlugin mechanics, plugins/components can be physically seperated from c
 [cspp-wbwi<br>(**W**rite**B**atch**W**ith**I**ndex)](https://github.com/topling/cspp-wbwi) | public | Auto clone in Makefile
 [cspp-memtable](https://github.com/topling/cspp-memtable) | pulbic | Auto clone in Makefile. Usage [doc](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)
 [topling-sst](https://github.com/topling/topling-sst) | pulbic | Auto clone in Makefile. Contains:<ul> <li>SingleFastTable(designed for L0 and L1)</li><li>VecAutoSortTable(designed for MyTopling bulk_load).</li><li>Deprecated ToplingFastTable, CSPPAutoSortTable</li></ul>
-[topling-rocks](https://github.com/topling/topling-rocks) | **private** | Auto clone in Makefile, contains:<ul><li>[Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)</li><li>[Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction)</li></ul>
+[topling-dcompact](https://github.com/topling/topling-dcompact) | public | Auto clone in Makefile, Distributed Compaction
+[topling-rocks](https://github.com/topling/topling-rocks) | **private** | Auto clone in Makefile, contains:[Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)
 
 **private** repo**s** are auto cloned in ToplingDB's Makefile, community users has no access permission to these **private** repo**s**, so the auto clone in Makefile will fail, thus ToplingDB is built without **private** components, this is so called **community** version.
 

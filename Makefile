@@ -361,13 +361,29 @@ else
   $(warning NotFound sideplugin/topling-sst, this is ok, only Topling Open SST(s) are disabled)
 endif
 
+ifeq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
+  dummy := $(shell set -e -x; \
+    cd sideplugin; \
+    git clone https://github.com/topling/topling-dcompact; \
+    cd topling-dcompact; \
+  )
+endif
+ifneq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
+  # now we have topling-dcompact
+  #CXXFLAGS   += -Isideplugin/topling-dcompact/src
+  TOPLING_DCOMPACT_GIT_VER_SRC := ${BUILD_ROOT}/git-version-topling_dcompact.cc
+  EXTRA_LIB_SOURCES += $(wildcard sideplugin/topling-dcompact/src/dcompact/*.cc) \
+                       sideplugin/topling-dcompact/${TOPLING_DCOMPACT_GIT_VER_SRC}
+else
+  $(warning NotFound sideplugin/topling-dcompact, this is ok, only topling-dcompact is disabled)
+endif
+
 export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   += -I sideplugin/topling-rocks/src
   LDFLAGS    += -lstdc++fs -lcurl
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
   EXTRA_LIB_SOURCES += \
-    $(wildcard sideplugin/topling-rocks/src/dcompact/*.cc) \
     $(wildcard sideplugin/topling-rocks/src/table/*_zip_*.cc) \
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
 else
@@ -1066,7 +1082,11 @@ all_but_some_tests: $(LIBRARY) $(BENCHMARKS) tools tools_lib test_libs $(ROCKSDB
 
 static_lib: $(STATIC_LIBRARY)
 
+ifdef TOPLING_DCOMPACT_GIT_VER_SRC
+shared_lib: $(SHARED) dcompact_worker
+else
 shared_lib: $(SHARED)
+endif
 
 stress_lib: $(STRESS_LIBRARY)
 
@@ -2837,7 +2857,8 @@ dcompact_worker: ${SHARED1}
 ifeq (${MAKE_UNIT_TEST},1)
 	@echo rocksdb unit test, skip dcompact_worker
 else
-	+make -C sideplugin/topling-rocks/tools/dcompact ${OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
+	+make -C sideplugin/topling-dcompact/tools/dcompact ${OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
+	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/dcompact_worker.exe ${OBJ_DIR}
 endif
 endif
 
@@ -2859,6 +2880,14 @@ sideplugin/topling-sst/${TOPLING_SST_GIT_VER_SRC}: \
   $(wildcard sideplugin/topling-sst/src/table/*.cc) \
   sideplugin/topling-sst/Makefile
 	+make -C sideplugin/topling-sst ${TOPLING_SST_GIT_VER_SRC}
+endif
+ifneq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
+sideplugin/topling-dcompact/${TOPLING_DCOMPACT_GIT_VER_SRC}: \
+  $(wildcard sideplugin/topling-dcompact/src/dcompact/*.h) \
+  $(wildcard sideplugin/topling-dcompact/src/dcompact/*.cc) \
+  $(wildcard sideplugin/topling-dcompact/tools/dcompact/*.cpp) \
+  sideplugin/topling-dcompact/Makefile
+	+make -C sideplugin/topling-dcompact ${TOPLING_DCOMPACT_GIT_VER_SRC}
 endif
 
 # Remove the rules for which dependencies should not be generated and see if any are left.

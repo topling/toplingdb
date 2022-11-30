@@ -641,6 +641,14 @@ else()
   message(STATUS "not found ${topling_sst}")
 endif()
 
+FILE(GLOB topling_dcompact ${PROJECT_SOURCE_DIR}/sideplugin/topling-dcompact/src/dcompact/*.cc)
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-sst/src/dcompact)
+  message(STATUS "found ${topling_dcompact}")
+  set (topling_rocks_src ${topling_rocks_src} ${topling_dcompact})
+else()
+  message(STATUS "not found ${topling_dcompact}")
+endif()
+
 set(SOURCES
         ${rockside_src}
         ${topling_rocks_src}

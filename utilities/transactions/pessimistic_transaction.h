@@ -320,6 +320,7 @@ class ReadOnlyTxn : public PessimisticTransaction {
 
   ~ReadOnlyTxn() override {}
 
+#if 0
   using TransactionBaseImpl::GetForUpdate;
   Status GetForUpdate(const ReadOptions& /*read_options*/,
                       ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
@@ -333,6 +334,7 @@ class ReadOnlyTxn : public PessimisticTransaction {
                       const bool /*do_validate*/) override  {
     return Status::NotSupported("Not supported in secondary mode.");
   };
+#endif
 
   using TransactionBaseImpl::Put;
   Status Put(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,

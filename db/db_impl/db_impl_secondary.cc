@@ -459,9 +459,16 @@ Iterator* DBImplSecondary::NewIterator(const ReadOptions& read_options,
     return NewErrorIterator(Status::NotSupported(
         "tailing iterator not supported in secondary mode"));
   } else if (read_options.snapshot != nullptr) {
+   #if defined(ROCKSDB_UNIT_TEST)
     // TODO (yanqin) support snapshot.
     return NewErrorIterator(
         Status::NotSupported("snapshot not supported in secondary mode"));
+   #else
+    // I dont know why does not support iterator, I just add snapshot
+    // read stupidly
+    SequenceNumber snapshot(read_options.snapshot->GetSequenceNumber());
+    result = NewIteratorImpl(read_options, cfd, snapshot, read_callback);
+   #endif
   } else {
     SequenceNumber snapshot(kMaxSequenceNumber);
     result = NewIteratorImpl(read_options, cfd, snapshot, read_callback);

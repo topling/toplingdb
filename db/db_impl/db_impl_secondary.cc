@@ -464,9 +464,10 @@ Iterator* DBImplSecondary::NewIterator(const ReadOptions& read_options,
     return NewErrorIterator(
         Status::NotSupported("snapshot not supported in secondary mode"));
    #else
-    // I dont know why does not support iterator, I just add snapshot
-    // read stupidly
-    SequenceNumber snapshot(read_options.snapshot->GetSequenceNumber());
+    // I dont know why does not support iterator
+    // I just ignore the snapshot stupidly
+    SequenceNumber snapshot(kMaxSequenceNumber);
+    //SequenceNumber snapshot(read_options.snapshot->GetSequenceNumber());
     result = NewIteratorImpl(read_options, cfd, snapshot, read_callback);
    #endif
   } else {

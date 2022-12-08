@@ -321,6 +321,7 @@ Status DBImplSecondary::RecoverLogFiles(
   return status;
 }
 
+#if defined(ROCKSDB_UNIT_TEST)
 // Implementation of the DB interface
 Status DBImplSecondary::Get(const ReadOptions& read_options,
                             ColumnFamilyHandle* column_family, const Slice& key,
@@ -551,6 +552,7 @@ Status DBImplSecondary::NewIterators(
   }
   return Status::OK();
 }
+#endif // ROCKSDB_UNIT_TEST
 
 Status DBImplSecondary::CheckConsistency() {
   mutex_.AssertHeld();

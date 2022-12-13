@@ -2851,15 +2851,6 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
 sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
   $(shell find sideplugin/topling-rocks/{src,tools} -name '*.cc' -o -name '*.h')
 	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
-
-.PHONY: dcompact_worker
-dcompact_worker: ${SHARED1}
-ifeq (${MAKE_UNIT_TEST},1)
-	@echo rocksdb unit test, skip dcompact_worker
-else
-	+make -C sideplugin/topling-dcompact/tools/dcompact ${OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
-	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/dcompact_worker.exe ${OBJ_DIR}
-endif
 endif
 
 ifneq (,$(wildcard sideplugin/cspp-memtable))
@@ -2888,6 +2879,14 @@ sideplugin/topling-dcompact/${TOPLING_DCOMPACT_GIT_VER_SRC}: \
   $(wildcard sideplugin/topling-dcompact/tools/dcompact/*.cpp) \
   sideplugin/topling-dcompact/Makefile
 	+make -C sideplugin/topling-dcompact ${TOPLING_DCOMPACT_GIT_VER_SRC}
+.PHONY: dcompact_worker
+dcompact_worker: ${SHARED1}
+ifeq (${MAKE_UNIT_TEST},1)
+	@echo rocksdb unit test, skip dcompact_worker
+else
+	+make -C sideplugin/topling-dcompact/tools/dcompact ${OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
+	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/dcompact_worker.exe ${OBJ_DIR}
+endif
 endif
 
 # Remove the rules for which dependencies should not be generated and see if any are left.

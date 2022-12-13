@@ -371,6 +371,7 @@ endif
 ifneq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
   # now we have topling-dcompact
   #CXXFLAGS   += -Isideplugin/topling-dcompact/src
+  LDFLAGS    += -lstdc++fs -lcurl
   TOPLING_DCOMPACT_GIT_VER_SRC := ${BUILD_ROOT}/git-version-topling_dcompact.cc
   EXTRA_LIB_SOURCES += $(wildcard sideplugin/topling-dcompact/src/dcompact/*.cc) \
                        sideplugin/topling-dcompact/${TOPLING_DCOMPACT_GIT_VER_SRC}
@@ -381,7 +382,6 @@ endif
 export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   += -I sideplugin/topling-rocks/src
-  LDFLAGS    += -lstdc++fs -lcurl
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
   EXTRA_LIB_SOURCES += \
     $(wildcard sideplugin/topling-rocks/src/table/*_zip_*.cc) \

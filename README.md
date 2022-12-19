@@ -6,12 +6,7 @@ ToplingDB has much more key features than RocksDB:
 1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
 1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to [online change](https://github.com/topling/rockside/wiki/Online-Change-Options) db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...) without restart the running process
 1. Many improves and refactories on RocksDB, aimed for performance and extendibility
-1. [Topling**CSPP**MemTab](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)(**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling
-1. Topling **CSPP**WBWI(**W**rite**B**atch**W**ith**I**ndex), with CSPP and carefully coding, **CSPP_WBWI** is 20x faster than rocksdb SkipList based WBWI
 1. Topling transaction lock management, 5x faster than rocksdb
-1. [Topling**Fast**Table](https://github.com/topling/rockside/wiki/ToplingFastTable) is an SST implementation optimized for speed, aimed for MemTable flush and L0->L1 compaction.
-1. [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable) is an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which used dedicated searchable in-memory data compression algorithms.
-1. [Distributed Compaction](https://github.com/topling/rockside/wiki/Distributed-Compaction) for offload compactions on elastic computing clusters, this is more general than RocksDB Compaction Service.
 1. MultiGet with concurrent IO by fiber/coroutine + io_uring, much faster than RocksDB's MultiGet
 1. Topling de-virtualization, de-virtualize hotspot (virtual) functions, 10x improvements on hotspot funcions
 1. Builtin SidePlugin**s** for existing RocksDB components(Cache, Comparator, TableFactory, MemTableFactory...)
@@ -28,17 +23,31 @@ With SidePlugin mechanics, plugins/components can be physically seperated from c
 2. User code need not any changes, just change json/yaml files
 3. Topling's non-open-source enterprise plugins/components are delivered in this way
 
+### Repository dir structure
+```bash
+toplingdb
+  \__ sideplugin
+        \__ rockside           (submodule , sideplugin core and framework)
+        \__ cspp-memtab        (auto clone, sideplugin component)
+        \__ cspp-wbwi          (auto clone, sideplugin component)
+        \__ topling-sst        (auto clone, sideplugin component)
+        \__ topling-dcompact   (auto clone, sideplugin component)
+             \_ tools/dcompact (dcompact-worker binary app)
+        \__ topling-rocks      (auto clone, sideplugin component)
+        \__ topling-zip        (auto clone, zip and core lib)
+```
+
  Repository    | Permission | Description (and components)
 -------------- | ---------- | -----------
 [ToplingDB](https://github.com/topling/toplingdb) | public | Top repositry, forked from [RocksDB](https://github.com/facebook/rocksdb) with our fixes, refactories and enhancements
-[rockside](https://github.com/topling/rockside) | public | This is a submodule, contains:<ul><li>SidePlugin framework</li><li>Embeded Http Server</li><li>Prometheus metrics</li><li>Builtin SidePlugin**s**</li></ul>
-[cspp-wbwi<br>(**W**rite**B**atch**W**ith**I**ndex)](https://github.com/topling/cspp-wbwi) | public | Auto clone in Makefile
-[cspp-memtable](https://github.com/topling/cspp-memtable) | pulbic | Auto clone in Makefile. Usage [doc](https://github.com/topling/rockside/wiki/ToplingCSPPMemTab)
-[topling-sst](https://github.com/topling/topling-sst) | pulbic | Auto clone in Makefile. Contains:<ul> <li>SingleFastTable(designed for L0 and L1)</li><li>VecAutoSortTable(designed for MyTopling bulk_load).</li><li>Deprecated ToplingFastTable, CSPPAutoSortTable</li></ul>
-[topling-dcompact](https://github.com/topling/topling-dcompact) | public | Auto clone in Makefile, Distributed Compaction
-[topling-rocks](https://github.com/topling/topling-rocks) | **private** | Auto clone in Makefile, contains:[Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)
+[rockside](https://github.com/topling/rockside) | public | This is a submodule, contains:<ul><li>SidePlugin framework and Builtin SidePlugin**s**</li><li>Embeded Http Server and Prometheus metrics</li></ul>
+[cspp-wbwi<br>(**W**rite**B**atch**W**ith**I**ndex)](https://github.com/topling/cspp-wbwi) | public | With CSPP and carefully coding, **CSPP_WBWI** is 20x faster than rocksdb SkipList based WBWI
+[cspp-memtable](https://github.com/topling/cspp-memtable) | pulbic | (**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling)
+[topling-sst](https://github.com/topling/topling-sst) | pulbic | 1. [SingleFastTable](https://github.com/topling/rockside/wiki/SingleFastTable)(designed for L0 and L1)<br/> 2. VecAutoSortTable(designed for MyTopling bulk_load).<br/> 3. Deprecated [ToplingFastTable](https://github.com/topling/rockside/wiki/ToplingFastTable), CSPPAutoSortTable
+[topling-dcompact](https://github.com/topling/topling-dcompact) | public | Distributed Compaction with general dcompact_worker application, offload compactions to elastic computing clusters, much more powerful than RocksDB Compaction Service
+[topling-rocks](https://github.com/topling/topling-rocks) | **private** | [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable), an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which uses topling dedicated searchable in-memory data compression algorithms
 
-**private** repo**s** are auto cloned in ToplingDB's Makefile, community users has no access permission to these **private** repo**s**, so the auto clone in Makefile will fail, thus ToplingDB is built without **private** components, this is so called **community** version.
+repo**s** are auto cloned in ToplingDB's Makefile, community users will auto clone public repo successfully but fail to auto clone **private** repo, thus ToplingDB is built without **private** components, this is so called **community** version.
 
 ## Run db_bench
 ToplingDB requires gcc 8.4 or newer, or new clang(in near 3 years).

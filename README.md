@@ -19,7 +19,7 @@ ToplingDB has much more key features than RocksDB:
 
 ## ToplingDB Components
 With SidePlugin mechanics, plugins/components can be physically seperated from core toplingdb
-1. Compiled to a seperated dynamic lib and loaded at runtime
+1. Can be compiled to a seperated dynamic lib and loaded at runtime
 2. User code need not any changes, just change json/yaml files
 3. Topling's non-open-source enterprise plugins/components are delivered in this way
 
@@ -47,7 +47,7 @@ toplingdb
 [topling-dcompact](https://github.com/topling/topling-dcompact) | public | Distributed Compaction with general dcompact_worker application, offload compactions to elastic computing clusters, much more powerful than RocksDB Compaction Service
 [topling-rocks](https://github.com/topling/topling-rocks) | **private** | [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable), an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which uses topling dedicated searchable in-memory data compression algorithms
 
-repo**s** are auto cloned in ToplingDB's Makefile, community users will auto clone public repo successfully but fail to auto clone **private** repo, thus ToplingDB is built without **private** components, this is so called **community** version.
+To simplify the compiling, repo**s** are auto cloned in ToplingDB's Makefile, community users will auto clone public repo successfully but fail to auto clone **private** repo, thus ToplingDB is built without **private** components, this is so called **community** version.
 
 ## Run db_bench
 ToplingDB requires gcc 8.4 or newer, or new clang(in near 3 years).

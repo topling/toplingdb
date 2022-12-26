@@ -136,61 +136,6 @@ static FORCE_INLINE bool RevBytewiseCompareInternalKey(Slice x,
   return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
 }
 
-class MinHeapBytewiseItemComparator {
- public:
-  MinHeapBytewiseItemComparator(const InternalKeyComparator* comparator) {}
-  FORCE_INLINE
-  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    if (a.key_prefix > b.key_prefix) {
-      assert(BytewiseCompareInternalKey(b.item_ptr->key(), a.item_ptr->key()));
-      return true;
-    } else if (a.key_prefix < b.key_prefix) {
-      assert(!BytewiseCompareInternalKey(b.item_ptr->key(), a.item_ptr->key()));
-      return false;
-    } else
-      return BytewiseCompareInternalKey(b.item_ptr->key(), a.item_ptr->key());
-  }
-};
-
-class MinHeapItemComparator {
- public:
-  MinHeapItemComparator(const InternalKeyComparator* comparator)
-      : comparator_(comparator) {}
-  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    return comparator_->Compare(a.item_ptr->key(), b.item_ptr->key()) > 0;
-  }
-
- private:
-  const InternalKeyComparator* comparator_;
-};
-
-class MaxHeapBytewiseItemComparator {
- public:
-  MaxHeapBytewiseItemComparator(const InternalKeyComparator* comparator) {}
-  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    if (a.key_prefix < b.key_prefix) {
-      assert(BytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key()));
-      return true;
-    } else if (a.key_prefix > b.key_prefix) {
-      assert(!BytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key()));
-      return false;
-    } else
-      return BytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key());
-  }
-};
-
-class MaxHeapItemComparator {
- public:
-  MaxHeapItemComparator(const InternalKeyComparator* comparator)
-      : comparator_(comparator) {}
-  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    return comparator_->Compare(a.item_ptr->key(), b.item_ptr->key()) < 0;
-  }
-
- private:
-  const InternalKeyComparator* comparator_;
-};
-
 class MinHeapItemRevComparator {
  public:
   MinHeapItemRevComparator(const InternalKeyComparator* comparator) {}
@@ -220,6 +165,61 @@ class MaxHeapItemRevComparator {
     } else
       return RevBytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key());
   }
+};
+
+class MinHeapBytewiseItemComparator {
+ public:
+  MinHeapBytewiseItemComparator(const InternalKeyComparator* comparator) {}
+  FORCE_INLINE
+  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+    if (a.key_prefix > b.key_prefix) {
+      assert(BytewiseCompareInternalKey(b.item_ptr->key(), a.item_ptr->key()));
+      return true;
+    } else if (a.key_prefix < b.key_prefix) {
+      assert(!BytewiseCompareInternalKey(b.item_ptr->key(), a.item_ptr->key()));
+      return false;
+    } else
+      return BytewiseCompareInternalKey(b.item_ptr->key(), a.item_ptr->key());
+  }
+};
+
+class MaxHeapBytewiseItemComparator {
+ public:
+  MaxHeapBytewiseItemComparator(const InternalKeyComparator* comparator) {}
+  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+    if (a.key_prefix < b.key_prefix) {
+      assert(BytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key()));
+      return true;
+    } else if (a.key_prefix > b.key_prefix) {
+      assert(!BytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key()));
+      return false;
+    } else
+      return BytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key());
+  }
+};
+
+class MinHeapItemComparator {
+ public:
+  MinHeapItemComparator(const InternalKeyComparator* comparator)
+      : comparator_(comparator) {}
+  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+    return comparator_->Compare(a.item_ptr->key(), b.item_ptr->key()) > 0;
+  }
+
+ private:
+  const InternalKeyComparator* comparator_;
+};
+
+class MaxHeapItemComparator {
+ public:
+  MaxHeapItemComparator(const InternalKeyComparator* comparator)
+      : comparator_(comparator) {}
+  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+    return comparator_->Compare(a.item_ptr->key(), b.item_ptr->key()) < 0;
+  }
+
+ private:
+  const InternalKeyComparator* comparator_;
 };
 
 class MergingIterator : public InternalIterator {

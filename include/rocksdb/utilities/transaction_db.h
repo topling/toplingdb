@@ -26,7 +26,8 @@ class TransactionDBMutexFactory;
 ROCKSDB_ENUM_PLAIN(TxnDBWritePolicy, int,
   WRITE_COMMITTED = 0,  // write only the committed data
   WRITE_PREPARED,       // write data after the prepare phase of 2pc
-  WRITE_UNPREPARED      // write data before the prepare phase of 2pc
+  WRITE_UNPREPARED,     // write data before the prepare phase of 2pc
+  WRITE_READ_ONLY       // for secondary instance of TransactionDB
 );
 
 constexpr uint32_t kInitialMaxDeadlocks = 5;
@@ -415,6 +416,21 @@ class TransactionDB : public StackableDB {
   static Status Open(const DBOptions& db_options,
                      const TransactionDBOptions& txn_db_options,
                      const std::string& dbname,
+                     const std::vector<ColumnFamilyDescriptor>& column_families,
+                     std::vector<ColumnFamilyHandle*>* handles,
+                     TransactionDB** dbptr);
+  // Open a secondary instance of TransactionDB similar to DB::OpenAsSecondary
+  // Internally call PrepareWrap() and WrapDB()
+  // Ignore txn_db_options.write_policy
+  // If the return status is not ok, then dbptr is set to nullptr.
+  static Status OpenAsSecondary(const Options& options,
+                     const TransactionDBOptions& txn_db_options,
+                     const std::string& dbname, const std::string& secondary_path,
+                     TransactionDB** dbptr);
+
+  static Status OpenAsSecondary(const DBOptions& db_options,
+                     const TransactionDBOptions& txn_db_options,
+                     const std::string& dbname, const std::string& secondary_path,
                      const std::vector<ColumnFamilyDescriptor>& column_families,
                      std::vector<ColumnFamilyHandle*>* handles,
                      TransactionDB** dbptr);

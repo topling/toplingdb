@@ -314,6 +314,123 @@ class WriteCommittedTxn : public PessimisticTransaction {
   std::unordered_set<uint32_t> cfs_with_ts_tracked_when_indexing_disabled_;
 };
 
+
+class ReadOnlyTxn : public PessimisticTransaction {
+ public:
+  ReadOnlyTxn(TransactionDB* txn_db, const WriteOptions& write_options,
+                    const TransactionOptions& txn_options)
+    : PessimisticTransaction(txn_db, write_options, txn_options) {}
+
+  // No copying allowed
+  ReadOnlyTxn(const ReadOnlyTxn&) = delete;
+  void operator=(const ReadOnlyTxn&) = delete;
+
+  ~ReadOnlyTxn() override {}
+
+#if 0
+  using TransactionBaseImpl::GetForUpdate;
+  Status GetForUpdate(const ReadOptions& /*read_options*/,
+                      ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                      std::string* /*value*/, bool /*exclusive*/,
+                      const bool /*do_validate*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status GetForUpdate(const ReadOptions& /*read_options*/,
+                      ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                      PinnableSlice* /*pinnable_val*/, bool /*exclusive*/,
+                      const bool /*do_validate*/) override  {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+#endif
+
+  using TransactionBaseImpl::Put;
+  Status Put(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+             const Slice& /*value*/, const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status Put(ColumnFamilyHandle* /*column_family*/, const SliceParts& /*key*/,
+             const SliceParts& /*value*/,
+             const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::PutUntracked;
+  Status PutUntracked(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                      const Slice& /*value*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status PutUntracked(ColumnFamilyHandle* /*column_family*/, const SliceParts& /*key*/,
+                      const SliceParts& /*value*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::Delete;
+  Status Delete(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status Delete(ColumnFamilyHandle* /*column_family*/, const SliceParts& /*key*/,
+                const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::DeleteUntracked;
+  Status DeleteUntracked(ColumnFamilyHandle* /*column_family*/,
+                         const Slice& /*key*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status DeleteUntracked(ColumnFamilyHandle* /*column_family*/,
+                         const SliceParts& /*key*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::SingleDelete;
+  Status SingleDelete(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                      const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status SingleDelete(ColumnFamilyHandle* /*column_family*/, const SliceParts& /*key*/,
+                      const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::SingleDeleteUntracked;
+  Status SingleDeleteUntracked(ColumnFamilyHandle* /*column_family*/,
+                               const Slice& /*key*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::Merge;
+  Status Merge(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+               const Slice& /*value*/, const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+ private:
+
+  // Get() will be operated immediately,
+  // thus Prepare() , Commit() and Rollback() make no sense.
+  Status PrepareInternal() override {
+    return Status::OK();
+  };
+
+  Status CommitWithoutPrepareInternal() override {
+    return Status::OK();
+  };
+
+  Status CommitBatchInternal(WriteBatch* batch, size_t batch_cnt) override {
+    return Status::OK();
+  };
+
+  Status CommitInternal() override {
+    return Status::OK();
+  };
+
+  Status RollbackInternal() override {
+    return Status::OK();
+  };
+};
+
 }  // namespace ROCKSDB_NAMESPACE
 
 #endif  // ROCKSDB_LITE

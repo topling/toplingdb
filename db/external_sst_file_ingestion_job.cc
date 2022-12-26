@@ -920,7 +920,8 @@ Status ExternalSstFileIngestionJob::AssignGlobalSeqnoForIngestedFile(
     return Status::OK();
   } else if (!ingestion_options_.allow_global_seqno) {
     return Status::InvalidArgument("Global seqno is required, but disabled");
-  } else if (file_to_ingest->global_seqno_offset == 0) {
+  } else if (file_to_ingest->global_seqno_offset == 0 &&
+             ingestion_options_.write_global_seqno) {
     return Status::InvalidArgument(
         "Trying to set global seqno for a file that don't have a global seqno "
         "field");

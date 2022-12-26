@@ -325,6 +325,7 @@ Status DBImplSecondary::RecoverLogFiles(
   return status;
 }
 
+#if defined(ROCKSDB_UNIT_TEST)
 // Implementation of the DB interface
 Status DBImplSecondary::Get(const ReadOptions& read_options,
                             ColumnFamilyHandle* column_family, const Slice& key,
@@ -466,9 +467,16 @@ Iterator* DBImplSecondary::NewIterator(const ReadOptions& read_options,
     return NewErrorIterator(Status::NotSupported(
         "tailing iterator not supported in secondary mode"));
   } else if (read_options.snapshot != nullptr) {
+   #if defined(ROCKSDB_UNIT_TEST)
     // TODO (yanqin) support snapshot.
     return NewErrorIterator(
         Status::NotSupported("snapshot not supported in secondary mode"));
+   #else
+    // I dont know why does not support iterator, I just add snapshot
+    // read stupidly
+    SequenceNumber snapshot(read_options.snapshot->GetSequenceNumber());
+    result = NewIteratorImpl(read_options, cfd, snapshot, read_callback);
+   #endif
   } else {
     SequenceNumber snapshot(kMaxSequenceNumber);
     result = NewIteratorImpl(read_options, cfd, snapshot, read_callback);
@@ -550,6 +558,7 @@ Status DBImplSecondary::NewIterators(
   }
   return Status::OK();
 }
+#endif // ROCKSDB_UNIT_TEST
 
 Status DBImplSecondary::CheckConsistency() {
   mutex_.AssertHeld();
@@ -613,7 +622,7 @@ Status DBImplSecondary::TryCatchUpWithPrimary() {
             ->ReadAndApply(&mutex_, &manifest_reader_,
                            manifest_reader_status_.get(), &cfds_changed);
 
-    ROCKS_LOG_INFO(immutable_db_options_.info_log, "Last sequence is %" PRIu64,
+    ROCKS_LOG_DEBUG(immutable_db_options_.info_log, "Last sequence is %" PRIu64,
                    static_cast<uint64_t>(versions_->LastSequence()));
     for (ColumnFamilyData* cfd : cfds_changed) {
       if (cfd->IsDropped()) {

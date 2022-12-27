@@ -149,7 +149,7 @@ class IteratorWrapperBase {
 
   Slice user_key() const {
     assert(Valid());
-    return iter_->user_key();
+    return Slice(result_.key.data_, result_.key.size_ - 8);
   }
 
   void UpdateReadaheadState(InternalIteratorBase<TValue>* old_iter) {

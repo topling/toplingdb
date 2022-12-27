@@ -179,6 +179,8 @@ class GetContext {
 
   uint64_t get_tracing_get_id() const { return tracing_get_id_; }
 
+  PinnableSlice* pinnable_val() const { return pinnable_val_; }
+
   void push_operand(const Slice& value, Cleanable* value_pinner);
 
  private:

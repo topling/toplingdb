@@ -193,6 +193,7 @@ class LegacyRandomAccessFileWrapper : public FSRandomAccessFile {
   IOStatus InvalidateCache(size_t offset, size_t length) override {
     return status_to_io_status(target_->InvalidateCache(offset, length));
   }
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
  private:
   std::unique_ptr<RandomAccessFile> target_;
@@ -336,6 +337,9 @@ class LegacyWritableFileWrapper : public FSWritableFile {
                     IODebugContext* /*dbg*/) override {
     return status_to_io_status(target_->Allocate(offset, len));
   }
+
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
 
  private:
   std::unique_ptr<WritableFile> target_;
@@ -848,7 +852,11 @@ WritableFile::~WritableFile() {}
 
 MemoryMappedFileBuffer::~MemoryMappedFileBuffer() {}
 
-Logger::~Logger() {}
+Logger::~Logger() {
+#if !defined(ROCKSDB_UNIT_TEST)
+  assert(closed_);
+#endif
+}
 
 Status Logger::Close() {
   if (!closed_) {
@@ -1099,6 +1107,7 @@ void AssignEnvOptions(EnvOptions* env_options, const DBOptions& options) {
   env_options->writable_file_max_buffer_size =
       options.writable_file_max_buffer_size;
   env_options->allow_fallocate = options.allow_fallocate;
+  env_options->allow_fdatasync = options.allow_fdatasync;
   env_options->strict_bytes_per_sync = options.strict_bytes_per_sync;
   options.env->SanitizeEnvOptions(env_options);
 }

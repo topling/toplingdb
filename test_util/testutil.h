@@ -330,6 +330,11 @@ class StringSource : public FSRandomAccessFile {
 
   void set_total_reads(int tr) { total_reads_ = tr; }
 
+  intptr_t FileDescriptor() const final {
+    assert(false);
+    return -1;
+  }
+
  private:
   std::string contents_;
   uint64_t uniq_id_;
@@ -342,6 +347,7 @@ class NullLogger : public Logger {
   using Logger::Logv;
   virtual void Logv(const char* /*format*/, va_list /*ap*/) override {}
   virtual size_t GetLogFileSize() const override { return 0; }
+  ~NullLogger() { Close(); }
 };
 
 // Corrupts key by changing the type
@@ -543,6 +549,12 @@ class StringFS : public FileSystemWrapper {
       contents_->append(slice.data(), slice.size());
       return IOStatus::OK();
     }
+
+    intptr_t FileDescriptor() const final {
+      ROCKSDB_DIE("Should not goes here");
+      return -1;
+    }
+    void SetFileSize(uint64_t fsize) final { contents_->resize(fsize); }
 
    private:
     std::string* contents_;

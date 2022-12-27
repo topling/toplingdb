@@ -204,6 +204,7 @@ class DBIter final : public Iterator {
   void SeekToFirst() final override;
   void SeekToLast() final override;
   Env* env() const { return env_; }
+  uint64_t get_sequence() const { return sequence_; }
   void set_sequence(uint64_t s) {
     sequence_ = s;
     if (read_callback_) {
@@ -237,6 +238,8 @@ class DBIter final : public Iterator {
   bool FindNextUserEntry(bool skipping_saved_key, const Slice* prefix);
   // Internal implementation of FindNextUserEntry().
   bool FindNextUserEntryInternal(bool skipping_saved_key, const Slice* prefix);
+  template<class CmpNoTS>
+  bool FindNextUserEntryInternalTmpl(bool, const Slice* prefix, CmpNoTS);
   bool ParseKey(ParsedInternalKey* key);
   bool MergeValuesNewToOld();
 
@@ -384,6 +387,7 @@ class DBIter final : public Iterator {
   bool expose_blob_index_;
   bool is_blob_;
   bool arena_mode_;
+  bool enable_perf_timer_;
   // List of operands for merge operator.
   MergeContext merge_context_;
   LocalStatistics local_stats_;
@@ -396,9 +400,15 @@ class DBIter final : public Iterator {
   ROCKSDB_FIELD_UNUSED
 #endif
   ColumnFamilyData* cfd_;
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Slice* const timestamp_ub_;
   const Slice* const timestamp_lb_;
   const size_t timestamp_size_;
+#else
+  static constexpr const Slice* const timestamp_ub_ = nullptr;
+  static constexpr const Slice* const timestamp_lb_ = nullptr;
+  static constexpr size_t timestamp_size_ = 0;
+#endif
   std::string saved_timestamp_;
 
   // Used only if timestamp_lb_ is not nullptr.

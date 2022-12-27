@@ -93,7 +93,7 @@ IOStatus RandomAccessFileReader::Read(
   IOStatus io_s;
   uint64_t elapsed = 0;
   {
-    StopWatch sw(clock_, stats_, hist_type_,
+    StopWatchEx sw(clock_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();
@@ -293,7 +293,7 @@ IOStatus RandomAccessFileReader::MultiRead(
   IOStatus io_s;
   uint64_t elapsed = 0;
   {
-    StopWatch sw(clock_, stats_, hist_type_,
+    StopWatchEx sw(clock_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();
@@ -492,13 +492,13 @@ IOStatus RandomAccessFileReader::ReadAsync(
 
     assert(read_async_info->buf_.CurrentSize() == 0);
 
-    StopWatch sw(clock_, nullptr /*stats*/, 0 /*hist_type*/, &elapsed,
-                 true /*overwrite*/, true /*delay_enabled*/);
+    StopWatchEx sw(clock_, nullptr /*stats*/, 0 /*hist_type*/, &elapsed,
+                   true /*overwrite*/, true /*delay_enabled*/);
     s = file_->ReadAsync(aligned_req, opts, read_async_callback,
                          read_async_info, io_handle, del_fn, nullptr /*dbg*/);
   } else {
-    StopWatch sw(clock_, nullptr /*stats*/, 0 /*hist_type*/, &elapsed,
-                 true /*overwrite*/, true /*delay_enabled*/);
+    StopWatchEx sw(clock_, nullptr /*stats*/, 0 /*hist_type*/, &elapsed,
+                   true /*overwrite*/, true /*delay_enabled*/);
     s = file_->ReadAsync(req, opts, read_async_callback, read_async_info,
                          io_handle, del_fn, nullptr /*dbg*/);
   }

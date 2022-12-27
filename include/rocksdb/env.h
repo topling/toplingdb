@@ -29,6 +29,7 @@
 #include "rocksdb/functor_wrapper.h"
 #include "rocksdb/status.h"
 #include "rocksdb/thread_status.h"
+#include "rocksdb/enum_reflection.h"
 
 #ifdef _WIN32
 // Windows API macro interference
@@ -102,6 +103,9 @@ struct EnvOptions {
 
   // If true, set the FD_CLOEXEC on open fd.
   bool set_fd_cloexec = true;
+
+  // If false, fdatasync() calls are bypassed
+  bool allow_fdatasync = true;
 
   // Allows OS to incrementally sync files to disk while they are being
   // written, in the background. Issue one request for every bytes_per_sync
@@ -858,6 +862,8 @@ class RandomAccessFile {
         "RandomAccessFile::InvalidateCache not supported.");
   }
 
+  virtual intptr_t FileDescriptor() const = 0;
+
   // If you're adding methods here, remember to add them to
   // RandomAccessFileWrapper too.
 };
@@ -1071,6 +1077,8 @@ class WritableFile {
 
   // If you're adding methods here, remember to add them to
   // WritableFileWrapper too.
+  virtual intptr_t FileDescriptor() const = 0;
+  virtual void SetFileSize(uint64_t) { assert(false); }
 
  protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
@@ -1170,15 +1178,15 @@ class Directory {
   // DirectoryWrapper too.
 };
 
-enum InfoLogLevel : unsigned char {
+ROCKSDB_ENUM_PLAIN(InfoLogLevel, unsigned char,
   DEBUG_LEVEL = 0,
   INFO_LEVEL,
   WARN_LEVEL,
   ERROR_LEVEL,
   FATAL_LEVEL,
   HEADER_LEVEL,
-  NUM_INFO_LOG_LEVELS,
-};
+  NUM_INFO_LOG_LEVELS
+);
 
 // An interface for writing log messages.
 //
@@ -1719,6 +1727,7 @@ class RandomAccessFileWrapper : public RandomAccessFile {
   Status InvalidateCache(size_t offset, size_t length) override {
     return target_->InvalidateCache(offset, length);
   }
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
  private:
   RandomAccessFile* target_;
@@ -1797,6 +1806,14 @@ class WritableFileWrapper : public WritableFile {
 
   Status Allocate(uint64_t offset, uint64_t len) override {
     return target_->Allocate(offset, len);
+  }
+
+  intptr_t FileDescriptor() const override {
+    return target_->FileDescriptor();
+  }
+
+  void SetFileSize(uint64_t fsize) override {
+    return target_->SetFileSize(fsize);
   }
 
  private:

@@ -262,7 +262,10 @@ Compaction::Compaction(
     compaction_reason_ = CompactionReason::kManualCompaction;
   }
   if (max_subcompactions_ == 0) {
-    max_subcompactions_ = _mutable_db_options.max_subcompactions;
+    if (1 == output_level_ && _mutable_db_options.max_level1_subcompactions)
+      max_subcompactions_ = _mutable_db_options.max_level1_subcompactions;
+    else
+      max_subcompactions_ = _mutable_db_options.max_subcompactions;
   }
 
   // for the non-bottommost levels, it tries to build files match the target
@@ -419,6 +422,10 @@ bool Compaction::InputCompressionMatchesOutput() const {
   return matches;
 }
 
+bool TableFactory::InputCompressionMatchesOutput(const Compaction* c) const {
+  return c->InputCompressionMatchesOutput();
+}
+
 bool Compaction::IsTrivialMove() const {
   // Avoid a move if there is lots of overlapping grandparent data.
   // Otherwise, the move could create a parent file that will require
@@ -448,6 +455,17 @@ bool Compaction::IsTrivialMove() const {
     return false;
   }
 
+#if !defined(ROCKSDB_UNIT_TEST) // ToplingDB specific
+  if (kCompactionStyleLevel == immutable_options_.compaction_style) {
+    auto& cfo = mutable_cf_options_;
+    if (1 == output_level_ &&
+        immutable_options_.compaction_executor_factory &&
+        cfo.write_buffer_size > cfo.target_file_size_base * 3/2) {
+      return false;
+    }
+  }
+#endif
+
   // Used in universal compaction, where trivial move can be done if the
   // input files are non overlapping
   if ((mutable_cf_options_.compaction_options_universal.allow_trivial_move) &&
@@ -458,7 +476,7 @@ bool Compaction::IsTrivialMove() const {
 
   if (!(start_level_ != output_level_ && num_input_levels() == 1 &&
         input(0, 0)->fd.GetPathId() == output_path_id() &&
-        InputCompressionMatchesOutput())) {
+        immutable_options_.table_factory->InputCompressionMatchesOutput(this))) {
     return false;
   }
 
@@ -684,6 +702,7 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter() const {
   context.is_manual_compaction = is_manual_compaction_;
   context.column_family_id = cfd_->GetID();
   context.reason = TableFileCreationReason::kCompaction;
+  context.smallest_seqno = GetSmallestSeqno();
   return cfd_->ioptions()->compaction_filter_factory->CreateCompactionFilter(
       context);
 }
@@ -830,6 +849,16 @@ int Compaction::EvaluatePenultimateLevel(
   }
 
   return penultimate_level;
+}
+
+uint64_t Compaction::GetSmallestSeqno() const {
+  uint64_t smallest_seqno = UINT64_MAX;
+  for (auto& eachlevel : inputs_) {
+    for (auto& eachfile : eachlevel.files)
+      if (smallest_seqno > eachfile->fd.smallest_seqno)
+          smallest_seqno = eachfile->fd.smallest_seqno;
+  }
+  return smallest_seqno;
 }
 
 }  // namespace ROCKSDB_NAMESPACE

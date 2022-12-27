@@ -45,6 +45,7 @@ class ConcurrentTaskLimiter;
 class Env;
 enum InfoLogLevel : unsigned char;
 class SstFileManager;
+struct FileMetaData;
 class FilterPolicy;
 class Logger;
 class MergeOperator;
@@ -334,6 +335,9 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   // Default: nullptr
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory = nullptr;
 
+  std::shared_ptr<class CompactionExecutorFactory> compaction_executor_factory;
+  std::shared_ptr<class AnyPlugin> html_user_key_coder;
+
   // Create ColumnFamilyOptions with default values for all fields
   ColumnFamilyOptions();
   // Create ColumnFamilyOptions from Options
@@ -342,7 +346,7 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   void Dump(Logger* log) const;
 };
 
-enum class WALRecoveryMode : char {
+ROCKSDB_ENUM_CLASS(WALRecoveryMode, char,
   // Original levelDB recovery
   //
   // We tolerate the last record in any log to be incomplete due to a crash
@@ -378,8 +382,8 @@ enum class WALRecoveryMode : char {
   // possible
   // Use case : Ideal for last ditch effort to recover data or systems that
   // operate with low grade unrelated data
-  kSkipAnyCorruptedRecords = 0x03,
-};
+  kSkipAnyCorruptedRecords = 0x03
+);
 
 struct DbPath {
   std::string path;
@@ -729,6 +733,12 @@ struct DBOptions {
   // Dynamically changeable through SetDBOptions() API.
   uint32_t max_subcompactions = 1;
 
+  // L0 -> L1 compactions involves all L0 and L1 files, more subcompactions
+  // makes such compactions faster. Default 0 means ignore
+  // max_level1_subcompactions and fall back to use max_subcompactions
+  uint32_t max_level1_subcompactions = 0;
+
+  // NOT SUPPORTED ANYMORE: RocksDB automatically decides this based on the
   // DEPRECATED: RocksDB automatically decides this based on the
   // value of max_background_jobs. For backwards compatibility we will set
   // `max_background_jobs = max_background_compactions + max_background_flushes`
@@ -859,6 +869,9 @@ struct DBOptions {
   // Disable child process inherit open files. Default: true
   bool is_fd_close_on_exec = true;
 
+  // If false, fdatasync() calls are bypassed
+  bool allow_fdatasync = true;
+
   // if not zero, dump rocksdb.stats to LOG every stats_dump_period_sec
   //
   // Default: 600 (10 min)
@@ -924,7 +937,8 @@ struct DBOptions {
   // Specify the file access pattern once a compaction is started.
   // It will be applied to all input files of a compaction.
   // Default: NORMAL
-  enum AccessHint { NONE, NORMAL, SEQUENTIAL, WILLNEED };
+  ROCKSDB_ENUM_PLAIN_INCLASS(AccessHint, int,
+      NONE, NORMAL, SEQUENTIAL, WILLNEED);
   AccessHint access_hint_on_compaction_start = NORMAL;
 
   // If non-zero, we perform bigger reads when doing compaction. If you're
@@ -1401,6 +1415,11 @@ struct DBOptions {
   // of the contract leads to undefined behaviors with high possibility of data
   // inconsistency, e.g. deleted old data become visible again, etc.
   bool enforce_single_del_contracts = true;
+
+  // topling specific:
+  // just for TransactionDB, it should be in TransactionDBOptions, but that
+  // needs many code changes, so we put it here, to minimize code changes
+  std::shared_ptr<class WBWIFactory> wbwi_factory;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)
@@ -1453,7 +1472,7 @@ struct Options : public DBOptions, public ColumnFamilyOptions {
 // Get call will process data that is already processed in the memtable or
 // the block cache. It will not page in data from the OS cache or data that
 // resides in storage.
-enum ReadTier {
+enum ReadTier : unsigned char {
   kReadAllTier = 0x0,     // data in memtable, block cache, OS cache or storage
   kBlockCacheTier = 0x1,  // data in memtable or block cache
   kPersistedTier = 0x2,   // persisted data.  When WAL is disabled, this option
@@ -1529,6 +1548,10 @@ struct ReadOptions {
   // found at the specified cache, then Status::Incomplete is returned.
   // Default: kReadAllTier
   ReadTier read_tier;
+
+  bool just_check_key_exists; // just for check existing
+
+  bool cache_sst_file_iter;
 
   // If true, all data read from underlying storage will be
   // verified against corresponding checksums.
@@ -1618,7 +1641,7 @@ struct ReadOptions {
   // the table will not be scanned. This option only affects Iterators and has
   // no impact on point lookups.
   // Default: empty (every table will be scanned)
-  std::function<bool(const TableProperties&)> table_filter;
+  std::function<bool(const TableProperties&, const FileMetaData&)> table_filter;
 
   // Timestamp of operation. Read should return the latest data visible to the
   // specified timestamp. All timestamps of the same database must be of the
@@ -1706,6 +1729,11 @@ struct ReadOptions {
   //
   // Default: true
   bool optimize_multiget_for_io;
+
+  int async_queue_depth = 16;
+
+  // used for ToplingDB fiber MultiGet
+  mutable class ReadCallback* read_callback = nullptr;
 
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
@@ -1842,7 +1870,7 @@ struct CompactionOptions {
 
 // For level based compaction, we can configure if we want to skip/force
 // bottommost level compaction.
-enum class BottommostLevelCompaction {
+ROCKSDB_ENUM_CLASS(BottommostLevelCompaction, int,
   // Skip bottommost level compaction
   kSkip,
   // Only compact bottommost level if there is a compaction filter
@@ -1852,8 +1880,8 @@ enum class BottommostLevelCompaction {
   kForce,
   // Always compact bottommost level but in bottommost level avoid
   // double-compacting files created in the same compaction
-  kForceOptimized,
-};
+  kForceOptimized
+);
 
 // For manual compaction, we can configure if we want to skip/force garbage
 // collection of blob files.
@@ -1998,9 +2026,12 @@ struct IngestExternalFileOptions {
   //
   // ingest_behind takes precedence over fail_if_not_bottommost_level.
   bool fail_if_not_bottommost_level = false;
+
+  // ToplingDB: sync file can be optional
+  bool sync_file = true;
 };
 
-enum TraceFilterType : uint64_t {
+ROCKSDB_ENUM_PLAIN(TraceFilterType, uint64_t,
   // Trace all the operations
   kTraceFilterNone = 0x0,
   // Do not trace the get operations
@@ -2013,7 +2044,9 @@ enum TraceFilterType : uint64_t {
   kTraceFilterIteratorSeekForPrev = 0x1 << 3,
   // Do not trace the `MultiGet()` operations
   kTraceFilterMultiGet = 0x1 << 4,
-};
+
+  kTraceFilterTypeMax
+);
 
 // TraceOptions is used for StartTrace
 struct TraceOptions {

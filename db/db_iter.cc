@@ -33,6 +33,7 @@
 #include "util/mutexlock.h"
 #include "util/string_util.h"
 #include "util/user_comparator_wrapper.h"
+#include <terark/config.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -79,9 +80,12 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       arena_mode_(arena_mode),
       db_impl_(db_impl),
       cfd_(cfd),
+    #if defined(TOPLINGDB_WITH_TIMESTAMP)
       timestamp_ub_(read_options.timestamp),
       timestamp_lb_(read_options.iter_start_ts),
-      timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0) {
+      timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0),
+    #endif
+      saved_ikey_() {
   RecordTick(statistics_, NO_ITERATOR_CREATED);
   if (pin_thru_lifetime_) {
     pinned_iters_mgr_.StartPinning();
@@ -92,6 +96,7 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
   status_.PermitUncheckedError();
   assert(timestamp_size_ ==
          user_comparator_.user_comparator()->timestamp_size());
+  enable_perf_timer_ = perf_level >= PerfLevel::kEnableTimeExceptForMutex;
 }
 
 Status DBIter::GetProperty(std::string prop_name, std::string* prop) {
@@ -115,9 +120,11 @@ Status DBIter::GetProperty(std::string prop_name, std::string* prop) {
   return Status::InvalidArgument("Unidentified property.");
 }
 
+__always_inline
 bool DBIter::ParseKey(ParsedInternalKey* ikey) {
+#if 0
   Status s = ParseInternalKey(iter_.key(), ikey, false /* log_err_key */);
-  if (!s.ok()) {
+  if (UNLIKELY(!s.ok())) {
     status_ = Status::Corruption("In DBIter: ", s.getState());
     valid_ = false;
     ROCKS_LOG_ERROR(logger_, "In DBIter: %s", status_.getState());
@@ -125,6 +132,10 @@ bool DBIter::ParseKey(ParsedInternalKey* ikey) {
   } else {
     return true;
   }
+#else
+  ikey->FastParseInternalKey(iter_.key());
+  return true;
+#endif
 }
 
 void DBIter::Next() {
@@ -250,13 +261,56 @@ bool DBIter::SetValueAndColumnsFromEntity(Slice slice) {
 // within the prefix, and the iterator needs to be made invalid, if no
 // more entry for the prefix can be found.
 bool DBIter::FindNextUserEntry(bool skipping_saved_key, const Slice* prefix) {
-  PERF_TIMER_GUARD(find_next_user_entry_time);
-  return FindNextUserEntryInternal(skipping_saved_key, prefix);
+  if (enable_perf_timer_) {
+    PERF_TIMER_GUARD(find_next_user_entry_time);
+    return FindNextUserEntryInternal(skipping_saved_key, prefix);
+  } else {
+    return FindNextUserEntryInternal(skipping_saved_key, prefix);
+  }
 }
+
+struct BytewiseCmpNoTS {
+  bool operator()(const Slice& x, const Slice& y) const { return x < y; }
+  int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
+};
+
+struct RevBytewiseCmpNoTS {
+  bool operator()(const Slice& x, const Slice& y) const { return y < x; }
+  int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
+};
+
+struct VirtualCmpNoTS {
+  bool operator()(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, false, y, false) < 0;
+  }
+  int compare(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, y);
+  }
+  const Comparator* cmp;
+};
 
 // Actual implementation of DBIter::FindNextUserEntry()
 bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                                        const Slice* prefix) {
+  if (user_comparator_.IsForwardBytewise()) {
+    ROCKSDB_ASSERT_EZ(user_comparator_.timestamp_size());
+    BytewiseCmpNoTS cmp;
+    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+  } else if (user_comparator_.IsReverseBytewise()) {
+    ROCKSDB_ASSERT_EZ(user_comparator_.timestamp_size());
+    RevBytewiseCmpNoTS cmp;
+    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+  } else {
+    VirtualCmpNoTS cmp{user_comparator_.user_comparator()};
+    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+  }
+}
+
+template<class CmpNoTS>
+ROCKSDB_FLATTEN
+bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
+                                           const Slice* prefix,
+                                           CmpNoTS cmpNoTS) {
   // Loop until we hit an acceptable entry to yield
   assert(iter_.Valid());
   assert(status_.ok());
@@ -286,7 +340,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
     // Will update is_key_seqnum_zero_ as soon as we parsed the current key
     // but we need to save the previous value to be used in the loop.
     bool is_prev_key_seqnum_zero = is_key_seqnum_zero_;
-    if (!ParseKey(&ikey_)) {
+    if (UNLIKELY(!ParseKey(&ikey_))) {
       is_key_seqnum_zero_ = false;
       return false;
     }
@@ -302,9 +356,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                /*b_has_ts=*/false) < 0);
     if (iterate_upper_bound_ != nullptr &&
         iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
-        user_comparator_.CompareWithoutTimestamp(
-            user_key_without_ts, /*a_has_ts=*/false, *iterate_upper_bound_,
-            /*b_has_ts=*/false) >= 0) {
+        !cmpNoTS(user_key_without_ts, *iterate_upper_bound_)) {
       break;
     }
 
@@ -421,7 +473,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
       // This key was inserted after our snapshot was taken or skipped by
       // timestamp range. If this happens too many times in a row for the same
       // user key, we want to seek to the target sequence number.
-      int cmp = user_comparator_.CompareWithoutTimestamp(
+      int cmp = cmpNoTS.compare(
           ikey_.user_key, saved_key_.GetUserKey());
       if (cmp == 0 || (skipping_saved_key && cmp < 0)) {
         num_skipped++;
@@ -1348,6 +1400,7 @@ bool DBIter::FindUserKeyBeforeSavedKey() {
   return true;
 }
 
+__always_inline
 bool DBIter::TooManyInternalKeysSkipped(bool increment) {
   if ((max_skippable_internal_keys_ > 0) &&
       (num_internal_keys_skipped_ > max_skippable_internal_keys_)) {
@@ -1360,6 +1413,7 @@ bool DBIter::TooManyInternalKeysSkipped(bool increment) {
   return false;
 }
 
+__always_inline
 bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
                        bool* more_recent) {
   // Remember that comparator orders preceding timestamp as larger.
@@ -1368,16 +1422,22 @@ bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
                             ? sequence <= sequence_
                             : read_callback_->IsVisible(sequence);
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   bool visible_by_ts =
       (timestamp_ub_ == nullptr ||
        user_comparator_.CompareTimestamp(ts, *timestamp_ub_) <= 0) &&
       (timestamp_lb_ == nullptr ||
        user_comparator_.CompareTimestamp(ts, *timestamp_lb_) >= 0);
+#endif
 
   if (more_recent) {
     *more_recent = !visible_by_seq;
   }
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   return visible_by_seq && visible_by_ts;
+#else
+  return visible_by_seq;
+#endif
 }
 
 void DBIter::SetSavedKeyToSeekTarget(const Slice& target) {

@@ -291,11 +291,8 @@ Status DBImplSecondary::RecoverLogFiles(
           if (cfd == nullptr) {
             continue;
           }
-          std::unordered_map<ColumnFamilyData*, uint64_t>::iterator iter =
-              cfd_to_current_log_.find(cfd);
-          if (iter == cfd_to_current_log_.end()) {
-            cfd_to_current_log_.insert({cfd, log_number});
-          } else if (log_number > iter->second) {
+          auto [iter, success] = cfd_to_current_log_.emplace(cfd, log_number);
+          if (!success && log_number > iter->second) {
             iter->second = log_number;
           }
         }
@@ -328,6 +325,7 @@ Status DBImplSecondary::RecoverLogFiles(
   return status;
 }
 
+#if defined(ROCKSDB_UNIT_TEST)
 // Implementation of the DB interface
 Status DBImplSecondary::Get(const ReadOptions& read_options,
                             ColumnFamilyHandle* column_family, const Slice& key,
@@ -469,9 +467,16 @@ Iterator* DBImplSecondary::NewIterator(const ReadOptions& read_options,
     return NewErrorIterator(Status::NotSupported(
         "tailing iterator not supported in secondary mode"));
   } else if (read_options.snapshot != nullptr) {
+   #if defined(ROCKSDB_UNIT_TEST)
     // TODO (yanqin) support snapshot.
     return NewErrorIterator(
         Status::NotSupported("snapshot not supported in secondary mode"));
+   #else
+    // I dont know why does not support iterator, I just add snapshot
+    // read stupidly
+    SequenceNumber snapshot(read_options.snapshot->GetSequenceNumber());
+    result = NewIteratorImpl(read_options, cfd, snapshot, read_callback);
+   #endif
   } else {
     SequenceNumber snapshot(kMaxSequenceNumber);
     result = NewIteratorImpl(read_options, cfd, snapshot, read_callback);
@@ -493,7 +498,7 @@ ArenaWrappedDBIter* DBImplSecondary::NewIteratorImpl(
       super_version->current, snapshot,
       super_version->mutable_cf_options.max_sequential_skip_in_iterations,
       super_version->version_number, read_callback, this, cfd,
-      expose_blob_index, read_options.snapshot ? false : allow_refresh);
+      expose_blob_index, allow_refresh);
   auto internal_iter = NewInternalIterator(
       db_iter->GetReadOptions(), cfd, super_version, db_iter->GetArena(),
       snapshot, /* allow_unprepared_value */ true, db_iter);
@@ -553,6 +558,7 @@ Status DBImplSecondary::NewIterators(
   }
   return Status::OK();
 }
+#endif // ROCKSDB_UNIT_TEST
 
 Status DBImplSecondary::CheckConsistency() {
   mutex_.AssertHeld();
@@ -583,11 +589,17 @@ Status DBImplSecondary::CheckConsistency() {
 
     uint64_t fsize = 0;
     s = env_->GetFileSize(file_path, &fsize);
+#ifdef ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
     if (!s.ok() &&
         (env_->GetFileSize(Rocks2LevelTableFileName(file_path), &fsize).ok() ||
          s.IsPathNotFound())) {
       s = Status::OK();
     }
+#else
+    if (s.IsPathNotFound()) {
+      s = Status::OK();
+    }
+#endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
     if (!s.ok()) {
       corruption_messages +=
           "Can't access " + md.name + ": " + s.ToString() + "\n";
@@ -610,7 +622,7 @@ Status DBImplSecondary::TryCatchUpWithPrimary() {
             ->ReadAndApply(&mutex_, &manifest_reader_,
                            manifest_reader_status_.get(), &cfds_changed);
 
-    ROCKS_LOG_INFO(immutable_db_options_.info_log, "Last sequence is %" PRIu64,
+    ROCKS_LOG_DEBUG(immutable_db_options_.info_log, "Last sequence is %" PRIu64,
                    static_cast<uint64_t>(versions_->LastSequence()));
     for (ColumnFamilyData* cfd : cfds_changed) {
       if (cfd->IsDropped()) {

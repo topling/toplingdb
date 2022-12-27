@@ -9,13 +9,7 @@
 
 #pragma once
 
-#include <atomic>
 #include <functional>
-#include <memory>
-#include <unordered_map>
-#include <vector>
-
-#include "port/port.h"
 #include "util/autovector.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -49,6 +43,9 @@ class ThreadLocalPtr {
   ThreadLocalPtr& operator=(const ThreadLocalPtr&) = delete;
 
   ~ThreadLocalPtr();
+
+  // if 'this' have been destroyed, destructor will do nothing
+  void Destroy();
 
   // Return the current pointer stored in thread local
   void* Get() const;

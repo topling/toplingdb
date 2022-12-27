@@ -176,6 +176,8 @@ else()
   endif()
 endif()
 
+include_directories(sideplugin/rockside/src)
+
 option(WITH_MD_LIBRARY "build with MD" ON)
 if(WIN32 AND MSVC)
   if(WITH_MD_LIBRARY)
@@ -186,6 +188,11 @@ if(WIN32 AND MSVC)
 endif()
 
 if(MSVC)
+  if(MSVC_VERSION LESS 1926)
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /experimental:preprocessor")
+  else()
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:preprocessor")
+  endif()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /EHsc /GS /Gd /GR /GF /fp:precise /Zc:wchar_t /Zc:forScope /errorReport:queue")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /d2Zi+ /W4 /wd4127 /wd4800 /wd4996 /wd4351 /wd4100 /wd4204 /wd4324")
 else()
@@ -644,8 +651,59 @@ endif()
 find_package(Threads REQUIRED)
 
 # Main library source code
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt)
+  message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  include(${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt)
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt")
+endif()
+
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)
+  message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
+  include(${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
+endif()
+
+set (cspp_memtab ${PROJECT_SOURCE_DIR}/sideplugin/cspp-memtable/cspp_memtable.cc)
+if (EXISTS ${cspp_memtab})
+  message(STATUS "found ${cspp_memtab}")
+  set (topling_rocks_src ${topling_rocks_src} ${cspp_memtab})
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAS_TOPLING_CSPP_MEMTABLE")
+else()
+  message(STATUS "not found ${cspp_memtab}")
+endif()
+
+set (cspp_wbwi ${PROJECT_SOURCE_DIR}/sideplugin/cspp-wbwi/cspp_wbwi.cc)
+if (EXISTS ${cspp_wbwi})
+  message(STATUS "found ${cspp_wbwi}")
+  set (topling_rocks_src ${topling_rocks_src} ${cspp_wbwi})
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAS_TOPLING_CSPP_WBWI")
+else()
+  message(STATUS "not found ${cspp_wbwi}")
+endif()
+
+FILE(GLOB topling_sst ${PROJECT_SOURCE_DIR}/sideplugin/topling-sst/src/table/*.cc)
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-sst/src/table)
+  message(STATUS "found ${topling_sst}")
+  set (topling_rocks_src ${topling_rocks_src} ${topling_sst})
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAS_TOPLING_SST")
+else()
+  message(STATUS "not found ${topling_sst}")
+endif()
+
+FILE(GLOB topling_dcompact ${PROJECT_SOURCE_DIR}/sideplugin/topling-dcompact/src/dcompact/*.cc)
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-sst/src/dcompact)
+  message(STATUS "found ${topling_dcompact}")
+  set (topling_rocks_src ${topling_rocks_src} ${topling_dcompact})
+else()
+  message(STATUS "not found ${topling_dcompact}")
+endif()
 
 set(SOURCES
+        ${rockside_src}
+        ${topling_rocks_src}
         cache/cache.cc
         cache/cache_entry_roles.cc
         cache/cache_key.cc
@@ -674,6 +732,7 @@ set(SOURCES
         db/builder.cc
         db/c.cc
         db/column_family.cc
+        db/compaction/compaction_executor.cc
         db/compaction/compaction.cc
         db/compaction/compaction_iterator.cc
         db/compaction/compaction_picker.cc

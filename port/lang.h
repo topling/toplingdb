@@ -68,3 +68,9 @@ constexpr bool kMustFreeHeapAllocations = false;
 #else
 #define TSAN_SUPPRESSION
 #endif  // TSAN_SUPPRESSION
+
+#if defined(__GNUC__)
+#define ROCKSDB_STATIC_TLS __attribute__((tls_model("initial-exec")))
+#else
+#define ROCKSDB_STATIC_TLS
+#endif

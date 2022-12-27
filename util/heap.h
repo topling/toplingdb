@@ -59,6 +59,11 @@ class BinaryHeap {
     return data_.front();
   }
 
+  T& top() {
+    assert(!empty());
+    return data_.front();
+  }
+
   void replace_top(const T& value) {
     assert(!empty());
     data_.front() = value;

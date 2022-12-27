@@ -168,5 +168,4 @@ class MinHeapItemComparator {
   const InternalKeyComparator* comparator_;
 };
 
-using MergerMinIterHeap = BinaryHeap<HeapItem*, MinHeapItemComparator>;
 }  // namespace ROCKSDB_NAMESPACE

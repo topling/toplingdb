@@ -35,14 +35,179 @@ class MaxHeapItemComparator {
  private:
   const InternalKeyComparator* comparator_;
 };
-// Without anonymous namespace here, we fail the warning -Wmissing-prototypes
-namespace {
-using MergerMaxIterHeap = BinaryHeap<HeapItem*, MaxHeapItemComparator>;
-}  // namespace
+
+#if defined(_MSC_VER) /* Visual Studio */
+#define FORCE_INLINE __forceinline
+#elif defined(__GNUC__)
+#define FORCE_INLINE inline __attribute__((always_inline))
+#else
+#define FORCE_INLINE inline
+#endif
+
+inline uint64_t HostPrefixCacheUK(const Slice& uk) {
+  uint64_t data = 0;
+  memcpy(&data, uk.data_, std::min<size_t>(uk.size_, 8));
+  if (port::kLittleEndian)
+    return __bswap_64(data);
+  else
+    return data;
+}
+
+struct HeapItemAndPrefix {
+  HeapItemAndPrefix(HeapItem* item) : item_ptr(item) {
+    UpdatePrefixCache(*this);
+  }
+  HeapItem* item_ptr;
+  uint64_t key_prefix = 0;
+
+  HeapItem* operator->() const noexcept { return item_ptr; }
+
+  inline friend void UpdatePrefixCache(HeapItemAndPrefix& x) {
+    auto p = x.item_ptr;
+    if (LIKELY(HeapItem::ITERATOR == p->type))
+      x.key_prefix = HostPrefixCache(p->iter.key());
+    else
+      x.key_prefix = HostPrefixCacheUK(p->parsed_ikey.user_key);
+  }
+};
+inline static void UpdatePrefixCache(HeapItem*) {} // do nothing
+
+#if 0
+static FORCE_INLINE uint64_t GetUnalignedU64(const void* ptr) noexcept {
+  uint64_t x;
+  memcpy(&x, ptr, sizeof(uint64_t));
+  return x;
+}
+
+static FORCE_INLINE bool BytewiseCompareInternalKey(Slice x, Slice y) noexcept {
+  size_t n = std::min(x.size_, y.size_) - 8;
+  int cmp = memcmp(x.data_, y.data_, n);
+  if (0 != cmp) return cmp < 0;
+  if (x.size_ != y.size_) return x.size_ < y.size_;
+  return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+}
+
+static FORCE_INLINE bool RevBytewiseCompareInternalKey(Slice x,
+                                                       Slice y) noexcept {
+  size_t n = std::min(x.size_, y.size_) - 8;
+  int cmp = memcmp(x.data_, y.data_, n);
+  if (0 != cmp) return cmp > 0;
+  if (x.size_ != y.size_) return x.size_ > y.size_;
+  return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+}
+#endif
+
+class MinHeapBytewiseComp {
+  const InternalKeyComparator* c_;
+ public:
+  MinHeapBytewiseComp(const InternalKeyComparator* c) : c_(c) {}
+  FORCE_INLINE
+  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+    if (a.key_prefix > b.key_prefix)
+      return true;
+    else if (a.key_prefix < b.key_prefix)
+      return false;
+    else
+    #if 0
+      return BytewiseCompareInternalKey(b.item_ptr->key(), a.item_ptr->key());
+    #else
+      // there is no simpler way to emulate this behavior
+      return MinHeapItemComparator(c_)(a.item_ptr, b.item_ptr);
+    #endif
+  }
+};
+
+class MaxHeapBytewiseComp {
+  const InternalKeyComparator* c_;
+ public:
+  MaxHeapBytewiseComp(const InternalKeyComparator* c) : c_(c) {}
+  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+    if (a.key_prefix < b.key_prefix)
+      return true;
+    else if (a.key_prefix > b.key_prefix)
+      return false;
+    else
+    #if 0
+      return BytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key());
+    #else
+      // there is no simpler way to emulate this behavior
+      return MaxHeapItemComparator(c_)(a.item_ptr, b.item_ptr);
+    #endif
+  }
+};
+
+class MinHeapRevBytewiseComp {
+  const InternalKeyComparator* c_;
+ public:
+  MinHeapRevBytewiseComp(const InternalKeyComparator* c) : c_(c) {}
+  FORCE_INLINE
+  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+    if (a.key_prefix < b.key_prefix)
+      return true;
+    else if (a.key_prefix > b.key_prefix)
+      return false;
+    else
+    #if 0
+      return RevBytewiseCompareInternalKey(b.item_ptr->key(), a.item_ptr->key());
+    #else
+      // there is no simpler way to emulate this behavior
+      return MinHeapItemComparator(c_)(a.item_ptr, b.item_ptr);
+    #endif
+  }
+};
+
+class MaxHeapRevBytewiseComp {
+  const InternalKeyComparator* c_;
+ public:
+  MaxHeapRevBytewiseComp(const InternalKeyComparator* c) : c_(c) {}
+  bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+    if (a.key_prefix > b.key_prefix)
+      return true;
+    else if (a.key_prefix < b.key_prefix)
+      return false;
+    else
+    #if 0
+      return RevBytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key());
+    #else
+      // there is no simpler way to emulate this behavior
+      return MaxHeapItemComparator(c_)(a.item_ptr, b.item_ptr);
+    #endif
+  }
+};
 
 class MergingIterator : public InternalIterator {
  public:
-  MergingIterator(const InternalKeyComparator* comparator,
+  // these Methods should be defined here, but for minimal diff with
+  // upstream RocksDB code, we declare them as virtual here and define
+  // them in derived template class
+  virtual void AddIterator(InternalIterator*) = 0;
+  virtual void AddRangeTombstoneIterator(TruncatedRangeDelIterator*) = 0;
+  virtual void Finish() = 0;
+
+  // We could also use an autovector with a larger reserved size.
+  // HeapItem for all child point iterators.
+  std::vector<HeapItem> children_;
+
+  // range_tombstone_iters_[i] contains range tombstones in the sorted run that
+  // corresponds to children_[i]. range_tombstone_iters_.empty() means not
+  // handling range tombstones in merging iterator. range_tombstone_iters_[i] ==
+  // nullptr means the sorted run of children_[i] does not have range
+  // tombstones.
+  std::vector<TruncatedRangeDelIterator*> range_tombstone_iters_;
+};
+
+template <class MinHeapComparator, class MaxHeapComparator, class Item = HeapItemAndPrefix>
+class MergingIterTmpl final : public MergingIterator {
+  using  MergerMinIterHeap = BinaryHeap<Item, MinHeapComparator>;
+  struct MergerMaxIterHeap : BinaryHeap<Item, MaxHeapComparator> {
+    // to minimize code diff, do not need change maxHeap_->xxx to maxHeap_.xxx
+    inline MergerMaxIterHeap* operator->() { return this; }
+    inline const MergerMaxIterHeap* operator->() const { return this; }
+  };
+  static_assert(sizeof(MergerMinIterHeap) == sizeof(MergerMaxIterHeap));
+
+public:
+  MergingIterTmpl(const InternalKeyComparator* comparator,
                   InternalIterator** children, int n, bool is_arena_mode,
                   bool prefix_seek_mode,
                   const Slice* iterate_upper_bound = nullptr)
@@ -51,7 +216,7 @@ class MergingIterator : public InternalIterator {
         direction_(kForward),
         comparator_(comparator),
         current_(nullptr),
-        minHeap_(MinHeapItemComparator(comparator_)),
+        minHeap_(MinHeapComparator(comparator_)),
         pinned_iters_mgr_(nullptr),
         iterate_upper_bound_(iterate_upper_bound) {
     children_.resize(n);
@@ -119,7 +284,8 @@ class MergingIterator : public InternalIterator {
     }
   }
 
-  ~MergingIterator() override {
+  ~MergingIterTmpl() override {
+    minHeap_.~MergerMinIterHeap();
     for (auto child : range_tombstone_iters_) {
       delete child;
     }
@@ -357,6 +523,7 @@ class MergingIterator : public InternalIterator {
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
+      UpdatePrefixCache(minHeap_.top());
       minHeap_.replace_top(minHeap_.top());
     } else {
       // current stopped being valid, remove it from the heap.
@@ -399,6 +566,7 @@ class MergingIterator : public InternalIterator {
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
+      UpdatePrefixCache(maxHeap_->top());
       maxHeap_->replace_top(maxHeap_->top());
     } else {
       // current stopped being valid, remove it from the heap.
@@ -492,21 +660,12 @@ class MergingIterator : public InternalIterator {
   enum Direction : uint8_t { kForward, kReverse };
   Direction direction_;
   const InternalKeyComparator* comparator_;
-  // We could also use an autovector with a larger reserved size.
-  // HeapItem for all child point iterators.
-  std::vector<HeapItem> children_;
   // HeapItem for range tombstone start and end keys. Each range tombstone
   // iterator will have at most one side (start key or end key) in a heap
   // at the same time, so this vector will be of size children_.size();
   // pinned_heap_item_[i] corresponds to the start key and end key HeapItem
   // for range_tombstone_iters_[i].
   std::vector<HeapItem> pinned_heap_item_;
-  // range_tombstone_iters_[i] contains range tombstones in the sorted run that
-  // corresponds to children_[i]. range_tombstone_iters_.empty() means not
-  // handling range tombstones in merging iterator. range_tombstone_iters_[i] ==
-  // nullptr means the sorted run of children_[i] does not have range
-  // tombstones.
-  std::vector<TruncatedRangeDelIterator*> range_tombstone_iters_;
 
   // Levels (indices into range_tombstone_iters_/children_ ) that currently have
   // "active" range tombstones. See comments above Seek() for meaning of
@@ -522,11 +681,11 @@ class MergingIterator : public InternalIterator {
   IteratorWrapper* current_;
   // If any of the children have non-ok status, this is one of them.
   Status status_;
-  MergerMinIterHeap minHeap_;
+  union {
+    MergerMinIterHeap minHeap_;
+    MergerMaxIterHeap maxHeap_;
+  };
 
-  // Max heap is used for reverse iteration, which is way less common than
-  // forward.  Lazily initialize it to save memory.
-  std::unique_ptr<MergerMaxIterHeap> maxHeap_;
   PinnedIteratorsManager* pinned_iters_mgr_;
 
   // Used to bound range tombstones. For point keys, DBIter and SSTable iterator
@@ -555,11 +714,14 @@ class MergingIterator : public InternalIterator {
 
   IteratorWrapper* CurrentReverse() const {
     assert(direction_ == kReverse);
-    assert(maxHeap_);
     assert(maxHeap_->empty() || maxHeap_->top()->type == HeapItem::ITERATOR);
     return !maxHeap_->empty() ? &maxHeap_->top()->iter : nullptr;
   }
 };
+
+#define MergingIterMethod(Ret) \
+  template <class MinHeapComparator, class MaxHeapComparator, class Item> \
+  Ret MergingIterTmpl<MinHeapComparator, MaxHeapComparator, Item>::
 
 // Seek to fist key >= target key (internal key) for children_[starting_level:].
 // Cascading seek optimizations are applied if range tombstones are present (see
@@ -568,7 +730,7 @@ class MergingIterator : public InternalIterator {
 // @param range_tombstone_reseek Whether target is some range tombstone
 // end, i.e., whether this SeekImpl() call is a part of a "cascading seek". This
 // is used only for recoding relevant perf_context.
-void MergingIterator::SeekImpl(const Slice& target, size_t starting_level,
+MergingIterMethod(void)SeekImpl(const Slice& target, size_t starting_level,
                                bool range_tombstone_reseek) {
   // active range tombstones before `starting_level` remain active
   ClearHeaps(false /* clear_active */);
@@ -737,7 +899,7 @@ void MergingIterator::SeekImpl(const Slice& target, size_t starting_level,
 // REQUIRES:
 // - min heap is currently not empty, and iter is in kForward direction.
 // - minHeap_ top is not DELETE_RANGE_START (so that `active_` is current).
-bool MergingIterator::SkipNextDeleted() {
+MergingIterMethod(bool)SkipNextDeleted() {
   // 3 types of keys:
   // - point key
   // - file boundary sentinel keys
@@ -788,6 +950,7 @@ bool MergingIterator::SkipNextDeleted() {
     current->iter.Next();
     if (current->iter.Valid()) {
       assert(current->iter.status().ok());
+      UpdatePrefixCache(current);
       minHeap_.push(current);
     }
     if (range_tombstone_iters_[current->level] &&
@@ -824,6 +987,7 @@ bool MergingIterator::SkipNextDeleted() {
         // covered by range tombstone
         current->iter.Next();
         if (current->iter.Valid()) {
+          UpdatePrefixCache(current);
           minHeap_.replace_top(current);
         } else {
           minHeap_.pop();
@@ -846,7 +1010,7 @@ bool MergingIterator::SkipNextDeleted() {
   return false /* current key not deleted */;
 }
 
-void MergingIterator::SeekForPrevImpl(const Slice& target,
+MergingIterMethod(void)SeekForPrevImpl(const Slice& target,
                                       size_t starting_level,
                                       bool range_tombstone_reseek) {
   // active range tombstones before `starting_level` remain active
@@ -965,7 +1129,7 @@ void MergingIterator::SeekForPrevImpl(const Slice& target,
 // REQUIRES:
 // - max heap is currently not empty, and iter is in kReverse direction.
 // - maxHeap_ top is not DELETE_RANGE_END (so that `active_` is current).
-bool MergingIterator::SkipPrevDeleted() {
+MergingIterMethod(bool)SkipPrevDeleted() {
   // 3 types of keys:
   // - point key
   // - file boundary sentinel keys
@@ -996,6 +1160,7 @@ bool MergingIterator::SkipPrevDeleted() {
     current->iter.Prev();
     if (current->iter.Valid()) {
       assert(current->iter.status().ok());
+      UpdatePrefixCache(current);
       maxHeap_->push(current);
     }
 
@@ -1037,6 +1202,7 @@ bool MergingIterator::SkipPrevDeleted() {
       if (pik.sequence < range_tombstone_iters_[current->level]->seq()) {
         current->iter.Prev();
         if (current->iter.Valid()) {
+          UpdatePrefixCache(current);
           maxHeap_->replace_top(current);
         } else {
           maxHeap_->pop();
@@ -1055,7 +1221,7 @@ bool MergingIterator::SkipPrevDeleted() {
   return false /* current key not deleted */;
 }
 
-void MergingIterator::AddToMinHeapOrCheckStatus(HeapItem* child) {
+MergingIterMethod(void)AddToMinHeapOrCheckStatus(HeapItem* child) {
   if (child->iter.Valid()) {
     assert(child->iter.status().ok());
     minHeap_.push(child);
@@ -1064,7 +1230,7 @@ void MergingIterator::AddToMinHeapOrCheckStatus(HeapItem* child) {
   }
 }
 
-void MergingIterator::AddToMaxHeapOrCheckStatus(HeapItem* child) {
+MergingIterMethod(void)AddToMaxHeapOrCheckStatus(HeapItem* child) {
   if (child->iter.Valid()) {
     assert(child->iter.status().ok());
     maxHeap_->push(child);
@@ -1079,7 +1245,7 @@ void MergingIterator::AddToMaxHeapOrCheckStatus(HeapItem* child) {
 // Advance all range tombstones iters, including the one corresponding to
 // current_, to the first tombstone with end_key > current_.key().
 // TODO: potentially do cascading seek here too
-void MergingIterator::SwitchToForward() {
+MergingIterMethod(void)SwitchToForward() {
   ClearHeaps();
   Slice target = key();
   for (auto& child : children_) {
@@ -1146,7 +1312,7 @@ void MergingIterator::SwitchToForward() {
 
 // Advance all range tombstones iters, including the one corresponding to
 // current_, to the first tombstone with start_key <= current_.key().
-void MergingIterator::SwitchToBackward() {
+MergingIterMethod(void)SwitchToBackward() {
   ClearHeaps();
   InitMaxHeap();
   Slice target = key();
@@ -1200,20 +1366,15 @@ void MergingIterator::SwitchToBackward() {
   assert(current_ == CurrentReverse());
 }
 
-void MergingIterator::ClearHeaps(bool clear_active) {
+MergingIterMethod(void)ClearHeaps(bool clear_active) {
   minHeap_.clear();
-  if (maxHeap_) {
-    maxHeap_->clear();
-  }
   if (clear_active) {
     active_.clear();
   }
 }
 
-void MergingIterator::InitMaxHeap() {
-  if (!maxHeap_) {
-    maxHeap_ = std::make_unique<MergerMaxIterHeap>(comparator_);
-  }
+MergingIterMethod(inline void)InitMaxHeap() {
+  maxHeap_.clear();
 }
 
 // Repeatedly check and remove heap top key if it is not a point key
@@ -1222,7 +1383,7 @@ void MergingIterator::InitMaxHeap() {
 // tombstone from a newer sorted run. If the covering tombstone is from current
 // key's level, then the current child iterator is simply advanced to its next
 // key without reseeking.
-inline void MergingIterator::FindNextVisibleKey() {
+MergingIterMethod(inline void)FindNextVisibleKey() {
   // When active_ is empty, we know heap top cannot be a range tombstone end
   // key. It cannot be a range tombstone start key per PopDeleteRangeStart().
   PopDeleteRangeStart();
@@ -1233,12 +1394,42 @@ inline void MergingIterator::FindNextVisibleKey() {
   }
 }
 
-inline void MergingIterator::FindPrevVisibleKey() {
+MergingIterMethod(inline void)FindPrevVisibleKey() {
   PopDeleteRangeEnd();
   while (!maxHeap_->empty() &&
          (!active_.empty() || maxHeap_->top()->IsDeleteRangeSentinelKey()) &&
          SkipPrevDeleted()) {
     PopDeleteRangeEnd();
+  }
+}
+
+template<class MinHeapComparator, class MaxHeapComparator, class Item = HeapItemAndPrefix>
+static MergingIterator* NewIterTpl(const InternalKeyComparator* cmp,
+                                   InternalIterator** list, int n,
+                                   Arena* arena, bool prefix_seek_mode,
+                                   const Slice* upper_bound) {
+  using Iter = MergingIterTmpl<MinHeapComparator, MaxHeapComparator, Item>;
+  if (arena == nullptr) {
+    return new Iter(cmp, list, n, false, prefix_seek_mode, upper_bound);
+  } else {
+    auto mem = arena->AllocateAligned(sizeof(Iter));
+    return new (mem) Iter(cmp, list, n, true, prefix_seek_mode, upper_bound);
+  }
+}
+
+static MergingIterator* NewIter(const InternalKeyComparator* cmp,
+                                InternalIterator** list, int n,
+                                Arena* arena, bool prefix_seek_mode,
+                                const Slice* upper_bound) {
+  if (cmp->IsForwardBytewise()) {
+    return NewIterTpl<MinHeapBytewiseComp, MaxHeapBytewiseComp>
+        (cmp, list, n, arena, prefix_seek_mode, upper_bound);
+  } else if (cmp->IsReverseBytewise()) {
+    return NewIterTpl<MinHeapRevBytewiseComp, MaxHeapRevBytewiseComp>
+        (cmp, list, n, arena, prefix_seek_mode, upper_bound);
+  } else {
+    return NewIterTpl<MinHeapItemComparator, MaxHeapItemComparator, HeapItem*>
+        (cmp, list, n, arena, prefix_seek_mode, upper_bound);
   }
 }
 
@@ -1251,12 +1442,7 @@ InternalIterator* NewMergingIterator(const InternalKeyComparator* cmp,
   } else if (n == 1) {
     return list[0];
   } else {
-    if (arena == nullptr) {
-      return new MergingIterator(cmp, list, n, false, prefix_seek_mode);
-    } else {
-      auto mem = arena->AllocateAligned(sizeof(MergingIterator));
-      return new (mem) MergingIterator(cmp, list, n, true, prefix_seek_mode);
-    }
+    return NewIter(cmp, list, n, arena, prefix_seek_mode, nullptr);
   }
 }
 
@@ -1264,9 +1450,8 @@ MergeIteratorBuilder::MergeIteratorBuilder(
     const InternalKeyComparator* comparator, Arena* a, bool prefix_seek_mode,
     const Slice* iterate_upper_bound)
     : first_iter(nullptr), use_merging_iter(false), arena(a) {
-  auto mem = arena->AllocateAligned(sizeof(MergingIterator));
-  merge_iter = new (mem) MergingIterator(comparator, nullptr, 0, true,
-                                         prefix_seek_mode, iterate_upper_bound);
+  ROCKSDB_VERIFY(nullptr != arena);
+  merge_iter = NewIter(comparator, nullptr, 0, a, prefix_seek_mode, iterate_upper_bound);
 }
 
 MergeIteratorBuilder::~MergeIteratorBuilder() {

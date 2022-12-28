@@ -3624,6 +3624,12 @@ Status DBImpl::GetTimestampedSnapshots(
 
 SnapshotImpl* DBImpl::GetSnapshotImpl(bool is_write_conflict_boundary,
                                       bool lock) {
+  return GetSnapshotImpl(kMaxSequenceNumber, is_write_conflict_boundary, lock);
+}
+
+SnapshotImpl* DBImpl::GetSnapshotImpl(SequenceNumber snapshot_seq,
+                                      bool is_write_conflict_boundary,
+                                      bool lock) {
   int64_t unix_time = 0;
   immutable_db_options_.clock->GetCurrentTime(&unix_time)
       .PermitUncheckedError();  // Ignore error
@@ -3642,7 +3648,9 @@ SnapshotImpl* DBImpl::GetSnapshotImpl(bool is_write_conflict_boundary,
     delete s;
     return nullptr;
   }
-  auto snapshot_seq = GetLastPublishedSequence();
+  if (kMaxSequenceNumber == snapshot_seq) {
+    snapshot_seq = GetLastPublishedSequence();
+  }
   SnapshotImpl* snapshot =
       snapshots_.New(s, snapshot_seq, unix_time, is_write_conflict_boundary);
   if (lock) {

@@ -46,7 +46,7 @@ class EmptyIterator : public Iterator {
     return Slice();
   }
   Status status() const override { return status_; }
-  Status Refresh(const class Snapshot*) override {
+  Status Refresh(const class Snapshot*, bool) override {
     return Status::OK(); // do nothing
   }
   using Iterator::Refresh;

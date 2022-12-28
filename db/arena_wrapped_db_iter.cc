@@ -62,10 +62,12 @@ void ArenaWrappedDBIter::Init(
 }
 
 Status ArenaWrappedDBIter::Refresh() {
-  return Refresh(nullptr);
+  return Refresh(nullptr, false); // do not keep iter pos
 }
 
-Status ArenaWrappedDBIter::Refresh(const Snapshot* snap) {
+// when keep_iter_pos is true, user code should ensure ReadOptions's
+// lower_bound and upper_bound are not changed
+Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
   if (cfd_ == nullptr || db_impl_ == nullptr || !allow_refresh_) {
     return Status::NotSupported("Creating renew iterator is not allowed.");
   }
@@ -80,10 +82,20 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap) {
     if (sv_number_ != cur_sv_number) {
       std::string curr_key;
       bool is_valid = this->Valid();
-      if (is_valid) {
+      SequenceNumber old_iter_seq = db_iter_->get_sequence();
+      SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
+      if (is_valid && keep_iter_pos) {
         curr_key = this->key().ToString();
       }
-      SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
+      Snapshot* pin_snap = nullptr;
+      if (size_t(snap) == KEEP_SNAPSHOT) {
+        // pin the snapshot latest_seq to avoid race condition caused by
+        // the the snapshot latest_seq being garbage collected by a
+        // compaction, which may cause many errors, for example an external
+        // behavior is Seek on belowing new iterator failed(with same
+        // read_opt.lower_bound/upper_bound...)
+        pin_snap = db_impl_->GetSnapshotImpl(latest_seq, false);
+      }
       Env* env = db_iter_->env();
       db_iter_->~DBIter();
       arena_.~Arena();
@@ -103,9 +115,14 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap) {
           read_options_, cfd_, sv, &arena_, db_iter_->GetRangeDelAggregator(),
           latest_seq, /* allow_unprepared_value */ true);
       SetIterUnderDBIter(internal_iter);
-      if (is_valid) {
+      if (is_valid && keep_iter_pos) {
         this->Seek(curr_key);
-        ROCKSDB_VERIFY(this->Valid());
+        ROCKSDB_VERIFY_F(this->Valid(),
+          "old_iter_seq = %lld, latest_seq = %lld, snap = %p, pin_snap = %p",
+          (long long)old_iter_seq, (long long)latest_seq, snap, pin_snap);
+      }
+      if (pin_snap) {
+        db_impl_->ReleaseSnapshot(pin_snap);
       }
       break;
     } else {

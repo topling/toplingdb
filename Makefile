@@ -399,11 +399,11 @@ endif
 endif
 
 TOPLING_DCOMPACT_USE_ETCD := 0
-ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/src/libetcd-cpp-api.${PLATFORM_SHARED_EXT}))
-ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
-  CXXFLAGS   += -I sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto \
-                -I sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3
-  LDFLAGS    += -L sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/src -letcd-cpp-api
+ifneq (,$(wildcard sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/src/libetcd-cpp-api.${PLATFORM_SHARED_EXT}))
+ifneq (,$(wildcard sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
+  CXXFLAGS   += -I sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto \
+                -I sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3
+  LDFLAGS    += -L sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/src -letcd-cpp-api
   export LD_LIBRARY_PATH:=${TOPLING_ROCKS_DIR}/3rdparty/etcd-cpp-apiv3/build/src:${LD_LIBRARY_PATH}
   ifneq (,$(wildcard ../vcpkg/packages/grpc_x64-linux/include))
     CXXFLAGS   += -I ../vcpkg/packages/grpc_x64-linux/include

@@ -295,8 +295,8 @@ LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
            -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
 
 # default is 1, can be override
-AUTO_CLONE_TOPLING_ROCKS ?= 1
-ifeq (${AUTO_CLONE_TOPLING_ROCKS},1)
+WITH_TOPLING_ROCKS ?= 1
+ifeq (${WITH_TOPLING_ROCKS},1)
 ifeq (,$(wildcard sideplugin/topling-rocks))
   # topling specific: just for people who has permission to topling-rocks
   dummy := $(shell set -e -x; \
@@ -380,6 +380,7 @@ else
 endif
 
 export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
+ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   += -I sideplugin/topling-rocks/src
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
@@ -394,6 +395,7 @@ else
     ${TOPLING_CORE_DIR}/src/terark/hash_common.cpp \
     ${TOPLING_CORE_DIR}/src/terark/util/throw.cpp
   endif
+endif
 endif
 
 TOPLING_DCOMPACT_USE_ETCD := 0
@@ -2849,10 +2851,12 @@ ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: LDFLAGS =
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}:
 	+make -C ${TOPLING_CORE_DIR} ${TOPLING_ZBS_TARGET}
 
+ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
 sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
   $(shell find sideplugin/topling-rocks/{src,tools} -name '*.cc' -o -name '*.h')
 	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
+endif
 endif
 
 ifneq (,$(wildcard sideplugin/cspp-memtable))

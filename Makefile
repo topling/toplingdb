@@ -2285,13 +2285,15 @@ install-static: install-headers $(LIBRARY)
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(LIBRARY) $(INSTALL_LIBDIR)
 
-install-shared: install-headers $(SHARED4)
+install-shared: install-headers $(SHARED4) dcompact_worker
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED2)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED1)
 	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/* $(INSTALL_LIBDIR)
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
 
 # install static by default + install shared if it exists
 install: install-static

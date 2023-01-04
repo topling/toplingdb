@@ -310,8 +310,8 @@ LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
            -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
 
 # default is 1, can be override
-AUTO_CLONE_TOPLING_ROCKS ?= 1
-ifeq (${AUTO_CLONE_TOPLING_ROCKS},1)
+WITH_TOPLING_ROCKS ?= 1
+ifeq (${WITH_TOPLING_ROCKS},1)
 ifeq (,$(wildcard sideplugin/topling-rocks))
   # topling specific: just for people who has permission to topling-rocks
   dummy := $(shell set -e -x; \
@@ -395,6 +395,7 @@ else
 endif
 
 export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
+ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   += -I sideplugin/topling-rocks/src
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
@@ -410,13 +411,14 @@ else
     ${TOPLING_CORE_DIR}/src/terark/util/throw.cpp
   endif
 endif
+endif
 
 TOPLING_DCOMPACT_USE_ETCD := 0
-ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/src/libetcd-cpp-api.${PLATFORM_SHARED_EXT}))
-ifneq (,$(wildcard sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
-  CXXFLAGS   += -I sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto \
-                -I sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3
-  LDFLAGS    += -L sideplugin/topling-rocks/3rdparty/etcd-cpp-apiv3/build/src -letcd-cpp-api
+ifneq (,$(wildcard sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/src/libetcd-cpp-api.${PLATFORM_SHARED_EXT}))
+ifneq (,$(wildcard sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
+  CXXFLAGS   += -I sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto \
+                -I sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3
+  LDFLAGS    += -L sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/src -letcd-cpp-api
   export LD_LIBRARY_PATH:=${TOPLING_ROCKS_DIR}/3rdparty/etcd-cpp-apiv3/build/src:${LD_LIBRARY_PATH}
   ifneq (,$(wildcard ../vcpkg/packages/grpc_x64-linux/include))
     CXXFLAGS   += -I ../vcpkg/packages/grpc_x64-linux/include
@@ -2352,13 +2354,15 @@ install-static: install-headers $(LIBRARY)
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(LIBRARY) $(INSTALL_LIBDIR)
 
-install-shared: install-headers $(SHARED4)
+install-shared: install-headers $(SHARED4) dcompact_worker
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED2)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED1)
 	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/* $(INSTALL_LIBDIR)
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
 
 # install static by default + install shared if it exists
 install: install-static
@@ -2927,10 +2931,12 @@ ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: LDFLAGS =
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}:
 	+make -C ${TOPLING_CORE_DIR} ${TOPLING_ZBS_TARGET}
 
+ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
 sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
   $(shell find sideplugin/topling-rocks/{src,tools} -name '*.cc' -o -name '*.h')
 	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
+endif
 endif
 
 ifneq (,$(wildcard sideplugin/cspp-memtable))

@@ -2125,6 +2125,11 @@ class DBImpl : public DB {
 
   SnapshotImpl* GetSnapshotImpl(bool is_write_conflict_boundary,
                                 bool lock = true);
+public:
+  SnapshotImpl* GetSnapshotImpl(SequenceNumber snapshot_seq,
+                                bool is_write_conflict_boundary,
+                                bool lock = true);
+private:
 
   // If snapshot_seq != kMaxSequenceNumber, then this function can only be
   // called from the write thread that publishes sequence numbers to readers.

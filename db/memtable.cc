@@ -902,8 +902,6 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
           s->mem->GetLock(s->key->user_key())->ReadLock();
         }
 
-        Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
-
         *(s->status) = Status::OK();
 
         if (s->value) {
@@ -925,8 +923,6 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
         if (s->inplace_update_support) {
           s->mem->GetLock(s->key->user_key())->ReadLock();
         }
-
-        Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
 
         *(s->status) = Status::OK();
 
@@ -980,8 +976,6 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
         if (s->inplace_update_support) {
           s->mem->GetLock(s->key->user_key())->ReadLock();
         }
-
-        Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
 
         *(s->status) = Status::OK();
 

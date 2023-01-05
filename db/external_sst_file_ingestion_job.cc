@@ -753,10 +753,12 @@ Status ExternalSstFileIngestionJob::GetIngestedFileInfo(
                                   props->orig_file_number,
                                   &(file_to_ingest->unique_id));
   if (!s.ok()) {
+   if (db_options_.verify_sst_unique_id_in_manifest) {
     ROCKS_LOG_WARN(db_options_.info_log,
                    "Failed to get SST unique id for file %s, reason = %s",
                    external_file.c_str(),
                    s.ToString().c_str());
+   }
     file_to_ingest->unique_id = kNullUniqueId64x2;
   }
 

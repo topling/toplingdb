@@ -730,8 +730,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
   // Check that it belongs to same user key.  We do not check the
   // sequence number since the Seek() call above should have skipped
   // all entries with overly large sequence numbers.
-  Slice ikey, v;
-  std::tie(ikey, v) = pair->GetKeyValue();
+  auto [ikey, v] = pair->GetKeyValue();
   size_t key_length = ikey.size();
   const char* key_ptr = ikey.data();
   assert(key_length >= 8);
@@ -1095,8 +1094,7 @@ Status MemTable::Update(SequenceNumber seq, ValueType value_type,
   if (iter->Valid()) {
     // sequence number since the Seek() call above should have skipped
     // all entries with overly large sequence numbers.
-    Slice internal_key, prev_value;
-    std::tie(internal_key, prev_value) = iter->GetKeyValue();
+    auto [internal_key, prev_value] = iter->GetKeyValue();
     size_t key_length = internal_key.size();
     const char* key_ptr = internal_key.data();
     assert(key_length >= 8);
@@ -1151,8 +1149,7 @@ Status MemTable::UpdateCallback(SequenceNumber seq, const Slice& key,
     // Check that it belongs to same user key.  We do not check the
     // sequence number since the Seek() call above should have skipped
     // all entries with overly large sequence numbers.
-    Slice internal_key, prev_value;
-    std::tie(internal_key, prev_value) = iter->GetKeyValue();
+    auto [internal_key, prev_value] = iter->GetKeyValue();
     size_t key_length = internal_key.size();
     const char* key_ptr = internal_key.data();
     assert(key_length >= 8);

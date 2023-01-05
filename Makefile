@@ -2895,6 +2895,8 @@ else
 endif
 endif
 
+${OBJ_DIR}/sideplugin/rockside/src/topling/web/civetweb.o: CFLAGS += -DUSE_ZLIB
+
 # Remove the rules for which dependencies should not be generated and see if any are left.
 #If so, include the dependencies; if not, do not include the dependency files
 ROCKS_DEP_RULES=$(filter-out clean format check-format check-buck-targets check-headers check-sources jclean jtest package analyze tags rocksdbjavastatic% unity.% unity_test checkout_folly, $(MAKECMDGOALS))

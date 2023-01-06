@@ -94,11 +94,15 @@ namespace {
 
 #if defined(_MSC_VER) /* Visual Studio */
 #define FORCE_INLINE __forceinline
+#define __attribute_noinline__
+#define __builtin_prefetch(ptr) _mm_prefetch((const char*)(ptr), _MM_HINT_T0)
 #elif defined(__GNUC__)
-#define FORCE_INLINE __attribute__((always_inline))
+#define FORCE_INLINE __always_inline
 #pragma GCC diagnostic ignored "-Wattributes"
 #else
-#define inline
+#define FORCE_INLINE inline
+#define __attribute_noinline__
+#define __builtin_prefetch(ptr)
 #endif
 
 static FORCE_INLINE uint64_t GetUnalignedU64(const void* ptr) noexcept {
@@ -184,11 +188,21 @@ size_t FindFileInRangeTmpl(FallbackVirtCmp cmp, const LevelFilesBrief& brief,
 
 // Find File in LevelFilesBrief data structure
 // Within an index range defined by left and right
+#ifdef TOPLINGDB_NO_OPT_FindFileInRange
+__attribute_noinline__
+#endif
 int FindFileInRange(const InternalKeyComparator& icmp,
-    const LevelFilesBrief& file_level,
-    const Slice& key,
-    uint32_t left,
-    uint32_t right) {
+                    const LevelFilesBrief& file_level, const Slice& key,
+                    uint32_t left, uint32_t right) {
+#ifdef TOPLINGDB_NO_OPT_FindFileInRange
+  #pragma message "TOPLINGDB_NO_OPT_FindFileInRange is defined, intended for benchmark baseline"
+  // here is upstream rocksdb code
+  auto cmp = [&](const FdWithKeyRange& f, const Slice& k) -> bool {
+    return icmp.InternalKeyComparator::Compare(f.largest_key, k) < 0;
+  };
+  const auto& b = file_level.files;
+  return static_cast<int>(std::lower_bound(b + left, b + right, key, cmp) - b);
+#else // ToplingDB Devirtualization and Key Prefix Cache optimization
   if (icmp.IsForwardBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
     BytewiseCompareInternalKey cmp;
@@ -203,6 +217,7 @@ int FindFileInRange(const InternalKeyComparator& icmp,
     FallbackVirtCmp cmp{&icmp};
     return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
   }
+#endif
 }
 
 Status OverlapWithIterator(const Comparator* ucmp,

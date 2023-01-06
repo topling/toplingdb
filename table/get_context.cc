@@ -246,6 +246,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
       }
     }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
     size_t ts_sz = ucmp_->timestamp_size();
     if (ts_sz > 0 && timestamp_ != nullptr) {
       if (!timestamp_->empty()) {
@@ -273,6 +274,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         timestamp_->assign(ts.data(), ts.size());
       }
     }
+#endif
 
     auto type = parsed_key.type;
     // Key matches. Process it

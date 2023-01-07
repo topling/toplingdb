@@ -4984,6 +4984,9 @@ TEST_P(TransactionTest, DeleteRangeSupportTest) {
             ASSERT_OK(db->Get(ReadOptions(), "a", &value));
           }
           break;
+        case WRITE_READ_ONLY:
+          // do nothing
+          break;
       }
       // Without any promises from the user, range deletion via other `Write()`
       // APIs are still banned.

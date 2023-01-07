@@ -2401,7 +2401,7 @@ TEST_P(DBIteratorTest, RefreshWithSnapshot) {
   ASSERT_OK(iter->status());
   Status s = iter->Refresh();
   ASSERT_TRUE(s.ok());
-  s = iter->Refresh(snapshot);
+  s = iter->Refresh(snapshot, false);
   ASSERT_TRUE(s.ok());
   db_->ReleaseSnapshot(snapshot);
   delete iter;

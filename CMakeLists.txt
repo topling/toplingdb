@@ -688,7 +688,7 @@ FILE(GLOB topling_sst ${PROJECT_SOURCE_DIR}/sideplugin/topling-sst/src/table/*.c
 if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-sst/src/table)
   message(STATUS "found ${topling_sst}")
   set (topling_rocks_src ${topling_rocks_src} ${topling_sst})
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAS_TOPLING_SST")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAS_TOPLING_SST -Isideplugin/topling-sst/src")
 else()
   message(STATUS "not found ${topling_sst}")
 endif()

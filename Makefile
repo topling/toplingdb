@@ -438,13 +438,7 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
     $(wildcard sideplugin/topling-rocks/src/table/*.cc) \
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
 else
-  $(warning NotFound sideplugin/topling-rocks, this is ok, only Topling SST and Distributed Compaction are disabled)
-  ifeq (1,2) # Now link libterark-{zbs,fsa,core} instead
-  EXTRA_LIB_SOURCES += \
-    ${TOPLING_CORE_DIR}/src/terark/fstring.cpp \
-    ${TOPLING_CORE_DIR}/src/terark/hash_common.cpp \
-    ${TOPLING_CORE_DIR}/src/terark/util/throw.cpp
-  endif
+  $(warning NotFound sideplugin/topling-rocks, this is ok, only ToplingZipTable are disabled)
 endif
 endif
 
@@ -475,9 +469,9 @@ ifneq (,$(wildcard sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/pro
 endif
 endif
 
-ifeq (${TOPLING_DCOMPACT_USE_ETCD},0)
-  $(warning NotFound etcd-cpp-apiv3, this is ok, only etcd is disabled)
-endif
+#ifeq (${TOPLING_DCOMPACT_USE_ETCD},0)
+#  $(warning NotFound etcd-cpp-apiv3, this is ok, only etcd is disabled)
+#endif
 
 #export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
 

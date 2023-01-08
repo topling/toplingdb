@@ -90,7 +90,7 @@ else ifneq ($(filter jtest rocksdbjava%, $(MAKECMDGOALS)),)
 	endif
 endif
 
-$(info $$DEBUG_LEVEL is ${DEBUG_LEVEL})
+$(info $$DEBUG_LEVEL is ${DEBUG_LEVEL}, MAKE_RESTARTS is [${MAKE_RESTARTS}])
 
 # Lite build flag.
 LITE ?= 0
@@ -225,6 +225,13 @@ CFLAGS += -DUSE_SERVER_STATS=1
 CXXFLAGS += -DOPENSSL_API_1_1=1
 CFLAGS += -DOPENSSL_API_1_1=1
 
+ifneq ($(filter check_% check-% gen_parallel_tests %_test %_test2 \
+				watch-log format clean% tags% \
+				package% install install-shared install-static, \
+				$(MAKECMDGOALS)),)
+  UPDATE_REPO ?= 0
+endif
+
 ifeq (,$(wildcard sideplugin/rockside/3rdparty/rapidyaml))
   $(warning NotFound sideplugin/rockside/3rdparty/rapidyaml)
   $(warning sideplugin/rockside is a submodule, auto init...)
@@ -235,6 +242,12 @@ ifeq (,$(wildcard sideplugin/rockside/3rdparty/rapidyaml))
   )
   ifneq ("${IsCloneOK}","0")
     $(error "IsCloneOK=${IsCloneOK} Error cloning rockside, stop!")
+  endif
+else
+  ifneq (${UPDATE_REPO},0)
+   ifeq (${MAKE_RESTARTS},)
+    dummy := $(shell set -ex; git pull && git submodule update --init --recursive)
+   endif
   endif
 endif
 EXTRA_LIB_SOURCES += sideplugin/rockside/src/topling/rapidyaml_all.cc
@@ -262,6 +275,13 @@ else
     )
     ifneq ("${IsCloneOK}","0")
       $(error "IsCloneOK=${IsCloneOK} Error cloning topling-zip, stop!")
+    endif
+  else
+    ifneq (${UPDATE_REPO},0)
+     ifeq (${MAKE_RESTARTS},)
+      dummy := $(shell set -ex; cd sideplugin/topling-zip && \
+                       git pull && git submodule update --init --recursive)
+     endif
     endif
   endif
   TOPLING_CORE_DIR := sideplugin/topling-zip
@@ -320,6 +340,12 @@ ifeq (,$(wildcard sideplugin/topling-rocks))
     cd topling-rocks; \
     git submodule update --init --recursive \
   )
+else
+  ifneq (${UPDATE_REPO},0)
+   ifeq (${MAKE_RESTARTS},)
+    dummy := $(shell set -ex; cd sideplugin/topling-rocks && git pull)
+   endif
+  endif
 endif
 endif
 
@@ -330,6 +356,12 @@ ifeq (,$(wildcard sideplugin/cspp-memtable))
     git clone https://github.com/topling/cspp-memtable; \
     cd cspp-memtable; \
   )
+else
+  ifneq (${UPDATE_REPO},0)
+   ifeq (${MAKE_RESTARTS},)
+    dummy := $(shell set -ex; cd sideplugin/cspp-memtable && git pull)
+   endif
+  endif
 endif
 ifeq (,$(wildcard sideplugin/cspp-wbwi))
   dummy := $(shell set -e -x; \
@@ -337,6 +369,12 @@ ifeq (,$(wildcard sideplugin/cspp-wbwi))
     git clone https://github.com/topling/cspp-wbwi; \
     cd cspp-wbwi; \
   )
+else
+  ifneq (${UPDATE_REPO},0)
+   ifeq (${MAKE_RESTARTS},)
+    dummy := $(shell set -ex; cd sideplugin/cspp-wbwi && git pull)
+   endif
+  endif
 endif
 
 ifneq (,$(wildcard sideplugin/cspp-memtable))
@@ -365,6 +403,12 @@ ifeq (,$(wildcard sideplugin/topling-sst/src/table))
     git clone https://github.com/topling/topling-sst; \
     cd topling-sst; \
   )
+else
+  ifneq (${UPDATE_REPO},0)
+   ifeq (${MAKE_RESTARTS},)
+    dummy := $(shell cd sideplugin/topling-sst && git pull)
+   endif
+  endif
 endif
 ifneq (,$(wildcard sideplugin/topling-sst/src/table))
   # now we have topling-sst
@@ -382,6 +426,12 @@ ifeq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
     git clone https://github.com/topling/topling-dcompact; \
     cd topling-dcompact; \
   )
+else
+  ifneq (${UPDATE_REPO},0)
+   ifeq (${MAKE_RESTARTS},)
+    dummy := $(shell cd sideplugin/topling-dcompact && git pull)
+   endif
+  endif
 endif
 ifneq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
   # now we have topling-dcompact

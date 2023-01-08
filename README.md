@@ -7,8 +7,8 @@ ToplingDB has much more key features than RocksDB:
 1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to [online change](https://github.com/topling/rockside/wiki/Online-Change-Options) db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...) without restart the running process
 1. Many improves and refactories on RocksDB, aimed for performance and extendibility
 1. Topling transaction lock management, 5x faster than rocksdb
-1. MultiGet with concurrent IO by fiber/coroutine + io_uring, much faster than RocksDB's MultiGet
-1. Topling de-virtualization, de-virtualize hotspot (virtual) functions, 10x improvements on hotspot funcions
+1. MultiGet with concurrent IO by fiber/coroutine + io_uring, much faster than RocksDB's async MultiGet
+1. Topling [de-virtualization](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Principle), de-virtualize hotspot (virtual) functions, and key prefix caches, [bechmarks](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Benchmark)
 1. Builtin SidePlugin**s** for existing RocksDB components(Cache, Comparator, TableFactory, MemTableFactory...)
 1. Builtin Prometheus metrics support, this is based on [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView)
 1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
@@ -59,14 +59,17 @@ git clone https://github.com/topling/toplingdb
 cd toplingdb
 make -j`nproc` db_bench DEBUG_LEVEL=0
 cp sideplugin/rockside/src/topling/web/{style.css,index.html} ${/path/to/dbdir}
-cp sideplugin/rockside/sample-conf/lcompact_community.yaml .
+cp sideplugin/rockside/sample-conf/db_bench_*.yaml .
 export LD_LIBRARY_PATH=`find sideplugin -name lib_shared`
-# change ./lcompact_community.yaml
-# 1. path items (search /dev/shm), if you have no fast disk(such as on a cloud server), use /dev/shm
+# change db_bench_community.yaml as your needs
+# 1. use default path(/dev/shm) if you have no fast disk(such as a cloud server)
 # 2. change max_background_compactions to your cpu core num
+# 3. if you have github repo topling-rocks permissions, you can use db_bench_enterprise.yaml
+# 4. use db_bench_community.yaml is faster than upstream RocksDB
+# 5. use db_bench_enterprise.yaml is much faster than db_bench_community.yaml
 # command option -json can accept json and yaml files, here use yaml file for more human readable
-./db_bench -json lcompact_community.yaml -num 10000000 -disable_wal=true -value_size 2000 -benchmarks=fillrandom,readrandom -batch_size=10
-# you can access http://127.0.0.1:8081 to see webview
+./db_bench -json=db_bench_community.yaml -num=10000000 -disable_wal=true -value_size=20 -benchmarks=fillrandom,readrandom -batch_size=10
+# you can access http://127.0.0.1:2011 to see webview
 # you can see this db_bench is much faster than RocksDB
 ```
 ## License

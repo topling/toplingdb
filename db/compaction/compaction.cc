@@ -257,6 +257,7 @@ Compaction::Compaction(
               : _blob_garbage_collection_age_cutoff),
       penultimate_level_(EvaluatePenultimateLevel(
           vstorage, immutable_options_, start_level_, output_level_)) {
+  is_compaction_woker_ = IsCompactionWorker(); // preload to speed up
   MarkFilesBeingCompacted(true);
   if (is_manual_compaction_) {
     compaction_reason_ = CompactionReason::kManualCompaction;
@@ -528,6 +529,8 @@ bool Compaction::KeyNotExistsBeyondOutputLevel(
   assert(level_ptrs->size() == static_cast<size_t>(number_levels_));
   if (bottommost_level_) {
     return true;
+  } else if (is_compaction_woker_) {
+    return false;
   } else if (output_level_ != 0 &&
              cfd_->ioptions()->compaction_style == kCompactionStyleLevel) {
     // Maybe use binary search to find right entry instead of linear search?

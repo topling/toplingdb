@@ -474,6 +474,7 @@ class Compaction {
   // logic might pick a subset of the files that aren't overlapping. if
   // that is the case, set the value to false. Otherwise, set it true.
   bool l0_files_might_overlap_;
+  bool is_compaction_woker_;
 
   // Compaction input files organized by level. Constant after construction
   const std::vector<CompactionInputFiles> inputs_;

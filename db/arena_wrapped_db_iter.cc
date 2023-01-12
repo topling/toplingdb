@@ -120,6 +120,8 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
       ROCKSDB_VERIFY_F(this->Valid(),
         "old_iter_seq = %lld, latest_seq = %lld, snap = %p, pin_snap = %p",
         (long long)old_iter_seq, (long long)latest_seq, snap, pin_snap);
+      ROCKSDB_VERIFY_F(key() == curr_key, "%s %s",
+        key().ToString(true).c_str(), Slice(curr_key).ToString(true).c_str());
     }
     if (pin_snap) {
       db_impl_->ReleaseSnapshot(pin_snap);

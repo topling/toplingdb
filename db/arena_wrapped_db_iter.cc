@@ -192,11 +192,17 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
 }
 
 ArenaWrappedDBIter* NewArenaWrappedDbIterator(
-    Env* env, const ReadOptions& read_options, const ImmutableOptions& ioptions,
-    const MutableCFOptions& mutable_cf_options, const Version* version,
-    const SequenceNumber& sequence, uint64_t max_sequential_skip_in_iterations,
-    uint64_t version_number, ReadCallback* read_callback, DBImpl* db_impl,
-    ColumnFamilyData* cfd, bool expose_blob_index, bool allow_refresh) {
+    const ReadOptions& read_options, const SuperVersion* sv,
+    SequenceNumber sequence, ReadCallback* read_callback, DBImpl* db_impl,
+    bool expose_blob_index, bool allow_refresh) {
+  auto version = sv->current;
+  auto version_number = sv->version_number;
+  auto env = version->env();
+  auto cfd = sv->cfd;
+  const auto& ioptions = *cfd->ioptions();
+  const auto& mutable_cf_options = sv->mutable_cf_options;
+  auto max_sequential_skip_in_iterations =
+    mutable_cf_options.max_sequential_skip_in_iterations;
   ArenaWrappedDBIter* iter = new ArenaWrappedDBIter();
   iter->Init(env, read_options, ioptions, mutable_cf_options, version, sequence,
              max_sequential_skip_in_iterations, version_number, read_callback,

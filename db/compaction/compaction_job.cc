@@ -953,6 +953,7 @@ try {
 
   long long rename_t0 = env_->NowMicros();
   size_t out_raw_bytes = 0;
+  uint64_t epoch_number = c->MinInputFileEpochNumber();
   for (size_t i = 0; i < num_threads; ++i) {
     auto& sub_state = compact_->sub_compact_states[i];
     for (const auto& min_meta : rpc_results.output_files[i]) {
@@ -999,6 +1000,7 @@ try {
       meta.raw_key_size = tp->raw_key_size;
       meta.raw_value_size = tp->raw_value_size;
       meta.marked_for_compaction = min_meta.marked_for_compaction;
+      meta.epoch_number = epoch_number;
       bool enable_order_check = mut_cfo->check_flush_compaction_key_order;
       bool enable_hash = paranoid_file_checks_;
       uint64_t precalculated_hash = 0;

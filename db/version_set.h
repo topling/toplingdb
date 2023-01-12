@@ -934,6 +934,8 @@ class Version {
 
   size_t GetMemoryUsageByTableReaders();
 
+  Env* env() const { return env_; }
+
   ColumnFamilyData* cfd() const { return cfd_; }
 
   // Return the next Version in the linked list.

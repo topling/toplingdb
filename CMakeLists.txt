@@ -694,7 +694,7 @@ else()
 endif()
 
 FILE(GLOB topling_dcompact ${PROJECT_SOURCE_DIR}/sideplugin/topling-dcompact/src/dcompact/*.cc)
-if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-sst/src/dcompact)
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-dcompact/src/dcompact)
   message(STATUS "found ${topling_dcompact}")
   set (topling_rocks_src ${topling_rocks_src} ${topling_dcompact})
 else()

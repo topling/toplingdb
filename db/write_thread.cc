@@ -650,8 +650,9 @@ bool WriteThread::CompleteParallelMemTableWriter(Writer* w) {
   auto* write_group = w->write_group;
   if (!w->status.ok()) {
     static std::mutex mtx;
+    auto tmp = w->status;
     std::lock_guard<std::mutex> guard(mtx);
-    write_group->status = w->status;
+    write_group->status = std::move(tmp);
   }
 
   if (write_group->running-- > 1) {

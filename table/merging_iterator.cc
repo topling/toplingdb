@@ -72,21 +72,50 @@ struct HeapItemAndPrefix {
 };
 inline static void UpdatePrefixCache(HeapItem*) {} // do nothing
 
-#if 0
 static FORCE_INLINE uint64_t GetUnalignedU64(const void* ptr) noexcept {
   uint64_t x;
   memcpy(&x, ptr, sizeof(uint64_t));
   return x;
 }
 
-static FORCE_INLINE bool BytewiseCompareInternalKey(Slice x, Slice y) noexcept {
+static bool BytewiseCompareInternalKey(Slice x, Slice y) noexcept {
   size_t n = std::min(x.size_, y.size_) - 8;
   int cmp = memcmp(x.data_, y.data_, n);
   if (0 != cmp) return cmp < 0;
   if (x.size_ != y.size_) return x.size_ < y.size_;
   return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
 }
+static bool BytewiseCompareInternalKey(Slice x, const ParsedInternalKey& y)
+noexcept {
+  size_t nx = x.size_ - 8;
+  size_t n = std::min(nx, y.user_key.size_);
+  int cmp = memcmp(x.data_, y.user_key.data_, n);
+  if (0 != cmp) return cmp < 0;
+  if (nx != y.user_key.size_) return nx < y.user_key.size_;
+  return GetUnalignedU64(x.data_ + nx) > (y.sequence << 8 | y.type);
+}
+static bool BytewiseCompareInternalKey(const ParsedInternalKey& x, Slice y)
+noexcept {
+  size_t ny = y.size_ - 8;
+  size_t n = std::min(x.user_key.size_, ny);
+  int cmp = memcmp(x.user_key.data_, y.data_, n);
+  if (0 != cmp) return cmp < 0;
+  if (x.user_key.size_ != ny) return x.user_key.size_ < ny;
+  return (x.sequence << 8 | x.type) > GetUnalignedU64(y.data_ + ny);
+}
+static bool BytewiseCompareInternalKey(const ParsedInternalKey& x,
+                                       const ParsedInternalKey& y)
+noexcept {
+  size_t n = std::min(x.user_key.size_, y.user_key.size_);
+  int cmp = memcmp(x.user_key.data_, y.user_key.data_, n);
+  if (0 != cmp) return cmp < 0;
+  if (x.user_key.size_ != y.user_key.size_)
+    return x.user_key.size_ < y.user_key.size_;
+  else
+    return (x.sequence << 8 | x.type) > (y.sequence << 8 | y.type);
+}
 
+#if 0
 static FORCE_INLINE bool RevBytewiseCompareInternalKey(Slice x,
                                                        Slice y) noexcept {
   size_t n = std::min(x.size_, y.size_) - 8;
@@ -107,13 +136,18 @@ class MinHeapBytewiseComp {
       return true;
     else if (a.key_prefix < b.key_prefix)
       return false;
-    else
-    #if 0
-      return BytewiseCompareInternalKey(b.item_ptr->key(), a.item_ptr->key());
-    #else
-      // there is no simpler way to emulate this behavior
-      return MinHeapItemComparator(c_)(a.item_ptr, b.item_ptr);
-    #endif
+    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
+      if (LIKELY(b->type == HeapItem::ITERATOR))
+        return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
+      else
+        return BytewiseCompareInternalKey(b->parsed_ikey, a->iter.key());
+    }
+    else {
+      if (LIKELY(b->type == HeapItem::ITERATOR))
+        return BytewiseCompareInternalKey(b->iter.key(), a->parsed_ikey);
+      else
+        return BytewiseCompareInternalKey(b->parsed_ikey, a->parsed_ikey);
+    }
   }
 };
 
@@ -126,13 +160,18 @@ class MaxHeapBytewiseComp {
       return true;
     else if (a.key_prefix > b.key_prefix)
       return false;
-    else
-    #if 0
-      return BytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key());
-    #else
-      // there is no simpler way to emulate this behavior
-      return MaxHeapItemComparator(c_)(a.item_ptr, b.item_ptr);
-    #endif
+    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
+      if (LIKELY(b->type == HeapItem::ITERATOR))
+        return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
+      else
+        return BytewiseCompareInternalKey(a->iter.key(), b->parsed_ikey);
+    }
+    else {
+      if (LIKELY(b->type == HeapItem::ITERATOR))
+        return BytewiseCompareInternalKey(a->parsed_ikey, b->iter.key());
+      else
+        return BytewiseCompareInternalKey(a->parsed_ikey, b->parsed_ikey);
+    }
   }
 };
 

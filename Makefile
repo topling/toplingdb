@@ -310,6 +310,7 @@ ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test
   CXXFLAGS += -DROCKSDB_UNIT_TEST
   CXXFLAGS += -DROCKSDB_DYNAMIC_CREATE_CF
   CXXFLAGS += -DTOPLINGDB_WITH_TIMESTAMP
+  CXXFLAGS += -DTOPLINGDB_WITH_WIDE_COLUMNS
   MAKE_UNIT_TEST := 1
   OBJ_DIR := $(subst build/,build-ut/,${OBJ_DIR})
 endif

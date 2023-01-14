@@ -164,11 +164,13 @@ class DBIter final : public Iterator {
     return value_;
   }
 
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   const WideColumns& columns() const override {
     assert(valid_);
 
     return wide_columns_;
   }
+#endif
 
   Status status() const override {
     if (status_.ok()) {
@@ -307,17 +309,21 @@ class DBIter final : public Iterator {
 
   void SetValueAndColumnsFromPlain(const Slice& slice) {
     assert(value_.empty());
-    assert(wide_columns_.empty());
-
     value_ = slice;
+
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+    assert(wide_columns_.empty());
     wide_columns_.emplace_back(kDefaultWideColumnName, slice);
+#endif
   }
 
   bool SetValueAndColumnsFromEntity(Slice slice);
 
   void ResetValueAndColumns() {
     value_.clear();
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
     wide_columns_.clear();
+#endif
   }
 
   // If user-defined timestamp is enabled, `user_key` includes timestamp.
@@ -348,8 +354,10 @@ class DBIter final : public Iterator {
   PinnableSlice blob_value_;
   // Value of the default column
   Slice value_;
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   // All columns (i.e. name-value pairs)
   WideColumns wide_columns_;
+#endif
   Statistics* statistics_;
   uint64_t max_skip_;
   uint64_t max_skippable_internal_keys_;

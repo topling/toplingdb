@@ -228,6 +228,7 @@ bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
 }
 
 bool DBIter::SetValueAndColumnsFromEntity(Slice slice) {
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   assert(value_.empty());
   assert(wide_columns_.empty());
 
@@ -243,6 +244,7 @@ bool DBIter::SetValueAndColumnsFromEntity(Slice slice) {
       wide_columns_[0].name() == kDefaultWideColumnName) {
     value_ = wide_columns_[0].value();
   }
+#endif
 
   return true;
 }
@@ -436,10 +438,12 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
 
               SetValueAndColumnsFromPlain(expose_blob_index_ ? iter_.value()
                                                              : blob_value_);
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
             } else if (ikey_.type == kTypeWideColumnEntity) {
               if (!SetValueAndColumnsFromEntity(iter_.value())) {
                 return false;
               }
+        #endif
             } else {
               assert(ikey_.type == kTypeValue);
               SetValueAndColumnsFromPlain(iter_.value());
@@ -1182,10 +1186,12 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
 
       SetValueAndColumnsFromPlain(expose_blob_index_ ? pinned_value_
                                                      : blob_value_);
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
     } else if (ikey.type == kTypeWideColumnEntity) {
       if (!SetValueAndColumnsFromEntity(pinned_value_)) {
         return false;
       }
+#endif
     } else {
       assert(ikey.type == kTypeValue);
       SetValueAndColumnsFromPlain(pinned_value_);
@@ -1327,9 +1333,11 @@ bool DBIter::MergeEntity(const Slice& entity, const Slice& user_key) {
     return false;
   }
 
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   if (!SetValueAndColumnsFromEntity(saved_value_)) {
     return false;
   }
+#endif
 
   valid_ = true;
   return true;

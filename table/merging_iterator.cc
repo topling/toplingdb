@@ -127,9 +127,8 @@ static FORCE_INLINE bool RevBytewiseCompareInternalKey(Slice x,
 #endif
 
 class MinHeapBytewiseComp {
-  const InternalKeyComparator* c_;
  public:
-  MinHeapBytewiseComp(const InternalKeyComparator* c) : c_(c) {}
+  MinHeapBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
     if (a.key_prefix > b.key_prefix)
@@ -152,9 +151,8 @@ class MinHeapBytewiseComp {
 };
 
 class MaxHeapBytewiseComp {
-  const InternalKeyComparator* c_;
  public:
-  MaxHeapBytewiseComp(const InternalKeyComparator* c) : c_(c) {}
+  MaxHeapBytewiseComp(const InternalKeyComparator*) {}
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
     if (a.key_prefix < b.key_prefix)
       return true;

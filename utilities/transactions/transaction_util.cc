@@ -146,7 +146,7 @@ Status TransactionUtil::CheckKey(DBImpl* db_impl, SuperVersion* sv,
         write_conflict = ucmp->CompareTimestamp(*read_ts, timestamp) < 0;
       }
       if (write_conflict) {
-        result = Status::Busy();
+        result = Status::Busy("Write Conflict");
       }
     }
   }

@@ -78,7 +78,7 @@ static FORCE_INLINE uint64_t GetUnalignedU64(const void* ptr) noexcept {
   return x;
 }
 
-static bool BytewiseCompareInternalKey(Slice x, Slice y) noexcept {
+static FORCE_INLINE bool BytewiseCompareInternalKey(Slice x, Slice y) noexcept {
   size_t n = std::min(x.size_, y.size_) - 8;
   int cmp = memcmp(x.data_, y.data_, n);
   if (0 != cmp) return cmp < 0;
@@ -115,7 +115,6 @@ noexcept {
     return (x.sequence << 8 | x.type) > (y.sequence << 8 | y.type);
 }
 
-#if 0
 static FORCE_INLINE bool RevBytewiseCompareInternalKey(Slice x,
                                                        Slice y) noexcept {
   size_t n = std::min(x.size_, y.size_) - 8;
@@ -124,7 +123,35 @@ static FORCE_INLINE bool RevBytewiseCompareInternalKey(Slice x,
   if (x.size_ != y.size_) return x.size_ > y.size_;
   return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
 }
-#endif
+static bool RevBytewiseCompareInternalKey(Slice x, const ParsedInternalKey& y)
+noexcept {
+  size_t nx = x.size_ - 8;
+  size_t n = std::min(nx, y.user_key.size_);
+  int cmp = memcmp(x.data_, y.user_key.data_, n);
+  if (0 != cmp) return cmp > 0;
+  if (nx != y.user_key.size_) return nx > y.user_key.size_;
+  return GetUnalignedU64(x.data_ + nx) > (y.sequence << 8 | y.type);
+}
+static bool RevBytewiseCompareInternalKey(const ParsedInternalKey& x, Slice y)
+noexcept {
+  size_t ny = y.size_ - 8;
+  size_t n = std::min(x.user_key.size_, ny);
+  int cmp = memcmp(x.user_key.data_, y.data_, n);
+  if (0 != cmp) return cmp > 0;
+  if (x.user_key.size_ != ny) return x.user_key.size_ > ny;
+  return (x.sequence << 8 | x.type) > GetUnalignedU64(y.data_ + ny);
+}
+static bool RevBytewiseCompareInternalKey(const ParsedInternalKey& x,
+                                          const ParsedInternalKey& y)
+noexcept {
+  size_t n = std::min(x.user_key.size_, y.user_key.size_);
+  int cmp = memcmp(x.user_key.data_, y.user_key.data_, n);
+  if (0 != cmp) return cmp > 0;
+  if (x.user_key.size_ != y.user_key.size_)
+    return x.user_key.size_ > y.user_key.size_;
+  else
+    return (x.sequence << 8 | x.type) > (y.sequence << 8 | y.type);
+}
 
 class MinHeapBytewiseComp {
  public:
@@ -153,6 +180,7 @@ class MinHeapBytewiseComp {
 class MaxHeapBytewiseComp {
  public:
   MaxHeapBytewiseComp(const InternalKeyComparator*) {}
+  FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
     if (a.key_prefix < b.key_prefix)
       return true;
@@ -174,41 +202,50 @@ class MaxHeapBytewiseComp {
 };
 
 class MinHeapRevBytewiseComp {
-  const InternalKeyComparator* c_;
  public:
-  MinHeapRevBytewiseComp(const InternalKeyComparator* c) : c_(c) {}
+  MinHeapRevBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
     if (a.key_prefix < b.key_prefix)
       return true;
     else if (a.key_prefix > b.key_prefix)
       return false;
-    else
-    #if 0
-      return RevBytewiseCompareInternalKey(b.item_ptr->key(), a.item_ptr->key());
-    #else
-      // there is no simpler way to emulate this behavior
-      return MinHeapItemComparator(c_)(a.item_ptr, b.item_ptr);
-    #endif
+    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
+      if (LIKELY(b->type == HeapItem::ITERATOR))
+        return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
+      else
+        return RevBytewiseCompareInternalKey(b->parsed_ikey, a->iter.key());
+    }
+    else {
+      if (LIKELY(b->type == HeapItem::ITERATOR))
+        return RevBytewiseCompareInternalKey(b->iter.key(), a->parsed_ikey);
+      else
+        return RevBytewiseCompareInternalKey(b->parsed_ikey, a->parsed_ikey);
+    }
   }
 };
 
 class MaxHeapRevBytewiseComp {
-  const InternalKeyComparator* c_;
  public:
-  MaxHeapRevBytewiseComp(const InternalKeyComparator* c) : c_(c) {}
+  MaxHeapRevBytewiseComp(const InternalKeyComparator*) {}
+  FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
     if (a.key_prefix > b.key_prefix)
       return true;
     else if (a.key_prefix < b.key_prefix)
       return false;
-    else
-    #if 0
-      return RevBytewiseCompareInternalKey(a.item_ptr->key(), b.item_ptr->key());
-    #else
-      // there is no simpler way to emulate this behavior
-      return MaxHeapItemComparator(c_)(a.item_ptr, b.item_ptr);
-    #endif
+    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
+      if (LIKELY(b->type == HeapItem::ITERATOR))
+        return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
+      else
+        return RevBytewiseCompareInternalKey(a->iter.key(), b->parsed_ikey);
+    }
+    else {
+      if (LIKELY(b->type == HeapItem::ITERATOR))
+        return RevBytewiseCompareInternalKey(a->parsed_ikey, b->iter.key());
+      else
+        return RevBytewiseCompareInternalKey(a->parsed_ikey, b->parsed_ikey);
+    }
   }
 };
 

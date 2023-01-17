@@ -865,6 +865,12 @@ void CompactionJob::GetSubCompactOutputs(
 
 Status CompactionJob::RunRemote()
 try {
+  ROCKSDB_VERIFY_F(nullptr == snapshot_checker_,
+    "dcompact does not support snapshot_checker, ex: WritePreparedTxnDB "
+    "and WriteUnpreparedTxnDB are not supported because they use "
+    "WritePreparedSnapshotChecker"
+  );
+
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_RUN);
   TEST_SYNC_POINT("CompactionJob::RunRemote():Start");

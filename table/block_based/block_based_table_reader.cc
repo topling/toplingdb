@@ -2823,6 +2823,32 @@ Status BlockBasedTable::GetKVPairsFromDataBlocks(
   return Status::OK();
 }
 
+Status TableReader::DumpTable(WritableFile* out_file) {
+  WritableFileStringStreamAdapter out_file_wrapper(out_file);
+  std::ostream out_stream(&out_file_wrapper);
+  auto table_properties = GetTableProperties();
+  if (table_properties != nullptr) {
+    out_stream << "Table Properties:\n"
+                  "--------------------------------------\n";
+    out_stream << "  " << table_properties->ToString("\n  ", ": ") << "\n";
+  }
+  out_stream << "Table Key Values:\n"
+                "--------------------------------------\n";
+  ReadOptions ro;
+  auto iter = NewIterator(ro, nullptr, nullptr, false, kUserIterator);
+  std::unique_ptr<InternalIterator> iter_guard(iter);
+  iter->SeekToFirst();
+  while (iter->Valid()) {
+    Slice ikey = iter->key();
+    Slice val = iter->value();
+    ParsedInternalKey pikey(ikey);
+    out_stream << pikey.DebugString(true, true) << " : ";
+    out_stream << val.ToString(true) << "\n";
+    iter->Next();
+  }
+  return Status::OK();
+}
+
 Status BlockBasedTable::DumpTable(WritableFile* out_file) {
   WritableFileStringStreamAdapter out_file_wrapper(out_file);
   std::ostream out_stream(&out_file_wrapper);

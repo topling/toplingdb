@@ -170,9 +170,7 @@ class TableReader {
   }
 
   // convert db file to a human readable form
-  virtual Status DumpTable(WritableFile* /*out_file*/) {
-    return Status::NotSupported("DumpTable() not supported");
-  }
+  virtual Status DumpTable(WritableFile* /*out_file*/);
 
   // check whether there is corruption in this db file
   virtual Status VerifyChecksum(const ReadOptions& /*read_options*/,

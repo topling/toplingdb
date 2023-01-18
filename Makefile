@@ -225,9 +225,9 @@ CFLAGS += -DUSE_SERVER_STATS=1
 CXXFLAGS += -DOPENSSL_API_1_1=1
 CFLAGS += -DOPENSSL_API_1_1=1
 
-ifneq ($(filter check_% check-% gen_parallel_tests %_test %_test2 \
+ifneq ($(filter check_% check-% %_tests %_test %_test2 \
 				watch-log format clean% tags% \
-				package% install install-shared install-static, \
+				package% install install-%, \
 				$(MAKECMDGOALS)),)
   UPDATE_REPO ?= 0
 endif

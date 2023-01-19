@@ -23,7 +23,7 @@ namespace ROCKSDB_NAMESPACE {
 template <class TValue = Slice>
 class IteratorWrapperBase {
  public:
-  IteratorWrapperBase() : iter_(nullptr), valid_(false) {}
+  IteratorWrapperBase() : iter_(nullptr) {}
   explicit IteratorWrapperBase(InternalIteratorBase<TValue>* _iter)
       : iter_(nullptr) {
     Set(_iter);
@@ -38,7 +38,7 @@ class IteratorWrapperBase {
 
     iter_ = _iter;
     if (iter_ == nullptr) {
-      valid_ = false;
+      result_.is_valid = false;
     } else {
       Update();
     }
@@ -56,7 +56,7 @@ class IteratorWrapperBase {
   }
 
   // Iterator interface methods
-  bool Valid() const { return valid_; }
+  bool Valid() const { return result_.is_valid; }
   Slice key() const {
     assert(Valid());
     return result_.key;
@@ -81,20 +81,20 @@ class IteratorWrapperBase {
     }
 
     assert(!iter_->Valid());
-    valid_ = false;
+    result_.is_valid = false;
     return false;
   }
   void Next() {
     assert(iter_);
-    valid_ = iter_->NextAndGetResult(&result_);
-    assert(!valid_ || iter_->status().ok());
+    result_.is_valid = iter_->NextAndGetResult(&result_);
+    assert(!result_.is_valid || iter_->status().ok());
   }
   bool NextAndGetResult(IterateResult* result) {
     assert(iter_);
-    valid_ = iter_->NextAndGetResult(&result_);
+    result_.is_valid = iter_->NextAndGetResult(&result_);
     *result = result_;
-    assert(!valid_ || iter_->status().ok());
-    return valid_;
+    assert(!result_.is_valid || iter_->status().ok());
+    return result_.is_valid;
   }
   void Prev() {
     assert(iter_);
@@ -166,8 +166,8 @@ class IteratorWrapperBase {
 
  private:
   void Update() {
-    valid_ = iter_->Valid();
-    if (valid_) {
+    result_.is_valid = iter_->Valid();
+    if (result_.is_valid) {
       assert(iter_->status().ok());
       result_.key = iter_->key();
       result_.bound_check_result = IterBoundCheck::kUnknown;
@@ -177,7 +177,6 @@ class IteratorWrapperBase {
 
   InternalIteratorBase<TValue>* iter_;
   IterateResult result_;
-  bool valid_;
 };
 
 using IteratorWrapper = IteratorWrapperBase<Slice>;

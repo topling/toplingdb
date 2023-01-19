@@ -30,6 +30,7 @@ struct IterateResult {
   IterBoundCheck bound_check_result = IterBoundCheck::kUnknown;
   // If false, PrepareValue() needs to be called before value().
   bool value_prepared = true;
+  bool is_valid = false; // just used in IteratorWrapperBase
 };
 
 template <class TValue>

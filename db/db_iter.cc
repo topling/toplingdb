@@ -389,7 +389,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
       // level. This may change in the future.
       if ((!is_prev_key_seqnum_zero || timestamp_size_ > 0) &&
           skipping_saved_key &&
-          CompareKeyForSkip(ikey_.user_key, saved_key_.GetUserKey()) <= 0) {
+          !CmpKeyForSkip(saved_key_.GetUserKey(), ikey_.user_key, cmpNoTS)) {
         num_skipped++;  // skip this entry
         PERF_COUNTER_ADD(internal_key_skipped_count, 1);
       } else {

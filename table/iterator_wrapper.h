@@ -70,6 +70,10 @@ class IteratorWrapperBase {
     assert(iter_);
     return iter_->status();
   }
+
+#ifdef __GNUC__
+  inline __attribute__((always_inline))
+#endif
   bool PrepareValue() {
     assert(Valid());
     if (result_.value_prepared) {
@@ -84,11 +88,17 @@ class IteratorWrapperBase {
     result_.is_valid = false;
     return false;
   }
+#ifdef __GNUC__
+  inline __attribute__((always_inline))
+#endif
   void Next() {
     assert(iter_);
     result_.is_valid = iter_->NextAndGetResult(&result_);
     assert(!result_.is_valid || iter_->status().ok());
   }
+#ifdef __GNUC__
+  inline __attribute__((always_inline))
+#endif
   bool NextAndGetResult(IterateResult* result) {
     assert(iter_);
     result_.is_valid = iter_->NextAndGetResult(&result_);

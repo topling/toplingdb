@@ -102,19 +102,37 @@ class MergeIteratorBuilder {
 // The HeapItem struct represents 3 types of elements in the minHeap/maxHeap:
 // point key and the start and end keys of a range tombstone.
 struct HeapItem {
-  HeapItem() = default;
-
-  enum Type { ITERATOR, DELETE_RANGE_START, DELETE_RANGE_END };
+  enum Type : unsigned char { ITERATOR, DELETE_RANGE_START, DELETE_RANGE_END };
   IteratorWrapper iter;
-  size_t level = 0;
-  ParsedInternalKey parsed_ikey;
+  union { // This union use padding space of parsed_ikey for type & level
+    ParsedInternalKey parsed_ikey; // dont assign to parsed_ikey
+    struct {
+      size_t          u_parsed_ikey_user_key[2];
+      SequenceNumber  u_parsed_ikey_sequence;
+      ValueType       u_parsed_ikey_type;
+      char            u_parsed_ikey_padding[2];
+      // Will be overwritten before use, initialize here so compiler does not
+      // complain.
+      Type type;
+      uint32_t level;
+    };
+  };
   std::string range_tombstone_key;
-  // Will be overwritten before use, initialize here so compiler does not
-  // complain.
-  Type type = ITERATOR;
+
+  HeapItem() {
+    type = ITERATOR;
+    level = 0;
+    // strict check object layout at compile time:
+    static_assert(offsetof(HeapItem, iter) == 0);
+    static_assert(offsetof(HeapItem, parsed_ikey) == sizeof(iter));
+    static_assert(offsetof(HeapItem, range_tombstone_key) == sizeof(iter) + sizeof(parsed_ikey));
+    static_assert(sizeof(*this) == sizeof(iter) + sizeof(parsed_ikey) + sizeof(range_tombstone_key));
+  }
 
   explicit HeapItem(size_t _level, InternalIteratorBase<Slice>* _iter)
-      : level(_level), type(Type::ITERATOR) {
+  {
+    type = Type::ITERATOR;
+    level = (uint32_t)_level;
     iter.Set(_iter);
   }
 

@@ -185,6 +185,16 @@ inline void UnPackSequenceAndType(uint64_t packed, uint64_t* seq,
   // assert(IsExtendedValueType(*t));
 }
 
+inline void UnPackSequenceAndType(uint64_t packed, ParsedInternalKey* pikey) {
+  pikey->sequence = packed >> 8;
+  pikey->type = static_cast<ValueType>(packed & 0xff);
+}
+
+inline std::pair<uint64_t, ValueType>
+UnPackSequenceAndType(uint64_t packed) {
+  return {packed >> 8, ValueType(packed & 0xff)};
+}
+
 EntryType GetEntryType(ValueType value_type);
 
 inline void SetInternalKey(std::string* result, Slice ukey, uint64_t seqvt) {

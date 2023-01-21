@@ -458,7 +458,7 @@ class MemTableIterator : public InternalIterator {
     Next();
     bool is_valid = valid_;
     if (is_valid) {
-      result->key = key();
+      result->SetKey(this->key());
       result->bound_check_result = IterBoundCheck::kUnknown;
       result->value_prepared = true;
     }

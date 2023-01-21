@@ -60,7 +60,7 @@ class IteratorWrapperBase {
   bool Valid() const { return result_.is_valid; }
   Slice key() const {
     assert(Valid());
-    return result_.key;
+    return result_.key();
   }
   TValue value() const {
     assert(Valid());
@@ -160,7 +160,7 @@ class IteratorWrapperBase {
 
   Slice user_key() const {
     assert(Valid());
-    return Slice(result_.key.data_, result_.key.size_ - 8);
+    return result_.user_key();
   }
 
   void UpdateReadaheadState(InternalIteratorBase<TValue>* old_iter) {
@@ -180,7 +180,7 @@ class IteratorWrapperBase {
     result_.is_valid = iter_->Valid();
     if (result_.is_valid) {
       assert(iter_->status().ok());
-      result_.key = iter_->key();
+      result_.SetKey(iter_->key());
       result_.bound_check_result = IterBoundCheck::kUnknown;
       result_.value_prepared = false;
     }

@@ -26,7 +26,16 @@ enum class IterBoundCheck : char {
 };
 
 struct IterateResult {
-  Slice key;
+private:
+  const char* key_data_ = nullptr;
+  uint32_t    key_size_ = 0;
+public:
+  void SetKey(Slice k) {
+    key_data_ = k.data();
+    key_size_ = (uint32_t)(k.size());
+  }
+  Slice key() const { return Slice(key_data_, key_size_); }
+  Slice user_key() const { return Slice(key_data_, key_size_ - 8); }
   IterBoundCheck bound_check_result = IterBoundCheck::kUnknown;
   // If false, PrepareValue() needs to be called before value().
   bool value_prepared = true;
@@ -84,7 +93,7 @@ class InternalIteratorBase : public Cleanable {
     Next();
     bool is_valid = Valid();
     if (is_valid) {
-      result->key = key();
+      result->SetKey(key());
       // Default may_be_out_of_upper_bound to true to avoid unnecessary virtual
       // call. If an implementation has non-trivial UpperBoundCheckResult(),
       // it should also override NextAndGetResult().

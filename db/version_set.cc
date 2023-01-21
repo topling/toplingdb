@@ -1613,11 +1613,11 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
       // This could be set in TrySetDeleteRangeSentinel() or
       // SkipEmptyFileForward() above.
       if (to_return_sentinel_) {
-        result->key = sentinel_;
+        result->SetKey(sentinel_);
         result->bound_check_result = IterBoundCheck::kUnknown;
         result->value_prepared = true;
       } else {
-        result->key = key();
+        result->SetKey(this->key());
         result->bound_check_result = file_iter_.UpperBoundCheckResult();
         // Ideally, we should return the real file_iter_.value_prepared but the
         // information is not here. It would casue an extra PrepareValue()

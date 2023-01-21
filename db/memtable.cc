@@ -1337,11 +1337,10 @@ Status MemTable::Update(SequenceNumber seq, ValueType value_type,
                         const Slice& key, const Slice& value,
                         const ProtectionInfoKVOS64* kv_prot_info) {
   LookupKey lkey(key, seq);
-  Slice mem_key = lkey.memtable_key();
 
   std::unique_ptr<MemTableRep::Iterator> iter(
       table_->GetDynamicPrefixIterator());
-  iter->Seek(lkey.internal_key(), mem_key.data());
+  iter->Seek(lkey.internal_key(), lkey.memtable_key_data());
 
   if (iter->Valid()) {
     // sequence number since the Seek() call above should have skipped
@@ -1391,11 +1390,10 @@ Status MemTable::UpdateCallback(SequenceNumber seq, const Slice& key,
                                 const Slice& delta,
                                 const ProtectionInfoKVOS64* kv_prot_info) {
   LookupKey lkey(key, seq);
-  Slice memkey = lkey.memtable_key();
 
   std::unique_ptr<MemTableRep::Iterator> iter(
       table_->GetDynamicPrefixIterator());
-  iter->Seek(lkey.internal_key(), memkey.data());
+  iter->Seek(lkey.internal_key(), lkey.memtable_key_data());
 
   if (iter->Valid()) {
     // Check that it belongs to same user key.  We do not check the
@@ -1476,14 +1474,12 @@ Status MemTable::UpdateCallback(SequenceNumber seq, const Slice& key,
 }
 
 size_t MemTable::CountSuccessiveMergeEntries(const LookupKey& key) {
-  Slice memkey = key.memtable_key();
-
   // A total ordered iterator is costly for some memtablerep (prefix aware
   // reps). By passing in the user key, we allow efficient iterator creation.
   // The iterator only needs to be ordered within the same user key.
   std::unique_ptr<MemTableRep::Iterator> iter(
       table_->GetDynamicPrefixIterator());
-  iter->Seek(key.internal_key(), memkey.data());
+  iter->Seek(key.internal_key(), key.memtable_key_data());
 
   size_t num_successive_merges = 0;
 

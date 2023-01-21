@@ -26,6 +26,8 @@ class LookupKey {
 
   ~LookupKey();
 
+  const char* memtable_key_data() const { return start_; }
+
   // Return a key suitable for lookup in a MemTable.
   Slice memtable_key() const {
     return Slice(start_, static_cast<size_t>(end_ - start_));

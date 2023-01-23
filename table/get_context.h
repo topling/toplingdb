@@ -136,6 +136,12 @@ class GetContext {
   bool SaveValue(const ParsedInternalKey& parsed_key, const Slice& value,
                  bool* matched, Cleanable* value_pinner = nullptr);
 
+  bool SaveValue(const ParsedInternalKey& parsed_key, const Slice& value,
+                 Cleanable&& defer_clean) {
+    bool matched = false; // don't care
+    return SaveValue(parsed_key, value, &matched, &defer_clean);
+  }
+
   // Simplified version of the previous function. Should only be used when we
   // know that the operation is a Put.
   void SaveValue(const Slice& value, SequenceNumber seq);

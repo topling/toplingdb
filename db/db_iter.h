@@ -354,9 +354,9 @@ class DBIter final : public Iterator {
   // Reusable internal key data structure. This is only used inside one function
   // and should not be used across functions. Reusing this object can reduce
   // overhead of calling construction of the function if creating it each time.
-  ParsedInternalKey ikey_;
+  //ParsedInternalKey ikey_;
   std::string saved_value_;
-  Slice pinned_value_;
+  //Slice pinned_value_;
   // for prefix seek mode to support prev()
   PinnableSlice blob_value_;
   // Value of the default column

@@ -338,6 +338,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
   // to one.
   bool reseek_done = false;
 
+  ParsedInternalKey ikey_; // ToplingDB, move field as local var
   do {
     // Will update is_key_seqnum_zero_ as soon as we parsed the current key
     // but we need to save the previous value to be used in the loop.
@@ -872,9 +873,12 @@ bool DBIter::FindValueForCurrentKey() {
   // last_key_entry_type is initialized to kTypeDeletion.
   bool valid_entry_seen = false;
 
+  ParsedInternalKey ikey_; // ToplingDB, move field as local var
+
   // Temporarily pin blocks that hold (merge operands / the value)
   ReleaseTempPinnedData();
   TempPinData();
+  Slice pinned_value_;
   size_t num_skipped = 0;
   while (iter_.Valid()) {
     ParsedInternalKey ikey;
@@ -1178,7 +1182,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
   if (ikey.type == kTypeValue || ikey.type == kTypeBlobIndex ||
       ikey.type == kTypeWideColumnEntity) {
     assert(iter_.iter()->IsValuePinned());
-    pinned_value_ = iter_.value();
+    Slice pinned_value_ = iter_.value();
     if (ikey.type == kTypeBlobIndex) {
       if (!SetBlobValueIfNeeded(ikey.user_key, pinned_value_)) {
         return false;
@@ -1305,6 +1309,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
 }
 
 bool DBIter::Merge(const Slice* val, const Slice& user_key) {
+  Slice pinned_value_;
   Status s = MergeHelper::TimedFullMerge(
       merge_operator_, user_key, val, merge_context_.GetOperands(),
       &saved_value_, logger_, statistics_, clock_, &pinned_value_,

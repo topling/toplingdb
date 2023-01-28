@@ -675,8 +675,8 @@ class IterKey {
  private:
   char* buf_;
   const char* key_;
-  size_t key_size_;
-  size_t buf_size_;
+  uint32_t key_size_;
+  uint32_t buf_size_;
   char space_[39];  // Avoid allocation for short keys
   bool is_user_key_;
 

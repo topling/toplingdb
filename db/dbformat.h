@@ -592,7 +592,7 @@ class IterKey {
   void OwnKey() {
     assert(IsKeyPinned() == true);
 
-    Reserve(key_size_);
+    EnlargeBufferIfNeeded(key_size_);
     memcpy(buf(), key_, key_size_);
     key_ = buf();
   }

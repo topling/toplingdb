@@ -118,6 +118,8 @@ class BinaryHeap {
   static inline size_t get_right(size_t index) { return 2 * index + 2; }
 
   void upheap(size_t index) {
+    assert(index < data_.size());
+    T* data_ = this->data_.data();
     T v = std::move(data_[index]);
     while (index > get_root()) {
       const size_t parent = get_parent(index);
@@ -132,10 +134,11 @@ class BinaryHeap {
   }
 
   void downheap(size_t index) {
+    size_t heap_size = data_.size();
+    T* data_ = this->data_.data();
     T v = std::move(data_[index]);
 
     size_t picked_child = std::numeric_limits<size_t>::max();
-    size_t heap_size = data_.size();
     while (1) {
       const size_t left_child = get_left(index);
       if (left_child >= heap_size) {

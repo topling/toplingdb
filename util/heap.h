@@ -10,7 +10,7 @@
 #include <functional>
 
 #include "port/port.h"
-#include "util/autovector.h"
+#include <terark/valvec32.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -172,7 +172,7 @@ class BinaryHeap {
   }
 
   Compare cmp_;
-  autovector<T, 16> data_;
+  terark::valvec32<T> data_;static_assert(std::is_trivially_destructible_v<T>);
   // Used to reduce number of cmp_ calls in downheap()
   size_t root_cmp_cache_ = std::numeric_limits<size_t>::max();
 };

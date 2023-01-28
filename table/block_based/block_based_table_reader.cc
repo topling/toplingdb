@@ -538,7 +538,9 @@ void BlockBasedTable::SetupBaseCacheKey(const TableProperties* properties,
   uint64_t file_num;
   std::string db_id;
   if (properties && !properties->db_session_id.empty() &&
+#if !defined(ROCKSDB_UNIT_TEST)
       false && // ToplingDB dcompact can not ensure orig_file_number is unique
+#endif
       properties->orig_file_number > 0) {
     // (Newer SST file case)
     // We must have both properties to get a stable unique id because

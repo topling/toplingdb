@@ -3385,6 +3385,7 @@ class Benchmark {
       read_options_.adaptive_readahead = FLAGS_adaptive_readahead;
       read_options_.async_io = FLAGS_async_io;
       read_options_.optimize_multiget_for_io = FLAGS_optimize_multiget_for_io;
+      read_options_.ignore_range_deletions = 0 == FLAGS_max_num_range_tombstones;
 
       void (Benchmark::*method)(ThreadState*) = nullptr;
       void (Benchmark::*post_process_method)() = nullptr;

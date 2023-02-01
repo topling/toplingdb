@@ -351,6 +351,7 @@ struct LevelFilesBrief {
 };
 inline uint64_t HostPrefixCache(const Slice& ikey) {
   ROCKSDB_ASSERT_GE(ikey.size_, 8);
+  ROCKSDB_ASSUME(ikey.size_ >= 8);
   uint64_t data = 0;
   memcpy(&data, ikey.data_, std::min<size_t>(ikey.size_ - 8, 8));
   if (port::kLittleEndian)

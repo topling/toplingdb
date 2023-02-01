@@ -478,6 +478,16 @@
 #define TOPLINGDB_UNLIKELY(x) (x)
 #endif
 
+#ifdef _MSC_VER
+#define ROCKSDB_ASSUME(cond) __assume(cond)
+#elif defined(__clang__)
+#define ROCKSDB_ASSUME(cond) __builtin_assume(cond)
+#elif defined(__GNUC__)
+#define ROCKSDB_ASSUME(cond) ((cond) ? static_cast<void>(0) : __builtin_unreachable())
+#else
+#define ROCKSDB_ASSUME(cond) static_cast<void>(!!(cond))
+#endif
+
 #define ROCKSDB_DIE(fmt, ...) \
 	do { \
         fprintf(stderr, "%s:%d: %s: die: " fmt " !\n", \

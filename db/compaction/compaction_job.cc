@@ -794,7 +794,8 @@ Status CompactionJob::RunLocal() {
           }
           if (s.ok() &&
               !validator.CompareValidator(files_output[file_idx]->validator)) {
-            s = Status::Corruption("Paranoid checksums do not match");
+            ROCKSDB_DIE("Compact: Paranoid checksums do not match");
+            s = Status::Corruption("Compact: Paranoid checksums do not match");
           }
         }
 

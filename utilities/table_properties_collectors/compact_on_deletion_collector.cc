@@ -235,7 +235,7 @@ std::string TablePropertiesCollectorFactory::UserPropToString
       str.append("\"");
       str.append(name);
       str.append("\": \"");
-      str.append(name);
+      str.append(Slice(value).ToString(true)); // hex
       str.append("\",");
     }
     str.back() = '}';

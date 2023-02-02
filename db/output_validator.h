@@ -30,9 +30,7 @@ class OutputValidator {
   // Compare result of two key orders are the same. It can be used
   // to compare the keys inserted into a file, and what is read back.
   // Return true if the validation passes.
-  bool CompareValidator(const OutputValidator& other_validator) {
-    return GetHash() == other_validator.GetHash();
-  }
+  bool CompareValidator(const OutputValidator& other_validator);
 
   // Not (yet) intended to be persisted, so subject to change
   // without notice between releases.
@@ -44,5 +42,6 @@ class OutputValidator {
   uint64_t paranoid_hash_ = 0;
   bool enable_order_check_;
   bool enable_hash_;
+  std::vector<std::pair<std::string, std::string> > kv_vec_;
 };
 }  // namespace ROCKSDB_NAMESPACE

@@ -188,6 +188,11 @@ class Compaction {
   // Whether need to write output file to second DB path.
   uint32_t output_path_id() const { return output_path_id_; }
 
+  const DbPath& output_path() const {
+    ROCKSDB_VERIFY_LT(output_path_id_, immutable_options_.cf_paths.size());
+    return immutable_options_.cf_paths[output_path_id_];
+  }
+
   // Is this a trivial compaction that can be implemented by just
   // moving a single input file to the next level (no merging or splitting)
   bool IsTrivialMove() const;

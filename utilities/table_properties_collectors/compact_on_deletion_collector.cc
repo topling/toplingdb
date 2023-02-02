@@ -232,6 +232,9 @@ std::string TablePropertiesCollectorFactory::UserPropToString
   } else {
     str.append("{");
     for (auto& [name, value] : uprops) {
+      if (Slice(name).starts_with("rocksdb.")) {
+        continue; // skip rocksdb native properties
+      }
       str.append("\"");
       str.append(name);
       str.append("\": \"");

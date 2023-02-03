@@ -103,6 +103,7 @@ class Slice {
   // when hex is true, returns a string of twice the length hex encoded (0-9A-F)
   std::string ToString(bool hex) const;
   std::string ToString() const { return std::string(data_, size_); }
+  std::string hex() const { return ToString(true); }
 
   // Return a string_view that references the same data as this slice.
   std::string_view ToStringView() const {

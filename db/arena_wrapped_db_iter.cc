@@ -131,8 +131,11 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
     if (sv_number_ != cur_sv_number) {
       reinit_internal_iter();
       break;
+    } else if (size_t(snap) == KEEP_SNAPSHOT) {
+      break;
     } else {
-      SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
+      SequenceNumber latest_seq = snap ? snap->GetSequenceNumber()
+                                       : db_impl_->GetLatestSequenceNumber();
       if (latest_seq == db_iter_->get_sequence()) {
         break;
       }

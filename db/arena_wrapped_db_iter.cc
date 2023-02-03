@@ -118,7 +118,9 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
     if (is_valid && keep_iter_pos) {
       this->Seek(curr_key);
       ROCKSDB_VERIFY_F(this->Valid(),
+        "curr_key = %s, "
         "old_iter_seq = %lld, latest_seq = %lld, snap = %p, pin_snap = %p",
+        Slice(curr_key).hex().c_str(),
         (long long)old_iter_seq, (long long)latest_seq, snap, pin_snap);
       ROCKSDB_VERIFY_F(key() == curr_key, "%s %s",
         key().ToString(true).c_str(), Slice(curr_key).ToString(true).c_str());

@@ -42,7 +42,7 @@ bool OutputValidator::CompareValidator(const OutputValidator& other) {
   if (g_full_check) {
     ROCKSDB_VERIFY_EQ(kv_vec_.size(), other.kv_vec_.size());
     for (size_t i = 0, n = kv_vec_.size(); i < n; i++) {
-      #define hex(deref, field) Slice(deref kv_vec_[i].field).ToString(true).c_str()
+      #define hex(deref, field) ParsedInternalKey(deref kv_vec_[i].field).DebugString(true, true).c_str()
       ROCKSDB_VERIFY_F(kv_vec_[i].first  == other.kv_vec_[i].first , "%s [%zd] %s", hex(,first ), i, hex(other., first ));
       ROCKSDB_VERIFY_F(kv_vec_[i].second == other.kv_vec_[i].second, "%s [%zd] %s", hex(,second), i, hex(other., second));
     }

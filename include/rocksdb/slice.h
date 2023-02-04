@@ -281,6 +281,8 @@ inline bool operator<(const Slice& x, const Slice& y) {
     return x.size_ < y.size_;
 }
 inline bool operator>(const Slice& x, const Slice& y) { return y < x; }
+inline bool operator>=(const Slice& x, const Slice& y) { return !(x < y); }
+inline bool operator<=(const Slice& x, const Slice& y) { return !(y < x); }
 
 inline std::string operator+(const Slice& x, const Slice& y) {
   std::string z; z.reserve(x.size_ + y.size_);

@@ -185,6 +185,7 @@ struct TableProperties {
   uint64_t data_size = 0;
   // the size of index block.
   uint64_t index_size = 0;
+  uint64_t tag_size = 0;
   // Total number of index partitions if kTwoLevelIndexSearch is used
   uint64_t index_partitions = 0;
   // Size of the top-level index if kTwoLevelIndexSearch is used

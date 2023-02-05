@@ -40,6 +40,7 @@ struct TablePropertiesNames {
   static const std::string kOriginalFileNumber;
   static const std::string kDataSize;
   static const std::string kIndexSize;
+  static const std::string kTagSize;
   static const std::string kIndexPartitions;
   static const std::string kTopLevelIndexSize;
   static const std::string kIndexKeyIsUserKey;

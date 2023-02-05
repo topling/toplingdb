@@ -85,6 +85,9 @@ void PropertyBlockBuilder::AddTableProperty(const TableProperties& props) {
   Add(TablePropertiesNames::kRawValueSize, props.raw_value_size);
   Add(TablePropertiesNames::kDataSize, props.data_size);
   Add(TablePropertiesNames::kIndexSize, props.index_size);
+  if (props.tag_size) {
+    Add(TablePropertiesNames::kTagSize, props.tag_size);
+  }
   if (props.index_partitions != 0) {
     Add(TablePropertiesNames::kIndexPartitions, props.index_partitions);
     Add(TablePropertiesNames::kTopLevelIndexSize, props.top_level_index_size);
@@ -271,6 +274,7 @@ Status ReadTablePropertiesHelper(
        &new_table_properties->orig_file_number},
       {TablePropertiesNames::kDataSize, &new_table_properties->data_size},
       {TablePropertiesNames::kIndexSize, &new_table_properties->index_size},
+      {TablePropertiesNames::kTagSize, &new_table_properties->tag_size},
       {TablePropertiesNames::kIndexPartitions,
        &new_table_properties->index_partitions},
       {TablePropertiesNames::kTopLevelIndexSize,

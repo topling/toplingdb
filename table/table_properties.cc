@@ -262,6 +262,7 @@ const std::string TablePropertiesNames::kOriginalFileNumber =
     "rocksdb.original.file.number";
 const std::string TablePropertiesNames::kDataSize = "rocksdb.data.size";
 const std::string TablePropertiesNames::kIndexSize = "rocksdb.index.size";
+const std::string TablePropertiesNames::kTagSize = "rocksdb.tag.size";
 const std::string TablePropertiesNames::kIndexPartitions =
     "rocksdb.index.partitions";
 const std::string TablePropertiesNames::kTopLevelIndexSize =

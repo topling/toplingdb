@@ -170,6 +170,7 @@ std::string TableProperties::ToString(const std::string& prop_delim,
 void TableProperties::Add(const TableProperties& tp) {
   data_size += tp.data_size;
   index_size += tp.index_size;
+  tag_size += tp.tag_size;
   index_partitions += tp.index_partitions;
   top_level_index_size += tp.top_level_index_size;
   index_key_is_user_key += tp.index_key_is_user_key;

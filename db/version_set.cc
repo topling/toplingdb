@@ -1115,9 +1115,7 @@ class LevelIterator final : public InternalIterator {
         range_del_agg_(range_del_agg),
         pinned_iters_mgr_(nullptr),
         compaction_boundaries_(compaction_boundaries),
-        is_next_read_sequential_(false),
-        range_tombstone_iter_(nullptr),
-        to_return_sentinel_(false) {
+        range_tombstone_iter_(nullptr) {
     // Empty level is not supported.
     assert(flevel_ != nullptr && flevel_->num_files > 0);
     if (range_tombstone_iter_ptr_) {
@@ -1350,16 +1348,23 @@ class LevelIterator final : public InternalIterator {
   uint8_t opt_cmp_type_;
   size_t file_index_;
   int level_;
+
+  bool is_next_read_sequential_ = false;
+  // Whether next/prev key is a sentinel key.
+  bool to_return_sentinel_ = false;
+  // Set in Seek() when a prefix seek reaches end of the current file,
+  // and the next file has a different prefix. SkipEmptyFileForward()
+  // will not move to next file when this flag is set.
+  bool prefix_exhausted_ = false;
+
   RangeDelAggregator* range_del_agg_;
-  IteratorWrapper file_iter_;  // May be nullptr
+  ThinIteratorWrapper file_iter_;  // May be nullptr
   PinnedIteratorsManager* pinned_iters_mgr_;
   InternalIterator** file_iter_cache_;
 
   // To be propagated to RangeDelAggregator in order to safely truncate range
   // tombstones.
   const std::vector<AtomicCompactionUnitBoundary>* compaction_boundaries_;
-
-  bool is_next_read_sequential_;
 
   // This is set when this level iterator is used under a merging iterator
   // that processes range tombstones. range_tombstone_iter_ points to where the
@@ -1377,8 +1382,6 @@ class LevelIterator final : public InternalIterator {
   // *range_tombstone_iter_ points to range tombstones of the current SST file
   TruncatedRangeDelIterator** range_tombstone_iter_;
 
-  // Whether next/prev key is a sentinel key.
-  bool to_return_sentinel_ = false;
   // The sentinel key to be returned
   Slice sentinel_;
   // Sets flags for if we should return the sentinel key next.
@@ -1386,11 +1389,6 @@ class LevelIterator final : public InternalIterator {
   // file_iter_: !Valid() && status.().ok().
   void TrySetDeleteRangeSentinel(const Slice& boundary_key);
   void ClearSentinel() { to_return_sentinel_ = false; }
-
-  // Set in Seek() when a prefix seek reaches end of the current file,
-  // and the next file has a different prefix. SkipEmptyFileForward()
-  // will not move to next file when this flag is set.
-  bool prefix_exhausted_ = false;
 };
 
 void LevelIterator::TrySetDeleteRangeSentinel(const Slice& boundary_key) {

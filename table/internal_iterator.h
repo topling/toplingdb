@@ -41,6 +41,7 @@ public:
   bool value_prepared = true;
   bool is_valid = false; // just used in IteratorWrapperBase
 };
+static_assert(sizeof(IterateResult) == 16);
 
 template <class TValue>
 class InternalIteratorBase : public Cleanable {

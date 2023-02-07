@@ -105,8 +105,8 @@ class WBWIIterator {
   // @return kError if an unsupported operation was found for the key
   // @return kNotFound if no operations were found for this key
   //
-  Result FindLatestUpdate(const Slice& key, MergeContext* merge_context);
-  Result FindLatestUpdate(MergeContext* merge_context);
+  virtual Result FindLatestUpdate(const Slice& key, MergeContext*);
+  virtual Result FindLatestUpdate(MergeContext*);
 };
 
 // A WriteBatchWithIndex with a binary searchable index built for all the keys

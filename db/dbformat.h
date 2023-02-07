@@ -482,6 +482,18 @@ inline uint64_t GetInternalKeySeqno(const Slice& internal_key) {
   return num >> 8;
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#elif defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+#pragma clang diagnostic ignored "-Warray-bounds"
+#pragma clang diagnostic ignored "-Wstringop-overflow"
+#pragma clang diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 // The class to store keys in an efficient way. It allows:
 // 1. Users can either copy the key into it, or have it point to an unowned
 //    address.
@@ -534,39 +546,7 @@ class IterKey {
   // shared_len: bytes in [0, shard_len-1] would be remained
   // non_shared_data: data to be append, its length must be >= non_shared_len
   void TrimAppend(const size_t shared_len, const char* non_shared_data,
-                  const size_t non_shared_len) {
-    assert(shared_len <= key_size_);
-    size_t total_size = shared_len + non_shared_len;
-
-    if (IsKeyPinned() /* key is not in buf_ */) {
-      // Copy the key from external memory to buf_ (copy shared_len bytes)
-      EnlargeBufferIfNeeded(total_size);
-      memcpy(buf(), key_, shared_len);
-    } else if (total_size > buf_size_) {
-      // Need to allocate space, delete previous space
-      char* p = new char[total_size];
-      memcpy(p, key_, shared_len);
-
-      if (buf_size_ != sizeof(space_)) {
-        delete[] buf_;
-      }
-
-      buf_ = p;
-      buf_size_ = total_size;
-    }
-
-    #if defined(__GNUC__)
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Warray-bounds"
-    #pragma GCC diagnostic ignored "-Wstringop-overflow"
-    #endif
-    memcpy(buf() + shared_len, non_shared_data, non_shared_len);
-    #if defined(__GNUC__)
-    #pragma GCC diagnostic pop
-    #endif
-    key_ = buf();
-    key_size_ = total_size;
-  }
+                  const size_t non_shared_len);
 
   Slice SetKey(const Slice& key, bool copy = true) {
     // is_user_key_ expected to be set already via SetIsUserKey
@@ -600,7 +580,7 @@ class IterKey {
   void OwnKey() {
     assert(IsKeyPinned() == true);
 
-    EnlargeBufferIfNeeded(key_size_);
+    Reserve(key_size_);
     memcpy(buf(), key_, key_size_);
     key_ = buf();
   }
@@ -681,9 +661,9 @@ class IterKey {
 
  private:
   const char* key_;
-  uint32_t key_size_;
-  uint32_t buf_size_ : 31;
-  uint32_t is_user_key_ : 1;
+  size_t key_size_ : 32;
+  size_t buf_size_ : 31;
+  size_t is_user_key_ : 1;
   union {
     char* buf_;
     char space_[48];  // Avoid allocation for short keys
@@ -730,6 +710,11 @@ class IterKey {
 
   void EnlargeBuffer(size_t key_size);
 };
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#elif defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 // Convert from a SliceTransform of user keys, to a SliceTransform of
 // internal keys.

@@ -794,11 +794,14 @@ Status CompactionJob::RunLocal() {
           }
           if (s.ok() &&
               !validator.CompareValidator(files_output[file_idx]->validator)) {
+           #if !defined(ROCKSDB_UNIT_TEST)
             auto& fd = files_output[file_idx]->meta.fd;
             ROCKSDB_DIE("Compact: Paranoid checksums do not match(%s/%lld.sst)",
                         compact_->compaction->output_path().path.c_str(),
                         (long long)fd.GetNumber());
+           #else
             s = Status::Corruption("Compact: Paranoid checksums do not match");
+           #endif
           }
         }
 

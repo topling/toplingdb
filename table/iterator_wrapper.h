@@ -16,7 +16,6 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-#if !defined(TOPLINGDB_DISABLE_ITER_WRAPPER)
 // A internal wrapper class with an interface similar to Iterator that caches
 // the valid() and key() results for an underlying iterator.
 // This can help avoid virtual function calls and also gives better
@@ -190,13 +189,11 @@ class IteratorWrapperBase {
   IterateResult result_;
 };
 
-#else
-
 template <class TValue = Slice>
-class IteratorWrapperBase {
+class ThinIteratorWrapperBase {
  public:
-  IteratorWrapperBase() : iter_(nullptr) {}
-  explicit IteratorWrapperBase(InternalIteratorBase<TValue>* i) : iter_(i) {}
+  ThinIteratorWrapperBase() : iter_(nullptr) {}
+  explicit ThinIteratorWrapperBase(InternalIteratorBase<TValue>* i) : iter_(i) {}
   InternalIteratorBase<TValue>* iter() const { return iter_; }
 
   InternalIteratorBase<TValue>* Set(InternalIteratorBase<TValue>* i) {
@@ -262,8 +259,7 @@ class IteratorWrapperBase {
  private:
   InternalIteratorBase<TValue>* iter_;
 };
-
-#endif
+using ThinIteratorWrapper = ThinIteratorWrapperBase<Slice>;
 
 using IteratorWrapper = IteratorWrapperBase<Slice>;
 

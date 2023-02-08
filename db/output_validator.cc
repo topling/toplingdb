@@ -40,11 +40,12 @@ Status OutputValidator::Add(const Slice& key, const Slice& value) {
 
 bool OutputValidator::CompareValidator(const OutputValidator& other) {
   if (g_full_check) {
+    long long file_number = m_file_number ? m_file_number : other.m_file_number;
     ROCKSDB_VERIFY_EQ(kv_vec_.size(), other.kv_vec_.size());
     for (size_t i = 0, n = kv_vec_.size(); i < n; i++) {
       #define hex(deref, field) ParsedInternalKey(deref kv_vec_[i].field).DebugString(true, true).c_str()
-      ROCKSDB_VERIFY_F(kv_vec_[i].first  == other.kv_vec_[i].first , "%s [%zd] %s", hex(,first ), i, hex(other., first ));
-      ROCKSDB_VERIFY_F(kv_vec_[i].second == other.kv_vec_[i].second, "%s [%zd] %s", hex(,second), i, hex(other., second));
+      ROCKSDB_VERIFY_F(kv_vec_[i].first  == other.kv_vec_[i].first , "%06lld.sst[%zd]: %s %s", file_number, i, hex(,first ), hex(other., first ));
+      ROCKSDB_VERIFY_F(kv_vec_[i].second == other.kv_vec_[i].second, "%06lld.sst[%zd]: %s %s", file_number, i, hex(,second), hex(other., second));
     }
     ROCKSDB_VERIFY_EQ(GetHash(), other.GetHash());
   }

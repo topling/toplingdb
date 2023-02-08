@@ -36,6 +36,8 @@ class OutputValidator {
   // without notice between releases.
   uint64_t GetHash() const { return paranoid_hash_; }
 
+  uint64_t m_file_number = 0; // just a patch
+
  private:
   const InternalKeyComparator& icmp_;
   std::string prev_key_;

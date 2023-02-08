@@ -375,6 +375,7 @@ Status BuildTable(
         OutputValidator file_validator(tboptions.internal_comparator,
                                        /*enable_order_check=*/true,
                                        /*enable_hash=*/true);
+        file_validator.m_file_number = meta->fd.GetNumber();
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
           // Generate a rolling 64-bit hash of the key and values
           file_validator.Add(it->key(), it->value()).PermitUncheckedError();

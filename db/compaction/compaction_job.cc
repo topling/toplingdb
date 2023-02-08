@@ -783,6 +783,8 @@ Status CompactionJob::RunLocal() {
           OutputValidator validator(cfd->internal_comparator(),
                                     /*_enable_order_check=*/true,
                                     /*_enable_hash=*/true);
+          auto& fd = files_output[file_idx]->meta.fd;
+          validator.m_file_number = fd.GetNumber();
           for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
             s = validator.Add(iter->key(), iter->value());
             if (!s.ok()) {
@@ -795,7 +797,6 @@ Status CompactionJob::RunLocal() {
           if (s.ok() &&
               !validator.CompareValidator(files_output[file_idx]->validator)) {
            #if !defined(ROCKSDB_UNIT_TEST)
-            auto& fd = files_output[file_idx]->meta.fd;
             ROCKSDB_DIE("Compact: Paranoid checksums do not match(%s/%lld.sst)",
                         compact_->compaction->output_path().path.c_str(),
                         (long long)fd.GetNumber());

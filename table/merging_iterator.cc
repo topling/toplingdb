@@ -45,8 +45,13 @@ class MaxHeapItemComparator {
 #endif
 
 inline uint64_t HostPrefixCacheUK(const Slice& uk) {
-  uint64_t data = 0;
-  memcpy(&data, uk.data_, std::min<size_t>(uk.size_, 8));
+  uint64_t data;
+  if (LIKELY(uk.size_ >= 8)) {
+    memcpy(&data, uk.data_, 8);
+  } else {
+    data = 0;
+    memcpy(&data, uk.data_, uk.size_);
+  }
   if (port::kLittleEndian)
     return __bswap_64(data);
   else

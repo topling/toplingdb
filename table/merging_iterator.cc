@@ -1458,6 +1458,9 @@ MergingIterMethod(inline void)InitMaxHeap() {
 // key's level, then the current child iterator is simply advanced to its next
 // key without reseeking.
 MergingIterMethod(inline void)FindNextVisibleKey() {
+  if (LIKELY(range_tombstone_iters_.empty())) {
+    return;
+  }
   // When active_ is empty, we know heap top cannot be a range tombstone end
   // key. It cannot be a range tombstone start key per PopDeleteRangeStart().
   PopDeleteRangeStart();
@@ -1469,6 +1472,9 @@ MergingIterMethod(inline void)FindNextVisibleKey() {
 }
 
 MergingIterMethod(inline void)FindPrevVisibleKey() {
+  if (LIKELY(range_tombstone_iters_.empty())) {
+    return;
+  }
   PopDeleteRangeEnd();
   while (!maxHeap_->empty() &&
          (!active_.empty() || maxHeap_->top()->IsDeleteRangeSentinelKey()) &&

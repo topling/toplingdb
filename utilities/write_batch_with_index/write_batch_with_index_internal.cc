@@ -35,6 +35,7 @@ BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
                                         : nullptr) {
   assert(comparator_);
   wbwii_.reset(new WriteBatchWithIndexInternal(column_family));
+  opt_cmp_type_ = comparator->opt_cmp_type();
 }
 
 ROCKSDB_FLATTEN
@@ -279,14 +280,39 @@ void BaseDeltaIterator::AdvanceBase() {
 
 bool BaseDeltaIterator::BaseValid() const { return base_iterator_->Valid(); }
 bool BaseDeltaIterator::DeltaValid() const { return delta_iterator_->Valid(); }
+
+struct BDI_BytewiseCmpNoTS {
+  int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
+};
+struct BDI_RevBytewiseCmpNoTS {
+  int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
+};
+struct BDI_VirtualCmpNoTS {
+  int compare(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, false, y, false);
+  }
+  const Comparator* cmp;
+};
+
+ROCKSDB_FLATTEN
 void BaseDeltaIterator::UpdateCurrent() {
+  if (0 == opt_cmp_type_)
+    UpdateCurrentTpl(BDI_BytewiseCmpNoTS());
+  else if (1 == opt_cmp_type_)
+    UpdateCurrentTpl(BDI_RevBytewiseCmpNoTS());
+  else
+    UpdateCurrentTpl(BDI_VirtualCmpNoTS{comparator_});
+}
+template<class CmpNoTS>
+void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
 // Suppress false positive clang analyzer warnings.
 #ifndef __clang_analyzer__
   status_.SetAsOK();
   while (true) {
     auto delta_result = WBWIIteratorImpl::kNotFound;
     WriteEntry delta_entry;
-    if (DeltaValid()) {
+    const bool delta_valid = DeltaValid();
+    if (delta_valid) {
       assert(delta_iterator_->status().ok());
       delta_result =
           delta_iterator_->FindLatestUpdate(wbwii_->GetMergeContext());
@@ -305,14 +331,12 @@ void BaseDeltaIterator::UpdateCurrent() {
       }
 
       // Base has finished.
-      if (!DeltaValid()) {
+      if (!delta_valid) {
         // Finished
         return;
       }
       if (iterate_upper_bound_) {
-        if (comparator_->CompareWithoutTimestamp(
-                delta_entry.key, /*a_has_ts=*/false, *iterate_upper_bound_,
-                /*b_has_ts=*/false) >= 0) {
+        if (cmp.compare(delta_entry.key, *iterate_upper_bound_) >= 0) {
           // out of upper bound -> finished.
           return;
         }
@@ -324,15 +348,15 @@ void BaseDeltaIterator::UpdateCurrent() {
         current_at_base_ = false;
         return;
       }
-    } else if (!DeltaValid()) {
+    } else if (!delta_valid) {
       // Delta has finished.
       current_at_base_ = true;
       return;
     } else {
-      int compare =
-          (forward_ ? 1 : -1) * comparator_->CompareWithoutTimestamp(
-                                    delta_entry.key, /*a_has_ts=*/false,
-                                    base_iterator_->key(), /*b_has_ts=*/false);
+      int compare = forward_
+                  ? cmp.compare(delta_entry.key, base_iterator_->key())
+                  : cmp.compare(base_iterator_->key(), delta_entry.key)
+                  ;
       if (compare <= 0) {  // delta bigger or equal
         if (compare == 0) {
           equal_keys_ = true;

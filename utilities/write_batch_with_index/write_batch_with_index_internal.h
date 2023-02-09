@@ -64,11 +64,14 @@ class BaseDeltaIterator final : public Iterator {
   bool BaseValid() const;
   bool DeltaValid() const;
   void UpdateCurrent();
+  template<class CmpNoTS>
+  void UpdateCurrentTpl(CmpNoTS);
 
   std::unique_ptr<WriteBatchWithIndexInternal> wbwii_;
   bool forward_;
   bool current_at_base_;
   bool equal_keys_;
+  unsigned char opt_cmp_type_;
   mutable Status status_;
   std::unique_ptr<Iterator> base_iterator_;
   std::unique_ptr<WBWIIterator> delta_iterator_;

@@ -85,6 +85,7 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
 }
 
 struct HeapItemAndPrefix {
+  HeapItemAndPrefix() = default;
   HeapItemAndPrefix(HeapItem* item) : item_ptr(item) {
     UpdatePrefixCache(*this);
   }

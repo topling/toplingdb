@@ -104,7 +104,7 @@ class BinaryHeap {
   }
 
   void clear() {
-    data_.clear();
+    data_.resize(0); // do not free memory
     reset_root_cmp_cache();
   }
 

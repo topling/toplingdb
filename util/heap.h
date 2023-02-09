@@ -76,6 +76,11 @@ class BinaryHeap {
     downheap(get_root());
   }
 
+  void update_top() {
+    assert(!empty());
+    downheap(get_root());
+  }
+
   void pop() {
     assert(!empty());
     if (data_.size() > 1) {

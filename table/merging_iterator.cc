@@ -629,7 +629,7 @@ public:
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
       UpdatePrefixCache(minHeap_.top());
-      minHeap_.replace_top(minHeap_.top());
+      minHeap_.update_top();
     } else {
       // current stopped being valid, remove it from the heap.
       considerStatus(current_->status());

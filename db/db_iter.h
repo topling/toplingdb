@@ -343,7 +343,7 @@ class DBIter final : public Iterator {
   Logger* logger_;
   UserComparatorWrapper user_comparator_;
   const MergeOperator* const merge_operator_;
-  IteratorWrapper iter_;
+  ThinIteratorWrapper iter_;
   const Version* version_;
   ReadCallback* read_callback_;
   // Max visible sequence number. It is normally the snapshot seq unless we have

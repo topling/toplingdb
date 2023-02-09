@@ -388,6 +388,7 @@ public:
         pinned_heap_item_[i].parsed_ikey.type = kTypeMaxValid;
       }
     }
+    minHeap_.reserve(children_.size() + range_tombstone_iters_.size());
   }
 
   ~MergingIterTmpl() override {

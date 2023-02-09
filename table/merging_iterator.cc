@@ -44,16 +44,42 @@ class MaxHeapItemComparator {
 #define FORCE_INLINE inline
 #endif
 
-inline uint64_t HostPrefixCacheUK(const Slice& uk) {
-  uint64_t data;
-  if (LIKELY(uk.size_ >= 8)) {
-    memcpy(&data, uk.data_, 8);
+#if 0
+  #define bswap_prefix __bswap_64
+  using UintPrefix = uint64_t;
+#else
+  using UintPrefix = unsigned __int128;
+  #if defined(__GNUC__) && __GNUC_MINOR__ + 1000 * __GNUC__ > 12000
+    #define bswap_prefix __builtin_bswap128
+  #else
+    FORCE_INLINE UintPrefix bswap_prefix(UintPrefix x) {
+      return UintPrefix(__bswap_64(uint64_t(x))) << 64 | __bswap_64(uint64_t(x >> 64));
+    }
+  #endif
+#endif
+FORCE_INLINE UintPrefix HostPrefixCacheUK(const Slice& uk) {
+  UintPrefix data;
+  if (LIKELY(uk.size_ >= sizeof(UintPrefix))) {
+    memcpy(&data, uk.data_, sizeof(UintPrefix));
   } else {
     data = 0;
     memcpy(&data, uk.data_, uk.size_);
   }
   if (port::kLittleEndian)
-    return __bswap_64(data);
+    return bswap_prefix(data);
+  else
+    return data;
+}
+FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
+  UintPrefix data;
+  if (LIKELY(ik.size_ >= sizeof(UintPrefix) + 8)) {
+    memcpy(&data, ik.data_, sizeof(UintPrefix));
+  } else {
+    data = 0;
+    memcpy(&data, ik.data_, ik.size_ - 8);
+  }
+  if (port::kLittleEndian)
+    return bswap_prefix(data);
   else
     return data;
 }
@@ -62,15 +88,15 @@ struct HeapItemAndPrefix {
   HeapItemAndPrefix(HeapItem* item) : item_ptr(item) {
     UpdatePrefixCache(*this);
   }
+  UintPrefix key_prefix = 0;
   HeapItem* item_ptr;
-  uint64_t key_prefix = 0;
 
   HeapItem* operator->() const noexcept { return item_ptr; }
 
   inline friend void UpdatePrefixCache(HeapItemAndPrefix& x) {
     auto p = x.item_ptr;
     if (LIKELY(HeapItem::ITERATOR == p->type))
-      x.key_prefix = HostPrefixCache(p->iter.key());
+      x.key_prefix = HostPrefixCacheIK(p->iter.key());
     else
       x.key_prefix = HostPrefixCacheUK(p->parsed_ikey.user_key);
   }

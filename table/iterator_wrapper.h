@@ -96,6 +96,7 @@ class IteratorWrapperBase {
     result_.is_valid = iter_->NextAndGetResult(&result_);
     assert(!result_.is_valid || iter_->status().ok());
   }
+/*
 #ifdef __GNUC__
   inline __attribute__((always_inline))
 #endif
@@ -106,6 +107,7 @@ class IteratorWrapperBase {
     assert(!result_.is_valid || iter_->status().ok());
     return result_.is_valid;
   }
+*/
   void Prev() {
     assert(iter_);
     iter_->Prev();

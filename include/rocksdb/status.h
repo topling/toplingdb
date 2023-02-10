@@ -62,8 +62,10 @@ class Status {
   bool operator!=(const Status& rhs) const;
 
   void SetAsOK() {
-    pack8_ = 0;
-    state_.reset(nullptr);
+    if (kOk != code_) {
+      pack8_ = 0;
+      state_.reset(nullptr);
+    }
   }
 
   // In case of intentionally swallowing an error, user must explicitly call

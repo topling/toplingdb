@@ -308,10 +308,12 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
 // Suppress false positive clang analyzer warnings.
 #ifndef __clang_analyzer__
   status_.SetAsOK();
+  Iterator* base_iterator_ = this->base_iterator_.get();
+  WBWIIterator* delta_iterator_ = this->delta_iterator_.get();
   while (true) {
     auto delta_result = WBWIIteratorImpl::kNotFound;
     WriteEntry delta_entry;
-    const bool delta_valid = DeltaValid();
+    const bool delta_valid = delta_iterator_->Valid();
     if (delta_valid) {
       assert(delta_iterator_->status().ok());
       delta_result =
@@ -323,7 +325,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
       return;
     }
     equal_keys_ = false;
-    if (!BaseValid()) {
+    if (!base_iterator_->Valid()) {
       if (!base_iterator_->status().ok()) {
         // Expose the error status and stop.
         current_at_base_ = true;

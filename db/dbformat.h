@@ -672,6 +672,7 @@ class IterKey {
   char* buf() { return buf_size_ <= sizeof(space_) ? space_ : buf_ ; }
   const char* buf() const { return buf_size_ <= sizeof(space_) ? space_ : buf_ ; }
 
+  __always_inline
   Slice SetKeyImpl(const Slice& key, bool copy) {
     size_t size = key.size();
     if (copy) {
@@ -700,10 +701,11 @@ class IterKey {
   // larger than the static allocated buffer, another buffer is dynamically
   // allocated, until a larger key buffer is requested. In that case, we
   // reallocate buffer and delete the old one.
+  __always_inline
   void EnlargeBufferIfNeeded(size_t key_size) {
     // If size is smaller than buffer size, continue using current buffer,
     // or the static allocated one, as default
-    if (key_size > buf_size_) {
+    if (UNLIKELY(key_size > buf_size_)) {
       EnlargeBuffer(key_size);
     }
   }

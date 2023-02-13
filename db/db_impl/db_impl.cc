@@ -2111,7 +2111,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
   }
 
   // Acquire SuperVersion
-  SuperVersion* sv = GetAndRefSuperVersion(cfd);
+  SuperVersion* sv = GetAndRefSuperVersion(cfd, &read_options);
 
   TEST_SYNC_POINT("DBImpl::GetImpl:1");
   TEST_SYNC_POINT("DBImpl::GetImpl:2");
@@ -2242,7 +2242,8 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
       }
     }
     if (!done && !s.ok() && !s.IsMergeInProgress()) {
-      ReturnAndCleanupSuperVersion(cfd, sv);
+      if (!read_options.pinning_tls)
+        ReturnAndCleanupSuperVersion(cfd, sv);
       return s;
     }
   }
@@ -2344,7 +2345,8 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
       PERF_COUNTER_ADD(get_read_bytes, size);
     }
 
-    ReturnAndCleanupSuperVersion(cfd, sv);
+    if (!read_options.pinning_tls)
+      ReturnAndCleanupSuperVersion(cfd, sv);
 
     RecordInHistogram(stats_, BYTES_PER_READ, size);
   }
@@ -2974,7 +2976,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   auto cfd = cfh->cfd();
 
   // Acquire SuperVersion
-  SuperVersion* sv = GetAndRefSuperVersion(cfd);
+  SuperVersion* sv = GetAndRefSuperVersion(cfd, &read_options);
 
 //  TEST_SYNC_POINT("DBImpl::MultiGet:1");
 //  TEST_SYNC_POINT("DBImpl::MultiGet:2");
@@ -3136,7 +3138,8 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   PERF_COUNTER_ADD(multiget_read_bytes, bytes_read);
   PERF_TIMER_STOP(get_post_process_time);
 
-  ReturnAndCleanupSuperVersion(cfd, sv);
+  if (!read_options.pinning_tls)
+    ReturnAndCleanupSuperVersion(cfd, sv);
 } // g_MultiGetUseFiber
 }
 
@@ -4322,6 +4325,96 @@ bool DBImpl::GetAggregatedIntProperty(const Slice& property,
   }
   *aggregated_value = sum;
   return ret;
+}
+
+template<size_t> struct ToplingDB_size_to_uint;
+template<> struct ToplingDB_size_to_uint<4> { typedef unsigned int   type; };
+template<> struct ToplingDB_size_to_uint<8> { typedef unsigned long long type; };
+
+terark_pure_func inline static size_t ThisThreadID() {
+#if defined(_MSC_VER)
+    auto id = std::this_thread::get_id();
+    return (size_t)(ToplingDB_size_to_uint<sizeof(id)>::type&)(id);
+#else
+    // gnu pthread_self impl
+    size_t __self;
+    asm("movq %%fs:%c1,%q0" : "=r" (__self) : "i" (16));
+    return __self;
+#endif
+}
+
+ReadOptionsTLS::ReadOptionsTLS() {
+  // do nothing
+}
+ReadOptionsTLS::~ReadOptionsTLS() {
+  FinishPin();
+}
+inline SuperVersion*& ReadOptionsTLS::GetSuperVersionRef(size_t cfid) {
+  if (0 == cfid) {
+    return sv;
+  } else {
+    if (cfsv.size() <= cfid) {
+      cfsv.resize(cfid, nullptr);
+    }
+    return cfsv[cfid - 1];
+  }
+}
+
+void ReadOptionsTLS::FinishPin() {
+  if (sv) {
+    db_impl->ReturnAndCleanupSuperVersion(sv->cfd, sv);
+    sv = nullptr;
+  }
+  for (auto& x : cfsv) {
+    if (x) {
+      db_impl->ReturnAndCleanupSuperVersion(x->cfd, x);
+      x = nullptr;
+    }
+  }
+  cfsv.resize(0);
+  db_impl = nullptr;
+}
+
+void ReadOptions::StartPin() {
+  if (!pinning_tls) {
+    pinning_tls = std::make_shared<ReadOptionsTLS>();
+  } else {
+    ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->db_impl);
+    ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->sv);
+    ROCKSDB_VERIFY_EQ(pinning_tls->cfsv.size(), 0);
+  }
+  pinning_tls->thread_id = ThisThreadID();
+}
+void ReadOptions::FinishPin() {
+  ROCKSDB_VERIFY(pinning_tls != nullptr);
+  ROCKSDB_VERIFY_EQ(pinning_tls->thread_id, ThisThreadID());
+  pinning_tls->FinishPin();
+}
+ReadOptions::~ReadOptions() {
+  if (pinning_tls)
+    this->FinishPin();
+}
+
+SuperVersion*
+DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd, const ReadOptions* ro) {
+  auto tls = ro->pinning_tls.get();
+  if (!tls) {
+    return GetAndRefSuperVersion(cfd);
+  }
+  ROCKSDB_VERIFY_EQ(tls->thread_id, ThisThreadID());
+  size_t cfid = cfd->GetID();
+  SuperVersion*& sv = tls->GetSuperVersionRef(cfid);
+  if (sv) {
+    ROCKSDB_VERIFY_EQ(sv->cfd, cfd);
+    return sv;
+  }
+  if (!tls->db_impl) {
+    tls->db_impl = this;
+  } else {
+    ROCKSDB_VERIFY_EQ(this, tls->db_impl);
+  }
+  sv = GetAndRefSuperVersion(cfd);
+  return sv;
 }
 
 SuperVersion* DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd) {

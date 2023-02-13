@@ -449,7 +449,7 @@ class Env : public Customizable {
   static std::string PriorityToString(Priority priority);
 
   // Priority for requesting bytes in rate limiter scheduler
-  enum IOPriority {
+  enum IOPriority : unsigned char {
     IO_LOW = 0,
     IO_MID = 1,
     IO_HIGH = 2,

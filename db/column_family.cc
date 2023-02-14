@@ -1261,6 +1261,12 @@ SuperVersion* ColumnFamilyData::GetReferencedSuperVersion(DBImpl* db) {
   return sv;
 }
 
+template<class T>
+inline T NoAtomicLoad(const std::atomic<T>& x) {
+  static_assert(sizeof(x) == sizeof(T));
+  return reinterpret_cast<const T&>(x);
+}
+
 SuperVersion* ColumnFamilyData::GetThreadLocalSuperVersion(DBImpl* db) {
   // The SuperVersion is cached in thread local storage to avoid acquiring
   // mutex when SuperVersion does not change since the last use. When a new
@@ -1282,7 +1288,7 @@ SuperVersion* ColumnFamilyData::GetThreadLocalSuperVersion(DBImpl* db) {
   assert(ptr != SuperVersion::kSVInUse);
   SuperVersion* sv = static_cast<SuperVersion*>(ptr);
   if (sv == SuperVersion::kSVObsolete ||
-      sv->version_number != super_version_number_.load()) {
+      sv->version_number != NoAtomicLoad(super_version_number_)) {
     RecordTick(ioptions_.stats, NUMBER_SUPERVERSION_ACQUIRES);
     SuperVersion* sv_to_delete = nullptr;
 

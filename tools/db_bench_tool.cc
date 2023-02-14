@@ -5991,6 +5991,7 @@ class Benchmark {
       pot <<= 1;
     }
 
+    if (FLAGS_enable_zero_copy) options.StartPin();
     Duration duration(FLAGS_duration, reads_);
     do {
       for (int i = 0; i < 100; ++i) {
@@ -6024,6 +6025,7 @@ class Benchmark {
 
       thread->stats.FinishedOps(nullptr, db, 100, kRead);
     } while (!duration.Done(100));
+    if (FLAGS_enable_zero_copy) options.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg),
@@ -6078,6 +6080,7 @@ class Benchmark {
       ts_guard.reset(new char[user_timestamp_size_]);
     }
 
+    if (FLAGS_enable_zero_copy) options.StartPin();
     Duration duration(FLAGS_duration, reads_);
     while (!duration.Done(1)) {
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(thread);
@@ -6162,6 +6165,7 @@ class Benchmark {
 
       thread->stats.FinishedOps(db_with_cfh, db_with_cfh->db, 1, kRead);
     }
+    if (FLAGS_enable_zero_copy) options.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg), "(%" PRIu64 " of %" PRIu64 " found)\n", found,
@@ -6195,6 +6199,7 @@ class Benchmark {
       ts_guard.reset(new char[user_timestamp_size_]);
     }
 
+    if (FLAGS_enable_zero_copy) options.StartPin();
     Duration duration(FLAGS_duration, reads_);
     while (!duration.Done(entries_per_batch_)) {
       DB* db = SelectDB(thread);
@@ -6283,6 +6288,7 @@ class Benchmark {
       }
       thread->stats.FinishedOps(nullptr, db, entries_per_batch_, kRead);
     }
+    if (FLAGS_enable_zero_copy) options.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg), "(%" PRIu64 " of %" PRIu64 " found)", found,

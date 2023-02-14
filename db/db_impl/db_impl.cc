@@ -4404,13 +4404,15 @@ DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd, const ReadOptions* ro) {
   if (!tls) {
     return GetAndRefSuperVersion(cfd);
   }
-  ROCKSDB_VERIFY_EQ(tls->thread_id, ThisThreadID());
+  ROCKSDB_ASSERT_EQ(tls->thread_id, ThisThreadID());
   size_t cfid = cfd->GetID();
   SuperVersion*& sv = tls->GetSuperVersionRef(cfid);
   if (sv) {
-    ROCKSDB_VERIFY_EQ(sv->cfd, cfd);
+    ROCKSDB_ASSERT_EQ(sv->cfd, cfd);
     return sv;
   }
+  // slow path
+  ROCKSDB_VERIFY_EQ(tls->thread_id, ThisThreadID());
   if (!tls->db_impl) {
     tls->db_impl = this;
   } else {

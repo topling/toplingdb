@@ -338,6 +338,8 @@ DEFINE_int64(max_scan_distance, 0,
 
 DEFINE_bool(use_uint64_comparator, false, "use Uint64 user comparator");
 
+DEFINE_bool(enable_zero_copy, false, "enable zero copy for SST");
+
 DEFINE_int64(batch_size, 1, "Batch size");
 
 static bool ValidateKeySize(const char* /*flagname*/, int32_t /*value*/) {
@@ -3321,6 +3323,7 @@ class Benchmark {
     // Verify that all the key/values in truth_db are retrivable in db with
     // ::Get
     fprintf(stderr, "Verifying db >= truth_db with ::Get...\n");
+    if (FLAGS_enable_zero_copy) ro.StartPin();
     for (truth_iter->SeekToFirst(); truth_iter->Valid(); truth_iter->Next()) {
       std::string value;
       s = db_.db->Get(ro, truth_iter->key(), &value);
@@ -3328,6 +3331,7 @@ class Benchmark {
       // TODO(myabandeh): provide debugging hints
       assert(Slice(value) == truth_iter->value());
     }
+    if (FLAGS_enable_zero_copy) ro.FinishPin();
     // Verify that the db iterator does not give any extra key/value
     fprintf(stderr, "Verifying db == truth_db...\n");
     for (db_iter->SeekToFirst(), truth_iter->SeekToFirst(); db_iter->Valid();
@@ -5892,6 +5896,7 @@ class Benchmark {
     Slice key = AllocateKey(&key_guard);
     PinnableSlice pinnable_val;
 
+    if (FLAGS_enable_zero_copy) read_options_.StartPin();
     while (key_rand < FLAGS_num) {
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(thread);
       // We use same key_rand as seed for key and column family so that we can
@@ -5927,6 +5932,7 @@ class Benchmark {
 
       thread->stats.FinishedOps(db_with_cfh, db_with_cfh->db, 1, kRead);
     }
+    if (FLAGS_enable_zero_copy) read_options_.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg), "(%" PRIu64 " of %" PRIu64 " found)\n", found,

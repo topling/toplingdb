@@ -137,9 +137,11 @@ class GetContext {
                  bool* matched, Cleanable* value_pinner = nullptr);
 
   bool SaveValue(const ParsedInternalKey& parsed_key, const Slice& value,
+                 Cleanable* value_pinner = nullptr);
+
+  bool SaveValue(const ParsedInternalKey& parsed_key, const Slice& value,
                  Cleanable&& defer_clean) {
-    bool matched = false; // don't care
-    return SaveValue(parsed_key, value, &matched, &defer_clean);
+    return SaveValue(parsed_key, value, &defer_clean);
   }
 
   // Simplified version of the previous function. Should only be used when we

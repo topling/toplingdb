@@ -68,7 +68,7 @@ class GetContext {
  public:
   // Current state of the point lookup. All except kNotFound and kMerge are
   // terminal states
-  enum GetState {
+  enum GetState : unsigned char {
     kNotFound,
     kFound,
     kDeleted,
@@ -200,12 +200,10 @@ class GetContext {
   Logger* logger_;
   Statistics* statistics_;
 
-  GetState state_;
   Slice user_key_;
   PinnableSlice* pinnable_val_;
   PinnableWideColumns* columns_;
   std::string* timestamp_;
-  bool ts_from_rangetombstone_{false};
   bool* value_found_;  // Is value set correctly? Used by KeyMayExist
   MergeContext* merge_context_;
   SequenceNumber* max_covering_tombstone_seq_;
@@ -217,6 +215,8 @@ class GetContext {
   // Used to temporarily pin blocks when state_ == GetContext::kMerge
   PinnedIteratorsManager* pinned_iters_mgr_;
   ReadCallback* callback_;
+  GetState state_;
+  bool ts_from_rangetombstone_{false};
   bool sample_;
   // Value is true if it's called as part of DB Get API and false if it's
   // called as part of DB GetMergeOperands API. When it's false merge operators

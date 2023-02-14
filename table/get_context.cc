@@ -41,6 +41,14 @@ void appendToReplayLog(std::string* replay_log, ValueType type, Slice value) {
 
 }  // namespace
 
+ROCKSDB_ENUM_CLASS(GetContextSampleRead, unsigned char,
+  kAlways,
+  kNone,
+  kRandom
+);
+static auto g_how_sampling = enum_value(
+  getenv("TOPLINGDB_GetContext_sampling")?:"", GetContextSampleRead::kRandom);
+
 GetContext::GetContext(
     const Comparator* ucmp, const MergeOperator* merge_operator, Logger* logger,
     Statistics* statistics, GetState init_state, const Slice& user_key,
@@ -71,10 +79,16 @@ GetContext::GetContext(
       is_blob_index_(is_blob_index),
       tracing_get_id_(tracing_get_id),
       blob_fetcher_(blob_fetcher) {
-  if (seq_) {
-    *seq_ = kMaxSequenceNumber;
+  if (seq) {
+    *seq = kMaxSequenceNumber;
   }
-  sample_ = should_sample_file_read();
+  switch (g_how_sampling) {
+  case GetContextSampleRead::kAlways: sample_ = true; break;
+  case GetContextSampleRead::kNone  : sample_ = true; break;
+  case GetContextSampleRead::kRandom:
+    sample_ = should_sample_file_read();
+    break;
+  }
 }
 
 GetContext::GetContext(const Comparator* ucmp,

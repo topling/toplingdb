@@ -4386,9 +4386,12 @@ void ReadOptions::StartPin() {
   pinning_tls->thread_id = ThisThreadID();
 }
 void ReadOptions::FinishPin() {
-  ROCKSDB_VERIFY(pinning_tls != nullptr);
-  ROCKSDB_VERIFY_EQ(pinning_tls->thread_id, ThisThreadID());
-  pinning_tls->FinishPin();
+  // some applications(such as myrocks/mytopling) clean the working area which
+  // needs to call FinishPin before StartPin, so we need to allow such usage
+  if (pinning_tls) {
+    ROCKSDB_VERIFY_EQ(pinning_tls->thread_id, ThisThreadID());
+    pinning_tls->FinishPin();
+  }
 }
 ReadOptions::~ReadOptions() {
   if (pinning_tls)

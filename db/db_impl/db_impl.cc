@@ -4412,7 +4412,7 @@ ReadOptions::~ReadOptions() {
 SuperVersion*
 DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd, const ReadOptions* ro) {
   auto tls = ro->pinning_tls.get();
-  if (!tls) {
+  if (!tls) { // do not use zero copy, same as old behavior
     return GetAndRefSuperVersion(cfd);
   }
   ROCKSDB_ASSERT_EQ(tls->thread_id, ThisThreadID());

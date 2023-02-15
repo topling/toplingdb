@@ -25,36 +25,36 @@ struct ParsedInternalKey;
 // end of the point lookup, the corresponding ticker stats are updated. This
 // avoids the overhead of frequent ticker stats updates
 struct GetContextStats {
-  uint64_t num_cache_hit = 0;
-  uint64_t num_cache_index_hit = 0;
-  uint64_t num_cache_data_hit = 0;
-  uint64_t num_cache_filter_hit = 0;
-  uint64_t num_cache_compression_dict_hit = 0;
-  uint64_t num_cache_index_miss = 0;
-  uint64_t num_cache_filter_miss = 0;
-  uint64_t num_cache_data_miss = 0;
-  uint64_t num_cache_compression_dict_miss = 0;
   uint64_t num_cache_bytes_read = 0;
-  uint64_t num_cache_miss = 0;
-  uint64_t num_cache_add = 0;
-  uint64_t num_cache_add_redundant = 0;
   uint64_t num_cache_bytes_write = 0;
-  uint64_t num_cache_index_add = 0;
-  uint64_t num_cache_index_add_redundant = 0;
   uint64_t num_cache_index_bytes_insert = 0;
-  uint64_t num_cache_data_add = 0;
-  uint64_t num_cache_data_add_redundant = 0;
   uint64_t num_cache_data_bytes_insert = 0;
-  uint64_t num_cache_filter_add = 0;
-  uint64_t num_cache_filter_add_redundant = 0;
   uint64_t num_cache_filter_bytes_insert = 0;
-  uint64_t num_cache_compression_dict_add = 0;
-  uint64_t num_cache_compression_dict_add_redundant = 0;
   uint64_t num_cache_compression_dict_bytes_insert = 0;
+  uint32_t num_cache_hit = 0;
+  uint32_t num_cache_index_hit = 0;
+  uint32_t num_cache_data_hit = 0;
+  uint32_t num_cache_filter_hit = 0;
+  uint32_t num_cache_compression_dict_hit = 0;
+  uint32_t num_cache_index_miss = 0;
+  uint32_t num_cache_filter_miss = 0;
+  uint32_t num_cache_data_miss = 0;
+  uint32_t num_cache_compression_dict_miss = 0;
+  uint32_t num_cache_miss = 0;
+  uint32_t num_cache_add = 0;
+  uint32_t num_cache_add_redundant = 0;
+  uint32_t num_cache_index_add = 0;
+  uint32_t num_cache_index_add_redundant = 0;
+  uint32_t num_cache_data_add = 0;
+  uint32_t num_cache_data_add_redundant = 0;
+  uint32_t num_cache_filter_add = 0;
+  uint32_t num_cache_filter_add_redundant = 0;
+  uint32_t num_cache_compression_dict_add = 0;
+  uint32_t num_cache_compression_dict_add_redundant = 0;
   // MultiGet stats.
-  uint64_t num_filter_read = 0;
-  uint64_t num_index_read = 0;
-  uint64_t num_sst_read = 0;
+  uint32_t num_filter_read = 0;
+  uint32_t num_index_read = 0;
+  uint32_t num_sst_read = 0;
 };
 
 // A class to hold context about a point lookup, such as pointer to value

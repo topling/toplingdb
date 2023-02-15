@@ -2188,7 +2188,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
 #else
       nullptr;
 #endif
-  if (!skip_memtable) {
+  if (!skip_memtable && !sv->mem->IsEmpty() && !sv->imm->IsEmpty()) {
     // Get value associated with key
     if (get_impl_options.get_value) {
       if (sv->mem->Get(

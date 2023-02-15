@@ -76,6 +76,8 @@ class MemTableListVersion {
                is_blob_index);
   }
 
+  bool IsEmpty() const { return memlist_.empty(); }
+
   void MultiGet(const ReadOptions& read_options, MultiGetRange* range,
                 ReadCallback* callback);
 

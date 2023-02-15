@@ -1482,17 +1482,6 @@ enum ReadTier : unsigned char {
   kMemtableTier = 0x3     // data in memtable. used for memtable-only iterators.
 };
 
-struct ReadOptionsTLS {
-  size_t thread_id = size_t(-1);
-  class SuperVersion* sv = nullptr;
-  class DBImpl* db_impl = nullptr;
-  std::vector<class SuperVersion*> cfsv;
-  class SuperVersion*& GetSuperVersionRef(size_t cfid);
-  void FinishPin();
-  ReadOptionsTLS();
-  ~ReadOptionsTLS();
-};
-
 // Options that control read operations
 struct ReadOptions {
   // If "snapshot" is non-nullptr, read as of the supplied snapshot
@@ -1746,7 +1735,7 @@ struct ReadOptions {
   // used for ToplingDB fiber MultiGet
   mutable class ReadCallback* read_callback = nullptr;
 
-  mutable std::shared_ptr<ReadOptionsTLS> pinning_tls = nullptr;
+  std::shared_ptr<struct ReadOptionsTLS> pinning_tls = nullptr;
 
   // pin SuperVersion to enable zero copy on mmap SST
   void StartPin();

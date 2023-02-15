@@ -4343,6 +4343,17 @@ terark_pure_func inline static size_t ThisThreadID() {
 #endif
 }
 
+struct ReadOptionsTLS {
+  size_t thread_id = size_t(-1);
+  class SuperVersion* sv = nullptr;
+  class DBImpl* db_impl = nullptr;
+  std::vector<class SuperVersion*> cfsv;
+  class SuperVersion*& GetSuperVersionRef(size_t cfid);
+  void FinishPin();
+  ReadOptionsTLS();
+  ~ReadOptionsTLS();
+};
+
 ReadOptionsTLS::ReadOptionsTLS() {
   // do nothing
 }

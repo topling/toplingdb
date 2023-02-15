@@ -83,8 +83,8 @@ GetContext::GetContext(
     *seq = kMaxSequenceNumber;
   }
   switch (g_how_sampling) {
-  case GetContextSampleRead::kAlways: sample_ = true; break;
-  case GetContextSampleRead::kNone  : sample_ = true; break;
+  case GetContextSampleRead::kAlways: sample_ = true;  break;
+  case GetContextSampleRead::kNone  : sample_ = false; break;
   case GetContextSampleRead::kRandom:
     sample_ = should_sample_file_read();
     break;

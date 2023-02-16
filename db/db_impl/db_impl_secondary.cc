@@ -378,7 +378,7 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
     }
   }
   // Acquire SuperVersion
-  SuperVersion* super_version = GetAndRefSuperVersion(cfd);
+  SuperVersion* super_version = GetAndRefSuperVersion(cfd, &read_options);
   SequenceNumber snapshot = versions_->LastSequence();
   GetWithTimestampReadCallback read_cb(snapshot);
   MergeContext merge_context;
@@ -408,7 +408,8 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
     RecordTick(stats_, MEMTABLE_HIT);
   }
   if (!done && !s.ok() && !s.IsMergeInProgress()) {
-    ReturnAndCleanupSuperVersion(cfd, super_version);
+    if (!read_options.pinning_tls)
+      ReturnAndCleanupSuperVersion(cfd, super_version);
     return s;
   }
   if (!done) {
@@ -424,7 +425,8 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
   }
   {
     PERF_TIMER_GUARD(get_post_process_time);
-    ReturnAndCleanupSuperVersion(cfd, super_version);
+    if (!read_options.pinning_tls)
+      ReturnAndCleanupSuperVersion(cfd, super_version);
     RecordTick(stats_, NUMBER_KEYS_READ);
     size_t size = pinnable_val->size();
     RecordTick(stats_, BYTES_READ, size);

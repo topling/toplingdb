@@ -4557,7 +4557,10 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
   Version* v;
   auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
   auto cfd = cfh->cfd();
-  SuperVersion* sv = GetAndRefSuperVersion(cfd);
+  auto read_options = options.read_options;
+  bool zero_copy = read_options && read_options->pinning_tls;
+  SuperVersion* sv = zero_copy ? GetAndRefSuperVersion(cfd, read_options)
+                               : GetAndRefSuperVersion(cfd);
   v = sv->current;
 
   size_t len1 = range[0].start.size_;
@@ -4606,8 +4609,9 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
       sizes[i] += sv->imm->ApproximateStats(ik1, ik2).size;
     }
   }
-
-  ReturnAndCleanupSuperVersion(cfd, sv);
+  if (!zero_copy) {
+    ReturnAndCleanupSuperVersion(cfd, sv);
+  }
   return Status::OK();
 }
 

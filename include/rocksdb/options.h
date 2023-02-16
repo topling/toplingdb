@@ -2098,6 +2098,10 @@ struct SizeApproximationOptions {
   // If the value is non-positive - a more precise yet more CPU intensive
   // estimation is performed.
   double files_size_error_margin = -1.0;
+
+  // If using zero copy, and calling GetApproximateSizes() is interleaved with
+  // DB::Get/MultiGet, must set read_options to which used in Get
+  struct ReadOptions* read_options = nullptr;
 };
 
 struct CompactionServiceOptionsOverride {

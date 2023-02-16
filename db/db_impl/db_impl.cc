@@ -2188,10 +2188,10 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
 #else
       nullptr;
 #endif
-  if (!skip_memtable && !sv->mem->IsEmpty() && !sv->imm->IsEmpty()) {
+  if (!skip_memtable) {
     // Get value associated with key
     if (get_impl_options.get_value) {
-      if (sv->mem->Get(
+      if (!sv->mem->IsEmpty() && sv->mem->Get(
               lkey,
               get_impl_options.value ? get_impl_options.value->GetSelf()
                                      : nullptr,
@@ -2207,6 +2207,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
 
         RecordTick(stats_, MEMTABLE_HIT);
       } else if ((s.ok() || s.IsMergeInProgress()) &&
+                !sv->imm->IsEmpty() &&
                  sv->imm->Get(lkey,
                               get_impl_options.value
                                   ? get_impl_options.value->GetSelf()
@@ -2226,7 +2227,8 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
     } else {
       // Get Merge Operands associated with key, Merge Operands should not be
       // merged and raw values should be returned to the user.
-      if (sv->mem->Get(lkey, /*value=*/nullptr, /*columns=*/nullptr,
+      if (!sv->mem->IsEmpty() &&
+          sv->mem->Get(lkey, /*value=*/nullptr, /*columns=*/nullptr,
                        /*timestamp=*/nullptr, &s, &merge_context,
                        &max_covering_tombstone_seq, read_options,
                        false /* immutable_memtable */, nullptr, nullptr,
@@ -2234,6 +2236,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
         done = true;
         RecordTick(stats_, MEMTABLE_HIT);
       } else if ((s.ok() || s.IsMergeInProgress()) &&
+                !sv->imm->IsEmpty() &&
                  sv->imm->GetMergeOperands(lkey, &s, &merge_context,
                                            &max_covering_tombstone_seq,
                                            read_options)) {

@@ -13,7 +13,7 @@ namespace ROCKSDB_NAMESPACE {
 // A user may use kUncategorized if the caller is not interesting for analysis
 // or the table reader is called in the test environment, e.g., unit test, table
 // reader benchmark, etc.
-enum TableReaderCaller : char {
+enum TableReaderCaller : unsigned char {
   kUserGet = 1,
   kUserMultiGet = 2,
   kUserIterator = 3,

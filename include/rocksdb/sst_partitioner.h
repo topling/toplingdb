@@ -17,7 +17,7 @@ namespace ROCKSDB_NAMESPACE {
 
 class Slice;
 
-enum PartitionerResult : char {
+enum PartitionerResult : unsigned char {
   // Partitioner does not require to create new file
   kNotRequired = 0x0,
   // Partitioner is requesting forcefully to create new file

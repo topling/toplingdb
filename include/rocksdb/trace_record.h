@@ -19,7 +19,7 @@ class ColumnFamilyHandle;
 class DB;
 
 // Supported trace record types.
-enum TraceType : char {
+enum TraceType : unsigned char {
   kTraceNone = 0,
   kTraceBegin = 1,
   kTraceEnd = 2,

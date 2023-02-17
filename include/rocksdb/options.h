@@ -395,7 +395,7 @@ struct DbPath {
 
 extern const char* kHostnameForDbHostId;
 
-enum class CompactionServiceJobStatus : char {
+enum class CompactionServiceJobStatus : unsigned char {
   kSuccess,
   kFailure,
   kUseLocal,

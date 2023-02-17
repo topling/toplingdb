@@ -203,7 +203,7 @@ struct IODebugContext {
   // means bit at position 0 is set so TraceData::kRequestID (request_id) will
   // be logged in the trace record.
   //
-  enum TraceData : char {
+  enum TraceData : unsigned char {
     // The value of each enum represents the bitwise position for
     // that information in trace_data which will be used by IOTracer for
     // tracing. Make sure to add them sequentially.

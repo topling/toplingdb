@@ -19,7 +19,7 @@ namespace ROCKSDB_NAMESPACE {
 
 class PinnedIteratorsManager;
 
-enum class IterBoundCheck : char {
+enum class IterBoundCheck : unsigned char {
   kUnknown = 0,
   kOutOfBound,
   kInbound,

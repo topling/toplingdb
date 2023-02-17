@@ -48,7 +48,7 @@ extern const std::set<uint32_t> kFooterFormatVersionsToTest;
 
 // Return a random key with the specified length that may contain interesting
 // characters (e.g. \x00, \xff, etc.).
-enum RandomKeyType : char { RANDOM, LARGEST, SMALLEST, MIDDLE };
+enum RandomKeyType : unsigned char { RANDOM, LARGEST, SMALLEST, MIDDLE };
 extern std::string RandomKey(Random* rnd, int len,
                              RandomKeyType type = RandomKeyType::RANDOM);
 

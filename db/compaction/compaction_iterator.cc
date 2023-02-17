@@ -710,6 +710,7 @@ void CompactionIterator::NextFromInput() {
             // is an unexpected Merge or Delete.  We will compact it out
             // either way. We will maintain counts of how many mismatches
             // happened
+            ROCKSDB_ASSUME(next_ikey.type < kTypeMaxValid);
             if (next_ikey.type != kTypeValue &&
                 next_ikey.type != kTypeBlobIndex &&
                 next_ikey.type != kTypeWideColumnEntity) {

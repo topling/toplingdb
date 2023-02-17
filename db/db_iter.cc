@@ -592,6 +592,7 @@ bool DBIter::MergeValuesNewToOld() {
       // hit the next user key, stop right here
       break;
     }
+    ROCKSDB_ASSUME(ikey.type < kTypeMaxValid);
     if (kTypeDeletion == ikey.type || kTypeSingleDeletion == ikey.type ||
         kTypeDeletionWithTimestamp == ikey.type) {
       // hit a delete with the same user key, stop right here
@@ -1031,6 +1032,7 @@ bool DBIter::FindValueForCurrentKey() {
       return true;
     case kTypeMerge:
       current_entry_is_merged_ = true;
+      ROCKSDB_ASSUME(last_not_merge_type < kTypeMaxValid);
       if (last_not_merge_type == kTypeDeletion ||
           last_not_merge_type == kTypeSingleDeletion ||
           last_not_merge_type == kTypeDeletionWithTimestamp) {
@@ -1185,6 +1187,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
     Slice ts = ExtractTimestampFromUserKey(ikey.user_key, timestamp_size_);
     saved_timestamp_.assign(ts.data(), ts.size());
   }
+  ROCKSDB_ASSUME(ikey.type < kTypeMaxValid);
   if (ikey.type == kTypeValue || ikey.type == kTypeBlobIndex ||
       ikey.type == kTypeWideColumnEntity) {
     assert(iter_.iter()->IsValuePinned());
@@ -1239,6 +1242,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
                                                 saved_key_.GetUserKey())) {
       break;
     }
+    ROCKSDB_ASSUME(ikey.type < kTypeMaxValid);
     if (ikey.type == kTypeDeletion || ikey.type == kTypeSingleDeletion ||
         ikey.type == kTypeDeletionWithTimestamp) {
       break;

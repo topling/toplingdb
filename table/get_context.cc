@@ -301,6 +301,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
 #endif
 
     auto type = parsed_key.type;
+    ROCKSDB_ASSUME(type < kTypeMaxValid);
     // Key matches. Process it
     if ((type == kTypeValue || type == kTypeMerge || type == kTypeBlobIndex ||
          type == kTypeWideColumnEntity || type == kTypeDeletion ||

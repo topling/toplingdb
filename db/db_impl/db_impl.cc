@@ -4422,8 +4422,11 @@ DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd, const ReadOptions* ro) {
   size_t cfid = cfd->GetID();
   SuperVersion*& sv = tls->GetSuperVersionRef(cfid);
   if (sv) {
-    ROCKSDB_ASSERT_EQ(sv->cfd, cfd);
-    return sv;
+    if (LIKELY(sv->version_number == cfd->GetSuperVersionNumberNoAtomic())) {
+      ROCKSDB_ASSERT_EQ(sv->cfd, cfd);
+      return sv;
+    }
+    ReturnAndCleanupSuperVersion(cfd, sv);
   }
   // slow path
   ROCKSDB_VERIFY_EQ(tls->thread_id, ThisThreadID());

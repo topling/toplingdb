@@ -453,6 +453,9 @@ class ColumnFamilyData {
   uint64_t GetSuperVersionNumber() const {
     return super_version_number_.load();
   }
+  uint64_t GetSuperVersionNumberNoAtomic() const {
+    return reinterpret_cast<const uint64_t&>(super_version_number_);
+  }
   // will return a pointer to SuperVersion* if previous SuperVersion
   // if its reference count is zero and needs deletion or nullptr if not
   // As argument takes a pointer to allocated SuperVersion to enable

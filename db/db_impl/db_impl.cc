@@ -4367,7 +4367,7 @@ inline SuperVersion*& ReadOptionsTLS::GetSuperVersionRef(size_t cfid) {
   if (0 == cfid) {
     return sv;
   } else {
-    if (cfsv.size() <= cfid) {
+    if (cfsv.size() < cfid) {
       cfsv.resize(cfid, nullptr);
     }
     return cfsv[cfid - 1];

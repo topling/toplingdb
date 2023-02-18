@@ -58,6 +58,7 @@ void ArenaWrappedDBIter::Init(
                        read_callback, db_impl, cfd, expose_blob_index);
   sv_number_ = version_number;
   read_options_ = read_options;
+  read_options_.pinning_tls = nullptr; // must set null
   allow_refresh_ = allow_refresh;
   memtable_range_tombstone_iter_ = nullptr;
 }

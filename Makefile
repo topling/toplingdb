@@ -1684,7 +1684,7 @@ db_repl_stress: $(OBJ_DIR)/tools/db_repl_stress.o $(LIBRARY)
 arena_test: $(OBJ_DIR)/memory/arena_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-memory_allocator_test: memory/memory_allocator_test.o $(TEST_LIBRARY) $(LIBRARY)
+memory_allocator_test: $(OBJ_DIR)/memory/memory_allocator_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 autovector_test: $(OBJ_DIR)/util/autovector_test.o $(TEST_LIBRARY) $(LIBRARY)
@@ -1783,7 +1783,7 @@ db_wide_basic_test: $(OBJ_DIR)/db/wide/db_wide_basic_test.o $(TEST_LIBRARY) $(LI
 db_with_timestamp_basic_test: $(OBJ_DIR)/db/db_with_timestamp_basic_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-db_with_timestamp_compaction_test: db/db_with_timestamp_compaction_test.o $(TEST_LIBRARY) $(LIBRARY)
+db_with_timestamp_compaction_test: $(OBJ_DIR)/db/db_with_timestamp_compaction_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 db_encryption_test: $(OBJ_DIR)/db/db_encryption_test.o $(TEST_LIBRARY) $(LIBRARY)
@@ -1996,7 +1996,7 @@ random_access_file_reader_test: $(OBJ_DIR)/file/random_access_file_reader_test.o
 file_reader_writer_test: $(OBJ_DIR)/util/file_reader_writer_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-block_based_table_reader_test: table/block_based/block_based_table_reader_test.o $(TEST_LIBRARY) $(LIBRARY)
+block_based_table_reader_test: $(OBJ_DIR)/table/block_based/block_based_table_reader_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 full_filter_block_test: $(OBJ_DIR)/table/block_based/full_filter_block_test.o $(TEST_LIBRARY) $(LIBRARY)
@@ -2014,7 +2014,7 @@ cleanable_test: $(OBJ_DIR)/table/cleanable_test.o $(TEST_LIBRARY) $(LIBRARY)
 table_test: $(OBJ_DIR)/table/table_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-block_fetcher_test: table/block_fetcher_test.o $(TEST_LIBRARY) $(LIBRARY)
+block_fetcher_test: $(OBJ_DIR)/table/block_fetcher_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 block_test: $(OBJ_DIR)/table/block_based/block_test.o $(TEST_LIBRARY) $(LIBRARY)
@@ -2104,10 +2104,10 @@ thread_list_test: $(OBJ_DIR)/util/thread_list_test.o $(TEST_LIBRARY) $(LIBRARY)
 compact_files_test: $(OBJ_DIR)/db/compact_files_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-configurable_test: options/configurable_test.o $(TEST_LIBRARY) $(LIBRARY)
+configurable_test: $(OBJ_DIR)/options/configurable_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-customizable_test: options/customizable_test.o $(TEST_LIBRARY) $(LIBRARY)
+customizable_test: $(OBJ_DIR)/options/customizable_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 options_test: $(OBJ_DIR)/options/options_test.o $(TEST_LIBRARY) $(LIBRARY)
@@ -2161,7 +2161,7 @@ write_callback_test: $(OBJ_DIR)/db/write_callback_test.o $(TEST_LIBRARY) $(LIBRA
 heap_test: $(OBJ_DIR)/util/heap_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-point_lock_manager_test: utilities/transactions/lock/point/point_lock_manager_test.o $(TEST_LIBRARY) $(LIBRARY)
+point_lock_manager_test: $(OBJ_DIR)/utilities/transactions/lock/point/point_lock_manager_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 transaction_test: $(OBJ_DIR)/utilities/transactions/transaction_test.o $(TEST_LIBRARY) $(LIBRARY)
@@ -2227,7 +2227,7 @@ blob_db_test: $(OBJ_DIR)/utilities/blob_db/blob_db_test.o $(TEST_LIBRARY) $(LIBR
 repeatable_thread_test: $(OBJ_DIR)/util/repeatable_thread_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-range_locking_test: utilities/transactions/lock/range/range_locking_test.o $(TEST_LIBRARY) $(LIBRARY)
+range_locking_test: $(OBJ_DIR)/utilities/transactions/lock/range/range_locking_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 range_tombstone_fragmenter_test: $(OBJ_DIR)/db/range_tombstone_fragmenter_test.o $(TEST_LIBRARY) $(LIBRARY)

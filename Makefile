@@ -1076,10 +1076,16 @@ MICROBENCHS = $(patsubst %.cc, %, $(notdir $(MICROBENCH_SOURCES)))
 ifeq ($(LIBNAME),)
   LIBNAME=librocksdb
 # we should only run rocksdb in production with DEBUG_LEVEL 0
-ifneq ($(DEBUG_LEVEL),0)
+ifeq ($(DEBUG_LEVEL),2)
   LIBDEBUG=_debug
   ifeq (${MAKE_UNIT_TEST},1)
     LIBDEBUG=_debug_ut
+  endif
+endif
+ifeq ($(DEBUG_LEVEL),1)
+  LIBDEBUG=_debug_1
+  ifeq (${MAKE_UNIT_TEST},1)
+    LIBDEBUG=_debug_ut_1
   endif
 endif
 endif

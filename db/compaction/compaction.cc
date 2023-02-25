@@ -297,6 +297,7 @@ Compaction::Compaction(
   // Every compaction regardless of any compaction reason may respect the
   // existing compact cursor in the output level to split output files
   output_split_key_ = nullptr;
+#if defined(ROCKSDB_UNIT_TEST)
   if (immutable_options_.compaction_style == kCompactionStyleLevel &&
       immutable_options_.compaction_pri == kRoundRobin) {
     const InternalKey* cursor =
@@ -314,6 +315,7 @@ Compaction::Compaction(
       }
     }
   }
+#endif
 
   PopulatePenultimateLevelOutputRange();
 }
@@ -733,12 +735,14 @@ bool Compaction::ShouldFormSubcompactions() const {
     return false;
   }
 
+#if defined(ROCKSDB_UNIT_TEST)
   // Round-Robin pri under leveled compaction allows subcompactions by default
   // and the number of subcompactions can be larger than max_subcompactions_
   if (cfd_->ioptions()->compaction_pri == kRoundRobin &&
       cfd_->ioptions()->compaction_style == kCompactionStyleLevel) {
     return output_level_ > 0;
   }
+#endif
 
   if (max_subcompactions_ <= 1) {
     return false;

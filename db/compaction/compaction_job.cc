@@ -353,6 +353,7 @@ uint64_t CompactionJob::GetSubcompactionsLimit() {
 
 void CompactionJob::AcquireSubcompactionResources(
     int num_extra_required_subcompactions) {
+#if defined(ROCKSDB_UNIT_TEST)
   TEST_SYNC_POINT("CompactionJob::AcquireSubcompactionResources:0");
   TEST_SYNC_POINT("CompactionJob::AcquireSubcompactionResources:1");
   int max_db_compactions =
@@ -389,9 +390,11 @@ void CompactionJob::AcquireSubcompactionResources(
   } else {
     *bg_compaction_scheduled_ += extra_num_subcompaction_threads_reserved_;
   }
+#endif
 }
 
 void CompactionJob::ShrinkSubcompactionResources(uint64_t num_extra_resources) {
+#if defined(ROCKSDB_UNIT_TEST)
   // Do nothing when we have zero resources to shrink
   if (num_extra_resources == 0) return;
   db_mutex_->Lock();
@@ -416,9 +419,11 @@ void CompactionJob::ShrinkSubcompactionResources(uint64_t num_extra_resources) {
   }
   db_mutex_->Unlock();
   TEST_SYNC_POINT("CompactionJob::ShrinkSubcompactionResources:0");
+#endif
 }
 
 void CompactionJob::ReleaseSubcompactionResources() {
+#if defined(ROCKSDB_UNIT_TEST)
   if (extra_num_subcompaction_threads_reserved_ == 0) {
     return;
   }
@@ -437,6 +442,7 @@ void CompactionJob::ReleaseSubcompactionResources() {
                1 + extra_num_subcompaction_threads_reserved_);
   }
   ShrinkSubcompactionResources(extra_num_subcompaction_threads_reserved_);
+#endif
 }
 
 struct RangeWithSize {
@@ -475,11 +481,15 @@ void CompactionJob::GenSubcompactionBoundaries() {
   // cause relatively small inaccuracy.
 
   auto* c = compact_->compaction;
+#if defined(ROCKSDB_UNIT_TEST)
   if (c->max_subcompactions() <= 1 &&
       !(c->immutable_options()->compaction_pri == kRoundRobin &&
         c->immutable_options()->compaction_style == kCompactionStyleLevel)) {
     return;
   }
+#else
+  if (c->max_subcompactions() <= 1) return;
+#endif
   auto* cfd = c->column_family_data();
   const Comparator* cfd_comparator = cfd->user_comparator();
   const InternalKeyComparator& icomp = cfd->internal_comparator();
@@ -543,6 +553,7 @@ void CompactionJob::GenSubcompactionBoundaries() {
                   }),
       all_anchors.end());
 
+#if defined(ROCKSDB_UNIT_TEST)
   // Get the number of planned subcompactions, may update reserve threads
   // and update extra_num_subcompaction_threads_reserved_ for round-robin
   uint64_t num_planned_subcompactions;
@@ -575,6 +586,9 @@ void CompactionJob::GenSubcompactionBoundaries() {
   } else {
     num_planned_subcompactions = GetSubcompactionsLimit();
   }
+#else
+  uint64_t num_planned_subcompactions = std::max(1u, c->max_subcompactions());
+#endif
 
   TEST_SYNC_POINT_CALLBACK("CompactionJob::GenSubcompactionBoundaries:0",
                            &num_planned_subcompactions);
@@ -2022,6 +2036,7 @@ Status CompactionJob::InstallCompactionResults(
                              stats.GetBytes());
   }
 
+#if defined(ROCKSDB_UNIT_TEST)
   if ((compaction->compaction_reason() ==
            CompactionReason::kLevelMaxLevelSize ||
        compaction->compaction_reason() == CompactionReason::kRoundRobinTtl) &&
@@ -2034,6 +2049,7 @@ Status CompactionJob::InstallCompactionResults(
                                  start_level, compaction->num_input_files(0)));
     }
   }
+#endif
 
   return versions_->LogAndApply(compaction->column_family_data(),
                                 mutable_cf_options, edit, db_mutex_,

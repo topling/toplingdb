@@ -672,6 +672,26 @@ Status CompactionJob::RunLocal() {
   for (auto& thread : thread_pool) {
     thread.join();
   }
+  auto GetPath = [this]() {
+    size_t pathId = compact_->compaction->output_path_id();
+    auto& paths = compact_->compaction->immutable_options()->cf_paths;
+    return paths[std::min(paths.size()-1, pathId)].path.c_str();
+  };
+  for (const auto& state : compact_->sub_compact_states) {
+    std::string filelist;
+    long long size = 0;
+    for (const auto& output : state.GetOutputs()) {
+      auto& fd = output.meta.fd;
+      char buf[32];
+      auto len = sprintf(buf, "%06lld,", (long long)fd.GetNumber());
+      filelist.append(buf, len);
+      size += fd.file_size;
+    }
+    if (!filelist.empty()) filelist.pop_back();
+    ROCKS_LOG_INFO(db_options_.info_log,
+        "job-%05d: subcompact[%d], size: %.6f G, files: %s [%s]",
+         job_id_, state.sub_job_id, size/1e9, GetPath(), filelist.c_str());
+  }
 
   compaction_stats_.SetMicros(db_options_.clock->NowMicros() - start_micros);
 
@@ -925,7 +945,8 @@ try {
   rpc_params.db_session_id = this->db_session_id_;
   rpc_params.full_history_ts_low = this->full_history_ts_low_;
 //rpc_params.compaction_job_stats = this->compaction_job_stats_;
-  rpc_params.max_subcompactions = uint32_t(num_threads);
+//rpc_params.max_subcompactions = uint32_t(num_threads);
+  rpc_params.max_subcompactions = c->max_subcompactions();
   rpc_params.shutting_down = this->shutting_down_;
 
   const uint64_t start_micros = env_->NowMicros();
@@ -971,7 +992,7 @@ try {
     num_threads = result_sub_num;
     auto& sub_vec = compact_->sub_compact_states;
     while (sub_vec.size() < result_sub_num) {
-      int sub_job_id = 0;
+      int sub_job_id = (int)sub_vec.size();
       sub_vec.emplace_back(compact_->compaction, nullptr, nullptr, sub_job_id);
     }
     while (sub_vec.size() > result_sub_num) {

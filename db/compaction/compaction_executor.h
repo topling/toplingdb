@@ -99,8 +99,11 @@ struct CompactionParams {
   bool preserve_deletes;
   bool bottommost_level;
   bool is_deserialized;
+  CompactionStyle compaction_style;
+  CompactionPri   compaction_pri;
   std::vector<ObjectRpcParam> listeners;
   std::vector<ObjectRpcParam> table_properties_collector_factories;
+  std::string extensible_js_data;
 
   // CompactionFilterFactory ... can have individual serde files
   mutable std::vector<std::string> extra_serde_files;

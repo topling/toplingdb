@@ -39,6 +39,8 @@ class Slice {
 
   Slice(const unsigned char* d, size_t n) : data_((const char*)d), size_(n) {}
 
+  Slice(std::nullptr_t, size_t n) : data_(nullptr), size_(n) {}
+
   // Create a slice that refers to the contents of "s"
   /* implicit */
   Slice(const std::string& s) : data_(s.data()), size_(s.size()) {}

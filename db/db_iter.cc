@@ -272,16 +272,21 @@ bool DBIter::FindNextUserEntry(bool skipping_saved_key, const Slice* prefix) {
 }
 
 struct BytewiseCmpNoTS {
+  bool equal(const Slice& x, const Slice& y) const { return x == y; }
   bool operator()(const Slice& x, const Slice& y) const { return x < y; }
   int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
 };
 
 struct RevBytewiseCmpNoTS {
+  bool equal(const Slice& x, const Slice& y) const { return x == y; }
   bool operator()(const Slice& x, const Slice& y) const { return y < x; }
   int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
 };
 
 struct VirtualCmpNoTS {
+  bool equal(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, y) == 0;
+  }
   bool operator()(const Slice& x, const Slice& y) const {
     return cmp->CompareWithoutTimestamp(x, false, y, false) < 0;
   }
@@ -390,7 +395,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
       // level. This may change in the future.
       if ((!is_prev_key_seqnum_zero || timestamp_size_ > 0) &&
           skipping_saved_key &&
-          !CmpKeyForSkip(saved_key_.GetUserKey(), ikey_.user_key, cmpNoTS)) {
+          EqKeyForSkip(saved_key_.GetUserKey(), ikey_.user_key, cmpNoTS)) {
         num_skipped++;  // skip this entry
         PERF_COUNTER_ADD(internal_key_skipped_count, 1);
       } else {

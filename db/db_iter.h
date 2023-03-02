@@ -305,6 +305,13 @@ class DBIter final : public Iterator {
                : c(a, b);
   }
 
+  template<class CmpNoTS>
+  inline bool EqKeyForSkip(const Slice& a, const Slice& b, const CmpNoTS& c) {
+    return timestamp_lb_ != nullptr // semantic exactly same with origin code
+               ? user_comparator_.Compare(a, b) >= 0 // ^^^^^^^^^^^^^^^^^^^^^
+               : c.equal(a, b);
+  }
+
   // Retrieves the blob value for the specified user key using the given blob
   // index when using the integrated BlobDB implementation.
   bool SetBlobValueIfNeeded(const Slice& user_key, const Slice& blob_index);

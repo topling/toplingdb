@@ -123,8 +123,7 @@ struct ParsedInternalKey {
   explicit ParsedInternalKey(const Slice& ik)
       : user_key(ik.data_, ik.size_ - 8) {
     ROCKSDB_ASSERT_GE(ik.size_, 8);
-    uint64_t seqvt;
-    GetUnaligned((const uint64_t*)(ik.data_ + ik.size_ - 8), &seqvt);
+    auto seqvt = GetUnaligned<uint64_t>(ik.data_ + ik.size_ - 8);
     sequence = seqvt >> 8;
     type = ValueType(seqvt);
   }
@@ -133,8 +132,7 @@ struct ParsedInternalKey {
     user_key.data_ = ik.data_;
     user_key.size_ = ik.size_ - 8;
     ROCKSDB_ASSERT_GE(ik.size_, 8);
-    uint64_t seqvt;
-    GetUnaligned((const uint64_t*)(ik.data_ + ik.size_ - 8), &seqvt);
+    auto seqvt = GetUnaligned<uint64_t>(ik.data_ + ik.size_ - 8);
     sequence = seqvt >> 8;
     type = ValueType(seqvt);
   }

@@ -386,4 +386,22 @@ GetUnaligned(const T* memory, T* value) {
 #endif
 }
 
+template <class T>
+#ifdef ROCKSDB_UBSAN_RUN
+#if defined(__clang__)
+__attribute__((__no_sanitize__("alignment")))
+#elif defined(__GNUC__)
+__attribute__((__no_sanitize_undefined__))
+#endif
+#endif
+inline T GetUnaligned(const void* memory) {
+#if defined(PLATFORM_UNALIGNED_ACCESS_NOT_ALLOWED)
+  T value;
+  memcpy(&value, memory, sizeof(T));
+  return value;
+#else
+  return *reinterpret_cast<const T*>(memory);
+#endif
+}
+
 }  // namespace ROCKSDB_NAMESPACE

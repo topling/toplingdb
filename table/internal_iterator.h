@@ -34,6 +34,7 @@ public:
     key_data_ = k.data();
     key_size_ = (uint32_t)(k.size());
   }
+  size_t key_len() const { return key_size_; }
   Slice key() const { return Slice(key_data_, key_size_); }
   Slice user_key() const { return Slice(key_data_, key_size_ - 8); }
   IterBoundCheck bound_check_result = IterBoundCheck::kUnknown;

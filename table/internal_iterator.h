@@ -81,6 +81,18 @@ class InternalIteratorBase : public Cleanable {
   // an entry that comes at or before target.
   virtual void SeekForPrev(const Slice& target) = 0;
 
+  // Now just for online benchmark
+  // After calling this function, iterator position is unspecified
+  // returns true if found
+  virtual bool PointGet(const Slice& key, bool fetch_value) {
+    this->Seek(key);
+    bool found = this->Valid();
+    if (found && fetch_value) {
+      this->PrepareValue();
+    }
+    return found;
+  }
+
   // Moves to the next entry in the source.  After this call, Valid() is
   // true iff the iterator was not positioned at the last entry in the source.
   // REQUIRES: Valid()

@@ -179,7 +179,7 @@ class TableReader {
   }
 
   // if implemented, returns true
-  virtual bool GetRandomInteranlKeysAppend(
+  virtual bool GetRandomInternalKeysAppend(
                   size_t /*num*/, std::vector<std::string>* /*output*/) const {
     return false; // indicate not implemented
   }

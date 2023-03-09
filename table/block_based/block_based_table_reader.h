@@ -194,7 +194,7 @@ class BlockBasedTable : public TableReader {
                         TableReaderCaller caller) override;
 
   // if implemented, returns true
-  bool GetRandomInteranlKeysAppend(
+  bool GetRandomInternalKeysAppend(
       size_t num, std::vector<std::string>* output) const override;
 
   ~BlockBasedTable();

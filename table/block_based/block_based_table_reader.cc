@@ -3120,7 +3120,7 @@ void BlockBasedTable::DumpKeyValue(const Slice& key, const Slice& value,
 }
 
 // if implemented, returns true
-bool BlockBasedTable::GetRandomInteranlKeysAppend(
+bool BlockBasedTable::GetRandomInternalKeysAppend(
       size_t num, std::vector<std::string>* output) const {
   if (!rep_->table_options.enable_get_random_keys) {
     return false;

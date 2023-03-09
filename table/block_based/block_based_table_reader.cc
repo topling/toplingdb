@@ -445,7 +445,6 @@ bool IsFeatureSupported(const TableProperties& table_properties,
   }
   return true;
 }
-}  // namespace
 
 // Caller has to ensure seqno is not nullptr.
 Status GetGlobalSequenceNumber(const TableProperties& table_properties,
@@ -520,6 +519,7 @@ Status GetGlobalSequenceNumber(const TableProperties& table_properties,
 
   return Status::OK();
 }
+}  // namespace
 
 void BlockBasedTable::SetupBaseCacheKey(const TableProperties* properties,
                                         const std::string& cur_db_session_id,

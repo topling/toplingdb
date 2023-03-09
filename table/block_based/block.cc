@@ -625,7 +625,6 @@ bool BlockIter<TValue>::ParseNextKey(bool* is_shared) {
 
 bool DataBlockIter::ParseNextDataKey(bool* is_shared) {
   if (ParseNextKey<DecodeEntry>(is_shared)) {
-#if defined(ROCKSDB_UNIT_TEST)
 #ifndef NDEBUG
     if (global_seqno_ != kDisableGlobalSequenceNumber) {
       // If we are reading a file with a global sequence number we should
@@ -644,7 +643,6 @@ bool DataBlockIter::ParseNextDataKey(bool* is_shared) {
       assert(seqno == 0);
     }
 #endif  // NDEBUG
-#endif // ROCKSDB_UNIT_TEST
     return true;
   } else {
     return false;

@@ -72,6 +72,21 @@ export LD_LIBRARY_PATH=`find sideplugin -name lib_shared`
 # you can access http://127.0.0.1:2011 to see webview
 # you can see this db_bench is much faster than RocksDB
 ```
+## Configurable features
+For performance and simplicity, ToplingDB disabled some RocksDB features by default:
+
+Feature|Control MACRO
+-------|-------------
+Dynamic creation of ColumnFamily | ROCKSDB_DYNAMIC_CREATE_CF
+User level timestamp on key | TOPLINGDB_WITH_TIMESTAMP
+Wide Columns | TOPLINGDB_WITH_WIDE_COLUMNS
+
+**Note**: Dynamic creation of ColumnFamily is not supported by SidePlugin
+
+To enable these features, add `-D${MACRO_NAME}` to var `EXTRA_CXXFLAGS`, such as build ToplingDB for java with dynamic ColumnFamily:
+```
+make -j`nproc` EXTRA_CXXFLAGS='-DROCKSDB_DYNAMIC_CREATE_CF' rocksdbjava
+```
 ## License
 We disallow bytedance using this software, other terms are identidal with
 upstream rocksdb license, see [LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING) and

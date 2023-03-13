@@ -163,6 +163,11 @@ enum Tickers : uint32_t {
   // Disabled by default. To enable it set stats level to kAll
   DB_MUTEX_WAIT_NANOS,
   DB_COND_WAIT_NANOS,
+
+  // for compatible to existing code
+  DB_MUTEX_WAIT_MICROS = DB_MUTEX_WAIT_NANOS,
+  DB_COND_WAIT_MICROS = DB_COND_WAIT_NANOS,
+
   RATE_LIMIT_DELAY_MILLIS,
   // DEPRECATED number of iterators currently open
   NO_ITERATORS,

@@ -454,7 +454,7 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
     $(wildcard sideplugin/topling-rocks/src/table/*.cc) \
     sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
 else
-  $(warning NotFound sideplugin/topling-rocks, this is ok, only ToplingZipTable are disabled)
+  $(warning NotFound sideplugin/topling-rocks, this is ok, only ToplingZipTable is disabled)
 endif
 endif
 

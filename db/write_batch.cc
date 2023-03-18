@@ -243,6 +243,9 @@ void WriteBatch::Handler::LogData(const Slice& /*blob*/) {
 bool WriteBatch::Handler::Continue() { return true; }
 
 void WriteBatch::Clear() {
+  if (rep_.capacity() > 512*1024) {
+    std::string().swap(rep_); // free memory
+  }
   rep_.clear();
   rep_.resize(WriteBatchInternal::kHeader);
 

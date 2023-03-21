@@ -319,6 +319,20 @@ public class RocksDB extends RocksObject {
     return db;
   }
 
+  public static RocksDB fromNativeHandles(long dbHandle, long[] cfHandles) {
+    RocksDB db = new RocksDB(dbHandle);
+    if (cfHandles != null) {
+      for (int i = 0; i < cfHandles.length; i++) {
+        ColumnFamilyHandle cfh = new ColumnFamilyHandle(db, cfHandles[i]);
+        db.ownedColumnFamilyHandles.add(cfh);
+      }
+    }
+    return db;
+  }
+  public List<ColumnFamilyHandle> getOwnedColumnFamilyHandles() {
+    return ownedColumnFamilyHandles;
+  }
+
   /**
    * The factory constructor of RocksDB that opens a RocksDB instance in
    * Read-Only mode given the path to the database using the default

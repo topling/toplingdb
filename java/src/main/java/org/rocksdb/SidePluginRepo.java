@@ -45,13 +45,19 @@ public class SidePluginRepo extends RocksObject {
     public native void startHttpServer() throws RocksDBException; // http server for inspection
     public native void closeHttpServer();
 
+    // synonym to closeAllDB
+    public void close() {
+        closeAllDB();
+    }
     // user must ensure all dbs are alive when calling this function
+    // consistency to C++ native func name CloseAllDB
     public void closeAllDB() {
         if (owningHandle_.compareAndSet(true, false)) {
             nativeCloseAllDB(nativeHandle_);
             for (final RocksDB db : dblist_) {
                 db.close();
             }
+            disposeInternal(nativeHandle_);
         }
         dblist_ = null;
     }

@@ -111,6 +111,7 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/java/jmh || exit
           ls -l $GITHUB_WORKSPACE && tail -15 pom.xml
-          mvn deploy -e -f $GITHUB_WORKSPACE/java/jmh/pom.xml -s $GITHUB_WORKSPACE/settings.xml
+          mvn deploy -e -f $GITHUB_WORKSPACE/java/jmh/pom.xml -s $GITHUB_WORKSPACE/settings.xml \
+                     -Dregistry=https://maven.pkg.github.com/distributedStorage/toplingdb
         env:
           GITHUB_TOKEN: ${{ github.token }}

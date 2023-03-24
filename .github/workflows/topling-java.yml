@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GCC_VER: "11.3" # better get from the 'gcc --version'
+      GITHUB_TOKEN: ${{ github.token }}
     permissions:
       contents: read
       packages: write
@@ -123,5 +124,5 @@ jobs:
           -Durl=https://maven.pkg.github.com/distributedStorage/toplingdb -DrepositoryId=github
           # -Dregistry=https://maven.pkg.github.com/distributedStorage/toplingdb # <- failed with it
           # -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/distributedStorage/toplingdb # TODO: try it later
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+        #env:
+        #  GITHUB_TOKEN: ${{ github.token }}

@@ -59,7 +59,15 @@ ROCKSDB_ENUM_PLAIN(CompactionPri, unsigned char,
   // compacted before, and always picks the next files (key range) in that
   // level. The file picking process will cycle through all the files in a
   // round-robin manner.
-  kRoundRobin = 0x4
+  kRoundRobin = 0x4,
+
+  // kMinOverlappingRatio may generate many very small files, because a very
+  // small file can overlap a normal file in next level, thus the small file
+  // will not likely to be picked.
+  // kMinOverlappingBytes ignore current file size, it is equivalent to we
+  // assume all files in current level are same size, thus small files are
+  // treated equally.
+  kMinOverlappingBytes = 0x5
 );
 
 struct CompactionOptionsFIFO {

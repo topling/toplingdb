@@ -3953,11 +3953,12 @@ void VersionStorageInfo::UpdateNumNonEmptyLevels() {
 
 namespace {
 // Sort `temp` based on ratio of overlapping size over file size
-void SortFileByOverlappingRatio(
+void SortFileByOverlapping(CompactionPri pri,
     const InternalKeyComparator& icmp, const std::vector<FileMetaData*>& files,
     const std::vector<FileMetaData*>& next_level_files, SystemClock* clock,
     int level, int num_non_empty_levels, uint64_t ttl,
     std::vector<Fsize>* temp) {
+  // exactly file_to_order should be file_to_score
   std::unordered_map<uint64_t, uint64_t> file_to_order;
   auto next_level_it = next_level_files.begin();
 
@@ -3994,7 +3995,7 @@ void SortFileByOverlappingRatio(
     assert(ttl_boost_score > 0);
     assert(file->compensated_file_size != 0);
     file_to_order[file->fd.GetNumber()] = overlapping_bytes * 1024U /
-                                          file->compensated_file_size /
+       (pri == kMinOverlappingBytes ? 1 : file->compensated_file_size) /
                                           ttl_boost_score;
   }
 
@@ -4008,14 +4009,31 @@ void SortFileByOverlappingRatio(
                       // This makes the algorithm more deterministic, and also
                       // help the trivial move case to have more files to
                       // extend.
-                      if (file_to_order[f1.file->fd.GetNumber()] ==
-                          file_to_order[f2.file->fd.GetNumber()]) {
+                      auto score1 = file_to_order[f1.file->fd.GetNumber()];
+                      auto score2 = file_to_order[f2.file->fd.GetNumber()];
+                      if (score1 == score2) {
                         return icmp.Compare(f1.file->smallest,
                                             f2.file->smallest) < 0;
                       }
-                      return file_to_order[f1.file->fd.GetNumber()] <
-                             file_to_order[f2.file->fd.GetNumber()];
+                      return score1 < score2;
                     });
+}
+
+void SortFileByOverlappingRatio(
+    const InternalKeyComparator& icmp, const std::vector<FileMetaData*>& files,
+    const std::vector<FileMetaData*>& next_level_files, SystemClock* clock,
+    int level, int num_non_empty_levels, uint64_t ttl,
+    std::vector<Fsize>* temp) {
+  SortFileByOverlapping(kMinOverlappingRatio, icmp, files, next_level_files,
+                        clock, level, num_non_empty_levels, ttl, temp);
+}
+void SortFileByOverlappingBytes(
+    const InternalKeyComparator& icmp, const std::vector<FileMetaData*>& files,
+    const std::vector<FileMetaData*>& next_level_files, SystemClock* clock,
+    int level, int num_non_empty_levels, uint64_t ttl,
+    std::vector<Fsize>* temp) {
+  SortFileByOverlapping(kMinOverlappingBytes, icmp, files, next_level_files,
+                        clock, level, num_non_empty_levels, ttl, temp);
 }
 
 void SortFileByRoundRobin(const InternalKeyComparator& icmp,
@@ -4127,6 +4145,11 @@ void VersionStorageInfo::UpdateFilesByCompactionPri(
       case kRoundRobin:
         SortFileByRoundRobin(*internal_comparator_, &compact_cursor_,
                              level0_non_overlapping_, level, &temp);
+        break;
+      case kMinOverlappingBytes:
+        SortFileByOverlappingBytes(*internal_comparator_, files_[level],
+                                   files_[level + 1], ioptions.clock, level,
+                                   num_non_empty_levels_, options.ttl, &temp);
         break;
       default:
         assert(false);

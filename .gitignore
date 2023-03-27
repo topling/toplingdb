@@ -101,3 +101,5 @@ third-party/folly/
 *_dbg
 *_test
 
+generated-sources
+target

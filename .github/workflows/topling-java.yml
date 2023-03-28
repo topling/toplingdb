@@ -120,8 +120,8 @@ jobs:
           cd $GITHUB_WORKSPACE/java/jmh || exit
           ls -l $GITHUB_WORKSPACE && tail -15 pom.xml
           mvn deploy -e -f $GITHUB_WORKSPACE/java/jmh/pom.xml -s $GITHUB_WORKSPACE/settings.xml \
-          -Durl=https://maven.pkg.github.com/distributedStorage/toplingdb -DrepositoryId=github
-          # -Dregistry=https://maven.pkg.github.com/distributedStorage/toplingdb # <- failed with it
-          # -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/distributedStorage/toplingdb # TODO: try it later
+          -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/distributedStorage/toplingdb
+          -Dregistry=https://maven.pkg.github.com/distributedStorage/toplingdb # <- failed with it
+          #-Durl=https://maven.pkg.github.com/distributedStorage/toplingdb -DrepositoryId=github
         #env:
         #  GITHUB_TOKEN: ${{ github.token }}

@@ -1,3 +1,4 @@
+# TODO: How to cache make files / speed up build progress here?
 name: "topling java"
 
 on:
@@ -46,7 +47,7 @@ jobs:
           cache: maven
           server-id: github # Value of the distributionManagement/repository/id field of the pom.xml
           settings-path: ${{ github.workspace }} # location for the settings.xml file
-      #- name: Cache Make
+      #- name: Cache Maven # Replace by setup-java now
       #  uses: actions/cache@v3
       #  with:
       #    path: ~/.m2/repository
@@ -77,15 +78,15 @@ jobs:
         run: |
           cd java/target || exit
           cp -v rocksdbjni-7.10.0-linux64.jar rocksdbjni-7.10.0-SNAPSHOT-linux64.jar
+          mvn install:install-file -ntp -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar \
+          -DgroupId=org.rocksdb -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
+          # TODO: why deploy doesn't include install step here? if we only use deploy, will lack local jar
           if [ ${{ inputs.deploy_maven }} ]; then
             # TODO: what's the pom file for it? -DpomFile=/xx/pom.xml 
             mvn deploy:deploy-file -e -s $GITHUB_WORKSPACE/settings.xml \
             -Durl=https://maven.pkg.github.com/distributedStorage/toplingdb -DrepositoryId=github \
             -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar -DgroupId=org.rocksdb \
             -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
-          else
-            mvn install:install-file -ntp -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar \
-            -DgroupId=org.rocksdb -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
           fi
 
       # for compile SideGetBenchmarks
@@ -112,9 +113,7 @@ jobs:
                -p keyCount=1000 -p keySize=128 -p valueSize=32768 \
                -p sideConf=$GITHUB_WORKSPACE/sideplugin/rockside/sample-conf/db_bench_community.yaml SideGetBenchmarks
           # curl http://127.0.0.1:2011 # web server should visit in running time
-          
-      #- if: ${{ inputs.deploy_maven }} 
-      #  uses: s4u/maven-settings-action@v2.8.0 # seems "actions/setup-java" could include this
+
       - name: Publish JAR to GitHub Packages
         if: ${{ inputs.deploy_maven }}
         run: |

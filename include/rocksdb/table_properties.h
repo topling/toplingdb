@@ -187,6 +187,7 @@ struct TableProperties {
   // the size of index block.
   uint64_t index_size = 0;
   uint64_t tag_size = 0;
+  uint64_t gdic_size = 0; // global dictionary size
   // Total number of index partitions if kTwoLevelIndexSearch is used
   uint64_t index_partitions = 0;
   // Size of the top-level index if kTwoLevelIndexSearch is used

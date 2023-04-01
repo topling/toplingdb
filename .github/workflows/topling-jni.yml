@@ -85,7 +85,7 @@ jobs:
           if [ ${{ inputs.deploy_maven }} ]; then
             # TODO: what's the pom file for it? add with '-DpomFile=/xx/pom.xml'
             mvn deploy:deploy-file -e -s $GITHUB_WORKSPACE/settings.xml \
-            -Durl=https://maven.pkg.github.com/distributedStorage/toplingdb -DrepositoryId=github \
+            -Durl=https://maven.pkg.github.com/toplingdb/toplingdb -DrepositoryId=github \
             -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar -DgroupId=org.rocksdb \
             -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
           fi
@@ -120,6 +120,6 @@ jobs:
           cd $GITHUB_WORKSPACE/java/jmh || exit
           ls -l $GITHUB_WORKSPACE && tail -15 pom.xml
           mvn deploy -e -f $GITHUB_WORKSPACE/java/jmh/pom.xml -s $GITHUB_WORKSPACE/settings.xml \
-          -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/distributedStorage/toplingdb
+          -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/toplingdb/toplingdb
         #env:
         #  GITHUB_TOKEN: ${{ github.token }}

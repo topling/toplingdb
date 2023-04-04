@@ -37,7 +37,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          repository: ${{ REP_URL }}
+          repository: ${{ inputs.repository_url }}
           ref: ${{ inputs.repository_branch }}
           fetch-depth: 1
 

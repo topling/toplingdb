@@ -135,4 +135,13 @@
         </plugins>
     </build>
 
+  <!-- add github maven config for deploy(upload) packages -->
+  <!--distributionManagement>
+    <repository>
+      <id>github</id>
+      <name>GitHub Packages</name>
+      <url>https://maven.pkg.github.com/toplingdb/toplingdb</url>
+    </repository>
+  </distributionManagement-->
+
 </project>

@@ -19,7 +19,7 @@ on:
         required: false
         type: boolean
         description: publish to maven repo
-        default: false
+        default: true
 
 jobs:
   build:

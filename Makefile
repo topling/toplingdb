@@ -655,7 +655,7 @@ ifneq ($(MACHINE), arm64)
 # linking with jemalloc (as it won't be arm64-compatible) and remove some other options
 # set during platform detection
 DISABLE_JEMALLOC=1
-PLATFORM_CFLAGS := $(filter-out -march=native -DHAVE_SSE42 -DHAVE_AVX2, $(PLATFORM_CFLAGS))
+PLATFORM_CCFLAGS := $(filter-out -march=native -DHAVE_SSE42 -DHAVE_AVX2, $(PLATFORM_CCFLAGS))
 PLATFORM_CXXFLAGS := $(filter-out -march=native -DHAVE_SSE42 -DHAVE_AVX2, $(PLATFORM_CXXFLAGS))
 endif
 endif
@@ -665,7 +665,7 @@ ifeq (${WITH_BMI2},1)
   CPU_ARCH ?= -march=haswell
 endif
 ifdef CPU_ARCH
-  PLATFORM_CFLAGS   := ${CPU_ARCH} $(filter-out -march=native -DHAVE_AVX2, $(PLATFORM_CFLAGS))
+  PLATFORM_CCFLAGS  := ${CPU_ARCH} $(filter-out -march=native -DHAVE_AVX2, $(PLATFORM_CCFLAGS))
   PLATFORM_CXXFLAGS := ${CPU_ARCH} $(filter-out -march=native -DHAVE_AVX2, $(PLATFORM_CXXFLAGS))
 endif
 

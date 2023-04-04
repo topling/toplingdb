@@ -665,8 +665,8 @@ ifeq (${WITH_BMI2},1)
   CPU_ARCH ?= -march=haswell
 endif
 ifdef CPU_ARCH
-  PLATFORM_CFLAGS   := ${CPU_ARCH} $(filter-out -march=native, $(PLATFORM_CFLAGS))
-  PLATFORM_CXXFLAGS := ${CPU_ARCH} $(filter-out -march=native, $(PLATFORM_CXXFLAGS))
+  PLATFORM_CFLAGS   := ${CPU_ARCH} $(filter-out -march=native -DHAVE_AVX2, $(PLATFORM_CFLAGS))
+  PLATFORM_CXXFLAGS := ${CPU_ARCH} $(filter-out -march=native -DHAVE_AVX2, $(PLATFORM_CXXFLAGS))
 endif
 
 # ASAN doesn't work well with jemalloc. If we're compiling with ASAN, we should use regular malloc.

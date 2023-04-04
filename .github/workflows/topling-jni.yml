@@ -28,6 +28,7 @@ jobs:
     env:
       GCC_VER: "11.3" # TODO: better get from the 'gcc --version'
       GITHUB_TOKEN: ${{ github.token }}
+      REP_URL: ${{ inputs.repository_url }}
     permissions:
       contents: read
       packages: write
@@ -81,13 +82,13 @@ jobs:
           cp -v rocksdbjni-7.10.0-linux64.jar rocksdbjni-7.10.0-SNAPSHOT-linux64.jar
           mvn install:install-file -ntp -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar \
           -DgroupId=org.rocksdb -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
-          # TODO: why deploy doesn't include install step here? if we only use deploy, will lack local jar
+          # TODO: why 'deploy' doesn't include install step here? if we only use deploy, will lack local jar
           if [ ${{ inputs.deploy_maven }} ]; then
             # TODO: what's the pom file for it? add with '-DpomFile=/xx/pom.xml'
             mvn deploy:deploy-file -e -s $GITHUB_WORKSPACE/settings.xml \
-            -Durl=https://maven.pkg.github.com/toplingdb/toplingdb -DrepositoryId=github \
-            -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar -DgroupId=org.rocksdb \
-            -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
+                -Durl=https://maven.pkg.github.com/$REP_URL -DrepositoryId=github \
+                -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar -DgroupId=org.rocksdb \
+                -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
           fi
 
       # for compile jmh.jar to test the performance
@@ -120,6 +121,6 @@ jobs:
           cd $GITHUB_WORKSPACE/java/jmh || exit
           ls -l $GITHUB_WORKSPACE && tail -15 pom.xml
           mvn deploy -e -f $GITHUB_WORKSPACE/java/jmh/pom.xml -s $GITHUB_WORKSPACE/settings.xml \
-          -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/toplingdb/toplingdb
+                     -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/$REP_URL
         #env:
         #  GITHUB_TOKEN: ${{ github.token }}

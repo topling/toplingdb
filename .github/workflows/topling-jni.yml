@@ -83,7 +83,7 @@ jobs:
           mvn install:install-file -ntp -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar \
           -DgroupId=org.rocksdb -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
           # TODO: why 'deploy' doesn't include install step here? if we only use deploy, will lack local jar
-          if [ ${{ inputs.deploy_maven }} ]; then
+          if ${{ inputs.deploy_maven }}; then
             # TODO: what's the pom file for it? add with '-DpomFile=/xx/pom.xml'
             mvn deploy:deploy-file -e -s $GITHUB_WORKSPACE/settings.xml \
                 -Durl=https://maven.pkg.github.com/$REP_URL -DrepositoryId=github \

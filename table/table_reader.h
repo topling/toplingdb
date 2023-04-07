@@ -90,6 +90,8 @@ class TableReader {
   struct Anchor {
     Anchor(const Slice& _user_key, size_t _range_size)
         : user_key(_user_key.ToStringView()), range_size(_range_size) {}
+    Anchor(std::string&& _user_key, size_t _range_size)
+        : user_key(std::move(_user_key)), range_size(_range_size) {}
     std::string user_key;
     size_t range_size;
   };

@@ -2411,11 +2411,13 @@ install-headers: gen-pc
 	done
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
-install-static: install-headers $(LIBRARY)
+#install-static: install-headers $(LIBRARY)
+install-static: $(LIBRARY)
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(LIBRARY) $(INSTALL_LIBDIR)
 
-install-shared: install-headers $(SHARED4) dcompact_worker
+#install-shared: install-headers $(SHARED4) dcompact_worker
+install-shared: $(SHARED4) dcompact_worker
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
@@ -2426,7 +2428,8 @@ install-shared: install-headers $(SHARED4) dcompact_worker
 	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
 
 # install static by default + install shared if it exists
-install: install-static
+#install: install-static
+install: install-shared
 	[ -e $(SHARED4) ] && $(MAKE) install-shared || :
 
 # Generate the pkg-config file

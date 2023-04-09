@@ -118,7 +118,8 @@ CompactionIterator::CompactionIterator(
 #ifndef NDEBUG
   // findEarliestVisibleSnapshot assumes this ordering.
   for (size_t i = 1; i < snapshots_->size(); ++i) {
-    assert(snapshots_->at(i - 1) < snapshots_->at(i));
+    ROCKSDB_VERIFY_F(snapshots_->at(i - 1) < snapshots_->at(i),
+        "[%zd]: %zd %zd", i, snapshots_->at(i - 1), snapshots_->at(i));
   }
   assert(timestamp_size_ == 0 || !full_history_ts_low_ ||
          timestamp_size_ == full_history_ts_low_->size());

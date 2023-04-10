@@ -700,8 +700,6 @@ Status CompactionJob::RunLocal() {
     state.RemoveLastEmptyOutput();
   }
 
-  RecordTimeToHistogram(stats_, COMPACTION_TIME,
-                        compaction_stats_.stats.micros);
   for (size_t i = 0; i < compact_->sub_compact_states.size(); i++) {
     auto& sub = compact_->sub_compact_states[i];
     for (size_t j = 0; j < sub.outputs.size(); ++j) {

@@ -421,6 +421,30 @@ else
   $(warning NotFound sideplugin/topling-sst, this is ok, only Topling Open SST(s) are disabled)
 endif
 
+ifeq (,$(wildcard sideplugin/topling-zip_table_reader/src/table))
+  dummy := $(shell set -e -x; \
+    cd sideplugin; \
+    git clone https://github.com/topling/topling-zip_table_reader; \
+    cd topling-zip_table_reader; \
+  )
+else
+  ifneq (${UPDATE_REPO},0)
+   ifeq (${MAKE_RESTARTS},)
+    dummy := $(shell cd sideplugin/topling-zip_table_reader && git pull)
+   endif
+  endif
+endif
+ifneq (,$(wildcard sideplugin/topling-zip_table_reader/src/table))
+  # now we have topling-zip_table_reader
+  CXXFLAGS   += -DHAS_TOPLING_SST -Isideplugin/topling-zip_table_reader/src
+  TOPLING_ZIP_TABLE_READER_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_zip_table_reader.cc
+  EXTRA_LIB_SOURCES += $(wildcard sideplugin/topling-zip_table_reader/src/table/*.cc) \
+                       sideplugin/topling-zip_table_reader/${TOPLING_ZIP_TABLE_READER_GIT_VER_SRC}
+else
+  $(warning NotFound sideplugin/topling-zip_table_reader, this is ok, only Topling Open SST(s) are disabled)
+endif
+
+
 ifeq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
   dummy := $(shell set -e -x; \
     cd sideplugin; \
@@ -3037,6 +3061,13 @@ sideplugin/topling-sst/${TOPLING_SST_GIT_VER_SRC}: \
   $(wildcard sideplugin/topling-sst/src/table/*.cc) \
   sideplugin/topling-sst/Makefile
 	+make -C sideplugin/topling-sst ${TOPLING_SST_GIT_VER_SRC}
+endif
+ifneq (,$(wildcard sideplugin/topling-zip_table_reader/src/table))
+sideplugin/topling-zip_table_reader/${TOPLING_ZIP_TABLE_READER_GIT_VER_SRC}: \
+  $(wildcard sideplugin/topling-zip_table_reader/src/table/*.h) \
+  $(wildcard sideplugin/topling-zip_table_reader/src/table/*.cc) \
+  sideplugin/topling-zip_table_reader/Makefile
+	+make -C sideplugin/topling-zip_table_reader ${TOPLING_ZIP_TABLE_READER_GIT_VER_SRC}
 endif
 ifneq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
 sideplugin/topling-dcompact/${TOPLING_DCOMPACT_GIT_VER_SRC}: \

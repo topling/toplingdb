@@ -26,15 +26,16 @@ With SidePlugin mechanics, plugins/components can be physically seperated from c
 ### Repository dir structure
 ```bash
 toplingdb
-  \__ sideplugin
-        \__ rockside           (submodule , sideplugin core and framework)
-        \__ cspp-memtab        (auto clone, sideplugin component)
-        \__ cspp-wbwi          (auto clone, sideplugin component)
-        \__ topling-sst        (auto clone, sideplugin component)
-        \__ topling-dcompact   (auto clone, sideplugin component)
-             \_ tools/dcompact (dcompact-worker binary app)
-        \__ topling-rocks      (auto clone, sideplugin component)
-        \__ topling-zip        (auto clone, zip and core lib)
+ \__ sideplugin
+      \__ rockside                 (submodule , sideplugin core and framework)
+      \__ topling-zip              (auto clone, zip and core lib)
+      \__ cspp-memtab              (auto clone, sideplugin component)
+      \__ cspp-wbwi                (auto clone, sideplugin component)
+      \__ topling-sst              (auto clone, sideplugin component)
+      \__ topling-rocks            (auto clone, sideplugin component)
+      \__ topling-zip_table_reader (auto clone, sideplugin component)
+      \__ topling-dcompact         (auto clone, sideplugin component)
+           \_ tools/dcompact       (dcompact-worker binary app)
 ```
 
  Repository    | Permission | Description (and components)

@@ -46,6 +46,7 @@ toplingdb
 [topling-sst](https://github.com/topling/topling-sst) | public | 1. [SingleFastTable](https://github.com/topling/rockside/wiki/SingleFastTable)(designed for L0 and L1)<br/> 2. VecAutoSortTable(designed for MyTopling bulk_load).<br/> 3. Deprecated [ToplingFastTable](https://github.com/topling/rockside/wiki/ToplingFastTable), CSPPAutoSortTable
 [topling-dcompact](https://github.com/topling/topling-dcompact) | public | Distributed Compaction with general dcompact_worker application, offload compactions to elastic computing clusters, much more powerful than RocksDB's Remote Compaction
 [topling-rocks](https://github.com/topling/topling-rocks) | **private** | [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable), an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which uses topling dedicated searchable in-memory data compression algorithms
+[topling-zip_table_reader](https://github.com/topling/topling-zip_table_reader) | public | For read Topling**Zip**Table by community users, builder of Topling**Zip**Table is in [topling-rocks](https://github.com/topling/topling-rocks)
 
 To simplify the compiling, repo**s** are auto cloned in ToplingDB's Makefile, community users will auto clone public repo successfully but fail to auto clone **private** repo, thus ToplingDB is built without **private** components, this is so called **community** version.
 

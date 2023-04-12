@@ -760,6 +760,9 @@ public class ReadOptions extends RocksObject {
     return this;
   }
 
+  public void startPin() { startPin(nativeHandle_); }
+  public void finishPin() { finishPin(nativeHandle_); }
+
   // instance variables
   // NOTE: If you add new member variables, please update the copy constructor above!
   //
@@ -828,4 +831,6 @@ public class ReadOptions extends RocksObject {
   private native void setIoTimeout(final long handle, final long ioTimeout);
   private native long valueSizeSoftLimit(final long handle);
   private native void setValueSizeSoftLimit(final long handle, final long softLimit);
+  private native void startPin(final long handle);
+  private native void finishPin(final long handle);
 }

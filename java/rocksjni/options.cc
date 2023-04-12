@@ -8510,6 +8510,26 @@ void Java_org_rocksdb_ReadOptions_setValueSizeSoftLimit(
   opt->value_size_soft_limit = static_cast<uint64_t>(jvalue_size_soft_limit);
 }
 
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    startPin
+ * Signature: (J)V
+ */
+void Java_org_rocksdb_ReadOptions_startPin(JNIEnv*, jobject, jlong jhandle) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  opt->StartPin();
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    finishPin
+ * Signature: (J)V
+ */
+void Java_org_rocksdb_ReadOptions_finishPin(JNIEnv*, jobject, jlong jhandle) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  opt->FinishPin();
+}
+
 /////////////////////////////////////////////////////////////////////
 // ROCKSDB_NAMESPACE::ComparatorOptions
 

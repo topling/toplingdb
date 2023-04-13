@@ -81,12 +81,13 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:1");
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:2");
   auto reinit_internal_iter = [&]() {
-    std::string curr_key;
+    std::string curr_key, curr_val;
     bool is_valid = this->Valid();
     SequenceNumber old_iter_seq = db_iter_->get_sequence();
     SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
     if (is_valid && keep_iter_pos) {
       curr_key = this->key().ToString();
+      curr_val = this->value().ToString();
     }
     Snapshot* pin_snap = nullptr;
     if (size_t(snap) == KEEP_SNAPSHOT) {
@@ -125,6 +126,8 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
         (long long)old_iter_seq, (long long)latest_seq, snap, pin_snap);
       ROCKSDB_VERIFY_F(key() == curr_key, "%s %s",
         key().ToString(true).c_str(), Slice(curr_key).ToString(true).c_str());
+      ROCKSDB_VERIFY_F(value() == curr_val, "%s %s",
+        value().ToString(true).c_str(), Slice(curr_val).ToString(true).c_str());
     }
     if (pin_snap) {
       db_impl_->ReleaseSnapshot(pin_snap);

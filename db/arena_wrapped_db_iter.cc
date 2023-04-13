@@ -85,7 +85,7 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
     bool is_valid = this->Valid();
     SequenceNumber old_iter_seq = db_iter_->get_sequence();
     SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
-    if (is_valid && keep_iter_pos) {
+    if (is_valid && keep_iter_pos && old_iter_seq == latest_seq) {
       curr_key = this->key().ToString();
       curr_val = this->value().ToString();
     }
@@ -119,15 +119,16 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
     SetIterUnderDBIter(internal_iter);
     if (is_valid && keep_iter_pos) {
       this->Seek(curr_key);
-      ROCKSDB_VERIFY_F(this->Valid(),
-        "curr_key = %s, "
-        "old_iter_seq = %lld, latest_seq = %lld, snap = %p, pin_snap = %p",
-        Slice(curr_key).hex().c_str(),
-        (long long)old_iter_seq, (long long)latest_seq, snap, pin_snap);
-      ROCKSDB_VERIFY_F(key() == curr_key, "%s %s",
-        key().ToString(true).c_str(), Slice(curr_key).ToString(true).c_str());
-      ROCKSDB_VERIFY_F(value() == curr_val, "%s %s",
-        value().ToString(true).c_str(), Slice(curr_val).ToString(true).c_str());
+      if (old_iter_seq == latest_seq) {
+        ROCKSDB_VERIFY_F(this->Valid(),
+          "curr_key = %s, seq = %lld, snap = %p, pin_snap = %p",
+          Slice(curr_key).hex().c_str(),
+          (long long)latest_seq, snap, pin_snap);
+        ROCKSDB_VERIFY_F(key() == curr_key, "%s %s",
+          key().hex().c_str(), Slice(curr_key).hex().c_str());
+        ROCKSDB_VERIFY_F(value() == curr_val, "%s %s",
+          value().hex().c_str(), Slice(curr_val).hex().c_str());
+      }
     }
     if (pin_snap) {
       db_impl_->ReleaseSnapshot(pin_snap);

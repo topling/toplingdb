@@ -85,7 +85,7 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
     bool is_valid = this->Valid();
     SequenceNumber old_iter_seq = db_iter_->get_sequence();
     SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
-    if (is_valid && keep_iter_pos && old_iter_seq == latest_seq) {
+    if (is_valid && keep_iter_pos) {
       curr_key = this->key().ToString();
       curr_val = this->value().ToString();
     }

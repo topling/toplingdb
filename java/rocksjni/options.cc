@@ -8512,6 +8512,48 @@ void Java_org_rocksdb_ReadOptions_setValueSizeSoftLimit(
 
 /*
  * Class:     org_rocksdb_ReadOptions
+ * Method:    asyncIO
+ * Signature: (J)Z
+ */
+jboolean Java_org_rocksdb_ReadOptions_asyncIO(JNIEnv *, jobject, jlong jhandle) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  return opt->async_io;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    setAsyncIO
+ * Signature: (JZ)V
+ */
+void Java_org_rocksdb_ReadOptions_setAsyncIO(
+    JNIEnv *, jobject, jlong jhandle, jboolean async) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  opt->async_io = async;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    asyncQueueDepth
+ * Signature: (J)I
+ */
+jint Java_org_rocksdb_ReadOptions_asyncQueueDepth(JNIEnv *, jobject, jlong jhandle) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  return opt->async_queue_depth;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    setAsyncQueueDepth
+ * Signature: (JI)V
+ */
+void Java_org_rocksdb_ReadOptions_setAsyncQueueDepth(
+    JNIEnv *, jobject, jlong jhandle, jint queue_depth) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  opt->async_queue_depth = queue_depth;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
  * Method:    startPin
  * Signature: (J)V
  */

@@ -6,7 +6,7 @@ on:
     inputs:
       repository_url:
         required: true
-        default: 'topling/toplingdb'
+        default: 'distributedStorage/toplingdb'
       repository_branch:
         required: false
         default: 'sideplugin-7.10.0-2022-12-21-bec42648'

@@ -86,6 +86,7 @@ jobs:
           if ${{ inputs.deploy_maven }}; then
             # TODO: what's the pom file for it? add with '-DpomFile=/xx/pom.xml'
             mvn deploy:deploy-file -e -s $GITHUB_WORKSPACE/settings.xml \
+                -DpomFile=$GITHUB_WORKSPACE/java/pom.xml.template \
                 -Durl=https://maven.pkg.github.com/$REP_URL -DrepositoryId=github \
                 -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar -DgroupId=org.rocksdb \
                 -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar

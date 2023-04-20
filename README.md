@@ -1,6 +1,8 @@
 ## ToplingDB: A Persistent Key-Value Store for External Storage
 ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). It is built with [RocksDB](https://github.com/facebook/rocksdb). See [ToplingDB Branch Name Convention](https://github.com/topling/toplingdb/wiki/ToplingDB-Branch-Name-Convention).
 
+### ToplingDB [documents](https://github.com/topling/rockside/wiki)
+
 ToplingDB has much more key features than RocksDB:
 1. [SidePlugin](https://github.com/topling/rockside/wiki) enables users to write a json(or yaml) to define DB configs
 1. [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)

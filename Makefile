@@ -330,8 +330,24 @@ CXXFLAGS += \
 LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
            -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
 
-# default is 1, can be override
-WITH_TOPLING_ROCKS ?= 1
+ifndef WITH_TOPLING_ROCKS
+  # auto check
+  ifeq (,$(wildcard sideplugin/topling-rocks))
+    # topling specific: just for people who has permission to topling-rocks
+    dummy := $(shell set -e -x; \
+      cd sideplugin; \
+      git clone git@github.com:rockeet/topling-rocks; \
+      cd topling-rocks; \
+      git submodule update --init --recursive \
+    )
+  endif
+  ifeq (,$(wildcard sideplugin/topling-rocks))
+    WITH_TOPLING_ROCKS := 0
+  else
+    WITH_TOPLING_ROCKS := 1
+  endif
+endif
+
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifeq (,$(wildcard sideplugin/topling-rocks))
   # topling specific: just for people who has permission to topling-rocks

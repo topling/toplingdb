@@ -364,6 +364,9 @@ else
    endif
   endif
 endif
+ifeq (,$(wildcard sideplugin/topling-rocks/src/table/top_zip_table_builder.cc))
+  $(error WITH_TOPLING_ROCKS=1 but repo sideplugin/topling-rocks is broken)
+endif
 endif
 
 ifeq (,$(wildcard sideplugin/cspp-memtable))

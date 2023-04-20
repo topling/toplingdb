@@ -8512,6 +8512,27 @@ void Java_org_rocksdb_ReadOptions_setValueSizeSoftLimit(
 
 /*
  * Class:     org_rocksdb_ReadOptions
+ * Method:    justCheckKeyExists
+ * Signature: (J)Z
+ */
+jboolean Java_org_rocksdb_ReadOptions_justCheckKeyExists(JNIEnv *, jobject, jlong jhandle) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  return opt->just_check_key_exists;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    setJustCheckKeyExists
+ * Signature: (JZ)V
+ */
+void Java_org_rocksdb_ReadOptions_setJustCheckKeyExists(
+    JNIEnv *, jobject, jlong jhandle, jboolean val) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  opt->just_check_key_exists = val;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
  * Method:    asyncIO
  * Signature: (J)Z
  */

@@ -2456,6 +2456,7 @@ install-headers: gen-pc
 	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.inl      $(DESTDIR)/$(PREFIX)/include/terark/fsa
 	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/ppi/*.hpp  $(DESTDIR)/$(PREFIX)/include/terark/fsa/ppi
 	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/zbs/*.hpp      $(DESTDIR)/$(PREFIX)/include/terark/zbs
+	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)/$(PREFIX)/include
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
 install-static: install-headers $(LIBRARY)

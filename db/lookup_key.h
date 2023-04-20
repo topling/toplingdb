@@ -28,11 +28,13 @@ class LookupKey {
 
   const char* memtable_key_data() const { return kstart_ - kstart_[-4]; }
 
+#if 0 // not used now
   // Return a key suitable for lookup in a MemTable.
   Slice memtable_key() const {
     size_t klen_len = kstart_[-4];
     return Slice(kstart_ - klen_len, klen_len + klength_);
   }
+#endif
 
   // Return an internal key (suitable for passing to an internal iterator)
   Slice internal_key() const { return Slice(kstart_, klength_); }

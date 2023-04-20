@@ -292,7 +292,7 @@ void HashSkipListRep::Get(const ReadOptions&,
   if (bucket != nullptr) {
     EncodedKeyValuePair kv;
     Bucket::Iterator iter(bucket);
-    for (iter.Seek(k.memtable_key().data());
+    for (iter.Seek(k.memtable_key_data());
          iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
          iter.Next()) {
     }

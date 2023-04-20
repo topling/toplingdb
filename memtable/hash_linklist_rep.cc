@@ -750,7 +750,7 @@ void HashLinkListRep::Get(const ReadOptions&,
     if (skip_list_header != nullptr) {
       // Is a skip list
       MemtableSkipList::Iterator iter(&skip_list_header->skip_list);
-      for (iter.Seek(k.memtable_key().data());
+      for (iter.Seek(k.memtable_key_data());
            iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
            iter.Next()) {
       }

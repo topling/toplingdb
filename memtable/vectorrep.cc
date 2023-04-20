@@ -266,7 +266,7 @@ void VectorRep::Get(const ReadOptions&,
   VectorRep::Iterator iter(vector_rep, immutable_ ? bucket_ : bucket, compare_);
   rwlock_.ReadUnlock();
 
-  for (iter.Seek(k.user_key(), k.memtable_key().data());
+  for (iter.Seek(k.user_key(), k.memtable_key_data());
        iter.Valid() && callback_func(callback_args, &iter); iter.Next()) {
   }
 }

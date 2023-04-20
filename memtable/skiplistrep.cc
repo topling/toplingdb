@@ -87,7 +87,7 @@ class SkipListRep : public MemTableRep {
     SkipListRep::Iterator iter(&skip_list_);
     EncodedKeyValuePair kv;
     Slice dummy_slice;
-    for (iter.Seek(dummy_slice, k.memtable_key().data());
+    for (iter.Seek(dummy_slice, k.memtable_key_data());
          iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
          iter.Next()) {
     }

@@ -2433,15 +2433,37 @@ install-headers: gen-pc
 		install -d $(DESTDIR)/$(PREFIX)/include/rocksdb/`dirname $$header`; \
 		install -C -m 644 $$header $(DESTDIR)/$(PREFIX)/include/rocksdb/$$header; \
 	done
+	install -d                                  $(DESTDIR)/$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/json.h     $(DESTDIR)/$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/json_fwd.h $(DESTDIR)/$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/builtin_table_factory.h $(DESTDIR)/$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_repo.h      $(DESTDIR)/$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_factory.h   $(DESTDIR)/$(PREFIX)/include/topling
+	install -d $(DESTDIR)/$(PREFIX)/include/terark
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/io
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/succinct
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/thread
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/util
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/fsa
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/fsa/ppi
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/zbs
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/*.hpp          $(DESTDIR)/$(PREFIX)/include/terark
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/io/*.hpp       $(DESTDIR)/$(PREFIX)/include/terark/io
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/succinct/*.hpp $(DESTDIR)/$(PREFIX)/include/terark/succinct
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/thread/*.hpp   $(DESTDIR)/$(PREFIX)/include/terark/thread
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/util/*.hpp     $(DESTDIR)/$(PREFIX)/include/terark/util
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.hpp      $(DESTDIR)/$(PREFIX)/include/terark/fsa
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.inl      $(DESTDIR)/$(PREFIX)/include/terark/fsa
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/ppi/*.hpp  $(DESTDIR)/$(PREFIX)/include/terark/fsa/ppi
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/zbs/*.hpp      $(DESTDIR)/$(PREFIX)/include/terark/zbs
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
-#install-static: install-headers $(LIBRARY)
-install-static: $(LIBRARY)
+install-static: install-headers $(LIBRARY)
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(LIBRARY) $(INSTALL_LIBDIR)
+	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_static/* $(INSTALL_LIBDIR)
 
-#install-shared: install-headers $(SHARED4) dcompact_worker
-install-shared: $(SHARED4) dcompact_worker
+install-shared: install-headers $(SHARED4)
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
@@ -2452,8 +2474,7 @@ install-shared: $(SHARED4) dcompact_worker
 	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
 
 # install static by default + install shared if it exists
-#install: install-static
-install: install-shared
+install: install-static
 	[ -e $(SHARED4) ] && $(MAKE) install-shared || :
 
 # Generate the pkg-config file
@@ -2467,7 +2488,7 @@ gen-pc:
 	-echo 'Description: An embeddable persistent key-value store for fast storage' >> rocksdb.pc
 	-echo Version: $(shell ./build_tools/version.sh full) >> rocksdb.pc
 	-echo 'Libs: -L$${libdir} $(EXEC_LDFLAGS) -lrocksdb' >> rocksdb.pc
-	-echo 'Libs.private: $(PLATFORM_LDFLAGS)' >> rocksdb.pc
+	-echo 'Libs.private: -lterark-zbs-r -lterark-fsa-r -lterark-core-r $(PLATFORM_LDFLAGS)' >> rocksdb.pc
 	-echo 'Cflags: -I$${includedir} $(PLATFORM_CXXFLAGS)' >> rocksdb.pc
 	-echo 'Requires: $(subst ",,$(ROCKSDB_PLUGIN_PKGCONFIG_REQUIRES))' >> rocksdb.pc
 

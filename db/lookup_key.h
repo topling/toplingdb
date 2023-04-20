@@ -26,45 +26,47 @@ class LookupKey {
 
   ~LookupKey();
 
-  const char* memtable_key_data() const { return start_; }
+  const char* memtable_key_data() const { return kstart_ - kstart_[-4]; }
 
   // Return a key suitable for lookup in a MemTable.
   Slice memtable_key() const {
-    return Slice(start_, static_cast<size_t>(end_ - start_));
+    size_t klen_len = kstart_[-4];
+    return Slice(kstart_ - klen_len, klen_len + klength_);
   }
 
   // Return an internal key (suitable for passing to an internal iterator)
-  Slice internal_key() const {
-    return Slice(kstart_, static_cast<size_t>(end_ - kstart_));
-  }
+  Slice internal_key() const { return Slice(kstart_, klength_); }
 
   // Return the user key.
   // If user-defined timestamp is enabled, then timestamp is included in the
   // result.
-  Slice user_key() const {
-    return Slice(kstart_, static_cast<size_t>(end_ - kstart_ - 8));
-  }
+  Slice user_key() const { return Slice(kstart_, klength_ - 8); }
 
  private:
   // We construct a char array of the form:
-  //    klength  varint32               <-- start_
-  //    userkey  char[klength]          <-- kstart_
-  //    tag      uint64
-  //                                    <-- end_
+  // buf = kstart_ - 4
+  // buf[0] is offset of varint32 encoded klength
+  // max klength is 3 bytes varint32, which is 2**(7*3) = 2M
+  //     klen_len                     <-- buf[0], klen_offset = 4 - klen_len
+  //     unused                       <-- buf[1 ~ klen_offset),
+  //     klength  varint32            <-- buf[klen_offset ~ 4)
+  //     userkey  char[user key len]  <-- buf + 4 = kstart_, aligned to 8
+  //     tag      uint64
   // The array is a suitable MemTable key.
   // The suffix starting with "userkey" can be used as an InternalKey.
-  const char* start_;
   const char* kstart_;
-  const char* end_;
-  char space_[200];  // Avoid allocation for short keys
+  uint32_t    klength_; // internal key len
+  char space_[116];  // Avoid allocation for short keys
 
   // No copying allowed
   LookupKey(const LookupKey&);
   void operator=(const LookupKey&);
 };
+static_assert(sizeof(LookupKey) == 128);
 
 inline LookupKey::~LookupKey() {
-  if (start_ != space_) delete[] start_;
+  assert(size_t(kstart_) % 8 == 0); // must be aligned to 8
+  if (kstart_ != space_ + 4) delete[] (kstart_ - 8);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

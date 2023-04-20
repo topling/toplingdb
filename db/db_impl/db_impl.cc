@@ -141,6 +141,11 @@ struct ToplingMGetCtx {
   ToplingMGetCtx() {}
   ~ToplingMGetCtx() { if (lkey_initialized) lkey.~LookupKey(); }
 };
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+static_assert(sizeof(ToplingMGetCtx) == 192 + 8);
+#else
+static_assert(sizeof(ToplingMGetCtx) == 192);
+#endif
 
 CompressionType GetCompressionFlush(
     const ImmutableCFOptions& ioptions,

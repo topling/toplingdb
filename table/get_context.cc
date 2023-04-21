@@ -326,7 +326,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
       case kTypeBlobIndex:
       case kTypeWideColumnEntity:
         assert(state_ == kNotFound || state_ == kMerge);
-        if (type == kTypeBlobIndex) {
+        if (UNLIKELY(type == kTypeBlobIndex)) {
           if (is_blob_index_ == nullptr) {
             // Blob value not supported. Stop.
             state_ = kUnexpectedBlobIndex;
@@ -334,7 +334,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           }
         }
 
-        if (is_blob_index_ != nullptr) {
+        if (UNLIKELY(is_blob_index_ != nullptr)) {
           *is_blob_index_ = (type == kTypeBlobIndex);
         }
 

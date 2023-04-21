@@ -39,6 +39,14 @@ void appendToReplayLog(std::string* replay_log, ValueType type, Slice value) {
 #endif  // ROCKSDB_LITE
 }
 
+// replay_log is very likely be nullptr, let it quick check as inline func
+__always_inline
+void appendToReplayLogInline(std::string* replay_log, ValueType type, Slice value) {
+  if (UNLIKELY(replay_log != nullptr))
+    appendToReplayLog(replay_log, type, value);
+}
+#define appendToReplayLog appendToReplayLogInline
+
 }  // namespace
 
 ROCKSDB_ENUM_CLASS(GetContextSampleRead, unsigned char,

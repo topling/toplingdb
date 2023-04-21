@@ -2476,6 +2476,7 @@ std::vector<Status> DBImpl::MultiGet(
     merge_context.Clear();
     Status& s = stat_list[keys_read];
     std::string* value = &(*values)[keys_read];
+    value->clear();
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::string* timestamp = timestamps ? &(*timestamps)[keys_read] : nullptr;
 #else
@@ -2511,7 +2512,7 @@ std::vector<Status> DBImpl::MultiGet(
       }
     }
     if (!done) {
-      PinnableSlice pinnable_val;
+      PinnableSlice pinnable_val(value);
       PERF_TIMER_GUARD(get_from_output_files_time);
       PinnedIteratorsManager pinned_iters_mgr;
       super_version->current->Get(read_options, lkey, &pinnable_val,
@@ -2520,7 +2521,7 @@ std::vector<Status> DBImpl::MultiGet(
                                   &pinned_iters_mgr, /*value_found=*/nullptr,
                                   /*key_exists=*/nullptr,
                                   /*seq=*/nullptr, read_callback);
-      value->assign(pinnable_val.data(), pinnable_val.size());
+      pinnable_val.SyncToString(value);
       RecordTick(stats_, MEMTABLE_MISS);
     }
 
@@ -3596,14 +3597,15 @@ bool DBImpl::KeyMayExist(const ReadOptions& read_options,
   }
   ReadOptions roptions = read_options;
   roptions.read_tier = kBlockCacheTier;  // read from block cache only
-  PinnableSlice pinnable_val;
+  value->clear();
+  PinnableSlice pinnable_val(value);
   GetImplOptions get_impl_options;
   get_impl_options.column_family = column_family;
   get_impl_options.value = &pinnable_val;
   get_impl_options.value_found = value_found;
   get_impl_options.timestamp = timestamp;
   auto s = GetImpl(roptions, key, get_impl_options);
-  value->assign(pinnable_val.data(), pinnable_val.size());
+  pinnable_val.SyncToString(value);
 
   // If block_cache is enabled and the index block of the table didn't
   // not present in block_cache, the return value will be Status::Incomplete.

@@ -192,6 +192,17 @@ class PinnableSlice : public Slice, public Cleanable {
     assert(pinned_);
   }
 
+  inline void SyncToString(std::string* s) const {
+    assert(s == buf_);
+    if (pinned_) {
+      s->assign(data_, size_);
+    } else {
+      assert(size_ == s->size());
+      assert(data_ == s->data() || size_ == 0);
+    }
+  }
+  inline void SyncToString() const { SyncToString(buf_); }
+
   inline void PinSelf(const Slice& slice) {
     assert(!pinned_);
     buf_->assign(slice.data(), slice.size());

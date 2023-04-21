@@ -182,8 +182,7 @@ LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
   size_t ts_sz = (nullptr == ts) ? 0 : ts->size();
   klength_ = usize + ts_sz + 8;
   char buf[8];
-  auto end = EncodeVarint32(buf, klength_);
-  auto klen_len = end - buf;
+  auto klen_len = EncodeVarint32(buf, klength_) - buf;
   klen_len_ = char(klen_len);
   char* dst;
   if (LIKELY(klength_ <= sizeof(space_) - 4)) {

@@ -13,10 +13,12 @@
 
 #include "rocksdb/slice.h"
 #include "rocksdb/types.h"
+#include "port/likely.h"
 
 namespace ROCKSDB_NAMESPACE {
 
 // A helper class useful for DBImpl::Get()
+#pragma pack(push, 1)
 class LookupKey {
  public:
   // Initialize *this for looking up user_key at a snapshot with
@@ -26,49 +28,83 @@ class LookupKey {
 
   ~LookupKey();
 
-  const char* memtable_key_data() const { return kstart_ - kstart_[-4]; }
+  const char* memtable_key_data() const {
+    if (LIKELY(klength_ <= sizeof(space_) - 4))
+      return space_ + 4 - klen_len_;
+    else
+      return longstart_ - klen_len_;
+  }
 
 #if 0 // not used now
   // Return a key suitable for lookup in a MemTable.
   Slice memtable_key() const {
-    size_t klen_len = kstart_[-4];
-    return Slice(kstart_ - klen_len, klen_len + klength_);
+    if (LIKELY(klength_ <= sizeof(space_) - 4))
+      return Slice(space_ + 4 - klen_len_, klen_len_ + klength_);
+    else
+      return Slice(longstart_ - klen_len_, klen_len_ + klength_);
   }
 #endif
 
   // Return an internal key (suitable for passing to an internal iterator)
-  Slice internal_key() const { return Slice(kstart_, klength_); }
+  Slice internal_key() const {
+    if (LIKELY(klength_ <= sizeof(space_) - 4))
+      return Slice(space_ + 4, klength_);
+    else
+      return Slice(longstart_, klength_);
+  }
 
   // Return the user key.
   // If user-defined timestamp is enabled, then timestamp is included in the
   // result.
-  Slice user_key() const { return Slice(kstart_, klength_ - 8); }
+  Slice user_key() const {
+    if (LIKELY(klength_ <= sizeof(space_) - 4))
+      return Slice(space_ + 4, klength_ - 8);
+    else
+      return Slice(longstart_, klength_ - 8);
+  }
 
  private:
   // We construct a char array of the form:
-  // buf = kstart_ - 4
-  // buf[0] is offset of varint32 encoded klength
-  // max klength is 3 bytes varint32, which is 2**(7*3) = 2M
-  //     klen_len                     <-- buf[0], klen_offset = 4 - klen_len
-  //     unused                       <-- buf[1 ~ klen_offset),
-  //     klength  varint32            <-- buf[klen_offset ~ 4)
-  //     userkey  char[user key len]  <-- buf + 4 = kstart_, aligned to 8
+  // short keys: klength_ <= sizeof(space_) - 4
+  //     klen_len               <-- space_[0], klen_offset = 4 - klen_len
+  //     unused                 <-- space_[1 ~ klen_offset),
+  //     klength  varint32      <-- space_[klen_offset ~ 4)
+  //     userkey  char          <-- space_[4 ~ 4 + ukey_len), aligned to 8
   //     tag      uint64
+  // long keys: klength_ > sizeof(space_) - 4
+  //     klen_len_              <-- space_[0]
+  //     unused                 <-- space_[1~4)
+  //     longstart_             <-- ptr to key data, klen_offset = 8 - klen_len
+  //        unused              <-- longstart_[-8 ~ -8 + klen_offset)
+  //        klength  varint32   <-- longstart_[-klen_len, 0)
+  //        userkey  char       <-- longstart_[0 ~ ukey_len), aligned to 8
+  //        tag      uint64
+  //
   // The array is a suitable MemTable key.
   // The suffix starting with "userkey" can be used as an InternalKey.
-  const char* kstart_;
-  uint32_t    klength_; // internal key len
-  char space_[116];  // Avoid allocation for short keys
+  uint32_t  klength_; // internal key len
+  union {
+    char space_[124]; // Avoid allocation for short keys
+    struct {
+      char klen_len_;
+      char klen_data_[3];     // for short keys
+      const char* longstart_; // for long  keys
+    };
+  };
 
   // No copying allowed
   LookupKey(const LookupKey&);
   void operator=(const LookupKey&);
 };
+#pragma pack(pop)
+
 static_assert(sizeof(LookupKey) == 128);
 
 inline LookupKey::~LookupKey() {
-  assert(size_t(kstart_) % 8 == 0); // must be aligned to 8
-  if (kstart_ != space_ + 4) delete[] (kstart_ - 8);
+  if (UNLIKELY(klength_ > sizeof(space_) - 4)) {
+    assert(size_t(longstart_) % 8 == 0); // must be aligned to 8
+    delete[] (longstart_ - 8);
+  }
 }
 
 }  // namespace ROCKSDB_NAMESPACE

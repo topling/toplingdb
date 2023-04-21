@@ -177,27 +177,24 @@ int InternalKeyComparator::Compare(const ParsedInternalKey& a,
 
 LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
                      const Slice* ts) {
+  static_assert(offsetof(LookupKey, longstart_) == 8);
   size_t usize = _user_key.size();
   size_t ts_sz = (nullptr == ts) ? 0 : ts->size();
-  size_t needed = usize + ts_sz + 12;  // precise space
-  ROCKSDB_VERIFY_LT(needed, 1u<<21);   // must less than 2MB
-  char* dst;
-  if (needed <= sizeof(space_)) {
-    dst = space_;
-  } else {
-    dst = new char[4 + needed];
-    dst += 4; // don't use first 4 bytes
-  }
-  kstart_ = dst + 4;
   klength_ = usize + ts_sz + 8;
   char buf[8];
   auto end = EncodeVarint32(buf, klength_);
   auto klen_len = end - buf;
-  auto klen_offset = 4 - klen_len;
-  dst[0] = char(klen_len);
-  ROCKSDB_ASSUME(klen_len >= 1 && klen_len <= 3);
-  memcpy(dst + klen_offset, buf, klen_len);
-  dst += 4;
+  klen_len_ = char(klen_len);
+  char* dst;
+  if (LIKELY(klength_ <= sizeof(space_) - 4)) {
+    dst = space_ + 4 - klen_len;
+  } else {
+    char* ptr = new char[usize + ts_sz + 16]; // precise space
+    dst = ptr + 8 - klen_len;
+    longstart_ = ptr + 8;
+  }
+  ROCKSDB_ASSUME(klen_len >= 1 && klen_len <= 5);
+  memcpy(dst, buf, klen_len); dst += klen_len;
   memcpy(dst, _user_key.data(), usize);
   dst += usize;
   if (nullptr != ts) {

@@ -336,6 +336,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             if (LIKELY(pinnable_val_ != nullptr)) {
               Slice value_to_use = value;
 
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
               if (type == kTypeWideColumnEntity) {
                 Slice value_copy = value;
 
@@ -346,6 +347,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                   return false;
                 }
               }
+        #endif
 
               if (LIKELY(value_pinner != nullptr)) {
                 // If the backing resources for the value are provided, pin them
@@ -356,6 +358,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                 // Otherwise copy the value
                 pinnable_val_->PinSelf(value_to_use);
               }
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
             } else if (columns_ != nullptr) {
               if (type == kTypeWideColumnEntity) {
                 if (!columns_->SetWideColumnValue(value, value_pinner).ok()) {
@@ -365,18 +368,20 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               } else {
                 columns_->SetPlainValue(value, value_pinner);
               }
+        #endif
             }
           } else {
             // It means this function is called as part of DB GetMergeOperands
             // API and the current value should be part of
             // merge_context_->operand_list
-            if (type == kTypeBlobIndex) {
+            if (UNLIKELY(type == kTypeBlobIndex)) {
               PinnableSlice pin_val;
               if (GetBlobValue(value, &pin_val) == false) {
                 return false;
               }
               Slice blob_value(pin_val);
               push_operand(blob_value, nullptr);
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
             } else if (type == kTypeWideColumnEntity) {
               Slice value_copy = value;
               Slice value_of_default;
@@ -389,6 +394,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               }
 
               push_operand(value_of_default, value_pinner);
+        #endif
             } else {
               assert(type == kTypeValue);
               push_operand(value, value_pinner);
@@ -396,7 +402,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           }
         } else if (kMerge == state_) {
           assert(merge_operator_ != nullptr);
-          if (type == kTypeBlobIndex) {
+          if (UNLIKELY(type == kTypeBlobIndex)) {
             PinnableSlice pin_val;
             if (GetBlobValue(value, &pin_val) == false) {
               return false;
@@ -411,6 +417,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               // merge_context_->operand_list
               push_operand(blob_value, nullptr);
             }
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
           } else if (type == kTypeWideColumnEntity) {
             state_ = kFound;
 
@@ -432,6 +439,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
 
               push_operand(value_of_default, value_pinner);
             }
+        #endif
           } else {
             assert(type == kTypeValue);
 

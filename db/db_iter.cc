@@ -57,7 +57,7 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       sequence_(s),
       statistics_(ioptions.stats),
       max_skip_(max_sequential_skip_in_iterations),
-      max_skippable_internal_keys_(read_options.max_skippable_internal_keys),
+      max_skippable_internal_keys_(read_options.max_skippable_internal_keys?:UINT64_MAX),
       num_internal_keys_skipped_(0),
       iterate_lower_bound_(read_options.iterate_lower_bound),
       iterate_upper_bound_(read_options.iterate_upper_bound),
@@ -437,7 +437,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                       !iter_.iter()->IsKeyPinned() /* copy */);
             }
 
-            if (ikey_.type == kTypeBlobIndex) {
+            if (UNLIKELY(ikey_.type == kTypeBlobIndex)) {
               if (!SetBlobValueIfNeeded(ikey_.user_key, iter_.value())) {
                 return false;
               }
@@ -459,7 +459,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
             return true;
             break;
           case kTypeMerge:
-            if (!iter_.PrepareValue()) {
+            if (UNLIKELY(!iter_.PrepareValue())) {
               assert(!iter_.status().ok());
               valid_ = false;
               return false;
@@ -1430,8 +1430,7 @@ bool DBIter::FindUserKeyBeforeSavedKey() {
 
 __always_inline
 bool DBIter::TooManyInternalKeysSkipped(bool increment) {
-  if ((max_skippable_internal_keys_ > 0) &&
-      (num_internal_keys_skipped_ > max_skippable_internal_keys_)) {
+  if (num_internal_keys_skipped_ > max_skippable_internal_keys_) {
     valid_ = false;
     status_ = Status::Incomplete("Too many internal keys skipped.");
     return true;

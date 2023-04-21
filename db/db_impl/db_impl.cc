@@ -2199,8 +2199,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
     if (get_impl_options.get_value) {
       if (!sv->mem->IsEmpty() && sv->mem->Get(
               lkey,
-              get_impl_options.value ? get_impl_options.value->GetSelf()
-                                     : nullptr,
+              get_impl_options.value,
               get_impl_options.columns, timestamp, &s, &merge_context,
               &max_covering_tombstone_seq, read_options,
               false /* immutable_memtable */, get_impl_options.callback,
@@ -2215,9 +2214,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
       } else if ((s.ok() || s.IsMergeInProgress()) &&
                 !sv->imm->IsEmpty() &&
                  sv->imm->Get(lkey,
-                              get_impl_options.value
-                                  ? get_impl_options.value->GetSelf()
-                                  : nullptr,
+                              get_impl_options.value,
                               get_impl_options.columns, timestamp, &s,
                               &merge_context, &max_covering_tombstone_seq,
                               read_options, get_impl_options.callback,
@@ -2498,13 +2495,14 @@ std::vector<Status> DBImpl::MultiGet(
          has_unpersisted_data_.load(std::memory_order_relaxed));
     bool done = false;
     if (!skip_memtable) {
+      PinnableSlice pin(value);
       if (super_version->mem->Get(
-              lkey, value, /*columns=*/nullptr, timestamp, &s, &merge_context,
+              lkey, &pin, /*columns=*/nullptr, timestamp, &s, &merge_context,
               &max_covering_tombstone_seq, read_options,
               false /* immutable_memtable */, read_callback)) {
         done = true;
         RecordTick(stats_, MEMTABLE_HIT);
-      } else if (super_version->imm->Get(lkey, value, /*columns=*/nullptr,
+      } else if (super_version->imm->Get(lkey, &pin, /*columns=*/nullptr,
                                          timestamp, &s, &merge_context,
                                          &max_covering_tombstone_seq,
                                          read_options, read_callback)) {
@@ -3068,21 +3066,19 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
       auto& max_covering_tombstone_seq = ctx_vec[i].max_covering_tombstone_seq;
       MergeContext& merge_context = ctx_vec[i].merge_context();
       Status& s = statuses[i];
-      if (sv->mem->Get(ctx_vec[i].lkey, values[i].GetSelf(), columns,
+      if (sv->mem->Get(ctx_vec[i].lkey, &values[i], columns,
                        timestamp, &s, &merge_context,
                        &max_covering_tombstone_seq, read_options,
                        false, // immutable_memtable
                        callback, is_blob_index)) {
         ctx_vec[i].set_done();
-        values[i].PinSelf();
         hits++;
       } else if ((s.ok() || s.IsMergeInProgress()) &&
-                sv->imm->Get(ctx_vec[i].lkey, values[i].GetSelf(), columns,
+                sv->imm->Get(ctx_vec[i].lkey, &values[i], columns,
                              timestamp, &s, &merge_context,
                              &max_covering_tombstone_seq, read_options,
                              callback, is_blob_index)) {
         ctx_vec[i].set_done();
-        values[i].PinSelf();
         hits++;
       }
     }

@@ -391,20 +391,18 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
   const Comparator* ucmp = column_family->GetComparator();
   assert(ucmp);
   std::string* ts = ucmp->timestamp_size() > 0 ? timestamp : nullptr;
-  if (super_version->mem->Get(lkey, pinnable_val->GetSelf(),
+  if (super_version->mem->Get(lkey, pinnable_val,
                               /*columns=*/nullptr, ts, &s, &merge_context,
                               &max_covering_tombstone_seq, read_options,
                               false /* immutable_memtable */, &read_cb)) {
     done = true;
-    pinnable_val->PinSelf();
     RecordTick(stats_, MEMTABLE_HIT);
   } else if ((s.ok() || s.IsMergeInProgress()) &&
              super_version->imm->Get(
-                 lkey, pinnable_val->GetSelf(), /*columns=*/nullptr, ts, &s,
+                 lkey, pinnable_val, /*columns=*/nullptr, ts, &s,
                  &merge_context, &max_covering_tombstone_seq, read_options,
                  &read_cb)) {
     done = true;
-    pinnable_val->PinSelf();
     RecordTick(stats_, MEMTABLE_HIT);
   }
   if (!done && !s.ok() && !s.IsMergeInProgress()) {

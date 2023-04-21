@@ -85,11 +85,10 @@ Status DBImplReadOnly::Get(const ReadOptions& read_options,
   SequenceNumber max_covering_tombstone_seq = 0;
   LookupKey lkey(key, snapshot, read_options.timestamp);
   PERF_TIMER_STOP(get_snapshot_time);
-  if (super_version->mem->Get(lkey, pinnable_val->GetSelf(),
+  if (super_version->mem->Get(lkey, pinnable_val,
                               /*columns=*/nullptr, ts, &s, &merge_context,
                               &max_covering_tombstone_seq, read_options,
                               false /* immutable_memtable */, &read_cb)) {
-    pinnable_val->PinSelf();
     RecordTick(stats_, MEMTABLE_HIT);
   } else {
     PERF_TIMER_GUARD(get_from_output_files_time);

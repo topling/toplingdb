@@ -772,7 +772,7 @@ struct Saver {
   const LookupKey* key;
   bool* found_final_value;  // Is value set correctly? Used by KeyMayExist
   bool* merge_in_progress;
-  std::string* value;
+  PinnableSlice* value;
   PinnableWideColumns* columns;
   SequenceNumber seq;
   std::string* timestamp;
@@ -790,6 +790,7 @@ struct Saver {
   ReadCallback* callback_;
   bool* is_blob_index;
   bool allow_data_in_errors;
+  bool is_zero_copy;
   bool CheckCallback(SequenceNumber _seq) {
     if (callback_) {
       return callback_->IsVisible(_seq);
@@ -904,7 +905,10 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
         *(s->status) = Status::OK();
 
         if (s->value) {
-          s->value->assign(v.data(), v.size());
+          if (s->is_zero_copy)
+            s->value->PinSlice(v, nullptr);
+          else
+            s->value->PinSelf(v);
         } else if (s->columns) {
           s->columns->SetPlainValue(v);
         }
@@ -946,7 +950,8 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
 
             if (s->status->ok()) {
               if (s->value) {
-                *(s->value) = std::move(result);
+                *(s->value->GetSelf()) = std::move(result);
+                s->value->PinSelf();
               } else {
                 assert(s->columns);
                 s->columns->SetPlainValue(result);
@@ -954,7 +959,10 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
             }
           }
         } else if (s->value) {
-          s->value->assign(v.data(), v.size());
+          if (s->is_zero_copy)
+            s->value->PinSlice(v, nullptr);
+          else
+            s->value->PinSelf(v);
         } else if (s->columns) {
           s->columns->SetPlainValue(v);
         }
@@ -1001,9 +1009,10 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
             if (s->status->ok()) {
               *(s->status) = MergeHelper::TimedFullMerge(
                   merge_operator, s->key->user_key(), &value_of_default,
-                  merge_context->GetOperands(), s->value, s->logger,
+                  merge_context->GetOperands(), s->value->GetSelf(), s->logger,
                   s->statistics, s->clock, /* result_operand */ nullptr,
                   /* update_num_ops_stats */ true);
+              s->value->PinSelf();
             }
           } else if (s->columns) {
             std::string result;
@@ -1021,7 +1030,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
           *(s->status) = WideColumnSerialization::GetValueOfDefaultColumn(
               v, value_of_default);
           if (s->status->ok()) {
-            s->value->assign(value_of_default.data(), value_of_default.size());
+            s->value->PinSelf(value_of_default);
           }
         } else if (s->columns) {
           *(s->status) = s->columns->SetWideColumnValue(v);
@@ -1054,7 +1063,8 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
 
             if (s->status->ok()) {
               if (s->value) {
-                *(s->value) = std::move(result);
+                *(s->value->GetSelf()) = std::move(result);
+                s->value->PinSelf();
               } else {
                 assert(s->columns);
                 s->columns->SetPlainValue(result);
@@ -1093,7 +1103,8 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
 
             if (s->status->ok()) {
               if (s->value) {
-                *(s->value) = std::move(result);
+                *(s->value->GetSelf()) = std::move(result);
+                s->value->PinSelf();
               } else {
                 assert(s->columns);
                 s->columns->SetPlainValue(result);
@@ -1128,7 +1139,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
 #if defined(__GNUC__)
 __attribute__((flatten))
 #endif
-bool MemTable::Get(const LookupKey& key, std::string* value,
+bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
                    PinnableWideColumns* columns, std::string* timestamp,
                    Status* s, MergeContext* merge_context,
                    SequenceNumber* max_covering_tombstone_seq,
@@ -1211,7 +1222,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value,
 void MemTable::GetFromTable(const ReadOptions& ro, const LookupKey& key,
                             SequenceNumber max_covering_tombstone_seq,
                             bool do_merge, ReadCallback* callback,
-                            bool* is_blob_index, std::string* value,
+                            bool* is_blob_index, PinnableSlice* value,
                             PinnableWideColumns* columns,
                             std::string* timestamp, Status* s,
                             MergeContext* merge_context, SequenceNumber* seq,
@@ -1237,6 +1248,10 @@ void MemTable::GetFromTable(const ReadOptions& ro, const LookupKey& key,
   saver.is_blob_index = is_blob_index;
   saver.do_merge = do_merge;
   saver.allow_data_in_errors = moptions_.allow_data_in_errors;
+  saver.is_zero_copy = ro.pinning_tls != nullptr;
+  if (value) {
+    value->Reset();
+  }
   table_->Get(ro, key, &saver, SaveValue);
   *seq = saver.seq;
 }
@@ -1305,7 +1320,7 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
     }
     SequenceNumber dummy_seq;
     GetFromTable(read_options, *(iter->lkey), iter->max_covering_tombstone_seq, true,
-                 callback, &iter->is_blob_index, iter->value->GetSelf(),
+                 callback, &iter->is_blob_index, iter->value,
                  /*columns=*/nullptr, iter->timestamp, iter->s,
                  &(iter->merge_context), &dummy_seq, &found_final_value,
                  &merge_in_progress);

@@ -298,12 +298,13 @@ TEST_F(DBMemTableTest, ConcurrentMergeWrite) {
   ReadOptions roptions;
   SequenceNumber max_covering_tombstone_seq = 0;
   LookupKey lkey("key", kMaxSequenceNumber);
-  bool res = mem->Get(lkey, &value, /*columns=*/nullptr, /*timestamp=*/nullptr,
+  PinnableSlice pin;
+  bool res = mem->Get(lkey, &pin, /*columns=*/nullptr, /*timestamp=*/nullptr,
                       &status, &merge_context, &max_covering_tombstone_seq,
                       roptions, false /* immutable_memtable */);
   ASSERT_OK(status);
   ASSERT_TRUE(res);
-  uint64_t ivalue = DecodeFixed64(Slice(value).data());
+  uint64_t ivalue = DecodeFixed64(pin.data());
   uint64_t sum = 0;
   for (int seq = 0; seq < num_ops; seq++) {
     sum += seq;

@@ -122,11 +122,12 @@ void DumpRocksDBBuildVersion(Logger* log);
 // because FiberPool.m_channel must be destructed first
 static ROCKSDB_STATIC_TLS thread_local terark::FiberPool gt_fiber_pool(
     boost::fibers::context::active_pp());
-struct ToplingMGetCtx {
-  MergeContext merge_context;
+struct ToplingMGetCtx : protected MergeContext {
+  MergeContext& merge_context() { return *this; }
   SequenceNumber max_covering_tombstone_seq = 0;
-  bool done = false;
-  bool lkey_initialized = false;
+  static constexpr uint32_t FLAG_done = 1;
+  static constexpr uint32_t FLAG_lkey_initialized = 2;
+
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   std::string* timestamp = nullptr;
 #endif
@@ -136,16 +137,16 @@ struct ToplingMGetCtx {
   void InitLookupKey(const Slice& user_key, SequenceNumber seq,
                      const Slice* ts) {
     new(&lkey)LookupKey(user_key, seq, ts);
-    lkey_initialized = true;
+    this->ext_flags_ |= FLAG_lkey_initialized;
   }
   ToplingMGetCtx() {}
-  ~ToplingMGetCtx() { if (lkey_initialized) lkey.~LookupKey(); }
+  ~ToplingMGetCtx() {
+    if (this->ext_flags_ & FLAG_lkey_initialized)
+      lkey.~LookupKey();
+  }
+  void set_done() { this->ext_flags_ |= FLAG_done; }
+  bool is_done() const { return (this->ext_flags_ & FLAG_done) != 0; }
 };
-#if defined(TOPLINGDB_WITH_TIMESTAMP)
-static_assert(sizeof(ToplingMGetCtx) == 192 + 8);
-#else
-static_assert(sizeof(ToplingMGetCtx) == 192);
-#endif
 
 CompressionType GetCompressionFlush(
     const ImmutableCFOptions& ioptions,
@@ -3065,14 +3066,14 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
     size_t hits = 0;
     for (size_t i = 0; i < num_keys; i++) {
       auto& max_covering_tombstone_seq = ctx_vec[i].max_covering_tombstone_seq;
-      MergeContext& merge_context = ctx_vec[i].merge_context;
+      MergeContext& merge_context = ctx_vec[i].merge_context();
       Status& s = statuses[i];
       if (sv->mem->Get(ctx_vec[i].lkey, values[i].GetSelf(), columns,
                        timestamp, &s, &merge_context,
                        &max_covering_tombstone_seq, read_options,
                        false, // immutable_memtable
                        callback, is_blob_index)) {
-        ctx_vec[i].done = true;
+        ctx_vec[i].set_done();
         values[i].PinSelf();
         hits++;
       } else if ((s.ok() || s.IsMergeInProgress()) &&
@@ -3080,7 +3081,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
                              timestamp, &s, &merge_context,
                              &max_covering_tombstone_seq, read_options,
                              callback, is_blob_index)) {
-        ctx_vec[i].done = true;
+        ctx_vec[i].set_done();
         values[i].PinSelf();
         hits++;
       }
@@ -3091,7 +3092,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   //TEST_SYNC_POINT("DBImpl::GetImpl:PostMemTableGet:1");
   size_t counting = 0;
   auto get_in_sst = [&](size_t i, size_t/*unused*/ = 0) {
-    MergeContext& merge_context = ctx_vec[i].merge_context;
+    MergeContext& merge_context = ctx_vec[i].merge_context();
     PinnedIteratorsManager pinned_iters_mgr;
     auto& max_covering_tombstone_seq = ctx_vec[i].max_covering_tombstone_seq;
     //PERF_TIMER_GUARD(get_from_output_files_time);
@@ -3113,7 +3114,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   }
   size_t memtab_miss = 0;
   for (size_t i = 0; i < num_keys; i++) {
-    if (!ctx_vec[i].done) {
+    if (!ctx_vec[i].is_done()) {
       if (read_options.async_io) {
         gt_fiber_pool.push({TERARK_C_CALLBACK(get_in_sst), i});
       } else {

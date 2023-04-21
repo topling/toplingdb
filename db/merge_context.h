@@ -96,7 +96,7 @@ class MergeContext {
     return operand_list_;
   }
 
- private:
+ protected:
   static char* MakeCopy(Slice src) {
     char* copy = new char[src.size()];
     memcpy(copy, src.data(), src.size());
@@ -122,6 +122,7 @@ class MergeContext {
   // Copy of operands that are not pinned.
   terark::valvec32<std::unique_ptr<char[]> > copied_operands_;
   mutable bool operands_reversed_ = true;
+  mutable uint32_t ext_flags_ = 0; // for use by derived class
 };
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -2478,12 +2478,12 @@ install-headers: gen-pc
 	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)/$(PREFIX)/include
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
-install-static: install-headers $(LIBRARY)
+install-static: install-headers $(LIBRARY) static_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(LIBRARY) $(INSTALL_LIBDIR)
 	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_static/* $(INSTALL_LIBDIR)
 
-install-shared: install-headers $(SHARED4)
+install-shared: install-headers $(SHARED4) shared_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)

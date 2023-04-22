@@ -44,7 +44,7 @@ extern thread_local PerfContext perf_context ROCKSDB_STATIC_TLS;
 
 #define PerfStepTimerDecl(metric, clock, use_cpu_time, enable_level, ...) \
   PerfStepTimer perf_step_timer_##metric( \
-   perf_level >= enable_level ? &perf_context.metric : nullptr, \
+   &perf_context.metric, \
    clock, use_cpu_time, enable_level, ##__VA_ARGS__)
 
 #define PERF_TIMER_FULL_STATS(metric, ticker, histogram, stats) \

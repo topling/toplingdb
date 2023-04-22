@@ -151,7 +151,7 @@ void DBIter::Next() {
   local_stats_.skip_count_--;
   num_internal_keys_skipped_ = 0;
   bool ok = true;
-  if (direction_ == kReverse) {
+  if (UNLIKELY(direction_ == kReverse)) {
     is_key_seqnum_zero_ = false;
     if (!ReverseToForward()) {
       ok = false;
@@ -704,7 +704,7 @@ void DBIter::Prev() {
   ResetValueAndColumns();
   ResetInternalKeysSkippedCounter();
   bool ok = true;
-  if (direction_ == kForward) {
+  if (UNLIKELY(direction_ == kForward)) {
     if (!ReverseToBackward()) {
       ok = false;
     }

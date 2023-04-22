@@ -2493,9 +2493,7 @@ install-shared: install-headers $(SHARED4)
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
 
-# install static by default + install shared if it exists
-install: install-static
-	[ -e $(SHARED4) ] && $(MAKE) install-shared || :
+install: install-${LIB_MODE}
 
 # Generate the pkg-config file
 gen-pc:

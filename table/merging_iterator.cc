@@ -1068,8 +1068,7 @@ MergingIterMethod(bool)SkipNextDeleted() {
   }
   assert(current->type == HeapItem::ITERATOR);
   // Point key case: check active_ for range tombstone coverage.
-  ParsedInternalKey pik;
-  ParseInternalKey(current->iter.key(), &pik, false).PermitUncheckedError();
+  ParsedInternalKey pik(current->iter.key());
   if (!active_.empty()) {
     auto i = *active_.begin();
     if (i < current->level) {
@@ -1279,8 +1278,7 @@ MergingIterMethod(bool)SkipPrevDeleted() {
   }
   assert(current->type == HeapItem::ITERATOR);
   // Point key case: check active_ for range tombstone coverage.
-  ParsedInternalKey pik;
-  ParseInternalKey(current->iter.key(), &pik, false).PermitUncheckedError();
+  ParsedInternalKey pik(current->iter.key());
   if (!active_.empty()) {
     auto i = *active_.begin();
     if (i < current->level) {
@@ -1389,9 +1387,7 @@ MergingIterMethod(void)SwitchToForward() {
   // tombstone before current_. If there is no such tombstone, then the range
   // tombstone iter is !Valid(). Need to reseek here to make it valid again.
   if (!range_tombstone_iters_.empty()) {
-    ParsedInternalKey pik;
-    ParseInternalKey(target, &pik, false /* log_err_key */)
-        .PermitUncheckedError();
+    ParsedInternalKey pik(target);
     for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
       auto iter = range_tombstone_iters_[i];
       if (iter) {
@@ -1435,9 +1431,7 @@ MergingIterMethod(void)SwitchToBackward() {
     AddToMaxHeapOrCheckStatus(&child);
   }
 
-  ParsedInternalKey pik;
-  ParseInternalKey(target, &pik, false /* log_err_key */)
-      .PermitUncheckedError();
+  ParsedInternalKey pik(target);
   for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
     auto iter = range_tombstone_iters_[i];
     if (iter) {

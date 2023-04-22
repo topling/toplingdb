@@ -401,7 +401,11 @@ class DBIter final : public Iterator {
   const bool prefix_same_as_start_;
   // Means that we will pin all data blocks we read as long the Iterator
   // is not deleted, will be true if ReadOptions::pin_data is true
+#if defined(ROCKSDB_UNIT_TEST)
   const bool pin_thru_lifetime_;
+#else
+  static constexpr bool pin_thru_lifetime_ = false;
+#endif
   // Expect the inner iterator to maintain a total order.
   // prefix_extractor_ must be non-NULL if the value is false.
   const bool expect_total_order_inner_iter_;

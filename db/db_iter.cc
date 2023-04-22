@@ -70,7 +70,9 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       prefix_same_as_start_(mutable_cf_options.prefix_extractor
                                 ? read_options.prefix_same_as_start
                                 : false),
+#if defined(ROCKSDB_UNIT_TEST)
       pin_thru_lifetime_(read_options.pin_data),
+#endif
       expect_total_order_inner_iter_(prefix_extractor_ == nullptr ||
                                      read_options.total_order_seek ||
                                      read_options.auto_prefix_mode),

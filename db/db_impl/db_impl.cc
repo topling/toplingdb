@@ -2502,12 +2502,14 @@ std::vector<Status> DBImpl::MultiGet(
               &max_covering_tombstone_seq, read_options,
               false /* immutable_memtable */, read_callback)) {
         done = true;
+        pin.SyncToString(value);
         RecordTick(stats_, MEMTABLE_HIT);
       } else if (super_version->imm->Get(lkey, &pin, /*columns=*/nullptr,
                                          timestamp, &s, &merge_context,
                                          &max_covering_tombstone_seq,
                                          read_options, read_callback)) {
         done = true;
+        pin.SyncToString(value);
         RecordTick(stats_, MEMTABLE_HIT);
       }
     }

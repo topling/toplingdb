@@ -1426,7 +1426,7 @@ bool DBIter::FindUserKeyBeforeSavedKey() {
 
 __always_inline
 bool DBIter::TooManyInternalKeysSkipped(bool increment) {
-  if (num_internal_keys_skipped_ > max_skippable_internal_keys_) {
+  if (UNLIKELY(num_internal_keys_skipped_ > max_skippable_internal_keys_)) {
     valid_ = false;
     status_ = Status::Incomplete("Too many internal keys skipped.");
     return true;

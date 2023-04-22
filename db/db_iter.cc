@@ -47,7 +47,9 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
                ColumnFamilyData* cfd, bool expose_blob_index)
     : prefix_extractor_(mutable_cf_options.prefix_extractor.get()),
       env_(_env),
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
       clock_(ioptions.clock),
+#endif
       logger_(ioptions.logger),
       user_comparator_(cmp),
       merge_operator_(ioptions.merge_operator.get()),
@@ -920,9 +922,11 @@ bool DBIter::FindValueForCurrentKey() {
       break;
     }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP) // ts may need runtime check
     if (!ts.empty()) {
       saved_timestamp_.assign(ts.data(), ts.size());
     }
+#endif
 
     if (TooManyInternalKeysSkipped()) {
       return false;

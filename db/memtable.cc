@@ -240,7 +240,7 @@ void MemTable::UpdateFlushState() {
 
 void MemTable::UpdateOldestKeyTime() {
   uint64_t oldest_key_time = oldest_key_time_.load(std::memory_order_relaxed);
-  if (oldest_key_time == std::numeric_limits<uint64_t>::max()) {
+  if (UNLIKELY(oldest_key_time == std::numeric_limits<uint64_t>::max())) {
     int64_t current_time = 0;
     auto s = clock_->GetCurrentTime(&current_time);
     if (s.ok()) {
@@ -734,7 +734,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
         !earliest_seqno_.compare_exchange_weak(cur_earliest_seqno, s)) {
     }
   }
-  if (type == kTypeRangeDeletion) {
+  if (UNLIKELY(type == kTypeRangeDeletion)) {
     auto new_cache = std::make_shared<FragmentedRangeTombstoneListCache>();
     size_t size = cached_range_tombstone_.Size();
     if (allow_concurrent) {
@@ -1184,7 +1184,7 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
   Slice user_key_without_ts = key.user_key();
 #endif
   bool bloom_checked = false;
-  if (bloom_filter_) {
+  if (UNLIKELY(bloom_filter_ != nullptr)) {
     // when both memtable_whole_key_filtering and prefix_extractor_ are set,
     // only do whole key filtering for Get() to save CPU
     if (moptions_.memtable_whole_key_filtering) {
@@ -1200,14 +1200,14 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
     }
   }
 
-  if (bloom_filter_ && !may_contain) {
+  if (UNLIKELY(bloom_filter_ && !may_contain)) {
     // iter is null if prefix bloom says the key does not exist
     PERF_COUNTER_ADD(bloom_memtable_miss_count, 1);
     *seq = kMaxSequenceNumber;
     PERF_COUNTER_ADD(get_from_memtable_count, 1);
     return false;
   } else {
-    if (bloom_checked) {
+    if (UNLIKELY(bloom_checked)) {
       PERF_COUNTER_ADD(bloom_memtable_hit_count, 1);
     }
     Saver saver;
@@ -1232,7 +1232,7 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
     saver.do_merge = do_merge;
     saver.allow_data_in_errors = moptions_.allow_data_in_errors;
     saver.is_zero_copy = read_opts.pinning_tls != nullptr;
-    if (value) {
+    if (LIKELY(value != nullptr)) {
       value->Reset();
     }
     table_->Get(read_opts, key, &saver, SaveValue);

@@ -1312,10 +1312,8 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
     saver.found_final_value = false;
     saver.merge_in_progress = iter->s->IsMergeInProgress();
     saver.key = iter->lkey;
-    saver.value = iter->value;
-    if (saver.value) {
-      saver.value->Reset();
-    }
+    saver.value = iter->value; // not null
+    saver.value->Reset();
     saver.columns = nullptr;
     saver.timestamp = iter->timestamp;
     saver.seq = kMaxSequenceNumber; // dummy_seq
@@ -1339,7 +1337,6 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
     }
 
     if (saver.found_final_value) {
-      iter->value->PinSelf();
       range->AddValueSize(iter->value->size());
       range->MarkKeyDone(iter);
       RecordTick(moptions_.statistics, MEMTABLE_HIT);

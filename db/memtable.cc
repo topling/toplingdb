@@ -770,8 +770,6 @@ namespace {
 struct Saver {
   Status* status;
   const LookupKey* key;
-  bool* found_final_value;  // Is value set correctly? Used by KeyMayExist
-  bool* merge_in_progress;
   PinnableSlice* value;
   PinnableWideColumns* columns;
   SequenceNumber seq;
@@ -783,12 +781,14 @@ struct Saver {
   MemTable* mem;
   Logger* logger;
   Statistics* statistics;
-  bool inplace_update_support;
-  bool do_merge;
   SystemClock* clock;
 
   ReadCallback* callback_;
   bool* is_blob_index;
+  bool found_final_value;  // Is value set correctly? Used by KeyMayExist
+  bool merge_in_progress;
+  bool inplace_update_support;
+  bool do_merge;
   bool allow_data_in_errors;
   bool is_zero_copy;
   bool CheckCallback(SequenceNumber _seq) {
@@ -878,14 +878,14 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
         if (!s->do_merge) {
           *(s->status) = Status::NotSupported(
               "GetMergeOperands not supported by stacked BlobDB");
-          *(s->found_final_value) = true;
+          s->found_final_value = true;
           return false;
         }
 
-        if (*(s->merge_in_progress)) {
+        if (s->merge_in_progress) {
           *(s->status) = Status::NotSupported(
               "Merge operator not supported by stacked BlobDB");
-          *(s->found_final_value) = true;
+          s->found_final_value = true;
           return false;
         }
 
@@ -894,7 +894,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
           *(s->status) = Status::NotSupported(
               "Encountered unexpected blob index. Please open DB with "
               "ROCKSDB_NAMESPACE::blob_db::BlobDB.");
-          *(s->found_final_value) = true;
+          s->found_final_value = true;
           return false;
         }
 
@@ -917,7 +917,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
           s->mem->GetLock(s->key->user_key())->ReadUnlock();
         }
 
-        *(s->found_final_value) = true;
+        s->found_final_value = true;
         *(s->is_blob_index) = true;
 
         return false;
@@ -937,7 +937,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
 
           merge_context->PushOperand(
               v, s->inplace_update_support == false /* operand_pinned */);
-        } else if (*(s->merge_in_progress)) {
+        } else if (s->merge_in_progress) {
           assert(s->do_merge);
 
           if (s->value || s->columns) {
@@ -971,7 +971,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
           s->mem->GetLock(s->key->user_key())->ReadUnlock();
         }
 
-        *(s->found_final_value) = true;
+        s->found_final_value = true;
 
         if (s->is_blob_index != nullptr) {
           *(s->is_blob_index) = false;
@@ -999,7 +999,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
                 value_of_default,
                 s->inplace_update_support == false /* operand_pinned */);
           }
-        } else if (*(s->merge_in_progress)) {
+        } else if (s->merge_in_progress) {
           assert(s->do_merge);
 
           if (s->value) {
@@ -1040,7 +1040,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
           s->mem->GetLock(s->key->user_key())->ReadUnlock();
         }
 
-        *(s->found_final_value) = true;
+        s->found_final_value = true;
 
         if (s->is_blob_index != nullptr) {
           *(s->is_blob_index) = false;
@@ -1052,7 +1052,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
       case kTypeDeletionWithTimestamp:
       case kTypeSingleDeletion:
       case kTypeRangeDeletion: {
-        if (*(s->merge_in_progress)) {
+        if (s->merge_in_progress) {
           if (s->value || s->columns) {
             std::string result;
             *(s->status) = MergeHelper::TimedFullMerge(
@@ -1074,7 +1074,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
         } else {
           *(s->status) = Status::NotFound();
         }
-        *(s->found_final_value) = true;
+        s->found_final_value = true;
         return false;
       }
       case kTypeMerge: {
@@ -1085,10 +1085,10 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
           // operand.  But in case of an error, we should stop the loop
           // immediately and pretend we have found the value to stop further
           // seek.  Otherwise, the later call will override this error status.
-          *(s->found_final_value) = true;
+          s->found_final_value = true;
           return false;
         }
-        *(s->merge_in_progress) = true;
+        s->merge_in_progress = true;
         merge_context->PushOperand(
             v, s->inplace_update_support == false /* operand_pinned */);
         if (s->do_merge && merge_operator->ShouldMerge(
@@ -1112,7 +1112,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
             }
           }
 
-          *(s->found_final_value) = true;
+          s->found_final_value = true;
           return false;
         }
         return true;
@@ -1171,8 +1171,6 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
     }
   }
 
-  bool found_final_value = false;
-  bool merge_in_progress = s->IsMergeInProgress();
   bool may_contain = true;
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
@@ -1201,59 +1199,48 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
     // iter is null if prefix bloom says the key does not exist
     PERF_COUNTER_ADD(bloom_memtable_miss_count, 1);
     *seq = kMaxSequenceNumber;
+    PERF_COUNTER_ADD(get_from_memtable_count, 1);
+    return false;
   } else {
     if (bloom_checked) {
       PERF_COUNTER_ADD(bloom_memtable_hit_count, 1);
     }
-    GetFromTable(read_opts, key, *max_covering_tombstone_seq, do_merge, callback,
-                 is_blob_index, value, columns, timestamp, s, merge_context, seq,
-                 &found_final_value, &merge_in_progress);
-  }
+    Saver saver;
+    saver.status = s;
+    saver.found_final_value = false;
+    saver.merge_in_progress = s->IsMergeInProgress();
+    saver.key = &key;
+    saver.value = value;
+    saver.columns = columns;
+    saver.timestamp = timestamp;
+    saver.seq = kMaxSequenceNumber;
+    saver.mem = this;
+    saver.merge_context = merge_context;
+    saver.max_covering_tombstone_seq = *max_covering_tombstone_seq;
+    saver.merge_operator = moptions_.merge_operator;
+    saver.logger = moptions_.info_log;
+    saver.inplace_update_support = moptions_.inplace_update_support;
+    saver.statistics = moptions_.statistics;
+    saver.clock = clock_;
+    saver.callback_ = callback;
+    saver.is_blob_index = is_blob_index;
+    saver.do_merge = do_merge;
+    saver.allow_data_in_errors = moptions_.allow_data_in_errors;
+    saver.is_zero_copy = read_opts.pinning_tls != nullptr;
+    if (value) {
+      value->Reset();
+    }
+    table_->Get(read_opts, key, &saver, SaveValue);
+    *seq = saver.seq;
 
-  // No change to value, since we have not yet found a Put/Delete
-  // Propagate corruption error
-  if (!found_final_value && merge_in_progress && !s->IsCorruption()) {
-    *s = Status::MergeInProgress();
+    // No change to value, since we have not yet found a Put/Delete
+    // Propagate corruption error
+    if (!saver.found_final_value && saver.merge_in_progress && !s->IsCorruption()) {
+      *s = Status::MergeInProgress();
+    }
+    PERF_COUNTER_ADD(get_from_memtable_count, 1);
+    return saver.found_final_value;
   }
-  PERF_COUNTER_ADD(get_from_memtable_count, 1);
-  return found_final_value;
-}
-
-void MemTable::GetFromTable(const ReadOptions& ro, const LookupKey& key,
-                            SequenceNumber max_covering_tombstone_seq,
-                            bool do_merge, ReadCallback* callback,
-                            bool* is_blob_index, PinnableSlice* value,
-                            PinnableWideColumns* columns,
-                            std::string* timestamp, Status* s,
-                            MergeContext* merge_context, SequenceNumber* seq,
-                            bool* found_final_value, bool* merge_in_progress) {
-  Saver saver;
-  saver.status = s;
-  saver.found_final_value = found_final_value;
-  saver.merge_in_progress = merge_in_progress;
-  saver.key = &key;
-  saver.value = value;
-  saver.columns = columns;
-  saver.timestamp = timestamp;
-  saver.seq = kMaxSequenceNumber;
-  saver.mem = this;
-  saver.merge_context = merge_context;
-  saver.max_covering_tombstone_seq = max_covering_tombstone_seq;
-  saver.merge_operator = moptions_.merge_operator;
-  saver.logger = moptions_.info_log;
-  saver.inplace_update_support = moptions_.inplace_update_support;
-  saver.statistics = moptions_.statistics;
-  saver.clock = clock_;
-  saver.callback_ = callback;
-  saver.is_blob_index = is_blob_index;
-  saver.do_merge = do_merge;
-  saver.allow_data_in_errors = moptions_.allow_data_in_errors;
-  saver.is_zero_copy = ro.pinning_tls != nullptr;
-  if (value) {
-    value->Reset();
-  }
-  table_->Get(ro, key, &saver, SaveValue);
-  *seq = saver.seq;
 }
 
 void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
@@ -1299,8 +1286,6 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
     }
   }
   for (auto iter = temp_range.begin(); iter != temp_range.end(); ++iter) {
-    bool found_final_value{false};
-    bool merge_in_progress = iter->s->IsMergeInProgress();
     if (!no_range_del) {
       std::unique_ptr<FragmentedRangeTombstoneIterator> range_del_iter(
           NewRangeTombstoneIteratorInternal(
@@ -1318,18 +1303,38 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
         }
       }
     }
-    SequenceNumber dummy_seq;
-    GetFromTable(read_options, *(iter->lkey), iter->max_covering_tombstone_seq, true,
-                 callback, &iter->is_blob_index, iter->value,
-                 /*columns=*/nullptr, iter->timestamp, iter->s,
-                 &(iter->merge_context), &dummy_seq, &found_final_value,
-                 &merge_in_progress);
+    Saver saver;
+    saver.status = iter->s;
+    saver.found_final_value = false;
+    saver.merge_in_progress = iter->s->IsMergeInProgress();
+    saver.key = iter->lkey;
+    saver.value = iter->value;
+    if (saver.value) {
+      saver.value->Reset();
+    }
+    saver.columns = nullptr;
+    saver.timestamp = iter->timestamp;
+    saver.seq = kMaxSequenceNumber; // dummy_seq
+    saver.mem = this;
+    saver.merge_context = &(iter->merge_context);
+    saver.max_covering_tombstone_seq = iter->max_covering_tombstone_seq;
+    saver.merge_operator = moptions_.merge_operator;
+    saver.logger = moptions_.info_log;
+    saver.inplace_update_support = moptions_.inplace_update_support;
+    saver.statistics = moptions_.statistics;
+    saver.clock = clock_;
+    saver.callback_ = callback;
+    saver.is_blob_index = &iter->is_blob_index;
+    saver.do_merge = true;
+    saver.allow_data_in_errors = moptions_.allow_data_in_errors;
+    saver.is_zero_copy = read_options.pinning_tls != nullptr;
+    table_->Get(read_options, *(iter->lkey), &saver, SaveValue);
 
-    if (!found_final_value && merge_in_progress) {
+    if (!saver.found_final_value && saver.merge_in_progress) {
       *(iter->s) = Status::MergeInProgress();
     }
 
-    if (found_final_value) {
+    if (saver.found_final_value) {
       iter->value->PinSelf();
       range->AddValueSize(iter->value->size());
       range->MarkKeyDone(iter);

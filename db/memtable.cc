@@ -815,7 +815,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
   // sequence number since the Seek() call above should have skipped
   // all entries with overly large sequence numbers.
   auto [ikey, v] = pair->GetKeyValue();
-  size_t key_length = ikey.size();
+  const size_t key_length = ikey.size();
   const char* key_ptr = ikey.data();
   assert(key_length >= 8);
   Slice user_key_slice = Slice(key_ptr, key_length - 8);
@@ -823,6 +823,10 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
       s->mem->GetInternalKeyComparator().user_comparator();
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   size_t ts_sz = user_comparator->timestamp_size();
+  if (ts_sz && s->timestamp && max_covering_tombstone_seq > 0) {
+    // timestamp should already be set to range tombstone timestamp
+    assert(s->timestamp->size() == ts_sz);
+  }
 #else
   constexpr size_t ts_sz = 0; // let compiler optimize it out
 #endif

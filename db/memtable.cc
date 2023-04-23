@@ -620,6 +620,7 @@ Status MemTable::VerifyEncodedEntry(Slice ikey, Slice value,
       .GetStatus();
 }
 
+ROCKSDB_FLATTEN
 Status MemTable::Add(SequenceNumber s, ValueType type,
                      const Slice& key, /* user key */
                      const Slice& value,

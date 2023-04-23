@@ -26,6 +26,7 @@
 #include "monitoring/instrumented_mutex.h"
 #include "options/cf_options.h"
 #include "rocksdb/db.h"
+#include "rocksdb/fake_atomic.h"
 #include "rocksdb/memtablerep.h"
 #include "table/multiget_context.h"
 #include "util/dynamic_bloom.h"
@@ -547,12 +548,12 @@ class MemTable {
   std::atomic_bool is_range_del_table_empty_;
 
   // Total data size of all data inserted
-  std::atomic<uint64_t> data_size_;
-  std::atomic<uint64_t> num_entries_;
-  std::atomic<uint64_t> num_deletes_;
+  fake_atomic<uint64_t> data_size_;
+  fake_atomic<uint64_t> num_entries_;
+  fake_atomic<uint64_t> num_deletes_;
 
   // Dynamically changeable memtable option
-  std::atomic<size_t> write_buffer_size_;
+  fake_atomic<size_t> write_buffer_size_;
 
   // These are used to manage memtable flushes to storage
   bool flush_in_progress_;  // started the flush
@@ -609,7 +610,7 @@ class MemTable {
 
   // keep track of memory usage in table_, arena_, and range_del_table_.
   // Gets refreshed inside `ApproximateMemoryUsage()` or `ShouldFlushNow`
-  std::atomic<uint64_t> approximate_memory_usage_;
+  fake_atomic<uint64_t> approximate_memory_usage_;
 
 #ifndef ROCKSDB_LITE
   // Flush job info of the current memtable.

@@ -773,9 +773,6 @@ public class ReadOptions extends RocksObject {
     setAsyncQueueDepth(nativeHandle_, queueDepth);
   }
 
-  public void startPin() { startPin(nativeHandle_); }
-  public void finishPin() { finishPin(nativeHandle_); }
-
   // instance variables
   // NOTE: If you add new member variables, please update the copy constructor above!
   //
@@ -850,6 +847,4 @@ public class ReadOptions extends RocksObject {
   private native void setAsyncIO(final long handle, final boolean async);
   private native int asyncQueueDepth(final long handle);
   private native void setAsyncQueueDepth(final long handle, final int queueDepth);
-  private native void startPin(final long handle);
-  private native void finishPin(final long handle);
 }

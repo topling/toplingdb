@@ -8573,26 +8573,6 @@ void Java_org_rocksdb_ReadOptions_setAsyncQueueDepth(
   opt->async_queue_depth = queue_depth;
 }
 
-/*
- * Class:     org_rocksdb_ReadOptions
- * Method:    startPin
- * Signature: (J)V
- */
-void Java_org_rocksdb_ReadOptions_startPin(JNIEnv*, jobject, jlong jhandle) {
-  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
-  opt->StartPin();
-}
-
-/*
- * Class:     org_rocksdb_ReadOptions
- * Method:    finishPin
- * Signature: (J)V
- */
-void Java_org_rocksdb_ReadOptions_finishPin(JNIEnv*, jobject, jlong jhandle) {
-  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
-  opt->FinishPin();
-}
-
 /////////////////////////////////////////////////////////////////////
 // ROCKSDB_NAMESPACE::ComparatorOptions
 

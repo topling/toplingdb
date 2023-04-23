@@ -1360,6 +1360,7 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
 Status MemTable::Update(SequenceNumber seq, ValueType value_type,
                         const Slice& key, const Slice& value,
                         const ProtectionInfoKVOS64* kv_prot_info) {
+  assert(moptions_.inplace_update_support);
   LookupKey lkey(key, seq);
 
   std::unique_ptr<MemTableRep::Iterator> iter(
@@ -1413,6 +1414,7 @@ Status MemTable::Update(SequenceNumber seq, ValueType value_type,
 Status MemTable::UpdateCallback(SequenceNumber seq, const Slice& key,
                                 const Slice& delta,
                                 const ProtectionInfoKVOS64* kv_prot_info) {
+  assert(moptions_.inplace_update_support);
   LookupKey lkey(key, seq);
 
   std::unique_ptr<MemTableRep::Iterator> iter(

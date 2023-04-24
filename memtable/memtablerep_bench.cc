@@ -89,9 +89,6 @@ DEFINE_bool(if_log_bucket_dist_when_flash, true,
             "if_log_bucket_dist_when_flash parameter to pass into "
             "NewHashLinkListRepFactory");
 
-DEFINE_bool(skip_read_cmp, false, "skip cmp key on read");
-DEFINE_bool(strict_verify, false, "die on verify fail");
-
 DEFINE_int32(
     threshold_use_skiplist, 256,
     "threshold_use_skiplist parameter to pass into NewHashLinkListRepFactory");
@@ -132,6 +129,7 @@ namespace ROCKSDB_NAMESPACE {
 namespace {
 struct CallbackVerifyArgs {
   bool found;
+  bool needs_user_key_cmp;
   LookupKey* key;
   InternalKeyComparator* comparator;
 };
@@ -307,30 +305,26 @@ class ConcurrentFillBenchmarkThread : public FillBenchmarkThread {
 
 class ReadBenchmarkThread : public BenchmarkThread {
   ReadOptions read_opt_;
+  bool needs_user_key_cmp_;
  public:
   ReadBenchmarkThread(MemTableRep* table, KeyGenerator* key_gen,
                       uint64_t* bytes_written, uint64_t* bytes_read,
                       uint64_t* sequence, uint64_t num_ops, uint64_t* read_hits)
       : BenchmarkThread(table, key_gen, bytes_written, bytes_read, sequence,
-                        num_ops, read_hits) {}
+                        num_ops, read_hits) {
+    needs_user_key_cmp_ = table->NeedsUserKeyCompareInGet();
+  }
 
   static bool callback(void* arg, const MemTableRep::KeyValuePair& kv) {
     CallbackVerifyArgs* callback_args = static_cast<CallbackVerifyArgs*>(arg);
     assert(callback_args != nullptr);
-    if (FLAGS_skip_read_cmp) {
+    if (!callback_args->needs_user_key_cmp) {
       callback_args->found = true;
       return true;
     }
     Slice internal_key = kv.ikey;
     size_t key_length = internal_key.size();
     const char* key_ptr = internal_key.data();
-    if (FLAGS_strict_verify) {
-      auto ucmp = callback_args->comparator->user_comparator();
-      Slice ukey(key_ptr, key_length - 8);
-      ROCKSDB_VERIFY(ucmp->Equal(ukey, callback_args->key->user_key()));
-      callback_args->found = true;
-      return true;
-    }
     if ((callback_args->comparator)
             ->user_comparator()
             ->Equal(Slice(key_ptr, key_length - 8),
@@ -347,6 +341,7 @@ class ReadBenchmarkThread : public BenchmarkThread {
     LookupKey lookup_key(Slice(user_key, sizeof(user_key)), *sequence_);
     InternalKeyComparator internal_key_comp(BytewiseComparator());
     CallbackVerifyArgs verify_args;
+    verify_args.needs_user_key_cmp = needs_user_key_cmp_;
     verify_args.found = false;
     verify_args.key = &lookup_key;
     verify_args.comparator = &internal_key_comp;

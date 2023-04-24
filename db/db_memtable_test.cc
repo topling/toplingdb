@@ -56,7 +56,7 @@ class MockMemTableRep : public MemTableRep {
   bool Contains(const Slice& key) const override { return rep_->Contains(key); }
 
   void Get(const ReadOptions& ro, const LookupKey& k, void* callback_args,
-           bool (*callback_func)(void* arg, const KeyValuePair*)) override {
+           bool (*callback_func)(void* arg, const KeyValuePair&)) override {
     rep_->Get(ro, k, callback_args, callback_func);
   }
 

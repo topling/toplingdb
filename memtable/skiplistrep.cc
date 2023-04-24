@@ -83,12 +83,11 @@ class SkipListRep : public MemTableRep {
   }
 
   void Get(const ReadOptions&, const LookupKey& k, void* callback_args,
-           bool (*callback_func)(void* arg, const KeyValuePair*)) override {
+           bool (*callback_func)(void* arg, const KeyValuePair&)) override {
     SkipListRep::Iterator iter(&skip_list_);
-    EncodedKeyValuePair kv;
     Slice dummy_slice;
     for (iter.Seek(dummy_slice, k.memtable_key_data());
-         iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
+         iter.Valid() && callback_func(callback_args, KeyValuePair(iter.key()));
          iter.Next()) {
     }
   }

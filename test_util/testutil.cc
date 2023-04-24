@@ -598,7 +598,7 @@ class SpecialMemTableRep : public MemTableRep {
 
   virtual void Get(const ReadOptions& ro, const LookupKey& k, void* callback_args,
                    bool (*callback_func)(void* arg,
-                                         const KeyValuePair*)) override {
+                                         const KeyValuePair&)) override {
     memtable_->Get(ro, k, callback_args, callback_func);
   }
 

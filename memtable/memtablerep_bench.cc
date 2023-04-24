@@ -314,14 +314,14 @@ class ReadBenchmarkThread : public BenchmarkThread {
       : BenchmarkThread(table, key_gen, bytes_written, bytes_read, sequence,
                         num_ops, read_hits) {}
 
-  static bool callback(void* arg, const MemTableRep::KeyValuePair* kv) {
+  static bool callback(void* arg, const MemTableRep::KeyValuePair& kv) {
     CallbackVerifyArgs* callback_args = static_cast<CallbackVerifyArgs*>(arg);
     assert(callback_args != nullptr);
     if (FLAGS_skip_read_cmp) {
       callback_args->found = true;
       return true;
     }
-    Slice internal_key = kv->GetKey();
+    Slice internal_key = kv.ikey;
     size_t key_length = internal_key.size();
     const char* key_ptr = internal_key.data();
     if (FLAGS_strict_verify) {

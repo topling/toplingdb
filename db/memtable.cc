@@ -801,7 +801,7 @@ struct Saver {
 };
 }  // anonymous namespace
 
-static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
+static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
   Saver* s = reinterpret_cast<Saver*>(arg);
   assert(s != nullptr);
   assert(!s->value || !s->columns);
@@ -815,7 +815,8 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair* pair) {
   // Check that it belongs to same user key.  We do not check the
   // sequence number since the Seek() call above should have skipped
   // all entries with overly large sequence numbers.
-  auto [ikey, v] = pair->GetKeyValue();
+  const Slice ikey = pair.ikey;
+  Slice v = pair.value;
   const size_t key_length = ikey.size();
   const char* key_ptr = ikey.data();
   assert(key_length >= 8);
@@ -1530,20 +1531,9 @@ size_t MemTable::CountSuccessiveMergeEntries(const LookupKey& key) {
   return num_successive_merges;
 }
 
-Slice MemTableRep::EncodedKeyValuePair::GetKey() const {
-  return GetLengthPrefixedSlice(key_);
-}
-
-Slice MemTableRep::EncodedKeyValuePair::GetValue() const {
-  Slice k = GetLengthPrefixedSlice(key_);
-  return GetLengthPrefixedSlice(k.data() + k.size());
-}
-
-std::pair<Slice, Slice> MemTableRep::EncodedKeyValuePair::GetKeyValue() const {
-  Slice k = GetLengthPrefixedSlice(key_);
-  Slice v = GetLengthPrefixedSlice(k.data() + k.size());
-  return {k, v};
-}
+MemTableRep::KeyValuePair::KeyValuePair(const char* key)
+  : ikey(GetLengthPrefixedSlice(key)),
+    value(GetLengthPrefixedSlice(ikey.end())) {}
 
 Slice MemTableRep::Iterator::GetKey() const {
   assert(Valid());

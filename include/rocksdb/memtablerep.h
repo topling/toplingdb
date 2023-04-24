@@ -201,27 +201,13 @@ class MemTableRep {
   // of time. Otherwise, RocksDB may be blocked.
   virtual void MarkFlushed() {}
 
-  class KeyValuePair {
-   public:
-    virtual Slice GetKey() const = 0;
-    virtual Slice GetValue() const = 0;
-    virtual std::pair<Slice, Slice> GetKeyValue() const = 0;
-    virtual ~KeyValuePair() {}
-  };
-
-  class EncodedKeyValuePair : public KeyValuePair {
-   public:
-    virtual Slice GetKey() const override;
-    virtual Slice GetValue() const override;
-    virtual std::pair<Slice, Slice> GetKeyValue() const override;
-
-    KeyValuePair* SetKey(const char* key) {
-      key_ = key;
-      return this;
-    }
-
-   private:
-    const char* key_ = nullptr;
+  struct KeyValuePair {
+    Slice ikey;
+    Slice value;
+    explicit KeyValuePair(const char* key); ///< cons from varlen prefixed kv
+    KeyValuePair(Slice ik, Slice v) : ikey(ik), value(v) {}
+    KeyValuePair(const std::pair<Slice, Slice>& kv) // implicit cons
+      : ikey(kv.first), value(kv.second) {}
   };
 
   template <class Legacy>
@@ -252,7 +238,7 @@ class MemTableRep {
   // seek and call the call back function.
   virtual void Get(const struct ReadOptions&,
                    const LookupKey&, void* callback_args,
-                   bool (*callback_func)(void* arg, const KeyValuePair*)) = 0;
+                   bool (*callback_func)(void* arg, const KeyValuePair&)) = 0;
 
   virtual uint64_t ApproximateNumEntries(const Slice& /*start_ikey*/,
                                          const Slice& /*end_key*/) {
@@ -277,7 +263,7 @@ class MemTableRep {
   virtual ~MemTableRep() {}
 
   // Iteration over the contents of a skip collection
-  class Iterator : public KeyValuePair {
+  class Iterator {
    public:
     // Initialize an iterator over the specified collection.
     // The returned iterator is not valid.
@@ -293,15 +279,15 @@ class MemTableRep {
 
     // Returns the key at the current position.
     // REQUIRES: Valid()
-    virtual Slice GetKey() const override;
+    virtual Slice GetKey() const;
 
     // Returns the value at the current position.
     // REQUIRES: Valid()
-    virtual Slice GetValue() const override;
+    virtual Slice GetValue() const;
 
     // Returns the key & value at the current position.
     // REQUIRES: Valid()
-    virtual std::pair<Slice, Slice> GetKeyValue() const override;
+    virtual std::pair<Slice, Slice> GetKeyValue() const;
 
     // Advances to the next position.
     // REQUIRES: Valid()

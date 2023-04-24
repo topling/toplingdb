@@ -343,6 +343,8 @@ class MemTableRep {
   // Default: true
   virtual bool IsSnapshotSupported() const { return true; }
 
+  virtual bool NeedsUserKeyCompareInGet() const { return true; }
+
  protected:
   // When *key is an internal key concatenated with the value, returns the
   // user key.

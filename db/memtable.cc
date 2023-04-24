@@ -113,6 +113,7 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       oldest_key_time_(std::numeric_limits<uint64_t>::max()),
       atomic_flush_seqno_(kMaxSequenceNumber),
       approximate_memory_usage_(0) {
+  needs_user_key_cmp_in_get_ = table_->NeedsUserKeyCompareInGet();
   UpdateFlushState();
   // something went wrong if we need to flush before inserting anything
   assert(!ShouldScheduleFlush());
@@ -792,6 +793,7 @@ struct Saver {
   bool do_merge;
   bool allow_data_in_errors;
   bool is_zero_copy;
+  bool needs_user_key_cmp_in_get;
   bool CheckCallback(SequenceNumber _seq) {
     if (callback_) {
       return callback_->IsVisible(_seq);
@@ -832,8 +834,11 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
 #else
   constexpr size_t ts_sz = 0; // let compiler optimize it out
 #endif
-  if (user_comparator->EqualWithoutTimestamp(user_key_slice,
+  if (!s->needs_user_key_cmp_in_get ||
+      user_comparator->EqualWithoutTimestamp(user_key_slice,
                                              s->key->user_key())) {
+    assert(user_comparator->EqualWithoutTimestamp(user_key_slice,
+                                             s->key->user_key()));
     // Correct user key
     const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
     ValueType type;
@@ -1233,6 +1238,7 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
     saver.do_merge = do_merge;
     saver.allow_data_in_errors = moptions_.allow_data_in_errors;
     saver.is_zero_copy = read_opts.pinning_tls != nullptr;
+    saver.needs_user_key_cmp_in_get = needs_user_key_cmp_in_get_;
     if (LIKELY(value != nullptr)) {
       value->Reset();
     }
@@ -1332,6 +1338,7 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
     saver.do_merge = true;
     saver.allow_data_in_errors = moptions_.allow_data_in_errors;
     saver.is_zero_copy = read_options.pinning_tls != nullptr;
+    saver.needs_user_key_cmp_in_get = needs_user_key_cmp_in_get_;
     table_->Get(read_options, *(iter->lkey), &saver, SaveValue);
 
     if (!saver.found_final_value && saver.merge_in_progress) {

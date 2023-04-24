@@ -557,6 +557,7 @@ class MemTable {
   // These are used to manage memtable flushes to storage
   bool flush_in_progress_;  // started the flush
   bool flush_completed_;    // finished the flush
+  bool needs_user_key_cmp_in_get_;
   uint64_t file_number_;    // filled up after flush is complete
 
   // The updates to be applied to the transaction log when this

@@ -89,6 +89,8 @@ DEFINE_bool(if_log_bucket_dist_when_flash, true,
             "if_log_bucket_dist_when_flash parameter to pass into "
             "NewHashLinkListRepFactory");
 
+DEFINE_bool(enable_zero_copy, false, "enable zero copy");
+
 DEFINE_int32(
     threshold_use_skiplist, 256,
     "threshold_use_skiplist parameter to pass into NewHashLinkListRepFactory");
@@ -312,7 +314,15 @@ class ReadBenchmarkThread : public BenchmarkThread {
                       uint64_t* sequence, uint64_t num_ops, uint64_t* read_hits)
       : BenchmarkThread(table, key_gen, bytes_written, bytes_read, sequence,
                         num_ops, read_hits) {
+    if (FLAGS_enable_zero_copy) {
+      read_opt_.StartPin();
+    }
     needs_user_key_cmp_ = table->NeedsUserKeyCompareInGet();
+  }
+  ~ReadBenchmarkThread() {
+    if (FLAGS_enable_zero_copy) {
+      read_opt_.FinishPin();
+    }
   }
 
   static bool callback(void* arg, const MemTableRep::KeyValuePair& kv) {

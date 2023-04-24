@@ -1,3 +1,4 @@
+## [中文版](README-zh_cn.md)
 ## ToplingDB: A Persistent Key-Value Store for External Storage
 ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). It is built with [RocksDB](https://github.com/facebook/rocksdb). See [ToplingDB Branch Name Convention](https://github.com/topling/toplingdb/wiki/ToplingDB-Branch-Name-Convention).
 
@@ -11,11 +12,12 @@ ToplingDB has much more key features than RocksDB:
 1. Topling transaction lock management, 5x faster than rocksdb
 1. MultiGet with concurrent IO by fiber/coroutine + io_uring, much faster than RocksDB's async MultiGet
 1. Topling [de-virtualization](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Principle), de-virtualize hotspot (virtual) functions, and key prefix caches, [bechmarks](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Benchmark)
+1. Topling zero copy for point search(Get/MultiGet) and Iterator
 1. Builtin SidePlugin**s** for existing RocksDB components(Cache, Comparator, TableFactory, MemTableFactory...)
 1. Builtin Prometheus metrics support, this is based on [Embeded Http Server](https://github.com/topling/rockside/wiki/WebView)
 1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
 
-## ToplingDB cloud native services
+## ToplingDB cloud native DB services
 1. [MyTopling](https://github.com/topling/mytopling)(MySQL on ToplingDB), [Managed MyTopling on aliyun](https://topling.cn/products/mytopling/)
 1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB), [Managed Todis on aliyun](https://topling.cn/products/todis-enterprise/)
 
@@ -54,9 +56,9 @@ toplingdb
 To simplify the compiling, repo**s** are auto cloned in ToplingDB's Makefile, community users will auto clone public repo successfully but fail to auto clone **private** repo, thus ToplingDB is built without **private** components, this is so called **community** version.
 
 ## Run db_bench
-ToplingDB requires gcc 8.4 or newer, or new clang(in near 3 years).
+ToplingDB requires C++17, gcc 8.3 or newer is recommended, clang also works.
 
-Even without Topling performance components, ToplingDB is much faster than upstream RocksDB:
+Even without ToplingZipTable, ToplingDB is much faster than upstream RocksDB:
 ```bash
 sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel libcurl-devel liburing-devel
 git clone https://github.com/topling/toplingdb
@@ -92,8 +94,14 @@ To enable these features, add `-D${MACRO_NAME}` to var `EXTRA_CXXFLAGS`, such as
 make -j`nproc` EXTRA_CXXFLAGS='-DROCKSDB_DYNAMIC_CREATE_CF' rocksdbjava
 ```
 ## License
-We disallow bytedance using this software, other terms are identidal with
-upstream rocksdb license, see [LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING) and
+To conform open source license, the following term of disallowing bytedance is deleted since 2023-04-24,
+that is say: bytedance using ToplingDB is no longer illeagal and is not a shame.
+
+~~We disallow bytedance using this software, other terms are identidal with
+upstream rocksdb license,~~ see [LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING) and
+[LICENSE.leveldb](LICENSE.leveldb).
+
+The terms of disallowing bytedance are also deleted in [LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING) and
 [LICENSE.leveldb](LICENSE.leveldb).
 
 <hr/>

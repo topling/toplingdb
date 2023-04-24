@@ -1,9 +1,3 @@
-Copyright (c) 2021 The ToplingDB Authors. All rights reserved.
-
-We disallow bytedance using this software, other terms are identical with
-original license, see below:
----------------------------------------------------------------------------
-
 This contains code that is from LevelDB, and that code is under the following license:
 
 Copyright (c) 2011 The LevelDB Authors. All rights reserved.

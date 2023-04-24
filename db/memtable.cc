@@ -922,7 +922,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
           s->mem->GetLock(s->key->user_key())->ReadLock();
         }
 
-        *(s->status) = Status::OK();
+        s->status->SetAsOK();
 
         if (s->value) {
           if (s->is_zero_copy)
@@ -943,13 +943,13 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
         return false;
       }
       case kTypeValue: {
-        if (s->inplace_update_support) {
+        if (UNLIKELY(s->inplace_update_support)) {
           s->mem->GetLock(s->key->user_key())->ReadLock();
         }
 
-        *(s->status) = Status::OK();
+        s->status->SetAsOK();
 
-        if (!s->do_merge) {
+        if (UNLIKELY(!s->do_merge)) {
           // Preserve the value with the goal of returning it as part of
           // raw merge operands to the user
           // TODO(yanqin) update MergeContext so that timestamps information
@@ -957,7 +957,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
 
           merge_context->PushOperand(
               v, s->inplace_update_support == false /* operand_pinned */);
-        } else if (s->merge_in_progress) {
+        } else if (UNLIKELY(s->merge_in_progress)) {
           assert(s->do_merge);
 
           if (s->value || s->columns) {
@@ -978,7 +978,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
               }
             }
           }
-        } else if (s->value) {
+        } else if (LIKELY(s->value != nullptr)) {
           if (s->is_zero_copy)
             s->value->PinSlice(v, nullptr);
           else
@@ -987,24 +987,24 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
           s->columns->SetPlainValue(v);
         }
 
-        if (s->inplace_update_support) {
+        if (UNLIKELY(s->inplace_update_support)) {
           s->mem->GetLock(s->key->user_key())->ReadUnlock();
         }
 
         s->found_final_value = true;
 
-        if (s->is_blob_index != nullptr) {
+        if (UNLIKELY(s->is_blob_index != nullptr)) {
           *(s->is_blob_index) = false;
         }
 
         return false;
       }
       case kTypeWideColumnEntity: {
-        if (s->inplace_update_support) {
+        if (UNLIKELY(s->inplace_update_support)) {
           s->mem->GetLock(s->key->user_key())->ReadLock();
         }
 
-        *(s->status) = Status::OK();
+        s->status->SetAsOK();
 
         if (!s->do_merge) {
           // Preserve the value with the goal of returning it as part of
@@ -1056,7 +1056,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
           *(s->status) = s->columns->SetWideColumnValue(v);
         }
 
-        if (s->inplace_update_support) {
+        if (UNLIKELY(s->inplace_update_support)) {
           s->mem->GetLock(s->key->user_key())->ReadUnlock();
         }
 
@@ -1098,7 +1098,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
         return false;
       }
       case kTypeMerge: {
-        if (!merge_operator) {
+        if (UNLIKELY(!merge_operator)) {
           *(s->status) = Status::InvalidArgument(
               "merge_operator is not properly initialized.");
           // Normally we continue the loop (return true) when we see a merge

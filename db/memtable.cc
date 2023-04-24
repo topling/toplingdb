@@ -823,18 +823,27 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
   const char* key_ptr = ikey.data();
   assert(key_length >= 8);
   Slice user_key_slice = Slice(key_ptr, key_length - 8);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* user_comparator =
       s->mem->GetInternalKeyComparator().user_comparator();
-#if defined(TOPLINGDB_WITH_TIMESTAMP)
   size_t ts_sz = user_comparator->timestamp_size();
   if (ts_sz && s->timestamp && max_covering_tombstone_seq > 0) {
     // timestamp should already be set to range tombstone timestamp
     assert(s->timestamp->size() == ts_sz);
   }
 #else
+  #if defined(__GNUC__)
+    #pragma GCC diagnostic ignored "-Wparentheses" // fuck
+  #endif
+  const Comparator* user_comparator = nullptr;
   constexpr size_t ts_sz = 0; // let compiler optimize it out
 #endif
   if (!s->needs_user_key_cmp_in_get ||
+#if !defined(TOPLINGDB_WITH_TIMESTAMP)
+  // user_comparator is not need if !needs_user_key_cmp_in_get without timestamp,
+  // omit load it from ptr to ptr
+  (user_comparator = s->mem->GetInternalKeyComparator().user_comparator(), true) &&
+#endif
       user_comparator->EqualWithoutTimestamp(user_key_slice,
                                              s->key->user_key())) {
     assert(user_comparator->EqualWithoutTimestamp(user_key_slice,

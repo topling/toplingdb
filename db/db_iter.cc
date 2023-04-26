@@ -128,7 +128,7 @@ __always_inline
 bool DBIter::ParseKey(ParsedInternalKey* ikey) {
 #if 0
   Status s = ParseInternalKey(iter_.key(), ikey, false /* log_err_key */);
-  if (UNLIKELY(!s.ok())) {
+  if (!s.ok()) {
     status_ = Status::Corruption("In DBIter: ", s.getState());
     valid_ = false;
     ROCKS_LOG_ERROR(logger_, "In DBIter: %s", status_.getState());
@@ -353,7 +353,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
     // Will update is_key_seqnum_zero_ as soon as we parsed the current key
     // but we need to save the previous value to be used in the loop.
     bool is_prev_key_seqnum_zero = is_key_seqnum_zero_;
-    if (UNLIKELY(!ParseKey(&ikey_))) {
+    if (!ParseKey(&ikey_)) {
       is_key_seqnum_zero_ = false;
       return false;
     }
@@ -454,7 +454,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                       !iter_.iter()->IsKeyPinned() /* copy */);
             }
 
-            if (UNLIKELY(ikey_.type == kTypeBlobIndex)) {
+            if (ikey_.type == kTypeBlobIndex) {
               if (!SetBlobValueIfNeeded(ikey_.user_key, iter_.value())) {
                 return false;
               }

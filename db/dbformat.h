@@ -579,8 +579,9 @@ class IterKey {
     assert(IsKeyPinned() == true);
 
     Reserve(key_size_);
-    memcpy(buf(), key_, key_size_);
-    key_ = buf();
+    char*  bufp = buf();
+    memcpy(bufp, key_, key_size_);
+    key_ = bufp;
   }
 
   // Update the sequence number in the internal key.  Guarantees not to
@@ -588,13 +589,14 @@ class IterKey {
   void UpdateInternalKey(uint64_t seq, ValueType t, const Slice* ts = nullptr) {
     assert(!IsKeyPinned());
     assert(key_size_ >= kNumInternalBytes);
+    char*  bufp = buf();
     if (ts) {
       assert(key_size_ >= kNumInternalBytes + ts->size());
-      memcpy(&buf()[key_size_ - kNumInternalBytes - ts->size()], ts->data(),
+      memcpy(&bufp[key_size_ - kNumInternalBytes - ts->size()], ts->data(),
              ts->size());
     }
     uint64_t newval = (seq << 8) | t;
-    EncodeFixed64(&buf()[key_size_ - kNumInternalBytes], newval);
+    EncodeFixed64(&bufp[key_size_ - kNumInternalBytes], newval);
   }
 
   bool IsKeyPinned() const { return (key_ != buf()); }
@@ -610,17 +612,18 @@ class IterKey {
     size_t usize = user_key.size();
     size_t ts_sz = (ts != nullptr ? ts->size() : 0);
     EnlargeBufferIfNeeded(psize + usize + sizeof(uint64_t) + ts_sz);
+    char* bufp = buf();
     if (psize > 0) {
-      memcpy(buf(), key_prefix.data(), psize);
+      memcpy(bufp, key_prefix.data(), psize);
     }
-    memcpy(buf() + psize, user_key.data(), usize);
+    memcpy(bufp + psize, user_key.data(), usize);
     if (ts) {
-      memcpy(buf() + psize + usize, ts->data(), ts_sz);
+      memcpy(bufp + psize + usize, ts->data(), ts_sz);
     }
-    EncodeFixed64(buf() + usize + psize + ts_sz,
+    EncodeFixed64(bufp + usize + psize + ts_sz,
                   PackSequenceAndType(s, value_type));
 
-    key_ = buf();
+    key_ = bufp;
     key_size_ = psize + usize + sizeof(uint64_t) + ts_sz;
     is_user_key_ = false;
   }
@@ -649,9 +652,10 @@ class IterKey {
   void EncodeLengthPrefixedKey(const Slice& key) {
     auto size = key.size();
     EnlargeBufferIfNeeded(size + static_cast<size_t>(VarintLength(size)));
-    char* ptr = EncodeVarint32(buf(), static_cast<uint32_t>(size));
+    char* bufp = buf();
+    char* ptr = EncodeVarint32(bufp, static_cast<uint32_t>(size));
     memcpy(ptr, key.data(), size);
-    key_ = buf();
+    key_ = bufp;
     is_user_key_ = true;
   }
 
@@ -676,14 +680,15 @@ class IterKey {
     if (copy) {
       // Copy key to buf_
       EnlargeBufferIfNeeded(size);
-      memcpy(buf(), key.data(), size);
-      key_ = buf();
+      char*  bufp = buf();
+      key_ = bufp;
+      memcpy(bufp, key.data(), size);
     } else {
       // Update key_ to point to external memory
       key_ = key.data();
     }
     key_size_ = size;
-    return Slice(key_, key_size_);
+    return Slice(key_, size);
   }
 
   void ResetBuffer() {

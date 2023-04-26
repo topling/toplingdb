@@ -349,6 +349,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
 
   ParsedInternalKey ikey_; // ToplingDB, move field as local var
   do {
+    is_value_prepared_ = true;
     // Will update is_key_seqnum_zero_ as soon as we parsed the current key
     // but we need to save the previous value to be used in the loop.
     bool is_prev_key_seqnum_zero = is_key_seqnum_zero_;
@@ -428,10 +429,17 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
           case kTypeValue:
           case kTypeBlobIndex:
           case kTypeWideColumnEntity:
-            if (!iter_.PrepareValue()) {
-              assert(!iter_.status().ok());
-              valid_ = false;
-              return false;
+            is_value_prepared_ = false;
+        #if !defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+            if (UNLIKELY(ikey_.type != kTypeValue))
+        #endif
+            {
+              if (!iter_.PrepareValue()) {
+                assert(!iter_.status().ok());
+                valid_ = false;
+                return false;
+              }
+              is_value_prepared_ = true;
             }
             if (timestamp_lb_) {
               saved_key_.SetInternalKey(ikey_);
@@ -456,7 +464,9 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
         #endif
             } else {
               assert(ikey_.type == kTypeValue);
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
               SetValueAndColumnsFromPlain(iter_.value());
+        #endif
             }
 
             valid_ = true;
@@ -809,6 +819,7 @@ bool DBIter::ReverseToBackward() {
 }
 
 void DBIter::PrevInternal(const Slice* prefix) {
+  is_value_prepared_ = true;
   while (iter_.Valid()) {
     saved_key_.SetUserKey(
         ExtractUserKey(iter_.key()),

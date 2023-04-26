@@ -160,7 +160,16 @@ class DBIter final : public Iterator {
   }
   Slice value() const override {
     assert(valid_);
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+    assert(is_value_prepared_);
+#endif
 
+    if (!is_value_prepared_) {
+      auto mut = const_cast<DBIter*>(this);
+      ROCKSDB_VERIFY(mut->iter_.PrepareValue());
+      mut->is_value_prepared_ = true;
+      mut->value_ = iter_.value();
+    }
     return value_;
   }
 
@@ -393,6 +402,7 @@ class DBIter final : public Iterator {
   Status status_;
   Direction direction_;
   bool valid_;
+  bool is_value_prepared_;
   bool current_entry_is_merged_;
   // True if we know that the current entry's seqnum is 0.
   // This information is used as that the next entry will be for another

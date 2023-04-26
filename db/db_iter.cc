@@ -346,10 +346,10 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
   // an infinite loop of reseeks. To avoid that, we limit the number of reseeks
   // to one.
   bool reseek_done = false;
+  is_value_prepared_ = true;
 
   ParsedInternalKey ikey_; // ToplingDB, move field as local var
   do {
-    is_value_prepared_ = true;
     // Will update is_key_seqnum_zero_ as soon as we parsed the current key
     // but we need to save the previous value to be used in the loop.
     bool is_prev_key_seqnum_zero = is_key_seqnum_zero_;
@@ -427,19 +427,24 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
             }
             break;
           case kTypeValue:
+        #if !defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+            if (timestamp_lb_) {
+              saved_key_.SetInternalKey(ikey_);
+            } else {
+              saved_key_.SetUserKey(
+                  ikey_.user_key, !pin_thru_lifetime_ ||
+                                      !iter_.iter()->IsKeyPinned() /* copy */);
+            }
+            is_value_prepared_ = false;
+            valid_ = true;
+            return true;
+        #endif
           case kTypeBlobIndex:
           case kTypeWideColumnEntity:
-            is_value_prepared_ = false;
-        #if !defined(TOPLINGDB_WITH_WIDE_COLUMNS)
-            if (UNLIKELY(ikey_.type != kTypeValue))
-        #endif
-            {
-              if (!iter_.PrepareValue()) {
-                assert(!iter_.status().ok());
-                valid_ = false;
-                return false;
-              }
-              is_value_prepared_ = true;
+            if (!iter_.PrepareValue()) {
+              assert(!iter_.status().ok());
+              valid_ = false;
+              return false;
             }
             if (timestamp_lb_) {
               saved_key_.SetInternalKey(ikey_);
@@ -456,17 +461,13 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
 
               SetValueAndColumnsFromPlain(expose_blob_index_ ? iter_.value()
                                                              : blob_value_);
-        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
             } else if (ikey_.type == kTypeWideColumnEntity) {
               if (!SetValueAndColumnsFromEntity(iter_.value())) {
                 return false;
               }
-        #endif
             } else {
               assert(ikey_.type == kTypeValue);
-        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
               SetValueAndColumnsFromPlain(iter_.value());
-        #endif
             }
 
             valid_ = true;

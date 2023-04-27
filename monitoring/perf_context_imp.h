@@ -17,7 +17,9 @@ extern PerfContext perf_context;
 extern thread_local PerfContext perf_context_;
 #define perf_context (*get_perf_context())
 #else
-extern thread_local PerfContext perf_context ROCKSDB_STATIC_TLS;
+  extern PerfContext* init_perf_context();
+  extern ROCKSDB_STATIC_TLS ROCKSDB_RAW_TLS PerfContext* p_perf_context;
+  #define perf_context (*(p_perf_context?:init_perf_context()))
 #endif
 #endif
 

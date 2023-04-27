@@ -71,6 +71,8 @@ constexpr bool kMustFreeHeapAllocations = false;
 
 #if defined(__GNUC__)
 #define ROCKSDB_STATIC_TLS __attribute__((tls_model("initial-exec")))
+#define ROCKSDB_RAW_TLS __thread
 #else
 #define ROCKSDB_STATIC_TLS
+#define ROCKSDB_RAW_TLS thread_local
 #endif

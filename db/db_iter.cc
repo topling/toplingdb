@@ -182,13 +182,15 @@ void DBIter::Next() {
     } else {
       FindNextUserEntry(true /* skipping the current user key */, nullptr);
     }
+    if (LIKELY(valid_)) {
+      local_stats_.next_found_count_++;
+      local_stats_.bytes_read_ += saved_key_.Size();
+      if (is_value_prepared_)
+        local_stats_.bytes_read_ += value_.size_;
+    }
   } else {
     is_key_seqnum_zero_ = false;
     valid_ = false;
-  }
-  if (statistics_ != nullptr && valid_) {
-    local_stats_.next_found_count_++;
-    local_stats_.bytes_read_ += (key().size() + value().size());
   }
 }
 
@@ -368,7 +370,9 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                user_key_without_ts, /*a_has_ts=*/false, *iterate_upper_bound_,
                /*b_has_ts=*/false) < 0);
     if (iterate_upper_bound_ != nullptr &&
-        iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
+        // ToplingDB: for speed up, do not call UpperBoundCheckResult()
+        // The following cmpNoTS has same semantic as UpperBoundCheckResult()
+        // iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
         !cmpNoTS(user_key_without_ts, *iterate_upper_bound_)) {
       break;
     }

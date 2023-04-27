@@ -169,6 +169,7 @@ class DBIter final : public Iterator {
       ROCKSDB_VERIFY(mut->iter_.PrepareValue());
       mut->is_value_prepared_ = true;
       mut->value_ = iter_.value();
+      mut->local_stats_.bytes_read_ += value_.size_;
     }
     return value_;
   }

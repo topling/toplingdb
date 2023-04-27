@@ -1635,6 +1635,8 @@ struct ReadOptions {
   // Default: false
   bool ignore_range_deletions;
 
+  uint32_t min_prefault_pages = UINT32_MAX; // mainly for zero copy
+
   // A callback to determine whether relevant keys for this scan exist in a
   // given table based on the table's properties. The callback is passed the
   // properties of each table during iteration. If the callback returns false,

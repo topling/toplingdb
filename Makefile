@@ -3004,13 +3004,13 @@ $(OBJ_DIR)/%.o: %.c
 	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.s: %.cc
-	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -S -Wa,-adhln $< -o $@ $(COVERAGEFLAGS)
+	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -Wa,-adhln -fverbose-asm -masm=intel -S $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.s: %.cpp
-	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -S $< -o $@ $(COVERAGEFLAGS)
+	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -fverbose-asm -masm=intel -S $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.s: %.c
-	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -S $< -o $@
+	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -fverbose-asm -masm=intel -S $< -o $@
 endif
 
 # ---------------------------------------------------------------------------

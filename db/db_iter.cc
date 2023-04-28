@@ -359,8 +359,12 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
       is_key_seqnum_zero_ = false;
       return false;
     }
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
     Slice user_key_without_ts =
         StripTimestampFromUserKey(ikey_.user_key, timestamp_size_);
+#else
+    Slice& user_key_without_ts = ikey_.user_key;
+#endif
 
     is_key_seqnum_zero_ = (ikey_.sequence == 0);
 

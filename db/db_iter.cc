@@ -1467,22 +1467,16 @@ bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
                             ? sequence <= sequence_
                             : read_callback_->IsVisible(sequence);
 
-#if defined(TOPLINGDB_WITH_TIMESTAMP)
   bool visible_by_ts =
       (timestamp_ub_ == nullptr ||
        user_comparator_.CompareTimestamp(ts, *timestamp_ub_) <= 0) &&
       (timestamp_lb_ == nullptr ||
        user_comparator_.CompareTimestamp(ts, *timestamp_lb_) >= 0);
-#endif
 
   if (more_recent) {
     *more_recent = !visible_by_seq;
   }
-#if defined(TOPLINGDB_WITH_TIMESTAMP)
   return visible_by_seq && visible_by_ts;
-#else
-  return visible_by_seq;
-#endif
 }
 
 void DBIter::SetSavedKeyToSeekTarget(const Slice& target) {

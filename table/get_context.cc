@@ -323,6 +323,36 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
     }
     switch (type) {
       case kTypeValue:
+        if (LIKELY(kNotFound == state_)) {
+          state_ = kFound;
+          if (LIKELY(do_merge_)) {
+            if (LIKELY(pinnable_val_ != nullptr)) {
+              if (LIKELY(value_pinner != nullptr)) {
+                pinnable_val_->PinSlice(value, value_pinner);
+              } else {
+                TEST_SYNC_POINT_CALLBACK("GetContext::SaveValue::PinSelf", this);
+                pinnable_val_->PinSelf(value);
+              }
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+            } else if (columns_ != nullptr) {
+              columns_->SetPlainValue(value, value_pinner);
+        #endif
+            }
+          }
+          else {
+            push_operand(value, value_pinner);
+          }
+        }
+        else {
+          assert(state_ == kMerge);
+          state_ = kFound;
+          if (LIKELY(do_merge_)) {
+            Merge(&value);
+          } else {
+            push_operand(value, value_pinner);
+          }
+        }
+        return false;
       case kTypeBlobIndex:
       case kTypeWideColumnEntity:
         assert(state_ == kNotFound || state_ == kMerge);

@@ -122,6 +122,8 @@ class MergeContext {
   // Copy of operands that are not pinned.
   terark::valvec32<std::unique_ptr<char[]> > copied_operands_;
   mutable bool operands_reversed_ = true;
+  mutable bool ext_bool_ = false;
+  mutable uint16_t ext_uint16_ = 0;
   mutable uint32_t ext_flags_ = 0; // for use by derived class
 };
 

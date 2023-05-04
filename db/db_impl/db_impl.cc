@@ -2908,7 +2908,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
 }
 
 #if defined(ROCKSDB_UNIT_TEST)
-static bool const g_MultiGetUseFiber = false;
+static bool const g_MultiGetUseFiber = terark::getEnvBool("MultiGetUseFiber", false);
 #else
 static bool const g_MultiGetUseFiber = terark::getEnvBool("MultiGetUseFiber", true);
 #endif

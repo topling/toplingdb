@@ -349,15 +349,11 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
   bool reseek_done = false;
   is_value_prepared_ = true;
 
-  ParsedInternalKey ikey_; // ToplingDB, move field as local var
   do {
     // Will update is_key_seqnum_zero_ as soon as we parsed the current key
     // but we need to save the previous value to be used in the loop.
     bool is_prev_key_seqnum_zero = is_key_seqnum_zero_;
-    if (!ParseKey(&ikey_)) {
-      is_key_seqnum_zero_ = false;
-      return false;
-    }
+    ParsedInternalKey ikey_(iter_.key()); // ToplingDB, move field as local var
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
     Slice user_key_without_ts =
         StripTimestampFromUserKey(ikey_.user_key, timestamp_size_);

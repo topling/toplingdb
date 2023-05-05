@@ -245,7 +245,7 @@ TEST_F(MemTableListTest, GetTest) {
                     max_write_buffer_size_to_maintain);
 
   SequenceNumber seq = 1;
-  std::string value;
+  PinnableSlice value;
   Status s;
   MergeContext merge_context;
   InternalKeyComparator ikey_cmp(options.comparator);
@@ -381,7 +381,7 @@ TEST_F(MemTableListTest, GetFromHistoryTest) {
                     max_write_buffer_size_to_maintain);
 
   SequenceNumber seq = 1;
-  std::string value;
+  PinnableSlice value;
   Status s;
   MergeContext merge_context;
   InternalKeyComparator ikey_cmp(options.comparator);

@@ -330,8 +330,24 @@ CXXFLAGS += \
 LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
            -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
 
-# default is 1, can be override
-WITH_TOPLING_ROCKS ?= 1
+ifndef WITH_TOPLING_ROCKS
+  # auto check
+  ifeq (,$(wildcard sideplugin/topling-rocks))
+    # topling specific: just for people who has permission to topling-rocks
+    dummy := $(shell set -e -x; \
+      cd sideplugin; \
+      git clone git@github.com:rockeet/topling-rocks; \
+      cd topling-rocks; \
+      git submodule update --init --recursive \
+    )
+  endif
+  ifeq (,$(wildcard sideplugin/topling-rocks))
+    WITH_TOPLING_ROCKS := 0
+  else
+    WITH_TOPLING_ROCKS := 1
+  endif
+endif
+
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifeq (,$(wildcard sideplugin/topling-rocks))
   # topling specific: just for people who has permission to topling-rocks
@@ -347,6 +363,9 @@ else
     dummy := $(shell set -ex; cd sideplugin/topling-rocks && git pull)
    endif
   endif
+endif
+ifeq (,$(wildcard sideplugin/topling-rocks/src/table/top_zip_table_builder.cc))
+  $(error WITH_TOPLING_ROCKS=1 but repo sideplugin/topling-rocks is broken)
 endif
 endif
 
@@ -2433,15 +2452,38 @@ install-headers: gen-pc
 		install -d $(DESTDIR)/$(PREFIX)/include/rocksdb/`dirname $$header`; \
 		install -C -m 644 $$header $(DESTDIR)/$(PREFIX)/include/rocksdb/$$header; \
 	done
+	install -d                                  $(DESTDIR)/$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/json.h     $(DESTDIR)/$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/json_fwd.h $(DESTDIR)/$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/builtin_table_factory.h $(DESTDIR)/$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_repo.h      $(DESTDIR)/$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_factory.h   $(DESTDIR)/$(PREFIX)/include/topling
+	install -d $(DESTDIR)/$(PREFIX)/include/terark
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/io
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/succinct
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/thread
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/util
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/fsa
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/fsa/ppi
+	install -d $(DESTDIR)/$(PREFIX)/include/terark/zbs
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/*.hpp          $(DESTDIR)/$(PREFIX)/include/terark
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/io/*.hpp       $(DESTDIR)/$(PREFIX)/include/terark/io
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/succinct/*.hpp $(DESTDIR)/$(PREFIX)/include/terark/succinct
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/thread/*.hpp   $(DESTDIR)/$(PREFIX)/include/terark/thread
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/util/*.hpp     $(DESTDIR)/$(PREFIX)/include/terark/util
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.hpp      $(DESTDIR)/$(PREFIX)/include/terark/fsa
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.inl      $(DESTDIR)/$(PREFIX)/include/terark/fsa
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/ppi/*.hpp  $(DESTDIR)/$(PREFIX)/include/terark/fsa/ppi
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/zbs/*.hpp      $(DESTDIR)/$(PREFIX)/include/terark/zbs
+	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)/$(PREFIX)/include
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
-#install-static: install-headers $(LIBRARY)
-install-static: $(LIBRARY)
+install-static: install-headers $(LIBRARY) static_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(LIBRARY) $(INSTALL_LIBDIR)
+	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_static/* $(INSTALL_LIBDIR)
 
-#install-shared: install-headers $(SHARED4) dcompact_worker
-install-shared: $(SHARED4) dcompact_worker
+install-shared: install-headers $(SHARED4) shared_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
@@ -2451,10 +2493,7 @@ install-shared: $(SHARED4) dcompact_worker
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
 
-# install static by default + install shared if it exists
-#install: install-static
-install: install-shared
-	[ -e $(SHARED4) ] && $(MAKE) install-shared || :
+install: install-${LIB_MODE}
 
 # Generate the pkg-config file
 gen-pc:
@@ -2467,7 +2506,7 @@ gen-pc:
 	-echo 'Description: An embeddable persistent key-value store for fast storage' >> rocksdb.pc
 	-echo Version: $(shell ./build_tools/version.sh full) >> rocksdb.pc
 	-echo 'Libs: -L$${libdir} $(EXEC_LDFLAGS) -lrocksdb' >> rocksdb.pc
-	-echo 'Libs.private: $(PLATFORM_LDFLAGS)' >> rocksdb.pc
+	-echo 'Libs.private: -lterark-zbs-r -lterark-fsa-r -lterark-core-r $(PLATFORM_LDFLAGS)' >> rocksdb.pc
 	-echo 'Cflags: -I$${includedir} $(PLATFORM_CXXFLAGS)' >> rocksdb.pc
 	-echo 'Requires: $(subst ",,$(ROCKSDB_PLUGIN_PKGCONFIG_REQUIRES))' >> rocksdb.pc
 
@@ -2824,8 +2863,12 @@ ifeq ($(JAVA_HOME),)
 endif
 	$(AM_V_at)rm -f ./java/target/$(ROCKSDBJNILIB)
 	$(AM_V_at)$(CXX) $(CXXFLAGS) -shared -fPIC -o ./java/target/$(ROCKSDBJNILIB) $(ALL_JNI_NATIVE_OBJECTS) $(LIB_OBJECTS) $(JAVA_LDFLAGS) $(LDFLAGS)
+	$(AM_V_at)cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/*${COMPILER}*-r.so java/target
+ifeq ($(STRIP_DEBUG_INFO),1)
+	$(AM_V_at)strip java/target/*.so
+endif
 	$(AM_V_at)cd java; $(JAR_CMD) -cf target/$(ROCKSDB_JAR) HISTORY*.md
-	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) $(ROCKSDBJNILIB)
+	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) *.so
 	$(AM_V_at)cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR) org/rocksdb/*.class org/rocksdb/util/*.class
 	$(AM_V_at)openssl sha1 java/target/$(ROCKSDB_JAR) | sed 's/.*= \([0-9a-f]*\)/\1/' > java/target/$(ROCKSDB_JAR).sha1
 
@@ -2965,13 +3008,13 @@ $(OBJ_DIR)/%.o: %.c
 	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.s: %.cc
-	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -S -Wa,-adhln $< -o $@ $(COVERAGEFLAGS)
+	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -Wa,-adhln -fverbose-asm -masm=intel -S $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.s: %.cpp
-	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -S $< -o $@ $(COVERAGEFLAGS)
+	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -fverbose-asm -masm=intel -S $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.s: %.c
-	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -S $< -o $@
+	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -fverbose-asm -masm=intel -S $< -o $@
 endif
 
 # ---------------------------------------------------------------------------
@@ -3034,6 +3077,10 @@ ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: CXXFLAGS =
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: LDFLAGS =
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}:
 	+make -C ${TOPLING_CORE_DIR} ${TOPLING_ZBS_TARGET}
+
+${STATIC_LIBRARY}: ${BUILD_ROOT}/lib_shared/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a
+${BUILD_ROOT}/lib_shared/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a:
+	+make -C ${TOPLING_CORE_DIR} core fsa zbs
 
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))

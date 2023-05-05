@@ -15,7 +15,15 @@ namespace ROCKSDB_NAMESPACE {
 // Put here just to make get_perf_context() simple without ifdef.
 PerfContext perf_context;
 #else
-thread_local PerfContext perf_context ROCKSDB_STATIC_TLS;
+  ROCKSDB_STATIC_TLS ROCKSDB_RAW_TLS PerfContext* p_perf_context;
+  // not need ROCKSDB_STATIC_TLS
+  static thread_local std::unique_ptr<PerfContext> g_del_perf_context;
+  PerfContext* init_perf_context() {
+    // tls is always init at first use, this function is a must
+    auto ptr = p_perf_context = new PerfContext;
+    g_del_perf_context.reset(ptr);
+    return ptr;
+  }
 #endif
 
 PerfContext* get_perf_context() { return &perf_context; }
@@ -26,7 +34,7 @@ PerfContext::~PerfContext() {
 #endif
 }
 
-PerfContext::PerfContext() noexcept = default;
+PerfContext::PerfContext() noexcept { Reset(); }
 
 PerfContext::PerfContext(const PerfContext&) = default;
 

@@ -122,11 +122,12 @@ void DumpRocksDBBuildVersion(Logger* log);
 // because FiberPool.m_channel must be destructed first
 static ROCKSDB_STATIC_TLS thread_local terark::FiberPool gt_fiber_pool(
     boost::fibers::context::active_pp());
-struct ToplingMGetCtx {
-  MergeContext merge_context;
+struct ToplingMGetCtx : protected MergeContext {
+  MergeContext& merge_context() { return *this; }
   SequenceNumber max_covering_tombstone_seq = 0;
-  bool done = false;
-  bool lkey_initialized = false;
+  static constexpr uint32_t FLAG_done = 1;
+  static constexpr uint32_t FLAG_lkey_initialized = 2;
+
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   std::string* timestamp = nullptr;
 #endif
@@ -136,10 +137,15 @@ struct ToplingMGetCtx {
   void InitLookupKey(const Slice& user_key, SequenceNumber seq,
                      const Slice* ts) {
     new(&lkey)LookupKey(user_key, seq, ts);
-    lkey_initialized = true;
+    this->ext_flags_ |= FLAG_lkey_initialized;
   }
   ToplingMGetCtx() {}
-  ~ToplingMGetCtx() { if (lkey_initialized) lkey.~LookupKey(); }
+  ~ToplingMGetCtx() {
+    if (this->ext_flags_ & FLAG_lkey_initialized)
+      lkey.~LookupKey();
+  }
+  void set_done() { this->ext_flags_ |= FLAG_done; }
+  bool is_done() const { return (this->ext_flags_ & FLAG_done) != 0; }
 };
 
 CompressionType GetCompressionFlush(
@@ -2193,34 +2199,23 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
     if (get_impl_options.get_value) {
       if (!sv->mem->IsEmpty() && sv->mem->Get(
               lkey,
-              get_impl_options.value ? get_impl_options.value->GetSelf()
-                                     : nullptr,
+              get_impl_options.value,
               get_impl_options.columns, timestamp, &s, &merge_context,
               &max_covering_tombstone_seq, read_options,
               false /* immutable_memtable */, get_impl_options.callback,
               get_impl_options.is_blob_index)) {
         done = true;
 
-        if (get_impl_options.value) {
-          get_impl_options.value->PinSelf();
-        }
-
         RecordTick(stats_, MEMTABLE_HIT);
       } else if ((s.ok() || s.IsMergeInProgress()) &&
                 !sv->imm->IsEmpty() &&
                  sv->imm->Get(lkey,
-                              get_impl_options.value
-                                  ? get_impl_options.value->GetSelf()
-                                  : nullptr,
+                              get_impl_options.value,
                               get_impl_options.columns, timestamp, &s,
                               &merge_context, &max_covering_tombstone_seq,
                               read_options, get_impl_options.callback,
                               get_impl_options.is_blob_index)) {
         done = true;
-
-        if (get_impl_options.value) {
-          get_impl_options.value->PinSelf();
-        }
 
         RecordTick(stats_, MEMTABLE_HIT);
       }
@@ -2473,6 +2468,7 @@ std::vector<Status> DBImpl::MultiGet(
     merge_context.Clear();
     Status& s = stat_list[keys_read];
     std::string* value = &(*values)[keys_read];
+    value->clear();
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::string* timestamp = timestamps ? &(*timestamps)[keys_read] : nullptr;
 #else
@@ -2492,22 +2488,25 @@ std::vector<Status> DBImpl::MultiGet(
          has_unpersisted_data_.load(std::memory_order_relaxed));
     bool done = false;
     if (!skip_memtable) {
+      PinnableSlice pin(value);
       if (super_version->mem->Get(
-              lkey, value, /*columns=*/nullptr, timestamp, &s, &merge_context,
+              lkey, &pin, /*columns=*/nullptr, timestamp, &s, &merge_context,
               &max_covering_tombstone_seq, read_options,
               false /* immutable_memtable */, read_callback)) {
         done = true;
+        pin.SyncToString(value);
         RecordTick(stats_, MEMTABLE_HIT);
-      } else if (super_version->imm->Get(lkey, value, /*columns=*/nullptr,
+      } else if (super_version->imm->Get(lkey, &pin, /*columns=*/nullptr,
                                          timestamp, &s, &merge_context,
                                          &max_covering_tombstone_seq,
                                          read_options, read_callback)) {
         done = true;
+        pin.SyncToString(value);
         RecordTick(stats_, MEMTABLE_HIT);
       }
     }
     if (!done) {
-      PinnableSlice pinnable_val;
+      PinnableSlice pinnable_val(value);
       PERF_TIMER_GUARD(get_from_output_files_time);
       PinnedIteratorsManager pinned_iters_mgr;
       super_version->current->Get(read_options, lkey, &pinnable_val,
@@ -2516,7 +2515,7 @@ std::vector<Status> DBImpl::MultiGet(
                                   &pinned_iters_mgr, /*value_found=*/nullptr,
                                   /*key_exists=*/nullptr,
                                   /*seq=*/nullptr, read_callback);
-      value->assign(pinnable_val.data(), pinnable_val.size());
+      pinnable_val.SyncToString(value);
       RecordTick(stats_, MEMTABLE_MISS);
     }
 
@@ -2550,7 +2549,6 @@ std::vector<Status> DBImpl::MultiGet(
 
   // Post processing (decrement reference counts and record statistics)
   PERF_TIMER_GUARD(get_post_process_time);
-  autovector<SuperVersion*> superversions_to_delete;
 
   for (auto mgd_iter : multiget_cf_data) {
     auto mgd = mgd_iter.second;
@@ -2902,7 +2900,7 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
 }
 
 #if defined(ROCKSDB_UNIT_TEST)
-static bool const g_MultiGetUseFiber = false;
+static bool const g_MultiGetUseFiber = terark::getEnvBool("MultiGetUseFiber", false);
 #else
 static bool const g_MultiGetUseFiber = terark::getEnvBool("MultiGetUseFiber", true);
 #endif
@@ -3060,23 +3058,21 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
     size_t hits = 0;
     for (size_t i = 0; i < num_keys; i++) {
       auto& max_covering_tombstone_seq = ctx_vec[i].max_covering_tombstone_seq;
-      MergeContext& merge_context = ctx_vec[i].merge_context;
+      MergeContext& merge_context = ctx_vec[i].merge_context();
       Status& s = statuses[i];
-      if (sv->mem->Get(ctx_vec[i].lkey, values[i].GetSelf(), columns,
+      if (sv->mem->Get(ctx_vec[i].lkey, &values[i], columns,
                        timestamp, &s, &merge_context,
                        &max_covering_tombstone_seq, read_options,
                        false, // immutable_memtable
                        callback, is_blob_index)) {
-        ctx_vec[i].done = true;
-        values[i].PinSelf();
+        ctx_vec[i].set_done();
         hits++;
       } else if ((s.ok() || s.IsMergeInProgress()) &&
-                sv->imm->Get(ctx_vec[i].lkey, values[i].GetSelf(), columns,
+                sv->imm->Get(ctx_vec[i].lkey, &values[i], columns,
                              timestamp, &s, &merge_context,
                              &max_covering_tombstone_seq, read_options,
                              callback, is_blob_index)) {
-        ctx_vec[i].done = true;
-        values[i].PinSelf();
+        ctx_vec[i].set_done();
         hits++;
       }
     }
@@ -3086,7 +3082,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   //TEST_SYNC_POINT("DBImpl::GetImpl:PostMemTableGet:1");
   size_t counting = 0;
   auto get_in_sst = [&](size_t i, size_t/*unused*/ = 0) {
-    MergeContext& merge_context = ctx_vec[i].merge_context;
+    MergeContext& merge_context = ctx_vec[i].merge_context();
     PinnedIteratorsManager pinned_iters_mgr;
     auto& max_covering_tombstone_seq = ctx_vec[i].max_covering_tombstone_seq;
     //PERF_TIMER_GUARD(get_from_output_files_time);
@@ -3108,7 +3104,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   }
   size_t memtab_miss = 0;
   for (size_t i = 0; i < num_keys; i++) {
-    if (!ctx_vec[i].done) {
+    if (!ctx_vec[i].is_done()) {
       if (read_options.async_io) {
         gt_fiber_pool.push({TERARK_C_CALLBACK(get_in_sst), i});
       } else {
@@ -3594,14 +3590,15 @@ bool DBImpl::KeyMayExist(const ReadOptions& read_options,
   }
   ReadOptions roptions = read_options;
   roptions.read_tier = kBlockCacheTier;  // read from block cache only
-  PinnableSlice pinnable_val;
+  value->clear();
+  PinnableSlice pinnable_val(value);
   GetImplOptions get_impl_options;
   get_impl_options.column_family = column_family;
   get_impl_options.value = &pinnable_val;
   get_impl_options.value_found = value_found;
   get_impl_options.timestamp = timestamp;
   auto s = GetImpl(roptions, key, get_impl_options);
-  value->assign(pinnable_val.data(), pinnable_val.size());
+  pinnable_val.SyncToString(value);
 
   // If block_cache is enabled and the index block of the table didn't
   // not present in block_cache, the return value will be Status::Incomplete.
@@ -4367,7 +4364,7 @@ inline SuperVersion*& ReadOptionsTLS::GetSuperVersionRef(size_t cfid) {
   if (0 == cfid) {
     return sv;
   } else {
-    if (cfsv.size() < cfid) {
+    if (UNLIKELY(cfsv.size() < cfid)) {
       cfsv.resize(cfid, nullptr);
     }
     return cfsv[cfid - 1];

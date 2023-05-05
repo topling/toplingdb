@@ -13,7 +13,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 #if !defined(ROCKSDB_NON_TLS_PERF_LEVEL)
-extern thread_local PerfLevel perf_level ROCKSDB_STATIC_TLS;
+  extern ROCKSDB_RAW_TLS PerfLevel perf_level ROCKSDB_STATIC_TLS;
 #else
 extern PerfLevel perf_level;
 #endif

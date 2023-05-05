@@ -259,7 +259,7 @@ class MemTable {
   // @param immutable_memtable Whether this memtable is immutable. Used
   // internally by NewRangeTombstoneIterator(). See comment above
   // NewRangeTombstoneIterator() for more detail.
-  bool Get(const LookupKey& key, std::string* value,
+  bool Get(const LookupKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq, SequenceNumber* seq,
@@ -267,7 +267,7 @@ class MemTable {
            ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
            bool do_merge = true);
 
-  bool Get(const LookupKey& key, std::string* value,
+  bool Get(const LookupKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
@@ -557,6 +557,7 @@ class MemTable {
   // These are used to manage memtable flushes to storage
   bool flush_in_progress_;  // started the flush
   bool flush_completed_;    // finished the flush
+  bool needs_user_key_cmp_in_get_;
   uint64_t file_number_;    // filled up after flush is complete
 
   // The updates to be applied to the transaction log when this
@@ -621,13 +622,6 @@ class MemTable {
 
   void UpdateOldestKeyTime();
 
-  void GetFromTable(const ReadOptions&, const LookupKey& key,
-                    SequenceNumber max_covering_tombstone_seq, bool do_merge,
-                    ReadCallback* callback, bool* is_blob_index,
-                    std::string* value, PinnableWideColumns* columns,
-                    std::string* timestamp, Status* s,
-                    MergeContext* merge_context, SequenceNumber* seq,
-                    bool* found_final_value, bool* merge_in_progress);
 
   // Always returns non-null and assumes certain pre-checks (e.g.,
   // is_range_del_table_empty_) are done. This is only valid during the lifetime

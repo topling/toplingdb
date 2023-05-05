@@ -160,7 +160,17 @@ class DBIter final : public Iterator {
   }
   Slice value() const override {
     assert(valid_);
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+    assert(is_value_prepared_);
+#endif
 
+    if (!is_value_prepared_) {
+      auto mut = const_cast<DBIter*>(this);
+      ROCKSDB_VERIFY(mut->iter_.PrepareValue());
+      mut->is_value_prepared_ = true;
+      mut->value_ = iter_.value();
+      mut->local_stats_.bytes_read_ += value_.size_;
+    }
     return value_;
   }
 
@@ -346,7 +356,11 @@ class DBIter final : public Iterator {
 
   const SliceTransform* prefix_extractor_;
   Env* const env_;
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
   SystemClock* clock_;
+#else
+  static constexpr SystemClock* clock_ = nullptr;
+#endif
   Logger* logger_;
   UserComparatorWrapper user_comparator_;
   const MergeOperator* const merge_operator_;
@@ -389,6 +403,7 @@ class DBIter final : public Iterator {
   Status status_;
   Direction direction_;
   bool valid_;
+  bool is_value_prepared_;
   bool current_entry_is_merged_;
   // True if we know that the current entry's seqnum is 0.
   // This information is used as that the next entry will be for another
@@ -397,7 +412,11 @@ class DBIter final : public Iterator {
   const bool prefix_same_as_start_;
   // Means that we will pin all data blocks we read as long the Iterator
   // is not deleted, will be true if ReadOptions::pin_data is true
+#if defined(ROCKSDB_UNIT_TEST)
   const bool pin_thru_lifetime_;
+#else
+  static constexpr bool pin_thru_lifetime_ = false;
+#endif
   // Expect the inner iterator to maintain a total order.
   // prefix_extractor_ must be non-NULL if the value is false.
   const bool expect_total_order_inner_iter_;

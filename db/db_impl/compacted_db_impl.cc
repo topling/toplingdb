@@ -153,8 +153,8 @@ std::vector<Status> CompactedDBImpl::MultiGet(
   int idx = 0;
   for (auto* r : reader_list) {
     if (r != nullptr) {
-      PinnableSlice pinnable_val;
-      std::string& value = (*values)[idx];
+      PinnableSlice pinnable_val(&(*values)[idx]);
+      pinnable_val.GetSelf()->clear();
       LookupKey lkey(keys[idx], kMaxSequenceNumber, options.timestamp);
       std::string* timestamp = timestamps ? &(*timestamps)[idx] : nullptr;
       GetContext get_context(
@@ -167,7 +167,7 @@ std::vector<Status> CompactedDBImpl::MultiGet(
       if (!s.ok() && !s.IsNotFound()) {
         statuses[idx] = s;
       } else {
-        value.assign(pinnable_val.data(), pinnable_val.size());
+        pinnable_val.SyncToString();
         if (get_context.State() == GetContext::kFound) {
           statuses[idx] = Status::OK();
         }

@@ -655,10 +655,16 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     return;
   }
 #endif
-  struct Elem {
-    WBWIIteratorImpl::Result wbwi_result;
-    uint32_t full_index;
-    MergeContext merge_context;
+  struct Elem : public MergeContext {
+    Elem(WBWIIteratorImpl::Result wbwi_result1, size_t idx, MergeContext&& mg)
+     : MergeContext(std::move(mg)) {
+      ext_flags_ = uint32_t(idx);
+      ext_uint16_ = wbwi_result1;
+    }
+    WBWIIteratorImpl::Result wbwi_result() const {
+      return (WBWIIteratorImpl::Result)(ext_uint16_);
+    }
+    size_t full_index() const { return ext_flags_; }
   };
   TERARK_FAST_ALLOC(Elem, merges, num_keys);
   TERARK_FAST_ALLOC(Slice, db_keys, num_keys);
@@ -686,7 +692,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     assert(result == WBWIIteratorImpl::kMergeInProgress ||
            result == WBWIIteratorImpl::kNotFound);
     db_keys[num_get_db] = keys[i];
-    new(merges + num_get_db)Elem{result, uint32_t(i), std::move(merge_context)};
+    new(merges + num_get_db)Elem{result, i, std::move(merge_context)};
     num_get_db++;
   }
   TERARK_FAST_ARRAY(PinnableSlice, db_values, num_get_db);
@@ -703,17 +709,17 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
   read_options.read_callback = old_callback;
 
   for (size_t index = 0; index < num_get_db; index++) {
-    size_t full_index = merges[index].full_index;
+    size_t full_index = merges[index].full_index();
     const Slice& key = db_keys[index];
     Status& s = statuses[full_index] = std::move(db_statuses[index]);
     if (s.ok() || s.IsNotFound()) { // DB Get Succeeded
       auto& mg = merges[index];
-      if (mg.wbwi_result == WBWIIteratorImpl::kMergeInProgress) {
+      if (mg.wbwi_result() == WBWIIteratorImpl::kMergeInProgress) {
         // topling comment: prev MergeKey() in wbwii.GetFromBatch is a waste
         std::string merged_value;
         // Merge result from DB with merges in Batch
         PinnableSlice* db_value = s.ok() ? &db_values[index] : nullptr;
-        s = MergeKey(db, column_family, key, db_value, &merged_value, mg.merge_context);
+        s = MergeKey(db, column_family, key, db_value, &merged_value, mg);
         if (s.ok()) {
           values[full_index].Reset();
           *values[full_index].GetSelf() = std::move(merged_value);

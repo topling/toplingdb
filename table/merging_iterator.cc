@@ -85,18 +85,20 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
 }
 
 struct HeapItemAndPrefix {
-  HeapItemAndPrefix() = default;
-  HeapItemAndPrefix(HeapItem* item) : item_ptr(item) {
+  FORCE_INLINE HeapItemAndPrefix() = default;
+  FORCE_INLINE HeapItemAndPrefix(HeapItem* item) : item_ptr(item) {
+    iter_type = item->type;
     UpdatePrefixCache(*this);
   }
   UintPrefix key_prefix = 0;
   HeapItem* item_ptr;
+  HeapItem::Type iter_type;
 
   HeapItem* operator->() const noexcept { return item_ptr; }
 
-  inline friend void UpdatePrefixCache(HeapItemAndPrefix& x) {
+  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefix& x) {
     auto p = x.item_ptr;
-    if (LIKELY(HeapItem::ITERATOR == p->type))
+    if (LIKELY(HeapItem::ITERATOR == x.iter_type))
       x.key_prefix = HostPrefixCacheIK(p->iter.key());
     else
       x.key_prefix = HostPrefixCacheUK(p->parsed_ikey.user_key);
@@ -194,14 +196,14 @@ class MinHeapBytewiseComp {
       return true;
     else if (a.key_prefix < b.key_prefix)
       return false;
-    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+    else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
       else
         return BytewiseCompareInternalKey(b->parsed_ikey, a->iter.key());
     }
     else {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(b->iter.key(), a->parsed_ikey);
       else
         return BytewiseCompareInternalKey(b->parsed_ikey, a->parsed_ikey);
@@ -218,14 +220,14 @@ class MaxHeapBytewiseComp {
       return true;
     else if (a.key_prefix > b.key_prefix)
       return false;
-    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+    else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
       else
         return BytewiseCompareInternalKey(a->iter.key(), b->parsed_ikey);
     }
     else {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(a->parsed_ikey, b->iter.key());
       else
         return BytewiseCompareInternalKey(a->parsed_ikey, b->parsed_ikey);
@@ -242,14 +244,14 @@ class MinHeapRevBytewiseComp {
       return true;
     else if (a.key_prefix > b.key_prefix)
       return false;
-    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+    else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
       else
         return RevBytewiseCompareInternalKey(b->parsed_ikey, a->iter.key());
     }
     else {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(b->iter.key(), a->parsed_ikey);
       else
         return RevBytewiseCompareInternalKey(b->parsed_ikey, a->parsed_ikey);
@@ -266,14 +268,14 @@ class MaxHeapRevBytewiseComp {
       return true;
     else if (a.key_prefix < b.key_prefix)
       return false;
-    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+    else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
       else
         return RevBytewiseCompareInternalKey(a->iter.key(), b->parsed_ikey);
     }
     else {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(a->parsed_ikey, b->iter.key());
       else
         return RevBytewiseCompareInternalKey(a->parsed_ikey, b->parsed_ikey);
@@ -299,7 +301,7 @@ class MergingIterator : public InternalIterator {
   // handling range tombstones in merging iterator. range_tombstone_iters_[i] ==
   // nullptr means the sorted run of children_[i] does not have range
   // tombstones.
-  std::vector<TruncatedRangeDelIterator*> range_tombstone_iters_;
+  terark::valvec32<TruncatedRangeDelIterator*> range_tombstone_iters_;
 };
 
 template <class MinHeapComparator, class MaxHeapComparator, class Item = HeapItemAndPrefix>
@@ -614,7 +616,7 @@ public:
     // If we are moving in the forward direction, it is already
     // true for all of the non-current children since current_ is
     // the smallest child and key() == current_->key().
-    if (direction_ != kForward) {
+    if (UNLIKELY(direction_ != kForward)) {
       // The loop advanced all non-current children to be > key() so current_
       // should still be strictly the smallest key.
       SwitchToForward();
@@ -625,7 +627,7 @@ public:
     assert(current_ == CurrentForward());
     // as the current points to the current record. move the iterator forward.
     current_->Next();
-    if (current_->Valid()) {
+    if (LIKELY(current_->Valid())) {
       // current is still valid after the Next() call above.  Call
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
@@ -658,7 +660,7 @@ public:
     // If we are moving in the reverse direction, it is already
     // true for all of the non-current children since current_ is
     // the largest child and key() == current_->key().
-    if (direction_ != kReverse) {
+    if (UNLIKELY(direction_ != kReverse)) {
       // Otherwise, retreat the non-current children.  We retreat current_
       // just after the if-block.
       SwitchToBackward();
@@ -668,7 +670,7 @@ public:
     // current top of the heap.
     assert(current_ == CurrentReverse());
     current_->Prev();
-    if (current_->Valid()) {
+    if (LIKELY(current_->Valid())) {
       // current is still valid after the Prev() call above.  Call
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
@@ -752,6 +754,9 @@ public:
   // is not covered by any range tombstone.
   void FindNextVisibleKey();
   void FindPrevVisibleKey();
+
+  void FindNextVisibleKeySlowPath();
+  void FindPrevVisibleKeySlowPath();
 
   void SeekImpl(const Slice& target, size_t starting_level = 0,
                 bool range_tombstone_reseek = false);
@@ -1068,8 +1073,7 @@ MergingIterMethod(bool)SkipNextDeleted() {
   }
   assert(current->type == HeapItem::ITERATOR);
   // Point key case: check active_ for range tombstone coverage.
-  ParsedInternalKey pik;
-  ParseInternalKey(current->iter.key(), &pik, false).PermitUncheckedError();
+  ParsedInternalKey pik(current->iter.key());
   if (!active_.empty()) {
     auto i = *active_.begin();
     if (i < current->level) {
@@ -1279,8 +1283,7 @@ MergingIterMethod(bool)SkipPrevDeleted() {
   }
   assert(current->type == HeapItem::ITERATOR);
   // Point key case: check active_ for range tombstone coverage.
-  ParsedInternalKey pik;
-  ParseInternalKey(current->iter.key(), &pik, false).PermitUncheckedError();
+  ParsedInternalKey pik(current->iter.key());
   if (!active_.empty()) {
     auto i = *active_.begin();
     if (i < current->level) {
@@ -1389,9 +1392,7 @@ MergingIterMethod(void)SwitchToForward() {
   // tombstone before current_. If there is no such tombstone, then the range
   // tombstone iter is !Valid(). Need to reseek here to make it valid again.
   if (!range_tombstone_iters_.empty()) {
-    ParsedInternalKey pik;
-    ParseInternalKey(target, &pik, false /* log_err_key */)
-        .PermitUncheckedError();
+    ParsedInternalKey pik(target);
     for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
       auto iter = range_tombstone_iters_[i];
       if (iter) {
@@ -1435,9 +1436,7 @@ MergingIterMethod(void)SwitchToBackward() {
     AddToMaxHeapOrCheckStatus(&child);
   }
 
-  ParsedInternalKey pik;
-  ParseInternalKey(target, &pik, false /* log_err_key */)
-      .PermitUncheckedError();
+  ParsedInternalKey pik(target);
   for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
     auto iter = range_tombstone_iters_[i];
     if (iter) {
@@ -1494,6 +1493,9 @@ MergingIterMethod(inline void)FindNextVisibleKey() {
   if (LIKELY(range_tombstone_iters_.empty())) {
     return;
   }
+  FindNextVisibleKeySlowPath();
+}
+MergingIterMethod(void)FindNextVisibleKeySlowPath() {
   // When active_ is empty, we know heap top cannot be a range tombstone end
   // key. It cannot be a range tombstone start key per PopDeleteRangeStart().
   PopDeleteRangeStart();
@@ -1508,6 +1510,9 @@ MergingIterMethod(inline void)FindPrevVisibleKey() {
   if (LIKELY(range_tombstone_iters_.empty())) {
     return;
   }
+  FindPrevVisibleKeySlowPath();
+}
+MergingIterMethod(void)FindPrevVisibleKeySlowPath() {
   PopDeleteRangeEnd();
   while (!maxHeap_->empty() &&
          (!active_.empty() || maxHeap_->top()->IsDeleteRangeSentinelKey()) &&

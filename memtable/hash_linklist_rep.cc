@@ -176,7 +176,7 @@ class HashLinkListRep : public MemTableRep {
   size_t ApproximateMemoryUsage() override;
 
   void Get(const ReadOptions&, const LookupKey& k, void* callback_args,
-           bool (*callback_func)(void* arg, const KeyValuePair*)) override;
+           bool (*callback_func)(void* arg, const KeyValuePair&)) override;
 
   ~HashLinkListRep() override;
 
@@ -729,11 +729,10 @@ size_t HashLinkListRep::ApproximateMemoryUsage() {
 
 void HashLinkListRep::Get(const ReadOptions&,
                           const LookupKey& k, void* callback_args,
-                          bool (*callback_func)(void*, const KeyValuePair*)) {
+                          bool (*callback_func)(void*, const KeyValuePair&)) {
   auto transformed = transform_->Transform(k.user_key());
   Pointer& bucket = GetBucket(transformed);
 
-  EncodedKeyValuePair kv;
   if (IsEmptyBucket(bucket)) {
     return;
   }
@@ -742,7 +741,7 @@ void HashLinkListRep::Get(const ReadOptions&,
   if (link_list_head != nullptr) {
     LinkListIterator iter(this, link_list_head);
     for (iter.Seek(k.internal_key(), nullptr);
-         iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
+         iter.Valid() && callback_func(callback_args, KeyValuePair(iter.key()));
          iter.Next()) {
     }
   } else {
@@ -750,8 +749,8 @@ void HashLinkListRep::Get(const ReadOptions&,
     if (skip_list_header != nullptr) {
       // Is a skip list
       MemtableSkipList::Iterator iter(&skip_list_header->skip_list);
-      for (iter.Seek(k.memtable_key().data());
-           iter.Valid() && callback_func(callback_args, kv.SetKey(iter.key()));
+      for (iter.Seek(k.memtable_key_data());
+           iter.Valid() && callback_func(callback_args, KeyValuePair(iter.key()));
            iter.Next()) {
       }
     }

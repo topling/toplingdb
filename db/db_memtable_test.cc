@@ -56,7 +56,7 @@ class MockMemTableRep : public MemTableRep {
   bool Contains(const Slice& key) const override { return rep_->Contains(key); }
 
   void Get(const ReadOptions& ro, const LookupKey& k, void* callback_args,
-           bool (*callback_func)(void* arg, const KeyValuePair*)) override {
+           bool (*callback_func)(void* arg, const KeyValuePair&)) override {
     rep_->Get(ro, k, callback_args, callback_func);
   }
 
@@ -298,12 +298,13 @@ TEST_F(DBMemTableTest, ConcurrentMergeWrite) {
   ReadOptions roptions;
   SequenceNumber max_covering_tombstone_seq = 0;
   LookupKey lkey("key", kMaxSequenceNumber);
-  bool res = mem->Get(lkey, &value, /*columns=*/nullptr, /*timestamp=*/nullptr,
+  PinnableSlice pin;
+  bool res = mem->Get(lkey, &pin, /*columns=*/nullptr, /*timestamp=*/nullptr,
                       &status, &merge_context, &max_covering_tombstone_seq,
                       roptions, false /* immutable_memtable */);
   ASSERT_OK(status);
   ASSERT_TRUE(res);
-  uint64_t ivalue = DecodeFixed64(Slice(value).data());
+  uint64_t ivalue = DecodeFixed64(pin.data());
   uint64_t sum = 0;
   for (int seq = 0; seq < num_ops; seq++) {
     sum += seq;

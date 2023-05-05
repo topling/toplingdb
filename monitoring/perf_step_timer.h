@@ -20,7 +20,7 @@ class PerfStepTimer {
       PerfLevel enable_level = PerfLevel::kEnableTimeExceptForMutex,
       Statistics* statistics = nullptr, uint32_t ticker_type = UINT32_MAX,
       uint16_t histogram_type = UINT16_MAX)
-      : perf_counter_enabled_(perf_level >= enable_level),
+      : perf_counter_enabled_(perf_level >= enable_level || statistics != nullptr),
 #if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
         use_cpu_time_(use_cpu_time),
 #endif
@@ -38,7 +38,7 @@ class PerfStepTimer {
   ~PerfStepTimer() { Stop(); }
 
   void Start() {
-    if (perf_counter_enabled_ || statistics_ != nullptr) {
+    if (perf_counter_enabled_) {
       start_ = time_now();
     }
   }

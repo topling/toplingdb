@@ -89,6 +89,8 @@ DEFINE_bool(if_log_bucket_dist_when_flash, true,
             "if_log_bucket_dist_when_flash parameter to pass into "
             "NewHashLinkListRepFactory");
 
+DEFINE_bool(enable_zero_copy, false, "enable zero copy");
+
 DEFINE_int32(
     threshold_use_skiplist, 256,
     "threshold_use_skiplist parameter to pass into NewHashLinkListRepFactory");
@@ -129,8 +131,8 @@ namespace ROCKSDB_NAMESPACE {
 namespace {
 struct CallbackVerifyArgs {
   bool found;
+  bool needs_user_key_cmp;
   LookupKey* key;
-  MemTableRep* table;
   InternalKeyComparator* comparator;
 };
 }  // namespace
@@ -304,17 +306,33 @@ class ConcurrentFillBenchmarkThread : public FillBenchmarkThread {
 };
 
 class ReadBenchmarkThread : public BenchmarkThread {
+  ReadOptions read_opt_;
+  bool needs_user_key_cmp_;
  public:
   ReadBenchmarkThread(MemTableRep* table, KeyGenerator* key_gen,
                       uint64_t* bytes_written, uint64_t* bytes_read,
                       uint64_t* sequence, uint64_t num_ops, uint64_t* read_hits)
       : BenchmarkThread(table, key_gen, bytes_written, bytes_read, sequence,
-                        num_ops, read_hits) {}
+                        num_ops, read_hits) {
+    if (FLAGS_enable_zero_copy) {
+      read_opt_.StartPin();
+    }
+    needs_user_key_cmp_ = table->NeedsUserKeyCompareInGet();
+  }
+  ~ReadBenchmarkThread() {
+    if (FLAGS_enable_zero_copy) {
+      read_opt_.FinishPin();
+    }
+  }
 
-  static bool callback(void* arg, const MemTableRep::KeyValuePair* kv) {
+  static bool callback(void* arg, const MemTableRep::KeyValuePair& kv) {
     CallbackVerifyArgs* callback_args = static_cast<CallbackVerifyArgs*>(arg);
     assert(callback_args != nullptr);
-    Slice internal_key = kv->GetKey();
+    if (!callback_args->needs_user_key_cmp) {
+      callback_args->found = true;
+      return true;
+    }
+    Slice internal_key = kv.ikey;
     size_t key_length = internal_key.size();
     const char* key_ptr = internal_key.data();
     if ((callback_args->comparator)
@@ -327,17 +345,17 @@ class ReadBenchmarkThread : public BenchmarkThread {
   }
 
   void ReadOne() {
-    std::string user_key;
+    char user_key[sizeof(uint64_t)];
     auto key = key_gen_->Next();
-    PutFixed64(&user_key, key);
-    LookupKey lookup_key(user_key, *sequence_);
+    EncodeFixed64(user_key, key);
+    LookupKey lookup_key(Slice(user_key, sizeof(user_key)), *sequence_);
     InternalKeyComparator internal_key_comp(BytewiseComparator());
     CallbackVerifyArgs verify_args;
+    verify_args.needs_user_key_cmp = needs_user_key_cmp_;
     verify_args.found = false;
     verify_args.key = &lookup_key;
-    verify_args.table = table_;
     verify_args.comparator = &internal_key_comp;
-    table_->Get(ReadOptions(), lookup_key, &verify_args, callback);
+    table_->Get(read_opt_, lookup_key, &verify_args, callback);
     if (verify_args.found) {
       *bytes_read_ += VarintLength(16) + 16 + FLAGS_item_size;
       ++*read_hits_;

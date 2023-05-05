@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include <terark/valvec32.hpp>
 #include "rocksdb/slice.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -22,7 +23,7 @@ class MergeContext {
   // Clear all the operands
   void Clear() {
     operand_list_.clear();
-    copied_operands_.clear();
+    copied_operands_.erase_all();
   }
 
   // Push a merge operand
@@ -95,7 +96,7 @@ class MergeContext {
     return operand_list_;
   }
 
- private:
+ protected:
   static char* MakeCopy(Slice src) {
     char* copy = new char[src.size()];
     memcpy(copy, src.data(), src.size());
@@ -119,8 +120,11 @@ class MergeContext {
   // List of operands
   mutable std::vector<Slice> operand_list_;
   // Copy of operands that are not pinned.
-  std::vector<std::unique_ptr<char[]> > copied_operands_;
+  terark::valvec32<std::unique_ptr<char[]> > copied_operands_;
   mutable bool operands_reversed_ = true;
+  mutable bool ext_bool_ = false;
+  mutable uint16_t ext_uint16_ = 0;
+  mutable uint32_t ext_flags_ = 0; // for use by derived class
 };
 
 }  // namespace ROCKSDB_NAMESPACE

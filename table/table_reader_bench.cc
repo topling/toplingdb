@@ -153,8 +153,11 @@ void TableReaderBenchmark(Options& opts, EnvOptions& env_options,
   }
 
   Random rnd(301);
-  std::string result;
   HistogramImpl hist;
+
+  read_options.StartPin();
+  ROCKSDB_SCOPE_EXIT(read_options.FinishPin());
+  auto dcf = db->DefaultColumnFamily();
 
   for (int it = 0; it < num_iter; it++) {
     for (int i = 0; i < num_keys1; i++) {
@@ -170,8 +173,8 @@ void TableReaderBenchmark(Options& opts, EnvOptions& env_options,
           // Query one existing key;
           std::string key = MakeKey(r1, r2, through_db);
           uint64_t start_time = Now(clock, measured_by_nanosecond);
+          PinnableSlice value;
           if (!through_db) {
-            PinnableSlice value;
             MergeContext merge_context;
             SequenceNumber max_covering_tombstone_seq = 0;
             GetContext get_context(
@@ -181,7 +184,7 @@ void TableReaderBenchmark(Options& opts, EnvOptions& env_options,
                 &merge_context, true, &max_covering_tombstone_seq, clock);
             s = table_reader->Get(read_options, key, &get_context, nullptr);
           } else {
-            s = db->Get(read_options, key, &result);
+            s = db->Get(read_options, dcf, key, &value);
           }
           hist.Add(Now(clock, measured_by_nanosecond) - start_time);
         } else {

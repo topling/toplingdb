@@ -32,6 +32,10 @@ SequenceNumber GetSeqNum(const DBImpl* db, const Snapshot* s, const DBIter* i) {
     return db->GetLatestSequenceNumber();
 }
 
+Status Iterator::RefreshKeepSnapshot(bool keep_iter_pos) {
+  return Refresh(reinterpret_cast<Snapshot*>(KEEP_SNAPSHOT), keep_iter_pos);
+}
+
 Status ArenaWrappedDBIter::GetProperty(std::string prop_name,
                                        std::string* prop) {
   if (prop_name == "rocksdb.iterator.super-version-number") {

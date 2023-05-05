@@ -2863,8 +2863,12 @@ ifeq ($(JAVA_HOME),)
 endif
 	$(AM_V_at)rm -f ./java/target/$(ROCKSDBJNILIB)
 	$(AM_V_at)$(CXX) $(CXXFLAGS) -shared -fPIC -o ./java/target/$(ROCKSDBJNILIB) $(ALL_JNI_NATIVE_OBJECTS) $(LIB_OBJECTS) $(JAVA_LDFLAGS) $(LDFLAGS)
+	$(AM_V_at)cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/*${COMPILER}*-r.so java/target
+ifeq ($(STRIP_DEBUG_INFO),1)
+	$(AM_V_at)strip java/target/*.so
+endif
 	$(AM_V_at)cd java; $(JAR_CMD) -cf target/$(ROCKSDB_JAR) HISTORY*.md
-	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) $(ROCKSDBJNILIB)
+	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) *.so
 	$(AM_V_at)cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR) org/rocksdb/*.class org/rocksdb/util/*.class
 	$(AM_V_at)openssl sha1 java/target/$(ROCKSDB_JAR) | sed 's/.*= \([0-9a-f]*\)/\1/' > java/target/$(ROCKSDB_JAR).sha1
 

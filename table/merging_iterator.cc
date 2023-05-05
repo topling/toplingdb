@@ -753,6 +753,9 @@ public:
   void FindNextVisibleKey();
   void FindPrevVisibleKey();
 
+  void FindNextVisibleKeySlowPath();
+  void FindPrevVisibleKeySlowPath();
+
   void SeekImpl(const Slice& target, size_t starting_level = 0,
                 bool range_tombstone_reseek = false);
 
@@ -1488,6 +1491,9 @@ MergingIterMethod(inline void)FindNextVisibleKey() {
   if (LIKELY(range_tombstone_iters_.empty())) {
     return;
   }
+  FindNextVisibleKeySlowPath();
+}
+MergingIterMethod(void)FindNextVisibleKeySlowPath() {
   // When active_ is empty, we know heap top cannot be a range tombstone end
   // key. It cannot be a range tombstone start key per PopDeleteRangeStart().
   PopDeleteRangeStart();
@@ -1502,6 +1508,9 @@ MergingIterMethod(inline void)FindPrevVisibleKey() {
   if (LIKELY(range_tombstone_iters_.empty())) {
     return;
   }
+  FindPrevVisibleKeySlowPath();
+}
+MergingIterMethod(void)FindPrevVisibleKeySlowPath() {
   PopDeleteRangeEnd();
   while (!maxHeap_->empty() &&
          (!active_.empty() || maxHeap_->top()->IsDeleteRangeSentinelKey()) &&

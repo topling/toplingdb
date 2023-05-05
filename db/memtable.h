@@ -213,17 +213,9 @@ class MemTable {
   // is constructed when a memtable becomes immutable. Setting the flag to false
   // will always yield correct result, but may incur performance penalty as it
   // always creates a new fragmented range tombstone list.
-  inline
   FragmentedRangeTombstoneIterator* NewRangeTombstoneIterator(
       const ReadOptions& read_options, SequenceNumber read_seq,
-      bool immutable_memtable) {
-    if (read_options.ignore_range_deletions ||
-        is_range_del_table_empty_.load(std::memory_order_relaxed)) {
-      return nullptr;
-    }
-    return NewRangeTombstoneIteratorInternal(read_options, read_seq,
-                                             immutable_memtable);
-  }
+      bool immutable_memtable);
 
   Status VerifyEncodedEntry(Slice ikey, Slice value,
                             const ProtectionInfoKVOS64& kv_prot_info);

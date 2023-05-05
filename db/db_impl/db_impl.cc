@@ -2206,10 +2206,6 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
               get_impl_options.is_blob_index)) {
         done = true;
 
-        if (get_impl_options.value) {
-          get_impl_options.value->PinSelf();
-        }
-
         RecordTick(stats_, MEMTABLE_HIT);
       } else if ((s.ok() || s.IsMergeInProgress()) &&
                 !sv->imm->IsEmpty() &&
@@ -2220,10 +2216,6 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
                               read_options, get_impl_options.callback,
                               get_impl_options.is_blob_index)) {
         done = true;
-
-        if (get_impl_options.value) {
-          get_impl_options.value->PinSelf();
-        }
 
         RecordTick(stats_, MEMTABLE_HIT);
       }

@@ -10,6 +10,7 @@
 #include <functional>
 
 #include "port/port.h"
+#include "port/likely.h"
 #include <terark/valvec32.hpp>
 
 namespace ROCKSDB_NAMESPACE {
@@ -114,11 +115,10 @@ class BinaryHeap {
 
   size_t size() const { return data_.size(); }
 
+ private:
   void reset_root_cmp_cache() {
     root_cmp_cache_ = std::numeric_limits<size_t>::max();
   }
-
- private:
   static inline size_t get_root() { return 0; }
   static inline size_t get_parent(size_t index) { return (index - 1) / 2; }
   static inline size_t get_left(size_t index) { return 2 * index + 1; }
@@ -148,7 +148,7 @@ class BinaryHeap {
     size_t picked_child = std::numeric_limits<size_t>::max();
     while (1) {
       const size_t left_child = get_left(index);
-      if (left_child >= heap_size) {
+      if (UNLIKELY(left_child >= heap_size)) {
         break;
       }
       const size_t right_child = left_child + 1;

@@ -658,7 +658,7 @@ public:
     // If we are moving in the reverse direction, it is already
     // true for all of the non-current children since current_ is
     // the largest child and key() == current_->key().
-    if (direction_ != kReverse) {
+    if (UNLIKELY(direction_ != kReverse)) {
       // Otherwise, retreat the non-current children.  We retreat current_
       // just after the if-block.
       SwitchToBackward();
@@ -668,7 +668,7 @@ public:
     // current top of the heap.
     assert(current_ == CurrentReverse());
     current_->Prev();
-    if (current_->Valid()) {
+    if (LIKELY(current_->Valid())) {
       // current is still valid after the Prev() call above.  Call
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.

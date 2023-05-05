@@ -85,18 +85,20 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
 }
 
 struct HeapItemAndPrefix {
-  HeapItemAndPrefix() = default;
-  HeapItemAndPrefix(HeapItem* item) : item_ptr(item) {
+  FORCE_INLINE HeapItemAndPrefix() = default;
+  FORCE_INLINE HeapItemAndPrefix(HeapItem* item) : item_ptr(item) {
+    iter_type = item->type;
     UpdatePrefixCache(*this);
   }
   UintPrefix key_prefix = 0;
   HeapItem* item_ptr;
+  HeapItem::Type iter_type;
 
   HeapItem* operator->() const noexcept { return item_ptr; }
 
-  inline friend void UpdatePrefixCache(HeapItemAndPrefix& x) {
+  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefix& x) {
     auto p = x.item_ptr;
-    if (LIKELY(HeapItem::ITERATOR == p->type))
+    if (LIKELY(HeapItem::ITERATOR == x.iter_type))
       x.key_prefix = HostPrefixCacheIK(p->iter.key());
     else
       x.key_prefix = HostPrefixCacheUK(p->parsed_ikey.user_key);
@@ -194,14 +196,14 @@ class MinHeapBytewiseComp {
       return true;
     else if (a.key_prefix < b.key_prefix)
       return false;
-    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+    else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
       else
         return BytewiseCompareInternalKey(b->parsed_ikey, a->iter.key());
     }
     else {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(b->iter.key(), a->parsed_ikey);
       else
         return BytewiseCompareInternalKey(b->parsed_ikey, a->parsed_ikey);
@@ -218,14 +220,14 @@ class MaxHeapBytewiseComp {
       return true;
     else if (a.key_prefix > b.key_prefix)
       return false;
-    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+    else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
       else
         return BytewiseCompareInternalKey(a->iter.key(), b->parsed_ikey);
     }
     else {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(a->parsed_ikey, b->iter.key());
       else
         return BytewiseCompareInternalKey(a->parsed_ikey, b->parsed_ikey);
@@ -242,14 +244,14 @@ class MinHeapRevBytewiseComp {
       return true;
     else if (a.key_prefix > b.key_prefix)
       return false;
-    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+    else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
       else
         return RevBytewiseCompareInternalKey(b->parsed_ikey, a->iter.key());
     }
     else {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(b->iter.key(), a->parsed_ikey);
       else
         return RevBytewiseCompareInternalKey(b->parsed_ikey, a->parsed_ikey);
@@ -266,14 +268,14 @@ class MaxHeapRevBytewiseComp {
       return true;
     else if (a.key_prefix < b.key_prefix)
       return false;
-    else if (LIKELY(a->type == HeapItem::ITERATOR)) {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+    else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
       else
         return RevBytewiseCompareInternalKey(a->iter.key(), b->parsed_ikey);
     }
     else {
-      if (LIKELY(b->type == HeapItem::ITERATOR))
+      if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(a->parsed_ikey, b->iter.key());
       else
         return RevBytewiseCompareInternalKey(a->parsed_ikey, b->parsed_ikey);

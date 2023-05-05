@@ -299,7 +299,7 @@ class MergingIterator : public InternalIterator {
   // handling range tombstones in merging iterator. range_tombstone_iters_[i] ==
   // nullptr means the sorted run of children_[i] does not have range
   // tombstones.
-  std::vector<TruncatedRangeDelIterator*> range_tombstone_iters_;
+  terark::valvec32<TruncatedRangeDelIterator*> range_tombstone_iters_;
 };
 
 template <class MinHeapComparator, class MaxHeapComparator, class Item = HeapItemAndPrefix>
@@ -614,7 +614,7 @@ public:
     // If we are moving in the forward direction, it is already
     // true for all of the non-current children since current_ is
     // the smallest child and key() == current_->key().
-    if (direction_ != kForward) {
+    if (UNLIKELY(direction_ != kForward)) {
       // The loop advanced all non-current children to be > key() so current_
       // should still be strictly the smallest key.
       SwitchToForward();
@@ -625,7 +625,7 @@ public:
     assert(current_ == CurrentForward());
     // as the current points to the current record. move the iterator forward.
     current_->Next();
-    if (current_->Valid()) {
+    if (LIKELY(current_->Valid())) {
       // current is still valid after the Next() call above.  Call
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.

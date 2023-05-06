@@ -61,7 +61,9 @@ jobs:
          cat $GITHUB_WORKSPACE/settings.xml
          sudo apt-get update -y && sudo apt-get install -y \
          libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
-         libbz2-dev libcurl4-gnutls-dev liburing-dev
+         libbz2-dev libcurl4-gnutls-dev liburing-dev \
+         libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
+
          gcc --version
          git submodule update --init --recursive
          mkdir -p ~/.ssh && mkdir -p /opt/lib

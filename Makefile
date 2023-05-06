@@ -2864,6 +2864,7 @@ endif
 	$(AM_V_at)rm -f ./java/target/$(ROCKSDBJNILIB)
 	$(AM_V_at)$(CXX) $(CXXFLAGS) -shared -fPIC -o ./java/target/$(ROCKSDBJNILIB) $(ALL_JNI_NATIVE_OBJECTS) $(LIB_OBJECTS) $(JAVA_LDFLAGS) $(LDFLAGS)
 	$(AM_V_at)cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/*${COMPILER}*-r.so java/target
+	$(AM_V_at)cp -a sideplugin/rockside/src/topling/web/{style.css,index.html}      java/target
 ifeq ($(STRIP_DEBUG_INFO),1)
 	$(AM_V_at)strip java/target/*.so
 endif

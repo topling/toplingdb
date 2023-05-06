@@ -2870,6 +2870,7 @@ ifeq ($(STRIP_DEBUG_INFO),1)
 endif
 	$(AM_V_at)cd java; $(JAR_CMD) -cf target/$(ROCKSDB_JAR) HISTORY*.md
 	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) *.so
+	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) style.css index.html
 	$(AM_V_at)cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR) org/rocksdb/*.class org/rocksdb/util/*.class
 	$(AM_V_at)openssl sha1 java/target/$(ROCKSDB_JAR) | sed 's/.*= \([0-9a-f]*\)/\1/' > java/target/$(ROCKSDB_JAR).sha1
 

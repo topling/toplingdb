@@ -1100,6 +1100,7 @@ Status DBImpl::CompactRangeInternal(const CompactRangeOptions& options,
         // Small lies about compaction range
         context.smallest_user_key = *begin;
         context.largest_user_key = *end;
+        context.target_output_file_size = 0;
         partitioner = partitioner_factory->CreatePartitioner(context);
       }
 

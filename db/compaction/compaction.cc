@@ -723,6 +723,7 @@ std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
   context.output_level = output_level_;
   context.smallest_user_key = smallest_user_key_;
   context.largest_user_key = largest_user_key_;
+  context.target_output_file_size = target_output_file_size_;
   return immutable_options_.sst_partitioner_factory->CreatePartitioner(context);
 }
 

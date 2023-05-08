@@ -18,7 +18,7 @@ PerfContext perf_context;
   ROCKSDB_STATIC_TLS ROCKSDB_RAW_TLS PerfContext* p_perf_context;
   // not need ROCKSDB_STATIC_TLS
   static thread_local std::unique_ptr<PerfContext> g_del_perf_context;
-  PerfContext* init_perf_context() {
+  PerfContext* init_perf_context() noexcept {
     // tls is always init at first use, this function is a must
     auto ptr = p_perf_context = new PerfContext;
     g_del_perf_context.reset(ptr);

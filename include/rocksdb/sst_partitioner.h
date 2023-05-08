@@ -75,6 +75,7 @@ class SstPartitioner {
     Slice smallest_user_key;
     // Largest key for compaction
     Slice largest_user_key;
+    size_t target_output_file_size;
   };
 };
 

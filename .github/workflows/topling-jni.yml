@@ -61,7 +61,9 @@ jobs:
          cat $GITHUB_WORKSPACE/settings.xml
          sudo apt-get update -y && sudo apt-get install -y \
          libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
-         libbz2-dev libcurl4-gnutls-dev liburing-dev
+         libbz2-dev libcurl4-gnutls-dev liburing-dev \
+         libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
+
          gcc --version
          git submodule update --init --recursive
          mkdir -p ~/.ssh && mkdir -p /opt/lib
@@ -86,6 +88,7 @@ jobs:
           if ${{ inputs.deploy_maven }}; then
             # TODO: what's the pom file for it? add with '-DpomFile=/xx/pom.xml'
             mvn deploy:deploy-file -e -s $GITHUB_WORKSPACE/settings.xml \
+                -DpomFile=$GITHUB_WORKSPACE/java/pom.xml.template \
                 -Durl=https://maven.pkg.github.com/$REP_URL -DrepositoryId=github \
                 -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar -DgroupId=org.rocksdb \
                 -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar

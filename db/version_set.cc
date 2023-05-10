@@ -90,6 +90,11 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+__attribute__((weak)) void
+InitUdfa(LevelFilesBrief*, const Comparator* user_cmp);
+__attribute__((weak)) int
+FindFileInRangeUdfa(const LevelFilesBrief&, const Slice& key);
+
 namespace {
 
 #if defined(_MSC_VER) /* Visual Studio */
@@ -205,6 +210,10 @@ int FindFileInRange(const InternalKeyComparator& icmp,
 #else // ToplingDB Devirtualization and Key Prefix Cache optimization
   if (icmp.IsForwardBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+    if (file_level.udfa) {
+      assert(&FindFileInRangeUdfa != nullptr);
+      return FindFileInRangeUdfa(file_level, key);
+    }
     BytewiseCompareInternalKey cmp;
     return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
   }
@@ -3162,6 +3171,8 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
   for (int level = 0; level < num_non_empty_levels_; level++) {
     DoGenerateLevelFilesBrief(&level_files_brief_[level], files_[level],
                               &arena_);
+    if (InitUdfa)
+      InitUdfa(&level_files_brief_[level], user_comparator_);
   }
 }
 

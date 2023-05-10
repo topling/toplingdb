@@ -343,6 +343,7 @@ struct FdWithKeyRange {
 struct LevelFilesBrief {
   size_t num_files;
   FdWithKeyRange* files;
+  std::shared_ptr<class SSTUnionDFA> udfa = nullptr;
   uint64_t* prefix_cache = nullptr;
   LevelFilesBrief() {
     num_files = 0;

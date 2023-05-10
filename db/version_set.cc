@@ -1263,7 +1263,7 @@ class LevelIterator final : public InternalIterator {
   // into the new file. Old range tombstone iterator is cleared.
   InternalIterator* NewFileIterator() {
     assert(file_index_ < flevel_->num_files);
-    auto file_meta = flevel_->files[file_index_];
+    const auto& file_meta = flevel_->files[file_index_];
     if (should_sample_) {
       sample_file_read_inc(file_meta.file_metadata);
     }

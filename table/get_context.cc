@@ -33,7 +33,23 @@ void appendToReplayLog(std::string* replay_log, ValueType type, Slice value) {
   }
 }
 
+// replay_log is very likely be nullptr, let it quick check as inline func
+__always_inline
+void appendToReplayLogInline(std::string* replay_log, ValueType type, Slice value) {
+  if (UNLIKELY(replay_log != nullptr))
+    appendToReplayLog(replay_log, type, value);
+}
+#define appendToReplayLog appendToReplayLogInline
+
 }  // namespace
+
+ROCKSDB_ENUM_CLASS(GetContextSampleRead, unsigned char,
+  kAlways,
+  kNone,
+  kRandom
+);
+static auto g_how_sampling = enum_value(
+  getenv("TOPLINGDB_GetContext_sampling")?:"", GetContextSampleRead::kRandom);
 
 GetContext::GetContext(
     const Comparator* ucmp, const MergeOperator* merge_operator, Logger* logger,
@@ -48,7 +64,6 @@ GetContext::GetContext(
       merge_operator_(merge_operator),
       logger_(logger),
       statistics_(statistics),
-      state_(init_state),
       user_key_(user_key),
       pinnable_val_(pinnable_val),
       columns_(columns),
@@ -61,14 +76,21 @@ GetContext::GetContext(
       replay_log_(nullptr),
       pinned_iters_mgr_(_pinned_iters_mgr),
       callback_(callback),
+      state_(init_state),
       do_merge_(do_merge),
       is_blob_index_(is_blob_index),
       tracing_get_id_(tracing_get_id),
       blob_fetcher_(blob_fetcher) {
-  if (seq_) {
-    *seq_ = kMaxSequenceNumber;
+  if (seq) {
+    *seq = kMaxSequenceNumber;
   }
-  sample_ = should_sample_file_read();
+  switch (g_how_sampling) {
+  case GetContextSampleRead::kAlways: sample_ = true;  break;
+  case GetContextSampleRead::kNone  : sample_ = false; break;
+  case GetContextSampleRead::kRandom:
+    sample_ = should_sample_file_read();
+    break;
+  }
 }
 
 GetContext::GetContext(const Comparator* ucmp,
@@ -223,6 +245,16 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
          merge_context_ != nullptr);
   if (ucmp_->EqualWithoutTimestamp(parsed_key.user_key, user_key_)) {
     *matched = true;
+    return SaveValue(parsed_key, value, value_pinner);
+  }
+  return false;
+}
+
+bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
+                           const Slice& value, Cleanable* value_pinner) {
+
+  { // intentional block begin, for keep min diff to upstream
+
     // If the value is not in the snapshot, skip it
     if (!CheckCallback(parsed_key.sequence)) {
       return true;  // to continue to the next seq
@@ -240,6 +272,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
       }
     }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
     size_t ts_sz = ucmp_->timestamp_size();
     if (ts_sz > 0 && timestamp_ != nullptr) {
       if (!timestamp_->empty()) {
@@ -267,8 +300,10 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         timestamp_->assign(ts.data(), ts.size());
       }
     }
+#endif
 
     auto type = parsed_key.type;
+    ROCKSDB_ASSUME(type < kTypeMaxValid);
     // Key matches. Process it
     if ((type == kTypeValue || type == kTypeMerge || type == kTypeBlobIndex ||
          type == kTypeWideColumnEntity || type == kTypeDeletion ||
@@ -282,10 +317,40 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
     }
     switch (type) {
       case kTypeValue:
+        if (LIKELY(kNotFound == state_)) {
+          state_ = kFound;
+          if (LIKELY(do_merge_)) {
+            if (LIKELY(pinnable_val_ != nullptr)) {
+              if (LIKELY(value_pinner != nullptr)) {
+                pinnable_val_->PinSlice(value, value_pinner);
+              } else {
+                TEST_SYNC_POINT_CALLBACK("GetContext::SaveValue::PinSelf", this);
+                pinnable_val_->PinSelf(value);
+              }
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+            } else if (columns_ != nullptr) {
+              columns_->SetPlainValue(value, value_pinner);
+        #endif
+            }
+          }
+          else {
+            push_operand(value, value_pinner);
+          }
+        }
+        else {
+          assert(state_ == kMerge);
+          state_ = kFound;
+          if (LIKELY(do_merge_)) {
+            Merge(&value);
+          } else {
+            push_operand(value, value_pinner);
+          }
+        }
+        return false;
       case kTypeBlobIndex:
       case kTypeWideColumnEntity:
         assert(state_ == kNotFound || state_ == kMerge);
-        if (type == kTypeBlobIndex) {
+        if (UNLIKELY(type == kTypeBlobIndex)) {
           if (is_blob_index_ == nullptr) {
             // Blob value not supported. Stop.
             state_ = kUnexpectedBlobIndex;
@@ -293,7 +358,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           }
         }
 
-        if (is_blob_index_ != nullptr) {
+        if (UNLIKELY(is_blob_index_ != nullptr)) {
           *is_blob_index_ = (type == kTypeBlobIndex);
         }
 
@@ -306,6 +371,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             if (LIKELY(pinnable_val_ != nullptr)) {
               Slice value_to_use = value;
 
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
               if (type == kTypeWideColumnEntity) {
                 Slice value_copy = value;
 
@@ -316,6 +382,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                   return false;
                 }
               }
+        #endif
 
               if (LIKELY(value_pinner != nullptr)) {
                 // If the backing resources for the value are provided, pin them
@@ -326,6 +393,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                 // Otherwise copy the value
                 pinnable_val_->PinSelf(value_to_use);
               }
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
             } else if (columns_ != nullptr) {
               if (type == kTypeWideColumnEntity) {
                 if (!columns_->SetWideColumnValue(value, value_pinner).ok()) {
@@ -335,18 +403,20 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               } else {
                 columns_->SetPlainValue(value, value_pinner);
               }
+        #endif
             }
           } else {
             // It means this function is called as part of DB GetMergeOperands
             // API and the current value should be part of
             // merge_context_->operand_list
-            if (type == kTypeBlobIndex) {
+            if (UNLIKELY(type == kTypeBlobIndex)) {
               PinnableSlice pin_val;
               if (GetBlobValue(parsed_key.user_key, value, &pin_val) == false) {
                 return false;
               }
               Slice blob_value(pin_val);
               push_operand(blob_value, nullptr);
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
             } else if (type == kTypeWideColumnEntity) {
               Slice value_copy = value;
               Slice value_of_default;
@@ -359,6 +429,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               }
 
               push_operand(value_of_default, value_pinner);
+        #endif
             } else {
               assert(type == kTypeValue);
               push_operand(value, value_pinner);
@@ -366,7 +437,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           }
         } else if (kMerge == state_) {
           assert(merge_operator_ != nullptr);
-          if (type == kTypeBlobIndex) {
+          if (UNLIKELY(type == kTypeBlobIndex)) {
             PinnableSlice pin_val;
             if (GetBlobValue(parsed_key.user_key, value, &pin_val) == false) {
               return false;
@@ -381,6 +452,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               // merge_context_->operand_list
               push_operand(blob_value, nullptr);
             }
+        #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
           } else if (type == kTypeWideColumnEntity) {
             state_ = kFound;
 
@@ -402,6 +474,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
 
               push_operand(value_of_default, value_pinner);
             }
+        #endif
           } else {
             assert(type == kTypeValue);
 

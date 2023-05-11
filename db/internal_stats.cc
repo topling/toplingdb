@@ -87,10 +87,11 @@ const std::map<InternalStats::InternalDBStatsType, DBStatInfo>
 namespace {
 const double kMB = 1048576.0;
 const double kGB = kMB * 1024;
+const double kTB = kGB * 1024;
 const double kMicrosInSec = 1000000.0;
 
 void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
-                           const std::string& group_by) {
+                           const char* group_by) {
   int written_size =
       snprintf(buf, len, "\n** Compaction Stats [%s] **\n", cf_name.c_str());
   written_size = std::min(written_size, static_cast<int>(len));
@@ -99,10 +100,10 @@ void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
   };
   int line_size = snprintf(
       buf + written_size, len - written_size,
-      "%s    %s   %s     %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s "
+      "%-8s %s      %s     %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s "
       "%s\n",
       // Note that we skip COMPACTED_FILES and merge it with Files column
-      group_by.c_str(), hdr(LevelStatType::NUM_FILES),
+      group_by, hdr(LevelStatType::NUM_FILES),
       hdr(LevelStatType::SIZE_BYTES), hdr(LevelStatType::SCORE),
       hdr(LevelStatType::READ_GB), hdr(LevelStatType::RN_GB),
       hdr(LevelStatType::RNP1_GB), hdr(LevelStatType::WRITE_GB),
@@ -163,8 +164,8 @@ void PrintLevelStats(char* buf, size_t len, const std::string& name,
   snprintf(
       buf, len,
       "%4s "      /*  Level */
-      "%6d/%-3d " /*  Files */
-      "%8s "      /*  Size */
+      "%6d/%-4d " /*  Files */
+      "%10s "     /*  Size */
       "%5.1f "    /*  Score */
       "%8.1f "    /*  Read(GB) */
       "%7.1f "    /*  Rn(GB) */
@@ -1930,10 +1931,10 @@ void InternalStats::DumpCFStatsNoFileHistogram(bool is_periodic,
   uint64_t interval_add_file_inget =
       add_file_ingest - cf_stats_snapshot_.ingest_bytes_addfile;
   uint64_t interval_ingest =
-      interval_flush_ingest + interval_add_file_inget + 1;
+      interval_flush_ingest + interval_add_file_inget;
   CompactionStats interval_stats(compaction_stats_sum);
   interval_stats.Subtract(cf_stats_snapshot_.comp_stats);
-  double w_amp =
+  double w_amp = 0 == interval_ingest ? 0 :
       (interval_stats.bytes_written + interval_stats.bytes_written_blob) /
       static_cast<double>(interval_ingest);
   PrintLevelStats(buf, sizeof(buf), "Int", 0, 0, 0, 0, w_amp, interval_stats);
@@ -2012,11 +2013,15 @@ void InternalStats::DumpCFStatsNoFileHistogram(bool is_periodic,
   }
 
   snprintf(buf, sizeof(buf),
-           "Cumulative compaction: %.2f GB write, %.2f MB/s write, "
-           "%.2f GB read, %.2f MB/s read, %.1f seconds\n",
-           compact_bytes_write / kGB,
+           "Cumulative compaction: %11.6f %s write, %7.2f MB/s write, "
+           "%11.6f %s read, %7.2f MB/s read, %7.1f seconds\n",
+           compact_bytes_write /
+          (compact_bytes_write < (1LL<<40) ? kGB  : kTB ),
+          (compact_bytes_write < (1LL<<40) ? "GB" : "TB"),
            compact_bytes_write / kMB / std::max(seconds_up, 0.001),
-           compact_bytes_read / kGB,
+           compact_bytes_read /
+          (compact_bytes_read < (1LL<<40) ? kGB  : kTB ),
+          (compact_bytes_read < (1LL<<40) ? "GB" : "TB"),
            compact_bytes_read / kMB / std::max(seconds_up, 0.001),
            compact_micros / kMicrosInSec);
   value->append(buf);
@@ -2031,8 +2036,8 @@ void InternalStats::DumpCFStatsNoFileHistogram(bool is_periodic,
 
   snprintf(
       buf, sizeof(buf),
-      "Interval compaction: %.2f GB write, %.2f MB/s write, "
-      "%.2f GB read, %.2f MB/s read, %.1f seconds\n",
+      "Interval   compaction: %11.6f GB write, %7.2f MB/s write, "
+      "%11.6f GB read, %7.2f MB/s read, %7.1f seconds\n",
       interval_compact_bytes_write / kGB,
       interval_compact_bytes_write / kMB / std::max(interval_seconds_up, 0.001),
       interval_compact_bytes_read / kGB,

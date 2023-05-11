@@ -752,6 +752,19 @@ public class ReadOptions extends RocksObject {
     return this;
   }
 
+  public boolean justCheckKeyExists() {
+    return justCheckKeyExists(nativeHandle_);
+  }
+  public void setJustCheckKeyExists(boolean val) {
+    setJustCheckKeyExists(nativeHandle_, val);
+  }
+  public boolean asyncIO() { return asyncIO(nativeHandle_); }
+  public void setAsyncIO(boolean async) { setAsyncIO(nativeHandle_, async); }
+  public int asyncQueueDepth() { return asyncQueueDepth(nativeHandle_); }
+  public void setAsyncQueueDepth(int queueDepth) {
+    setAsyncQueueDepth(nativeHandle_, queueDepth);
+  }
+
   // instance variables
   // NOTE: If you add new member variables, please update the copy constructor above!
   //
@@ -820,4 +833,10 @@ public class ReadOptions extends RocksObject {
   private native void setIoTimeout(final long handle, final long ioTimeout);
   private native long valueSizeSoftLimit(final long handle);
   private native void setValueSizeSoftLimit(final long handle, final long softLimit);
+  private native boolean justCheckKeyExists(final long handle);
+  private native void setJustCheckKeyExists(final long handle, final boolean val);
+  private native boolean asyncIO(final long handle);
+  private native void setAsyncIO(final long handle, final boolean async);
+  private native int asyncQueueDepth(final long handle);
+  private native void setAsyncQueueDepth(final long handle, final int queueDepth);
 }

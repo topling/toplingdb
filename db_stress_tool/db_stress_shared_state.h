@@ -53,7 +53,7 @@ class SharedState {
   // local variable updated via sync points to keep track of errors injected
   // while reading filter blocks in order to ignore the Get/MultiGet result
   // for those calls
-  static thread_local bool ignore_read_error;
+  static thread_local bool ignore_read_error ROCKSDB_STATIC_TLS;
 
   SharedState(Env* /*env*/, StressTest* stress_test)
       : cv_(&mu_),

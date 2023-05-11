@@ -1249,7 +1249,10 @@ TEST_P(PrefetchTest, DBIterLevelReadAheadWithAsyncIO) {
 
     // For index and data blocks.
     if (is_adaptive_readahead) {
+     #if !defined(TOPLINGDB_DISABLE_ITER_WRAPPER)
       ASSERT_EQ(readahead_carry_over_count, 2 * (num_sst_files - 1));
+     #endif
+      ASSERT_GT(buff_async_prefetch_count, 0);
     } else {
       ASSERT_EQ(readahead_carry_over_count, 0);
     }

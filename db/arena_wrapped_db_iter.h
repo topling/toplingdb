@@ -80,6 +80,7 @@ class ArenaWrappedDBIter : public Iterator {
   Status GetProperty(std::string prop_name, std::string* prop) override;
 
   Status Refresh() override;
+  Status Refresh(const Snapshot*, bool keep_iter_pos) override;
 
   void Init(Env* env, const ReadOptions& read_options,
             const ImmutableOptions& ioptions,
@@ -118,10 +119,7 @@ class ArenaWrappedDBIter : public Iterator {
 // `db_impl` and `cfd` are used for reneweal. If left null, renewal will not
 // be supported.
 extern ArenaWrappedDBIter* NewArenaWrappedDbIterator(
-    Env* env, const ReadOptions& read_options, const ImmutableOptions& ioptions,
-    const MutableCFOptions& mutable_cf_options, const Version* version,
-    const SequenceNumber& sequence, uint64_t max_sequential_skip_in_iterations,
-    uint64_t version_number, ReadCallback* read_callback,
-    DBImpl* db_impl = nullptr, ColumnFamilyData* cfd = nullptr,
+    const ReadOptions&, const SuperVersion*, SequenceNumber sequence,
+    ReadCallback*, DBImpl* db_impl = nullptr,
     bool expose_blob_index = false, bool allow_refresh = true);
 }  // namespace ROCKSDB_NAMESPACE

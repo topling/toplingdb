@@ -1,5 +1,16 @@
 # These are the sources from which librocksdb.a is built:
 LIB_SOURCES =                                                   \
+  sideplugin/rockside/src/topling/builtin_db_open.cc            \
+  sideplugin/rockside/src/topling/builtin_plugin_basic.cc       \
+  sideplugin/rockside/src/topling/builtin_plugin_misc.cc        \
+  sideplugin/rockside/src/topling/builtin_plugin_more.cc        \
+  sideplugin/rockside/src/topling/builtin_table_factory.cc      \
+  sideplugin/rockside/src/topling/side_plugin_tpl_inst.cc       \
+  sideplugin/rockside/src/topling/side_plugin_repo.cc           \
+  sideplugin/rockside/src/topling/block_based_table_side_plugin.cc \
+  sideplugin/rockside/src/topling/show_sys_info.cc \
+  sideplugin/rockside/src/topling/web/json_civetweb.cc          \
+  sideplugin/rockside/src/topling/web/CivetServer.cc            \
   cache/cache.cc                                                \
   cache/cache_entry_roles.cc                                    \
   cache/cache_key.cc                                            \
@@ -31,6 +42,7 @@ LIB_SOURCES =                                                   \
   db/c.cc                                                       \
   db/column_family.cc                                           \
   db/compaction/compaction.cc                                   \
+  db/compaction/compaction_executor.cc                          \
   db/compaction/compaction_iterator.cc                          \
   db/compaction/compaction_job.cc                               \
   db/compaction/compaction_picker.cc                            \
@@ -327,6 +339,7 @@ else
 LIB_SOURCES_ASM =
 LIB_SOURCES_C =
 endif
+LIB_SOURCES_C += sideplugin/rockside/src/topling/web/civetweb.c
 
 RANGE_TREE_SOURCES =\
   utilities/transactions/lock/range/range_tree/lib/locktree/concurrent_tree.cc \
@@ -685,6 +698,7 @@ JNI_NATIVE_SOURCES =                                          \
   java/rocksjni/sst_file_readerjni.cc                         \
   java/rocksjni/sst_file_reader_iterator.cc                   \
   java/rocksjni/sst_partitioner.cc                            \
+  java/rocksjni/side_plugin_repo_jni.cc                       \
   java/rocksjni/statistics.cc                                 \
   java/rocksjni/statisticsjni.cc                              \
   java/rocksjni/table.cc                                      \

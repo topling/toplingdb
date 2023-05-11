@@ -39,6 +39,7 @@ struct SstFileWriter::Rep {
         cfh(_cfh),
         invalidate_page_cache(_invalidate_page_cache),
         skip_filters(_skip_filters),
+        sst_support_auto_sort(options.table_factory->SupportAutoSort()),
         db_session_id(_db_session_id) {}
 
   std::unique_ptr<WritableFileWriter> file_writer;
@@ -49,7 +50,6 @@ struct SstFileWriter::Rep {
   Env::IOPriority io_priority;
   InternalKeyComparator internal_comparator;
   ExternalSstFileInfo file_info;
-  InternalKey ikey;
   std::string column_family_name;
   ColumnFamilyHandle* cfh;
   // If true, We will give the OS a hint that this file pages is not needed
@@ -59,16 +59,35 @@ struct SstFileWriter::Rep {
   // cached pages from page cache.
   uint64_t last_fadvise_size = 0;
   bool skip_filters;
+  bool sst_support_auto_sort = false;
   std::string db_session_id;
   uint64_t next_file_number = 1;
 
+  ROCKSDB_FLATTEN
   Status AddImpl(const Slice& user_key, const Slice& value,
                  ValueType value_type) {
-    if (!builder) {
+    if (UNLIKELY(!builder)) {
       return Status::InvalidArgument("File is not opened");
     }
 
-    if (file_info.num_entries == 0) {
+    if (sst_support_auto_sort) {
+     #if 0 // now we use GetBoundaryUserKey after Finish
+      assert(internal_comparator.IsBytewise());
+      // now auto sort just support bytewise comparator
+      // we use Slice default compare to omit comparator virtual call
+      if (file_info.num_entries == 0) {
+        file_info.smallest_key.assign(user_key.data(), user_key.size());
+        file_info.largest_key.assign(user_key.data(), user_key.size());
+      }
+      else {
+        if (file_info.largest_key < user_key)
+          file_info.largest_key.assign(user_key.data(), user_key.size());
+        else if (user_key < file_info.smallest_key)
+          file_info.smallest_key.assign(user_key.data(), user_key.size());
+      }
+     #endif
+    }
+    else if (file_info.num_entries == 0) {
       file_info.smallest_key.assign(user_key.data(), user_key.size());
     } else {
       if (internal_comparator.user_comparator()->Compare(
@@ -85,24 +104,27 @@ struct SstFileWriter::Rep {
 
     constexpr SequenceNumber sequence_number = 0;
 
-    ikey.Set(user_key, sequence_number, value_type);
+    char* ikey_buf = (char*)alloca(user_key.size_ + 8);
+    SetInternalKey(ikey_buf, user_key, sequence_number, value_type);
 
-    builder->Add(ikey.Encode(), value);
+    builder->Add({ikey_buf, user_key.size_ + 8}, value);
 
     // update file info
     file_info.num_entries++;
-    file_info.largest_key.assign(user_key.data(), user_key.size());
-    file_info.file_size = builder->FileSize();
+    if (!sst_support_auto_sort)
+      file_info.largest_key.assign(user_key.data(), user_key.size());
+    file_info.file_size = builder->EstimatedFileSize();
 
-    InvalidatePageCache(false /* closing */).PermitUncheckedError();
-    return Status::OK();
+    //InvalidatePageCache(false /* closing */).PermitUncheckedError();
+    return builder->status();
   }
 
   Status Add(const Slice& user_key, const Slice& value, ValueType value_type) {
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (internal_comparator.user_comparator()->timestamp_size() != 0) {
       return Status::InvalidArgument("Timestamp size mismatch");
     }
-
+   #endif
     return AddImpl(user_key, value, value_type);
   }
 
@@ -169,9 +191,9 @@ struct SstFileWriter::Rep {
 
     // update file info
     file_info.num_range_del_entries++;
-    file_info.file_size = builder->FileSize();
+    file_info.file_size = builder->EstimatedFileSize();
 
-    InvalidatePageCache(false /* closing */).PermitUncheckedError();
+    //InvalidatePageCache(false /* closing */).PermitUncheckedError();
     return Status::OK();
   }
 
@@ -332,6 +354,8 @@ Status SstFileWriter::Open(const std::string& file_path) {
       TableFileCreationReason::kMisc, 0 /* oldest_key_time */,
       0 /* file_creation_time */, "SST Writer" /* db_id */, r->db_session_id,
       0 /* target_file_size */, r->next_file_number);
+  table_builder_options.fixed_key_len = fixed_key_len;
+  table_builder_options.fixed_value_len = fixed_value_len;
   // External SST files used to each get a unique session id. Now for
   // slightly better uniqueness probability in constructing cache keys, we
   // assign fake file numbers to each file (into table properties) and keep
@@ -413,6 +437,12 @@ Status SstFileWriter::Finish(ExternalSstFileInfo* file_info) {
     if (s.ok()) {
       s = r->file_writer->Close();
     }
+  }
+  if (s.ok() && rep_->sst_support_auto_sort) {
+    // this reduced comparing user keys with smallest_key & largest_key.
+    auto& fi = r->file_info;
+    s = r->builder->GetBoundaryUserKey(&fi.smallest_key, &fi.largest_key);
+    ROCKSDB_VERIFY_F(s.ok(), "GetBoundaryUserKey = %s", s.ToString().c_str());
   }
   if (s.ok()) {
     r->file_info.file_checksum = r->file_writer->GetFileChecksum();

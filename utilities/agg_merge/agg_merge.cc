@@ -171,6 +171,7 @@ class AggMergeOperator::Accumulator {
 // threads so we cannot simply create one Aggregator and reuse.
 // We use thread local instances instead.
 AggMergeOperator::Accumulator& AggMergeOperator::GetTLSAccumulator() {
+  ROCKSDB_STATIC_TLS
   static thread_local Accumulator tls_acc;
   tls_acc.Clear();
   return tls_acc;

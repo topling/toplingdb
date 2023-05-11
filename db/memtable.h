@@ -58,7 +58,6 @@ struct ImmutableMemTableOptions {
   MergeOperator* merge_operator;
   Logger* info_log;
   bool allow_data_in_errors;
-  uint32_t protection_bytes_per_key;
 };
 
 // Batched counters to updated when inserting keys in one write batch.
@@ -93,6 +92,7 @@ class MemTable {
                            const char* prefix_len_key2) const override;
     virtual int operator()(const char* prefix_len_key,
                            const DecodedType& key) const override;
+    virtual const InternalKeyComparator* icomparator() const override;
   };
 
   // MemTables are reference counted.  The initial reference count
@@ -217,7 +217,7 @@ class MemTable {
       const ReadOptions& read_options, SequenceNumber read_seq,
       bool immutable_memtable);
 
-  Status VerifyEncodedEntry(Slice encoded,
+  Status VerifyEncodedEntry(Slice ikey, Slice value,
                             const ProtectionInfoKVOS64& kv_prot_info);
 
   // Add an entry into memtable that maps key to value at the
@@ -259,7 +259,7 @@ class MemTable {
   // @param immutable_memtable Whether this memtable is immutable. Used
   // internally by NewRangeTombstoneIterator(). See comment above
   // NewRangeTombstoneIterator() for more detail.
-  bool Get(const LookupKey& key, std::string* value,
+  bool Get(const LookupKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq, SequenceNumber* seq,
@@ -267,7 +267,7 @@ class MemTable {
            ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
            bool do_merge = true);
 
-  bool Get(const LookupKey& key, std::string* value,
+  bool Get(const LookupKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
@@ -527,11 +527,6 @@ class MemTable {
     }
   }
 
-  // Returns Corruption status if verification fails.
-  static Status VerifyEntryChecksum(const char* entry,
-                                    uint32_t protection_bytes_per_key,
-                                    bool allow_data_in_errors = false);
-
  private:
   enum FlushStateEnum { FLUSH_NOT_REQUESTED, FLUSH_REQUESTED, FLUSH_SCHEDULED };
 
@@ -560,6 +555,7 @@ class MemTable {
   // These are used to manage memtable flushes to storage
   bool flush_in_progress_;  // started the flush
   bool flush_completed_;    // finished the flush
+  bool needs_user_key_cmp_in_get_;
   uint64_t file_number_;    // filled up after flush is complete
 
   // The updates to be applied to the transaction log when this
@@ -622,13 +618,6 @@ class MemTable {
 
   void UpdateOldestKeyTime();
 
-  void GetFromTable(const LookupKey& key,
-                    SequenceNumber max_covering_tombstone_seq, bool do_merge,
-                    ReadCallback* callback, bool* is_blob_index,
-                    std::string* value, PinnableWideColumns* columns,
-                    std::string* timestamp, Status* s,
-                    MergeContext* merge_context, SequenceNumber* seq,
-                    bool* found_final_value, bool* merge_in_progress);
 
   // Always returns non-null and assumes certain pre-checks (e.g.,
   // is_range_del_table_empty_) are done. This is only valid during the lifetime

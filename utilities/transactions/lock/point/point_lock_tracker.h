@@ -8,6 +8,8 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <terark/hash_strmap.hpp>
+#include <terark/util/vec_idx_map.hpp>
 
 #include "utilities/transactions/lock/lock_tracker.h"
 
@@ -33,14 +35,25 @@ struct TrackedKeyInfo {
   }
 };
 
+#if 0
 using TrackedKeyInfos = std::unordered_map<std::string, TrackedKeyInfo>;
+#else
+struct TrackedKeyInfos : terark::hash_strmap<TrackedKeyInfo> {
+  TrackedKeyInfos() {
+    size_t cap = 8;
+    size_t strpool_cap = 1024;
+    this->reserve(cap, strpool_cap);
+    //this->enable_freelist();
+  }
+};
+#endif
 
-using TrackedKeys = std::unordered_map<ColumnFamilyId, TrackedKeyInfos>;
+using TrackedKeys = terark::VectorIndexMap<ColumnFamilyId, TrackedKeyInfos>;
 
 // Tracks point locks on single keys.
 class PointLockTracker : public LockTracker {
  public:
-  PointLockTracker() = default;
+  PointLockTracker();
 
   PointLockTracker(const PointLockTracker&) = delete;
   PointLockTracker& operator=(const PointLockTracker&) = delete;
@@ -69,7 +82,7 @@ class PointLockTracker : public LockTracker {
       const LockTracker& save_point_tracker) const override;
 
   PointLockStatus GetPointLockStatus(ColumnFamilyId column_family_id,
-                                     const std::string& key) const override;
+                                     const LockString& key) const override;
 
   uint64_t GetNumPointLocks() const override;
 
@@ -77,7 +90,7 @@ class PointLockTracker : public LockTracker {
 
   KeyIterator* GetKeyIterator(ColumnFamilyId column_family_id) const override;
 
- private:
+ //private:
   TrackedKeys tracked_keys_;
 };
 

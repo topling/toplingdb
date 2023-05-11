@@ -345,6 +345,18 @@ std::string Footer::ToString() const {
   return result;
 }
 
+// This ReadFooterFromFile overload is used by ToplingZipTable,
+// ToplingZipTable need to adapt to multiple upstream rocksdb,
+// so we do not change ToplingZipTable, but add this overload.
+Status ReadFooterFromFile(const IOOptions& opts, RandomAccessFileReader* file,
+                          FilePrefetchBuffer* prefetch_buffer,
+                          uint64_t file_size, Footer* footer,
+                          uint64_t enforce_table_magic_number) {
+  FileSystem& fs = *Env::Default()->GetFileSystem();
+  return ReadFooterFromFile(opts, file, fs, prefetch_buffer, file_size,
+                            footer, enforce_table_magic_number);
+}
+
 Status ReadFooterFromFile(const IOOptions& opts, RandomAccessFileReader* file,
                           FileSystem& fs, FilePrefetchBuffer* prefetch_buffer,
                           uint64_t file_size, Footer* footer,

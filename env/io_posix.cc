@@ -924,6 +924,10 @@ IOStatus PosixRandomAccessFile::ReadAsync(
 #endif
 }
 
+intptr_t PosixRandomAccessFile::FileDescriptor() const {
+  return this->fd_;
+}
+
 /*
  * PosixMmapReadableFile
  *
@@ -1007,6 +1011,10 @@ IOStatus PosixMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
                      " len" + std::to_string(length),
                  filename_, errno);
 #endif
+}
+
+intptr_t PosixMmapReadableFile::FileDescriptor() const {
+  return this->fd_;
 }
 
 /*
@@ -1274,6 +1282,7 @@ PosixWritableFile::PosixWritableFile(const std::string& fname, int fd,
     : FSWritableFile(options),
       filename_(fname),
       use_direct_io_(options.use_direct_writes),
+      allow_fdatasync_(options.allow_fdatasync),
       fd_(fd),
       filesize_(0),
       logical_sector_size_(logical_block_size) {
@@ -1406,6 +1415,9 @@ IOStatus PosixWritableFile::Sync(const IOOptions& /*opts*/,
     return IOError("while fcntl(F_FULLFSYNC)", filename_, errno);
   }
 #else   // HAVE_FULLFSYNC
+  if (!allow_fdatasync_) {
+    return IOStatus::OK();
+  }
   if (fdatasync(fd_) < 0) {
     return IOError("While fdatasync", filename_, errno);
   }

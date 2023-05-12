@@ -3080,7 +3080,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   }
   //TEST_SYNC_POINT("DBImpl::GetImpl:PostMemTableGet:0");
   //TEST_SYNC_POINT("DBImpl::GetImpl:PostMemTableGet:1");
-  size_t counting = 0;
+  size_t get_in_sst_cnt = 0;
   auto get_in_sst = [&](size_t i, size_t/*unused*/ = 0) {
     MergeContext& merge_context = ctx_vec[i].merge_context();
     PinnedIteratorsManager pinned_iters_mgr;
@@ -3097,28 +3097,28 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
         callback,
         is_blob_index,
         get_value);
-    counting++;
+    get_in_sst_cnt++;
   };
   if (read_options.async_io) {
     gt_fiber_pool.update_fiber_count(read_options.async_queue_depth);
-  }
-  size_t memtab_miss = 0;
-  for (size_t i = 0; i < num_keys; i++) {
-    if (!ctx_vec[i].is_done()) {
-      if (read_options.async_io) {
+    size_t memtab_miss = 0;
+    for (size_t i = 0; i < num_keys; i++) {
+      if (!ctx_vec[i].is_done()) {
         gt_fiber_pool.push({TERARK_C_CALLBACK(get_in_sst), i});
-      } else {
-        get_in_sst(i);
+        memtab_miss++;
       }
-      memtab_miss++;
     }
-  }
-  while (counting < memtab_miss) {
-    gt_fiber_pool.unchecked_yield();
+    while (get_in_sst_cnt < memtab_miss)
+      gt_fiber_pool.unchecked_yield();
+  } else {
+    for (size_t i = 0; i < num_keys; i++) {
+      if (!ctx_vec[i].is_done())
+        get_in_sst(i);
+    }
   }
 
   // Post processing (decrement reference counts and record statistics)
-  RecordTick(stats_, MEMTABLE_MISS, memtab_miss);
+  RecordTick(stats_, MEMTABLE_MISS, get_in_sst_cnt);
   PERF_TIMER_GUARD(get_post_process_time);
   size_t num_found = 0;
   uint64_t bytes_read = 0;

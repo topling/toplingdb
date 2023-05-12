@@ -210,15 +210,29 @@ int FindFileInRange(const InternalKeyComparator& icmp,
 #else // ToplingDB Devirtualization and Key Prefix Cache optimization
   if (icmp.IsForwardBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+  #ifdef TOPLINGDB_WITH_SST_UNION_DFA
     if (file_level.udfa) {
+      if (UNLIKELY(key.empty())) {
+        return int(left);
+      }
       assert(&FindFileInRangeUdfa != nullptr);
       return FindFileInRangeUdfa(file_level, key);
     }
+  #endif
     BytewiseCompareInternalKey cmp;
     return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
   }
   else if (icmp.IsReverseBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+  #ifdef TOPLINGDB_WITH_SST_UNION_DFA
+    if (file_level.udfa) {
+      if (UNLIKELY(key.empty())) {
+        return int(right);
+      }
+      assert(&FindFileInRangeUdfa != nullptr);
+      return FindFileInRangeUdfa(file_level, key);
+    }
+  #endif
     RevBytewiseCompareInternalKey cmp;
     return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
   }

@@ -343,7 +343,9 @@ struct FdWithKeyRange {
 struct LevelFilesBrief {
   size_t num_files;
   FdWithKeyRange* files;
+#ifdef TOPLINGDB_WITH_SST_UNION_DFA
   std::shared_ptr<class SSTUnionDFA> udfa = nullptr;
+#endif
   uint64_t* prefix_cache = nullptr;
   LevelFilesBrief() {
     num_files = 0;

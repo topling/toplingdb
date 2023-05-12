@@ -260,6 +260,7 @@ CXXFLAGS += -Isideplugin/rockside/3rdparty/rapidyaml \
 ifneq (,$(wildcard sideplugin/topling-core))
   TOPLING_CORE_DIR := sideplugin/topling-core
   CXXFLAGS += -DGITHUB_TOPLING_ZIP='"https://github.com/rockeet/topling-core"'
+  CXXFLAGS += -DTOPLING_CORE_FULL_FEATURE=1
 else
   CXXFLAGS += -DGITHUB_TOPLING_ZIP='"https://github.com/topling/topling-zip"'
   # topling-zip is topling public

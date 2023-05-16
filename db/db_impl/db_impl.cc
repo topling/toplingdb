@@ -4389,7 +4389,19 @@ void ReadOptionsTLS::FinishPin() {
 void ReadOptions::StartPin() {
   if (!pinning_tls) {
     pinning_tls = std::make_shared<ReadOptionsTLS>();
-  } else {
+  } else if (UNLIKELY(tailing)) {
+    // taling mode keeps SuperVersion always being the newest.
+    //
+    // In tailing mode, StartPin ... FinishPin must be paired and can not be
+    // nested, because in tailing mode, GetAndRefSuperVersion(cfd, ro) may
+    // update SuperVersion pointer, thus cause old SuperVersion being
+    // invalidated, thus cause existing value ptr from old SuperVersion being
+    // invalidated.
+    //
+    // In non-tailing mode, StartPin ... FinishPin can be nested, it even
+    // can be non-paired, it just requires in same thread.
+    //
+    // now we verify db_impl and sv must be null
     ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->db_impl);
     ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->sv);
     ROCKSDB_VERIFY_EQ(pinning_tls->cfsv.size(), 0);
@@ -4419,6 +4431,9 @@ DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd, const ReadOptions* ro) {
   size_t cfid = cfd->GetID();
   SuperVersion*& sv = tls->GetSuperVersionRef(cfid);
   if (sv) {
+    if (LIKELY(!ro->tailing)) {
+      return sv;
+    }
     if (LIKELY(sv->version_number == cfd->GetSuperVersionNumberNoAtomic())) {
       ROCKSDB_ASSERT_EQ(sv->cfd, cfd);
       return sv;

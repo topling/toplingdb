@@ -60,7 +60,12 @@ ToplingDB requires C++17, gcc 8.3 or newer is recommended, clang also works.
 
 Even without ToplingZipTable, ToplingDB is much faster than upstream RocksDB:
 ```bash
+# centos
 sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel libcurl-devel liburing-devel
+# ubuntu
+sudo apt-get update -y
+sudo apt-get install -y libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev libbz2-dev libcurl4-gnutls-dev liburing-dev
+
 git clone https://github.com/topling/toplingdb
 cd toplingdb
 make -j`nproc` db_bench DEBUG_LEVEL=0

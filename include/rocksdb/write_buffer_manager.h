@@ -159,12 +159,15 @@ class WriteBufferManager final {
 
   void RemoveDBFromQueue(StallInterface* wbm_stall);
 
+  const std::shared_ptr<Cache>& GetCache() const { return cache_; }
+
  private:
   std::atomic<size_t> buffer_size_;
   std::atomic<size_t> mutable_limit_;
   std::atomic<size_t> memory_used_;
   // Memory that hasn't been scheduled to free.
   std::atomic<size_t> memory_active_;
+  std::shared_ptr<Cache> cache_;
   std::shared_ptr<CacheReservationManager> cache_res_mgr_;
   // Protects cache_res_mgr_
   std::mutex cache_res_mgr_mu_;

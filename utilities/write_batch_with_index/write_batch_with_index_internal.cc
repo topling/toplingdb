@@ -20,7 +20,7 @@
 namespace ROCKSDB_NAMESPACE {
 BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
                                      Iterator* base_iterator,
-                                     WBWIIteratorImpl* delta_iterator,
+                                     WBWIIterator* delta_iterator,
                                      const Comparator* comparator,
                                      const ReadOptions* read_options)
     : forward_(true),
@@ -34,8 +34,10 @@ BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
                                         : nullptr) {
   assert(comparator_);
   wbwii_.reset(new WriteBatchWithIndexInternal(column_family));
+  opt_cmp_type_ = comparator->opt_cmp_type();
 }
 
+ROCKSDB_FLATTEN
 bool BaseDeltaIterator::Valid() const {
   return status_.ok() ? (current_at_base_ ? BaseValid() : DeltaValid()) : false;
 }
@@ -69,12 +71,12 @@ void BaseDeltaIterator::SeekForPrev(const Slice& k) {
 }
 
 void BaseDeltaIterator::Next() {
-  if (!Valid()) {
+  if (UNLIKELY(!Valid())) {
     status_ = Status::NotSupported("Next() on invalid iterator");
     return;
   }
 
-  if (!forward_) {
+  if (UNLIKELY(!forward_)) {
     // Need to change direction
     // if our direction was backward and we're not equal, we have two states:
     // * both iterators are valid: we're already in a good state (current
@@ -106,12 +108,12 @@ void BaseDeltaIterator::Next() {
 }
 
 void BaseDeltaIterator::Prev() {
-  if (!Valid()) {
+  if (UNLIKELY(!Valid())) {
     status_ = Status::NotSupported("Prev() on invalid iterator");
     return;
   }
 
-  if (forward_) {
+  if (UNLIKELY(forward_)) {
     // Need to change direction
     // if our direction was backward and we're not equal, we have two states:
     // * both iterators are valid: we're already in a good state (current
@@ -185,6 +187,10 @@ Status BaseDeltaIterator::status() const {
     return base_iterator_->status();
   }
   return delta_iterator_->status();
+}
+
+Status BaseDeltaIterator::Refresh(const Snapshot* snap, bool keep_iter_pos) {
+  return base_iterator_->Refresh(snap, keep_iter_pos);
 }
 
 void BaseDeltaIterator::Invalidate(Status s) { status_ = s; }
@@ -273,14 +279,41 @@ void BaseDeltaIterator::AdvanceBase() {
 
 bool BaseDeltaIterator::BaseValid() const { return base_iterator_->Valid(); }
 bool BaseDeltaIterator::DeltaValid() const { return delta_iterator_->Valid(); }
+
+struct BDI_BytewiseCmpNoTS {
+  int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
+};
+struct BDI_RevBytewiseCmpNoTS {
+  int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
+};
+struct BDI_VirtualCmpNoTS {
+  int compare(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, false, y, false);
+  }
+  const Comparator* cmp;
+};
+
+ROCKSDB_FLATTEN
 void BaseDeltaIterator::UpdateCurrent() {
+  if (0 == opt_cmp_type_)
+    UpdateCurrentTpl(BDI_BytewiseCmpNoTS());
+  else if (1 == opt_cmp_type_)
+    UpdateCurrentTpl(BDI_RevBytewiseCmpNoTS());
+  else
+    UpdateCurrentTpl(BDI_VirtualCmpNoTS{comparator_});
+}
+template<class CmpNoTS>
+void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
 // Suppress false positive clang analyzer warnings.
 #ifndef __clang_analyzer__
-  status_ = Status::OK();
+  status_.SetAsOK();
+  Iterator* base_iterator_ = this->base_iterator_.get();
+  WBWIIterator* delta_iterator_ = this->delta_iterator_.get();
   while (true) {
     auto delta_result = WBWIIteratorImpl::kNotFound;
     WriteEntry delta_entry;
-    if (DeltaValid()) {
+    const bool delta_valid = delta_iterator_->Valid();
+    if (delta_valid) {
       assert(delta_iterator_->status().ok());
       delta_result =
           delta_iterator_->FindLatestUpdate(wbwii_->GetMergeContext());
@@ -291,7 +324,7 @@ void BaseDeltaIterator::UpdateCurrent() {
       return;
     }
     equal_keys_ = false;
-    if (!BaseValid()) {
+    if (!base_iterator_->Valid()) {
       if (!base_iterator_->status().ok()) {
         // Expose the error status and stop.
         current_at_base_ = true;
@@ -299,14 +332,12 @@ void BaseDeltaIterator::UpdateCurrent() {
       }
 
       // Base has finished.
-      if (!DeltaValid()) {
+      if (!delta_valid) {
         // Finished
         return;
       }
       if (iterate_upper_bound_) {
-        if (comparator_->CompareWithoutTimestamp(
-                delta_entry.key, /*a_has_ts=*/false, *iterate_upper_bound_,
-                /*b_has_ts=*/false) >= 0) {
+        if (cmp.compare(delta_entry.key, *iterate_upper_bound_) >= 0) {
           // out of upper bound -> finished.
           return;
         }
@@ -318,15 +349,15 @@ void BaseDeltaIterator::UpdateCurrent() {
         current_at_base_ = false;
         return;
       }
-    } else if (!DeltaValid()) {
+    } else if (!delta_valid) {
       // Delta has finished.
       current_at_base_ = true;
       return;
     } else {
-      int compare =
-          (forward_ ? 1 : -1) * comparator_->CompareWithoutTimestamp(
-                                    delta_entry.key, /*a_has_ts=*/false,
-                                    base_iterator_->key(), /*b_has_ts=*/false);
+      int compare = forward_
+                  ? cmp.compare(delta_entry.key, base_iterator_->key())
+                  : cmp.compare(base_iterator_->key(), delta_entry.key)
+                  ;
       if (compare <= 0) {  // delta bigger or equal
         if (compare == 0) {
           equal_keys_ = true;
@@ -380,7 +411,7 @@ void WBWIIteratorImpl::PrevKey() {
   }
 }
 
-WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
+WBWIIteratorImpl::Result WBWIIterator::FindLatestUpdate(
     MergeContext* merge_context) {
   if (Valid()) {
     Slice key = Entry().key;
@@ -391,15 +422,18 @@ WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
   }
 }
 
-WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
+bool WBWIIteratorImpl::EqualsKey(const Slice& key) const {
+  return comparator_->CompareKey(column_family_id_, Entry().key, key) == 0;
+}
+
+WBWIIteratorImpl::Result WBWIIterator::FindLatestUpdate(
     const Slice& key, MergeContext* merge_context) {
   Result result = WBWIIteratorImpl::kNotFound;
   merge_context->Clear();  // Clear any entries in the MergeContext
   // TODO(agiardullo): consider adding support for reverse iteration
   if (!Valid()) {
     return result;
-  } else if (comparator_->CompareKey(column_family_id_, Entry().key, key) !=
-             0) {
+  } else if (!EqualsKey(key)) {
     return result;
   } else {
     // We want to iterate in the reverse order that the writes were added to the
@@ -416,7 +450,7 @@ WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
     // last Put or Delete, accumulating merges along the way.
     while (Valid()) {
       const WriteEntry entry = Entry();
-      if (comparator_->CompareKey(column_family_id_, entry.key, key) != 0) {
+      if (!EqualsKey(key)) {
         break;  // Unexpected error or we've reached a different next key
       }
 
@@ -613,12 +647,14 @@ WriteEntry WBWIIteratorImpl::Entry() const {
   assert(ret.type == kPutRecord || ret.type == kDeleteRecord ||
          ret.type == kSingleDeleteRecord || ret.type == kDeleteRangeRecord ||
          ret.type == kMergeRecord);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   // Make sure entry.key does not include user-defined timestamp.
   const Comparator* const ucmp = comparator_->GetComparator(column_family_id_);
   size_t ts_sz = ucmp->timestamp_size();
   if (ts_sz > 0) {
     ret.key = StripTimestampFromUserKey(ret.key, ts_sz);
   }
+#endif
   return ret;
 }
 
@@ -700,11 +736,15 @@ Status WriteBatchWithIndexInternal::MergeKey(const Slice& key,
 WBWIIteratorImpl::Result WriteBatchWithIndexInternal::GetFromBatch(
     WriteBatchWithIndex* batch, const Slice& key, MergeContext* context,
     std::string* value, Status* s) {
-  *s = Status::OK();
+  s->SetAsOK();
 
+#if 0
   std::unique_ptr<WBWIIteratorImpl> iter(
       static_cast_with_check<WBWIIteratorImpl>(
           batch->NewIterator(column_family_)));
+#else // topling: use base class WBWIIterator
+  std::unique_ptr<WBWIIterator> iter(batch->NewIterator(column_family_));
+#endif
 
   // Search the iterator for this key, and updates/merges to it.
   iter->Seek(key);

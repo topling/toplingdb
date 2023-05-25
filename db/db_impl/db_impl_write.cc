@@ -314,7 +314,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
 
     if (w.ShouldWriteToMemtable()) {
       PERF_TIMER_STOP(write_pre_and_post_process_time);
-      PERF_TIMER_GUARD(write_memtable_time);
+      PERF_TIMER_WITH_HISTOGRAM(write_memtable_time, MEMTAB_WRITE_KV_NANOS, stats_);
 
       ColumnFamilyMemTablesImpl column_family_memtables(
           versions_->GetColumnFamilySet());
@@ -488,7 +488,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
         assert(log_context.log_file_number_size);
         LogFileNumberSize& log_file_number_size =
             *(log_context.log_file_number_size);
-        PERF_TIMER_GUARD(write_wal_time);
+        PERF_TIMER_WITH_HISTOGRAM(write_wal_time, WRITE_WAL_NANOS, stats_);
         io_s =
             WriteToWAL(write_group, log_context.writer, log_used,
                        log_context.need_log_sync, log_context.need_log_dir_sync,
@@ -496,7 +496,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
       }
     } else {
       if (status.ok() && !write_options.disableWAL) {
-        PERF_TIMER_GUARD(write_wal_time);
+        PERF_TIMER_WITH_HISTOGRAM(write_wal_time, WRITE_WAL_NANOS, stats_);
         // LastAllocatedSequence is increased inside WriteToWAL under
         // wal_write_mutex_ to ensure ordered events in WAL
         io_s = ConcurrentWriteToWAL(write_group, log_used, &last_sequence,
@@ -543,7 +543,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     }
 
     if (status.ok()) {
-      PERF_TIMER_GUARD(write_memtable_time);
+      PERF_TIMER_WITH_HISTOGRAM(write_memtable_time, MEMTAB_WRITE_KV_NANOS, stats_);
 
       if (!parallel) {
         // w.sequence will be set inside InsertInto
@@ -732,7 +732,7 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
     io_s.PermitUncheckedError();  // Allow io_s to be uninitialized
 
     if (w.status.ok() && !write_options.disableWAL) {
-      PERF_TIMER_GUARD(write_wal_time);
+      PERF_TIMER_WITH_HISTOGRAM(write_wal_time, WRITE_WAL_NANOS, stats_);
       stats->AddDBStats(InternalStats::kIntStatsWriteDoneBySelf, 1);
       RecordTick(stats_, WRITE_DONE_BY_SELF, 1);
       if (wal_write_group.size > 1) {
@@ -783,7 +783,7 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
   WriteThread::WriteGroup memtable_write_group;
 
   if (w.state == WriteThread::STATE_MEMTABLE_WRITER_LEADER) {
-    PERF_TIMER_GUARD(write_memtable_time);
+    PERF_TIMER_WITH_HISTOGRAM(write_memtable_time, MEMTAB_WRITE_KV_NANOS, stats_);
     assert(w.ShouldWriteToMemtable());
     write_thread_.EnterAsMemTableWriter(&w, &memtable_write_group);
     if (memtable_write_group.size > 1 &&
@@ -990,7 +990,7 @@ Status DBImpl::WriteImplWALOnly(
 
   PERF_TIMER_STOP(write_pre_and_post_process_time);
 
-  PERF_TIMER_GUARD(write_wal_time);
+  PERF_TIMER_WITH_HISTOGRAM(write_wal_time, WRITE_WAL_NANOS, stats_);
   // LastAllocatedSequence is increased inside WriteToWAL under
   // wal_write_mutex_ to ensure ordered events in WAL
   size_t seq_inc = 0 /* total_count */;
@@ -1166,7 +1166,10 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
     assert(num_cfs >= 1);
     if (num_cfs > 1) {
       WaitForPendingWrites();
+      auto beg = immutable_db_options_.clock->NowNanos();
       status = SwitchWAL(write_context);
+      auto end = immutable_db_options_.clock->NowNanos();
+      RecordInHistogram(stats_, SWITCH_WAL_NANOS, end - beg);
     }
   }
 
@@ -1178,18 +1181,28 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
     // suboptimal but still correct.
     InstrumentedMutexLock l(&mutex_);
     WaitForPendingWrites();
+    auto beg = immutable_db_options_.clock->NowNanos();
     status = HandleWriteBufferManagerFlush(write_context);
+    auto end = immutable_db_options_.clock->NowNanos();
+    RecordInHistogram(stats_, SWITCH_WAL_NANOS, end - beg);
   }
 
   if (UNLIKELY(status.ok() && !trim_history_scheduler_.Empty())) {
-    InstrumentedMutexLock l(&mutex_);
+    auto beg = immutable_db_options_.clock->NowNanos();
+    mutex_.Lock();
     status = TrimMemtableHistory(write_context);
+    mutex_.Unlock();
+    auto end = immutable_db_options_.clock->NowNanos();
+    RecordInHistogram(stats_, SWITCH_WAL_NANOS, end - beg);
   }
 
   if (UNLIKELY(status.ok() && !flush_scheduler_.Empty())) {
     InstrumentedMutexLock l(&mutex_);
     WaitForPendingWrites();
+    auto beg = immutable_db_options_.clock->NowNanos();
     status = ScheduleFlushes(write_context);
+    auto end = immutable_db_options_.clock->NowNanos();
+    RecordInHistogram(stats_, SWITCH_WAL_NANOS, end - beg);
   }
 
   PERF_TIMER_STOP(write_scheduling_flushes_compactions_time);
@@ -1808,8 +1821,8 @@ Status DBImpl::DelayWrite(uint64_t num_bytes, WriteThread& write_thread,
   uint64_t time_delayed = 0;
   bool delayed = false;
   {
-    StopWatch sw(immutable_db_options_.clock, stats_, WRITE_STALL,
-                 Histograms::HISTOGRAM_ENUM_MAX, &time_delayed);
+    StopWatchEx sw(immutable_db_options_.clock, stats_, WRITE_STALL,
+                   &time_delayed);
     // To avoid parallel timed delays (bad throttling), only support them
     // on the primary write queue.
     uint64_t delay;
@@ -1839,7 +1852,7 @@ Status DBImpl::DelayWrite(uint64_t num_bytes, WriteThread& write_thread,
       const uint64_t kDelayInterval = 1001;
       uint64_t stall_end = sw.start_time() + delay;
       while (write_controller_.NeedsDelay()) {
-        if (immutable_db_options_.clock->NowMicros() >= stall_end) {
+        if (sw.now_micros() >= stall_end) {
           // We already delayed this write `delay` microseconds
           break;
         }

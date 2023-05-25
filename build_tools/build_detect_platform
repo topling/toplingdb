@@ -49,7 +49,7 @@ fi
 if [ "$ROCKSDB_CXX_STANDARD" ]; then
   PLATFORM_CXXFLAGS="-std=$ROCKSDB_CXX_STANDARD"
 else
-  PLATFORM_CXXFLAGS="-std=c++17"
+  PLATFORM_CXXFLAGS="-std=gnu++17"
 fi
 
 # we currently depend on POSIX platform
@@ -238,7 +238,7 @@ EOF
     Cygwin)
         PLATFORM=CYGWIN
         PLATFORM_SHARED_CFLAGS=""
-        PLATFORM_CXXFLAGS="-std=gnu++11"
+        PLATFORM_CXXFLAGS="-std=gnu++17"
         COMMON_FLAGS="$COMMON_FLAGS -DCYGWIN"
         if [ -z "$USE_CLANG" ]; then
             COMMON_FLAGS="$COMMON_FLAGS -fno-builtin-memcmp"
@@ -334,6 +334,9 @@ EOF
         then
           COMMON_FLAGS="$COMMON_FLAGS -DGFLAGS=1 -DGFLAGS_NAMESPACE=google"
           PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lgflags"
+        else
+          echo Not found: GFLAGS 1>&2
+          exit 1
         fi
     fi
 
@@ -347,6 +350,9 @@ EOF
             COMMON_FLAGS="$COMMON_FLAGS -DZLIB"
             PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lz"
             JAVA_LDFLAGS="$JAVA_LDFLAGS -lz"
+        else
+          echo Not found: zlib "(for gzip)" 1>&2
+          exit 1
         fi
     fi
 

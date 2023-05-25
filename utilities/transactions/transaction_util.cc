@@ -19,7 +19,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 Status TransactionUtil::CheckKeyForConflicts(
-    DBImpl* db_impl, ColumnFamilyHandle* column_family, const std::string& key,
+    DBImpl* db_impl, ColumnFamilyHandle* column_family, const LockString& key,
     SequenceNumber snap_seq, const std::string* const read_ts, bool cache_only,
     ReadCallback* snap_checker, SequenceNumber min_uncommitted) {
   Status result;
@@ -32,8 +32,7 @@ Status TransactionUtil::CheckKeyForConflicts(
     result = Status::InvalidArgument("Could not access column family " +
                                      cfh->GetName());
   }
-
-  if (result.ok()) {
+  else {
     SequenceNumber earliest_seq =
         db_impl->GetEarliestMemTableSequenceNumber(sv, true);
 
@@ -49,16 +48,21 @@ Status TransactionUtil::CheckKeyForConflicts(
 Status TransactionUtil::CheckKey(DBImpl* db_impl, SuperVersion* sv,
                                  SequenceNumber earliest_seq,
                                  SequenceNumber snap_seq,
-                                 const std::string& key,
-                                 const std::string* const read_ts,
+                                 const LockString& key0,
+                                 const std::string* read_ts,
                                  bool cache_only, ReadCallback* snap_checker,
                                  SequenceNumber min_uncommitted) {
+#if !defined(TOPLINGDB_WITH_TIMESTAMP)
+  read_ts = nullptr; // let compiler optimize out null check
+#endif
+
   // When `min_uncommitted` is provided, keys are not always committed
   // in sequence number order, and `snap_checker` is used to check whether
   // specific sequence number is in the database is visible to the transaction.
   // So `snap_checker` must be provided.
   assert(min_uncommitted == kMaxSequenceNumber || snap_checker != nullptr);
 
+  const Slice key(key0.data(), key0.size());
   Status result;
   bool need_to_read_sst = false;
 
@@ -141,7 +145,7 @@ Status TransactionUtil::CheckKey(DBImpl* db_impl, SuperVersion* sv,
         write_conflict = ucmp->CompareTimestamp(*read_ts, timestamp) < 0;
       }
       if (write_conflict) {
-        result = Status::Busy();
+        result = Status::Busy("Write Conflict");
       }
     }
   }
@@ -176,7 +180,7 @@ Status TransactionUtil::CheckKeysForConflicts(DBImpl* db_impl,
         tracker.GetKeyIterator(cf));
     assert(key_it != nullptr);
     while (key_it->HasNext()) {
-      const std::string& key = key_it->Next();
+      const auto& key = key_it->Next();
       PointLockStatus status = tracker.GetPointLockStatus(cf, key);
       const SequenceNumber key_seq = status.seq;
 

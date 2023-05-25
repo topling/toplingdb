@@ -87,6 +87,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.wal_bytes_per_sync = mutable_db_options.wal_bytes_per_sync;
   options.strict_bytes_per_sync = mutable_db_options.strict_bytes_per_sync;
   options.max_subcompactions = mutable_db_options.max_subcompactions;
+  options.max_level1_subcompactions = mutable_db_options.max_level1_subcompactions;
   options.max_background_flushes = mutable_db_options.max_background_flushes;
   options.max_log_file_size = immutable_db_options.max_log_file_size;
   options.log_file_time_to_roll = immutable_db_options.log_file_time_to_roll;
@@ -105,6 +106,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.use_direct_io_for_flush_and_compaction =
       immutable_db_options.use_direct_io_for_flush_and_compaction;
   options.allow_fallocate = immutable_db_options.allow_fallocate;
+  options.allow_fdatasync = immutable_db_options.allow_fdatasync;
   options.is_fd_close_on_exec = immutable_db_options.is_fd_close_on_exec;
   options.stats_dump_period_sec = mutable_db_options.stats_dump_period_sec;
   options.stats_persist_period_sec =
@@ -176,6 +178,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.lowest_used_cache_tier = immutable_db_options.lowest_used_cache_tier;
   options.enforce_single_del_contracts =
       immutable_db_options.enforce_single_del_contracts;
+  options.wbwi_factory = mutable_db_options.wbwi_factory;
   return options;
 }
 

@@ -21,6 +21,19 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+static auto g_cspp_fac = []()-> std::shared_ptr<MemTableRepFactory> {
+  const char* memtab_opt = getenv("MemTableRepFactory");
+  if (memtab_opt && strncmp(memtab_opt, "cspp:", 5) == 0) {
+   #ifdef HAS_TOPLING_CSPP_MEMTABLE
+    extern MemTableRepFactory* NewCSPPMemTabForPlain(const std::string&);
+    return std::shared_ptr<MemTableRepFactory>(NewCSPPMemTabForPlain(memtab_opt + 5));
+   #else
+    fprintf(stderr, "env MemTableRepFactory is cspp but HAS_TOPLING_CSPP_MEMTABLE is not defined\n");
+   #endif
+  }
+  return nullptr;
+}();
+
 class MemTableListTest : public testing::Test {
  public:
   std::string dbname;
@@ -230,7 +243,7 @@ TEST_F(MemTableListTest, GetTest) {
                     max_write_buffer_size_to_maintain);
 
   SequenceNumber seq = 1;
-  std::string value;
+  PinnableSlice value;
   Status s;
   MergeContext merge_context;
   InternalKeyComparator ikey_cmp(options.comparator);
@@ -247,6 +260,7 @@ TEST_F(MemTableListTest, GetTest) {
   InternalKeyComparator cmp(BytewiseComparator());
   auto factory = std::make_shared<SkipListFactory>();
   options.memtable_factory = factory;
+  if (g_cspp_fac) options.memtable_factory = g_cspp_fac;
   ImmutableOptions ioptions(options);
 
   WriteBufferManager wb(options.db_write_buffer_size);
@@ -365,7 +379,7 @@ TEST_F(MemTableListTest, GetFromHistoryTest) {
                     max_write_buffer_size_to_maintain);
 
   SequenceNumber seq = 1;
-  std::string value;
+  PinnableSlice value;
   Status s;
   MergeContext merge_context;
   InternalKeyComparator ikey_cmp(options.comparator);
@@ -382,6 +396,7 @@ TEST_F(MemTableListTest, GetFromHistoryTest) {
   InternalKeyComparator cmp(BytewiseComparator());
   auto factory = std::make_shared<SkipListFactory>();
   options.memtable_factory = factory;
+  if (g_cspp_fac) options.memtable_factory = g_cspp_fac;
   ImmutableOptions ioptions(options);
 
   WriteBufferManager wb(options.db_write_buffer_size);
@@ -588,6 +603,7 @@ TEST_F(MemTableListTest, FlushPendingTest) {
 
   auto factory = std::make_shared<SkipListFactory>();
   options.memtable_factory = factory;
+  if (g_cspp_fac) options.memtable_factory = g_cspp_fac;
   ImmutableOptions ioptions(options);
   InternalKeyComparator cmp(BytewiseComparator());
   WriteBufferManager wb(options.db_write_buffer_size);
@@ -887,6 +903,7 @@ TEST_F(MemTableListTest, AtomicFlusTest) {
 
   auto factory = std::make_shared<SkipListFactory>();
   options.memtable_factory = factory;
+  if (g_cspp_fac) options.memtable_factory = g_cspp_fac;
   ImmutableOptions ioptions(options);
   InternalKeyComparator cmp(BytewiseComparator());
   WriteBufferManager wb(options.db_write_buffer_size);

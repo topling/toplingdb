@@ -25,7 +25,7 @@ class RangeLockManagerBase : public LockManager {
   // range
   using LockManager::TryLock;
   Status TryLock(PessimisticTransaction* txn, ColumnFamilyId column_family_id,
-                 const std::string& key, Env* env, bool exclusive) override {
+                 const Slice& key, Env* env, bool exclusive) override {
     Endpoint endp(key.data(), key.size(), false);
     return TryLock(txn, column_family_id, endp, endp, env, exclusive);
   }

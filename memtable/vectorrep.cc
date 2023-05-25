@@ -31,14 +31,14 @@ class VectorRep : public MemTableRep {
   void Insert(KeyHandle handle) override;
 
   // Returns true iff an entry that compares equal to key is in the collection.
-  bool Contains(const char* key) const override;
+  bool Contains(const Slice& internal_key) const override;
 
   void MarkReadOnly() override;
 
   size_t ApproximateMemoryUsage() override;
 
-  void Get(const LookupKey& k, void* callback_args,
-           bool (*callback_func)(void* arg, const char* entry)) override;
+  void Get(const ReadOptions&, const LookupKey& k, void* callback_args,
+           bool (*callback_func)(void* arg, const KeyValuePair&)) override;
 
   ~VectorRep() override {}
 
@@ -112,9 +112,15 @@ void VectorRep::Insert(KeyHandle handle) {
 }
 
 // Returns true iff an entry that compares equal to key is in the collection.
-bool VectorRep::Contains(const char* key) const {
+bool VectorRep::Contains(const Slice& internal_key) const {
+  std::string memtable_key;
+  EncodeKey(&memtable_key, internal_key);
+  const char* key = memtable_key.data();
+  auto eq = [this,key](const char* x) {
+    return this->compare_(x, key) == 0;
+  };
   ReadLock l(&rwlock_);
-  return std::find(bucket_->begin(), bucket_->end(), key) != bucket_->end();
+  return std::find_if(bucket_->begin(), bucket_->end(), eq) != bucket_->end();
 }
 
 void VectorRep::MarkReadOnly() {
@@ -244,8 +250,9 @@ void VectorRep::Iterator::SeekToLast() {
   }
 }
 
-void VectorRep::Get(const LookupKey& k, void* callback_args,
-                    bool (*callback_func)(void* arg, const char* entry)) {
+void VectorRep::Get(const ReadOptions&,
+                    const LookupKey& k, void* callback_args,
+                    bool (*callback_func)(void* arg, const KeyValuePair&)) {
   rwlock_.ReadLock();
   VectorRep* vector_rep;
   std::shared_ptr<Bucket> bucket;
@@ -258,8 +265,8 @@ void VectorRep::Get(const LookupKey& k, void* callback_args,
   VectorRep::Iterator iter(vector_rep, immutable_ ? bucket_ : bucket, compare_);
   rwlock_.ReadUnlock();
 
-  for (iter.Seek(k.user_key(), k.memtable_key().data());
-       iter.Valid() && callback_func(callback_args, iter.key()); iter.Next()) {
+  for (iter.Seek(k.user_key(), k.memtable_key_data());
+       iter.Valid() && callback_func(callback_args, iter.GetKeyValue()); iter.Next()) {
   }
 }
 

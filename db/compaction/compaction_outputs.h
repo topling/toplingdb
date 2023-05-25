@@ -190,6 +190,8 @@ class CompactionOutputs {
     return range_del_agg_ && !range_del_agg_->IsEmpty();
   }
 
+  std::vector<Output>& GetOutputs() { return outputs_; }
+
  private:
   friend class SubcompactionState;
 

@@ -19,6 +19,23 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+static constexpr size_t KEEP_SNAPSHOT = 16;
+
+inline static
+SequenceNumber GetSeqNum(const DBImpl* db, const Snapshot* s, const DBIter* i) {
+  if (size_t(s) == KEEP_SNAPSHOT)
+    return i->get_sequence();
+  else if (s)
+    //return static_cast_with_check<const SnapshotImpl>(s)->number_;
+    return s->GetSequenceNumber();
+  else
+    return db->GetLatestSequenceNumber();
+}
+
+Status Iterator::RefreshKeepSnapshot(bool keep_iter_pos) {
+  return Refresh(reinterpret_cast<Snapshot*>(KEEP_SNAPSHOT), keep_iter_pos);
+}
+
 Status ArenaWrappedDBIter::GetProperty(std::string prop_name,
                                        std::string* prop) {
   if (prop_name == "rocksdb.iterator.super-version-number") {
@@ -45,6 +62,7 @@ void ArenaWrappedDBIter::Init(
                        read_callback, db_impl, cfd, expose_blob_index);
   sv_number_ = version_number;
   read_options_ = read_options;
+  read_options_.pinning_tls = nullptr; // must set null
   allow_refresh_ = allow_refresh;
   memtable_range_tombstone_iter_ = nullptr;
   if (!env->GetFileSystem()->use_async_io()) {
@@ -53,6 +71,12 @@ void ArenaWrappedDBIter::Init(
 }
 
 Status ArenaWrappedDBIter::Refresh() {
+  return Refresh(nullptr, false); // do not keep iter pos
+}
+
+// when keep_iter_pos is true, user code should ensure ReadOptions's
+// lower_bound and upper_bound are not changed
+Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
   if (cfd_ == nullptr || db_impl_ == nullptr || !allow_refresh_) {
     return Status::NotSupported("Creating renew iterator is not allowed.");
   }
@@ -64,13 +88,29 @@ Status ArenaWrappedDBIter::Refresh() {
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:1");
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:2");
   auto reinit_internal_iter = [&]() {
+    std::string curr_key, curr_val;
+    bool is_valid = this->Valid();
+    SequenceNumber old_iter_seq = db_iter_->get_sequence();
+    SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
+    if (is_valid && keep_iter_pos) {
+      curr_key = this->key().ToString();
+      curr_val = this->value().ToString();
+    }
+    Snapshot* pin_snap = nullptr;
+    if (size_t(snap) == KEEP_SNAPSHOT) {
+      // pin the snapshot latest_seq to avoid race condition caused by
+      // the the snapshot latest_seq being garbage collected by a
+      // compaction, which may cause many errors, for example an external
+      // behavior is Seek on belowing new iterator failed(with same
+      // read_opt.lower_bound/upper_bound...)
+      pin_snap = db_impl_->GetSnapshotImpl(latest_seq, false);
+    }
     Env* env = db_iter_->env();
     db_iter_->~DBIter();
     arena_.~Arena();
     new (&arena_) Arena();
 
     SuperVersion* sv = cfd_->GetReferencedSuperVersion(db_impl_);
-    SequenceNumber latest_seq = db_impl_->GetLatestSequenceNumber();
     if (read_callback_) {
       read_callback_->Refresh(latest_seq);
     }
@@ -84,13 +124,35 @@ Status ArenaWrappedDBIter::Refresh() {
         read_options_, cfd_, sv, &arena_, latest_seq,
         /* allow_unprepared_value */ true, /* db_iter */ this);
     SetIterUnderDBIter(internal_iter);
+    if (is_valid && keep_iter_pos) {
+      this->Seek(curr_key);
+      if (old_iter_seq == latest_seq) {
+        ROCKSDB_VERIFY_F(this->Valid(),
+          "curr_key = %s, seq = %lld, snap = %p, pin_snap = %p",
+          Slice(curr_key).hex().c_str(),
+          (long long)latest_seq, snap, pin_snap);
+        ROCKSDB_VERIFY_F(key() == curr_key, "%s %s",
+          key().hex().c_str(), Slice(curr_key).hex().c_str());
+        ROCKSDB_VERIFY_F(value() == curr_val, "%s %s",
+          value().hex().c_str(), Slice(curr_val).hex().c_str());
+      }
+    }
+    if (pin_snap) {
+      db_impl_->ReleaseSnapshot(pin_snap);
+    }
   };
   while (true) {
     if (sv_number_ != cur_sv_number) {
       reinit_internal_iter();
       break;
+    } else if (size_t(snap) == KEEP_SNAPSHOT) {
+      break;
     } else {
-      SequenceNumber latest_seq = db_impl_->GetLatestSequenceNumber();
+      SequenceNumber latest_seq = snap ? snap->GetSequenceNumber()
+                                       : db_impl_->GetLatestSequenceNumber();
+      if (latest_seq == db_iter_->get_sequence()) {
+        break;
+      }
       // Refresh range-tombstones in MemTable
       if (!read_options_.ignore_range_deletions) {
         SuperVersion* sv = cfd_->GetThreadLocalSuperVersion(db_impl_);
@@ -128,7 +190,7 @@ Status ArenaWrappedDBIter::Refresh() {
       }
       // Refresh latest sequence number
       db_iter_->set_sequence(latest_seq);
-      db_iter_->set_valid(false);
+      // db_iter_->set_valid(false); // comment out for ToplingDB
       // Check again if the latest super version number is changed
       uint64_t latest_sv_number = cfd_->GetSuperVersionNumber();
       if (latest_sv_number != cur_sv_number) {
@@ -140,15 +202,24 @@ Status ArenaWrappedDBIter::Refresh() {
       break;
     }
   }
+  if (size_t(snap) > KEEP_SNAPSHOT) {
+    this->read_options_.snapshot = snap;
+  }
   return Status::OK();
 }
 
 ArenaWrappedDBIter* NewArenaWrappedDbIterator(
-    Env* env, const ReadOptions& read_options, const ImmutableOptions& ioptions,
-    const MutableCFOptions& mutable_cf_options, const Version* version,
-    const SequenceNumber& sequence, uint64_t max_sequential_skip_in_iterations,
-    uint64_t version_number, ReadCallback* read_callback, DBImpl* db_impl,
-    ColumnFamilyData* cfd, bool expose_blob_index, bool allow_refresh) {
+    const ReadOptions& read_options, const SuperVersion* sv,
+    SequenceNumber sequence, ReadCallback* read_callback, DBImpl* db_impl,
+    bool expose_blob_index, bool allow_refresh) {
+  auto version = sv->current;
+  auto version_number = sv->version_number;
+  auto env = version->env();
+  auto cfd = sv->cfd;
+  const auto& ioptions = *cfd->ioptions();
+  const auto& mutable_cf_options = sv->mutable_cf_options;
+  auto max_sequential_skip_in_iterations =
+    mutable_cf_options.max_sequential_skip_in_iterations;
   ArenaWrappedDBIter* iter = new ArenaWrappedDBIter();
   iter->Init(env, read_options, ioptions, mutable_cf_options, version, sequence,
              max_sequential_skip_in_iterations, version_number, read_callback,

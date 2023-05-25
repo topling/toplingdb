@@ -658,7 +658,7 @@ bool FlushJob::MemPurgeDecider(double threshold) {
   Slice key_slice, value_slice;
   ParsedInternalKey res;
   SnapshotImpl min_snapshot;
-  std::string vget;
+  PinnableSlice vget;
   Status mget_s, parse_s;
   MergeContext merge_context;
   SequenceNumber max_covering_tombstone_seq = 0, sqno = 0,

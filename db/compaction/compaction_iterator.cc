@@ -119,7 +119,8 @@ CompactionIterator::CompactionIterator(
 #ifndef NDEBUG
   // findEarliestVisibleSnapshot assumes this ordering.
   for (size_t i = 1; i < snapshots_->size(); ++i) {
-    assert(snapshots_->at(i - 1) < snapshots_->at(i));
+    ROCKSDB_VERIFY_F(snapshots_->at(i - 1) < snapshots_->at(i),
+        "[%zd]: %zd %zd", i, snapshots_->at(i - 1), snapshots_->at(i));
   }
   assert(timestamp_size_ == 0 || !full_history_ts_low_ ||
          timestamp_size_ == full_history_ts_low_->size());
@@ -797,6 +798,7 @@ void CompactionIterator::NextFromInput() {
             // is an unexpected Merge or Delete.  We will compact it out
             // either way. We will maintain counts of how many mismatches
             // happened
+            ROCKSDB_ASSUME(next_ikey.type < kTypeMaxValid);
             if (next_ikey.type != kTypeValue &&
                 next_ikey.type != kTypeBlobIndex &&
                 next_ikey.type != kTypeWideColumnEntity) {
@@ -1415,7 +1417,7 @@ std::unique_ptr<BlobFetcher> CompactionIterator::CreateBlobFetcherIfNeeded(
   read_options.io_activity = Env::IOActivity::kCompaction;
   read_options.fill_cache = false;
 
-  return std::unique_ptr<BlobFetcher>(new BlobFetcher(version, read_options));
+  return std::make_unique<BlobFetcherCopyReadOptions>(version, read_options);
 }
 
 std::unique_ptr<PrefetchBufferCollection>

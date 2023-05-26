@@ -19,18 +19,30 @@ namespace ROCKSDB_NAMESPACE {
 
 class PinnedIteratorsManager;
 
-enum class IterBoundCheck : char {
+enum class IterBoundCheck : unsigned char {
   kUnknown = 0,
   kOutOfBound,
   kInbound,
 };
 
 struct IterateResult {
-  Slice key;
+private:
+  const char* key_data_ = nullptr;
+  uint32_t    key_size_ = 0;
+public:
+  void SetKey(Slice k) {
+    key_data_ = k.data();
+    key_size_ = (uint32_t)(k.size());
+  }
+  size_t key_len() const { return key_size_; }
+  Slice key() const { return Slice(key_data_, key_size_); }
+  Slice user_key() const { return Slice(key_data_, key_size_ - 8); }
   IterBoundCheck bound_check_result = IterBoundCheck::kUnknown;
   // If false, PrepareValue() needs to be called before value().
   bool value_prepared = true;
+  bool is_valid = false; // just used in IteratorWrapperBase
 };
+static_assert(sizeof(IterateResult) == 16);
 
 template <class TValue>
 class InternalIteratorBase : public Cleanable {
@@ -70,6 +82,18 @@ class InternalIteratorBase : public Cleanable {
   // an entry that comes at or before target.
   virtual void SeekForPrev(const Slice& target) = 0;
 
+  // Now just for online benchmark
+  // After calling this function, iterator position is unspecified
+  // returns true if found
+  virtual bool PointGet(const Slice& key, bool fetch_value) {
+    this->Seek(key);
+    bool found = this->Valid();
+    if (found && fetch_value) {
+      this->PrepareValue();
+    }
+    return found;
+  }
+
   // Moves to the next entry in the source.  After this call, Valid() is
   // true iff the iterator was not positioned at the last entry in the source.
   // REQUIRES: Valid()
@@ -83,7 +107,7 @@ class InternalIteratorBase : public Cleanable {
     Next();
     bool is_valid = Valid();
     if (is_valid) {
-      result->key = key();
+      result->SetKey(key());
       // Default may_be_out_of_upper_bound to true to avoid unnecessary virtual
       // call. If an implementation has non-trivial UpperBoundCheckResult(),
       // it should also override NextAndGetResult().

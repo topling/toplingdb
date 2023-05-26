@@ -198,6 +198,10 @@ class BlockBasedTable : public TableReader {
   Status VerifyChecksum(const ReadOptions& readOptions,
                         TableReaderCaller caller) override;
 
+  // if implemented, returns true
+  bool GetRandomInternalKeysAppend(
+      size_t num, std::vector<std::string>* output) const override;
+
   ~BlockBasedTable();
 
   bool TEST_FilterBlockInCache() const;
@@ -315,7 +319,6 @@ class BlockBasedTable : public TableReader {
   explicit BlockBasedTable(const TableReader&) = delete;
   void operator=(const TableReader&) = delete;
 
- private:
   friend class MockedBlockBasedTable;
   friend class BlockBasedTableReaderTestVerifyChecksum_ChecksumMismatch_Test;
   BlockCacheTracer* const block_cache_tracer_;
@@ -581,11 +584,11 @@ struct BlockBasedTable::Rep {
   std::unique_ptr<FilterBlockReader> filter;
   std::unique_ptr<UncompressionDictReader> uncompression_dict_reader;
 
-  enum class FilterType {
+  ROCKSDB_ENUM_CLASS_INCLASS(FilterType, int,
     kNoFilter,
     kFullFilter,
-    kPartitionedFilter,
-  };
+    kPartitionedFilter
+  );
   FilterType filter_type;
   BlockHandle filter_handle;
   BlockHandle compression_dict_handle;

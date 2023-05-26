@@ -10,7 +10,8 @@
 #include <functional>
 
 #include "port/port.h"
-#include "util/autovector.h"
+#include "port/likely.h"
+#include <terark/valvec32.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -39,10 +40,10 @@ namespace ROCKSDB_NAMESPACE {
 // less-than relation, but top() will return the maximum.
 
 template <typename T, typename Compare = std::less<T>>
-class BinaryHeap {
+class BinaryHeap : private Compare {
  public:
   BinaryHeap() {}
-  explicit BinaryHeap(Compare cmp) : cmp_(std::move(cmp)) {}
+  explicit BinaryHeap(Compare cmp) : Compare(std::move(cmp)) {}
 
   void push(const T& value) {
     data_.push_back(value);
@@ -59,6 +60,11 @@ class BinaryHeap {
     return data_.front();
   }
 
+  T& top() {
+    assert(!empty());
+    return data_.front();
+  }
+
   void replace_top(const T& value) {
     assert(!empty());
     data_.front() = value;
@@ -68,6 +74,11 @@ class BinaryHeap {
   void replace_top(T&& value) {
     assert(!empty());
     data_.front() = std::move(value);
+    downheap(get_root());
+  }
+
+  void update_top() {
+    assert(!empty());
     downheap(get_root());
   }
 
@@ -88,35 +99,39 @@ class BinaryHeap {
   }
 
   void swap(BinaryHeap& other) {
-    std::swap(cmp_, other.cmp_);
+    std::swap(static_cast<Compare&>(*this), static_cast<Compare&>(other));
     data_.swap(other.data_);
     std::swap(root_cmp_cache_, other.root_cmp_cache_);
   }
 
   void clear() {
-    data_.clear();
+    data_.resize(0); // do not free memory
     reset_root_cmp_cache();
   }
+
+  void reserve(size_t cap) { data_.reserve(cap); }
 
   bool empty() const { return data_.empty(); }
 
   size_t size() const { return data_.size(); }
 
+ private:
+  inline Compare& cmp_() { return *this; }
   void reset_root_cmp_cache() {
     root_cmp_cache_ = std::numeric_limits<size_t>::max();
   }
-
- private:
   static inline size_t get_root() { return 0; }
   static inline size_t get_parent(size_t index) { return (index - 1) / 2; }
   static inline size_t get_left(size_t index) { return 2 * index + 1; }
   static inline size_t get_right(size_t index) { return 2 * index + 2; }
 
   void upheap(size_t index) {
+    assert(index < data_.size());
+    T* data_ = this->data_.data();
     T v = std::move(data_[index]);
     while (index > get_root()) {
       const size_t parent = get_parent(index);
-      if (!cmp_(data_[parent], v)) {
+      if (!cmp_()(data_[parent], v)) {
         break;
       }
       data_[index] = std::move(data_[parent]);
@@ -127,24 +142,26 @@ class BinaryHeap {
   }
 
   void downheap(size_t index) {
+    size_t heap_size = data_.size();
+    T* data_ = this->data_.data();
     T v = std::move(data_[index]);
 
     size_t picked_child = std::numeric_limits<size_t>::max();
     while (1) {
       const size_t left_child = get_left(index);
-      if (get_left(index) >= data_.size()) {
+      if (UNLIKELY(left_child >= heap_size)) {
         break;
       }
       const size_t right_child = left_child + 1;
       assert(right_child == get_right(index));
       picked_child = left_child;
-      if (index == 0 && root_cmp_cache_ < data_.size()) {
+      if (index == 0 && root_cmp_cache_ < heap_size) {
         picked_child = root_cmp_cache_;
-      } else if (right_child < data_.size() &&
-                 cmp_(data_[left_child], data_[right_child])) {
+      } else if (right_child < heap_size &&
+                 cmp_()(data_[left_child], data_[right_child])) {
         picked_child = right_child;
       }
-      if (!cmp_(v, data_[picked_child])) {
+      if (!cmp_()(v, data_[picked_child])) {
         break;
       }
       data_[index] = std::move(data_[picked_child]);
@@ -165,8 +182,7 @@ class BinaryHeap {
     data_[index] = std::move(v);
   }
 
-  Compare cmp_;
-  autovector<T> data_;
+  terark::valvec32<T> data_;static_assert(std::is_trivially_destructible_v<T>);
   // Used to reduce number of cmp_ calls in downheap()
   size_t root_cmp_cache_ = std::numeric_limits<size_t>::max();
 };

@@ -6,6 +6,7 @@
 #pragma once
 
 #include "rocksdb/rocksdb_namespace.h"
+#include "rocksdb/enum_reflection.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -14,7 +15,7 @@ namespace ROCKSDB_NAMESPACE {
 // being stored in a file.  The following enum describes which
 // compression method (if any) is used to compress a block.
 
-enum CompressionType : unsigned char {
+ROCKSDB_ENUM_PLAIN(CompressionType, unsigned char,
   // NOTE: do not change the values of existing entries, as these are
   // part of the persistent format on disk.
   kNoCompression = 0x0,
@@ -34,7 +35,7 @@ enum CompressionType : unsigned char {
   kZSTDNotFinalCompression = 0x40,
 
   // kDisableCompressionOption is used to disable some compression options.
-  kDisableCompressionOption = 0xff,
-};
+  kDisableCompressionOption = 0xff
+);
 
 }  // namespace ROCKSDB_NAMESPACE

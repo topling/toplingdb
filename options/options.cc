@@ -29,9 +29,11 @@
 #include "rocksdb/sst_partitioner.h"
 #include "rocksdb/table.h"
 #include "rocksdb/table_properties.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 #include "rocksdb/wal_filter.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "util/compression.h"
+#include <terark/fstring.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -126,7 +128,16 @@ ColumnFamilyOptions::ColumnFamilyOptions()
 ColumnFamilyOptions::ColumnFamilyOptions(const Options& options)
     : ColumnFamilyOptions(*static_cast<const ColumnFamilyOptions*>(&options)) {}
 
-DBOptions::DBOptions() {}
+DBOptions::DBOptions() {
+  wbwi_factory = SingleSkipListWBWIFactory();
+ #if defined(HAS_TOPLING_CSPP_WBWI)
+  extern WBWIFactory* NewCSPP_WBWIForPlain(const std::string& jstr);
+  if (auto var = getenv("DefaultWBWIFactory")) {
+    if (Slice(var).starts_with("cspp:"))
+      wbwi_factory.reset(NewCSPP_WBWIForPlain(var+5));
+  }
+ #endif
+}
 DBOptions::DBOptions(const Options& options)
     : DBOptions(*static_cast<const DBOptions*>(&options)) {}
 
@@ -683,10 +694,17 @@ DBOptions* DBOptions::IncreaseParallelism(int total_threads) {
   return this;
 }
 
+static const bool g_cache_sst_file_iter =
+    terark::getEnvBool("TOPLINGDB_CACHE_SST_FILE_ITER", false);
+
 ReadOptions::ReadOptions(bool _verify_checksums, bool _fill_cache)
-    : verify_checksums(_verify_checksums), fill_cache(_fill_cache) {}
+    : verify_checksums(_verify_checksums), fill_cache(_fill_cache) {
+  cache_sst_file_iter = g_cache_sst_file_iter;
+}
 
 ReadOptions::ReadOptions(Env::IOActivity _io_activity)
-    : io_activity(_io_activity) {}
+    : io_activity(_io_activity) {
+  cache_sst_file_iter = g_cache_sst_file_iter;
+}
 
 }  // namespace ROCKSDB_NAMESPACE

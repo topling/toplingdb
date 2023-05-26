@@ -35,6 +35,7 @@ struct ImmutableDBOptions {
   int max_file_opening_threads;
   std::shared_ptr<Statistics> statistics;
   bool use_fsync;
+  bool allow_fdatasync = true;
   std::vector<DbPath> db_paths;
   std::string db_log_dir;
   // The wal_dir option from the file.  To determine the
@@ -121,6 +122,7 @@ struct MutableDBOptions {
   int max_background_jobs;
   int max_background_compactions;
   uint32_t max_subcompactions;
+  uint32_t max_level1_subcompactions;
   bool avoid_flush_during_shutdown;
   size_t writable_file_max_buffer_size;
   uint64_t delayed_write_rate;
@@ -134,6 +136,15 @@ struct MutableDBOptions {
   uint64_t wal_bytes_per_sync;
   bool strict_bytes_per_sync;
   size_t compaction_readahead_size;
+
+
+  // with rocksdb's principle, this should be immutable options, but with
+  // toplingdb, wbwi_factory has a use_cnt in SidePluginRepo,
+  // it is safe to change wbwi_factory without mutex,
+  // one day we will add http online update wbwi_factory
+  // by json request
+  std::shared_ptr<class WBWIFactory> wbwi_factory;
+
   int max_background_flushes;
 };
 

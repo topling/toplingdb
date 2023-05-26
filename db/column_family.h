@@ -167,7 +167,7 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
                          InstrumentedMutex* mutex);
   // destroy without mutex
   virtual ~ColumnFamilyHandleImpl();
-  virtual ColumnFamilyData* cfd() const { return cfd_; }
+  virtual ColumnFamilyData* cfd() const override { return cfd_; }
 
   virtual uint32_t GetID() const override;
   virtual const std::string& GetName() const override;
@@ -194,6 +194,9 @@ class ColumnFamilyHandleInternal : public ColumnFamilyHandleImpl {
 
   void SetCFD(ColumnFamilyData* _cfd) { internal_cfd_ = _cfd; }
   virtual ColumnFamilyData* cfd() const override { return internal_cfd_; }
+  uint32_t GetID() const final;
+  const std::string& GetName() const final;
+  const Comparator* GetComparator() const override;
 
  private:
   ColumnFamilyData* internal_cfd_;
@@ -444,6 +447,9 @@ class ColumnFamilyData {
   uint64_t GetSuperVersionNumber() const {
     return super_version_number_.load();
   }
+  uint64_t GetSuperVersionNumberNoAtomic() const {
+    return reinterpret_cast<const uint64_t&>(super_version_number_);
+  }
   // will return a pointer to SuperVersion* if previous SuperVersion
   // if its reference count is zero and needs deletion or nullptr if not
   // As argument takes a pointer to allocated SuperVersion to enable
@@ -506,7 +512,7 @@ class ColumnFamilyData {
     return full_history_ts_low_;
   }
 
-  ThreadLocalPtr* TEST_GetLocalSV() { return local_sv_.get(); }
+  ThreadLocalPtr* TEST_GetLocalSV() { return &local_sv_; }
   WriteBufferManager* write_buffer_mgr() { return write_buffer_manager_; }
   std::shared_ptr<CacheReservationManager>
   GetFileMetadataCacheReservationManager() {
@@ -591,7 +597,7 @@ class ColumnFamilyData {
 
   // Thread's local copy of SuperVersion pointer
   // This needs to be destructed before mutex_
-  std::unique_ptr<ThreadLocalPtr> local_sv_;
+  ThreadLocalPtr local_sv_;
 
   // pointers for a circular linked list. we use it to support iterations over
   // all column families that are alive (note: dropped column families can also

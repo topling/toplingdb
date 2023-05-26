@@ -160,10 +160,12 @@ class CompactionFilter : public Customizable {
     // Whether this table file is created as part of a compaction requested by
     // the client.
     bool is_manual_compaction;
-    // The column family that will contain the created table file.
-    uint32_t column_family_id;
     // Reason this table file is being created.
     TableFileCreationReason reason;
+    // The column family that will contain the created table file.
+    uint32_t column_family_id;
+
+    uint64_t smallest_seqno;
   };
 
   virtual ~CompactionFilter() {}
@@ -326,6 +328,8 @@ class CompactionFilter : public Customizable {
     return Decision::kUndetermined;
   }
 };
+
+typedef CompactionFilter::Context CompactionFilterContext;
 
 // Each thread of work involving creating table files will create a new
 // `CompactionFilter` according to `ShouldFilterTableFileCreation()`. This

@@ -15,7 +15,7 @@ namespace ROCKSDB_NAMESPACE {
 // Put here just to make get_iostats_context() simple without ifdef.
 static IOStatsContext iostats_context;
 #else
-thread_local IOStatsContext iostats_context;
+thread_local IOStatsContext iostats_context ROCKSDB_STATIC_TLS;
 #endif
 
 IOStatsContext* get_iostats_context() { return &iostats_context; }

@@ -40,6 +40,7 @@ struct TablePropertiesNames {
   static const std::string kOriginalFileNumber;
   static const std::string kDataSize;
   static const std::string kIndexSize;
+  static const std::string kTagSize;
   static const std::string kIndexPartitions;
   static const std::string kTopLevelIndexSize;
   static const std::string kIndexKeyIsUserKey;
@@ -55,6 +56,7 @@ struct TablePropertiesNames {
   static const std::string kNumRangeDeletions;
   static const std::string kFormatVersion;
   static const std::string kFixedKeyLen;
+  static const std::string kFixedValueLen;
   static const std::string kFilterPolicy;
   static const std::string kColumnFamilyName;
   static const std::string kColumnFamilyId;
@@ -170,6 +172,8 @@ class TablePropertiesCollectorFactory : public Customizable {
   // configuration info that will // be logged to the info log when the
   // DB is opened
   virtual std::string ToString() const { return Name(); }
+
+  virtual std::string UserPropToString(const UserCollectedProperties&) const;
 };
 
 // TableProperties contains a bunch of read-only properties of its associated
@@ -183,6 +187,8 @@ struct TableProperties {
   uint64_t data_size = 0;
   // the size of index block.
   uint64_t index_size = 0;
+  uint64_t tag_size = 0;
+  uint64_t gdic_size = 0; // global dictionary size
   // Total number of index partitions if kTwoLevelIndexSearch is used
   uint64_t index_partitions = 0;
   // Size of the top-level index if kTwoLevelIndexSearch is used
@@ -214,6 +220,8 @@ struct TableProperties {
   uint64_t format_version = 0;
   // If 0, key is variable length. Otherwise number of bytes for each key.
   uint64_t fixed_key_len = 0;
+  // If UINT64_MAX, value is variable length. Otherwise number of bytes for each value.
+  uint64_t fixed_value_len = UINT64_MAX;
   // ID of column family for this SST file, corresponding to the CF identified
   // by column_family_name.
   uint64_t column_family_id = ROCKSDB_NAMESPACE::

@@ -1058,6 +1058,9 @@ jint rocksdb_get_helper_direct(
   key += jkey_off;
   value += jval_off;
 
+  auto& mut_ro = const_cast<ROCKSDB_NAMESPACE::ReadOptions&>(read_options);
+  mut_ro.StartPin(); ROCKSDB_SCOPE_EXIT(mut_ro.FinishPin());
+
   ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
 
   ROCKSDB_NAMESPACE::PinnableSlice pinnable_value;
@@ -1423,6 +1426,9 @@ jbyteArray rocksdb_get_helper(
     return nullptr;
   }
 
+  auto& mut_ro = const_cast<ROCKSDB_NAMESPACE::ReadOptions&>(read_opt);
+  mut_ro.StartPin(); ROCKSDB_SCOPE_EXIT(mut_ro.FinishPin());
+
   ROCKSDB_NAMESPACE::Slice key_slice(reinterpret_cast<char*>(key), jkey_len);
 
   ROCKSDB_NAMESPACE::PinnableSlice pinnable_value;
@@ -1551,6 +1557,10 @@ jint rocksdb_get_helper(
     *has_exception = true;
     return kStatusError;
   }
+
+  auto& mut_ro = const_cast<ROCKSDB_NAMESPACE::ReadOptions&>(read_options);
+  mut_ro.StartPin(); ROCKSDB_SCOPE_EXIT(mut_ro.FinishPin());
+
   ROCKSDB_NAMESPACE::Slice key_slice(reinterpret_cast<char*>(key), jkey_len);
 
   ROCKSDB_NAMESPACE::PinnableSlice pinnable_value;
@@ -1857,6 +1867,20 @@ inline bool keys_from_bytebuffers(JNIEnv* env,
   return true;
 }
 
+using ROCKSDB_NAMESPACE::ColumnFamilyHandle;
+ColumnFamilyHandle*
+get_uniq_cf(ROCKSDB_NAMESPACE::DB* db, const std::vector<ColumnFamilyHandle*>& cfv) {
+  if (cfv.empty()) {
+    return db->DefaultColumnFamily();
+  }
+  ColumnFamilyHandle* cf = cfv[0];
+  for (size_t i = 1, n = cfv.size(); i < n; i++) {
+    if (cfv[i] != cf)
+      return nullptr;
+  }
+  return cf;
+}
+
 /**
  * cf multi get
  *
@@ -1879,12 +1903,15 @@ jobjectArray multi_get_helper(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
     return nullptr;
   }
 
-  std::vector<std::string> values;
-  std::vector<ROCKSDB_NAMESPACE::Status> s;
-  if (cf_handles.size() == 0) {
-    s = db->MultiGet(rOpt, keys, &values);
+  size_t num = keys.size();
+  std::vector<ROCKSDB_NAMESPACE::PinnableSlice> values(num);
+  std::vector<ROCKSDB_NAMESPACE::Status> s(num);
+  auto& mut_ro = const_cast<ROCKSDB_NAMESPACE::ReadOptions&>(rOpt);
+  mut_ro.StartPin(); ROCKSDB_SCOPE_EXIT(mut_ro.FinishPin());
+  if (auto uniq_cf = get_uniq_cf(db, cf_handles)) {
+    db->MultiGet(rOpt, uniq_cf, num, keys.data(), values.data(), nullptr, s.data());
   } else {
-    s = db->MultiGet(rOpt, cf_handles, keys, &values);
+    db->MultiGet(rOpt, num, cf_handles.data(), keys.data(), values.data(), nullptr, s.data());
   }
 
   // free up allocated byte arrays
@@ -1904,7 +1931,7 @@ jobjectArray multi_get_helper(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
   for (std::vector<ROCKSDB_NAMESPACE::Status>::size_type i = 0; i != s.size();
        i++) {
     if (s[i].ok()) {
-      std::string* value = &values[i];
+      auto* value = &values[i];
       const jsize jvalue_len = static_cast<jsize>(value->size());
       jbyteArray jentry_value = env->NewByteArray(jvalue_len);
       if (jentry_value == nullptr) {
@@ -1914,7 +1941,7 @@ jobjectArray multi_get_helper(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
 
       env->SetByteArrayRegion(
           jentry_value, 0, static_cast<jsize>(jvalue_len),
-          const_cast<jbyte*>(reinterpret_cast<const jbyte*>(value->c_str())));
+          const_cast<jbyte*>(reinterpret_cast<const jbyte*>(value->data())));
       if (env->ExceptionCheck()) {
         // exception thrown:
         // ArrayIndexOutOfBoundsException
@@ -1979,16 +2006,10 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
   }
 
   std::vector<ROCKSDB_NAMESPACE::Status> s(num_keys);
-  if (cf_handles.size() == 0) {
-    // we can use the more efficient call here
-    auto cf_handle = db->DefaultColumnFamily();
-    db->MultiGet(rOpt, cf_handle, num_keys, keys.data(), values.data(),
-                 s.data());
-  } else if (cf_handles.size() == 1) {
-    // we can use the more efficient call here
-    auto cf_handle = cf_handles[0];
-    db->MultiGet(rOpt, cf_handle, num_keys, keys.data(), values.data(),
-                 s.data());
+  auto& mut_ro = const_cast<ROCKSDB_NAMESPACE::ReadOptions&>(rOpt);
+  mut_ro.StartPin(); ROCKSDB_SCOPE_EXIT(mut_ro.FinishPin());
+  if (auto uniq_cf = get_uniq_cf(db, cf_handles)) {
+    db->MultiGet(rOpt, uniq_cf, num_keys, keys.data(), values.data(), nullptr, s.data());
   } else {
     // multiple CFs version
     db->MultiGet(rOpt, num_keys, cf_handles.data(), keys.data(), values.data(),

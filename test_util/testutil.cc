@@ -594,7 +594,7 @@ class SpecialMemTableRep : public MemTableRep {
   }
 
   // Returns true iff an entry that compares equal to key is in the list.
-  virtual bool Contains(const char* key) const override {
+  virtual bool Contains(const Slice& key) const override {
     return memtable_->Contains(key);
   }
 
@@ -604,10 +604,10 @@ class SpecialMemTableRep : public MemTableRep {
     return (num_entries_ < num_entries_flush_) ? 0 : 1024 * 1024 * 1024;
   }
 
-  virtual void Get(const LookupKey& k, void* callback_args,
+  virtual void Get(const ReadOptions& ro, const LookupKey& k, void* callback_args,
                    bool (*callback_func)(void* arg,
-                                         const char* entry)) override {
-    memtable_->Get(k, callback_args, callback_func);
+                                         const KeyValuePair&)) override {
+    memtable_->Get(ro, k, callback_args, callback_func);
   }
 
   uint64_t ApproximateNumEntries(const Slice& start_ikey,

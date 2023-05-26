@@ -25,36 +25,36 @@ struct ParsedInternalKey;
 // end of the point lookup, the corresponding ticker stats are updated. This
 // avoids the overhead of frequent ticker stats updates
 struct GetContextStats {
-  uint64_t num_cache_hit = 0;
-  uint64_t num_cache_index_hit = 0;
-  uint64_t num_cache_data_hit = 0;
-  uint64_t num_cache_filter_hit = 0;
-  uint64_t num_cache_compression_dict_hit = 0;
-  uint64_t num_cache_index_miss = 0;
-  uint64_t num_cache_filter_miss = 0;
-  uint64_t num_cache_data_miss = 0;
-  uint64_t num_cache_compression_dict_miss = 0;
   uint64_t num_cache_bytes_read = 0;
-  uint64_t num_cache_miss = 0;
-  uint64_t num_cache_add = 0;
-  uint64_t num_cache_add_redundant = 0;
   uint64_t num_cache_bytes_write = 0;
-  uint64_t num_cache_index_add = 0;
-  uint64_t num_cache_index_add_redundant = 0;
   uint64_t num_cache_index_bytes_insert = 0;
-  uint64_t num_cache_data_add = 0;
-  uint64_t num_cache_data_add_redundant = 0;
   uint64_t num_cache_data_bytes_insert = 0;
-  uint64_t num_cache_filter_add = 0;
-  uint64_t num_cache_filter_add_redundant = 0;
   uint64_t num_cache_filter_bytes_insert = 0;
-  uint64_t num_cache_compression_dict_add = 0;
-  uint64_t num_cache_compression_dict_add_redundant = 0;
   uint64_t num_cache_compression_dict_bytes_insert = 0;
+  uint32_t num_cache_hit = 0;
+  uint32_t num_cache_index_hit = 0;
+  uint32_t num_cache_data_hit = 0;
+  uint32_t num_cache_filter_hit = 0;
+  uint32_t num_cache_compression_dict_hit = 0;
+  uint32_t num_cache_index_miss = 0;
+  uint32_t num_cache_filter_miss = 0;
+  uint32_t num_cache_data_miss = 0;
+  uint32_t num_cache_compression_dict_miss = 0;
+  uint32_t num_cache_miss = 0;
+  uint32_t num_cache_add = 0;
+  uint32_t num_cache_add_redundant = 0;
+  uint32_t num_cache_index_add = 0;
+  uint32_t num_cache_index_add_redundant = 0;
+  uint32_t num_cache_data_add = 0;
+  uint32_t num_cache_data_add_redundant = 0;
+  uint32_t num_cache_filter_add = 0;
+  uint32_t num_cache_filter_add_redundant = 0;
+  uint32_t num_cache_compression_dict_add = 0;
+  uint32_t num_cache_compression_dict_add_redundant = 0;
   // MultiGet stats.
-  uint64_t num_filter_read = 0;
-  uint64_t num_index_read = 0;
-  uint64_t num_sst_read = 0;
+  uint32_t num_filter_read = 0;
+  uint32_t num_index_read = 0;
+  uint32_t num_sst_read = 0;
 };
 
 // A class to hold context about a point lookup, such as pointer to value
@@ -68,7 +68,7 @@ class GetContext {
  public:
   // Current state of the point lookup. All except kNotFound and kMerge are
   // terminal states
-  enum GetState {
+  enum GetState : unsigned char {
     kNotFound,
     kFound,
     kDeleted,
@@ -137,6 +137,14 @@ class GetContext {
   bool SaveValue(const ParsedInternalKey& parsed_key, const Slice& value,
                  bool* matched, Cleanable* value_pinner = nullptr);
 
+  bool SaveValue(const ParsedInternalKey& parsed_key, const Slice& value,
+                 Cleanable* value_pinner = nullptr);
+
+  bool SaveValue(const ParsedInternalKey& parsed_key, const Slice& value,
+                 Cleanable&& defer_clean) {
+    return SaveValue(parsed_key, value, &defer_clean);
+  }
+
   // Simplified version of the previous function. Should only be used when we
   // know that the operation is a Put.
   void SaveValue(const Slice& value, SequenceNumber seq);
@@ -188,6 +196,8 @@ class GetContext {
 
   uint64_t get_tracing_get_id() const { return tracing_get_id_; }
 
+  PinnableSlice* pinnable_val() const { return pinnable_val_; }
+
   void push_operand(const Slice& value, Cleanable* value_pinner);
 
  private:
@@ -202,7 +212,6 @@ class GetContext {
   Logger* logger_;
   Statistics* statistics_;
 
-  GetState state_;
   Slice user_key_;
   // When a blob index is found with the user key containing timestamp,
   // this copies the corresponding user key on record in the sst file
@@ -211,7 +220,6 @@ class GetContext {
   PinnableSlice* pinnable_val_;
   PinnableWideColumns* columns_;
   std::string* timestamp_;
-  bool ts_from_rangetombstone_{false};
   bool* value_found_;  // Is value set correctly? Used by KeyMayExist
   MergeContext* merge_context_;
   SequenceNumber* max_covering_tombstone_seq_;
@@ -223,6 +231,8 @@ class GetContext {
   // Used to temporarily pin blocks when state_ == GetContext::kMerge
   PinnedIteratorsManager* pinned_iters_mgr_;
   ReadCallback* callback_;
+  GetState state_;
+  bool ts_from_rangetombstone_{false};
   bool sample_;
   // Value is true if it's called as part of DB Get API and false if it's
   // called as part of DB GetMergeOperands API. When it's false merge operators

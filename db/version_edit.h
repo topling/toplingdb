@@ -361,11 +361,28 @@ struct FdWithKeyRange {
 struct LevelFilesBrief {
   size_t num_files;
   FdWithKeyRange* files;
+  std::shared_ptr<class SSTUnionDFA> udfa = nullptr;
+  uint64_t* prefix_cache = nullptr;
   LevelFilesBrief() {
     num_files = 0;
     files = nullptr;
   }
 };
+inline uint64_t HostPrefixCache(const Slice& ikey) {
+  ROCKSDB_ASSERT_GE(ikey.size_, 8);
+  ROCKSDB_ASSUME(ikey.size_ >= 8);
+  uint64_t data;
+  if (LIKELY(ikey.size_ >= 16)) {
+    memcpy(&data, ikey.data_, 8);
+  } else {
+    data = 0;
+    memcpy(&data, ikey.data_, ikey.size_ - 8);
+  }
+  if (port::kLittleEndian)
+    return __bswap_64(data);
+  else
+    return data;
+}
 
 // The state of a DB at any given time is referred to as a Version.
 // Any modification to the Version is considered a Version Edit. A Version is

@@ -15,6 +15,8 @@
 #include <utility>
 
 #include "rocksdb/comparator.h"
+#include "rocksdb/enum_reflection.h"
+#include "rocksdb/filter_policy.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/types.h"
@@ -36,7 +38,7 @@ class InternalKey;
 // data structures.
 // The highest bit of the value type needs to be reserved to SST tables
 // for them to do more flexible encoding.
-enum ValueType : unsigned char {
+ROCKSDB_ENUM_PLAIN(ValueType, unsigned char,
   kTypeDeletion = 0x0,
   kTypeValue = 0x1,
   kTypeMerge = 0x2,
@@ -71,7 +73,7 @@ enum ValueType : unsigned char {
   kTypeMaxValid,    // Should be after the last valid type, only used for
                     // validation
   kMaxValue = 0x7F  // Not used for storing records.
-};
+);
 
 // Defined in dbformat.cc
 extern const ValueType kValueTypeForSeek;
@@ -110,6 +112,9 @@ struct ParsedInternalKey {
   Slice user_key;
   SequenceNumber sequence;
   ValueType type;
+  unsigned char ext_ui08 = 0;
+  uint16_t ext_ui16 = 0;
+  uint32_t ext_ui32 = 0;
 
   ParsedInternalKey()
       : sequence(kMaxSequenceNumber),
@@ -118,6 +123,24 @@ struct ParsedInternalKey {
   // u contains timestamp if user timestamp feature is enabled.
   ParsedInternalKey(const Slice& u, const SequenceNumber& seq, ValueType t)
       : user_key(u), sequence(seq), type(t) {}
+  ParsedInternalKey(const Slice& u, uint64_t seqvt)
+      : user_key(u), sequence(seqvt >> 8), type(ValueType(seqvt)) {}
+  explicit ParsedInternalKey(const Slice& ik)
+      : user_key(ik.data_, ik.size_ - 8) {
+    ROCKSDB_ASSERT_GE(ik.size_, 8);
+    auto seqvt = GetUnaligned<uint64_t>(ik.data_ + ik.size_ - 8);
+    sequence = seqvt >> 8;
+    type = ValueType(seqvt);
+  }
+  // same as cons ParsedInternalKey(const Slice& ik)
+  inline void FastParseInternalKey(const Slice& ik) {
+    user_key.data_ = ik.data_;
+    user_key.size_ = ik.size_ - 8;
+    ROCKSDB_ASSERT_GE(ik.size_, 8);
+    auto seqvt = GetUnaligned<uint64_t>(ik.data_ + ik.size_ - 8);
+    sequence = seqvt >> 8;
+    type = ValueType(seqvt);
+  }
   std::string DebugString(bool log_err_key, bool hex) const;
 
   void clear() {
@@ -138,6 +161,7 @@ struct ParsedInternalKey {
     return Slice(const_cast<char*>(addr), ts_sz);
   }
 };
+static_assert(sizeof(ParsedInternalKey) == 32);
 
 // Return the length of the encoding of "key".
 inline size_t InternalKeyEncodingLength(const ParsedInternalKey& key) {
@@ -165,7 +189,39 @@ inline void UnPackSequenceAndType(uint64_t packed, uint64_t* seq,
   // assert(IsExtendedValueType(*t));
 }
 
+inline void UnPackSequenceAndType(uint64_t packed, ParsedInternalKey* pikey) {
+  pikey->sequence = packed >> 8;
+  pikey->type = static_cast<ValueType>(packed & 0xff);
+}
+
+inline std::pair<uint64_t, ValueType>
+UnPackSequenceAndType(uint64_t packed) {
+  return {packed >> 8, ValueType(packed & 0xff)};
+}
+
 EntryType GetEntryType(ValueType value_type);
+
+inline void SetInternalKey(std::string* result, Slice ukey, uint64_t seqvt) {
+  result->assign(ukey.data(), ukey.size());
+  PutFixed64(result, seqvt);
+}
+inline void SetInternalKey(std::string* result, Slice ukey,
+                           SequenceNumber seq, ValueType vt) {
+  result->assign(ukey.data(), ukey.size());
+  PutFixed64(result, PackSequenceAndType(seq, vt));
+}
+
+// user code should ensure buf size is at least ukey.size() + 8
+inline void SetInternalKey(char* buf, Slice ukey,
+                           SequenceNumber seq, ValueType vt) {
+  memcpy(buf, ukey.data_, ukey.size_);
+  auto value = PackSequenceAndType(seq, vt);
+  if (port::kLittleEndian) {
+    memcpy(buf + ukey.size_, &value, sizeof(value));
+  } else {
+    EncodeFixed64(buf + ukey.size_, value);
+  }
+}
 
 // Append the serialization of "key" to *result.
 extern void AppendInternalKey(std::string* result,
@@ -305,6 +361,11 @@ class InternalKeyComparator
   // value `kDisableGlobalSequenceNumber`.
   int Compare(const Slice& a, SequenceNumber a_global_seqno, const Slice& b,
               SequenceNumber b_global_seqno) const;
+
+  uint8_t opt_cmp_type() const noexcept { return user_comparator_.opt_cmp_type(); }
+  bool IsForwardBytewise() const noexcept { return user_comparator_.IsForwardBytewise(); }
+  bool IsReverseBytewise() const noexcept { return user_comparator_.IsReverseBytewise(); }
+  bool IsBytewise() const noexcept { return user_comparator_.IsBytewise(); }
 };
 
 // The class represent the internal key in encoded form.
@@ -397,7 +458,7 @@ inline Status ParseInternalKey(const Slice& internal_key,
                                ParsedInternalKey* result, bool log_err_key) {
   const size_t n = internal_key.size();
 
-  if (n < kNumInternalBytes) {
+  if (UNLIKELY(n < kNumInternalBytes)) {
     return Status::Corruption("Corrupted Key: Internal Key too small. Size=" +
                               std::to_string(n) + ". ");
   }
@@ -409,7 +470,7 @@ inline Status ParseInternalKey(const Slice& internal_key,
   assert(result->type <= ValueType::kMaxValue);
   result->user_key = Slice(internal_key.data(), n - kNumInternalBytes);
 
-  if (IsExtendedValueType(result->type)) {
+  if (LIKELY(IsExtendedValueType(result->type))) {
     return Status::OK();
   } else {
     return Status::Corruption("Corrupted Key",
@@ -437,6 +498,18 @@ inline uint64_t GetInternalKeySeqno(const Slice& internal_key) {
   return num >> 8;
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#elif defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+#pragma clang diagnostic ignored "-Warray-bounds"
+#pragma clang diagnostic ignored "-Wstringop-overflow"
+#pragma clang diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 // The class to store keys in an efficient way. It allows:
 // 1. Users can either copy the key into it, or have it point to an unowned
 //    address.
@@ -446,8 +519,7 @@ inline uint64_t GetInternalKeySeqno(const Slice& internal_key) {
 class IterKey {
  public:
   IterKey()
-      : buf_(space_),
-        key_(buf_),
+      : key_(space_),
         key_size_(0),
         buf_size_(sizeof(space_)),
         is_user_key_(true) {}
@@ -490,31 +562,7 @@ class IterKey {
   // shared_len: bytes in [0, shard_len-1] would be remained
   // non_shared_data: data to be append, its length must be >= non_shared_len
   void TrimAppend(const size_t shared_len, const char* non_shared_data,
-                  const size_t non_shared_len) {
-    assert(shared_len <= key_size_);
-    size_t total_size = shared_len + non_shared_len;
-
-    if (IsKeyPinned() /* key is not in buf_ */) {
-      // Copy the key from external memory to buf_ (copy shared_len bytes)
-      EnlargeBufferIfNeeded(total_size);
-      memcpy(buf_, key_, shared_len);
-    } else if (total_size > buf_size_) {
-      // Need to allocate space, delete previous space
-      char* p = new char[total_size];
-      memcpy(p, key_, shared_len);
-
-      if (buf_ != space_) {
-        delete[] buf_;
-      }
-
-      buf_ = p;
-      buf_size_ = total_size;
-    }
-
-    memcpy(buf_ + shared_len, non_shared_data, non_shared_len);
-    key_ = buf_;
-    key_size_ = total_size;
-  }
+                  const size_t non_shared_len);
 
   // A version of `TrimAppend` assuming the last bytes of length `ts_sz` in the
   // user key part of `key_` is not counted towards shared bytes. And the
@@ -605,8 +653,9 @@ class IterKey {
     assert(IsKeyPinned() == true);
 
     Reserve(key_size_);
-    memcpy(buf_, key_, key_size_);
-    key_ = buf_;
+    char*  bufp = buf();
+    memcpy(bufp, key_, key_size_);
+    key_ = bufp;
   }
 
   // Update the sequence number in the internal key.  Guarantees not to
@@ -614,16 +663,17 @@ class IterKey {
   void UpdateInternalKey(uint64_t seq, ValueType t, const Slice* ts = nullptr) {
     assert(!IsKeyPinned());
     assert(key_size_ >= kNumInternalBytes);
+    char*  bufp = buf();
     if (ts) {
       assert(key_size_ >= kNumInternalBytes + ts->size());
-      memcpy(&buf_[key_size_ - kNumInternalBytes - ts->size()], ts->data(),
+      memcpy(&bufp[key_size_ - kNumInternalBytes - ts->size()], ts->data(),
              ts->size());
     }
     uint64_t newval = (seq << 8) | t;
-    EncodeFixed64(&buf_[key_size_ - kNumInternalBytes], newval);
+    EncodeFixed64(&bufp[key_size_ - kNumInternalBytes], newval);
   }
 
-  bool IsKeyPinned() const { return (key_ != buf_); }
+  bool IsKeyPinned() const { return (key_ != buf()); }
 
   // If `ts` is provided, user_key should not contain timestamp,
   // and `ts` is appended after user_key.
@@ -636,17 +686,18 @@ class IterKey {
     size_t usize = user_key.size();
     size_t ts_sz = (ts != nullptr ? ts->size() : 0);
     EnlargeBufferIfNeeded(psize + usize + sizeof(uint64_t) + ts_sz);
+    char* bufp = buf();
     if (psize > 0) {
-      memcpy(buf_, key_prefix.data(), psize);
+      memcpy(bufp, key_prefix.data(), psize);
     }
-    memcpy(buf_ + psize, user_key.data(), usize);
+    memcpy(bufp + psize, user_key.data(), usize);
     if (ts) {
-      memcpy(buf_ + psize + usize, ts->data(), ts_sz);
+      memcpy(bufp + psize + usize, ts->data(), ts_sz);
     }
-    EncodeFixed64(buf_ + usize + psize + ts_sz,
+    EncodeFixed64(bufp + usize + psize + ts_sz,
                   PackSequenceAndType(s, value_type));
 
-    key_ = buf_;
+    key_ = bufp;
     key_size_ = psize + usize + sizeof(uint64_t) + ts_sz;
     is_user_key_ = false;
   }
@@ -675,41 +726,48 @@ class IterKey {
   void EncodeLengthPrefixedKey(const Slice& key) {
     auto size = key.size();
     EnlargeBufferIfNeeded(size + static_cast<size_t>(VarintLength(size)));
-    char* ptr = EncodeVarint32(buf_, static_cast<uint32_t>(size));
+    char* bufp = buf();
+    char* ptr = EncodeVarint32(bufp, static_cast<uint32_t>(size));
     memcpy(ptr, key.data(), size);
-    key_ = buf_;
+    key_ = bufp;
     is_user_key_ = true;
   }
 
   bool IsUserKey() const { return is_user_key_; }
 
  private:
-  char* buf_;
   const char* key_;
-  size_t key_size_;
-  size_t buf_size_;
-  char space_[32];  // Avoid allocation for short keys
-  bool is_user_key_;
+  size_t key_size_ : 32;
+  size_t buf_size_ : 31;
+  size_t is_user_key_ : 1;
+  union {
+    char* buf_;
+    char space_[48];  // Avoid allocation for short keys
+  };
 
+  char* buf() { return buf_size_ <= sizeof(space_) ? space_ : buf_ ; }
+  const char* buf() const { return buf_size_ <= sizeof(space_) ? space_ : buf_ ; }
+
+  __always_inline
   Slice SetKeyImpl(const Slice& key, bool copy) {
     size_t size = key.size();
     if (copy) {
       // Copy key to buf_
       EnlargeBufferIfNeeded(size);
-      memcpy(buf_, key.data(), size);
-      key_ = buf_;
+      char*  bufp = buf();
+      key_ = bufp;
+      memcpy(bufp, key.data(), size);
     } else {
       // Update key_ to point to external memory
       key_ = key.data();
     }
     key_size_ = size;
-    return Slice(key_, key_size_);
+    return Slice(key_, size);
   }
 
   void ResetBuffer() {
-    if (buf_ != space_) {
+    if (sizeof(space_) != buf_size_) {
       delete[] buf_;
-      buf_ = space_;
     }
     buf_size_ = sizeof(space_);
     key_size_ = 0;
@@ -720,10 +778,11 @@ class IterKey {
   // larger than the static allocated buffer, another buffer is dynamically
   // allocated, until a larger key buffer is requested. In that case, we
   // reallocate buffer and delete the old one.
+  __always_inline
   void EnlargeBufferIfNeeded(size_t key_size) {
     // If size is smaller than buffer size, continue using current buffer,
     // or the static allocated one, as default
-    if (key_size > buf_size_) {
+    if (UNLIKELY(key_size > buf_size_)) {
       EnlargeBuffer(key_size);
     }
   }
@@ -747,6 +806,11 @@ class IterKey {
     }
   }
 };
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#elif defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 // Convert from a SliceTransform of user keys, to a SliceTransform of
 // internal keys.

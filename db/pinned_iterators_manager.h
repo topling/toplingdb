@@ -16,9 +16,20 @@ namespace ROCKSDB_NAMESPACE {
 // PinnedIteratorsManager will be notified whenever we need to pin an Iterator
 // and it will be responsible for deleting pinned Iterators when they are
 // not needed anymore.
-class PinnedIteratorsManager : public Cleanable {
+
+class PinIterMgrBase {
+  // used for dummy PinnedIteratorsManager
+protected:
+  bool pinning_enabled = false; // first field of PinnedIteratorsManager
+
+public:
+  // Is pinning enabled ?
+  bool PinningEnabled() { return pinning_enabled; }
+};
+
+class PinnedIteratorsManager : public PinIterMgrBase, public Cleanable {
  public:
-  PinnedIteratorsManager() : pinning_enabled(false) {}
+  PinnedIteratorsManager() = default;
   ~PinnedIteratorsManager() {
     if (pinning_enabled) {
       ReleasePinnedData();
@@ -35,9 +46,6 @@ class PinnedIteratorsManager : public Cleanable {
     assert(pinning_enabled == false);
     pinning_enabled = true;
   }
-
-  // Is pinning enabled ?
-  bool PinningEnabled() { return pinning_enabled; }
 
   // Take ownership of iter and delete it when ReleasePinnedData() is called
   void PinIterator(InternalIterator* iter, bool arena = false) {
@@ -85,7 +93,6 @@ class PinnedIteratorsManager : public Cleanable {
     reinterpret_cast<InternalIterator*>(ptr)->~InternalIterator();
   }
 
-  bool pinning_enabled;
   std::vector<std::pair<void*, ReleaseFunction>> pinned_ptrs_;
 };
 

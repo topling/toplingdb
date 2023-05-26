@@ -182,6 +182,8 @@ class DBImpl : public DB {
 
   virtual ~DBImpl();
 
+  bool opened_successfully() const { return this->opened_successfully_; }
+
   // ---- Implementations of the DB interface ----
 
   using DB::Resume;
@@ -854,6 +856,8 @@ class DBImpl : public DB {
   // sends the signals.
   void CancelAllBackgroundWork(bool wait);
 
+  SuperVersion* GetAndRefSuperVersion(ColumnFamilyData*, const ReadOptions*);
+
   // Find Super version and reference it. Based on options, it might return
   // the thread local cached one.
   // Call ReturnAndCleanupSuperVersion() when it is no longer needed.
@@ -1257,6 +1261,10 @@ class DBImpl : public DB {
 
   bool seq_per_batch() const { return seq_per_batch_; }
 
+  int next_job_id() const noexcept {
+    return next_job_id_.load(std::memory_order_relaxed);
+  }
+
  protected:
   const std::string dbname_;
   // TODO(peterd): unify with VersionSet::db_id_
@@ -1574,7 +1582,6 @@ class DBImpl : public DB {
   friend class WriteUnpreparedTransactionTest_RecoveryTest_Test;
 #endif
 
-  struct CompactionState;
   struct PrepickedCompaction;
   struct PurgeFileInfo;
 
@@ -2135,6 +2142,11 @@ class DBImpl : public DB {
 
   SnapshotImpl* GetSnapshotImpl(bool is_write_conflict_boundary,
                                 bool lock = true);
+public:
+  SnapshotImpl* GetSnapshotImpl(SequenceNumber snapshot_seq,
+                                bool is_write_conflict_boundary,
+                                bool lock = true);
+private:
 
   // If snapshot_seq != kMaxSequenceNumber, then this function can only be
   // called from the write thread that publishes sequence numbers to readers.
@@ -2212,8 +2224,9 @@ class DBImpl : public DB {
 
   // Utility function to do some debug validation and sort the given vector
   // of MultiGet keys
+  static
   void PrepareMultiGetKeys(
-      const size_t num_keys, bool sorted,
+      const size_t num_keys, bool sorted, bool same_cf,
       autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE>* key_ptrs);
 
   void MultiGetCommon(const ReadOptions& options,
@@ -2227,44 +2240,6 @@ class DBImpl : public DB {
                       PinnableSlice* values, PinnableWideColumns* columns,
                       std::string* timestamps, Status* statuses,
                       bool sorted_input);
-
-  // A structure to hold the information required to process MultiGet of keys
-  // belonging to one column family. For a multi column family MultiGet, there
-  // will be a container of these objects.
-  struct MultiGetColumnFamilyData {
-    ColumnFamilyHandle* cf;
-    ColumnFamilyData* cfd;
-
-    // For the batched MultiGet which relies on sorted keys, start specifies
-    // the index of first key belonging to this column family in the sorted
-    // list.
-    size_t start;
-
-    // For the batched MultiGet case, num_keys specifies the number of keys
-    // belonging to this column family in the sorted list
-    size_t num_keys;
-
-    // SuperVersion for the column family obtained in a manner that ensures a
-    // consistent view across all column families in the DB
-    SuperVersion* super_version;
-    MultiGetColumnFamilyData(ColumnFamilyHandle* column_family,
-                             SuperVersion* sv)
-        : cf(column_family),
-          cfd(static_cast<ColumnFamilyHandleImpl*>(cf)->cfd()),
-          start(0),
-          num_keys(0),
-          super_version(sv) {}
-
-    MultiGetColumnFamilyData(ColumnFamilyHandle* column_family, size_t first,
-                             size_t count, SuperVersion* sv)
-        : cf(column_family),
-          cfd(static_cast<ColumnFamilyHandleImpl*>(cf)->cfd()),
-          start(first),
-          num_keys(count),
-          super_version(sv) {}
-
-    MultiGetColumnFamilyData() = default;
-  };
 
   // A common function to obtain a consistent snapshot, which can be implicit
   // if the user doesn't specify a snapshot in read_options, across
@@ -2283,8 +2258,6 @@ class DBImpl : public DB {
   template <class T>
   bool MultiCFSnapshot(
       const ReadOptions& read_options, ReadCallback* callback,
-      std::function<MultiGetColumnFamilyData*(typename T::iterator&)>&
-          iter_deref_func,
       T* cf_list, SequenceNumber* snapshot);
 
   // The actual implementation of the batching MultiGet. The caller is expected

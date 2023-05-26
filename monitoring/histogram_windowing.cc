@@ -73,8 +73,7 @@ void HistogramWindowingImpl::Merge(const HistogramWindowingImpl& other) {
   std::lock_guard<std::mutex> lock(mutex_);
   stats_.Merge(other.stats_);
 
-  if (stats_.num_buckets_ != other.stats_.num_buckets_ ||
-      micros_per_window_ != other.micros_per_window_) {
+  if (micros_per_window_ != other.micros_per_window_) {
     return;
   }
 

@@ -72,14 +72,20 @@ class PessimisticTransaction : public TransactionBaseImpl {
                                             std::string* key) const override {
     std::lock_guard<std::mutex> lock(wait_mutex_);
     std::vector<TransactionID> ids(waiting_txn_ids_.size());
-    if (key) *key = waiting_key_ ? *waiting_key_ : "";
+    if (key) {
+      if (waiting_key_)
+        key->assign(waiting_key_->data(), waiting_key_->size());
+      else
+        key->clear();
+    }
     if (column_family_id) *column_family_id = waiting_cf_id_;
     std::copy(waiting_txn_ids_.begin(), waiting_txn_ids_.end(), ids.begin());
     return ids;
   }
 
-  void SetWaitingTxn(autovector<TransactionID> ids, uint32_t column_family_id,
-                     const std::string* key) {
+  void SetWaitingTxn(const autovector<TransactionID>& ids, uint32_t column_family_id,
+                     const Slice* key) {
+    waiting_txn_ids_.reserve(ids.size());
     std::lock_guard<std::mutex> lock(wait_mutex_);
     waiting_txn_ids_ = ids;
     waiting_cf_id_ = column_family_id;
@@ -187,7 +193,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
   // function. At that point, the key string object is one of the function
   // parameters.
   uint32_t waiting_cf_id_;
-  const std::string* waiting_key_;
+  const Slice* waiting_key_;
 
   // Mutex protecting waiting_txn_ids_, waiting_cf_id_ and waiting_key_.
   mutable std::mutex wait_mutex_;
@@ -305,6 +311,123 @@ class WriteCommittedTxn : public PessimisticTransaction {
   // true, then the corresponding column family is not added to cfs_with_ts
   // even if it enables timestamp.
   std::unordered_set<uint32_t> cfs_with_ts_tracked_when_indexing_disabled_;
+};
+
+
+class ReadOnlyTxn : public PessimisticTransaction {
+ public:
+  ReadOnlyTxn(TransactionDB* txn_db, const WriteOptions& write_options,
+                    const TransactionOptions& txn_options)
+    : PessimisticTransaction(txn_db, write_options, txn_options) {}
+
+  // No copying allowed
+  ReadOnlyTxn(const ReadOnlyTxn&) = delete;
+  void operator=(const ReadOnlyTxn&) = delete;
+
+  ~ReadOnlyTxn() override {}
+
+#if 0
+  using TransactionBaseImpl::GetForUpdate;
+  Status GetForUpdate(const ReadOptions& /*read_options*/,
+                      ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                      std::string* /*value*/, bool /*exclusive*/,
+                      const bool /*do_validate*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status GetForUpdate(const ReadOptions& /*read_options*/,
+                      ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                      PinnableSlice* /*pinnable_val*/, bool /*exclusive*/,
+                      const bool /*do_validate*/) override  {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+#endif
+
+  using TransactionBaseImpl::Put;
+  Status Put(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+             const Slice& /*value*/, const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status Put(ColumnFamilyHandle* /*column_family*/, const SliceParts& /*key*/,
+             const SliceParts& /*value*/,
+             const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::PutUntracked;
+  Status PutUntracked(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                      const Slice& /*value*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status PutUntracked(ColumnFamilyHandle* /*column_family*/, const SliceParts& /*key*/,
+                      const SliceParts& /*value*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::Delete;
+  Status Delete(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status Delete(ColumnFamilyHandle* /*column_family*/, const SliceParts& /*key*/,
+                const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::DeleteUntracked;
+  Status DeleteUntracked(ColumnFamilyHandle* /*column_family*/,
+                         const Slice& /*key*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status DeleteUntracked(ColumnFamilyHandle* /*column_family*/,
+                         const SliceParts& /*key*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::SingleDelete;
+  Status SingleDelete(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                      const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+  Status SingleDelete(ColumnFamilyHandle* /*column_family*/, const SliceParts& /*key*/,
+                      const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::SingleDeleteUntracked;
+  Status SingleDeleteUntracked(ColumnFamilyHandle* /*column_family*/,
+                               const Slice& /*key*/) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+  using TransactionBaseImpl::Merge;
+  Status Merge(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+               const Slice& /*value*/, const bool /*assume_tracked*/ = false) override {
+    return Status::NotSupported("Not supported in secondary mode.");
+  };
+
+ private:
+
+  // Get() will be operated immediately,
+  // thus Prepare() , Commit() and Rollback() make no sense.
+  Status PrepareInternal() override {
+    return Status::OK();
+  };
+
+  Status CommitWithoutPrepareInternal() override {
+    return Status::OK();
+  };
+
+  Status CommitBatchInternal(WriteBatch* batch, size_t batch_cnt) override {
+    return Status::OK();
+  };
+
+  Status CommitInternal() override {
+    return Status::OK();
+  };
+
+  Status RollbackInternal() override {
+    return Status::OK();
+  };
 };
 
 }  // namespace ROCKSDB_NAMESPACE

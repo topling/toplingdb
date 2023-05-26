@@ -193,6 +193,9 @@ IOStatus EncryptedRandomAccessFile::InvalidateCache(size_t offset,
                                                     size_t length) {
   return file_->InvalidateCache(offset + prefixLength_, length);
 }
+intptr_t EncryptedRandomAccessFile::FileDescriptor() const {
+  return file_->FileDescriptor();
+}
 
 // A file abstraction for sequential writing.  The implementation
 // must provide buffering since callers may append small fragments

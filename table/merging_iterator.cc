@@ -729,6 +729,10 @@ public:
       assert(current_->status().ok());
       UpdatePrefixCache(minHeap_.top());
       minHeap_.update_top();
+      if (LIKELY(range_tombstone_iters_.empty())) {
+        current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
+        return;
+      }
     } else {
       // current stopped being valid, remove it from the heap.
       considerStatus(current_->status());
@@ -778,6 +782,10 @@ public:
       assert(current_->status().ok());
       UpdatePrefixCache(maxHeap_->top());
       maxHeap_->replace_top(maxHeap_->top());
+      if (LIKELY(range_tombstone_iters_.empty())) {
+        current_ = &maxHeap_->top()->iter; // current_ = CurrentReverse();
+        return;
+      }
     } else {
       // current stopped being valid, remove it from the heap.
       considerStatus(current_->status());

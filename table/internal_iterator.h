@@ -41,6 +41,7 @@ public:
   // If false, PrepareValue() needs to be called before value().
   bool value_prepared = true;
   bool is_valid = false; // just used in IteratorWrapperBase
+  unsigned char unused = 0;
 };
 static_assert(sizeof(IterateResult) == 16);
 

@@ -176,7 +176,7 @@ class IteratorWrapperBase {
     return iter_->IsDeleteRangeSentinelKey();
   }
 
- private:
+ protected:
   void Update() {
     result_.is_valid = iter_->Valid();
     if (result_.is_valid) {

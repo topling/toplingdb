@@ -816,6 +816,16 @@ public:
     return false;
   }
 
+  bool PrepareAndGetValue(Slice* v) override {
+    assert(Valid());
+    if (LIKELY(current_->PrepareAndGetValue(v))) {
+      return true;
+    }
+    considerStatus(current_->status());
+    assert(!status_.ok());
+    return false;
+  }
+
   // Here we simply relay MayBeOutOfLowerBound/MayBeOutOfUpperBound result
   // from current child iterator. Potentially as long as one of child iterator
   // report out of bound is not possible, we know current key is within bound.

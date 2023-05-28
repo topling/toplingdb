@@ -91,6 +91,23 @@ class IteratorWrapperBase {
 #ifdef __GNUC__
   inline __attribute__((always_inline))
 #endif
+  bool PrepareAndGetValue(TValue* v) {
+    assert(Valid());
+    if (result_.value_prepared) {
+      *v = iter_->value();
+      return true;
+    }
+    if (LIKELY(iter_->PrepareAndGetValue(v))) {
+      result_.value_prepared = true;
+      return true;
+    }
+    assert(!iter_->Valid());
+    result_.is_valid = false;
+    return false;
+  }
+#ifdef __GNUC__
+  inline __attribute__((always_inline))
+#endif
   void Next() {
     assert(iter_);
     result_.is_valid = iter_->NextAndGetResult(&result_);
@@ -222,6 +239,10 @@ class ThinIteratorWrapperBase {
   // Methods below require iter() != nullptr
   Status status() const { assert(iter_); return iter_->status(); }
   bool PrepareValue() { assert(Valid()); return iter_->PrepareValue(); }
+  bool PrepareAndGetValue(TValue* v) {
+    assert(Valid());
+    return iter_->PrepareAndGetValue(v);
+  }
   void Next() { assert(Valid()); iter_->Next(); }
   bool NextAndGetResult(IterateResult* r) {
     assert(iter_);

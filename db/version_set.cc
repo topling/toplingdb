@@ -1208,6 +1208,9 @@ class LevelIterator final : public InternalIterator {
   }
 
   bool PrepareValue() override { return file_iter_.PrepareValue(); }
+  bool PrepareAndGetValue(Slice* v) override {
+    return file_iter_.PrepareAndGetValue(v);
+  }
 
   inline bool MayBeOutOfLowerBound() override {
     assert(Valid());

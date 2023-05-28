@@ -158,6 +158,14 @@ class InternalIteratorBase : public Cleanable {
   // REQUIRES: Valid()
   virtual bool PrepareValue() { return true; }
 
+  virtual bool PrepareAndGetValue(TValue* v) {
+    if (PrepareValue()) {
+      *v = value();
+      return true;
+    }
+    return false;
+  }
+
   // Keys return from this iterator can be smaller than iterate_lower_bound.
   virtual bool MayBeOutOfLowerBound() { return true; }
 

@@ -166,9 +166,8 @@ class DBIter final : public Iterator {
 
     if (!is_value_prepared_) {
       auto mut = const_cast<DBIter*>(this);
-      ROCKSDB_VERIFY(mut->iter_.PrepareValue());
+      ROCKSDB_VERIFY(mut->iter_.PrepareAndGetValue(&mut->value_));
       mut->is_value_prepared_ = true;
-      mut->value_ = iter_.value();
       mut->local_stats_.bytes_read_ += value_.size_;
     }
     return value_;

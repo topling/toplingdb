@@ -574,7 +574,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
       iter_.Seek(last_key);
       RecordTick(statistics_, NUMBER_OF_RESEEKS_IN_ITERATION);
     } else {
-      iter_.Next();
+      if (iter_.Next()) continue; else break; // omit iter_.Valid()
     }
   } while (iter_.Valid());
 

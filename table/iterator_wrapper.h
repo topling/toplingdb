@@ -108,15 +108,12 @@ class IteratorWrapperBase {
 #ifdef __GNUC__
   inline __attribute__((always_inline))
 #endif
-  void Next() {
+  bool Next() {
     assert(iter_);
-   #if defined(NDEBUG)
-    iter_->NextAndGetResult(&result_);
-   #else
     const bool is_valid = iter_->NextAndGetResult(&result_);
     assert(is_valid == result_.is_valid);
     assert(!result_.is_valid || iter_->status().ok());
-   #endif
+    return is_valid;
   }
 /*
 #ifdef __GNUC__

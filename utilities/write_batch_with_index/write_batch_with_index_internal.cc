@@ -263,6 +263,21 @@ void BaseDeltaIterator::Advance() {
   UpdateCurrent();
 }
 
+inline static void AdvanceIter(WBWIIterator* i, bool forward) {
+  if (forward) {
+    i->NextKey();
+  } else {
+    i->PrevKey();
+  }
+}
+inline static void AdvanceIter(Iterator* i, bool forward) {
+  if (forward) {
+    i->Next();
+  } else {
+    i->Prev();
+  }
+}
+
 void BaseDeltaIterator::AdvanceDelta() {
   if (forward_) {
     delta_iterator_->NextKey();
@@ -310,15 +325,15 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
   status_.SetAsOK();
   Iterator* base_iterator_ = this->base_iterator_.get();
   WBWIIterator* delta_iterator_ = this->delta_iterator_.get();
+  auto wbwii_ = this->wbwii_.get();
+  const bool forward_ = this->forward_;
   while (true) {
     auto delta_result = WBWIIteratorImpl::kNotFound;
-    WriteEntry delta_entry;
     const bool delta_valid = delta_iterator_->Valid();
     if (delta_valid) {
       assert(delta_iterator_->status().ok());
       delta_result =
           delta_iterator_->FindLatestUpdate(wbwii_->GetMergeContext());
-      delta_entry = delta_iterator_->Entry();
     } else if (!delta_iterator_->status().ok()) {
       // Expose the error status and stop.
       current_at_base_ = false;
@@ -338,6 +353,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
         return;
       }
       if (iterate_upper_bound_) {
+        WriteEntry delta_entry = delta_iterator_->Entry();
         if (cmp.compare(delta_entry.key, *iterate_upper_bound_) >= 0) {
           // out of upper bound -> finished.
           return;
@@ -345,7 +361,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
       }
       if (delta_result == WBWIIteratorImpl::kDeleted &&
           wbwii_->GetNumOperands() == 0) {
-        AdvanceDelta();
+        AdvanceIter(delta_iterator_, forward_);
       } else {
         current_at_base_ = false;
         return;
@@ -355,6 +371,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
       current_at_base_ = true;
       return;
     } else {
+      WriteEntry delta_entry = delta_iterator_->Entry();
       int compare = forward_
                   ? cmp.compare(delta_entry.key, base_iterator_->key())
                   : cmp.compare(base_iterator_->key(), delta_entry.key)
@@ -369,9 +386,9 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
           return;
         }
         // Delta is less advanced and is delete.
-        AdvanceDelta();
+        AdvanceIter(delta_iterator_, forward_);
         if (equal_keys_) {
-          AdvanceBase();
+          AdvanceIter(base_iterator_, forward_);
         }
       } else {
         current_at_base_ = true;

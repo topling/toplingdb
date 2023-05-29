@@ -40,7 +40,8 @@ public:
   IterBoundCheck bound_check_result = IterBoundCheck::kUnknown;
   // If false, PrepareValue() needs to be called before value().
   bool value_prepared = true;
-  bool is_valid = false; // just used in IteratorWrapperBase
+  bool is_valid = false; // should be same as return of NextAndGetResult()
+  unsigned char unused = 0;
 };
 static_assert(sizeof(IterateResult) == 16);
 
@@ -106,6 +107,7 @@ class InternalIteratorBase : public Cleanable {
   virtual bool NextAndGetResult(IterateResult* result) {
     Next();
     bool is_valid = Valid();
+    result->is_valid = is_valid;
     if (is_valid) {
       result->SetKey(key());
       // Default may_be_out_of_upper_bound to true to avoid unnecessary virtual

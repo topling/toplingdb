@@ -210,6 +210,7 @@ void BlockBasedTableIterator::Next() {
 bool BlockBasedTableIterator::NextAndGetResult(IterateResult* result) {
   Next();
   bool is_valid = Valid();
+  result->is_valid = is_valid;
   if (is_valid) {
     result->SetKey(this->key());
     result->bound_check_result = UpperBoundCheckResult();

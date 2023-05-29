@@ -110,8 +110,13 @@ class IteratorWrapperBase {
 #endif
   void Next() {
     assert(iter_);
-    result_.is_valid = iter_->NextAndGetResult(&result_);
+   #if defined(NDEBUG)
+    iter_->NextAndGetResult(&result_);
+   #else
+    const bool is_valid = iter_->NextAndGetResult(&result_);
+    assert(is_valid == result_.is_valid);
     assert(!result_.is_valid || iter_->status().ok());
+   #endif
   }
 /*
 #ifdef __GNUC__
@@ -119,7 +124,8 @@ class IteratorWrapperBase {
 #endif
   bool NextAndGetResult(IterateResult* result) {
     assert(iter_);
-    result_.is_valid = iter_->NextAndGetResult(&result_);
+    const bool is_valid = iter_->NextAndGetResult(&result_);
+    assert(is_valid == result_.is_valid);
     *result = result_;
     assert(!result_.is_valid || iter_->status().ok());
     return result_.is_valid;

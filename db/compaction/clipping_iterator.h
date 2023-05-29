@@ -104,23 +104,21 @@ class ClippingIterator : public InternalIterator {
     assert(valid_);
     assert(result);
 
-    IterateResult res;
-    valid_ = iter_->NextAndGetResult(&res);
+    valid_ = iter_->NextAndGetResult(result);
 
     if (!valid_) {
       return false;
     }
 
     if (end_) {
-      EnforceUpperBoundImpl(res.bound_check_result);
-
+      EnforceUpperBoundImpl(result->bound_check_result);
+      result->is_valid = valid_;
       if (!valid_) {
         return false;
       }
     }
 
-    res.bound_check_result = IterBoundCheck::kInbound;
-    *result = res;
+    result->bound_check_result = IterBoundCheck::kInbound;
 
     return true;
   }

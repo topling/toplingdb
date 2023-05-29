@@ -166,7 +166,7 @@ class DBIter final : public Iterator {
 
     if (!is_value_prepared_) {
       auto mut = const_cast<DBIter*>(this);
-      ROCKSDB_VERIFY(mut->iter_.PrepareAndGetValue(&mut->value_));
+      ROCKSDB_VERIFY(mut->iter_.iter()->PrepareAndGetValue(&mut->value_));
       mut->is_value_prepared_ = true;
       mut->local_stats_.bytes_read_ += value_.size_;
     }
@@ -363,7 +363,7 @@ class DBIter final : public Iterator {
   Logger* logger_;
   UserComparatorWrapper user_comparator_;
   const MergeOperator* const merge_operator_;
-  ThinIteratorWrapper iter_;
+  IteratorWrapper iter_;
   const Version* version_;
   ReadCallback* read_callback_;
   // Max visible sequence number. It is normally the snapshot seq unless we have

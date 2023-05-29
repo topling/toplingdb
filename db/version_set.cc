@@ -1613,6 +1613,7 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
   assert(Valid());
   // file_iter_ is at EOF already when to_return_sentinel_
   bool is_valid = !to_return_sentinel_ && file_iter_.NextAndGetResult(result);
+  result->is_valid = is_valid;
   if (UNLIKELY(!is_valid)) {
     if (to_return_sentinel_) {
       ClearSentinel();
@@ -1623,6 +1624,7 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
     SkipEmptyFileForward();
     is_next_read_sequential_ = false;
     is_valid = Valid();
+    result->is_valid = is_valid;
     if (is_valid) {
       // This could be set in TrySetDeleteRangeSentinel() or
       // SkipEmptyFileForward() above.

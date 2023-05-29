@@ -751,7 +751,8 @@ public:
   bool NextAndGetResult(IterateResult* result) override {
     Next();
     bool is_valid = Valid();
-    if (is_valid) {
+    result->is_valid = is_valid;
+    if (LIKELY(is_valid)) {
       result->SetKey(this->key());
       result->bound_check_result = UpperBoundCheckResult();
       result->value_prepared = current_->IsValuePrepared();

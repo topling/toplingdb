@@ -38,12 +38,14 @@ class BoundsCheckingVectorIterator : public VectorIterator {
     Next();
 
     if (!Valid()) {
+      result->is_valid = false;
       return false;
     }
 
     result->SetKey(this->key());
     result->bound_check_result = UpperBoundCheckResult();
     result->value_prepared = true;
+    result->is_valid = true;
 
     return true;
   }

@@ -519,7 +519,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
       } else {
         saved_key_.SetUserKey(
             ikey_.user_key,
-            !iter_.iter()->IsKeyPinned() || !pin_thru_lifetime_ /* copy */);
+            !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
         skipping_saved_key = false;
         num_skipped = 0;
         reseek_done = false;

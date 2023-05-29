@@ -159,6 +159,8 @@ void DBIter::Next() {
     is_key_seqnum_zero_ = false;
     if (!ReverseToForward()) {
       ok = false;
+    } else {
+      ok = iter_.Valid();
     }
   } else if (!current_entry_is_merged_) {
     // If the current value is not a merge, the iter position is the
@@ -167,12 +169,14 @@ void DBIter::Next() {
     // If the current key is a merge, very likely iter already points
     // to the next internal position.
     assert(iter_.Valid());
-    iter_.Next();
+    ok = iter_.Next();
     PERF_COUNTER_ADD(internal_key_skipped_count, 1);
+  } else {
+    ok = iter_.Valid();
   }
 
   local_stats_.next_count_++;
-  if (ok && iter_.Valid()) {
+  if (ok) {
     ClearSavedValue();
 
     if (prefix_same_as_start_) {

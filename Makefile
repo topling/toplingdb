@@ -1623,6 +1623,7 @@ clean-rocks:
 	rm -f $(BENCHMARKS) $(TOOLS) $(TESTS) $(PARALLEL_TEST) $(ALL_STATIC_LIBS) $(ALL_SHARED_LIBS) $(MICROBENCHS)
 	rm -rf $(CLEAN_FILES) ios-x86 ios-arm scan_build_report
 	rm -rf sideplugin/topling-dcompact/tools/dcompact/build
+	+$(MAKE) -C ${TOPLING_CORE_DIR} clean
 	$(FIND) . -name "*.[oda]" -exec rm -f {} \;
 	$(FIND) . -type f \( -name "*.gcda" -o -name "*.gcno" \) -exec rm -f {} \;
 

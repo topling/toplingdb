@@ -836,7 +836,7 @@ void DBIter::PrevInternal(const Slice* prefix) {
   while (iter_.Valid()) {
     saved_key_.SetUserKey(
         ExtractUserKey(iter_.key()),
-        !iter_.iter()->IsKeyPinned() || !pin_thru_lifetime_ /* copy */);
+        !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
 
     assert(prefix == nullptr || prefix_extractor_ != nullptr);
     if (prefix != nullptr &&
@@ -1712,7 +1712,7 @@ void DBIter::SeekToFirst() {
   if (iter_.Valid()) {
     saved_key_.SetUserKey(
         ExtractUserKey(iter_.key()),
-        !iter_.iter()->IsKeyPinned() || !pin_thru_lifetime_ /* copy */);
+        !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
     FindNextUserEntry(false /* not skipping saved_key */,
                       nullptr /* no prefix check */);
     if (statistics_ != nullptr) {

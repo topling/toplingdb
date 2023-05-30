@@ -93,17 +93,14 @@ class IteratorWrapperBase {
 #endif
   bool PrepareAndGetValue(TValue* v) {
     assert(Valid());
+    /* ignore result_.value_prepared
     if (result_.value_prepared) {
       *v = iter_->value();
       return true;
     }
-    if (LIKELY(iter_->PrepareAndGetValue(v))) {
-      result_.value_prepared = true;
-      return true;
-    }
-    assert(!iter_->Valid());
-    result_.is_valid = false;
-    return false;
+    */
+    //return result_.value_prepared = iter_->PrepareAndGetValue(v);
+    return iter_->PrepareAndGetValue(v); // do minimal work
   }
 #ifdef __GNUC__
   inline __attribute__((always_inline))

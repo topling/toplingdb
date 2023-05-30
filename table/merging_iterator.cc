@@ -721,8 +721,7 @@ public:
     // current top of the heap.
     assert(current_ == CurrentForward());
     // as the current points to the current record. move the iterator forward.
-    current_->Next();
-    if (LIKELY(current_->Valid())) {
+    if (LIKELY(current_->Next())) {
       // current is still valid after the Next() call above.  Call
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
@@ -1278,10 +1277,9 @@ MergingIterMethod(bool)SkipNextDeleted() {
       }
     }
     // LevelIterator enters a new SST file
-    current->iter.Next();
     // Invariant(children_): current is popped from heap and added back only if
     // it is valid
-    if (current->iter.Valid()) {
+    if (current->iter.Next()) {
       assert(current->iter.status().ok());
       UpdatePrefixCache(current);
       minHeap_.push(current);
@@ -1318,9 +1316,8 @@ MergingIterMethod(bool)SkipNextDeleted() {
              0);
       if (pik.sequence < range_tombstone_iters_[current->level]->seq()) {
         // covered by range tombstone
-        current->iter.Next();
         // Invariant (children_)
-        if (current->iter.Valid()) {
+        if (current->iter.Next()) {
           UpdatePrefixCache(current);
           minHeap_.replace_top(current);
         } else {

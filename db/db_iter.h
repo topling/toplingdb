@@ -158,20 +158,7 @@ class DBIter final : public Iterator {
       return Slice(ukey_and_ts.data(), ukey_and_ts.size() - timestamp_size_);
     }
   }
-  Slice value() const override {
-    assert(valid_);
-#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
-    assert(is_value_prepared_);
-#endif
-
-    if (!is_value_prepared_) {
-      auto mut = const_cast<DBIter*>(this);
-      ROCKSDB_VERIFY(mut->iter_.iter()->PrepareAndGetValue(&mut->value_));
-      mut->is_value_prepared_ = true;
-      mut->local_stats_.bytes_read_ += value_.size_;
-    }
-    return value_;
-  }
+  Slice value() const override;
 
 #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   const WideColumns& columns() const override {

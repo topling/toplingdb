@@ -98,7 +98,7 @@ void BaseDeltaIterator::Next() {
     }
     if (DeltaValid() && BaseValid()) {
       if (0 == comparator_->CompareWithoutTimestamp(
-                   delta_iterator_->Entry().key, /*a_has_ts=*/false,
+                   delta_iterator_->user_key(), /*a_has_ts=*/false,
                    base_iterator_->key(), /*b_has_ts=*/false)) {
         equal_keys_ = true;
       }
@@ -135,7 +135,7 @@ void BaseDeltaIterator::Prev() {
     }
     if (DeltaValid() && BaseValid()) {
       if (0 == comparator_->CompareWithoutTimestamp(
-                   delta_iterator_->Entry().key, /*a_has_ts=*/false,
+                   delta_iterator_->user_key(), /*a_has_ts=*/false,
                    base_iterator_->key(), /*b_has_ts=*/false)) {
         equal_keys_ = true;
       }
@@ -147,7 +147,7 @@ void BaseDeltaIterator::Prev() {
 
 Slice BaseDeltaIterator::key() const {
   return current_at_base_ ? base_iterator_->key()
-                          : delta_iterator_->Entry().key;
+                          : delta_iterator_->user_key();
 }
 
 Slice BaseDeltaIterator::value() const {
@@ -352,8 +352,8 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
         return;
       }
       if (iterate_upper_bound_) {
-        WriteEntry delta_entry = delta_iterator_->Entry();
-        if (cmp.compare(delta_entry.key, *iterate_upper_bound_) >= 0) {
+        Slice delta_key = delta_iterator_->user_key();
+        if (cmp.compare(delta_key, *iterate_upper_bound_) >= 0) {
           // out of upper bound -> finished.
           return;
         }
@@ -370,10 +370,10 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
       current_at_base_ = true;
       return;
     } else {
-      WriteEntry delta_entry = delta_iterator_->Entry();
+      Slice delta_key = delta_iterator_->user_key();
       int compare = forward_
-                  ? cmp.compare(delta_entry.key, base_iterator_->key())
-                  : cmp.compare(base_iterator_->key(), delta_entry.key)
+                  ? cmp.compare(delta_key, base_iterator_->key())
+                  : cmp.compare(base_iterator_->key(), delta_key)
                   ;
       if (compare <= 0) {  // delta bigger or equal
         if (compare == 0) {
@@ -402,7 +402,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
 
 void WBWIIteratorImpl::AdvanceKey(bool forward) {
   if (Valid()) {
-    Slice key = Entry().key;
+    Slice key = user_key();
     do {
       if (forward) {
         Next();
@@ -431,7 +431,7 @@ void WBWIIteratorImpl::PrevKey() {
 WBWIIteratorImpl::Result WBWIIterator::FindLatestUpdate(
     MergeContext* merge_context) {
   if (Valid()) {
-    Slice key = Entry().key;
+    Slice key = user_key();
     return FindLatestUpdate(key, merge_context);
   } else {
     merge_context->Clear();  // Clear any entries in the MergeContext
@@ -440,7 +440,7 @@ WBWIIteratorImpl::Result WBWIIterator::FindLatestUpdate(
 }
 
 bool WBWIIteratorImpl::EqualsKey(const Slice& key) const {
-  return comparator_->CompareKey(column_family_id_, Entry().key, key) == 0;
+  return comparator_->CompareKey(column_family_id_, user_key(), key) == 0;
 }
 
 WBWIIteratorImpl::Result WBWIIterator::FindLatestUpdate(
@@ -675,9 +675,13 @@ WriteEntry WBWIIteratorImpl::Entry() const {
   return ret;
 }
 
+Slice WBWIIteratorImpl::user_key() const {
+  return Entry().key;
+}
+
 bool WBWIIteratorImpl::MatchesKey(uint32_t cf_id, const Slice& key) {
   if (Valid()) {
-    return comparator_->CompareKey(cf_id, key, Entry().key) == 0;
+    return comparator_->CompareKey(cf_id, key, user_key()) == 0;
   } else {
     return false;
   }

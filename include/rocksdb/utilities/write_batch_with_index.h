@@ -74,6 +74,8 @@ class WBWIIterator {
   // WriteBatchWithIndex
   virtual WriteEntry Entry() const = 0;
 
+  virtual Slice user_key() const = 0;
+
   virtual Status status() const = 0;
 
 //-------------------------------------------------------------------------

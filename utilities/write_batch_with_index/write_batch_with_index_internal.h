@@ -251,6 +251,8 @@ class WBWIIteratorImpl : public WBWIIterator {
 
   WriteEntry Entry() const override;
 
+  Slice user_key() const override;
+
   Status status() const override {
     // this is in-memory data structure, so the only way status can be non-ok is
     // through memory corruption

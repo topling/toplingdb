@@ -328,12 +328,9 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
   auto wbwii_ = this->wbwii_.get();
   const bool forward_ = this->forward_;
   while (true) {
-    auto delta_result = WBWIIteratorImpl::kNotFound;
     const bool delta_valid = delta_iterator_->Valid();
     if (delta_valid) {
       assert(delta_iterator_->status().ok());
-      delta_result =
-          delta_iterator_->FindLatestUpdate(wbwii_->GetMergeContext());
     } else if (!delta_iterator_->status().ok()) {
       // Expose the error status and stop.
       current_at_base_ = false;
@@ -359,6 +356,8 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
           return;
         }
       }
+      const auto delta_result =
+          delta_iterator_->FindLatestUpdate(wbwii_->GetMergeContext());
       if (delta_result == WBWIIteratorImpl::kDeleted &&
           wbwii_->GetNumOperands() == 0) {
         AdvanceIter(delta_iterator_, forward_);
@@ -380,6 +379,8 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
         if (compare == 0) {
           equal_keys_ = true;
         }
+        const auto delta_result =
+            delta_iterator_->FindLatestUpdate(wbwii_->GetMergeContext());
         if (delta_result != WBWIIteratorImpl::kDeleted ||
             wbwii_->GetNumOperands() > 0) {
           current_at_base_ = false;

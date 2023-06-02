@@ -139,6 +139,8 @@ class Iterator : public Cleanable {
     assert(false);
     return Slice();
   }
+
+  virtual bool PrepareValue() { return true; }
 };
 
 // Return an empty iterator (yields nothing).

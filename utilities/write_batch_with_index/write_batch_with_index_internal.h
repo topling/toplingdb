@@ -54,6 +54,7 @@ class BaseDeltaIterator final : public Iterator {
   Status Refresh(const Snapshot*, bool keep_iter_pos) override;
   using Iterator::Refresh;
   void Invalidate(Status s);
+  bool PrepareValue() override;
 
  private:
   void AssertInvariants();

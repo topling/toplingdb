@@ -75,6 +75,7 @@ class ArenaWrappedDBIter : public Iterator {
   const WideColumns& columns() const override { return db_iter_->columns(); }
   Status status() const override { return db_iter_->status(); }
   Slice timestamp() const override { return db_iter_->timestamp(); }
+  bool PrepareValue() override { return db_iter_->PrepareValue(); }
   bool IsBlob() const { return db_iter_->IsBlob(); }
 
   Status GetProperty(std::string prop_name, std::string* prop) override;

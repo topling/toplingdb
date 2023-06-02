@@ -159,6 +159,7 @@ class DBIter final : public Iterator {
     }
   }
   Slice value() const override;
+  bool PrepareValue() override; // enable error check for lazy load
 
 #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   const WideColumns& columns() const override {

@@ -144,6 +144,7 @@ class TtlIterator : public Iterator {
     trimmed_value.size_ -= DBWithTTLImpl::kTSLength;
     return trimmed_value;
   }
+  bool PrepareValue() override { return iter_->PrepareValue(); }
 
   Status status() const override { return iter_->status(); }
 

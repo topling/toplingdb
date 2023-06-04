@@ -168,6 +168,9 @@ class InternalIteratorBase : public Cleanable {
     return false;
   }
 
+  virtual bool NextAndCheckValid() { Next(); return Valid(); }
+  virtual bool PrevAndCheckValid() { Prev(); return Valid(); }
+
   // Keys return from this iterator can be smaller than iterate_lower_bound.
   virtual bool MayBeOutOfLowerBound() { return true; }
 

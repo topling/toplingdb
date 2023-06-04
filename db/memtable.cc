@@ -448,12 +448,17 @@ class MemTableIterator : public InternalIterator {
     iter_->SeekToLast();
     valid_ = iter_->Valid();
   }
+  ROCKSDB_FLATTEN
   void Next() override {
+    NextAndCheckValid(); // ignore return value
+  }
+  bool NextAndCheckValid() final {
     PERF_COUNTER_ADD(next_on_memtable_count, 1);
     assert(Valid());
     iter_->Next();
     TEST_SYNC_POINT_CALLBACK("MemTableIterator::Next:0", iter_);
     valid_ = iter_->Valid();
+    return valid_;
   }
   bool NextAndGetResult(IterateResult* result) override {
     Next();
@@ -466,11 +471,16 @@ class MemTableIterator : public InternalIterator {
     }
     return is_valid;
   }
+  ROCKSDB_FLATTEN
   void Prev() override {
+    PrevAndCheckValid(); // ignore return value
+  }
+  bool PrevAndCheckValid() final {
     PERF_COUNTER_ADD(prev_on_memtable_count, 1);
     assert(Valid());
     iter_->Prev();
     valid_ = iter_->Valid();
+    return valid_;
   }
   Slice key() const override {
     assert(Valid());

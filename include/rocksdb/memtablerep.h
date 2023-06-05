@@ -49,6 +49,7 @@ namespace ROCKSDB_NAMESPACE {
 class Arena;
 class Allocator;
 class InternalKeyComparator;
+class IterateResult;
 class LookupKey;
 class SliceTransform;
 class Logger;
@@ -296,6 +297,10 @@ class MemTableRep {
     // Advances to the previous position.
     // REQUIRES: Valid()
     virtual void Prev() = 0;
+
+    virtual bool NextAndGetResult(IterateResult*);
+    virtual bool NextAndCheckValid();
+    virtual bool PrevAndCheckValid();
 
     // Advance to the first entry with a key >= target
     virtual void Seek(const Slice& internal_key, const char* memtable_key) = 0;

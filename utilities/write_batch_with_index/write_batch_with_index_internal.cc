@@ -77,10 +77,14 @@ void BaseDeltaIterator::SeekForPrev(const Slice& k) {
 }
 
 void BaseDeltaIterator::Next() {
+#if 0
   if (UNLIKELY(!Valid())) {
     status_ = Status::NotSupported("Next() on invalid iterator");
     return;
   }
+#else
+  assert(Valid());
+#endif
 
   if (UNLIKELY(!forward_)) {
     // Need to change direction
@@ -115,10 +119,14 @@ void BaseDeltaIterator::Next() {
 }
 
 void BaseDeltaIterator::Prev() {
+#if 0
   if (UNLIKELY(!Valid())) {
     status_ = Status::NotSupported("Prev() on invalid iterator");
     return;
   }
+#else
+  assert(Valid());
+#endif
 
   if (UNLIKELY(forward_)) {
     // Need to change direction

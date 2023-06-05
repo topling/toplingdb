@@ -91,9 +91,9 @@ class WBWIIterator {
   };
 
   // Moves the iterator to first entry of the previous key.
-  virtual void PrevKey() = 0;
+  virtual bool PrevKey() = 0; // returns same as following Valid()
   // Moves the iterator to first entry of the next key.
-  virtual void NextKey() = 0;
+  virtual bool NextKey() = 0; // returns same as following Valid()
 
   virtual bool EqualsKey(const Slice& key) const = 0;
 

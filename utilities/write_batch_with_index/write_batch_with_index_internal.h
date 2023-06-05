@@ -72,6 +72,7 @@ class BaseDeltaIterator final : public Iterator {
   bool forward_;
   bool current_at_base_;
   bool equal_keys_;
+  bool delta_valid_;
   unsigned char opt_cmp_type_;
   mutable Status status_;
   std::unique_ptr<Iterator> base_iterator_;
@@ -204,7 +205,7 @@ class WBWIIteratorImpl : public WBWIIterator {
 
   ~WBWIIteratorImpl() override {}
 
-  bool Valid() const override {
+  bool Valid() const final {
     if (!skip_list_iter_.Valid()) {
       return false;
     }
@@ -267,9 +268,9 @@ class WBWIIteratorImpl : public WBWIIterator {
   bool MatchesKey(uint32_t cf_id, const Slice& key);
 
   // Moves the iterator to first entry of the previous key.
-  void PrevKey() final;
+  bool PrevKey() final;
   // Moves the iterator to first entry of the next key.
-  void NextKey() final;
+  bool NextKey() final;
 
  protected:
   void AdvanceKey(bool forward);

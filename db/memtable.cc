@@ -332,6 +332,21 @@ KeyHandle MemTableRep::Allocate(const size_t len, char** buf) {
   return static_cast<KeyHandle>(*buf);
 }
 
+bool MemTableRep::Iterator::NextAndGetResult(IterateResult* result) {
+  if (LIKELY(NextAndCheckValid())) {
+    result->SetKey(this->GetKey());
+    result->bound_check_result = IterBoundCheck::kUnknown;
+    result->value_prepared = true;
+    result->is_valid = true;
+    return true;
+  } else {
+    result->is_valid = false;
+    return false;
+  }
+}
+bool MemTableRep::Iterator::NextAndCheckValid() { Next(); return Valid(); }
+bool MemTableRep::Iterator::PrevAndCheckValid() { Prev(); return Valid(); }
+
 // Encode a suitable internal key target for "target" and return it.
 // Uses *scratch as scratch space, and the returned pointer will point
 // into this scratch space.
@@ -451,21 +466,13 @@ class MemTableIterator : public InternalIterator {
   bool NextAndCheckValid() final {
     PERF_COUNTER_ADD(next_on_memtable_count, 1);
     assert(Valid());
-    iter_->Next();
+    bool is_valid = iter_->NextAndCheckValid();
     TEST_SYNC_POINT_CALLBACK("MemTableIterator::Next:0", iter_);
-    valid_ = iter_->Valid();
-    return valid_;
+    valid_ = is_valid;
+    return is_valid;
   }
   bool NextAndGetResult(IterateResult* result) override {
-    Next();
-    bool is_valid = valid_;
-    result->is_valid = is_valid;
-    if (is_valid) {
-      result->SetKey(this->key());
-      result->bound_check_result = IterBoundCheck::kUnknown;
-      result->value_prepared = true;
-    }
-    return is_valid;
+    return iter_->NextAndGetResult(result);
   }
   ROCKSDB_FLATTEN
   void Prev() override {
@@ -474,8 +481,7 @@ class MemTableIterator : public InternalIterator {
   bool PrevAndCheckValid() final {
     PERF_COUNTER_ADD(prev_on_memtable_count, 1);
     assert(Valid());
-    iter_->Prev();
-    valid_ = iter_->Valid();
+    valid_ = iter_->PrevAndCheckValid();
     return valid_;
   }
   Slice key() const override {

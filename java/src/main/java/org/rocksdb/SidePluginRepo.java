@@ -61,12 +61,27 @@ public class SidePluginRepo extends RocksObject {
         }
         dblist_ = null;
     }
+    public ColumnFamilyHandle createCF(RocksDB db, String cfname, String spec) throws RocksDBException {
+        long cfh = nativeCreateCF(nativeHandle_, db.nativeHandle_, cfname, spec);
+        return new ColumnFamilyHandle(db, cfh);
+    }
+    public void dropCF(RocksDB db, String cfname) throws RocksDBException {
+        nativeDropCF(nativeHandle_, db.nativeHandle_, cfname);
+    }
+    public void dropCF(RocksDB db, ColumnFamilyHandle cfh) throws RocksDBException {
+        nativeDropCF(nativeHandle_, db.nativeHandle_, cfh.nativeHandle_);
+    }
+
     // call native->CloseAllDB(false)
     private native void nativeCloseAllDB(long handle);
 
     public native void put(String name, String spec, Options opt);
     public native void put(String name, String spec, DBOptions dbo);
     public native void put(String name, String spec, ColumnFamilyOptions cfo);
+
+    private native long nativeCreateCF(long handle, long dbh, String cfname, String spec) throws RocksDBException;
+    private native void nativeDropCF(long handle, long dbh, String cfname) throws RocksDBException;
+    private native void nativeDropCF(long handle, long dbh, long cfh) throws RocksDBException;
 
     public SidePluginRepo() {
         super(newSidePluginRepo());

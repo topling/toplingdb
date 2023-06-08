@@ -10,6 +10,7 @@
 #include "rocksjni/portal.h"
 
 #include <topling/side_plugin_repo.h>
+#include <topling/side_plugin_factory.h>
 
 using namespace rocksdb;
 
@@ -79,7 +80,7 @@ jobject Java_org_rocksdb_SidePluginRepo_nativeOpenDB
   if (jdbname) {
     const auto* dbname = env->GetStringUTFChars(jdbname, nullptr);
     ROCKSDB_VERIFY(dbname != nullptr);
-    status = repo->OpenDB(dbname, &db);
+    status = repo->OpenDB(std::string(dbname), &db);
     env->ReleaseStringUTFChars(jdbname, dbname);
   } else {
     status = repo->OpenDB(&db);
@@ -106,7 +107,7 @@ jobject Java_org_rocksdb_SidePluginRepo_nativeOpenDBMultiCF
   if (jdbname) {
     const auto* dbname = env->GetStringUTFChars(jdbname, nullptr);
     ROCKSDB_VERIFY(dbname != nullptr);
-    status = repo->OpenDB(dbname, &dbm);
+    status = repo->OpenDB(std::string(dbname), &dbm);
     env->ReleaseStringUTFChars(jdbname, dbname);
   } else {
     status = repo->OpenDB(&dbm);
@@ -193,6 +194,102 @@ void Java_org_rocksdb_SidePluginRepo_put__Ljava_lang_String_2Ljava_lang_String_2
 (JNIEnv* env, jobject jrepo, jstring jname, jstring jspec, jobject joptions)
 {
   PutOPT<ColumnFamilyOptions>(env, jrepo, jname, jspec, joptions);
+}
+
+static DB_MultiCF* Get_DB_MultiCF(JNIEnv* env, DB* db, SidePluginRepo* repo) {
+  auto& dbr = repo->m_impl->db;
+  auto iter = dbr.p2name.find(db);
+  if (dbr.p2name.end() == iter) {
+    Status status = Status::InvalidArgument("NotFound db by ptr in repo");
+    RocksDBExceptionJni::ThrowNew(env, status);
+    return nullptr;
+  }
+  const auto& dbname = iter->second.name;
+  auto i2 = dbr.name2p->find(dbname);
+  if (dbr.name2p->end() == i2) {
+    Status status = Status::InvalidArgument("NotFound db by name in repo");
+    RocksDBExceptionJni::ThrowNew(env, status);
+    return nullptr;
+  }
+  DB_Ptr dbp = i2->second;
+  if (nullptr == dbp.dbm) {
+    Status status = Status::InvalidArgument("DB_Ptr is not a DB_MultiCF");
+    RocksDBExceptionJni::ThrowNew(env, status);
+    return nullptr;
+  }
+  return dbp.dbm;
+}
+
+/*
+ * Class:     org_rocksdb_SidePluginRepo
+ * Method:    nativeCreateCF
+ * Signature: (JJLjava/lang/String;Ljava/lang/String;)J
+ */
+JNIEXPORT jlong JNICALL Java_org_rocksdb_SidePluginRepo_nativeCreateCF
+  (JNIEnv* env, jobject, jlong hrepo, jlong hdb, jstring jcfname, jstring jspec)
+{
+  auto repo = (SidePluginRepo*)hrepo;
+  auto db = (DB*)hdb;
+  DB_MultiCF* dbm = Get_DB_MultiCF(env, db, repo);
+  if (!dbm) {
+    return 0;
+  }
+  const char* cfname = env->GetStringUTFChars(jcfname, nullptr);
+  const char* spec = env->GetStringUTFChars(jspec, nullptr);
+  ROCKSDB_SCOPE_EXIT(
+    env->ReleaseStringUTFChars(jspec, spec);
+    env->ReleaseStringUTFChars(jcfname, cfname);
+  );
+  ColumnFamilyHandle* cfh = nullptr;
+  Status status = dbm->CreateColumnFamily(cfname, spec, &cfh);
+  if (!status.ok()) {
+    RocksDBExceptionJni::ThrowNew(env, status);
+    return 0;
+  }
+  return (jlong)cfh;
+}
+
+/*
+ * Class:     org_rocksdb_SidePluginRepo
+ * Method:    nativeDropCF
+ * Signature: (JJLjava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_org_rocksdb_SidePluginRepo_nativeDropCF__JJLjava_lang_String_2
+  (JNIEnv* env, jobject, jlong hrepo, jlong hdb, jstring jcfname)
+{
+  auto repo = (SidePluginRepo*)hrepo;
+  auto db = (DB*)hdb;
+  DB_MultiCF* dbm = Get_DB_MultiCF(env, db, repo);
+  if (!dbm) {
+    return;
+  }
+  const char* cfname = env->GetStringUTFChars(jcfname, nullptr);
+  ROCKSDB_SCOPE_EXIT(env->ReleaseStringUTFChars(jcfname, cfname));
+  Status status = dbm->DropColumnFamily(cfname);
+  if (!status.ok()) {
+    RocksDBExceptionJni::ThrowNew(env, status);
+  }
+}
+
+/*
+ * Class:     org_rocksdb_SidePluginRepo
+ * Method:    nativeDropCF
+ * Signature: (JJJ)V
+ */
+JNIEXPORT void JNICALL Java_org_rocksdb_SidePluginRepo_nativeDropCF__JJJ
+  (JNIEnv* env, jobject, jlong hrepo, jlong hdb, jlong hcf)
+{
+  auto repo = (SidePluginRepo*)hrepo;
+  auto db = (DB*)hdb;
+  DB_MultiCF* dbm = Get_DB_MultiCF(env, db, repo);
+  if (!dbm) {
+    return;
+  }
+  auto cfh = (ColumnFamilyHandle*)hcf;
+  Status status = dbm->DropColumnFamily(cfh);
+  if (!status.ok()) {
+    RocksDBExceptionJni::ThrowNew(env, status);
+  }
 }
 
 /*

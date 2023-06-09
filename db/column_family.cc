@@ -95,6 +95,9 @@ Status ColumnFamilyHandleImpl::GetDescriptor(ColumnFamilyDescriptor* desc) {
 const Comparator* ColumnFamilyHandleImpl::GetComparator() const {
   return cfd_->user_comparator();
 }
+ColumnFamilyHandle* ColumnFamilyHandleImpl::CloneHandle() const {
+  return new ColumnFamilyHandleImpl(cfd_, db_, mutex_);
+}
 
 uint32_t ColumnFamilyHandleInternal::GetID() const {
   return internal_cfd_->GetID();
@@ -104,6 +107,11 @@ const std::string& ColumnFamilyHandleInternal::GetName() const {
 }
 const Comparator* ColumnFamilyHandleInternal::GetComparator() const {
   return internal_cfd_->user_comparator();
+}
+ColumnFamilyHandle* ColumnFamilyHandleInternal::CloneHandle() const {
+  auto p = new ColumnFamilyHandleInternal();
+  p->SetCFD(internal_cfd_);
+  return p;
 }
 
 void GetIntTblPropCollectorFactory(

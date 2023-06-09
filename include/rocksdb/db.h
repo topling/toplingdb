@@ -98,6 +98,7 @@ class ColumnFamilyHandle {
     ROCKSDB_DIE("Unexpected");
     return nullptr;
   }
+  virtual ColumnFamilyHandle* CloneHandle() const = 0;
 };
 
 static const int kMajorVersion = __ROCKSDB_MAJOR__;

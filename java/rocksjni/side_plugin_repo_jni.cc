@@ -24,8 +24,8 @@ template<class OPT>
 static void PutOPT
 (JNIEnv* env, jobject jrepo, jstring jname, jstring jspec, jobject joptions)
 {
-  auto p_opt = (OPT*)GetLongField(env, joptions);
-  auto repo = (SidePluginRepo*)GetLongField(env, jrepo);
+  auto p_opt = (OPT*)GetNativeHandle(env, joptions);
+  auto repo = (SidePluginRepo*)GetNativeHandle(env, jrepo);
   const auto* name = env->GetStringUTFChars(jname, nullptr);
   const auto* spec = env->GetStringUTFChars(jspec, nullptr);
   auto sp_opt = std::make_shared<OPT>(*p_opt);

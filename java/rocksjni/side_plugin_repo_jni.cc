@@ -14,16 +14,18 @@
 
 using namespace rocksdb;
 
+static jlong GetNativeHandle(JNIEnv* env, jobject jobj) {
+  jclass clazz = env->GetObjectClass(jobj);
+  jfieldID handleFieldID = env->GetFieldID(clazz, "nativeHandle_", "J"); // long
+  return env->GetLongField(jobj, handleFieldID);
+}
+
 template<class OPT>
 static void PutOPT
 (JNIEnv* env, jobject jrepo, jstring jname, jstring jspec, jobject joptions)
 {
-  jclass clazz = env->GetObjectClass(joptions);
-  jfieldID handleFieldID = env->GetFieldID(clazz, "nativeHandle_", "J"); // long
-  OPT* p_opt = (OPT*)env->GetLongField(jrepo, handleFieldID);
-  clazz = env->GetObjectClass(jrepo);
-  handleFieldID = env->GetFieldID(clazz, "nativeHandle_", "J"); // long
-  auto repo = (SidePluginRepo*)env->GetLongField(jrepo, handleFieldID);
+  auto p_opt = (OPT*)GetLongField(env, joptions);
+  auto repo = (SidePluginRepo*)GetLongField(env, jrepo);
   const auto* name = env->GetStringUTFChars(jname, nullptr);
   const auto* spec = env->GetStringUTFChars(jspec, nullptr);
   auto sp_opt = std::make_shared<OPT>(*p_opt);

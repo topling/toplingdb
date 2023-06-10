@@ -34,6 +34,19 @@ static void PutOPT
   env->ReleaseStringUTFChars(jname, name);
 }
 
+template<class OPT>
+static jboolean CloneOPT(JNIEnv* env, jobject jrepo, jlong jdest, jstring jname) {
+  auto repo = (SidePluginRepo*)GetNativeHandle(env, jrepo);
+  const auto* name = env->GetStringUTFChars(jname, nullptr);
+  std::shared_ptr<OPT> dbo = repo->Get(name);
+  const bool exists = nullptr != dbo;
+  if (exists) {
+    *(OPT*)jdest = *dbo;
+  }
+  env->ReleaseStringUTFChars(jname, name);
+  return exists;
+}
+
 extern "C" {
 /*
  * Class:     org_rocksdb_SidePluginRepo
@@ -163,6 +176,51 @@ void Java_org_rocksdb_SidePluginRepo_nativeCloseAllDB
 {
   auto repo = (SidePluginRepo*)nativeHandle;
   repo->CloseAllDB(false); // dont close DB and cf
+}
+
+/*
+ * Class:     org_rocksdb_SidePluginRepo
+ * Method:    nativePutDB
+ * Signature: (Ljava/lang/String;Ljava/lang/String;Lorg/rocksdb/RocksDB;[Lorg/rocksdb/ColumnFamilyHandle;)V
+ */
+JNIEXPORT void JNICALL Java_org_rocksdb_SidePluginRepo_nativePutDB
+(JNIEnv* env, jobject jrepo, jstring jname, jstring jspec, jobject jdb, jobjectArray j_cf_handles)
+{
+  auto repo = (SidePluginRepo*)GetNativeHandle(env, jrepo);
+  auto db = (DB*)GetNativeHandle(env, jdb);
+  const auto* name = env->GetStringUTFChars(jname, nullptr);
+  const auto* spec = env->GetStringUTFChars(jspec, nullptr);
+  const size_t cf_num = env->GetArrayLength(j_cf_handles);
+  std::vector<ColumnFamilyHandle*> cf_handles(cf_num);
+  for (size_t i = 0; i < cf_num; i++) {
+    jobject jcfh = env->GetObjectArrayElement(j_cf_handles, i);
+    cf_handles[i] = (ColumnFamilyHandle*)GetNativeHandle(env, jcfh);
+  }
+  repo->Put(name, spec, db, cf_handles);
+  env->ReleaseStringUTFChars(jspec, spec);
+  env->ReleaseStringUTFChars(jname, name);
+}
+
+/*
+ * Class:     org_rocksdb_SidePluginRepo
+ * Method:    nativeCloneCFOptions
+ * Signature: (JLjava/lang/String;)Z
+ */
+JNIEXPORT jboolean JNICALL Java_org_rocksdb_SidePluginRepo_nativeCloneCFOptions
+(JNIEnv* env, jobject jrepo, jlong jdest, jstring jname)
+{
+  return CloneOPT<ColumnFamilyOptions>(env, jrepo, jdest, jname);
+}
+
+/*
+ * Class:     org_rocksdb_SidePluginRepo
+ * Method:    nativeCloneDBOptions
+ * Signature: (JLjava/lang/String;)Z
+ */
+JNIEXPORT jboolean JNICALL Java_org_rocksdb_SidePluginRepo_nativeCloneDBOptions
+(JNIEnv* env, jobject jrepo, jlong jdest, jstring jname)
+{
+  return CloneOPT<DBOptions>(env, jrepo, jdest, jname);
 }
 
 /*

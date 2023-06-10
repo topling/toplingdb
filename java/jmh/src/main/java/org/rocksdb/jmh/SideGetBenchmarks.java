@@ -89,7 +89,7 @@ public class SideGetBenchmarks {
   @TearDown(Level.Trial)
   public void cleanup() throws IOException {
     repo.closeHttpServer();
-    repo.closeAllDB(); // aslo can be repo.clse()
+    repo.closeAllDB(); // aslo can be repo.close()
   /* // not needed, will be closed in repo.closeAllDB(),
      // also dup close will not yield bad side effect
     for (final ColumnFamilyHandle cfHandle : cfHandles) {

@@ -72,12 +72,38 @@ public class SidePluginRepo extends RocksObject {
         nativeDropCF(nativeHandle_, db.nativeHandle_, cfh.nativeHandle_);
     }
 
+    public void put(String name, RocksDB db) {
+        put(name, "{}", db);
+    }
+    public void put(String name, String spec, RocksDB db) {
+        nativePutDB(name, spec, db,
+            db.getOwnedColumnFamilyHandles().toArray(new ColumnFamilyHandle[0]));
+    }
+    private native void nativePutDB(String name, String spec, RocksDB db, ColumnFamilyHandle[] cf_handles);
+
     // call native->CloseAllDB(false)
     private native void nativeCloseAllDB(long handle);
 
     public native void put(String name, String spec, Options opt);
     public native void put(String name, String spec, DBOptions dbo);
     public native void put(String name, String spec, ColumnFamilyOptions cfo);
+
+    // will get a clone on each call, to sync, put after modified
+    public ColumnFamilyOptions getCFOptions(String name) {
+        ColumnFamilyOptions o = new ColumnFamilyOptions();
+        nativeCloneCFOptions(o.nativeHandle_, name);
+        return o;
+    }
+    // will get a clone on each call, to sync, put after modified
+    public DBOptions getDBOptions(String name) {
+        DBOptions o = new DBOptions();
+        nativeCloneDBOptions(o.nativeHandle_, name);
+        return o;
+    }
+
+    // returns false if not exists
+    private native boolean nativeCloneCFOptions(long dest, String name);
+    private native boolean nativeCloneDBOptions(long dest, String name);
 
     private native long nativeCreateCF(long handle, long dbh, String cfname, String spec) throws RocksDBException;
     private native void nativeDropCF(long handle, long dbh, String cfname) throws RocksDBException;

@@ -30,10 +30,13 @@ public class SideGetBenchmarks {
   @Param({"12", "64", "128"}) int keySize;
   @Param({"64", "1024", "65536"}) int valueSize;
   @Param({"jmh-side-conf.json"}) String sideConf;
+  @Param({""}) String dbname;
+  @Param({""}) String dbpath;
+  @Param({"dbo"}) String dboName;
 
   SidePluginRepo repo;
   ReadOptions readOptions;
-  private AtomicInteger cfHandlesIdx;
+  private AtomicInteger cfHandlesIdx = new AtomicInteger(1);
   ColumnFamilyHandle[] cfHandles;
   int cfs = 0;  // number of column families
   RocksDB db;
@@ -51,8 +54,19 @@ public class SideGetBenchmarks {
     repo = new SidePluginRepo();
     repo.importAutoFile(sideConf);
 
-    final List<ColumnFamilyHandle> cfHandlesList = new ArrayList<>();
-    db = repo.openDB(cfHandlesList);
+    final List<ColumnFamilyHandle> cfHandlesList = new ArrayList<ColumnFamilyHandle>();
+    if (dbname.isEmpty()) {
+      db = repo.openDB(cfHandlesList);
+    } else {
+      // use legacy rocksdb method to open db
+      DBOptions dbo = repo.getDBOptions(dboName);
+      ColumnFamilyOptions cfo = repo.getCFOptions("default");
+      List<ColumnFamilyDescriptor> cf_desc = new ArrayList<ColumnFamilyDescriptor>();
+      byte[] cfname = "default".getBytes();
+      cf_desc.add(new ColumnFamilyDescriptor(cfname, cfo));
+      db = RocksDB.open(dbo, dbpath, cf_desc, cfHandlesList);
+      repo.put(dbname, db);
+    }
     repo.startHttpServer();
     cfHandles = cfHandlesList.toArray(new ColumnFamilyHandle[0]);
     cfs = cfHandles.length - 1; // conform old GetBenchmarks

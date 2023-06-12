@@ -60,10 +60,10 @@ public class SideGetBenchmarks {
     } else {
       // use legacy rocksdb method to open db
       DBOptions dbo = repo.getDBOptions(dboName);
-      ColumnFamilyOptions cfo = repo.getCFOptions("default");
+      String cfname = "default";
+      ColumnFamilyOptions cfo = repo.getCFOptions(cfname);
       List<ColumnFamilyDescriptor> cf_desc = new ArrayList<ColumnFamilyDescriptor>();
-      byte[] cfname = "default".getBytes();
-      cf_desc.add(new ColumnFamilyDescriptor(cfname, cfo));
+      cf_desc.add(new ColumnFamilyDescriptor(cfname.getBytes(), cfo));
       db = RocksDB.open(dbo, dbpath, cf_desc, cfHandlesList);
       repo.put(dbname, db);
     }

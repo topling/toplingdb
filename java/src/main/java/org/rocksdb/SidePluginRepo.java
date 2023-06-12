@@ -84,6 +84,9 @@ public class SidePluginRepo extends RocksObject {
     // call native->CloseAllDB(false)
     private native void nativeCloseAllDB(long handle);
 
+    public void put(String name, Options opt) { put(name, "{}", opt); }
+    public void put(String name, DBOptions opt) { put(name, "{}", opt); }
+    public void put(String name, ColumnFamilyOptions opt) { put(name, "{}", opt); }
     public native void put(String name, String spec, Options opt);
     public native void put(String name, String spec, DBOptions dbo);
     public native void put(String name, String spec, ColumnFamilyOptions cfo);

@@ -1437,7 +1437,13 @@ bool InternalStats::HandleEstimateOldestKeyTime(uint64_t* value, DBImpl* /*db*/,
 Cache* InternalStats::GetBlockCacheForStats() {
   auto* table_factory = cfd_->ioptions()->table_factory.get();
   assert(table_factory != nullptr);
+#if 0
   return table_factory->GetOptions<Cache>(TableFactory::kBlockCacheOpts());
+#else
+  // defined in rockside: builtin_table_factory.cc
+  Cache* GetBlockCacheFromAnyTableFactory(TableFactory*);
+  return GetBlockCacheFromAnyTableFactory(table_factory);
+#endif
 }
 
 bool InternalStats::HandleBlockCacheCapacity(uint64_t* value, DBImpl* /*db*/,

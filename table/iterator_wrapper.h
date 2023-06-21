@@ -23,7 +23,7 @@ namespace ROCKSDB_NAMESPACE {
 template <class TValue = Slice>
 class IteratorWrapperBase {
  public:
-  IteratorWrapperBase() : iter_(nullptr), valid_(false) {}
+  IteratorWrapperBase() : iter_(nullptr) {}
   explicit IteratorWrapperBase(InternalIteratorBase<TValue>* _iter)
       : iter_(nullptr) {
     Set(_iter);
@@ -38,7 +38,7 @@ class IteratorWrapperBase {
 
     iter_ = _iter;
     if (iter_ == nullptr) {
-      valid_ = false;
+      result_.is_valid = false;
     } else {
       Update();
     }
@@ -56,10 +56,10 @@ class IteratorWrapperBase {
   }
 
   // Iterator interface methods
-  bool Valid() const { return valid_; }
+  bool Valid() const { return result_.is_valid; }
   Slice key() const {
     assert(Valid());
-    return result_.key;
+    return result_.key();
   }
   TValue value() const {
     assert(Valid());
@@ -70,6 +70,10 @@ class IteratorWrapperBase {
     assert(iter_);
     return iter_->status();
   }
+
+#ifdef __GNUC__
+  inline __attribute__((always_inline))
+#endif
   bool PrepareValue() {
     assert(Valid());
     if (result_.value_prepared) {
@@ -81,21 +85,46 @@ class IteratorWrapperBase {
     }
 
     assert(!iter_->Valid());
-    valid_ = false;
+    result_.is_valid = false;
     return false;
   }
-  void Next() {
-    assert(iter_);
-    valid_ = iter_->NextAndGetResult(&result_);
-    assert(!valid_ || iter_->status().ok());
+#ifdef __GNUC__
+  inline __attribute__((always_inline))
+#endif
+  bool PrepareAndGetValue(TValue* v) {
+    assert(Valid());
+    /* ignore result_.value_prepared
+    if (result_.value_prepared) {
+      *v = iter_->value();
+      return true;
+    }
+    */
+    //return result_.value_prepared = iter_->PrepareAndGetValue(v);
+    return iter_->PrepareAndGetValue(v); // do minimal work
   }
+#ifdef __GNUC__
+  inline __attribute__((always_inline))
+#endif
+  bool Next() {
+    assert(iter_);
+    const bool is_valid = iter_->NextAndGetResult(&result_);
+    assert(is_valid == result_.is_valid);
+    assert(!result_.is_valid || iter_->status().ok());
+    return is_valid;
+  }
+/*
+#ifdef __GNUC__
+  inline __attribute__((always_inline))
+#endif
   bool NextAndGetResult(IterateResult* result) {
     assert(iter_);
-    valid_ = iter_->NextAndGetResult(&result_);
+    const bool is_valid = iter_->NextAndGetResult(&result_);
+    assert(is_valid == result_.is_valid);
     *result = result_;
-    assert(!valid_ || iter_->status().ok());
-    return valid_;
+    assert(!result_.is_valid || iter_->status().ok());
+    return result_.is_valid;
   }
+*/
   void Prev() {
     assert(iter_);
     iter_->Prev();
@@ -149,7 +178,7 @@ class IteratorWrapperBase {
 
   Slice user_key() const {
     assert(Valid());
-    return iter_->user_key();
+    return result_.user_key();
   }
 
   void UpdateReadaheadState(InternalIteratorBase<TValue>* old_iter) {
@@ -164,12 +193,12 @@ class IteratorWrapperBase {
     return iter_->IsDeleteRangeSentinelKey();
   }
 
- private:
+ protected:
   void Update() {
-    valid_ = iter_->Valid();
-    if (valid_) {
+    result_.is_valid = iter_->Valid();
+    if (result_.is_valid) {
       assert(iter_->status().ok());
-      result_.key = iter_->key();
+      result_.SetKey(iter_->key());
       result_.bound_check_result = IterBoundCheck::kUnknown;
       result_.value_prepared = false;
     }
@@ -177,8 +206,83 @@ class IteratorWrapperBase {
 
   InternalIteratorBase<TValue>* iter_;
   IterateResult result_;
-  bool valid_;
 };
+
+template <class TValue = Slice>
+class ThinIteratorWrapperBase {
+ public:
+  ThinIteratorWrapperBase() : iter_(nullptr) {}
+  explicit ThinIteratorWrapperBase(InternalIteratorBase<TValue>* i) : iter_(i) {}
+  InternalIteratorBase<TValue>* iter() const { return iter_; }
+
+  InternalIteratorBase<TValue>* Set(InternalIteratorBase<TValue>* i) {
+    auto old_iter = iter_;
+    iter_ = i;
+    return old_iter;
+  }
+
+  void DeleteIter(bool is_arena_mode) {
+    if (iter_) {
+      if (!is_arena_mode) {
+        delete iter_;
+      } else {
+        iter_->~InternalIteratorBase();
+      }
+    }
+  }
+
+  // Iterator interface methods
+  bool Valid() const { return iter_ && iter_->Valid(); }
+  Slice key() const { assert(Valid()); return iter_->key(); }
+  TValue value() const { assert(Valid()); return iter_->value(); }
+
+  // Methods below require iter() != nullptr
+  Status status() const { assert(iter_); return iter_->status(); }
+  bool PrepareValue() { assert(Valid()); return iter_->PrepareValue(); }
+  bool PrepareAndGetValue(TValue* v) {
+    assert(Valid());
+    return iter_->PrepareAndGetValue(v);
+  }
+  void Next() { assert(Valid()); iter_->Next(); }
+  bool NextAndGetResult(IterateResult* r) {
+    assert(iter_);
+    return iter_->NextAndGetResult(r);
+  }
+  void Prev() { assert(iter_); iter_->Prev(); }
+  void Seek(const Slice& k) { assert(iter_); iter_->Seek(k); }
+  void SeekForPrev(const Slice& k) { assert(iter_); iter_->SeekForPrev(k); }
+  void SeekToFirst() { assert(iter_); iter_->SeekToFirst(); }
+  void SeekToLast() { assert(iter_); iter_->SeekToLast(); }
+  bool MayBeOutOfLowerBound() {
+    assert(Valid());
+    return iter_->MayBeOutOfLowerBound();
+  }
+  IterBoundCheck UpperBoundCheckResult() {
+    assert(Valid());
+    return iter_->UpperBoundCheckResult();
+  }
+  void SetPinnedItersMgr(PinnedIteratorsManager* pinned_iters_mgr) {
+    assert(iter_);
+    iter_->SetPinnedItersMgr(pinned_iters_mgr);
+  }
+  bool IsKeyPinned() const { assert(Valid()); return iter_->IsKeyPinned(); }
+  bool IsValuePinned() const { assert(Valid()); return iter_->IsValuePinned(); }
+  bool IsValuePrepared() const { return false; }
+  Slice user_key() const { assert(Valid()); return iter_->user_key(); }
+  void UpdateReadaheadState(InternalIteratorBase<TValue>* old_iter) {
+    if (old_iter && iter_) {
+      ReadaheadFileInfo readahead_file_info;
+      old_iter->GetReadaheadState(&readahead_file_info);
+      iter_->SetReadaheadState(&readahead_file_info);
+    }
+  }
+  bool IsDeleteRangeSentinelKey() const {
+    return iter_->IsDeleteRangeSentinelKey();
+  }
+ private:
+  InternalIteratorBase<TValue>* iter_;
+};
+using ThinIteratorWrapper = ThinIteratorWrapperBase<Slice>;
 
 using IteratorWrapper = IteratorWrapperBase<Slice>;
 

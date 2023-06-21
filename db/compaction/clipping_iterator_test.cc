@@ -38,12 +38,14 @@ class BoundsCheckingVectorIterator : public VectorIterator {
     Next();
 
     if (!Valid()) {
+      result->is_valid = false;
       return false;
     }
 
-    result->key = key();
+    result->SetKey(this->key());
     result->bound_check_result = UpperBoundCheckResult();
     result->value_prepared = true;
+    result->is_valid = true;
 
     return true;
   }
@@ -168,7 +170,7 @@ TEST_P(ClippingIteratorTest, Clip) {
   for (size_t i = data_start_idx + 1; i < data_end_idx; ++i) {
     IterateResult result;
     ASSERT_TRUE(clip.NextAndGetResult(&result));
-    ASSERT_EQ(result.key, keys[i]);
+    ASSERT_EQ(result.key(), keys[i]);
     ASSERT_EQ(result.bound_check_result, IterBoundCheck::kInbound);
     ASSERT_TRUE(clip.Valid());
     ASSERT_EQ(clip.key(), keys[i]);

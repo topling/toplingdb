@@ -8,11 +8,19 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "util/thread_local.h"
+#include "util/mutexlock.h"
+#include "port/likely.h"
+#include "port/port.h"
 
 #include <stdlib.h>
+#include <atomic>
+#include <memory>
+#include <vector>
+
 
 #include "port/likely.h"
 #include "util/mutexlock.h"
+#include <rocksdb/preproc.h>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -123,30 +131,37 @@ class ThreadLocalPtr::StaticMeta {
   void RemoveThreadData(ThreadData* d);
 
   static ThreadData* GetThreadLocal();
+  static ThreadData* NewThreadLocal();
 
   uint32_t next_instance_id_;
   // Used to recycle Ids in case ThreadLocalPtr is instantiated and destroyed
   // frequently. This also prevents it from blowing up the vector space.
-  autovector<uint32_t> free_instance_ids_;
+  std::vector<uint32_t> free_instance_ids_;
   // Chain all thread local structure together. This is necessary since
   // when one ThreadLocalPtr gets destroyed, we need to loop over each
   // thread's version of pointer corresponding to that instance and
   // call UnrefHandler for it.
   ThreadData head_;
 
-  std::unordered_map<uint32_t, UnrefHandler> handler_map_;
+  // handler_map_.size() never shrink
+#if defined(NDEBUG)
+  std::vector<UnrefHandler> handler_map_{256}; // initial size 256
+#else
+  std::vector<UnrefHandler> handler_map_;
+#endif
 
   // The private mutex.  Developers should always use Mutex() instead of
   // using this variable directly.
   port::Mutex mutex_;
   // Thread local storage
-  static thread_local ThreadData* tls_;
+  static thread_local ThreadData* tls_ ROCKSDB_STATIC_TLS;
 
   // Used to make thread exit trigger possible if !defined(OS_MACOSX).
   // Otherwise, used to retrieve thread data.
   pthread_key_t pthread_key_;
 };
 
+ROCKSDB_STATIC_TLS
 thread_local ThreadData* ThreadLocalPtr::StaticMeta::tls_ = nullptr;
 
 // Windows doesn't support a per-thread destructor with its
@@ -235,10 +250,14 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD dwReason, PVOID pv) {
 #endif
 }  // extern "C"
 
+#define __always_inline __forceinline
+#define __attribute_noinline__  __declspec(noinline)
+
 #endif  // OS_WIN
 
 void ThreadLocalPtr::InitSingletons() { ThreadLocalPtr::Instance(); }
 
+__always_inline
 ThreadLocalPtr::StaticMeta* ThreadLocalPtr::Instance() {
   // Here we prefer function static variable instead of global
   // static variable as function static variable is initialized
@@ -301,6 +320,7 @@ ThreadLocalPtr::StaticMeta::StaticMeta()
   if (pthread_key_create(&pthread_key_, &OnThreadExit) != 0) {
     abort();
   }
+  free_instance_ids_.reserve(128);
 
   // OnThreadExit is not getting called on the main thread.
   // Call through the static destructor mechanism to avoid memory leak.
@@ -349,26 +369,33 @@ void ThreadLocalPtr::StaticMeta::RemoveThreadData(ThreadData* d) {
   d->next = d->prev = d;
 }
 
+__always_inline
 ThreadData* ThreadLocalPtr::StaticMeta::GetThreadLocal() {
-  if (UNLIKELY(tls_ == nullptr)) {
-    auto* inst = Instance();
-    tls_ = new ThreadData(inst);
+  ThreadData* tls = tls_;
+  if (LIKELY(tls != nullptr))
+    return tls;
+  else
+    return NewThreadLocal();
+}
+__attribute_noinline__
+ThreadData* ThreadLocalPtr::StaticMeta::NewThreadLocal() {
+  auto* inst = Instance();
+  tls_ = new ThreadData(inst);
+  {
+    // Register it in the global chain, needs to be done before thread exit
+    // handler registration
+    MutexLock l(Mutex());
+    inst->AddThreadData(tls_);
+  }
+  // Even it is not OS_MACOSX, need to register value for pthread_key_ so that
+  // its exit handler will be triggered.
+  if (pthread_setspecific(inst->pthread_key_, tls_) != 0) {
     {
-      // Register it in the global chain, needs to be done before thread exit
-      // handler registration
       MutexLock l(Mutex());
-      inst->AddThreadData(tls_);
+      inst->RemoveThreadData(tls_);
     }
-    // Even it is not OS_MACOSX, need to register value for pthread_key_ so that
-    // its exit handler will be triggered.
-    if (pthread_setspecific(inst->pthread_key_, tls_) != 0) {
-      {
-        MutexLock l(Mutex());
-        inst->RemoveThreadData(tls_);
-      }
-      delete tls_;
-      abort();
-    }
+    delete tls_;
+    abort();
   }
   return tls_;
 }
@@ -443,16 +470,16 @@ uint32_t ThreadLocalPtr::TEST_PeekId() { return Instance()->PeekId(); }
 
 void ThreadLocalPtr::StaticMeta::SetHandler(uint32_t id, UnrefHandler handler) {
   MutexLock l(Mutex());
+  if (UNLIKELY(id >= handler_map_.size())) {
+    handler_map_.resize(id+1, nullptr);
+  }
   handler_map_[id] = handler;
 }
 
 UnrefHandler ThreadLocalPtr::StaticMeta::GetHandler(uint32_t id) {
   Mutex()->AssertHeld();
-  auto iter = handler_map_.find(id);
-  if (iter == handler_map_.end()) {
-    return nullptr;
-  }
-  return iter->second;
+  ROCKSDB_ASSERT_LT(id, handler_map_.size());
+  return handler_map_[id];
 }
 
 uint32_t ThreadLocalPtr::StaticMeta::GetId() {
@@ -478,7 +505,7 @@ void ThreadLocalPtr::StaticMeta::ReclaimId(uint32_t id) {
   // This id is not used, go through all thread local data and release
   // corresponding value
   MutexLock l(Mutex());
-  auto unref = GetHandler(id);
+  auto unref = handler_map_[id];
   for (ThreadData* t = head_.next; t != &head_; t = t->next) {
     if (id < t->entries.size()) {
       void* ptr = t->entries[id].ptr.exchange(nullptr);
@@ -493,27 +520,43 @@ void ThreadLocalPtr::StaticMeta::ReclaimId(uint32_t id) {
 
 ThreadLocalPtr::ThreadLocalPtr(UnrefHandler handler)
     : id_(Instance()->GetId()) {
-  if (handler != nullptr) {
-    Instance()->SetHandler(id_, handler);
-  }
+  // always SetHandler, even handler is nullptr
+  Instance()->SetHandler(id_, handler);
 }
 
-ThreadLocalPtr::~ThreadLocalPtr() { Instance()->ReclaimId(id_); }
+ThreadLocalPtr::~ThreadLocalPtr() {
+  if (UNLIKELY(UINT32_MAX == id_)) {
+    return;
+  }
+  Instance()->ReclaimId(id_);
+}
 
+void ThreadLocalPtr::Destroy() {
+  ROCKSDB_VERIFY_NE(id_, UINT32_MAX);
+  Instance()->ReclaimId(id_);
+  const_cast<uint32_t&>(id_) = UINT32_MAX;
+}
+
+ROCKSDB_FLATTEN
 void* ThreadLocalPtr::Get() const { return Instance()->Get(id_); }
 
+ROCKSDB_FLATTEN
 void ThreadLocalPtr::Reset(void* ptr) { Instance()->Reset(id_, ptr); }
 
+ROCKSDB_FLATTEN
 void* ThreadLocalPtr::Swap(void* ptr) { return Instance()->Swap(id_, ptr); }
 
+ROCKSDB_FLATTEN
 bool ThreadLocalPtr::CompareAndSwap(void* ptr, void*& expected) {
   return Instance()->CompareAndSwap(id_, ptr, expected);
 }
 
+ROCKSDB_FLATTEN
 void ThreadLocalPtr::Scrape(autovector<void*>* ptrs, void* const replacement) {
   Instance()->Scrape(id_, ptrs, replacement);
 }
 
+ROCKSDB_FLATTEN
 void ThreadLocalPtr::Fold(FoldFunc func, void* res) {
   Instance()->Fold(id_, func, res);
 }

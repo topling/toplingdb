@@ -81,7 +81,7 @@ Status RangeTreeLockManager::TryLock(PessimisticTransaction* txn,
 
   // Put the key waited on into request's m_extra. See
   // wait_callback_for_locktree for details.
-  std::string wait_key(start_endp.slice.data(), start_endp.slice.size());
+  Slice wait_key(start_endp.slice.data(), start_endp.slice.size());
 
   request.set(lt.get(), (TXNID)txn, &start_key_dbt, &end_key_dbt,
               exclusive ? toku::lock_request::WRITE : toku::lock_request::READ,
@@ -159,7 +159,7 @@ void wait_callback_for_locktree(void*, toku::lock_wait_infos* infos) {
     for (auto waitee : wait_info.waitees) {
       waitee_ids.push_back(waitee);
     }
-    txn->SetWaitingTxn(waitee_ids, cf_id, (std::string*)wait_info.m_extra);
+    txn->SetWaitingTxn(waitee_ids, cf_id, (Slice*)wait_info.m_extra);
   }
 
   // Here we can assume that the locktree code will now wait for some lock
@@ -168,7 +168,7 @@ void wait_callback_for_locktree(void*, toku::lock_wait_infos* infos) {
 
 void RangeTreeLockManager::UnLock(PessimisticTransaction* txn,
                                   ColumnFamilyId column_family_id,
-                                  const std::string& key, Env*) {
+                                  const Slice& key, Env*) {
   auto locktree = GetLockTreeForCF(column_family_id);
   std::string endp_image;
   serialize_endpoint({key.data(), key.size(), false}, &endp_image);
@@ -251,7 +251,7 @@ namespace {
 void UnrefLockTreeMapsCache(void* ptr) {
   // Called when a thread exits or a ThreadLocalPtr gets destroyed.
   auto lock_tree_map_cache = static_cast<
-      std::unordered_map<ColumnFamilyId, std::shared_ptr<toku::locktree>>*>(
+      terark::VectorIndexMap<ColumnFamilyId, std::shared_ptr<toku::locktree>>*>(
       ptr);
   delete lock_tree_map_cache;
 }
@@ -260,7 +260,7 @@ void UnrefLockTreeMapsCache(void* ptr) {
 RangeTreeLockManager::RangeTreeLockManager(
     std::shared_ptr<TransactionDBMutexFactory> mutex_factory)
     : mutex_factory_(mutex_factory),
-      ltree_lookup_cache_(new ThreadLocalPtr(&UnrefLockTreeMapsCache)),
+      ltree_lookup_cache_(&UnrefLockTreeMapsCache),
       dlock_buffer_(10) {
   ltm_.create(on_create, on_destroy, on_escalate, nullptr, mutex_factory_);
 }
@@ -326,7 +326,7 @@ void RangeTreeLockManager::on_escalate(TXNID txnid, const toku::locktree* lt,
 
 RangeTreeLockManager::~RangeTreeLockManager() {
   autovector<void*> local_caches;
-  ltree_lookup_cache_->Scrape(&local_caches, nullptr);
+  ltree_lookup_cache_.Scrape(&local_caches, nullptr);
   for (auto cache : local_caches) {
     delete static_cast<LockTreeMap*>(cache);
   }
@@ -370,7 +370,8 @@ void RangeTreeLockManager::AddColumnFamily(const ColumnFamilyHandle* cfh) {
   uint32_t column_family_id = cfh->GetID();
 
   InstrumentedMutexLock l(&ltree_map_mutex_);
-  if (ltree_map_.find(column_family_id) == ltree_map_.end()) {
+  auto [it, success] = ltree_map_.insert({column_family_id, nullptr});
+  if (success) {
     DICTIONARY_ID dict_id = {.dictid = column_family_id};
     toku::comparator cmp;
     cmp.create(CompareDbtEndpoints, (void*)cfh->GetComparator());
@@ -380,7 +381,7 @@ void RangeTreeLockManager::AddColumnFamily(const ColumnFamilyHandle* cfh) {
     // This is ok to because get_lt has copied the comparator:
     cmp.destroy();
 
-    ltree_map_.insert({column_family_id, MakeLockTreePtr(ltree)});
+    it->second = MakeLockTreePtr(ltree);
   }
 }
 
@@ -413,7 +414,7 @@ void RangeTreeLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cfh) {
   }  // lock_map_mutex_
 
   autovector<void*> local_caches;
-  ltree_lookup_cache_->Scrape(&local_caches, nullptr);
+  ltree_lookup_cache_.Scrape(&local_caches, nullptr);
   for (auto cache : local_caches) {
     delete static_cast<LockTreeMap*>(cache);
   }
@@ -422,11 +423,11 @@ void RangeTreeLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cfh) {
 std::shared_ptr<toku::locktree> RangeTreeLockManager::GetLockTreeForCF(
     ColumnFamilyId column_family_id) {
   // First check thread-local cache
-  if (ltree_lookup_cache_->Get() == nullptr) {
-    ltree_lookup_cache_->Reset(new LockTreeMap());
+  auto ltree_map_cache = static_cast<LockTreeMap*>(ltree_lookup_cache_.Get());
+  if (ltree_map_cache == nullptr) {
+    ltree_map_cache = new LockTreeMap();
+    ltree_lookup_cache_.Reset(ltree_map_cache);
   }
-
-  auto ltree_map_cache = static_cast<LockTreeMap*>(ltree_lookup_cache_->Get());
 
   auto it = ltree_map_cache->find(column_family_id);
   if (it != ltree_map_cache->end()) {

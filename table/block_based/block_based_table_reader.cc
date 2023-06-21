@@ -509,6 +509,9 @@ void BlockBasedTable::SetupBaseCacheKey(const TableProperties* properties,
   uint64_t file_num;
   std::string db_id;
   if (properties && !properties->db_session_id.empty() &&
+#if !defined(ROCKSDB_UNIT_TEST)
+      false && // ToplingDB dcompact can not ensure orig_file_number is unique
+#endif
       properties->orig_file_number > 0) {
     // (Newer SST file case)
     // We must have both properties to get a stable unique id because
@@ -2769,6 +2772,32 @@ Status BlockBasedTable::GetKVPairsFromDataBlocks(
   return Status::OK();
 }
 
+Status TableReader::DumpTable(WritableFile* out_file) {
+  WritableFileStringStreamAdapter out_file_wrapper(out_file);
+  std::ostream out_stream(&out_file_wrapper);
+  auto table_properties = GetTableProperties();
+  if (table_properties != nullptr) {
+    out_stream << "Table Properties:\n"
+                  "--------------------------------------\n";
+    out_stream << "  " << table_properties->ToString("\n  ", ": ") << "\n";
+  }
+  out_stream << "Table Key Values:\n"
+                "--------------------------------------\n";
+  ReadOptions ro;
+  auto iter = NewIterator(ro, nullptr, nullptr, false, kUserIterator);
+  std::unique_ptr<InternalIterator> iter_guard(iter);
+  iter->SeekToFirst();
+  while (iter->Valid()) {
+    Slice ikey = iter->key();
+    Slice val = iter->value();
+    ParsedInternalKey pikey(ikey);
+    out_stream << pikey.DebugString(true, true) << " : ";
+    out_stream << val.ToString(true) << "\n";
+    iter->Next();
+  }
+  return Status::OK();
+}
+
 Status BlockBasedTable::DumpTable(WritableFile* out_file) {
   WritableFileStringStreamAdapter out_file_wrapper(out_file);
   std::ostream out_stream(&out_file_wrapper);
@@ -3046,6 +3075,46 @@ void BlockBasedTable::DumpKeyValue(const Slice& key, const Slice& value,
 
   out_stream << "  ASCII  " << res_key << ": " << res_value << "\n";
   out_stream << "  ------\n";
+}
+
+// if implemented, returns true
+bool BlockBasedTable::GetRandomInternalKeysAppend(
+      size_t num, std::vector<std::string>* output) const {
+  if (!rep_->table_options.enable_get_random_keys) {
+    return false;
+  }
+  const bool index_key_includes_seq = rep_->index_key_includes_seq;
+  size_t oldsize = output->size();
+  bool disable_prefix_seek = false;
+  BlockCacheLookupContext lookup_context{TableReaderCaller::kPrefetch};
+  std::unique_ptr<InternalIteratorBase<IndexValue>> index_iter(NewIndexIterator(
+      ReadOptions(), disable_prefix_seek,
+      /*input_iter=*/nullptr, /*get_context=*/nullptr, &lookup_context));
+  index_iter->SeekToFirst();
+  while (index_iter->Valid()) {
+    if (index_key_includes_seq) {
+      Slice internal_key = index_iter->key();
+      output->push_back(internal_key.ToString());
+    }
+    else {
+      std::string internal_key = index_iter->key().ToString();
+      internal_key.append("\0\0\0\0\0\0\0\0", 8); // seq + type
+      output->push_back(std::move(internal_key));
+    }
+    index_iter->Next();
+  }
+  auto beg = output->begin() + oldsize;
+  auto end = output->end();
+  if (size_t(end - beg) > num) {
+    // set seed as a random number
+    size_t seed = output->size() + size_t(rep_)
+                + size_t(rep_->file_size)
+                + size_t(rep_->file->file_name().data())
+                + size_t(beg->data()) + size_t(end[-1].data());
+    std::shuffle(beg, end, std::mt19937(seed));
+    output->resize(oldsize + num);
+  }
+  return beg != end;
 }
 
 }  // namespace ROCKSDB_NAMESPACE

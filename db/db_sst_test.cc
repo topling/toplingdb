@@ -85,6 +85,7 @@ TEST_F(DBSSTTest, DontDeletePendingOutputs) {
   Compact("a", "b");
 }
 
+#ifdef ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
 // 1 Create some SST files by inserting K-V pairs into DB
 // 2 Close DB and change suffix from ".sst" to ".ldb" for every other SST file
 // 3 Open DB and check if all key can be read
@@ -133,6 +134,7 @@ TEST_F(DBSSTTest, SSTsWithLdbSuffixHandling) {
   }
   Destroy(options);
 }
+#endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
 
 // Check that we don't crash when opening DB with
 // DBOptions::skip_checking_sst_file_sizes_on_db_open = true.

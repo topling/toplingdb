@@ -32,10 +32,10 @@ struct Options;
 // * current_at_base_ <=> base_iterator < delta_iterator
 // always:
 // * equal_keys_ <=> base_iterator == delta_iterator
-class BaseDeltaIterator : public Iterator {
+class BaseDeltaIterator final : public Iterator {
  public:
   BaseDeltaIterator(ColumnFamilyHandle* column_family, Iterator* base_iterator,
-                    WBWIIteratorImpl* delta_iterator,
+                    WBWIIterator* delta_iterator,
                     const Comparator* comparator,
                     const ReadOptions* read_options = nullptr);
 
@@ -51,7 +51,10 @@ class BaseDeltaIterator : public Iterator {
   Slice key() const override;
   Slice value() const override;
   Status status() const override;
+  Status Refresh(const Snapshot*, bool keep_iter_pos) override;
+  using Iterator::Refresh;
   void Invalidate(Status s);
+  bool PrepareValue() override;
 
  private:
   void AssertInvariants();
@@ -61,14 +64,18 @@ class BaseDeltaIterator : public Iterator {
   bool BaseValid() const;
   bool DeltaValid() const;
   void UpdateCurrent();
+  template<class CmpNoTS>
+  void UpdateCurrentTpl(CmpNoTS);
 
   std::unique_ptr<WriteBatchWithIndexInternal> wbwii_;
   bool forward_;
   bool current_at_base_;
   bool equal_keys_;
+  bool delta_valid_;
+  unsigned char opt_cmp_type_;
   mutable Status status_;
   std::unique_ptr<Iterator> base_iterator_;
-  std::unique_ptr<WBWIIteratorImpl> delta_iterator_;
+  std::unique_ptr<WBWIIterator> delta_iterator_;
   const Comparator* comparator_;  // not owned
   const Slice* iterate_upper_bound_;
   mutable PinnableSlice merge_result_;
@@ -186,13 +193,6 @@ using WriteBatchEntrySkipList =
 
 class WBWIIteratorImpl : public WBWIIterator {
  public:
-  enum Result : uint8_t {
-    kFound,
-    kDeleted,
-    kNotFound,
-    kMergeInProgress,
-    kError
-  };
   WBWIIteratorImpl(uint32_t column_family_id,
                    WriteBatchEntrySkipList* skip_list,
                    const ReadableWriteBatch* write_batch,
@@ -204,7 +204,7 @@ class WBWIIteratorImpl : public WBWIIterator {
 
   ~WBWIIteratorImpl() override {}
 
-  bool Valid() const override {
+  bool Valid() const final {
     if (!skip_list_iter_.Valid()) {
       return false;
     }
@@ -252,6 +252,8 @@ class WBWIIteratorImpl : public WBWIIterator {
 
   WriteEntry Entry() const override;
 
+  Slice user_key() const override;
+
   Status status() const override {
     // this is in-memory data structure, so the only way status can be non-ok is
     // through memory corruption
@@ -265,24 +267,13 @@ class WBWIIteratorImpl : public WBWIIterator {
   bool MatchesKey(uint32_t cf_id, const Slice& key);
 
   // Moves the iterator to first entry of the previous key.
-  void PrevKey();
+  bool PrevKey() final;
   // Moves the iterator to first entry of the next key.
-  void NextKey();
-
-  // Moves the iterator to the Update (Put or Delete) for the current key
-  // If there are no Put/Delete, the Iterator will point to the first entry for
-  // this key
-  // @return kFound if a Put was found for the key
-  // @return kDeleted if a delete was found for the key
-  // @return kMergeInProgress if only merges were fouund for the key
-  // @return kError if an unsupported operation was found for the key
-  // @return kNotFound if no operations were found for this key
-  //
-  Result FindLatestUpdate(const Slice& key, MergeContext* merge_context);
-  Result FindLatestUpdate(MergeContext* merge_context);
+  bool NextKey() final;
 
  protected:
   void AdvanceKey(bool forward);
+  bool EqualsKey(const Slice& key) const final;
 
  private:
   uint32_t column_family_id_;

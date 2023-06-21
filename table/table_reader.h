@@ -92,6 +92,8 @@ class TableReader {
   struct Anchor {
     Anchor(const Slice& _user_key, size_t _range_size)
         : user_key(_user_key.ToStringView()), range_size(_range_size) {}
+    Anchor(std::string&& _user_key, size_t _range_size)
+        : user_key(std::move(_user_key)), range_size(_range_size) {}
     std::string user_key;
     size_t range_size;
   };
@@ -173,14 +175,18 @@ class TableReader {
   }
 
   // convert db file to a human readable form
-  virtual Status DumpTable(WritableFile* /*out_file*/) {
-    return Status::NotSupported("DumpTable() not supported");
-  }
+  virtual Status DumpTable(WritableFile* /*out_file*/);
 
   // check whether there is corruption in this db file
   virtual Status VerifyChecksum(const ReadOptions& /*read_options*/,
                                 TableReaderCaller /*caller*/) {
     return Status::NotSupported("VerifyChecksum() not supported");
+  }
+
+  // if implemented, returns true
+  virtual bool GetRandomInternalKeysAppend(
+                  size_t /*num*/, std::vector<std::string>* /*output*/) const {
+    return false; // indicate not implemented
   }
 };
 

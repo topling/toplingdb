@@ -85,6 +85,7 @@ class DBImplSecondary : public DBImpl {
                  bool error_if_data_exists_in_wals, uint64_t* = nullptr,
                  RecoveryContext* recovery_ctx = nullptr) override;
 
+#if defined(ROCKSDB_UNIT_TEST)
   // Implementations of the DB interface.
   using DB::Get;
   // Can return IOError due to files being deleted by the primary. To avoid
@@ -130,6 +131,7 @@ class DBImplSecondary : public DBImpl {
   Status NewIterators(const ReadOptions& options,
                       const std::vector<ColumnFamilyHandle*>& column_families,
                       std::vector<Iterator*>* iterators) override;
+#endif // ROCKSDB_UNIT_TEST
 
   using DBImpl::Put;
   Status Put(const WriteOptions& /*options*/,

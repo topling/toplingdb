@@ -46,7 +46,9 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
                ColumnFamilyData* cfd, bool expose_blob_index)
     : prefix_extractor_(mutable_cf_options.prefix_extractor.get()),
       env_(_env),
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
       clock_(ioptions.clock),
+#endif
       logger_(ioptions.logger),
       user_comparator_(cmp),
       merge_operator_(ioptions.merge_operator.get()),
@@ -56,7 +58,7 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       sequence_(s),
       statistics_(ioptions.stats),
       max_skip_(max_sequential_skip_in_iterations),
-      max_skippable_internal_keys_(read_options.max_skippable_internal_keys),
+      max_skippable_internal_keys_(read_options.max_skippable_internal_keys?:UINT64_MAX),
       num_internal_keys_skipped_(0),
       iterate_lower_bound_(read_options.iterate_lower_bound),
       iterate_upper_bound_(read_options.iterate_upper_bound),
@@ -67,7 +69,9 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       prefix_same_as_start_(mutable_cf_options.prefix_extractor
                                 ? read_options.prefix_same_as_start
                                 : false),
+#if defined(ROCKSDB_UNIT_TEST)
       pin_thru_lifetime_(read_options.pin_data),
+#endif
       expect_total_order_inner_iter_(prefix_extractor_ == nullptr ||
                                      read_options.total_order_seek ||
                                      read_options.auto_prefix_mode),
@@ -79,9 +83,12 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       arena_mode_(arena_mode),
       db_impl_(db_impl),
       cfd_(cfd),
+    #if defined(TOPLINGDB_WITH_TIMESTAMP)
       timestamp_ub_(read_options.timestamp),
       timestamp_lb_(read_options.iter_start_ts),
-      timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0) {
+      timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0),
+    #endif
+      saved_timestamp_() {
   RecordTick(statistics_, NO_ITERATOR_CREATED);
   if (pin_thru_lifetime_) {
     pinned_iters_mgr_.StartPinning();
@@ -92,6 +99,7 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
   status_.PermitUncheckedError();
   assert(timestamp_size_ ==
          user_comparator_.user_comparator()->timestamp_size());
+  enable_perf_timer_ = perf_level >= PerfLevel::kEnableTimeExceptForMutex;
 }
 
 Status DBIter::GetProperty(std::string prop_name, std::string* prop) {
@@ -115,7 +123,9 @@ Status DBIter::GetProperty(std::string prop_name, std::string* prop) {
   return Status::InvalidArgument("Unidentified property.");
 }
 
+__always_inline
 bool DBIter::ParseKey(ParsedInternalKey* ikey) {
+#if 0
   Status s = ParseInternalKey(iter_.key(), ikey, false /* log_err_key */);
   if (!s.ok()) {
     status_ = Status::Corruption("In DBIter: ", s.getState());
@@ -125,6 +135,10 @@ bool DBIter::ParseKey(ParsedInternalKey* ikey) {
   } else {
     return true;
   }
+#else
+  ikey->FastParseInternalKey(iter_.key());
+  return true;
+#endif
 }
 
 void DBIter::Next() {
@@ -141,10 +155,12 @@ void DBIter::Next() {
   local_stats_.skip_count_--;
   num_internal_keys_skipped_ = 0;
   bool ok = true;
-  if (direction_ == kReverse) {
+  if (UNLIKELY(direction_ == kReverse)) {
     is_key_seqnum_zero_ = false;
     if (!ReverseToForward()) {
       ok = false;
+    } else {
+      ok = iter_.Valid();
     }
   } else if (!current_entry_is_merged_) {
     // If the current value is not a merge, the iter position is the
@@ -153,12 +169,14 @@ void DBIter::Next() {
     // If the current key is a merge, very likely iter already points
     // to the next internal position.
     assert(iter_.Valid());
-    iter_.Next();
+    ok = iter_.Next();
     PERF_COUNTER_ADD(internal_key_skipped_count, 1);
+  } else {
+    ok = iter_.Valid();
   }
 
   local_stats_.next_count_++;
-  if (ok && iter_.Valid()) {
+  if (ok) {
     ClearSavedValue();
 
     if (prefix_same_as_start_) {
@@ -168,14 +186,52 @@ void DBIter::Next() {
     } else {
       FindNextUserEntry(true /* skipping the current user key */, nullptr);
     }
+    if (LIKELY(valid_)) {
+      local_stats_.next_found_count_++;
+      local_stats_.bytes_read_ += saved_key_.Size();
+      if (is_value_prepared_)
+        local_stats_.bytes_read_ += value_.size_;
+    }
   } else {
     is_key_seqnum_zero_ = false;
     valid_ = false;
   }
-  if (statistics_ != nullptr && valid_) {
-    local_stats_.next_found_count_++;
-    local_stats_.bytes_read_ += (key().size() + value().size());
+}
+
+Slice DBIter::value() const {
+  assert(valid_);
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+  assert(is_value_prepared_);
+#endif
+  if (!is_value_prepared_) {
+    auto mut = const_cast<DBIter*>(this);
+    if (LIKELY(mut->iter_.PrepareAndGetValue(&mut->value_))) {
+      mut->is_value_prepared_ = true;
+      mut->local_stats_.bytes_read_ += value_.size_;
+    } else { // Can not go on, die with message
+      ROCKSDB_DIE("PrepareAndGetValue() failed, status = %s",
+                  iter_.status().ToString().c_str());
+    }
   }
+  return value_;
+}
+
+// without PrepareValue, user can not check iter_.PrepareAndGetValue(),
+// thus must die in DBIter::value() if iter_.PrepareAndGetValue() fails.
+bool DBIter::PrepareValue() { // enable error check for lazy load
+  assert(valid_);
+  if (!is_value_prepared_) {
+    if (LIKELY(iter_.PrepareAndGetValue(&value_))) {
+      is_value_prepared_ = true;
+      local_stats_.bytes_read_ += value_.size_;
+    } else {
+      valid_ = false;
+      status_ = iter_.status();
+      ROCKSDB_VERIFY(!status_.ok());
+      return false;
+    }
+  }
+  return true;
 }
 
 bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
@@ -219,6 +275,7 @@ bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
 }
 
 bool DBIter::SetValueAndColumnsFromEntity(Slice slice) {
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   assert(value_.empty());
   assert(wide_columns_.empty());
 
@@ -234,6 +291,7 @@ bool DBIter::SetValueAndColumnsFromEntity(Slice slice) {
       wide_columns_[0].name() == kDefaultWideColumnName) {
     value_ = wide_columns_[0].value();
   }
+#endif
 
   return true;
 }
@@ -252,13 +310,61 @@ bool DBIter::SetValueAndColumnsFromEntity(Slice slice) {
 // within the prefix, and the iterator needs to be made invalid, if no
 // more entry for the prefix can be found.
 bool DBIter::FindNextUserEntry(bool skipping_saved_key, const Slice* prefix) {
-  PERF_TIMER_GUARD(find_next_user_entry_time);
-  return FindNextUserEntryInternal(skipping_saved_key, prefix);
+  if (enable_perf_timer_) {
+    PERF_TIMER_GUARD(find_next_user_entry_time);
+    return FindNextUserEntryInternal(skipping_saved_key, prefix);
+  } else {
+    return FindNextUserEntryInternal(skipping_saved_key, prefix);
+  }
 }
+
+struct BytewiseCmpNoTS {
+  bool equal(const Slice& x, const Slice& y) const { return x == y; }
+  bool operator()(const Slice& x, const Slice& y) const { return x < y; }
+  int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
+};
+
+struct RevBytewiseCmpNoTS {
+  bool equal(const Slice& x, const Slice& y) const { return x == y; }
+  bool operator()(const Slice& x, const Slice& y) const { return y < x; }
+  int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
+};
+
+struct VirtualCmpNoTS {
+  bool equal(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, y) == 0;
+  }
+  bool operator()(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, false, y, false) < 0;
+  }
+  int compare(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, y);
+  }
+  const Comparator* cmp;
+};
 
 // Actual implementation of DBIter::FindNextUserEntry()
 bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                                        const Slice* prefix) {
+  if (user_comparator_.IsForwardBytewise()) {
+    ROCKSDB_ASSERT_EZ(user_comparator_.timestamp_size());
+    BytewiseCmpNoTS cmp;
+    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+  } else if (user_comparator_.IsReverseBytewise()) {
+    ROCKSDB_ASSERT_EZ(user_comparator_.timestamp_size());
+    RevBytewiseCmpNoTS cmp;
+    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+  } else {
+    VirtualCmpNoTS cmp{user_comparator_.user_comparator()};
+    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+  }
+}
+
+template<class CmpNoTS>
+ROCKSDB_FLATTEN
+bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
+                                           const Slice* prefix,
+                                           CmpNoTS cmpNoTS) {
   // Loop until we hit an acceptable entry to yield
   assert(iter_.Valid());
   assert(status_.ok());
@@ -283,17 +389,19 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
   // an infinite loop of reseeks. To avoid that, we limit the number of reseeks
   // to one.
   bool reseek_done = false;
+  is_value_prepared_ = true;
 
   do {
     // Will update is_key_seqnum_zero_ as soon as we parsed the current key
     // but we need to save the previous value to be used in the loop.
     bool is_prev_key_seqnum_zero = is_key_seqnum_zero_;
-    if (!ParseKey(&ikey_)) {
-      is_key_seqnum_zero_ = false;
-      return false;
-    }
+    ParsedInternalKey ikey_(iter_.key()); // ToplingDB, move field as local var
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
     Slice user_key_without_ts =
         StripTimestampFromUserKey(ikey_.user_key, timestamp_size_);
+#else
+    Slice& user_key_without_ts = ikey_.user_key;
+#endif
 
     is_key_seqnum_zero_ = (ikey_.sequence == 0);
 
@@ -303,10 +411,10 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                user_key_without_ts, /*a_has_ts=*/false, *iterate_upper_bound_,
                /*b_has_ts=*/false) < 0);
     if (iterate_upper_bound_ != nullptr &&
-        iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
-        user_comparator_.CompareWithoutTimestamp(
-            user_key_without_ts, /*a_has_ts=*/false, *iterate_upper_bound_,
-            /*b_has_ts=*/false) >= 0) {
+        // ToplingDB: for speed up, do not call UpperBoundCheckResult()
+        // The following cmpNoTS has same semantic as UpperBoundCheckResult()
+        // iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
+        !cmpNoTS(user_key_without_ts, *iterate_upper_bound_)) {
       break;
     }
 
@@ -337,7 +445,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
       // level. This may change in the future.
       if ((!is_prev_key_seqnum_zero || timestamp_size_ > 0) &&
           skipping_saved_key &&
-          CompareKeyForSkip(ikey_.user_key, saved_key_.GetUserKey()) <= 0) {
+          EqKeyForSkip(saved_key_.GetUserKey(), ikey_.user_key, cmpNoTS)) {
         num_skipped++;  // skip this entry
         PERF_COUNTER_ADD(internal_key_skipped_count, 1);
       } else {
@@ -364,6 +472,18 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
             }
             break;
           case kTypeValue:
+        #if !defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+            if (timestamp_lb_) {
+              saved_key_.SetInternalKey(ikey_);
+            } else {
+              saved_key_.SetUserKey(
+                  ikey_.user_key, !pin_thru_lifetime_ ||
+                                      !iter_.iter()->IsKeyPinned() /* copy */);
+            }
+            is_value_prepared_ = false;
+            valid_ = true;
+            return true;
+        #endif
           case kTypeBlobIndex:
           case kTypeWideColumnEntity:
             if (!iter_.PrepareValue()) {
@@ -399,7 +519,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
             return true;
             break;
           case kTypeMerge:
-            if (!iter_.PrepareValue()) {
+            if (UNLIKELY(!iter_.PrepareValue())) {
               assert(!iter_.status().ok());
               valid_ = false;
               return false;
@@ -428,14 +548,14 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
       // This key was inserted after our snapshot was taken or skipped by
       // timestamp range. If this happens too many times in a row for the same
       // user key, we want to seek to the target sequence number.
-      int cmp = user_comparator_.CompareWithoutTimestamp(
+      int cmp = cmpNoTS.compare(
           ikey_.user_key, saved_key_.GetUserKey());
       if (cmp == 0 || (skipping_saved_key && cmp < 0)) {
         num_skipped++;
       } else {
         saved_key_.SetUserKey(
             ikey_.user_key,
-            !iter_.iter()->IsKeyPinned() || !pin_thru_lifetime_ /* copy */);
+            !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
         skipping_saved_key = false;
         num_skipped = 0;
         reseek_done = false;
@@ -494,7 +614,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
       iter_.Seek(last_key);
       RecordTick(statistics_, NUMBER_OF_RESEEKS_IN_ITERATION);
     } else {
-      iter_.Next();
+      if (iter_.Next()) continue; else break; // omit iter_.Valid()
     }
   } while (iter_.Valid());
 
@@ -539,6 +659,7 @@ bool DBIter::MergeValuesNewToOld() {
       // hit the next user key, stop right here
       break;
     }
+    ROCKSDB_ASSUME(ikey.type < kTypeMaxValid);
     if (kTypeDeletion == ikey.type || kTypeSingleDeletion == ikey.type ||
         kTypeDeletionWithTimestamp == ikey.type) {
       // hit a delete with the same user key, stop right here
@@ -646,7 +767,7 @@ void DBIter::Prev() {
   ResetValueAndColumns();
   ResetInternalKeysSkippedCounter();
   bool ok = true;
-  if (direction_ == kForward) {
+  if (UNLIKELY(direction_ == kForward)) {
     if (!ReverseToBackward()) {
       ok = false;
     }
@@ -747,10 +868,11 @@ bool DBIter::ReverseToBackward() {
 }
 
 void DBIter::PrevInternal(const Slice* prefix) {
+  is_value_prepared_ = true;
   while (iter_.Valid()) {
     saved_key_.SetUserKey(
         ExtractUserKey(iter_.key()),
-        !iter_.iter()->IsKeyPinned() || !pin_thru_lifetime_ /* copy */);
+        !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
 
     assert(prefix == nullptr || prefix_extractor_ != nullptr);
     if (prefix != nullptr &&
@@ -826,9 +948,12 @@ bool DBIter::FindValueForCurrentKey() {
   // last_key_entry_type is initialized to kTypeDeletion.
   bool valid_entry_seen = false;
 
+  ParsedInternalKey ikey_; // ToplingDB, move field as local var
+
   // Temporarily pin blocks that hold (merge operands / the value)
   ReleaseTempPinnedData();
   TempPinData();
+  Slice pinned_value_;
   size_t num_skipped = 0;
   while (iter_.Valid()) {
     ParsedInternalKey ikey;
@@ -859,9 +984,11 @@ bool DBIter::FindValueForCurrentKey() {
       break;
     }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP) // ts may need runtime check
     if (!ts.empty()) {
       saved_timestamp_.assign(ts.data(), ts.size());
     }
+#endif
 
     if (TooManyInternalKeysSkipped()) {
       return false;
@@ -976,6 +1103,7 @@ bool DBIter::FindValueForCurrentKey() {
       return true;
     case kTypeMerge:
       current_entry_is_merged_ = true;
+      ROCKSDB_ASSUME(last_not_merge_type < kTypeMaxValid);
       if (last_not_merge_type == kTypeDeletion ||
           last_not_merge_type == kTypeSingleDeletion ||
           last_not_merge_type == kTypeDeletionWithTimestamp) {
@@ -1121,10 +1249,11 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
     Slice ts = ExtractTimestampFromUserKey(ikey.user_key, timestamp_size_);
     saved_timestamp_.assign(ts.data(), ts.size());
   }
+  ROCKSDB_ASSUME(ikey.type < kTypeMaxValid);
   if (ikey.type == kTypeValue || ikey.type == kTypeBlobIndex ||
       ikey.type == kTypeWideColumnEntity) {
     assert(iter_.iter()->IsValuePinned());
-    pinned_value_ = iter_.value();
+    Slice pinned_value_ = iter_.value();
     if (ikey.type == kTypeBlobIndex) {
       if (!SetBlobValueIfNeeded(ikey.user_key, pinned_value_)) {
         return false;
@@ -1132,10 +1261,12 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
 
       SetValueAndColumnsFromPlain(expose_blob_index_ ? pinned_value_
                                                      : blob_value_);
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
     } else if (ikey.type == kTypeWideColumnEntity) {
       if (!SetValueAndColumnsFromEntity(pinned_value_)) {
         return false;
       }
+#endif
     } else {
       assert(ikey.type == kTypeValue);
       SetValueAndColumnsFromPlain(pinned_value_);
@@ -1175,6 +1306,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
                                                 saved_key_.GetUserKey())) {
       break;
     }
+    ROCKSDB_ASSUME(ikey.type < kTypeMaxValid);
     if (ikey.type == kTypeDeletion || ikey.type == kTypeSingleDeletion ||
         ikey.type == kTypeDeletionWithTimestamp) {
       break;
@@ -1251,8 +1383,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
 }
 
 bool DBIter::Merge(const Slice* val, const Slice& user_key) {
-  // `op_failure_scope` (an output parameter) is not provided (set to nullptr)
-  // since a failure must be propagated regardless of its value.
+  Slice pinned_value_;
   Status s = MergeHelper::TimedFullMerge(
       merge_operator_, user_key, val, merge_context_.GetOperands(),
       &saved_value_, logger_, statistics_, clock_, &pinned_value_,
@@ -1285,9 +1416,11 @@ bool DBIter::MergeEntity(const Slice& entity, const Slice& user_key) {
     return false;
   }
 
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   if (!SetValueAndColumnsFromEntity(saved_value_)) {
     return false;
   }
+#endif
 
   valid_ = true;
   return true;
@@ -1358,9 +1491,9 @@ bool DBIter::FindUserKeyBeforeSavedKey() {
   return true;
 }
 
+__always_inline
 bool DBIter::TooManyInternalKeysSkipped(bool increment) {
-  if ((max_skippable_internal_keys_ > 0) &&
-      (num_internal_keys_skipped_ > max_skippable_internal_keys_)) {
+  if (UNLIKELY(num_internal_keys_skipped_ > max_skippable_internal_keys_)) {
     valid_ = false;
     status_ = Status::Incomplete("Too many internal keys skipped.");
     return true;
@@ -1370,6 +1503,7 @@ bool DBIter::TooManyInternalKeysSkipped(bool increment) {
   return false;
 }
 
+__always_inline
 bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
                        bool* more_recent) {
   // Remember that comparator orders preceding timestamp as larger.
@@ -1614,7 +1748,7 @@ void DBIter::SeekToFirst() {
   if (iter_.Valid()) {
     saved_key_.SetUserKey(
         ExtractUserKey(iter_.key()),
-        !iter_.iter()->IsKeyPinned() || !pin_thru_lifetime_ /* copy */);
+        !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
     FindNextUserEntry(false /* not skipping saved_key */,
                       nullptr /* no prefix check */);
     if (statistics_ != nullptr) {

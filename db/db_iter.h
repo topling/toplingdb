@@ -158,17 +158,16 @@ class DBIter final : public Iterator {
       return Slice(ukey_and_ts.data(), ukey_and_ts.size() - timestamp_size_);
     }
   }
-  Slice value() const override {
-    assert(valid_);
+  Slice value() const override;
+  bool PrepareValue() override; // enable error check for lazy load
 
-    return value_;
-  }
-
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   const WideColumns& columns() const override {
     assert(valid_);
 
     return wide_columns_;
   }
+#endif
 
   Status status() const override {
     if (status_.ok()) {
@@ -204,6 +203,7 @@ class DBIter final : public Iterator {
   void SeekToFirst() final override;
   void SeekToLast() final override;
   Env* env() const { return env_; }
+  uint64_t get_sequence() const { return sequence_; }
   void set_sequence(uint64_t s) {
     sequence_ = s;
     if (read_callback_) {
@@ -237,6 +237,8 @@ class DBIter final : public Iterator {
   bool FindNextUserEntry(bool skipping_saved_key, const Slice* prefix);
   // Internal implementation of FindNextUserEntry().
   bool FindNextUserEntryInternal(bool skipping_saved_key, const Slice* prefix);
+  template<class CmpNoTS>
+  bool FindNextUserEntryInternalTmpl(bool, const Slice* prefix, CmpNoTS);
   bool ParseKey(ParsedInternalKey* key);
   bool MergeValuesNewToOld();
 
@@ -293,6 +295,20 @@ class DBIter final : public Iterator {
                : user_comparator_.CompareWithoutTimestamp(a, b);
   }
 
+  template<class CmpNoTS>
+  inline bool CmpKeyForSkip(const Slice& a, const Slice& b, const CmpNoTS& c) {
+    return timestamp_lb_ != nullptr
+               ? user_comparator_.Compare(a, b) < 0
+               : c(a, b);
+  }
+
+  template<class CmpNoTS>
+  inline bool EqKeyForSkip(const Slice& a, const Slice& b, const CmpNoTS& c) {
+    return timestamp_lb_ != nullptr // semantic exactly same with origin code
+               ? user_comparator_.Compare(a, b) >= 0 // ^^^^^^^^^^^^^^^^^^^^^
+               : c.equal(a, b);
+  }
+
   // Retrieves the blob value for the specified user key using the given blob
   // index when using the integrated BlobDB implementation.
   bool SetBlobValueIfNeeded(const Slice& user_key, const Slice& blob_index);
@@ -304,17 +320,21 @@ class DBIter final : public Iterator {
 
   void SetValueAndColumnsFromPlain(const Slice& slice) {
     assert(value_.empty());
-    assert(wide_columns_.empty());
-
     value_ = slice;
+
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+    assert(wide_columns_.empty());
     wide_columns_.emplace_back(kDefaultWideColumnName, slice);
+#endif
   }
 
   bool SetValueAndColumnsFromEntity(Slice slice);
 
   void ResetValueAndColumns() {
     value_.clear();
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
     wide_columns_.clear();
+#endif
   }
 
   // If user-defined timestamp is enabled, `user_key` includes timestamp.
@@ -323,7 +343,11 @@ class DBIter final : public Iterator {
 
   const SliceTransform* prefix_extractor_;
   Env* const env_;
+#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
   SystemClock* clock_;
+#else
+  static constexpr SystemClock* clock_ = nullptr;
+#endif
   Logger* logger_;
   UserComparatorWrapper user_comparator_;
   const MergeOperator* const merge_operator_;
@@ -338,15 +362,17 @@ class DBIter final : public Iterator {
   // Reusable internal key data structure. This is only used inside one function
   // and should not be used across functions. Reusing this object can reduce
   // overhead of calling construction of the function if creating it each time.
-  ParsedInternalKey ikey_;
+  //ParsedInternalKey ikey_;
   std::string saved_value_;
-  Slice pinned_value_;
+  //Slice pinned_value_;
   // for prefix seek mode to support prev()
   PinnableSlice blob_value_;
   // Value of the default column
   Slice value_;
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   // All columns (i.e. name-value pairs)
   WideColumns wide_columns_;
+#endif
   Statistics* statistics_;
   uint64_t max_skip_;
   uint64_t max_skippable_internal_keys_;
@@ -364,6 +390,7 @@ class DBIter final : public Iterator {
   Status status_;
   Direction direction_;
   bool valid_;
+  bool is_value_prepared_;
   bool current_entry_is_merged_;
   // True if we know that the current entry's seqnum is 0.
   // This information is used as that the next entry will be for another
@@ -372,7 +399,11 @@ class DBIter final : public Iterator {
   const bool prefix_same_as_start_;
   // Means that we will pin all data blocks we read as long the Iterator
   // is not deleted, will be true if ReadOptions::pin_data is true
+#if defined(ROCKSDB_UNIT_TEST)
   const bool pin_thru_lifetime_;
+#else
+  static constexpr bool pin_thru_lifetime_ = false;
+#endif
   // Expect the inner iterator to maintain a total order.
   // prefix_extractor_ must be non-NULL if the value is false.
   const bool expect_total_order_inner_iter_;
@@ -384,15 +415,22 @@ class DBIter final : public Iterator {
   bool expose_blob_index_;
   bool is_blob_;
   bool arena_mode_;
+  bool enable_perf_timer_;
   // List of operands for merge operator.
   MergeContext merge_context_;
   LocalStatistics local_stats_;
   PinnedIteratorsManager pinned_iters_mgr_;
   DBImpl* db_impl_;
   ColumnFamilyData* cfd_;
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Slice* const timestamp_ub_;
   const Slice* const timestamp_lb_;
   const size_t timestamp_size_;
+#else
+  static constexpr const Slice* const timestamp_ub_ = nullptr;
+  static constexpr const Slice* const timestamp_lb_ = nullptr;
+  static constexpr size_t timestamp_size_ = 0;
+#endif
   std::string saved_timestamp_;
 };
 

@@ -140,7 +140,7 @@ TEST_F(DBStatisticsTest, MutexWaitStatsDisabledByDefault) {
   ThreadStatusUtil::TEST_SetStateDelay(ThreadStatus::STATE_MUTEX_WAIT,
                                        kMutexWaitDelay);
   ASSERT_OK(Put("hello", "rocksdb"));
-  ASSERT_EQ(TestGetTickerCount(options, DB_MUTEX_WAIT_MICROS), 0);
+  ASSERT_EQ(TestGetTickerCount(options, DB_MUTEX_WAIT_NANOS), 0);
   ThreadStatusUtil::TEST_SetStateDelay(ThreadStatus::STATE_MUTEX_WAIT, 0);
 }
 
@@ -154,7 +154,7 @@ TEST_F(DBStatisticsTest, MutexWaitStats) {
   ThreadStatusUtil::TEST_SetStateDelay(ThreadStatus::STATE_MUTEX_WAIT,
                                        kMutexWaitDelay);
   ASSERT_OK(Put("hello", "rocksdb"));
-  ASSERT_GE(TestGetTickerCount(options, DB_MUTEX_WAIT_MICROS), kMutexWaitDelay);
+  ASSERT_GE(TestGetTickerCount(options, DB_MUTEX_WAIT_NANOS), kMutexWaitDelay);
   ThreadStatusUtil::TEST_SetStateDelay(ThreadStatus::STATE_MUTEX_WAIT, 0);
 }
 

@@ -22,6 +22,7 @@
 #include "rocksdb/statistics.h"
 #include "rocksdb/system_clock.h"
 #include "rocksdb/utilities/options_type.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 #include "rocksdb/wal_filter.h"
 #include "util/string_util.h"
 
@@ -71,6 +72,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
           OptionTypeFlags::kMutable}},
         {"max_subcompactions",
          {offsetof(struct MutableDBOptions, max_subcompactions),
+          OptionType::kUInt32T, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"max_level1_subcompactions",
+         {offsetof(struct MutableDBOptions, max_level1_subcompactions),
           OptionType::kUInt32T, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
         {"avoid_flush_during_shutdown",
@@ -691,6 +696,7 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       max_file_opening_threads(options.max_file_opening_threads),
       statistics(options.statistics),
       use_fsync(options.use_fsync),
+      allow_fdatasync(options.allow_fdatasync),
       db_paths(options.db_paths),
       db_log_dir(options.db_log_dir),
       wal_dir(options.wal_dir),
@@ -966,6 +972,7 @@ MutableDBOptions::MutableDBOptions()
     : max_background_jobs(2),
       max_background_compactions(-1),
       max_subcompactions(0),
+      max_level1_subcompactions(0),
       avoid_flush_during_shutdown(false),
       writable_file_max_buffer_size(1024 * 1024),
       delayed_write_rate(2 * 1024U * 1024U),
@@ -985,6 +992,7 @@ MutableDBOptions::MutableDBOptions(const DBOptions& options)
     : max_background_jobs(options.max_background_jobs),
       max_background_compactions(options.max_background_compactions),
       max_subcompactions(options.max_subcompactions),
+      max_level1_subcompactions(options.max_level1_subcompactions),
       avoid_flush_during_shutdown(options.avoid_flush_during_shutdown),
       writable_file_max_buffer_size(options.writable_file_max_buffer_size),
       delayed_write_rate(options.delayed_write_rate),
@@ -999,6 +1007,7 @@ MutableDBOptions::MutableDBOptions(const DBOptions& options)
       wal_bytes_per_sync(options.wal_bytes_per_sync),
       strict_bytes_per_sync(options.strict_bytes_per_sync),
       compaction_readahead_size(options.compaction_readahead_size),
+      wbwi_factory(options.wbwi_factory),
       max_background_flushes(options.max_background_flushes) {}
 
 void MutableDBOptions::Dump(Logger* log) const {
@@ -1008,6 +1017,9 @@ void MutableDBOptions::Dump(Logger* log) const {
                    max_background_compactions);
   ROCKS_LOG_HEADER(log, "            Options.max_subcompactions: %" PRIu32,
                    max_subcompactions);
+  ROCKS_LOG_HEADER(
+      log, "            Options.max_level1_subcompactions: %" PRIu32,
+      max_level1_subcompactions);
   ROCKS_LOG_HEADER(log, "            Options.avoid_flush_during_shutdown: %d",
                    avoid_flush_during_shutdown);
   ROCKS_LOG_HEADER(

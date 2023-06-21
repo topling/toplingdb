@@ -162,7 +162,7 @@ class Compaction {
     return &inputs_[compaction_input_level].files;
   }
 
-  const std::vector<CompactionInputFiles>* inputs() { return &inputs_; }
+  const std::vector<CompactionInputFiles>* inputs() const { return &inputs_; }
 
   // Returns the LevelFilesBrief of the specified compaction input level.
   const LevelFilesBrief* input_levels(size_t compaction_input_level) const {
@@ -185,6 +185,11 @@ class Compaction {
 
   // Whether need to write output file to second DB path.
   uint32_t output_path_id() const { return output_path_id_; }
+
+  const DbPath& output_path() const {
+    ROCKSDB_VERIFY_LT(output_path_id_, immutable_options_.cf_paths.size());
+    return immutable_options_.cf_paths[output_path_id_];
+  }
 
   // Is this a trivial compaction that can be implemented by just
   // moving a single input file to the next level (no merging or splitting)
@@ -231,6 +236,8 @@ class Compaction {
 
   // Is this compaction creating a file in the bottom most level?
   bool bottommost_level() const { return bottommost_level_; }
+
+  void set_bottommost_level(bool v) { bottommost_level_ = v; }
 
   // Is the compaction compact to the last level
   bool is_last_level() const {
@@ -315,7 +322,7 @@ class Compaction {
       int output_level, VersionStorageInfo* vstorage,
       const std::vector<CompactionInputFiles>& inputs);
 
-  TablePropertiesCollection GetOutputTableProperties() const {
+  const TablePropertiesCollection& GetOutputTableProperties() const {
     return output_table_properties_;
   }
 
@@ -399,6 +406,7 @@ class Compaction {
   bool ShouldNotifyOnCompactionCompleted() const {
     return notify_on_compaction_completion_;
   }
+  uint64_t GetSmallestSeqno() const;
 
   static constexpr int kInvalidLevel = -1;
 
@@ -477,6 +485,7 @@ class Compaction {
   // logic might pick a subset of the files that aren't overlapping. if
   // that is the case, set the value to false. Otherwise, set it true.
   bool l0_files_might_overlap_;
+  bool is_compaction_woker_;
 
   // Compaction input files organized by level. Constant after construction
   const std::vector<CompactionInputFiles> inputs_;
@@ -490,7 +499,7 @@ class Compaction {
   const double score_;  // score that was used to pick this compaction.
 
   // Is this compaction creating a file in the bottom most level?
-  const bool bottommost_level_;
+  bool bottommost_level_;
   // Does this compaction include all sst files?
   const bool is_full_compaction_;
 
@@ -506,6 +515,7 @@ class Compaction {
 
   // Does input compression match the output compression?
   bool InputCompressionMatchesOutput() const;
+  friend class TableFactory; // use InputCompressionMatchesOutput
 
   // table properties of output files
   TablePropertiesCollection output_table_properties_;

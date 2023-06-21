@@ -65,6 +65,8 @@ TEST_F(StatisticsTest, NoNameStats) {
     uint64_t getAndResetTickerCount(uint32_t /*tickerType*/) override {
       return 0;
     }
+    void GetAggregated(uint64_t*, rocksdb::HistogramStat*) const override {}
+    void Merge(const uint64_t*, const rocksdb::HistogramStat*) override {}
     std::shared_ptr<Statistics> inner;
   };
   ConfigOptions options;

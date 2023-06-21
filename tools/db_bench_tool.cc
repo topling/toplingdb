@@ -99,6 +99,8 @@
 #include <io.h>  // open/close
 #endif
 
+#include "sideplugin/rockside/src/topling/side_plugin_repo.h"
+
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
 using GFLAGS_NAMESPACE::RegisterFlagValidator;
 using GFLAGS_NAMESPACE::SetUsageMessage;
@@ -322,6 +324,8 @@ DEFINE_int64(max_scan_distance, 0,
              "if FLAGS_reverse_iterator is set to true) when value is nonzero");
 
 DEFINE_bool(use_uint64_comparator, false, "use Uint64 user comparator");
+
+DEFINE_bool(enable_zero_copy, false, "enable zero copy for SST");
 
 DEFINE_int64(batch_size, 1, "Batch size");
 
@@ -1154,6 +1158,7 @@ DEFINE_int32(trace_replay_threads, 1,
 DEFINE_bool(io_uring_enabled, true,
             "If true, enable the use of IO uring if the platform supports it");
 extern "C" bool RocksDbIOUringEnable() { return FLAGS_io_uring_enabled; }
+DEFINE_string(json, "", "json config file.");
 
 DEFINE_bool(adaptive_readahead, false,
             "carry forward internal auto readahead size from one file to next "
@@ -1664,6 +1669,9 @@ DEFINE_bool(avoid_flush_during_recovery,
 DEFINE_int64(multiread_stride, 0,
              "Stride length for the keys in a MultiGet batch");
 DEFINE_bool(multiread_batched, false, "Use the new MultiGet API");
+DEFINE_bool(multiread_check, false, "check MultiGet result with Get");
+DEFINE_bool(multiread_async, false, "MultiGet async");
+DEFINE_int64(multiread_async_qd, 32, "MultiGet async queue depth");
 
 DEFINE_string(memtablerep, "skip_list", "");
 DEFINE_int64(hash_bucket_count, 1024 * 1024, "hash bucket count");
@@ -2995,14 +3003,14 @@ class Benchmark {
       JemallocAllocatorOptions jemalloc_options;
       if (!NewJemallocNodumpAllocator(jemalloc_options, &allocator).ok()) {
         fprintf(stderr, "JemallocNodumpAllocator not supported.\n");
-        exit(1);
+        ::exit(1);
       }
     } else if (FLAGS_use_cache_memkind_kmem_allocator) {
 #ifdef MEMKIND
       allocator = std::make_shared<MemkindKmemAllocator>();
 #else
       fprintf(stderr, "Memkind library is not linked with the binary.\n");
-      exit(1);
+      ::exit(1);
 #endif
     }
 
@@ -3038,7 +3046,7 @@ class Benchmark {
     }
     if (FLAGS_cache_type == "clock_cache") {
       fprintf(stderr, "Old clock cache implementation has been removed.\n");
-      exit(1);
+      ::exit(1);
     } else if (FLAGS_cache_type == "hyper_clock_cache") {
       HyperClockCacheOptions hcco{
           static_cast<size_t>(capacity),
@@ -3070,7 +3078,7 @@ class Benchmark {
               stderr,
               "No secondary cache registered matching string: %s status=%s\n",
               FLAGS_secondary_cache_uri.c_str(), s.ToString().c_str());
-          exit(1);
+          ::exit(1);
         }
         opts.secondary_cache = secondary_cache;
       } else if (FLAGS_use_compressed_secondary_cache && !use_tiered_cache) {
@@ -3090,7 +3098,7 @@ class Benchmark {
       }
     } else {
       fprintf(stderr, "Cache type not supported.");
-      exit(1);
+      ::exit(1);
     }
   }
 
@@ -3177,6 +3185,7 @@ class Benchmark {
   }
 
   void DeleteDBs() {
+    repo_.CloseAllDB(false);
     db_.DeleteDBs();
     for (const DBWithColumnFamilies& dbwcf : multi_dbs_) {
       delete dbwcf.db;
@@ -3191,6 +3200,12 @@ class Benchmark {
       // this will leak, but we're shutting down so nobody cares
       cache_->DisownData();
     }
+  }
+
+  __attribute__((noreturn))
+  void exit(int code) {
+    this->~Benchmark();
+    ::exit(code);
   }
 
   Slice AllocateKey(std::unique_ptr<const char[]>* key_guard) {
@@ -3296,6 +3311,7 @@ class Benchmark {
     // Verify that all the key/values in truth_db are retrivable in db with
     // ::Get
     fprintf(stderr, "Verifying db >= truth_db with ::Get...\n");
+    if (FLAGS_enable_zero_copy) ro.StartPin();
     for (truth_iter->SeekToFirst(); truth_iter->Valid(); truth_iter->Next()) {
       std::string value;
       s = db_.db->Get(ro, truth_iter->key(), &value);
@@ -3303,6 +3319,7 @@ class Benchmark {
       // TODO(myabandeh): provide debugging hints
       assert(Slice(value) == truth_iter->value());
     }
+    if (FLAGS_enable_zero_copy) ro.FinishPin();
     // Verify that the db iterator does not give any extra key/value
     fprintf(stderr, "Verifying db == truth_db...\n");
     for (db_iter->SeekToFirst(), truth_iter->SeekToFirst(); db_iter->Valid();
@@ -3325,7 +3342,7 @@ class Benchmark {
       ErrorExit();
     }
     Open(&open_options_);
-    PrintHeader(open_options_);
+    PrintHeader(db_.db->GetOptions());
     std::stringstream benchmark_stream(FLAGS_benchmarks);
     std::string name;
     std::unique_ptr<ExpiredTimeFilter> filter;
@@ -3360,6 +3377,7 @@ class Benchmark {
       read_options_.adaptive_readahead = FLAGS_adaptive_readahead;
       read_options_.async_io = FLAGS_async_io;
       read_options_.optimize_multiget_for_io = FLAGS_optimize_multiget_for_io;
+      read_options_.ignore_range_deletions = 0 == FLAGS_max_num_range_tombstones;
 
       void (Benchmark::*method)(ThreadState*) = nullptr;
       void (Benchmark::*post_process_method)() = nullptr;
@@ -4745,9 +4763,45 @@ class Benchmark {
     InitializeOptionsGeneral(opts);
   }
 
+  SidePluginRepo repo_;
   void OpenDb(Options options, const std::string& db_name,
               DBWithColumnFamilies* db) {
     uint64_t open_start = FLAGS_report_open_timing ? FLAGS_env->NowNanos() : 0;
+    if (!FLAGS_json.empty()) {
+      repo_.CloseAllDB(false);
+      repo_.CleanResetRepo();
+      DB_MultiCF* dbmcf = nullptr;
+      Status s = repo_.ImportAutoFile(FLAGS_json);
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: ImportAutoFile(%s): %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      s = repo_.OpenDB(&dbmcf);
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: OpenDB(): Config File=%s: %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      s = repo_.StartHttpServer();
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: StartHttpServer(): JsonFile=%s: %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      db->cfh = dbmcf->cf_handles;
+      db->db = dbmcf->db;
+      if (auto tdb = dynamic_cast<OptimisticTransactionDB*>(dbmcf->db)) {
+        db->opt_txn_db = tdb;
+        db->db = tdb->GetBaseDB();
+      }
+      db->num_created = FLAGS_num_column_families;
+      db->num_hot = FLAGS_num_column_families;
+      DBOptions dbo = db->db->GetDBOptions();
+      dbstats = dbo.statistics;
+      FLAGS_db = db->db->GetName();
+      return;
+    }
     Status s;
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
@@ -5773,6 +5827,7 @@ class Benchmark {
     Slice key = AllocateKey(&key_guard);
     PinnableSlice pinnable_val;
 
+    if (FLAGS_enable_zero_copy) read_options_.StartPin();
     while (key_rand < FLAGS_num) {
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(thread);
       // We use same key_rand as seed for key and column family so that we can
@@ -5808,6 +5863,7 @@ class Benchmark {
 
       thread->stats.FinishedOps(db_with_cfh, db_with_cfh->db, 1, kRead);
     }
+    if (FLAGS_enable_zero_copy) read_options_.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg), "(%" PRIu64 " of %" PRIu64 " found)\n", found,
@@ -5866,6 +5922,7 @@ class Benchmark {
       pot <<= 1;
     }
 
+    if (FLAGS_enable_zero_copy) options.StartPin();
     Duration duration(FLAGS_duration, reads_);
     do {
       for (int i = 0; i < 100; ++i) {
@@ -5899,6 +5956,7 @@ class Benchmark {
 
       thread->stats.FinishedOps(nullptr, db, 100, kRead);
     } while (!duration.Done(100));
+    if (FLAGS_enable_zero_copy) options.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg),
@@ -5953,6 +6011,7 @@ class Benchmark {
       ts_guard.reset(new char[user_timestamp_size_]);
     }
 
+    if (FLAGS_enable_zero_copy) options.StartPin();
     Duration duration(FLAGS_duration, reads_);
     while (!duration.Done(1)) {
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(thread);
@@ -6037,6 +6096,7 @@ class Benchmark {
 
       thread->stats.FinishedOps(db_with_cfh, db_with_cfh->db, 1, kRead);
     }
+    if (FLAGS_enable_zero_copy) options.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg), "(%" PRIu64 " of %" PRIu64 " found)\n", found,
@@ -6070,6 +6130,7 @@ class Benchmark {
       ts_guard.reset(new char[user_timestamp_size_]);
     }
 
+    if (FLAGS_enable_zero_copy) options.StartPin();
     Duration duration(FLAGS_duration, reads_);
     while (!duration.Done(entries_per_batch_)) {
       DB* db = SelectDB(thread);
@@ -6110,8 +6171,29 @@ class Benchmark {
           }
         }
       } else {
+        options.async_io = FLAGS_multiread_async;
+        options.async_queue_depth = FLAGS_multiread_async_qd;
         db->MultiGet(options, db->DefaultColumnFamily(), keys.size(),
                      keys.data(), pin_values, stat_list.data());
+
+        if (FLAGS_multiread_check) {
+          options.async_io = false; // single Get do not use async_io
+          std::string value;
+          for (size_t i = 0; i < keys.size(); i++) {
+            Status s = db->Get(options, keys[i], &value);
+            if (stat_list[i].ok()) {
+              TERARK_VERIFY_S(s.ok(), "%s", s.ToString());
+            } else {
+              TERARK_VERIFY_S(!s.ok(), "mget: %s", stat_list[i].ToString());
+            }
+            if (value != pin_values[i]) {
+              ROCKSDB_DIE("%zd: %s : get = [%zd] %s , mget = [%zd] %s", i,
+                keys[i].data(), value.size(), value.data(),
+                pin_values[i].size(), pin_values[i].data());
+            }
+            TERARK_VERIFY_S_EQ(value, pin_values[i]);
+          }
+        }
 
         read += entries_per_batch_;
         num_multireads++;
@@ -6137,6 +6219,7 @@ class Benchmark {
       }
       thread->stats.FinishedOps(nullptr, db, entries_per_batch_, kRead);
     }
+    if (FLAGS_enable_zero_copy) options.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg), "(%" PRIu64 " of %" PRIu64 " found)", found,

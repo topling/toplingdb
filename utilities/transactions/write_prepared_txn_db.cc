@@ -354,7 +354,7 @@ Iterator* WritePreparedTxnDB::NewIterator(const ReadOptions& options,
         "`Env::IOActivity::kUnknown`"));
   }
   constexpr bool expose_blob_index = false;
-  constexpr bool allow_refresh = false;
+  constexpr bool allow_refresh = true;
   std::shared_ptr<ManagedSnapshot> own_snapshot = nullptr;
   SequenceNumber snapshot_seq = kMaxSequenceNumber;
   SequenceNumber min_uncommitted = 0;

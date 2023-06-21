@@ -93,6 +93,12 @@ class ColumnFamilyHandle {
   // Returns the comparator of the column family associated with the
   // current handle.
   virtual const Comparator* GetComparator() const = 0;
+
+  virtual class ColumnFamilyData* cfd() const {
+    ROCKSDB_DIE("Unexpected");
+    return nullptr;
+  }
+  virtual ColumnFamilyHandle* CloneHandle() const = 0;
 };
 
 static const int kMajorVersion = __ROCKSDB_MAJOR__;
@@ -530,6 +536,8 @@ class DB {
     assert(!pinnable_val.IsPinned());
     auto s = Get(options, column_family, key, &pinnable_val);
     if (s.ok() && pinnable_val.IsPinned()) {
+      value->clear(); // will not free memory, to avoid reserve copy old data
+      value->reserve(pinnable_val.size() + 16); // reserve some extra space
       value->assign(pinnable_val.data(), pinnable_val.size());
     }  // else value is already assigned
     return s;
@@ -678,22 +686,10 @@ class DB {
                         ColumnFamilyHandle* column_family,
                         const size_t num_keys, const Slice* keys,
                         PinnableSlice* values, Status* statuses,
-                        const bool /*sorted_input*/ = false) {
-    std::vector<ColumnFamilyHandle*> cf;
-    std::vector<Slice> user_keys;
-    std::vector<Status> status;
-    std::vector<std::string> vals;
-
-    for (size_t i = 0; i < num_keys; ++i) {
-      cf.emplace_back(column_family);
-      user_keys.emplace_back(keys[i]);
-    }
-    status = MultiGet(options, cf, user_keys, &vals);
-    std::copy(status.begin(), status.end(), statuses);
-    for (auto& value : vals) {
-      values->PinSelf(value);
-      values++;
-    }
+                        const bool sorted_input = false) {
+    std::string* timestamps = nullptr;
+    MultiGet(options, column_family, num_keys, keys, values, timestamps,
+             statuses, sorted_input);
   }
 
   virtual void MultiGet(const ReadOptions& options,

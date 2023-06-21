@@ -5001,6 +5001,9 @@ TEST_P(TransactionTest, DeleteRangeSupportTest) {
             ASSERT_OK(db->Get(ReadOptions(), "a", &value));
           }
           break;
+        case WRITE_READ_ONLY:
+          // do nothing
+          break;
       }
       // Without any promises from the user, range deletion via other `Write()`
       // APIs are still banned.
@@ -5849,6 +5852,7 @@ TEST_P(TransactionTest, DuplicateKeys) {
   }
 
   // Test with non-bytewise comparator
+  if (getenv("DefaultWBWIFactory") == nullptr)
   {
     ASSERT_OK(ReOpen());
     std::unique_ptr<const Comparator> comp_gc(new ThreeBytewiseComparator());
@@ -6057,6 +6061,7 @@ TEST_P(TransactionTest, DuplicateKeys) {
   }
 
   // Test sucessfull recovery after a crash
+  if (getenv("DefaultWBWIFactory") == nullptr)
   {
     ASSERT_OK(ReOpen());
     TransactionOptions txn_options;

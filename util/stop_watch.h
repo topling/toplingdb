@@ -30,7 +30,8 @@ class StopWatch {
         clock_(clock),
 #endif
         statistics_(statistics),
-        hist_type_(hist_type),
+        hist_type_(uint16_t(hist_type)),
+        hist_type_2_(Histograms::HISTOGRAM_ENUM_MAX),
         overwrite_(false),
         stats_enabled_(statistics &&
                        statistics->get_stats_level() >=
@@ -66,14 +67,17 @@ class StopWatch {
 
  protected:
    StopWatch(SystemClock* clock, Statistics* statistics,
-             const uint32_t hist_type, uint64_t* elapsed,
+             const uint32_t hist_type,
+             const uint32_t hist_type_2,
+             uint64_t* elapsed,
              bool overwrite, bool delay_enabled)
    noexcept :
 #if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
         clock_(clock),
 #endif
         statistics_(statistics),
-        hist_type_(hist_type),
+        hist_type_(uint16_t(hist_type)),
+        hist_type_2_(uint16_t(hist_type_2)),
         overwrite_(overwrite),
         stats_enabled_(statistics &&
                        statistics->get_stats_level() >
@@ -86,7 +90,8 @@ class StopWatch {
   SystemClock* clock_;
 #endif
   Statistics* statistics_;
-  const uint32_t hist_type_;
+  const uint16_t hist_type_;
+  const uint16_t hist_type_2_;
   bool overwrite_;
   bool stats_enabled_;
   bool delay_enabled_;
@@ -97,10 +102,12 @@ class StopWatchEx : public StopWatch {
 public:
   inline
   StopWatchEx(SystemClock* clock, Statistics* statistics,
-              const uint32_t hist_type, uint64_t* elapsed = nullptr,
+              const uint32_t hist_type,
+              const uint32_t hist_type_2,
+              uint64_t* elapsed = nullptr,
               bool overwrite = true, bool delay_enabled = false)
   noexcept
-  : StopWatch(clock, statistics, hist_type, elapsed, overwrite, delay_enabled),
+  : StopWatch(clock, statistics, hist_type, hist_type_2, elapsed, overwrite, delay_enabled),
     elapsed_(elapsed),
     total_delay_(0),
     delay_start_time_(0) {}
@@ -117,10 +124,15 @@ public:
       *elapsed_ -= total_delay_ / 1000;
     }
     if (stats_enabled_) {
-      statistics_->reportTimeToHistogram(
-          hist_type_, (elapsed_ != nullptr)
-                          ? *elapsed_
-                          : (now_nanos() - start_time_) / 1000);
+      const auto time = (elapsed_ != nullptr)
+                            ? *elapsed_
+                            : (now_nanos() - start_time_) / 1000;
+      if (hist_type_ != Histograms::HISTOGRAM_ENUM_MAX) {
+        statistics_->reportTimeToHistogram(hist_type_, time);
+      }
+      if (hist_type_2_ != Histograms::HISTOGRAM_ENUM_MAX) {
+        statistics_->reportTimeToHistogram(hist_type_2_, time);
+      }
     }
     stats_enabled_ = false; // skip base class StopWatch destructor
   }

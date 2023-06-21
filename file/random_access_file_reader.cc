@@ -99,6 +99,9 @@ IOStatus RandomAccessFileReader::Read(
   uint64_t elapsed = 0;
   {
     StopWatchEx sw(clock_, stats_, hist_type_,
+                 (opts.io_activity != Env::IOActivity::kUnknown)
+                     ? kReadHistograms[(std::size_t)(opts.io_activity)]
+                     : Histograms::HISTOGRAM_ENUM_MAX,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();
@@ -293,6 +296,9 @@ IOStatus RandomAccessFileReader::MultiRead(
   uint64_t elapsed = 0;
   {
     StopWatchEx sw(clock_, stats_, hist_type_,
+                 (opts.io_activity != Env::IOActivity::kUnknown)
+                     ? kReadHistograms[(std::size_t)(opts.io_activity)]
+                     : Histograms::HISTOGRAM_ENUM_MAX,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();
@@ -481,13 +487,17 @@ IOStatus RandomAccessFileReader::ReadAsync(
 
     assert(read_async_info->buf_.CurrentSize() == 0);
 
-    StopWatchEx sw(clock_, nullptr /*stats*/, 0 /*hist_type*/, &elapsed,
-                   true /*overwrite*/, true /*delay_enabled*/);
+    StopWatchEx sw(clock_, nullptr /*stats*/,
+                 Histograms::HISTOGRAM_ENUM_MAX /*hist_type*/,
+                 Histograms::HISTOGRAM_ENUM_MAX, &elapsed, true /*overwrite*/,
+                 true /*delay_enabled*/);
     s = file_->ReadAsync(aligned_req, opts, read_async_callback,
                          read_async_info, io_handle, del_fn, nullptr /*dbg*/);
   } else {
-    StopWatchEx sw(clock_, nullptr /*stats*/, 0 /*hist_type*/, &elapsed,
-                   true /*overwrite*/, true /*delay_enabled*/);
+    StopWatchEx sw(clock_, nullptr /*stats*/,
+                 Histograms::HISTOGRAM_ENUM_MAX /*hist_type*/,
+                 Histograms::HISTOGRAM_ENUM_MAX, &elapsed, true /*overwrite*/,
+                 true /*delay_enabled*/);
     s = file_->ReadAsync(req, opts, read_async_callback, read_async_info,
                          io_handle, del_fn, nullptr /*dbg*/);
   }

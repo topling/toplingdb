@@ -1828,7 +1828,7 @@ Status DBImpl::DelayWrite(uint64_t num_bytes, WriteThread& write_thread,
   bool delayed = false;
   {
     StopWatchEx sw(immutable_db_options_.clock, stats_, WRITE_STALL,
-                   &time_delayed);
+                   Histograms::HISTOGRAM_ENUM_MAX, &time_delayed);
     // To avoid parallel timed delays (bad throttling), only support them
     // on the primary write queue.
     uint64_t delay;

@@ -339,10 +339,6 @@ TEST_P(PrefetchTailTest, Basic) {
   options.statistics->histogramData(FILE_READ_FLUSH_MICROS,
                                     &post_flush_file_read);
 
-#if 0 // ToplingDB specific
-  // FILE_READ_FLUSH_MICROS and FILE_READ_COMPACTION_MICROS have no refs,
-  // may be rocksdb bug
-
   if (UseFilePrefetchBuffer()) {
     // `PartitionedFilterBlockReader/PartitionIndexReader::CacheDependencies()`
     // should read from the prefetched tail in file prefetch buffer instead of
@@ -388,7 +384,6 @@ TEST_P(PrefetchTailTest, Basic) {
     ASSERT_GT(post_compaction_file_read.count - pre_compaction_file_read.count,
               3);
   }
-#endif
 
   Close();
 }

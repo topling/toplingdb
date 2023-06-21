@@ -165,10 +165,18 @@ private:
     }
   #endif
 #endif
+// if true, it should be a little faster
+static constexpr bool allow_read_beyond_key_mem = false;
 FORCE_INLINE UintPrefix HostPrefixCacheUK(const Slice& uk) {
   UintPrefix data;
   if (LIKELY(uk.size_ >= sizeof(UintPrefix))) {
     memcpy(&data, uk.data_, sizeof(UintPrefix));
+  } else if (allow_read_beyond_key_mem) {
+    memcpy(&data, uk.data_, sizeof(UintPrefix)); // read beyound uk mem
+    if (port::kLittleEndian) {
+      data = bswap_prefix(data);
+    }
+    return data & (UintPrefix(-1) << ((sizeof(UintPrefix) - uk.size_) * 8));
   } else {
     data = 0;
     memcpy(&data, uk.data_, uk.size_);
@@ -182,6 +190,12 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
   UintPrefix data;
   if (LIKELY(ik.size_ >= sizeof(UintPrefix) + 8)) {
     memcpy(&data, ik.data_, sizeof(UintPrefix));
+  } else if (allow_read_beyond_key_mem) {
+    memcpy(&data, ik.data_, sizeof(UintPrefix)); // read beyound user key mem
+    if (port::kLittleEndian) {
+      data = bswap_prefix(data);
+    }
+    return data & (UintPrefix(-1) << ((sizeof(UintPrefix) + 8 - ik.size_) * 8));
   } else {
     data = 0;
     memcpy(&data, ik.data_, ik.size_ - 8);

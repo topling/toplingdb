@@ -1173,9 +1173,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
   return false;
 }
 
-#if defined(__GNUC__)
-__attribute__((flatten))
-#endif
+ROCKSDB_FLATTEN
 bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
                    PinnableWideColumns* columns, std::string* timestamp,
                    Status* s, MergeContext* merge_context,
@@ -1184,7 +1182,7 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
                    bool immutable_memtable, ReadCallback* callback,
                    bool* is_blob_index, bool do_merge) {
   // The sequence number is updated synchronously in version_set.h
-  if (IsEmpty()) {
+  if (UNLIKELY(IsEmpty())) {
     // Avoiding recording stats for speed.
     return false;
   }
@@ -1208,15 +1206,15 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
     }
   }
 
-  bool may_contain = true;
-#if defined(TOPLINGDB_WITH_TIMESTAMP)
-  size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
-  Slice user_key_without_ts = StripTimestampFromUserKey(key.user_key(), ts_sz);
-#else
-  Slice user_key_without_ts = key.user_key();
-#endif
-  bool bloom_checked = false;
   if (UNLIKELY(bloom_filter_ != nullptr)) {
+    bool may_contain = true;
+  #if defined(TOPLINGDB_WITH_TIMESTAMP)
+    size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
+    Slice user_key_without_ts = StripTimestampFromUserKey(key.user_key(), ts_sz);
+  #else
+    Slice user_key_without_ts = key.user_key();
+  #endif
+    bool bloom_checked = false;
     // when both memtable_whole_key_filtering and prefix_extractor_ are set,
     // only do whole key filtering for Get() to save CPU
     if (moptions_.memtable_whole_key_filtering) {
@@ -1230,55 +1228,55 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
         bloom_checked = true;
       }
     }
+    if (UNLIKELY(!may_contain)) {
+      // iter is null if prefix bloom says the key does not exist
+      PERF_COUNTER_ADD(bloom_memtable_miss_count, 1);
+      *seq = kMaxSequenceNumber;
+      PERF_COUNTER_ADD(get_from_memtable_count, 1);
+      return false;
+    } else {
+      if (UNLIKELY(bloom_checked)) {
+        PERF_COUNTER_ADD(bloom_memtable_hit_count, 1);
+      }
+    }
   }
 
-  if (UNLIKELY(bloom_filter_ && !may_contain)) {
-    // iter is null if prefix bloom says the key does not exist
-    PERF_COUNTER_ADD(bloom_memtable_miss_count, 1);
-    *seq = kMaxSequenceNumber;
-    PERF_COUNTER_ADD(get_from_memtable_count, 1);
-    return false;
-  } else {
-    if (UNLIKELY(bloom_checked)) {
-      PERF_COUNTER_ADD(bloom_memtable_hit_count, 1);
-    }
-    Saver saver;
-    saver.status = s;
-    saver.found_final_value = false;
-    saver.merge_in_progress = s->IsMergeInProgress();
-    saver.key = &key;
-    saver.value = value;
-    saver.columns = columns;
-    saver.timestamp = timestamp;
-    saver.seq = kMaxSequenceNumber;
-    saver.mem = this;
-    saver.merge_context = merge_context;
-    saver.max_covering_tombstone_seq = *max_covering_tombstone_seq;
-    saver.merge_operator = moptions_.merge_operator;
-    saver.logger = moptions_.info_log;
-    saver.inplace_update_support = moptions_.inplace_update_support;
-    saver.statistics = moptions_.statistics;
-    saver.clock = clock_;
-    saver.callback_ = callback;
-    saver.is_blob_index = is_blob_index;
-    saver.do_merge = do_merge;
-    saver.allow_data_in_errors = moptions_.allow_data_in_errors;
-    saver.is_zero_copy = read_opts.pinning_tls != nullptr;
-    saver.needs_user_key_cmp_in_get = needs_user_key_cmp_in_get_;
-    if (LIKELY(value != nullptr)) {
-      value->Reset();
-    }
-    table_->Get(read_opts, key, &saver, SaveValue);
-    *seq = saver.seq;
-
-    // No change to value, since we have not yet found a Put/Delete
-    // Propagate corruption error
-    if (!saver.found_final_value && saver.merge_in_progress && !s->IsCorruption()) {
-      *s = Status::MergeInProgress();
-    }
-    PERF_COUNTER_ADD(get_from_memtable_count, 1);
-    return saver.found_final_value;
+  Saver saver;
+  saver.status = s;
+  saver.found_final_value = false;
+  saver.merge_in_progress = s->IsMergeInProgress();
+  saver.key = &key;
+  saver.value = value;
+  saver.columns = columns;
+  saver.timestamp = timestamp;
+  saver.seq = kMaxSequenceNumber;
+  saver.mem = this;
+  saver.merge_context = merge_context;
+  saver.max_covering_tombstone_seq = *max_covering_tombstone_seq;
+  saver.merge_operator = moptions_.merge_operator;
+  saver.logger = moptions_.info_log;
+  saver.inplace_update_support = moptions_.inplace_update_support;
+  saver.statistics = moptions_.statistics;
+  saver.clock = clock_;
+  saver.callback_ = callback;
+  saver.is_blob_index = is_blob_index;
+  saver.do_merge = do_merge;
+  saver.allow_data_in_errors = moptions_.allow_data_in_errors;
+  saver.is_zero_copy = read_opts.pinning_tls != nullptr;
+  saver.needs_user_key_cmp_in_get = needs_user_key_cmp_in_get_;
+  if (LIKELY(value != nullptr)) {
+    value->Reset();
   }
+  table_->Get(read_opts, key, &saver, SaveValue);
+  *seq = saver.seq;
+
+  // No change to value, since we have not yet found a Put/Delete
+  // Propagate corruption error
+  if (!saver.found_final_value && saver.merge_in_progress && !s->IsCorruption()) {
+    *s = Status::MergeInProgress();
+  }
+  PERF_COUNTER_ADD(get_from_memtable_count, 1);
+  return saver.found_final_value;
 }
 
 void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,

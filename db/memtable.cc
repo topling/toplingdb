@@ -657,12 +657,6 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
       return status;
     }
   }
-#if defined(TOPLINGDB_WITH_TIMESTAMP)
-  size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
-  Slice key_without_ts = StripTimestampFromUserKey(key, ts_sz);
-#else
-  const Slice& key_without_ts = key;
-#endif
 
   size_t encoded_len = MemTableRep::EncodeKeyValueSize(key_slice, value);
   if (!allow_concurrent) {
@@ -694,12 +688,19 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                          std::memory_order_relaxed);
     }
 
-    if (bloom_filter_ && prefix_extractor_ &&
-        prefix_extractor_->InDomain(key_without_ts)) {
-      bloom_filter_->Add(prefix_extractor_->Transform(key_without_ts));
-    }
-    if (bloom_filter_ && moptions_.memtable_whole_key_filtering) {
-      bloom_filter_->Add(key_without_ts);
+    if (bloom_filter_) {
+    #if defined(TOPLINGDB_WITH_TIMESTAMP)
+      size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
+      Slice key_without_ts = StripTimestampFromUserKey(key, ts_sz);
+    #else
+      const Slice& key_without_ts = key;
+    #endif
+      if (prefix_extractor_ && prefix_extractor_->InDomain(key_without_ts)) {
+        bloom_filter_->Add(prefix_extractor_->Transform(key_without_ts));
+      }
+      if (moptions_.memtable_whole_key_filtering) {
+        bloom_filter_->Add(key_without_ts);
+      }
     }
 
     // The first sequence number inserted into the memtable
@@ -731,13 +732,20 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
       post_process_info->num_deletes++;
     }
 
-    if (bloom_filter_ && prefix_extractor_ &&
-        prefix_extractor_->InDomain(key_without_ts)) {
-      bloom_filter_->AddConcurrently(
-          prefix_extractor_->Transform(key_without_ts));
-    }
-    if (bloom_filter_ && moptions_.memtable_whole_key_filtering) {
-      bloom_filter_->AddConcurrently(key_without_ts);
+    if (bloom_filter_) {
+    #if defined(TOPLINGDB_WITH_TIMESTAMP)
+      size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
+      Slice key_without_ts = StripTimestampFromUserKey(key, ts_sz);
+    #else
+      const Slice& key_without_ts = key;
+    #endif
+      if (prefix_extractor_ && prefix_extractor_->InDomain(key_without_ts)) {
+        bloom_filter_->AddConcurrently(
+            prefix_extractor_->Transform(key_without_ts));
+      }
+      if (moptions_.memtable_whole_key_filtering) {
+        bloom_filter_->AddConcurrently(key_without_ts);
+      }
     }
 
     // atomically update first_seqno_ and earliest_seqno_.

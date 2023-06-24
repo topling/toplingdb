@@ -972,9 +972,7 @@ Status WriteBatchInternal::PutEntity(WriteBatch* b, uint32_t column_family_id,
   PutLengthPrefixedSlice(&b->rep_, key);
   PutLengthPrefixedSlice(&b->rep_, entity);
 
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_PUT_ENTITY,
-                          std::memory_order_relaxed);
+  b->content_flags_.fetch_or(HAS_PUT_ENTITY, std::memory_order_relaxed);
 
   if (b->prot_info_ != nullptr) {
     b->prot_info_->entries_.emplace_back(
@@ -1067,8 +1065,7 @@ Status WriteBatchInternal::MarkCommitWithTimestamp(WriteBatch* b,
   b->rep_.push_back(static_cast<char>(kTypeCommitXIDAndTimestamp));
   PutLengthPrefixedSlice(&b->rep_, commit_ts);
   PutLengthPrefixedSlice(&b->rep_, xid);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_COMMIT,
+  b->content_flags_.fetch_or(ContentFlags::HAS_COMMIT,
                           std::memory_order_relaxed);
   return Status::OK();
 }

@@ -269,13 +269,14 @@ void BaseDeltaIterator::AssertInvariants() {
 #endif
 }
 
+ROCKSDB_FLATTEN
 void BaseDeltaIterator::Advance() {
-  if (equal_keys_) {
+  if (UNLIKELY(equal_keys_)) {
     assert(BaseValid() && DeltaValid());
     AdvanceBase();
     AdvanceDelta();
   } else {
-    if (current_at_base_) {
+    if (LIKELY(current_at_base_)) {
       assert(BaseValid());
       AdvanceBase();
     } else {
@@ -353,10 +354,9 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
   status_.SetAsOK();
   Iterator* base_iterator_ = this->base_iterator_.get();
   WBWIIterator* delta_iterator_ = this->delta_iterator_.get();
-  auto wbwii_ = this->wbwii_.get();
   const bool forward_ = this->forward_;
   while (true) {
-    if (delta_valid_) {
+    if (LIKELY(delta_valid_)) {
       assert(delta_iterator_->status().ok());
     } else if (!delta_iterator_->status().ok()) {
       // Expose the error status and stop.
@@ -364,7 +364,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
       return;
     }
     equal_keys_ = false;
-    if (!base_iterator_->Valid()) {
+    if (UNLIKELY(!base_iterator_->Valid())) {
       if (!base_iterator_->status().ok()) {
         // Expose the error status and stop.
         current_at_base_ = true;
@@ -392,7 +392,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
         current_at_base_ = false;
         return;
       }
-    } else if (!delta_valid_) {
+    } else if (UNLIKELY(!delta_valid_)) {
       // Delta has finished.
       current_at_base_ = true;
       return;
@@ -402,7 +402,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
                   ? cmp.compare(delta_key, base_iterator_->key())
                   : cmp.compare(base_iterator_->key(), delta_key)
                   ;
-      if (compare <= 0) {  // delta bigger or equal
+      if (UNLIKELY(compare <= 0)) {  // delta is less or equal
         if (compare == 0) {
           equal_keys_ = true;
         }

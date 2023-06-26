@@ -280,7 +280,7 @@ Compaction::Compaction(
     compaction_reason_ = CompactionReason::kManualCompaction;
   }
   if (max_subcompactions_ == 0) {
-    if (1 == output_level_ && _mutable_db_options.max_level1_subcompactions)
+    if (output_level_ > 0 && 0 == start_level_ && _mutable_db_options.max_level1_subcompactions)
       max_subcompactions_ = _mutable_db_options.max_level1_subcompactions;
     else
       max_subcompactions_ = _mutable_db_options.max_subcompactions;

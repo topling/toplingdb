@@ -48,7 +48,7 @@ void BaseDeltaIterator::SeekToFirst() {
   base_iterator_->SeekToFirst();
   delta_iterator_->SeekToFirst();
   delta_valid_ = delta_iterator_->Valid();
-  UpdateCurrent();
+  UpdateCurrent(true);
 }
 
 void BaseDeltaIterator::SeekToLast() {
@@ -56,7 +56,7 @@ void BaseDeltaIterator::SeekToLast() {
   base_iterator_->SeekToLast();
   delta_iterator_->SeekToLast();
   delta_valid_ = delta_iterator_->Valid();
-  UpdateCurrent();
+  UpdateCurrent(false);
 }
 
 void BaseDeltaIterator::Seek(const Slice& k) {
@@ -64,7 +64,7 @@ void BaseDeltaIterator::Seek(const Slice& k) {
   base_iterator_->Seek(k);
   delta_iterator_->Seek(k);
   delta_valid_ = delta_iterator_->Valid();
-  UpdateCurrent();
+  UpdateCurrent(true);
 }
 
 void BaseDeltaIterator::SeekForPrev(const Slice& k) {
@@ -72,7 +72,7 @@ void BaseDeltaIterator::SeekForPrev(const Slice& k) {
   base_iterator_->SeekForPrev(k);
   delta_iterator_->SeekForPrev(k);
   delta_valid_ = delta_iterator_->Valid();
-  UpdateCurrent();
+  UpdateCurrent(false);
 }
 
 void BaseDeltaIterator::Next() {
@@ -101,10 +101,10 @@ void BaseDeltaIterator::Next() {
       delta_valid_ = delta_iterator_->Valid();
     } else if (current_at_base_) {
       // Change delta from larger than base to smaller
-      AdvanceDelta();
+      AdvanceDelta(true);
     } else {
       // Change base from larger than delta to smaller
-      AdvanceBase();
+      AdvanceBase(true);
     }
     if (DeltaValid() && BaseValid()) {
       if (0 == comparator_->CompareWithoutTimestamp(
@@ -114,7 +114,7 @@ void BaseDeltaIterator::Next() {
       }
     }
   }
-  Advance();
+  Advance(true);
 }
 
 void BaseDeltaIterator::Prev() {
@@ -143,10 +143,10 @@ void BaseDeltaIterator::Prev() {
       delta_valid_ = delta_iterator_->Valid();
     } else if (current_at_base_) {
       // Change delta from less advanced than base to more advanced
-      AdvanceDelta();
+      AdvanceDelta(false);
     } else {
       // Change base from less advanced than delta to more advanced
-      AdvanceBase();
+      AdvanceBase(false);
     }
     if (DeltaValid() && BaseValid()) {
       if (0 == comparator_->CompareWithoutTimestamp(
@@ -157,7 +157,7 @@ void BaseDeltaIterator::Prev() {
     }
   }
 
-  Advance();
+  Advance(false);
 }
 
 Slice BaseDeltaIterator::key() const {
@@ -270,21 +270,21 @@ void BaseDeltaIterator::AssertInvariants() {
 }
 
 ROCKSDB_FLATTEN
-void BaseDeltaIterator::Advance() {
+void BaseDeltaIterator::Advance(bool const_forward) {
   if (UNLIKELY(equal_keys_)) {
     assert(BaseValid() && DeltaValid());
-    AdvanceBase();
-    AdvanceDelta();
+    AdvanceBase(const_forward);
+    AdvanceDelta(const_forward);
   } else {
     if (LIKELY(current_at_base_)) {
       assert(BaseValid());
-      AdvanceBase();
+      AdvanceBase(const_forward);
     } else {
       assert(DeltaValid());
-      AdvanceDelta();
+      AdvanceDelta(const_forward);
     }
   }
-  UpdateCurrent();
+  UpdateCurrent(const_forward);
 }
 
 inline static bool AdvanceIter(WBWIIterator* i, bool forward) {
@@ -302,15 +302,17 @@ inline static void AdvanceIter(Iterator* i, bool forward) {
   }
 }
 
-inline void BaseDeltaIterator::AdvanceDelta() {
-  if (forward_) {
+inline void BaseDeltaIterator::AdvanceDelta(bool const_forward) {
+  assert(const_forward == forward_);
+  if (const_forward) {
     delta_valid_ = delta_iterator_->NextKey();
   } else {
     delta_valid_ = delta_iterator_->PrevKey();
   }
 }
-inline void BaseDeltaIterator::AdvanceBase() {
-  if (forward_) {
+inline void BaseDeltaIterator::AdvanceBase(bool const_forward) {
+  assert(const_forward == forward_);
+  if (const_forward) {
     base_iterator_->Next();
   } else {
     base_iterator_->Prev();
@@ -339,22 +341,21 @@ struct BDI_VirtualCmpNoTS {
 };
 
 ROCKSDB_FLATTEN
-void BaseDeltaIterator::UpdateCurrent() {
+void BaseDeltaIterator::UpdateCurrent(bool const_forward) {
   if (0 == opt_cmp_type_)
-    UpdateCurrentTpl(BDI_BytewiseCmpNoTS());
+    UpdateCurrentTpl(const_forward, BDI_BytewiseCmpNoTS());
   else if (1 == opt_cmp_type_)
-    UpdateCurrentTpl(BDI_RevBytewiseCmpNoTS());
+    UpdateCurrentTpl(const_forward, BDI_RevBytewiseCmpNoTS());
   else
-    UpdateCurrentTpl(BDI_VirtualCmpNoTS{comparator_});
+    UpdateCurrentTpl(const_forward, BDI_VirtualCmpNoTS{comparator_});
 }
 template<class CmpNoTS>
-void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
+void BaseDeltaIterator::UpdateCurrentTpl(bool const_forward, CmpNoTS cmp) {
 // Suppress false positive clang analyzer warnings.
 #ifndef __clang_analyzer__
   status_.SetAsOK();
   Iterator* base_iterator_ = this->base_iterator_.get();
   WBWIIterator* delta_iterator_ = this->delta_iterator_.get();
-  const bool forward_ = this->forward_;
   while (true) {
     if (LIKELY(delta_valid_)) {
       assert(delta_iterator_->status().ok());
@@ -387,7 +388,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
           delta_iterator_->FindLatestUpdate(wbwii_->GetMergeContext());
       if (delta_result == WBWIIteratorImpl::kDeleted &&
           wbwii_->GetNumOperands() == 0) {
-        delta_valid_ = AdvanceIter(delta_iterator_, forward_);
+        delta_valid_ = AdvanceIter(delta_iterator_, const_forward);
       } else {
         current_at_base_ = false;
         return;
@@ -398,7 +399,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
       return;
     } else {
       Slice delta_key = delta_iterator_->user_key();
-      int compare = forward_
+      int compare = const_forward
                   ? cmp.compare(delta_key, base_iterator_->key())
                   : cmp.compare(base_iterator_->key(), delta_key)
                   ;
@@ -414,9 +415,9 @@ void BaseDeltaIterator::UpdateCurrentTpl(CmpNoTS cmp) {
           return;
         }
         // Delta is less advanced and is delete.
-        delta_valid_ = AdvanceIter(delta_iterator_, forward_);
+        delta_valid_ = AdvanceIter(delta_iterator_, const_forward);
         if (equal_keys_) {
-          AdvanceIter(base_iterator_, forward_);
+          AdvanceIter(base_iterator_, const_forward);
         }
       } else {
         current_at_base_ = true;

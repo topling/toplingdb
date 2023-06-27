@@ -59,14 +59,14 @@ class BaseDeltaIterator final : public Iterator {
 
  private:
   void AssertInvariants();
-  void Advance();
-  void AdvanceDelta();
-  void AdvanceBase();
+  void Advance(bool const_forward);
+  void AdvanceDelta(bool const_forward);
+  void AdvanceBase(bool const_forward);
   bool BaseValid() const;
   bool DeltaValid() const;
-  void UpdateCurrent();
+  void UpdateCurrent(bool const_forward);
   template<class CmpNoTS>
-  void UpdateCurrentTpl(CmpNoTS);
+  void UpdateCurrentTpl(bool const_forward, CmpNoTS);
 
   std::unique_ptr<WriteBatchWithIndexInternal> wbwii_;
   bool forward_;

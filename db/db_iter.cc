@@ -197,42 +197,6 @@ void DBIter::Next() {
   }
 }
 
-Slice DBIter::value() const {
-  assert(valid_);
-#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
-  assert(is_value_prepared_);
-#endif
-  if (!is_value_prepared_) {
-    auto mut = const_cast<DBIter*>(this);
-    if (LIKELY(mut->iter_.PrepareAndGetValue(&mut->value_))) {
-      mut->is_value_prepared_ = true;
-      mut->local_stats_.bytes_read_ += value_.size_;
-    } else { // Can not go on, die with message
-      ROCKSDB_DIE("PrepareAndGetValue() failed, status = %s",
-                  iter_.status().ToString().c_str());
-    }
-  }
-  return value_;
-}
-
-// without PrepareValue, user can not check iter_.PrepareAndGetValue(),
-// thus must die in DBIter::value() if iter_.PrepareAndGetValue() fails.
-bool DBIter::PrepareValue() { // enable error check for lazy load
-  assert(valid_);
-  if (!is_value_prepared_) {
-    if (LIKELY(iter_.PrepareAndGetValue(&value_))) {
-      is_value_prepared_ = true;
-      local_stats_.bytes_read_ += value_.size_;
-    } else {
-      valid_ = false;
-      status_ = iter_.status();
-      ROCKSDB_VERIFY(!status_.ok());
-      return false;
-    }
-  }
-  return true;
-}
-
 bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
                                   const Slice& blob_index) {
   assert(!is_blob_);

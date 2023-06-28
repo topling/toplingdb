@@ -72,11 +72,14 @@ class ArenaWrappedDBIter : public Iterator {
   }
   void Next() override { db_iter_->Next(); }
   void Prev() override { db_iter_->Prev(); }
+  ROCKSDB_FLATTEN
   Slice key() const override { return db_iter_->key(); }
+  ROCKSDB_FLATTEN
   Slice value() const override { return db_iter_->value(); }
   const WideColumns& columns() const override { return db_iter_->columns(); }
   Status status() const override { return db_iter_->status(); }
   Slice timestamp() const override { return db_iter_->timestamp(); }
+  ROCKSDB_FLATTEN
   bool PrepareValue() override { return db_iter_->PrepareValue(); }
   bool IsBlob() const { return db_iter_->IsBlob(); }
 

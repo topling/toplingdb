@@ -33,10 +33,12 @@ class Version;
 // to allocate.
 // When using the class's Iterator interface, the behavior is exactly
 // the same as the inner DBIter.
+#define db_iter_  (&db_iter_obj_)
 class ArenaWrappedDBIter : public Iterator {
  public:
+  ArenaWrappedDBIter();
   ~ArenaWrappedDBIter() override {
-    if (db_iter_ != nullptr) {
+    if (db_iter_inited_) {
       db_iter_->~DBIter();
     } else {
       assert(false);
@@ -102,7 +104,7 @@ class ArenaWrappedDBIter : public Iterator {
   }
 
  private:
-  DBIter* db_iter_ = nullptr;
+  union { DBIter db_iter_obj_; };
   Arena arena_;
   uint64_t sv_number_;
   ColumnFamilyData* cfd_ = nullptr;
@@ -111,10 +113,12 @@ class ArenaWrappedDBIter : public Iterator {
   ReadCallback* read_callback_;
   bool expose_blob_index_ = false;
   bool allow_refresh_ = true;
+  bool db_iter_inited_ = false;
   // If this is nullptr, it means the mutable memtable does not contain range
   // tombstone when added under this DBIter.
   TruncatedRangeDelIterator** memtable_range_tombstone_iter_ = nullptr;
 };
+#undef db_iter_
 
 // Generate the arena wrapped iterator class.
 // `db_impl` and `cfd` are used for reneweal. If left null, renewal will not

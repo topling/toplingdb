@@ -36,6 +36,11 @@ Status Iterator::RefreshKeepSnapshot(bool keep_iter_pos) {
   return Refresh(reinterpret_cast<Snapshot*>(KEEP_SNAPSHOT), keep_iter_pos);
 }
 
+ArenaWrappedDBIter::ArenaWrappedDBIter() {
+  // do nothing
+}
+#define db_iter_  (&db_iter_obj_)
+
 Status ArenaWrappedDBIter::GetProperty(std::string prop_name,
                                        std::string* prop) {
   if (prop_name == "rocksdb.iterator.super-version-number") {
@@ -54,12 +59,12 @@ void ArenaWrappedDBIter::Init(
     const SequenceNumber& sequence, uint64_t max_sequential_skip_in_iteration,
     uint64_t version_number, ReadCallback* read_callback, DBImpl* db_impl,
     ColumnFamilyData* cfd, bool expose_blob_index, bool allow_refresh) {
-  auto mem = arena_.AllocateAligned(sizeof(DBIter));
-  db_iter_ =
+  auto mem = db_iter_;
       new (mem) DBIter(env, read_options, ioptions, mutable_cf_options,
                        ioptions.user_comparator, /* iter */ nullptr, version,
                        sequence, true, max_sequential_skip_in_iteration,
                        read_callback, db_impl, cfd, expose_blob_index);
+  db_iter_inited_ = true;
   sv_number_ = version_number;
   read_options_ = read_options;
   read_options_.pinning_tls = nullptr; // must set null
@@ -80,6 +85,7 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
   if (cfd_ == nullptr || db_impl_ == nullptr || !allow_refresh_) {
     return Status::NotSupported("Creating renew iterator is not allowed.");
   }
+  assert(db_iter_inited_);
   assert(db_iter_ != nullptr);
   // TODO(yiwu): For last_seq_same_as_publish_seq_==false, this is not the
   // correct behavior. Will be corrected automatically when we take a snapshot
@@ -106,6 +112,7 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
       pin_snap = db_impl_->GetSnapshotImpl(latest_seq, false);
     }
     Env* env = db_iter_->env();
+    db_iter_inited_ = false;
     db_iter_->~DBIter();
     arena_.~Arena();
     new (&arena_) Arena();

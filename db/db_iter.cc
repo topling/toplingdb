@@ -141,6 +141,7 @@ bool DBIter::ParseKey(ParsedInternalKey* ikey) {
 #endif
 }
 
+ROCKSDB_FLATTEN
 void DBIter::Next() {
   assert(valid_);
   assert(status_.ok());
@@ -325,7 +326,6 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
 }
 
 template<class CmpNoTS>
-ROCKSDB_FLATTEN
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                            const Slice* prefix,
                                            CmpNoTS cmpNoTS) {
@@ -1536,6 +1536,7 @@ void DBIter::SetSavedKeyToSeekForPrevTarget(const Slice& target) {
   }
 }
 
+ROCKSDB_FLATTEN
 void DBIter::Seek(const Slice& target) {
   PERF_COUNTER_ADD(iter_seek_count, 1);
   PERF_CPU_TIMER_GUARD(iter_seek_cpu_nanos, clock_);

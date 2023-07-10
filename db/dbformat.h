@@ -278,15 +278,12 @@ inline Slice ExtractUserKey(const Slice& internal_key) {
 
 inline Slice ExtractUserKeyAndStripTimestamp(const Slice& internal_key,
                                              size_t ts_sz) {
-  Slice ret = internal_key;
-  ret.remove_suffix(kNumInternalBytes + ts_sz);
-  return ret;
+  return Slice(internal_key.data(),
+               internal_key.size() - (kNumInternalBytes + ts_sz));
 }
 
 inline Slice StripTimestampFromUserKey(const Slice& user_key, size_t ts_sz) {
-  Slice ret = user_key;
-  ret.remove_suffix(ts_sz);
-  return ret;
+  return Slice(user_key.data(), user_key.size() - ts_sz);
 }
 
 inline Slice ExtractTimestampFromUserKey(const Slice& user_key, size_t ts_sz) {

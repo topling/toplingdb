@@ -2671,7 +2671,11 @@ class Benchmark {
   std::vector<DBWithColumnFamilies> multi_dbs_;
   int64_t num_;
   int key_size_;
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   int user_timestamp_size_;
+#else
+  static constexpr int user_timestamp_size_ = 0;
+#endif
   int prefix_size_;
   int total_thread_count_;
   int64_t keys_per_prefix_;
@@ -3111,7 +3115,9 @@ class Benchmark {
                               : nullptr),
         num_(FLAGS_num),
         key_size_(FLAGS_key_size),
+    #if defined(TOPLINGDB_WITH_TIMESTAMP)
         user_timestamp_size_(FLAGS_user_timestamp_size),
+    #endif
         prefix_size_(FLAGS_prefix_size),
         total_thread_count_(0),
         keys_per_prefix_(FLAGS_keys_per_prefix),
@@ -5801,13 +5807,13 @@ class Benchmark {
     Iterator* iter = db->NewIterator(options);
     int64_t i = 0;
     int64_t bytes = 0;
+    const auto limiter = thread->shared->read_rate_limiter.get();
     for (iter->SeekToFirst(); i < reads_ && iter->Valid(); iter->Next()) {
       bytes += iter->key().size() + iter->value().size();
       thread->stats.FinishedOps(nullptr, db, 1, kRead);
       ++i;
 
-      if (thread->shared->read_rate_limiter.get() != nullptr &&
-          i % 1024 == 1023) {
+      if (limiter != nullptr && i % 1024 == 1023) {
         thread->shared->read_rate_limiter->Request(1024, Env::IO_HIGH,
                                                    nullptr /* stats */,
                                                    RateLimiter::OpType::kRead);
@@ -5887,12 +5893,12 @@ class Benchmark {
     Iterator* iter = db->NewIterator(read_options_);
     int64_t i = 0;
     int64_t bytes = 0;
+    const auto limiter = thread->shared->read_rate_limiter.get();
     for (iter->SeekToLast(); i < reads_ && iter->Valid(); iter->Prev()) {
       bytes += iter->key().size() + iter->value().size();
       thread->stats.FinishedOps(nullptr, db, 1, kRead);
       ++i;
-      if (thread->shared->read_rate_limiter.get() != nullptr &&
-          i % 1024 == 1023) {
+      if (limiter != nullptr && i % 1024 == 1023) {
         thread->shared->read_rate_limiter->Request(1024, Env::IO_HIGH,
                                                    nullptr /* stats */,
                                                    RateLimiter::OpType::kRead);
@@ -6012,6 +6018,8 @@ class Benchmark {
     }
 
     if (FLAGS_enable_zero_copy) options.StartPin();
+    const auto limiter = thread->shared->read_rate_limiter.get();
+    std::string ts_ret;
     Duration duration(FLAGS_duration, reads_);
     while (!duration.Done(1)) {
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(thread);
@@ -6034,7 +6042,6 @@ class Benchmark {
       }
       GenerateKeyFromInt(key_rand, FLAGS_num, &key);
       read++;
-      std::string ts_ret;
       std::string* ts_ptr = nullptr;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
@@ -6043,9 +6050,6 @@ class Benchmark {
       }
       Status s;
       pinnable_val.Reset();
-      for (size_t i = 0; i < pinnable_vals.size(); ++i) {
-        pinnable_vals[i].Reset();
-      }
       ColumnFamilyHandle* cfh;
       if (FLAGS_num_column_families > 1) {
         cfh = db_with_cfh->GetCfh(key_rand);
@@ -6053,6 +6057,9 @@ class Benchmark {
         cfh = db_with_cfh->db->DefaultColumnFamily();
       }
       if (read_operands_) {
+        for (size_t i = 0; i < pinnable_vals.size(); ++i) {
+          pinnable_vals[i].Reset();
+        }
         GetMergeOperandsOptions get_merge_operands_options;
         get_merge_operands_options.expected_max_number_of_operands =
             static_cast<int>(pinnable_vals.size());
@@ -6088,8 +6095,7 @@ class Benchmark {
         abort();
       }
 
-      if (thread->shared->read_rate_limiter.get() != nullptr &&
-          read % 256 == 255) {
+      if (limiter != nullptr && read % 256 == 255) {
         thread->shared->read_rate_limiter->Request(
             256, Env::IO_HIGH, nullptr /* stats */, RateLimiter::OpType::kRead);
       }

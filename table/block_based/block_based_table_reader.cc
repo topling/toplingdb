@@ -2142,8 +2142,12 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
       iiter_unique_ptr.reset(iiter);
     }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
     size_t ts_sz =
         rep_->internal_comparator.user_comparator()->timestamp_size();
+#else
+    constexpr size_t ts_sz = 0;
+#endif
     bool matched = false;  // if such user key matched a key in SST
     bool done = false;
     for (iiter->Seek(key); iiter->Valid() && !done; iiter->Next()) {
@@ -2171,17 +2175,15 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
           read_options, v.handle, &biter, BlockType::kData, get_context,
           &lookup_data_block_context, /*prefetch_buffer=*/nullptr,
           /*for_compaction=*/false, /*async_read=*/false, tmp_status);
-
-      if (no_io && biter.status().IsIncomplete()) {
+      s = biter.status();
+      if (no_io && s.IsIncomplete()) {
         // couldn't get block from block_cache
         // Update Saver.state to Found because we are only looking for
         // whether we can guarantee the key is not there when "no_io" is set
         get_context->MarkKeyMayExist();
-        s = biter.status();
         break;
       }
-      if (!biter.status().ok()) {
-        s = biter.status();
+      if (!s.ok()) {
         break;
       }
 
@@ -2197,12 +2199,16 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
       } else {
         // Call the *saver function on each entry/block until it returns false
         for (; biter.Valid(); biter.Next()) {
+         #if defined(ROCKSDB_UNIT_TEST)
           ParsedInternalKey parsed_key;
           Status pik_status = ParseInternalKey(
               biter.key(), &parsed_key, false /* log_err_key */);  // TODO
           if (!pik_status.ok()) {
             s = pik_status;
           }
+         #else
+          const ParsedInternalKey parsed_key(biter.key());
+         #endif
 
           if (!get_context->SaveValue(
                   parsed_key, biter.value(), &matched,

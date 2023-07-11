@@ -54,7 +54,7 @@ struct LRUHandle {
   LRUHandle* next;
   LRUHandle* prev;
   size_t total_charge;  // TODO(opt): Only allow uint32_t?
-  size_t key_length;
+  uint32_t key_length;
   // The hash of key(). Used for fast sharding and comparisons.
   uint32_t hash;
   // The number of external refs to this entry. The cache itself is not counted.
@@ -87,8 +87,10 @@ struct LRUHandle {
     IM_IS_STANDALONE = (1 << 2),
   };
 
+  uint16_t padding;
+
   // Beginning of the key (MUST BE THE LAST FIELD IN THIS STRUCT!)
-  char key_data[1];
+  char key_data[0];
 
   Slice key() const { return Slice(key_data, key_length); }
 

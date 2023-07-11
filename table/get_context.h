@@ -135,7 +135,16 @@ class GetContext {
   // Returns True if more keys need to be read (due to merges) or
   //         False if the complete value has been found.
   bool SaveValue(const ParsedInternalKey& parsed_key, const Slice& value,
-                 bool* matched, Cleanable* value_pinner = nullptr);
+                 bool* matched, Cleanable* value_pinner = nullptr) {
+    assert(matched);
+    assert((state_ != kMerge && parsed_key.type != kTypeMerge) ||
+          merge_context_ != nullptr);
+    if (ucmp_->EqualWithoutTimestamp(parsed_key.user_key, user_key_)) {
+      *matched = true;
+      return SaveValue(parsed_key, value, value_pinner);
+    }
+    return false;
+  }
 
   bool SaveValue(const ParsedInternalKey& parsed_key, const Slice& value,
                  Cleanable* value_pinner = nullptr);

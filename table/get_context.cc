@@ -237,6 +237,7 @@ void GetContext::ReportCounters() {
   }
 }
 
+#if 0 // make it inline
 bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                            const Slice& value, bool* matched,
                            Cleanable* value_pinner) {
@@ -249,6 +250,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
   }
   return false;
 }
+#endif
 
 bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                            const Slice& value, Cleanable* value_pinner) {

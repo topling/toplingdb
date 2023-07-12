@@ -128,7 +128,7 @@ class WriteThread {
     uint64_t log_ref;   // log number that memtable insert should reference
     WriteCallback* callback;
     bool made_waitable;          // records lazy construction of mutex and cv
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB)
     std::atomic<uint32_t> state;  // write under StateMutex() or pre-link
 #else
     std::atomic<uint8_t> state;  // write under StateMutex() or pre-link
@@ -138,7 +138,7 @@ class WriteThread {
     Status status;
     Status callback_status;  // status returned by callback->Callback()
 
-#if !defined(OS_LINUX)
+#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
     std::aligned_storage<sizeof(std::mutex)>::type state_mutex_bytes;
     std::aligned_storage<sizeof(std::condition_variable)>::type state_cv_bytes;
 #endif
@@ -192,7 +192,7 @@ class WriteThread {
           link_newer(nullptr) {}
 
     ~Writer() {
-#if !defined(OS_LINUX)
+#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
       if (made_waitable) {
         StateMutex().~mutex();
         StateCV().~condition_variable();
@@ -209,7 +209,7 @@ class WriteThread {
       return callback_status.ok();
     }
 
-#if !defined(OS_LINUX)
+#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
     void CreateMutex() {
       if (!made_waitable) {
         // Note that made_waitable is tracked separately from state
@@ -254,7 +254,7 @@ class WriteThread {
       return status.ok() && !CallbackFailed() && !disable_wal;
     }
 
-#if !defined(OS_LINUX)
+#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
     // No other mutexes may be acquired while holding StateMutex(), it is
     // always last in the order
     std::mutex& StateMutex() {
@@ -388,7 +388,7 @@ class WriteThread {
 
  private:
   // See AwaitState.
-#if !defined(OS_LINUX)
+#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
   const uint64_t max_yield_usec_;
   const uint64_t slow_yield_usec_;
 #endif
@@ -439,7 +439,7 @@ class WriteThread {
   // Read with stall_mu or DB mutex.
   uint64_t stall_ended_count_ = 0;
 
-#if !defined(OS_LINUX)
+#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
   // Waits for w->state & goal_mask using w->StateMutex().  Returns
   // the state that satisfies goal_mask.
   uint8_t BlockingAwaitState(Writer* w, uint8_t goal_mask);

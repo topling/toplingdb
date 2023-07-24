@@ -468,7 +468,7 @@ void CompactionIterator::NextFromInput() {
     is_range_del_ = input_.IsDeleteRangeSentinelKey();
 
     Status pik_status = ParseInternalKey(key_, &ikey_, allow_data_in_errors_);
-    if (!pik_status.ok()) {
+    if (UNLIKELY(!pik_status.ok())) {
       iter_stats_.num_input_corrupt_records++;
 
       // If `expect_valid_internal_key_` is false, return the corrupted key
@@ -485,7 +485,7 @@ void CompactionIterator::NextFromInput() {
       break;
     }
     TEST_SYNC_POINT_CALLBACK("CompactionIterator:ProcessKV", &ikey_);
-    if (is_range_del_) {
+    if (UNLIKELY(is_range_del_)) {
       validity_info_.SetValid(kRangeDeletion);
       break;
     }

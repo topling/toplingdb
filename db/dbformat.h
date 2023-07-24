@@ -467,7 +467,7 @@ inline Status ParseInternalKey(const Slice& internal_key,
   assert(result->type <= ValueType::kMaxValue);
   result->user_key = Slice(internal_key.data(), n - kNumInternalBytes);
 
-  if (LIKELY(IsExtendedValueType(result->type))) {
+  if (LIKELY(IsExtendedValueType(static_cast<ValueType>(c)))) {
     return Status::OK();
   } else {
     return Status::Corruption("Corrupted Key",

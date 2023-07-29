@@ -886,9 +886,6 @@ Status FlushJob::WriteLevel0Table() {
                          << GetFlushReasonString(flush_reason_);
 
     {
-      ScopedArenaIterator iter(
-          NewMergingIterator(&cfd_->internal_comparator(), memtables.data(),
-                             static_cast<int>(memtables.size()), &arena));
       ROCKS_LOG_INFO(db_options_.info_log,
                      "[%s] [JOB %d] Level-0 flush table #%" PRIu64 ": started",
                      cfd_->GetName().c_str(), job_context_->job_id,
@@ -938,6 +935,15 @@ Status FlushJob::WriteLevel0Table() {
       const SequenceNumber job_snapshot_seq =
           job_context_->GetJobSnapshotSequence();
       const ReadOptions read_options(Env::IOActivity::kFlush);
+    if (mems_.size() == 1 && mems_.front()->SupportConvertToSST()) {
+        // convert MemTable to sst
+        MemTable* memtable = mems_.front();
+        s = memtable->ConvertToSST(&meta_, tboptions);
+    }
+    else { // call BuildTable
+      ScopedArenaIterator iter(
+          NewMergingIterator(&cfd_->internal_comparator(), memtables.data(),
+                             static_cast<int>(memtables.size()), &arena));
       s = BuildTable(dbname_, versions_, db_options_, tboptions, file_options_,
                      read_options, cfd_->table_cache(), iter.get(),
                      std::move(range_del_iters), &meta_, &blob_file_additions,
@@ -972,6 +978,7 @@ Status FlushJob::WriteLevel0Table() {
                    memtable_garbage_bytes);
       }
       LogFlush(db_options_.info_log);
+    } // end call BuildTable
     }
     ROCKS_LOG_BUFFER(log_buffer_,
                      "[%s] [JOB %d] Level-0 flush table #%" PRIu64 ": %" PRIu64

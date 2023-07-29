@@ -502,6 +502,11 @@ class MemTable {
     return table_->IsSnapshotSupported() && !moptions_.inplace_update_support;
   }
 
+  bool SupportConvertToSST() const {
+    return table_->SupportConvertToSST();
+  }
+  Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
+
   struct MemTableStats {
     uint64_t size;
     uint64_t count;

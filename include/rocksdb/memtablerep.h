@@ -292,6 +292,9 @@ class MemTableRep {
 
   virtual bool NeedsUserKeyCompareInGet() const { return true; }
 
+  virtual bool SupportConvertToSST() const { return false; }
+  virtual Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
+
  protected:
   // When *key is an internal key concatenated with the value, returns the
   // user key.

@@ -351,6 +351,16 @@ void MemTableRep::Iterator::SeekForPrev(const Slice& ikey) {
   return SeekForPrev(ikey, nullptr);
 }
 Status MemTableRep::Iterator::status() const { return Status::OK(); }
+Status MemTableRep::ConvertToSST(struct FileMetaData*,
+                                 const struct TableBuilderOptions&) {
+  ROCKSDB_VERIFY(SupportConvertToSST());
+  return Status::NotSupported("Not supported MemTableRep::ConvertToSST()");
+}
+Status MemTable::ConvertToSST(struct FileMetaData* meta,
+                              const struct TableBuilderOptions& tbo) {
+  ROCKSDB_VERIFY(table_->SupportConvertToSST());
+  return table_->ConvertToSST(meta, tbo);
+}
 
 // Encode a suitable internal key target for "target" and return it.
 // Uses *scratch as scratch space, and the returned pointer will point

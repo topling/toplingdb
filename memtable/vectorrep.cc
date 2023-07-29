@@ -66,7 +66,9 @@ class VectorRep : public MemTableRep {
 
     // Returns the key at the current position.
     // REQUIRES: Valid()
-    const char* key() const override;
+    const char* varlen_key() const override;
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
 
     // Advances to the next position.
     // REQUIRES: Valid()
@@ -184,7 +186,7 @@ bool VectorRep::Iterator::Valid() const {
 
 // Returns the key at the current position.
 // REQUIRES: Valid()
-const char* VectorRep::Iterator::key() const {
+const char* VectorRep::Iterator::varlen_key() const {
   assert(sorted_);
   return *cit_;
 }

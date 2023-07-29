@@ -272,10 +272,12 @@ class HashLinkListRep : public MemTableRep {
 
     // Returns the key at the current position.
     // REQUIRES: Valid()
-    const char* key() const override {
+    const char* varlen_key() const override {
       assert(Valid());
       return iter_.key();
     }
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
 
     // Advances to the next position.
     // REQUIRES: Valid()
@@ -339,10 +341,12 @@ class HashLinkListRep : public MemTableRep {
 
     // Returns the key at the current position.
     // REQUIRES: Valid()
-    const char* key() const override {
+    const char* varlen_key() const override {
       assert(Valid());
       return node_->key;
     }
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
 
     // Advances to the next position.
     // REQUIRES: Valid()
@@ -457,11 +461,13 @@ class HashLinkListRep : public MemTableRep {
       return HashLinkListRep::LinkListIterator::Valid();
     }
 
-    const char* key() const override {
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
+    const char* varlen_key() const override {
       if (skip_list_iter_) {
         return skip_list_iter_->key();
       }
-      return HashLinkListRep::LinkListIterator::key();
+      return HashLinkListRep::LinkListIterator::varlen_key();
     }
 
     void Next() override {
@@ -484,7 +490,9 @@ class HashLinkListRep : public MemTableRep {
    public:
     EmptyIterator() {}
     bool Valid() const override { return false; }
-    const char* key() const override {
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
+    const char* varlen_key() const override {
       assert(false);
       return nullptr;
     }
@@ -649,7 +657,7 @@ void HashLinkListRep::Insert(KeyHandle handle) {
 
     // Add all current entries to the skip list
     for (bucket_iter.SeekToHead(); bucket_iter.Valid(); bucket_iter.Next()) {
-      skip_list.Insert(bucket_iter.key());
+      skip_list.Insert(bucket_iter.varlen_key());
     }
 
     // insert the new entry
@@ -740,7 +748,7 @@ void HashLinkListRep::Get(const ReadOptions&,
   if (link_list_head != nullptr) {
     LinkListIterator iter(this, link_list_head);
     for (iter.Seek(k.internal_key(), nullptr);
-         iter.Valid() && callback_func(callback_args, KeyValuePair(iter.key()));
+         iter.Valid() && callback_func(callback_args, KeyValuePair(iter.varlen_key()));
          iter.Next()) {
     }
   } else {
@@ -770,7 +778,7 @@ MemTableRep::Iterator* HashLinkListRep::GetIterator(Arena* alloc_arena) {
       if (link_list_head != nullptr) {
         LinkListIterator itr(this, link_list_head);
         for (itr.SeekToHead(); itr.Valid(); itr.Next()) {
-          list->Insert(itr.key());
+          list->Insert(itr.varlen_key());
           count++;
         }
       } else {

@@ -263,65 +263,7 @@ class MemTableRep {
 
   virtual ~MemTableRep() {}
 
-  // Iteration over the contents of a skip collection
-  class Iterator {
-   public:
-    // Initialize an iterator over the specified collection.
-    // The returned iterator is not valid.
-    // explicit Iterator(const MemTableRep* collection);
-    virtual ~Iterator() {}
-
-    // Returns true iff the iterator is positioned at a valid node.
-    virtual bool Valid() const = 0;
-
-    // Returns the key at the current position.
-    // REQUIRES: Valid()
-    virtual const char* key() const = 0;
-
-    // Returns the key at the current position.
-    // REQUIRES: Valid()
-    virtual Slice GetKey() const;
-
-    // Returns the value at the current position.
-    // REQUIRES: Valid()
-    virtual Slice GetValue() const;
-
-    // Returns the key & value at the current position.
-    // REQUIRES: Valid()
-    virtual std::pair<Slice, Slice> GetKeyValue() const;
-
-    // Advances to the next position.
-    // REQUIRES: Valid()
-    virtual void Next() = 0;
-
-    // Advances to the previous position.
-    // REQUIRES: Valid()
-    virtual void Prev() = 0;
-
-    virtual bool NextAndGetResult(IterateResult*);
-    virtual bool NextAndCheckValid();
-    virtual bool PrevAndCheckValid();
-
-    // Advance to the first entry with a key >= target
-    virtual void Seek(const Slice& internal_key, const char* memtable_key) = 0;
-
-    // retreat to the first entry with a key <= target
-    virtual void SeekForPrev(const Slice& internal_key,
-                             const char* memtable_key) = 0;
-
-    virtual void RandomSeek() {}
-
-    // Position at the first entry in collection.
-    // Final state of iterator is Valid() iff collection is not empty.
-    virtual void SeekToFirst() = 0;
-
-    // Position at the last entry in collection.
-    // Final state of iterator is Valid() iff collection is not empty.
-    virtual void SeekToLast() = 0;
-
-    // If true, this means that the Slice returned by GetKey() is always valid
-    virtual bool IsKeyPinned() const { return true; }
-  };
+  class Iterator; // defined in memtable.h, derived from InternalIterator
 
   // Return an iterator over the keys in this representation.
   // arena: If not null, the arena needs to be used to allocate the Iterator.

@@ -334,7 +334,7 @@ KeyHandle MemTableRep::Allocate(const size_t len, char** buf) {
 
 bool MemTableRep::Iterator::NextAndGetResult(IterateResult* result) {
   if (LIKELY(NextAndCheckValid())) {
-    result->SetKey(this->GetKey());
+    result->SetKey(this->key());
     result->bound_check_result = IterBoundCheck::kUnknown;
     result->value_prepared = true;
     result->is_valid = true;
@@ -346,6 +346,11 @@ bool MemTableRep::Iterator::NextAndGetResult(IterateResult* result) {
 }
 bool MemTableRep::Iterator::NextAndCheckValid() { Next(); return Valid(); }
 bool MemTableRep::Iterator::PrevAndCheckValid() { Prev(); return Valid(); }
+void MemTableRep::Iterator::Seek(const Slice& ikey) { Seek(ikey, nullptr); }
+void MemTableRep::Iterator::SeekForPrev(const Slice& ikey) {
+  return SeekForPrev(ikey, nullptr);
+}
+Status MemTableRep::Iterator::status() const { return Status::OK(); }
 
 // Encode a suitable internal key target for "target" and return it.
 // Uses *scratch as scratch space, and the returned pointer will point
@@ -486,11 +491,11 @@ class MemTableIterator : public InternalIterator {
   }
   Slice key() const override {
     assert(Valid());
-    return iter_->GetKey();
+    return iter_->key();
   }
   Slice value() const override {
     assert(Valid());
-    return iter_->GetValue();
+    return iter_->value();
   }
 
   Status status() const override { return Status::OK(); }
@@ -519,6 +524,13 @@ class MemTableIterator : public InternalIterator {
 InternalIterator* MemTable::NewIterator(const ReadOptions& read_options,
                                         Arena* arena) {
   assert(arena != nullptr);
+#if !defined(ROCKSDB_UNIT_TEST)
+  if (nullptr == bloom_filter_ && nullptr == prefix_extractor_ &&
+        perf_level < PerfLevel::kEnableCount &&
+        !moptions_.inplace_update_support) {
+    return table_->GetIterator(arena);
+  }
+#endif
   auto mem = arena->AllocateAligned(sizeof(MemTableIterator));
   return new (mem) MemTableIterator(*this, read_options, arena);
 }
@@ -1579,7 +1591,7 @@ size_t MemTable::CountSuccessiveMergeEntries(const LookupKey& key) {
   size_t num_successive_merges = 0;
 
   for (; iter->Valid(); iter->Next()) {
-    Slice internal_key = iter->GetKey();
+    Slice internal_key = iter->key();
     size_t key_length = internal_key.size();
     const char* iter_key_ptr = internal_key.data();
     if (!comparator_.comparator.user_comparator()->Equal(
@@ -1605,19 +1617,19 @@ MemTableRep::KeyValuePair::KeyValuePair(const char* key)
   : ikey(GetLengthPrefixedSlice(key)),
     value(GetLengthPrefixedSlice(ikey.end())) {}
 
-Slice MemTableRep::Iterator::GetKey() const {
+Slice MemTableRep::Iterator::key() const {
   assert(Valid());
-  return GetLengthPrefixedSlice(key());
+  return GetLengthPrefixedSlice(varlen_key());
 }
 
-Slice MemTableRep::Iterator::GetValue() const {
+Slice MemTableRep::Iterator::value() const {
   assert(Valid());
-  Slice k = GetLengthPrefixedSlice(key());
+  Slice k = GetLengthPrefixedSlice(varlen_key());
   return GetLengthPrefixedSlice(k.data() + k.size());
 }
 std::pair<Slice, Slice> MemTableRep::Iterator::GetKeyValue() const {
   assert(Valid());
-  Slice k = GetLengthPrefixedSlice(key());
+  Slice k = GetLengthPrefixedSlice(varlen_key());
   Slice v = GetLengthPrefixedSlice(k.data() + k.size());
   return {k, v};
 }

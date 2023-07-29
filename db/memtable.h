@@ -27,6 +27,7 @@
 #include "options/cf_options.h"
 #include "rocksdb/db.h"
 #include "rocksdb/memtablerep.h"
+#include "table/internal_iterator.h"
 #include "table/multiget_context.h"
 #include "util/dynamic_bloom.h"
 #include "util/hash.h"
@@ -67,6 +68,46 @@ struct MemTablePostProcessInfo {
   uint64_t data_size = 0;
   uint64_t num_entries = 0;
   uint64_t num_deletes = 0;
+};
+
+// Iteration over the contents of a skip collection
+class MemTableRep::Iterator : public InternalIterator {
+  public:
+  // Returns the key at the current position.
+  // REQUIRES: Valid()
+  virtual const char* varlen_key() const = 0;
+
+  // Returns the key at the current position.
+  // REQUIRES: Valid()
+  virtual Slice key() const override;
+
+  // Returns the value at the current position.
+  // REQUIRES: Valid()
+  virtual Slice value() const override;
+
+  // Returns the key & value at the current position.
+  // REQUIRES: Valid()
+  virtual std::pair<Slice, Slice> GetKeyValue() const;
+
+  virtual bool NextAndGetResult(IterateResult*);
+  virtual bool NextAndCheckValid();
+  virtual bool PrevAndCheckValid();
+
+  void Seek(const Slice& ikey) override;
+  // Advance to the first entry with a key >= target
+  virtual void Seek(const Slice& internal_key, const char* memtable_key) = 0;
+
+  void SeekForPrev(const Slice& ikey) override;
+  // retreat to the first entry with a key <= target
+  virtual void SeekForPrev(const Slice& internal_key,
+                            const char* memtable_key) = 0;
+
+  virtual void RandomSeek() {}
+
+  // If true, this means that the Slice returned by GetKey() is always valid
+  virtual bool IsKeyPinned() const override { return true; }
+  virtual bool IsValuePinned() const override { return true; }
+  virtual Status status() const override;
 };
 
 using MultiGetRange = MultiGetContext::Range;

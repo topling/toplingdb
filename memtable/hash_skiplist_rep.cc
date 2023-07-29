@@ -95,10 +95,12 @@ class HashSkipListRep : public MemTableRep {
 
     // Returns the key at the current position.
     // REQUIRES: Valid()
-    const char* key() const override {
+    const char* varlen_key() const override {
       assert(Valid());
       return iter_.key();
     }
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
 
     // Advances to the next position.
     // REQUIRES: Valid()
@@ -176,6 +178,9 @@ class HashSkipListRep : public MemTableRep {
         : HashSkipListRep::Iterator(nullptr, false),
           memtable_rep_(memtable_rep) {}
 
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
+
     // Advance to the first entry with a key >= target
     void Seek(const Slice& k, const char* memtable_key) override {
       auto transformed = memtable_rep_.transform_->Transform(ExtractUserKey(k));
@@ -210,7 +215,9 @@ class HashSkipListRep : public MemTableRep {
    public:
     EmptyIterator() {}
     bool Valid() const override { return false; }
-    const char* key() const override {
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
+    const char* varlen_key() const override {
       assert(false);
       return nullptr;
     }

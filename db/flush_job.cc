@@ -935,12 +935,38 @@ Status FlushJob::WriteLevel0Table() {
       const SequenceNumber job_snapshot_seq =
           job_context_->GetJobSnapshotSequence();
       const ReadOptions read_options(Env::IOActivity::kFlush);
+    if (mems_.size())
+      fprintf(stderr, "mems_.size = %zd, SupportConvertToSST = %d\n", mems_.size(), mems_.front()->SupportConvertToSST());
     if (mems_.size() == 1 && mems_.front()->SupportConvertToSST()) {
         // convert MemTable to sst
         MemTable* memtable = mems_.front();
+        // pass these fields to ConvertToSST, to fill TableProperties
+        meta_.num_entries = memtable->num_entries();
+        meta_.num_deletions = memtable->num_deletes();
+        meta_.num_range_deletions = 0;
+        meta_.raw_key_size = memtable->get_data_size() / 2; // estimate
+        meta_.raw_value_size = memtable->get_data_size();
         s = memtable->ConvertToSST(&meta_, tboptions);
+        fprintf(stderr, "[%s] [JOB %d] Level-0 ConvertToSST #%" PRIu64 ": ApproximateMemoryUsage %" PRIu64
+                        " bytes %s\n",
+                        cfd_->GetName().c_str(), job_context_->job_id,
+                        meta_.fd.GetNumber(), memtable->ApproximateMemoryUsage(),
+                        s.ToString().c_str());
+        if (!s.ok()) {
+          ROCKS_LOG_BUFFER(log_buffer_,
+                          "[%s] [JOB %d] Level-0 ConvertToSST #%" PRIu64 ": ApproximateMemoryUsage %" PRIu64
+                          " bytes %s",
+                          cfd_->GetName().c_str(), job_context_->job_id,
+                          meta_.fd.GetNumber(), memtable->ApproximateMemoryUsage(),
+                          s.ToString().c_str());
+          goto UseBuildTable;
+        }
+        meta_.fd.smallest_seqno = memtable->GetEarliestSequenceNumber();
+        meta_.fd.largest_seqno = memtable->GetCreationSeq();
+        meta_.marked_for_compaction = true;
     }
     else { // call BuildTable
+UseBuildTable:
       ScopedArenaIterator iter(
           NewMergingIterator(&cfd_->internal_comparator(), memtables.data(),
                              static_cast<int>(memtables.size()), &arena));

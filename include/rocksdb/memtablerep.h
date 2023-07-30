@@ -326,6 +326,14 @@ class MemTableRepFactory : public Customizable {
       uint32_t /* column_family_id */) {
     return CreateMemTableRep(key_cmp, allocator, slice_transform, logger);
   }
+  virtual MemTableRep* CreateMemTableRep(
+      const std::string& level0_dir,
+      const MemTableRep::KeyComparator& key_cmp, Allocator* allocator,
+      const SliceTransform* slice_transform, Logger* logger,
+      uint32_t column_family_id) {
+    return CreateMemTableRep(key_cmp, allocator, slice_transform, logger,
+                             column_family_id);
+  }
 
   const char* Name() const override = 0;
 

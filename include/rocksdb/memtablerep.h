@@ -327,7 +327,7 @@ class MemTableRepFactory : public Customizable {
     return CreateMemTableRep(key_cmp, allocator, slice_transform, logger);
   }
   virtual MemTableRep* CreateMemTableRep(
-      const std::string& level0_dir,
+      const std::string& /*level0_dir*/,
       const MemTableRep::KeyComparator& key_cmp, Allocator* allocator,
       const SliceTransform* slice_transform, Logger* logger,
       uint32_t column_family_id) {

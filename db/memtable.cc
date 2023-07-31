@@ -333,20 +333,6 @@ KeyHandle MemTableRep::Allocate(const size_t len, char** buf) {
   return static_cast<KeyHandle>(*buf);
 }
 
-bool MemTableRep::Iterator::NextAndGetResult(IterateResult* result) {
-  if (LIKELY(NextAndCheckValid())) {
-    result->SetKey(this->key());
-    result->bound_check_result = IterBoundCheck::kUnknown;
-    result->value_prepared = true;
-    result->is_valid = true;
-    return true;
-  } else {
-    result->is_valid = false;
-    return false;
-  }
-}
-bool MemTableRep::Iterator::NextAndCheckValid() { Next(); return Valid(); }
-bool MemTableRep::Iterator::PrevAndCheckValid() { Prev(); return Valid(); }
 void MemTableRep::Iterator::Seek(const Slice& ikey) { Seek(ikey, nullptr); }
 void MemTableRep::Iterator::SeekForPrev(const Slice& ikey) {
   return SeekForPrev(ikey, nullptr);

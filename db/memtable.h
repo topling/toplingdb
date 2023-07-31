@@ -93,10 +93,6 @@ class MemTableRep::Iterator : public InternalIterator {
   // REQUIRES: Valid()
   virtual std::pair<Slice, Slice> GetKeyValue() const;
 
-  virtual bool NextAndGetResult(IterateResult*) override;
-  virtual bool NextAndCheckValid() override;
-  virtual bool PrevAndCheckValid() override;
-
   void Seek(const Slice& ikey) override;
   // Advance to the first entry with a key >= target
   virtual void Seek(const Slice& internal_key, const char* memtable_key) = 0;
@@ -104,7 +100,7 @@ class MemTableRep::Iterator : public InternalIterator {
   void SeekForPrev(const Slice& ikey) override;
   // retreat to the first entry with a key <= target
   virtual void SeekForPrev(const Slice& internal_key,
-                            const char* memtable_key) = 0;
+                           const char* memtable_key) = 0;
 
   virtual void RandomSeek() {}
 

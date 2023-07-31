@@ -941,9 +941,10 @@ Status FlushJob::WriteLevel0Table() {
         // pass these fields to ConvertToSST, to fill TableProperties
         meta_.num_entries = memtable->num_entries();
         meta_.num_deletions = memtable->num_deletes();
+        meta_.num_merges = memtable->num_merges();
         meta_.num_range_deletions = 0;
-        meta_.raw_key_size = memtable->get_data_size() / 2; // estimate
-        meta_.raw_value_size = memtable->get_data_size();
+        meta_.raw_key_size = memtable->raw_key_size();
+        meta_.raw_value_size = memtable->raw_value_size();
         s = memtable->ConvertToSST(&meta_, tboptions);
         if (!s.ok()) {
           ROCKS_LOG_BUFFER(log_buffer_,
@@ -954,8 +955,9 @@ Status FlushJob::WriteLevel0Table() {
                           s.ToString().c_str());
           goto UseBuildTable;
         }
-        meta_.fd.smallest_seqno = memtable->GetEarliestSequenceNumber();
-        meta_.fd.largest_seqno = memtable->GetCreationSeq();
+        meta_.fd.smallest_seqno = std::min(memtable->GetEarliestSequenceNumber(),
+                                           memtable->GetFirstSequenceNumber());
+        meta_.fd.largest_seqno = memtable->largest_seqno();
         meta_.marked_for_compaction = true;
         for (auto* p_iter : memtables) { // memtables is vec of memtab iters
           std::destroy_at(p_iter); // Attention!!! must!

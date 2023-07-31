@@ -702,10 +702,21 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                        std::memory_order_relaxed);
     data_size_.store(data_size_.load(std::memory_order_relaxed) + encoded_len,
                      std::memory_order_relaxed);
+    raw_key_size_.store(raw_key_size_.load(std::memory_order_relaxed) + key_slice.size_,
+                     std::memory_order_relaxed);
+    raw_value_size_.store(raw_value_size_.load(std::memory_order_relaxed) + value.size_,
+                     std::memory_order_relaxed);
     if (type == kTypeDeletion || type == kTypeSingleDeletion ||
         type == kTypeDeletionWithTimestamp) {
       num_deletes_.store(num_deletes_.load(std::memory_order_relaxed) + 1,
                          std::memory_order_relaxed);
+    }
+    else if (type == kTypeMerge) {
+      num_merges_.store(num_merges_.load(std::memory_order_relaxed) + 1,
+                         std::memory_order_relaxed);
+    }
+    if (largest_seqno_.load(std::memory_order_relaxed) < s) {
+      largest_seqno_.store(s, std::memory_order_relaxed);
     }
 
     if (bloom_filter_) {
@@ -748,8 +759,17 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
     assert(post_process_info != nullptr);
     post_process_info->num_entries++;
     post_process_info->data_size += encoded_len;
-    if (type == kTypeDeletion) {
+    if (type == kTypeDeletion || type == kTypeSingleDeletion ||
+        type == kTypeDeletionWithTimestamp) {
       post_process_info->num_deletes++;
+    }
+    else if (type == kTypeMerge) {
+      post_process_info->num_merges++;
+    }
+    post_process_info->raw_key_size += key_slice.size_;
+    post_process_info->raw_value_size += value.size_;
+    if (post_process_info->largest_seqno < s) {
+        post_process_info->largest_seqno = s;
     }
 
     if (bloom_filter_) {

@@ -193,6 +193,7 @@ struct FileMetaData {
   uint64_t num_entries = 0;     // the number of entries.
   // The number of deletion entries, including range deletions.
   uint64_t num_deletions = 0;
+  uint64_t num_merges = 0;
   uint64_t raw_key_size = 0;    // total uncompressed key size.
   uint64_t raw_value_size = 0;  // total uncompressed value size.
   uint64_t num_range_deletions = 0;

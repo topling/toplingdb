@@ -68,6 +68,10 @@ struct MemTablePostProcessInfo {
   uint64_t data_size = 0;
   uint64_t num_entries = 0;
   uint64_t num_deletes = 0;
+  uint64_t num_merges = 0;
+  uint64_t largest_seqno = 0;
+  uint64_t raw_key_size = 0; // internal key
+  uint64_t raw_value_size = 0;
 };
 
 // Iteration over the contents of a skip collection
@@ -373,6 +377,15 @@ class MemTable {
       num_deletes_.fetch_add(update_counters.num_deletes,
                              std::memory_order_relaxed);
     }
+    if (update_counters.num_merges != 0) {
+      num_merges_.fetch_add(update_counters.num_merges,
+                             std::memory_order_relaxed);
+    }
+    if (largest_seqno_.load(std::memory_order_relaxed) < update_counters.largest_seqno) {
+      largest_seqno_.store(update_counters.largest_seqno, std::memory_order_relaxed);
+    }
+    raw_key_size_.fetch_add(update_counters.raw_key_size, std::memory_order_relaxed);
+    raw_value_size_.fetch_add(update_counters.raw_value_size, std::memory_order_relaxed);
     UpdateFlushState();
   }
 
@@ -389,9 +402,22 @@ class MemTable {
   uint64_t num_deletes() const {
     return num_deletes_.load(std::memory_order_relaxed);
   }
+  uint64_t num_merges() const {
+    return num_merges_.load(std::memory_order_relaxed);
+  }
 
   uint64_t get_data_size() const {
     return data_size_.load(std::memory_order_relaxed);
+  }
+
+  uint64_t largest_seqno() const {
+    return largest_seqno_.load(std::memory_order_relaxed);
+  }
+  uint64_t raw_key_size() const {
+    return raw_key_size_.load(std::memory_order_relaxed);
+  }
+  uint64_t raw_value_size() const {
+    return raw_value_size_.load(std::memory_order_relaxed);
   }
 
   // Dynamically change the memtable's capacity. If set below the current usage,
@@ -594,6 +620,10 @@ class MemTable {
   std::atomic<uint64_t> data_size_;
   std::atomic<uint64_t> num_entries_;
   std::atomic<uint64_t> num_deletes_;
+  std::atomic<uint64_t> num_merges_;
+  std::atomic<uint64_t> largest_seqno_;
+  std::atomic<uint64_t> raw_key_size_;
+  std::atomic<uint64_t> raw_value_size_;
 
   // Dynamically changeable memtable option
   std::atomic<size_t> write_buffer_size_;

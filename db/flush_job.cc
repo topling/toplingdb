@@ -917,13 +917,6 @@ Status FlushJob::WriteLevel0Table() {
       meta_.oldest_ancester_time = oldest_ancester_time;
       meta_.file_creation_time = current_time;
 
-      uint64_t num_input_entries = 0;
-      uint64_t memtable_payload_bytes = 0;
-      uint64_t memtable_garbage_bytes = 0;
-      IOStatus io_s;
-
-      const std::string* const full_history_ts_low =
-          (full_history_ts_low_.empty()) ? nullptr : &full_history_ts_low_;
       TableBuilderOptions tboptions(
           *cfd_->ioptions(), mutable_cf_options_, cfd_->internal_comparator(),
           cfd_->int_tbl_prop_collector_factories(), output_compression_,
@@ -932,9 +925,6 @@ Status FlushJob::WriteLevel0Table() {
           TableFileCreationReason::kFlush, oldest_key_time, current_time,
           db_id_, db_session_id_, 0 /* target_file_size */,
           meta_.fd.GetNumber());
-      const SequenceNumber job_snapshot_seq =
-          job_context_->GetJobSnapshotSequence();
-      const ReadOptions read_options(Env::IOActivity::kFlush);
     if (mems_.size() == 1 && mems_.front()->SupportConvertToSST()) {
         // convert MemTable to sst
         MemTable* memtable = mems_.front();
@@ -966,6 +956,15 @@ Status FlushJob::WriteLevel0Table() {
     }
     else { // call BuildTable
 UseBuildTable:
+      uint64_t num_input_entries = 0;
+      uint64_t memtable_payload_bytes = 0;
+      uint64_t memtable_garbage_bytes = 0;
+      IOStatus io_s;
+      const std::string* const full_history_ts_low =
+          (full_history_ts_low_.empty()) ? nullptr : &full_history_ts_low_;
+      const SequenceNumber job_snapshot_seq =
+          job_context_->GetJobSnapshotSequence();
+      const ReadOptions read_options(Env::IOActivity::kFlush);
       ScopedArenaIterator iter(
           NewMergingIterator(&cfd_->internal_comparator(), memtables.data(),
                              static_cast<int>(memtables.size()), &arena));

@@ -141,6 +141,7 @@ struct ParsedInternalKey {
     sequence = seqvt >> 8;
     type = ValueType(seqvt);
   }
+  inline uint64_t GetTag() const { return sequence << 8 | uint64_t(type); }
   std::string DebugString(bool log_err_key, bool hex) const;
 
   void clear() {

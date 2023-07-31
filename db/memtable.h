@@ -525,7 +525,7 @@ class MemTable {
   }
 
   bool SupportConvertToSST() const {
-    return table_->SupportConvertToSST();
+    return table_->SupportConvertToSST() && is_range_del_table_empty_;
   }
   Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
 

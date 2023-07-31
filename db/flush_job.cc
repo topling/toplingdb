@@ -957,7 +957,9 @@ Status FlushJob::WriteLevel0Table() {
         meta_.fd.smallest_seqno = memtable->GetEarliestSequenceNumber();
         meta_.fd.largest_seqno = memtable->GetCreationSeq();
         meta_.marked_for_compaction = true;
-        memtables.front()->~InternalIteratorBase(); // Attention!!! must!
+        for (auto* p_iter : memtables) { // memtables is vec of memtab iters
+          std::destroy_at(p_iter); // Attention!!! must!
+        }
         memtables.clear();
     }
     else { // call BuildTable

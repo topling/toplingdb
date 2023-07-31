@@ -911,8 +911,12 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
 #endif
       user_comparator->EqualWithoutTimestamp(user_key_slice,
                                              s->key->user_key())) {
+#if !defined(NDEBUG)
+    // In debug, user_comparator must be loaded
+    user_comparator = s->mem->GetInternalKeyComparator().user_comparator();
     assert(user_comparator->EqualWithoutTimestamp(user_key_slice,
                                              s->key->user_key()));
+#endif
     // Correct user key
     const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
     ValueType type;

@@ -133,29 +133,30 @@ void nolocks_localtime(struct tm *tmp, time_t t, time_t tz, int dst) {
     tmp->tm_wday = (days+4)%7;
 
     /* Calculate the current year. */
-    tmp->tm_year = 1970;
+    int year = 1970;
     while(1) {
         /* Leap years have one day more. */
-        time_t days_this_year = 365 + is_leap_year(tmp->tm_year);
+        time_t days_this_year = 365 + is_leap_year(year);
         if (days_this_year > days) break;
         days -= days_this_year;
-        tmp->tm_year++;
+        year++;
     }
     tmp->tm_yday = days;  /* Number of day of the current year. */
     /* We need to calculate in which month and day of the month we are. To do
      * so we need to skip days according to how many days there are in each
      * month, and adjust for the leap year that has one more day in February. */
-    int mdays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    mdays[1] += is_leap_year(tmp->tm_year);
+    unsigned char mdays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    mdays[1] += is_leap_year(year);
 
-    tmp->tm_mon = 0;
-    while(days >= mdays[tmp->tm_mon]) {
-        days -= mdays[tmp->tm_mon];
-        tmp->tm_mon++;
+    int mon = 0;
+    while(days >= mdays[mon]) {
+        days -= mdays[mon];
+        mon++;
     }
+    tmp->tm_mon = mon;
 
     tmp->tm_mday = days+1;  /* Add 1 since our 'days' is zero-based. */
-    tmp->tm_year -= 1900;   /* Surprisingly tm_year is year-1900. */
+    tmp->tm_year = year - 1900; /* Surprisingly tm_year is year-1900. */
 }
 
 void nolocks_localtime(struct tm *tmp, time_t t, time_t tz) {

@@ -205,7 +205,6 @@ Status DBImpl::FlushMemTableToOutputFile(
   // To address this, we make sure NotifyOnFlushBegin() executes after memtable
   // picking so that no new snapshot can be taken between the two functions.
 
-  constexpr bool sync_output_directory = false;
   FlushJob flush_job(
       dbname_, cfd, immutable_db_options_, mutable_cf_options, max_memtable_id,
       file_options_for_compaction_, versions_.get(), &mutex_, &shutting_down_,
@@ -214,7 +213,7 @@ Status DBImpl::FlushMemTableToOutputFile(
       GetDataDir(cfd, 0U),
       GetCompressionFlush(*cfd->ioptions(), mutable_cf_options), stats_,
       &event_logger_, mutable_cf_options.report_bg_io_stats,
-      sync_output_directory, true /* write_manifest */, thread_pri,
+      true /* sync_output_directory */, true /* write_manifest */, thread_pri,
       io_tracer_, seqno_time_mapping_, db_id_, db_session_id_,
       cfd->GetFullHistoryTsLow(), &blob_callback_);
   FileMetaData file_meta;

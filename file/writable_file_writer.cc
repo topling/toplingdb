@@ -287,19 +287,24 @@ IOStatus WritableFileWriter::Close() {
   }
 
   TEST_KILL_RANDOM("WritableFileWriter::Close:0");
-  {
-    FileOperationInfo::StartTimePoint start_ts;
-    if (ShouldNotifyListeners()) {
-      start_ts = FileOperationInfo::StartNow();
+  auto start_ts = FileOperationInfo::StartNow();
+  interim = writable_file_->Close(io_options, nullptr);
+  auto finish_ts = FileOperationInfo::FinishNow();
+  if (ShouldNotifyListeners()) {
+    NotifyOnFileCloseFinish(start_ts, finish_ts, s);
+    if (!interim.ok()) {
+      NotifyOnIOError(interim, FileOperationType::kClose, file_name());
     }
-    interim = writable_file_->Close(io_options, nullptr);
-    if (ShouldNotifyListeners()) {
-      auto finish_ts = FileOperationInfo::FinishNow();
-      NotifyOnFileCloseFinish(start_ts, finish_ts, s);
-      if (!interim.ok()) {
-        NotifyOnIOError(interim, FileOperationType::kClose, file_name());
-      }
-    }
+  }
+  ROCKSDB_VERIFY_EQ(filesize_, writable_file_->GetFileSize(io_options, nullptr));
+  using namespace std::chrono;
+  auto close_tm = finish_ts - start_ts.second;
+  if (close_tm > milliseconds(500)) {
+    extern const char* StrDateTimeNow();
+    fprintf(stderr, "WARN: %s: WritableFileWriter::Close(%s): "
+      "fsize = %.6f M, file close = %.3f ms\n",
+      StrDateTimeNow(), file_name_.c_str(), filesize_/1e6,
+      duration_cast<microseconds>(close_tm).count()/1e3);
   }
   if (!interim.ok() && s.ok()) {
     s = interim;

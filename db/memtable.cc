@@ -96,6 +96,7 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       num_entries_(0),
       num_deletes_(0),
       num_merges_(0),
+      num_range_deletes_(0),
       largest_seqno_(0),
       raw_key_size_(0),
       raw_value_size_(0),
@@ -118,7 +119,9 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
           ioptions.memtable_insert_with_hint_prefix_extractor.get()),
       oldest_key_time_(std::numeric_limits<uint64_t>::max()),
       atomic_flush_seqno_(kMaxSequenceNumber),
-      approximate_memory_usage_(0) {
+      approximate_memory_usage_(0),
+      memtable_max_range_deletions_(
+          mutable_cf_options.memtable_max_range_deletions) {
   needs_user_key_cmp_in_get_ = table_->NeedsUserKeyCompareInGet();
   UpdateFlushState();
   // something went wrong if we need to flush before inserting anything
@@ -175,6 +178,14 @@ size_t MemTable::ApproximateMemoryUsage() {
 }
 
 bool MemTable::ShouldFlushNow() {
+  // This is set if memtable_max_range_deletions is > 0,
+  // and that many range deletions are done
+  if (memtable_max_range_deletions_ > 0 &&
+      num_range_deletes_.load(std::memory_order_relaxed) >=
+          static_cast<uint64_t>(memtable_max_range_deletions_)) {
+    return true;
+  }
+
   size_t write_buffer_size = write_buffer_size_.load(std::memory_order_relaxed);
   // In a lot of times, we cannot allocate arena blocks that exactly matches the
   // buffer size. Thus we have to decide if we should over-allocate or
@@ -704,6 +715,9 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
         type == kTypeDeletionWithTimestamp) {
       num_deletes_.store(num_deletes_.load(std::memory_order_relaxed) + 1,
                          std::memory_order_relaxed);
+    } else if (type == kTypeRangeDeletion) {
+      uint64_t val = num_range_deletes_.load(std::memory_order_relaxed) + 1;
+      num_range_deletes_.store(val, std::memory_order_relaxed);
     }
     else if (type == kTypeMerge) {
       num_merges_.store(num_merges_.load(std::memory_order_relaxed) + 1,
@@ -798,6 +812,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
     auto new_cache = std::make_shared<FragmentedRangeTombstoneListCache>();
     size_t size = cached_range_tombstone_.Size();
     if (allow_concurrent) {
+      post_process_info->num_range_deletes++;
       range_del_mutex_.lock();
     }
     for (size_t i = 0; i < size; ++i) {
@@ -816,6 +831,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
               new_local_cache_ref, new_cache.get()),
           std::memory_order_relaxed);
     }
+
     if (allow_concurrent) {
       range_del_mutex_.unlock();
     }
@@ -1255,6 +1271,7 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
     // Avoiding recording stats for speed.
     return false;
   }
+
   PERF_TIMER_GUARD(get_from_memtable_time);
 
   std::unique_ptr<FragmentedRangeTombstoneIterator> range_del_iter(

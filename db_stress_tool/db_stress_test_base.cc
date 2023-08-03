@@ -3269,6 +3269,8 @@ void InitializeOptionsFromFlags(
   options.allow_data_in_errors = FLAGS_allow_data_in_errors;
 
   options.enable_thread_tracking = FLAGS_enable_thread_tracking;
+
+  options.memtable_max_range_deletions = FLAGS_memtable_max_range_deletions;
 }
 
 void InitializeOptionsGeneral(

@@ -969,6 +969,8 @@ Status DB::OpenAndCompact(
   delete db;
   if (s.ok()) {
     return serialization_status;
+  } else {
+    serialization_status.PermitUncheckedError();
   }
   return s;
 }

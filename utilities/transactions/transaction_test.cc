@@ -1383,7 +1383,7 @@ TEST_P(TransactionTest, PersistentTwoPhaseTransactionTest) {
   ASSERT_OK(db_impl->TEST_FlushMemTable(true));
 
   // regular db read
-  db->Get(read_options, "foo2", &value);
+  ASSERT_OK(db->Get(read_options, "foo2", &value));
   ASSERT_EQ(value, "bar2");
 
   // nothing has been prepped yet
@@ -1431,7 +1431,7 @@ TEST_P(TransactionTest, PersistentTwoPhaseTransactionTest) {
   ASSERT_OK(s);
 
   // value is now available
-  db->Get(read_options, "foo", &value);
+  ASSERT_OK(db->Get(read_options, "foo", &value));
   ASSERT_EQ(value, "bar");
 
   // we already committed
@@ -1602,10 +1602,10 @@ TEST_P(TransactionStressTest, TwoPhaseLongPrepareTest) {
       // crash
       env->SetFilesystemActive(false);
       reinterpret_cast<PessimisticTransactionDB*>(db)->TEST_Crash();
-      ReOpenNoDelete();
+      ASSERT_OK(ReOpenNoDelete());
     } else if (i % 37 == 0) {
       // close
-      ReOpenNoDelete();
+      ASSERT_OK(ReOpenNoDelete());
     }
   }
 
@@ -1707,7 +1707,7 @@ TEST_P(TransactionTest, TwoPhaseDoubleRecoveryTest) {
   // kill and reopen
   env->SetFilesystemActive(false);
   reinterpret_cast<PessimisticTransactionDB*>(db)->TEST_Crash();
-  ReOpenNoDelete();
+  ASSERT_OK(ReOpenNoDelete());
 
   // commit old txn
   assert(db != nullptr);  // Make clang analyze happy.
@@ -2187,9 +2187,9 @@ TEST_P(TransactionTest, WriteConflictTest) {
   s = txn->Commit();
   ASSERT_OK(s);
 
-  db->Get(read_options, "foo", &value);
+  ASSERT_OK(db->Get(read_options, "foo", &value));
   ASSERT_EQ(value, "A2");
-  db->Get(read_options, "foo2", &value);
+  ASSERT_OK(db->Get(read_options, "foo2", &value));
   ASSERT_EQ(value, "B2");
 
   delete txn;
@@ -2231,13 +2231,13 @@ TEST_P(TransactionTest, WriteConflictTest2) {
   ASSERT_OK(s);  // Txn should commit, but only write foo2 and foo3
 
   // Verify that transaction wrote foo2 and foo3 but not foo
-  db->Get(read_options, "foo", &value);
+  ASSERT_OK(db->Get(read_options, "foo", &value));
   ASSERT_EQ(value, "barz");
 
-  db->Get(read_options, "foo2", &value);
+  ASSERT_OK(db->Get(read_options, "foo2", &value));
   ASSERT_EQ(value, "X");
 
-  db->Get(read_options, "foo3", &value);
+  ASSERT_OK(db->Get(read_options, "foo3", &value));
   ASSERT_EQ(value, "Y");
 
   delete txn;
@@ -2329,13 +2329,13 @@ TEST_P(TransactionTest, FlushTest) {
 
   // force a memtable flush
   FlushOptions flush_ops;
-  db->Flush(flush_ops);
+  ASSERT_OK(db->Flush(flush_ops));
 
   s = txn->Commit();
   // txn should commit since the flushed table is still in MemtableList History
   ASSERT_OK(s);
 
-  db->Get(read_options, "foo", &value);
+  ASSERT_OK(db->Get(read_options, "foo", &value));
   ASSERT_EQ(value, "bar2");
 
   delete txn;
@@ -6028,7 +6028,7 @@ TEST_P(TransactionTest, DuplicateKeys) {
     cf_options.max_successive_merges = 2;
     cf_options.merge_operator = MergeOperators::CreateStringAppendOperator();
     ASSERT_OK(ReOpen());
-    db->CreateColumnFamily(cf_options, cf_name, &cf_handle);
+    ASSERT_OK(db->CreateColumnFamily(cf_options, cf_name, &cf_handle));
     WriteOptions write_options;
     // Ensure one value for the key
     ASSERT_OK(db->Put(write_options, cf_handle, Slice("key"), Slice("value")));

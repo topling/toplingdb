@@ -145,7 +145,7 @@ class TransactionTestBase : public ::testing::Test {
   Status ReOpen() {
     delete db;
     db = nullptr;
-    DestroyDB(dbname, options);
+    EXPECT_OK(DestroyDB(dbname, options));
     Status s;
     if (use_stackable_db_ == false) {
       s = TransactionDB::Open(options, txn_db_options, dbname, &db);

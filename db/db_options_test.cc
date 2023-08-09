@@ -1306,7 +1306,7 @@ TEST_F(DBOptionsTest, TempOptionsFailTest) {
       [&](void* /*arg*/) { fs->SetFilesystemActive(true); });
 
   SyncPoint::GetInstance()->EnableProcessing();
-  TryReopen(options);
+  ASSERT_NOK(TryReopen(options));
   SyncPoint::GetInstance()->DisableProcessing();
 
   std::vector<std::string> filenames;

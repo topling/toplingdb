@@ -81,6 +81,8 @@
 #define EXT4_SUPER_MAGIC 0xEF53
 #endif
 
+#include <terark/util/nolocks_localtime.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 #ifndef ROCKSDB_NO_DYNAMIC_EXTENSION
 #if defined(OS_WIN)
@@ -98,119 +100,8 @@ static const std::string kSharedLibExt = ".so";
 
 namespace port {
 
-static const uint32_t leap_bits[] = { // year [0000, 4000)
-  0x11111111, 0x11111111, 0x11111111, 0x11111101, 0x11111111,
-  0x11111111, 0x11111011, 0x11111111, 0x11111111, 0x11110111,
-  0x11111111, 0x11111111, 0x11111111, 0x11111111, 0x11111111,
-  0x11011111, 0x11111111, 0x11111111, 0x10111111, 0x11111111,
-  0x11111111, 0x01111111, 0x11111111, 0x11111111, 0x11111111,
-  0x11111111, 0x11111111, 0x11111111, 0x11111101, 0x11111111,
-  0x11111111, 0x11111011, 0x11111111, 0x11111111, 0x11110111,
-  0x11111111, 0x11111111, 0x11111111, 0x11111111, 0x11111111,
-  0x11011111, 0x11111111, 0x11111111, 0x10111111, 0x11111111,
-  0x11111111, 0x01111111, 0x11111111, 0x11111111, 0x11111111,
-  0x11111111, 0x11111111, 0x11111111, 0x11111101, 0x11111111,
-  0x11111111, 0x11111011, 0x11111111, 0x11111111, 0x11110111,
-  0x11111111, 0x11111111, 0x11111111, 0x11111111, 0x11111111,
-  0x11011111, 0x11111111, 0x11111111, 0x10111111, 0x11111111,
-  0x11111111, 0x01111111, 0x11111111, 0x11111111, 0x11111111,
-  0x11111111, 0x11111111, 0x11111111, 0x11111101, 0x11111111,
-  0x11111111, 0x11111011, 0x11111111, 0x11111111, 0x11110111,
-  0x11111111, 0x11111111, 0x11111111, 0x11111111, 0x11111111,
-  0x11011111, 0x11111111, 0x11111111, 0x10111111, 0x11111111,
-  0x11111111, 0x01111111, 0x11111111, 0x11111111, 0x11111111,
-  0x11111111, 0x11111111, 0x11111111, 0x11111101, 0x11111111,
-  0x11111111, 0x11111011, 0x11111111, 0x11111111, 0x11110111,
-  0x11111111, 0x11111111, 0x11111111, 0x11111111, 0x11111111,
-  0x11011111, 0x11111111, 0x11111111, 0x10111111, 0x11111111,
-  0x11111111, 0x01111111, 0x11111111, 0x11111111, 0x11111111,
-};
-static int is_leap_year_fast(time_t year) {
-  return leap_bits[year / 32] & (uint32_t(1) << (year % 32));
-}
-#if 1
-static int is_leap_year_slow(time_t year) {
-    if (year % 4) return 0;         /* A year not divisible by 4 is not leap. */
-    else if (year % 100) return 1;  /* If div by 4 and not 100 is surely leap. */
-    else if (year % 400) return 0;  /* If div by 100 *and* 400 is not leap. */
-    else return 1;                  /* If div by 100 and not by 400 is leap. */
-}
-int is_leap_year(time_t year) {
-  if (LIKELY(year >= 0 && year < 4000))
-    return is_leap_year_fast(year);
-  else
-    return is_leap_year_slow(year);
-}
-#else
-  #define is_leap_year is_leap_year_fast
-#endif
-
-static int g_daylight_active = [] {
-  tzset(); // Now 'timezome' global is populated.
-  time_t t = time(NULL);
-  struct tm *aux = localtime(&t); // safe in global cons
-  return aux->tm_isdst;
-}();
-
-void nolocks_localtime(struct tm *tmp, time_t t, time_t tz, int dst) {
-    const time_t secs_min = 60;
-    const time_t secs_hour = 3600;
-    const time_t secs_day = 3600*24;
-
-    t -= tz;                            /* Adjust for timezone. */
-    t += 3600*dst;                      /* Adjust for daylight time. */
-    time_t days = t / secs_day;         /* Days passed since epoch. */
-    time_t seconds = t % secs_day;      /* Remaining seconds. */
-
-    tmp->tm_isdst = dst;
-    tmp->tm_hour = seconds / secs_hour;
-    tmp->tm_min = (seconds % secs_hour) / secs_min;
-    tmp->tm_sec = (seconds % secs_hour) % secs_min;
-
-    /* 1/1/1970 was a Thursday, that is, day 4 from the POV of the tm structure
-     * where sunday = 0, so to calculate the day of the week we have to add 4
-     * and take the modulo by 7. */
-    tmp->tm_wday = (days+4)%7;
-
-    /* Calculate the current year. */
-    int year = 1970;
-    while(1) {
-        /* Leap years have one day more. */
-        time_t days_this_year = 365 + is_leap_year(year);
-        if (days_this_year > days) break;
-        days -= days_this_year;
-        year++;
-    }
-    tmp->tm_yday = days;  /* Number of day of the current year. */
-    /* We need to calculate in which month and day of the month we are. To do
-     * so we need to skip days according to how many days there are in each
-     * month, and adjust for the leap year that has one more day in February. */
-    static const unsigned char norm_mdays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    static const unsigned char leap_mdays[12] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    auto mdays = is_leap_year(year) ? leap_mdays : norm_mdays;
-
-    int mon = 0;
-    while(days >= mdays[mon]) {
-        days -= mdays[mon];
-        mon++;
-    }
-    tmp->tm_mon = mon;
-
-    tmp->tm_mday = days+1;  /* Add 1 since our 'days' is zero-based. */
-    tmp->tm_year = year - 1900; /* Surprisingly tm_year is year-1900. */
-}
-
-void nolocks_localtime(struct tm *tmp, time_t t, time_t tz) {
-  return nolocks_localtime(tmp, t, tz, g_daylight_active);
-}
-
-void nolocks_localtime(struct tm *tmp, time_t t) {
-  return nolocks_localtime(tmp, t, timezone, g_daylight_active);
-}
-
 struct tm* LocalTimeR(const time_t* timep, struct tm* result) {
-  nolocks_localtime(result, *timep);
-  return result;
+  return terark::nolocks_localtime_r(timep, result);
 }
 
 } // namespace port

@@ -188,6 +188,8 @@ class TableReader {
                   size_t /*num*/, std::vector<std::string>* /*output*/) const {
     return false; // indicate not implemented
   }
+
+  virtual bool IsMyFactory(const class TableFactory*) const { return true; }
 };
 
 }  // namespace ROCKSDB_NAMESPACE

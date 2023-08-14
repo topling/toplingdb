@@ -298,7 +298,7 @@ IOStatus WritableFileWriter::Close() {
   }
   ROCKSDB_VERIFY_EQ(filesize_, writable_file_->GetFileSize(io_options, nullptr));
   using namespace std::chrono;
-  auto slow_ms = atoi(getenv("WritableFileWriterSlowCloseMS") ?: "1000");
+  auto slow_ms = atoi(getenv("WritableFileWriterSlowCloseMS") ?: "5000");
   auto close_tm = finish_ts - start_ts.second;
   if (close_tm > milliseconds(slow_ms)) {
     extern const char* StrDateTimeNow();

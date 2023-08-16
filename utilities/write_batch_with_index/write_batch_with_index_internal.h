@@ -18,6 +18,7 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
 #include "rocksdb/utilities/write_batch_with_index.h"
+#include "table/internal_iterator.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -30,36 +31,16 @@ struct Options;
 // used by WriteBatchWithIndex::GetFromBatchRaw(), so WBWIIterator::Result is
 // moved from here to write_batch_with_index.h and named as WBWIIterEnum::Result,
 // derive from WBWIIterEnum is to avoid change old code
-class WBWIIterator : public WBWIIterEnum {
+class WBWIIterator : public InternalIterator, public WBWIIterEnum {
  public:
-  virtual ~WBWIIterator() {}
-
-  virtual bool Valid() const = 0;
-
-  virtual void SeekToFirst() = 0;
-
-  virtual void SeekToLast() = 0;
-
-  virtual void Seek(const Slice& key) = 0;
-
-  virtual void SeekForPrev(const Slice& key) = 0;
-
-  virtual void Next() = 0;
-
-  virtual void Prev() = 0;
-
   // the return WriteEntry is only valid until the next mutation of
   // WriteBatchWithIndex
   virtual WriteEntry Entry() const = 0;
 
-  virtual Slice user_key() const = 0;
-
-  virtual Status status() const = 0;
-
-//-------------------------------------------------------------------------
-// topling specific: copy from WBWIIteratorImpl as pure virtual,
-// to reuse BaseDeltaIterator.
-// just for reuse, many class is not required to be visiable by external code!
+  Slice key() const override {
+    ROCKSDB_DIE("This function should not be called");
+  }
+  Slice value() const override { return Entry().value; }
 
   // Moves the iterator to first entry of the previous key.
   virtual bool PrevKey() = 0; // returns same as following Valid()

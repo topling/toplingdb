@@ -230,6 +230,9 @@ class InternalIteratorBase : public Cleanable {
   // used by MergingIterator and LevelIterator for now.
   virtual bool IsDeleteRangeSentinelKey() const { return false; }
 
+  // MergingIterator will override this method
+  virtual bool AddDeltaIter(InternalIteratorBase*) { return false; }
+
  protected:
   void SeekForPrevImpl(const Slice& target, const CompareInterface* cmp) {
     Seek(target);

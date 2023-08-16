@@ -26,6 +26,61 @@ class WBWIIteratorImpl;
 class WriteBatchWithIndexInternal;
 struct Options;
 
+// We move WBWIIterator out of public include, but old WBWIIterator::Result was
+// used by WriteBatchWithIndex::GetFromBatchRaw(), so WBWIIterator::Result is
+// moved from here to write_batch_with_index.h and named as WBWIIterEnum::Result,
+// derive from WBWIIterEnum is to avoid change old code
+class WBWIIterator : public WBWIIterEnum {
+ public:
+  virtual ~WBWIIterator() {}
+
+  virtual bool Valid() const = 0;
+
+  virtual void SeekToFirst() = 0;
+
+  virtual void SeekToLast() = 0;
+
+  virtual void Seek(const Slice& key) = 0;
+
+  virtual void SeekForPrev(const Slice& key) = 0;
+
+  virtual void Next() = 0;
+
+  virtual void Prev() = 0;
+
+  // the return WriteEntry is only valid until the next mutation of
+  // WriteBatchWithIndex
+  virtual WriteEntry Entry() const = 0;
+
+  virtual Slice user_key() const = 0;
+
+  virtual Status status() const = 0;
+
+//-------------------------------------------------------------------------
+// topling specific: copy from WBWIIteratorImpl as pure virtual,
+// to reuse BaseDeltaIterator.
+// just for reuse, many class is not required to be visiable by external code!
+
+  // Moves the iterator to first entry of the previous key.
+  virtual bool PrevKey() = 0; // returns same as following Valid()
+  // Moves the iterator to first entry of the next key.
+  virtual bool NextKey() = 0; // returns same as following Valid()
+
+  virtual bool EqualsKey(const Slice& key) const = 0;
+
+  // Moves the iterator to the Update (Put or Delete) for the current key
+  // If there are no Put/Delete, the Iterator will point to the first entry for
+  // this key
+  // @return kFound if a Put was found for the key
+  // @return kDeleted if a delete was found for the key
+  // @return kMergeInProgress if only merges were fouund for the key
+  // @return kError if an unsupported operation was found for the key
+  // @return kNotFound if no operations were found for this key
+  //
+  virtual Result FindLatestUpdate(const Slice& key, MergeContext*);
+  virtual Result FindLatestUpdate(MergeContext*);
+};
+
 // when direction == forward
 // * current_at_base_ <=> base_iterator > delta_iterator
 // when direction == backwards

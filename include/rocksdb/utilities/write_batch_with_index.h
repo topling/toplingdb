@@ -52,36 +52,8 @@ struct WriteEntry {
 };
 
 // Iterator of one column family out of a WriteBatchWithIndex.
-class WBWIIterator {
- public:
-  virtual ~WBWIIterator() {}
-
-  virtual bool Valid() const = 0;
-
-  virtual void SeekToFirst() = 0;
-
-  virtual void SeekToLast() = 0;
-
-  virtual void Seek(const Slice& key) = 0;
-
-  virtual void SeekForPrev(const Slice& key) = 0;
-
-  virtual void Next() = 0;
-
-  virtual void Prev() = 0;
-
-  // the return WriteEntry is only valid until the next mutation of
-  // WriteBatchWithIndex
-  virtual WriteEntry Entry() const = 0;
-
-  virtual Slice user_key() const = 0;
-
-  virtual Status status() const = 0;
-
-//-------------------------------------------------------------------------
-// topling specific: copy from WBWIIteratorImpl as pure virtual,
-// to reuse BaseDeltaIterator.
-// just for reuse, many class is not required to be visiable by external code!
+class WBWIIterator; // forward declaration
+struct WBWIIterEnum {
   enum Result : uint8_t {
     kFound,
     kDeleted,
@@ -89,25 +61,6 @@ class WBWIIterator {
     kMergeInProgress,
     kError
   };
-
-  // Moves the iterator to first entry of the previous key.
-  virtual bool PrevKey() = 0; // returns same as following Valid()
-  // Moves the iterator to first entry of the next key.
-  virtual bool NextKey() = 0; // returns same as following Valid()
-
-  virtual bool EqualsKey(const Slice& key) const = 0;
-
-  // Moves the iterator to the Update (Put or Delete) for the current key
-  // If there are no Put/Delete, the Iterator will point to the first entry for
-  // this key
-  // @return kFound if a Put was found for the key
-  // @return kDeleted if a delete was found for the key
-  // @return kMergeInProgress if only merges were fouund for the key
-  // @return kError if an unsupported operation was found for the key
-  // @return kNotFound if no operations were found for this key
-  //
-  virtual Result FindLatestUpdate(const Slice& key, MergeContext*);
-  virtual Result FindLatestUpdate(MergeContext*);
 };
 
 // A WriteBatchWithIndex with a binary searchable index built for all the keys
@@ -261,7 +214,7 @@ class WriteBatchWithIndex : public WriteBatchBase {
     return GetFromBatch(nullptr, options, key, value);
   }
 
-  virtual WBWIIterator::Result
+  virtual WBWIIterEnum::Result
   GetFromBatchRaw(DB*, ColumnFamilyHandle*, const Slice& key,
                   MergeContext*, std::string* value, Status*);
 

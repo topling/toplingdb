@@ -833,7 +833,7 @@ MemoryMappedFileBuffer::~MemoryMappedFileBuffer() {}
 Logger::~Logger() {
 #if !defined(ROCKSDB_UNIT_TEST)
   if (!closed_) {
-    fprintf(stderr, "Logger::~Logger: RocksDB imperfect: not closed, ignore!\n");
+    //fprintf(stderr, "Logger::~Logger: RocksDB imperfect: not closed, ignore!\n");
   }
 #endif
 }

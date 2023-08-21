@@ -98,7 +98,9 @@ class TestWritableFile : public WritableFile {
   virtual bool use_direct_io() const override {
     return target_->use_direct_io();
   };
+  uint64_t GetFileSize() final { return target_->GetFileSize(); }
   intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
 
  private:
   FileState state_;

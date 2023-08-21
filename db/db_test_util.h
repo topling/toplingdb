@@ -233,6 +233,7 @@ class SpecialEnv : public EnvWrapper {
       size_t GetUniqueId(char* id, size_t max_size) const override {
         return base_->GetUniqueId(id, max_size);
       }
+      uint64_t GetFileSize() final { return base_->GetFileSize(); }
       intptr_t FileDescriptor() const final { return base_->FileDescriptor(); }
       void SetFileSize(uint64_t fsize) final { base_->SetFileSize(fsize); }
     };
@@ -350,6 +351,7 @@ class SpecialEnv : public EnvWrapper {
       Status Allocate(uint64_t offset, uint64_t len) override {
         return base_->Allocate(offset, len);
       }
+      uint64_t GetFileSize() final { return base_->GetFileSize(); }
       intptr_t FileDescriptor() const final { return base_->FileDescriptor(); }
       void SetFileSize(uint64_t fsize) { base_->SetFileSize(fsize); }
 

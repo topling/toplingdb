@@ -98,10 +98,20 @@ class MockMemTableRepFactory : public MemTableRepFactory {
                                  Allocator* allocator,
                                  const SliceTransform* transform,
                                  Logger* logger) override {
+    return CreateMemTableRep(cmp, allocator, transform, logger, 0);
+  }
+
+  virtual MemTableRep* CreateMemTableRep(
+      const std::string& level0_dir,
+      const MemTableRep::KeyComparator& cmp, Allocator* allocator,
+      const SliceTransform* transform, Logger* logger,
+      uint32_t column_family_id) {
+    last_column_family_id_ = column_family_id;
     if (g_cspp_fac) {
       auto ucmp = cmp.icomparator()->user_comparator();
       if (IsBytewiseComparator(ucmp)) {
-        auto rep = g_cspp_fac->CreateMemTableRep(cmp, allocator, transform, logger);
+        auto rep = g_cspp_fac->CreateMemTableRep
+          (level0_dir, cmp, allocator, transform, logger, column_family_id);
         mock_rep_ = new MockMemTableRep(allocator, rep);
         return mock_rep_;
       }
@@ -119,8 +129,8 @@ class MockMemTableRepFactory : public MemTableRepFactory {
                                  const SliceTransform* transform,
                                  Logger* logger,
                                  uint32_t column_family_id) override {
-    last_column_family_id_ = column_family_id;
-    return CreateMemTableRep(cmp, allocator, transform, logger);
+    return CreateMemTableRep("/tmp", cmp, allocator, transform, logger,
+                             column_family_id);
   }
 
   const char* Name() const override { return "MockMemTableRepFactory"; }

@@ -18,11 +18,15 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-static thread_local ROCKSDB_STATIC_TLS Random tls_instance(
-  std::hash<std::thread::id>()(std::this_thread::get_id()));
+static ROCKSDB_STATIC_TLS ROCKSDB_RAW_TLS Random* g_tls_instance = nullptr;
 
 Random* Random::GetTLSInstance() {
-  return &tls_instance;
+  if (nullptr == g_tls_instance) {
+    static thread_local ROCKSDB_STATIC_TLS Random tls_instance(
+      std::hash<std::thread::id>()(std::this_thread::get_id()));
+    g_tls_instance = &tls_instance;
+  }
+  return g_tls_instance;
 }
 
 std::string Random::HumanReadableString(int len) {

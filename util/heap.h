@@ -143,10 +143,32 @@ class BinaryHeap : private Compare {
 
   void downheap(size_t index) {
     size_t heap_size = data_.size();
+    assert(0 == index); ///< wiered, index must be 0
+    if (UNLIKELY(1 >= heap_size)) {
+      return;
+    }
     T* data_ = this->data_.data();
-    T v = std::move(data_[index]);
 
-    size_t picked_child = std::numeric_limits<size_t>::max();
+    size_t picked_child;
+    if (root_cmp_cache_ < heap_size) {
+      assert(1 == root_cmp_cache_ || 2 == root_cmp_cache_);
+      picked_child = root_cmp_cache_;
+    } else if (2 < heap_size && cmp_()(data_[1], data_[2])) {
+      picked_child = 2;
+    } else {
+      picked_child = 1;
+    }
+    if (!cmp_()(data_[0], data_[picked_child])) {
+      // the tree does not change anything
+      root_cmp_cache_ = picked_child;
+      return;
+    }
+
+    reset_root_cmp_cache();
+    T v = std::move(data_[index]);
+    data_[index] = std::move(data_[picked_child]);
+    index = picked_child;
+
     while (1) {
       const size_t left_child = get_left(index);
       if (UNLIKELY(left_child >= heap_size)) {
@@ -154,12 +176,11 @@ class BinaryHeap : private Compare {
       }
       const size_t right_child = left_child + 1;
       assert(right_child == get_right(index));
-      picked_child = left_child;
-      if (index == 0 && root_cmp_cache_ < heap_size) {
-        picked_child = root_cmp_cache_;
-      } else if (right_child < heap_size &&
+      if (right_child < heap_size &&
                  cmp_()(data_[left_child], data_[right_child])) {
         picked_child = right_child;
+      } else {
+        picked_child = left_child;
       }
       if (!cmp_()(v, data_[picked_child])) {
         break;
@@ -168,6 +189,7 @@ class BinaryHeap : private Compare {
       index = picked_child;
     }
 
+/*
     if (index == 0) {
       // We did not change anything in the tree except for the value
       // of the root node, left and right child did not change, we can
@@ -178,6 +200,7 @@ class BinaryHeap : private Compare {
       // the tree changed, reset cache
       reset_root_cmp_cache();
     }
+*/
 
     data_[index] = std::move(v);
   }

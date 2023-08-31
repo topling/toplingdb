@@ -15,6 +15,7 @@
 #include "db/compaction/compaction_iterator.h"
 #include "db/internal_stats.h"
 #include "db/output_validator.h"
+#include <terark/valvec32.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -318,7 +319,7 @@ class CompactionOutputs {
   std::unique_ptr<CompactionRangeDelAggregator> range_del_agg_ = nullptr;
 
   // partitioner information
-  std::string last_key_for_partitioner_;
+  terark::valvec32<char> last_key_for_partitioner_;
   std::unique_ptr<SstPartitioner> partitioner_;
 
   // A flag determines if this subcompaction has been split by the cursor

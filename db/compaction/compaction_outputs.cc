@@ -257,7 +257,7 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
 
   // If there's user defined partitioner, check that first
   if (partitioner_ && partitioner_->ShouldPartition(PartitionerRequest(
-                          last_key_for_partitioner_, c_iter.user_key(),
+                          SliceOf(last_key_for_partitioner_), c_iter.user_key(),
                           current_output_file_size_)) == kRequired) {
     return true;
   }

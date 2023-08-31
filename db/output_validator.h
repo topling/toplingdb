@@ -7,6 +7,7 @@
 #include "db/dbformat.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
+#include <terark/valvec32.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 // A class that validates key/value that is inserted to an SST file.
@@ -21,11 +22,15 @@ class OutputValidator {
       : icmp_(icmp),
         paranoid_hash_(precalculated_hash),
         enable_order_check_(enable_order_check),
-        enable_hash_(enable_hash) {}
+        enable_hash_(enable_hash) {
+    Init();
+  }
 
   // Add a key to the KV sequence, and return whether the key follows
   // criteria, e.g. key is ordered.
-  Status Add(const Slice& key, const Slice& value);
+  inline Status Add(const Slice& key, const Slice& value) {
+    return (this->*m_add)(key, value);
+  }
 
   // Compare result of two key orders are the same. It can be used
   // to compare the keys inserted into a file, and what is read back.
@@ -39,8 +44,12 @@ class OutputValidator {
   uint64_t m_file_number = 0; // just a patch
 
  private:
+  void Init();
+  Status (OutputValidator::*m_add)(const Slice key, const Slice value);
+  template<class Cmp> Status Add_tpl(const Slice key, const Slice value);
+
   const InternalKeyComparator& icmp_;
-  std::string prev_key_;
+  terark::valvec32<char> prev_key_;
   uint64_t paranoid_hash_ = 0;
   bool enable_order_check_;
   bool enable_hash_;

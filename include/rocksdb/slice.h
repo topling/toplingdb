@@ -26,6 +26,7 @@
 #include <string_view>  // RocksDB now requires C++17 support
 
 #include "rocksdb/cleanable.h"
+#include "preproc.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -313,6 +314,27 @@ inline size_t Slice::difference_offset(const Slice& b) const {
     if (data_[off] != b.data_[off]) break;
   }
   return off;
+}
+
+template<class ByteArray>
+inline Slice SliceOf(const ByteArray& ba) {
+  static_assert(sizeof(ba[0]) == 1);
+  return Slice((const char*)ba.data(), ba.size());
+}
+
+template<class ByteArray>
+inline Slice SubSlice(const ByteArray& x, size_t pos) {
+  static_assert(sizeof(x.data()[0]) == 1, "ByteArray elem size must be 1");
+  ROCKSDB_ASSERT_LE(pos, x.size());
+  return Slice((const char*)x.data() + pos, x.size() - pos);
+}
+
+template<class ByteArray>
+inline Slice SubSlice(const ByteArray& x, size_t pos, size_t len) {
+  static_assert(sizeof(x.data()[0]) == 1, "ByteArray elem size must be 1");
+  ROCKSDB_ASSERT_LE(pos, x.size());
+  ROCKSDB_ASSERT_LE(pos + len, x.size());
+  return Slice((const char*)x.data() + pos, len);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

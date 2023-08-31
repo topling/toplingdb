@@ -3776,9 +3776,20 @@ void VersionStorageInfo::ComputeCompactionScore(
       uint64_t level_bytes_no_compacting = 0;
       uint64_t level_total_bytes = 0;
       for (auto f : files_[level]) {
-        level_total_bytes += f->fd.GetFileSize();
-        if (!f->being_compacted) {
-          level_bytes_no_compacting += f->compensated_file_size;
+        if (auto rd = f->fd.table_reader) {
+          // raw size is stable between compressed level and uncompressed level
+          auto props = rd->GetTableProperties().get();
+          auto sst_bytes = props->raw_key_size + props->raw_value_size;
+          level_total_bytes += sst_bytes;
+          if (!f->being_compacted) {
+            level_bytes_no_compacting += uint64_t
+              (f->compensated_file_size * double(sst_bytes) / f->fd.GetFileSize());
+          }
+        } else {
+          level_total_bytes += f->fd.GetFileSize();
+          if (!f->being_compacted) {
+            level_bytes_no_compacting += f->compensated_file_size;
+          }
         }
       }
       if (!immutable_options.level_compaction_dynamic_level_bytes) {

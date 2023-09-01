@@ -3776,6 +3776,7 @@ void VersionStorageInfo::ComputeCompactionScore(
       uint64_t level_bytes_no_compacting = 0;
       uint64_t level_total_bytes = 0;
       for (auto f : files_[level]) {
+       #if !defined(ROCKSDB_UNIT_TEST)
         if (auto rd = f->fd.table_reader) {
           // raw size is stable between compressed level and uncompressed level
           auto props = rd->GetTableProperties().get();
@@ -3785,7 +3786,9 @@ void VersionStorageInfo::ComputeCompactionScore(
             level_bytes_no_compacting += uint64_t
               (f->compensated_file_size * double(sst_bytes) / f->fd.GetFileSize());
           }
-        } else {
+        } else
+       #endif
+        {
           level_total_bytes += f->fd.GetFileSize();
           if (!f->being_compacted) {
             level_bytes_no_compacting += f->compensated_file_size;

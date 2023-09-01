@@ -315,6 +315,7 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
     if (compaction_->immutable_options()->compaction_style ==
             kCompactionStyleLevel &&
         compaction_->immutable_options()->level_compaction_dynamic_file_size &&
+        current_output_file_size_ > compaction_->target_output_file_size() / 8 &&
         num_grandparent_boundaries_crossed >=
             num_skippable_boundaries_crossed &&
         grandparent_overlapped_bytes_ - previous_overlapped_bytes >

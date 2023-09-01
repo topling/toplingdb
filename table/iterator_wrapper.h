@@ -127,8 +127,7 @@ class IteratorWrapperBase {
 */
   void Prev() {
     assert(iter_);
-    iter_->Prev();
-    Update();
+    UpdateImpl(iter_->PrevAndCheckValid());
   }
   void Seek(const Slice& k) {
     assert(iter_);
@@ -195,7 +194,10 @@ class IteratorWrapperBase {
 
  protected:
   void Update() {
-    result_.is_valid = iter_->Valid();
+    UpdateImpl(iter_->Valid());
+  }
+  void UpdateImpl(bool is_valid) {
+    result_.is_valid = is_valid;
     if (result_.is_valid) {
       assert(iter_->status().ok());
       result_.SetKey(iter_->key());

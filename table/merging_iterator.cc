@@ -695,6 +695,7 @@ public:
     // holds after this call, and minHeap_.top().iter points to the
     // first key >= target among children_ that is not covered by any range
     // tombstone.
+    status_ = Status::OK();
     SeekImpl(target);
     FindNextVisibleKey();
 
@@ -708,6 +709,7 @@ public:
   void SeekForPrev(const Slice& target) override {
     assert(range_tombstone_iters_.empty() ||
            range_tombstone_iters_.size() == children_.size());
+    status_ = Status::OK();
     SeekForPrevImpl(target);
     FindPrevVisibleKey();
 
@@ -1106,7 +1108,6 @@ MergingIterMethod(void)SeekImpl(const Slice& target, size_t starting_level,
     active_.erase(active_.lower_bound(starting_level), active_.end());
   }
 
-  status_ = Status::OK();
   IterKey current_search_key;
   current_search_key.SetInternalKey(target, false /* copy */);
   // Seek target might change to some range tombstone end key, so
@@ -1390,7 +1391,6 @@ MergingIterMethod(void)SeekForPrevImpl(const Slice& target,
     active_.erase(active_.lower_bound(starting_level), active_.end());
   }
 
-  status_ = Status::OK();
   IterKey current_search_key;
   current_search_key.SetInternalKey(target, false /* copy */);
   // Seek target might change to some range tombstone end key, so

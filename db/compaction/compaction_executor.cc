@@ -132,6 +132,8 @@ std::string CompactionParams::DebugString() const {
   else {
     fprintf(fp, "existing_snapshots = nullptr\n");
   }
+  fprintf(fp, "level_compaction_dynamic_file_size = %s",
+               level_compaction_dynamic_file_size ? "true" : "false");
   PrintVersionSetSerDe(fp, version_set);
   fclose(fp);
   std::string result(mem_buf, mem_len);

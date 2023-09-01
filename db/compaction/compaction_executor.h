@@ -99,6 +99,7 @@ struct CompactionParams {
   bool preserve_deletes;
   bool bottommost_level;
   bool is_deserialized;
+  bool level_compaction_dynamic_file_size;
   CompactionStyle compaction_style;
   CompactionPri   compaction_pri;
   std::vector<ObjectRpcParam> listeners;

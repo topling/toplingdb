@@ -308,8 +308,8 @@ Status TransactionDB::Open(
                    use_seq_per_batch, use_batch_per_txn);
   if (s.ok()) {
     ROCKS_LOG_WARN(db->GetDBOptions().info_log,
-                   "Transaction write_policy is %" PRId32,
-                   static_cast<int>(txn_db_options.write_policy));
+                   "Transaction write_policy is %s",
+                   enum_stdstr(txn_db_options.write_policy).c_str());
     // if WrapDB return non-ok, db will be deleted in WrapDB() via
     // ~StackableDB().
     s = WrapDB(db, txn_db_options, compaction_enabled_cf_indices, *handles,

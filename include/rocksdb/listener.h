@@ -161,6 +161,8 @@ ROCKSDB_ENUM_CLASS(CompactionReason, int,
   kNumOfReasons
 );
 
+const char* GetCompactionReasonString(CompactionReason compaction_reason);
+
 ROCKSDB_ENUM_CLASS(FlushReason, int,
   kOthers = 0x00,
   kGetLiveFiles = 0x01,
@@ -179,6 +181,8 @@ ROCKSDB_ENUM_CLASS(FlushReason, int,
   kErrorRecoveryRetryFlush = 0xc,
   kWalFull = 0xd
 );
+
+const char* GetFlushReasonString(FlushReason flush_reason);
 
 // TODO: In the future, BackgroundErrorReason will only be used to indicate
 // why the BG Error is happening (e.g., flush, compaction). We may introduce

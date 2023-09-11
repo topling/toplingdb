@@ -36,6 +36,10 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+#if !defined(TOPLINGDB_WITH_TIMESTAMP)
+std::string DBIter::saved_timestamp_;
+#endif
+
 DBIter::DBIter(Env* _env, const ReadOptions& read_options,
                const ImmutableOptions& ioptions,
                const MutableCFOptions& mutable_cf_options,
@@ -81,14 +85,14 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       expose_blob_index_(expose_blob_index),
       is_blob_(false),
       arena_mode_(arena_mode),
-      db_impl_(db_impl),
-      cfd_(cfd),
     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       timestamp_ub_(read_options.timestamp),
       timestamp_lb_(read_options.iter_start_ts),
       timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0),
+      saved_timestamp_(),
     #endif
-      saved_timestamp_() {
+      db_impl_(db_impl),
+      cfd_(cfd) {
   RecordTick(statistics_, NO_ITERATOR_CREATED);
   if (pin_thru_lifetime_) {
     pinned_iters_mgr_.StartPinning();

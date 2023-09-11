@@ -454,18 +454,19 @@ class DBIter final : public Iterator {
   MergeContext merge_context_;
   LocalStatistics local_stats_;
   PinnedIteratorsManager pinned_iters_mgr_;
-  DBImpl* db_impl_;
-  ColumnFamilyData* cfd_;
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Slice* const timestamp_ub_;
   const Slice* const timestamp_lb_;
   const size_t timestamp_size_;
+  std::string saved_timestamp_;
 #else
   static constexpr const Slice* const timestamp_ub_ = nullptr;
   static constexpr const Slice* const timestamp_lb_ = nullptr;
   static constexpr size_t timestamp_size_ = 0;
+  static std::string saved_timestamp_;
 #endif
-  std::string saved_timestamp_;
+  DBImpl* db_impl_;
+  ColumnFamilyData* cfd_;
 };
 
 // Return a new iterator that converts internal keys (yielded by

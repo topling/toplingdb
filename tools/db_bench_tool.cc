@@ -823,6 +823,8 @@ DEFINE_bool(use_fsync, false, "If true, issue fsync instead of fdatasync");
 
 DEFINE_bool(disable_wal, false, "If true, do not write WAL for write.");
 
+DEFINE_bool(reduce_cpu_usage, true, "If false, use rocksdb adaptive spin lock.");
+
 DEFINE_bool(manual_wal_flush, false,
             "If true, buffer WAL until buffer is full or a manual FlushWAL().");
 
@@ -3371,6 +3373,7 @@ class Benchmark {
         write_options_.sync = true;
       }
       write_options_.disableWAL = FLAGS_disable_wal;
+      write_options_.reduce_cpu_usage = FLAGS_reduce_cpu_usage;
       write_options_.rate_limiter_priority =
           FLAGS_rate_limit_auto_wal_flush ? Env::IO_USER : Env::IO_TOTAL;
       read_options_ = ReadOptions(FLAGS_verify_checksum, true);

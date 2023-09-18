@@ -118,6 +118,7 @@ class WriteThread {
     bool sync;
     bool no_slowdown;
     bool disable_wal;
+    bool reduce_cpu_usage;
     Env::IOPriority rate_limiter_priority;
     bool disable_memtable;
     size_t batch_cnt;  // if non-zero, number of sub-batches in the write batch
@@ -128,20 +129,14 @@ class WriteThread {
     uint64_t log_ref;   // log number that memtable insert should reference
     WriteCallback* callback;
     bool made_waitable;          // records lazy construction of mutex and cv
-#if defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB)
-    std::atomic<uint32_t> state;  // write under StateMutex() or pre-link
-#else
-    std::atomic<uint8_t> state;  // write under StateMutex() or pre-link
-#endif
+    std::atomic<uint32_t> state; // write under StateMutex() or pre-link
     WriteGroup* write_group;
     SequenceNumber sequence;  // the sequence number to use for the first key
     Status status;
     Status callback_status;  // status returned by callback->Callback()
 
-#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
     std::aligned_storage<sizeof(std::mutex)>::type state_mutex_bytes;
     std::aligned_storage<sizeof(std::condition_variable)>::type state_cv_bytes;
-#endif
     Writer* link_older;  // read/write only before linking, or as leader
     Writer* link_newer;  // lazy, read/write only before linking, or as leader
 
@@ -150,6 +145,7 @@ class WriteThread {
           sync(false),
           no_slowdown(false),
           disable_wal(false),
+          reduce_cpu_usage(true),
           rate_limiter_priority(Env::IOPriority::IO_TOTAL),
           disable_memtable(false),
           batch_cnt(0),
@@ -175,6 +171,7 @@ class WriteThread {
           sync(write_options.sync),
           no_slowdown(write_options.no_slowdown),
           disable_wal(write_options.disableWAL),
+          reduce_cpu_usage(write_options.reduce_cpu_usage),
           rate_limiter_priority(write_options.rate_limiter_priority),
           disable_memtable(_disable_memtable),
           batch_cnt(_batch_cnt),
@@ -192,12 +189,10 @@ class WriteThread {
           link_newer(nullptr) {}
 
     ~Writer() {
-#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
       if (made_waitable) {
         StateMutex().~mutex();
         StateCV().~condition_variable();
       }
-#endif
       status.PermitUncheckedError();
       callback_status.PermitUncheckedError();
     }
@@ -209,7 +204,6 @@ class WriteThread {
       return callback_status.ok();
     }
 
-#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
     void CreateMutex() {
       if (!made_waitable) {
         // Note that made_waitable is tracked separately from state
@@ -220,7 +214,6 @@ class WriteThread {
         new (&state_cv_bytes) std::condition_variable;
       }
     }
-#endif
 
     // returns the aggregate status of this Writer
     Status FinalStatus() {
@@ -254,7 +247,6 @@ class WriteThread {
       return status.ok() && !CallbackFailed() && !disable_wal;
     }
 
-#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
     // No other mutexes may be acquired while holding StateMutex(), it is
     // always last in the order
     std::mutex& StateMutex() {
@@ -267,7 +259,6 @@ class WriteThread {
       return *static_cast<std::condition_variable*>(
           static_cast<void*>(&state_cv_bytes));
     }
-#endif
   };
 
   struct AdaptationContext {
@@ -388,10 +379,8 @@ class WriteThread {
 
  private:
   // See AwaitState.
-#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
   const uint64_t max_yield_usec_;
   const uint64_t slow_yield_usec_;
-#endif
 
   // Allow multiple writers write to memtable concurrently.
   const bool allow_concurrent_memtable_write_;
@@ -439,11 +428,9 @@ class WriteThread {
   // Read with stall_mu or DB mutex.
   uint64_t stall_ended_count_ = 0;
 
-#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
   // Waits for w->state & goal_mask using w->StateMutex().  Returns
   // the state that satisfies goal_mask.
   uint8_t BlockingAwaitState(Writer* w, uint8_t goal_mask);
-#endif
 
   // Blocks until w->state & goal_mask, returning the state value
   // that satisfied the predicate.  Uses ctx to adaptively use

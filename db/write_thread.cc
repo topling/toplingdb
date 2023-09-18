@@ -13,7 +13,7 @@
 #include "port/port.h"
 #include "test_util/sync_point.h"
 #include "util/random.h"
-#if defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB)
+#if defined(OS_LINUX)
   #include <linux/futex.h>
   #include <sys/syscall.h>   /* For SYS_xxx definitions */
   #include <sys/time.h>
@@ -24,19 +24,19 @@ futex(void* uaddr, uint32_t op, uint32_t val, const timespec* timeout = NULL,
   return syscall(SYS_futex, uaddr, (unsigned long)op, (unsigned long)val,
                  timeout, uaddr2, (unsigned long)val3);
 }
+  #define TOPLINGDB_HAS_FUTEX 1
+#else
+  #define TOPLINGDB_HAS_FUTEX 0
+  #define futex(...)
 #endif
 
 namespace ROCKSDB_NAMESPACE {
 
 WriteThread::WriteThread(const ImmutableDBOptions& db_options)
-#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
     : max_yield_usec_(db_options.enable_write_thread_adaptive_yield
                           ? db_options.write_thread_max_yield_usec
                           : 0),
       slow_yield_usec_(db_options.write_thread_slow_yield_usec),
-#else
-    :
-#endif
       allow_concurrent_memtable_write_(
           db_options.allow_concurrent_memtable_write),
       enable_pipelined_write_(db_options.enable_pipelined_write),
@@ -49,7 +49,6 @@ WriteThread::WriteThread(const ImmutableDBOptions& db_options)
       stall_mu_(),
       stall_cv_(&stall_mu_) {}
 
-#if !(defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB))
 uint8_t WriteThread::BlockingAwaitState(Writer* w, uint8_t goal_mask) {
   // We're going to block.  Lazily create the mutex.  We guarantee
   // propagation of this construction to the waker via the
@@ -77,11 +76,10 @@ uint8_t WriteThread::BlockingAwaitState(Writer* w, uint8_t goal_mask) {
   assert((state & goal_mask) != 0);
   return state;
 }
-#endif
 
 uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
                                 AdaptationContext* ctx) {
-#if defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB)
+ if (TOPLINGDB_HAS_FUTEX && w->reduce_cpu_usage) {
   uint32_t state = w->state.load(std::memory_order_acquire);
   while (!(state & goal_mask)) {
     if (w->state.compare_exchange_weak(state, STATE_LOCKED_WAITING, std::memory_order_acq_rel)) {
@@ -95,7 +93,8 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
     }
   }
   return (uint8_t)state;
-#else
+ }
+ else {
   uint8_t state = 0;
 
   // 1. Busy loop using "pause" for 1 micro sec
@@ -240,12 +239,12 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
 
   assert((state & goal_mask) != 0);
   return state;
-#endif
+ }
 }
 
 void WriteThread::SetState(Writer* w, uint8_t new_state) {
   assert(w);
-#if defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB)
+ if (TOPLINGDB_HAS_FUTEX && w->reduce_cpu_usage) {
   uint32_t state = w->state.load(std::memory_order_acquire);
   while (state != new_state &&
 !w->state.compare_exchange_weak(state,new_state,std::memory_order_acq_rel)){
@@ -253,7 +252,8 @@ void WriteThread::SetState(Writer* w, uint8_t new_state) {
   }
   if (STATE_LOCKED_WAITING == state)
     futex(&w->state, FUTEX_WAKE_PRIVATE, INT_MAX);
-#else
+ }
+ else {
   auto state = w->state.load(std::memory_order_acquire);
   if (state == STATE_LOCKED_WAITING ||
       !w->state.compare_exchange_strong(state, new_state)) {
@@ -264,7 +264,7 @@ void WriteThread::SetState(Writer* w, uint8_t new_state) {
     w->state.store(new_state, std::memory_order_relaxed);
     w->StateCV().notify_one();
   }
-#endif
+ }
 }
 
 bool WriteThread::LinkOne(Writer* w, std::atomic<Writer*>* newest_writer) {
@@ -675,15 +675,16 @@ static WriteThread::AdaptationContext cpmtw_ctx(
 bool WriteThread::CompleteParallelMemTableWriter(Writer* w) {
   auto* write_group = w->write_group;
   if (!w->status.ok()) {
-#if defined(OS_LINUX) && !defined(TOPLINGDB_WRITE_THREAD_USE_ROCKSDB)
+   if (TOPLINGDB_HAS_FUTEX && w->reduce_cpu_usage) {
     static std::mutex mtx;
     auto tmp = w->status;
     std::lock_guard<std::mutex> guard(mtx);
     write_group->status = std::move(tmp);
-#else
+   }
+   else {
     std::lock_guard<std::mutex> guard(write_group->leader->StateMutex());
     write_group->status = w->status;
-#endif
+   }
   }
 
   if (write_group->running-- > 1) {

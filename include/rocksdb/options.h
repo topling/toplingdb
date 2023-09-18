@@ -1779,6 +1779,12 @@ struct WriteOptions {
   // Default: false
   bool memtable_insert_hint_per_batch;
 
+  // ToplingDB specific: all concurrent writes must use same conf value.
+  // If true, use futex wait/notify, this reduces CPU usage but increase
+  //          write latency on multi threads write, esp. small WriteBatch.
+  // If false, use rocksdb's solution: adaptive spin lock.
+  bool reduce_cpu_usage = true;
+
   // For writes associated with this option, charge the internal rate
   // limiter (see `DBOptions::rate_limiter`) at the specified priority. The
   // special value `Env::IO_TOTAL` disables charging the rate limiter.

@@ -813,7 +813,8 @@ Status CompactionJob::Run() {
   return status;
 }
 
-Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
+Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options,
+                              bool* compaction_released) {
   assert(compact_);
 
   AutoThreadOperationStageUpdater stage_updater(
@@ -829,7 +830,7 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
                                             compaction_stats_);
 
   if (status.ok()) {
-    status = InstallCompactionResults(mutable_cf_options);
+    status = InstallCompactionResults(mutable_cf_options, compaction_released);
   }
   if (!versions_->io_status().ok()) {
     io_status_ = versions_->io_status();
@@ -1637,7 +1638,7 @@ Status CompactionJob::FinishCompactionOutputFile(
 }
 
 Status CompactionJob::InstallCompactionResults(
-    const MutableCFOptions& mutable_cf_options) {
+    const MutableCFOptions& mutable_cf_options, bool* compaction_released) {
   assert(compact_);
 
   db_mutex_->AssertHeld();
@@ -1719,9 +1720,15 @@ Status CompactionJob::InstallCompactionResults(
     }
   }
 
-  return versions_->LogAndApply(compaction->column_family_data(),
-                                mutable_cf_options, read_options, edit,
-                                db_mutex_, db_directory_);
+  auto manifest_wcb = [&compaction, &compaction_released](const Status& s) {
+    compaction->ReleaseCompactionFiles(s);
+    *compaction_released = true;
+  };
+
+  return versions_->LogAndApply(
+      compaction->column_family_data(), mutable_cf_options, read_options, edit,
+      db_mutex_, db_directory_, /*new_descriptor_log=*/false,
+      /*column_family_options=*/nullptr, manifest_wcb);
 }
 
 void CompactionJob::RecordCompactionIOStats() {

@@ -3324,7 +3324,7 @@ Status DBImpl::MultiGetImpl(
                         stats_);
     MultiGetRange range = ctx.GetMultiGetRange();
     range.AddValueSize(curr_value_size);
-    bool lookup_current = false;
+    bool lookup_current = true;
 
     keys_left -= batch_size;
     for (auto mget_iter = range.begin(); mget_iter != range.end();
@@ -3343,9 +3343,10 @@ Status DBImpl::MultiGetImpl(
         super_version->imm->MultiGet(read_options, &range, callback);
       }
       if (!range.empty()) {
-        lookup_current = true;
         uint64_t left = range.KeysLeft();
         RecordTick(stats_, MEMTABLE_MISS, left);
+      } else {
+        lookup_current = false;
       }
     }
     if (lookup_current) {

@@ -100,8 +100,27 @@ void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
   };
   int line_size = snprintf(
       buf + written_size, len - written_size,
-      "%-8s %s      %s     %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s "
-      "%s\n",
+      "%-8s "       // group_by
+      "%s      "    // NUM_FILES
+      "%s   "       // SIZE_BYTES
+      "   %s "      // SCORE
+      " %s "        // READ_GB
+      "  %s "       // RN_GB
+      " %s "        // RNP1_GB
+      " %s "        // WRITE_GB
+      " %s "        // W_NEW_GB
+      "%s "         // MOVED_GB
+      "%s "         // WRITE_AMP
+      "%s "         // READ_MBPS
+      "%s "         // WRITE_MBPS
+      "  %s "       // COMP_SEC
+      "%s "         // COMP_CPU_SEC
+      " %s "        // COMP_COUNT
+      "%s "         // AVG_SEC
+      " %s "        // KEY_IN
+      "%s "         // KEY_DROP
+      "  %s "       // R_BLOB_GB
+      "  %s\n",     // W_BLOB_GB
       // Note that we skip COMPACTED_FILES and merge it with Files column
       group_by, hdr(LevelStatType::NUM_FILES),
       hdr(LevelStatType::SIZE_BYTES), hdr(LevelStatType::SCORE),
@@ -166,24 +185,24 @@ void PrintLevelStats(char* buf, size_t len, const std::string& name,
       "%4s "      /*  Level */
       "%6d/%-4d " /*  Files */
       "%10s "     /*  Size */
-      "%5.1f "    /*  Score */
-      "%8.1f "    /*  Read(GB) */
-      "%7.1f "    /*  Rn(GB) */
-      "%8.1f "    /*  Rnp1(GB) */
-      "%9.1f "    /*  Write(GB) */
-      "%8.1f "    /*  Wnew(GB) */
+      "%6.1f "    /*  Score */
+      "%9.1f "    /*  Read(GB) */
+      "%8.1f "    /*  Rn(GB) */
+      "%9.1f "    /*  Rnp1(GB) */
+      "%10.1f "   /*  Write(GB) */
+      "%9.1f "    /*  Wnew(GB) */
       "%9.1f "    /*  Moved(GB) */
       "%5.1f "    /*  W-Amp */
       "%8.1f "    /*  Rd(MB/s) */
       "%8.1f "    /*  Wr(MB/s) */
-      "%9.2f "    /*  Comp(sec) */
+      "%11.2f "   /*  Comp(sec) */
       "%17.2f "   /*  CompMergeCPU(sec) */
-      "%9d "      /*  Comp(cnt) */
+      "%10d "     /*  Comp(cnt) */
       "%8.3f "    /*  Avg(sec) */
       "%7s "      /*  KeyIn */
       "%6s "      /*  KeyDrop */
-      "%9.1f "    /*  Rblob(GB) */
-      "%9.1f\n",  /*  Wblob(GB) */
+      "%11.1f "   /*  Rblob(GB) */
+      "%11.1f\n", /*  Wblob(GB) */
       name.c_str(), static_cast<int>(stat_value.at(LevelStatType::NUM_FILES)),
       static_cast<int>(stat_value.at(LevelStatType::COMPACTED_FILES)),
       BytesToHumanString(

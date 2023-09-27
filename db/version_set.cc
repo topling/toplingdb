@@ -3644,6 +3644,46 @@ bool ShouldChangeFileTemperature(const ImmutableOptions& ioptions,
   }
   return false;
 }
+
+
+
+#ifndef __attribute_const__
+#define __attribute_const__
+#endif
+
+__attribute_const__ inline auto GetProps(const TableReader* rd) {
+  return rd->GetTableProperties().get();
+}
+__attribute_const__
+inline uint64_t FileSizeForScore(const FileMetaData* f) {
+  auto fsize = f->fd.GetFileSize();
+ #if !defined(ROCKSDB_UNIT_TEST)
+  if (auto rd = f->fd.table_reader) {
+    // 1. raw size is stable between compressed level and uncompressed level
+    // 2. We plan to mmap WAL log file and extract abstract interface for WAL
+    //    and realize mmap WAL as BlobFile to be ref'ed by L0 sst, in this
+    //    case, L0 FileSize maybe much smaller than raw kv size, so we need
+    //    to use raw kv as FileSize
+    auto props = GetProps(rd);
+    return std::max(fsize, props->raw_key_size + props->raw_value_size);
+  }
+ #endif
+  return fsize;
+}
+__attribute_const__
+inline uint64_t CompensatedFileSizeForScore(const FileMetaData* f) {
+ #if !defined(ROCKSDB_UNIT_TEST)
+  if (auto rd = f->fd.table_reader) {
+    // raw size is stable between compressed level and uncompressed level
+    auto fsize = f->fd.GetFileSize();
+    auto props = GetProps(rd);
+    auto bytes = std::max(fsize, props->raw_key_size + props->raw_value_size);
+    return uint64_t(f->compensated_file_size * double(bytes) / fsize);
+  }
+ #endif
+  return f->compensated_file_size;
+}
+
 }  // anonymous namespace
 
 void VersionStorageInfo::ComputeCompactionScore(
@@ -3677,9 +3717,9 @@ void VersionStorageInfo::ComputeCompactionScore(
       int num_sorted_runs = 0;
       uint64_t total_size = 0;
       for (auto* f : files_[level]) {
-        total_downcompact_bytes += static_cast<double>(f->fd.GetFileSize());
+        total_downcompact_bytes += static_cast<double>(FileSizeForScore(f));
         if (!f->being_compacted) {
-          total_size += f->compensated_file_size;
+          total_size += CompensatedFileSizeForScore(f);
           num_sorted_runs++;
         }
       }
@@ -3754,7 +3794,7 @@ void VersionStorageInfo::ComputeCompactionScore(
               // over LBase -> LBase+1.
               uint64_t base_level_size = 0;
               for (auto f : files_[base_level_]) {
-                base_level_size += f->compensated_file_size;
+                base_level_size += CompensatedFileSizeForScore(f);
               }
               score = std::max(score, static_cast<double>(total_size) /
                                           static_cast<double>(std::max(
@@ -3776,23 +3816,9 @@ void VersionStorageInfo::ComputeCompactionScore(
       uint64_t level_bytes_no_compacting = 0;
       uint64_t level_total_bytes = 0;
       for (auto f : files_[level]) {
-       #if !defined(ROCKSDB_UNIT_TEST)
-        if (auto rd = f->fd.table_reader) {
-          // raw size is stable between compressed level and uncompressed level
-          auto props = rd->GetTableProperties().get();
-          auto sst_bytes = props->raw_key_size + props->raw_value_size;
-          level_total_bytes += sst_bytes;
-          if (!f->being_compacted) {
-            level_bytes_no_compacting += uint64_t
-              (f->compensated_file_size * double(sst_bytes) / f->fd.GetFileSize());
-          }
-        } else
-       #endif
-        {
-          level_total_bytes += f->fd.GetFileSize();
-          if (!f->being_compacted) {
-            level_bytes_no_compacting += f->compensated_file_size;
-          }
+        level_total_bytes += FileSizeForScore(f);
+        if (!f->being_compacted) {
+          level_bytes_no_compacting += CompensatedFileSizeForScore(f);
         }
       }
       if (!immutable_options.level_compaction_dynamic_level_bytes) {

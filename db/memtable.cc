@@ -342,6 +342,9 @@ void MemTableRep::Iterator::SeekForPrev(const Slice& ikey) {
   return SeekForPrev(ikey, nullptr);
 }
 Status MemTableRep::Iterator::status() const { return Status::OK(); }
+void MemTableRep::FinishHint(void* hint) {
+  delete[] reinterpret_cast<char*>(hint);
+}
 Status MemTableRep::ConvertToSST(struct FileMetaData*,
                                  const struct TableBuilderOptions&) {
   ROCKSDB_VERIFY(SupportConvertToSST());

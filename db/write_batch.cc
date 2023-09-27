@@ -1894,11 +1894,9 @@ class MemTableInserter : public WriteBatch::Handler {
     }
     if (hint_created_) {
       for (auto iter : GetHintMap()) {
-        // in ToplingDB CSPP PatriciaTrie, (iter.second & 1) indicate the hint
-        // is the thread local token, it does not need to be deleted
-        if ((reinterpret_cast<size_t>(iter.second) & 1) == 0) {
-          delete[] reinterpret_cast<char*>(iter.second);
-        }
+        // In base MemTableRep, FinishHint do delete [] (char*)(hint).
+        // In ToplingDB CSPP PatriciaTrie, FinishHint idle/release token.
+        iter.first->FinishHint(iter.second);
       }
       reinterpret_cast<HintMap*>(&hint_)->~HintMap();
     }

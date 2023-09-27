@@ -292,6 +292,7 @@ class MemTableRep {
 
   virtual bool NeedsUserKeyCompareInGet() const { return true; }
 
+  virtual void FinishHint(void*);
   virtual bool SupportConvertToSST() const { return false; }
   virtual Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
 

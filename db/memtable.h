@@ -524,6 +524,7 @@ class MemTable {
     return table_->IsSnapshotSupported() && !moptions_.inplace_update_support;
   }
 
+  void FinishHint(void* hint) const { table_->FinishHint(hint); }
   bool SupportConvertToSST() const {
     return table_->SupportConvertToSST() && is_range_del_table_empty_;
   }

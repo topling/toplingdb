@@ -865,7 +865,7 @@ bool LevelCompactionBuilder::PickFileToCompact() {
 }
 
 bool LevelCompactionBuilder::PickIntraL0Compaction() {
-  if (!ioptions_.table_factory->AllowIntraL0Compaction()) {
+  if (mutable_db_options_.max_level1_subcompactions > 1) {
     return false;
   }
   start_level_inputs_.clear();

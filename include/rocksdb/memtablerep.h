@@ -54,6 +54,7 @@ class LookupKey;
 class SliceTransform;
 class Logger;
 struct DBOptions;
+struct MutableCFOptions;
 
 using KeyHandle = void*;
 
@@ -329,6 +330,7 @@ class MemTableRepFactory : public Customizable {
   }
   virtual MemTableRep* CreateMemTableRep(
       const std::string& /*level0_dir*/,
+      const MutableCFOptions&,
       const MemTableRep::KeyComparator& key_cmp, Allocator* allocator,
       const SliceTransform* slice_transform, Logger* logger,
       uint32_t column_family_id) {

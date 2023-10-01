@@ -590,9 +590,11 @@ class ColumnFamilyData {
 
   WriteBufferManager* write_buffer_manager_;
 
+ #if !defined(ROCKSDB_UNIT_TEST)
   // precreated_memtable_list_.size() is normally 1
   std::list<std::unique_ptr<MemTable> > precreated_memtable_list_;
   std::mutex precreated_memtable_mutex_;
+ #endif
 
   MemTable* mem_;
   MemTableList imm_;

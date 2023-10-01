@@ -1124,6 +1124,7 @@ uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
 
 void ColumnFamilyData::PrepareNewMemtableInBackground(
     const MutableCFOptions& mutable_cf_options) {
+ #if !defined(ROCKSDB_UNIT_TEST)
   {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
     if (precreated_memtable_list_.size() > 2) {
@@ -1140,11 +1141,13 @@ void ColumnFamilyData::PrepareNewMemtableInBackground(
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
     precreated_memtable_list_.emplace_back(tab);
   }
+ #endif
 }
 
 MemTable* ColumnFamilyData::ConstructNewMemtable(
     const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
   MemTable* tab = nullptr;
+ #if !defined(ROCKSDB_UNIT_TEST)
   {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
     if (!precreated_memtable_list_.empty()) {
@@ -1152,6 +1155,7 @@ MemTable* ColumnFamilyData::ConstructNewMemtable(
       precreated_memtable_list_.pop_front();
     }
   }
+ #endif
   if (tab) {
     tab->SetCreationSeq(earliest_seq);
     tab->SetEarliestSequenceNumber(earliest_seq);

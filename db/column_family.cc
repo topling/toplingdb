@@ -1122,17 +1122,50 @@ uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
   return current_->GetSstFilesSize();
 }
 
-MemTable* ColumnFamilyData::ConstructNewMemtable(
-    const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
-#if !defined(ROCKSDB_UNIT_TEST)
+void ColumnFamilyData::PrepareNewMemtableInBackground(
+    const MutableCFOptions& mutable_cf_options) {
+  {
+    std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+    if (precreated_memtable_list_.size() > 2) {
+      // do nothing
+      return;
+    }
+  }
   auto beg = ioptions_.clock->NowNanos();
-#endif
   auto tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
-                      write_buffer_manager_, earliest_seq, id_);
-#if !defined(ROCKSDB_UNIT_TEST)
+                          write_buffer_manager_, 0/*earliest_seq*/, id_);
   auto end = ioptions_.clock->NowNanos();
   RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
-#endif
+  {
+    std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+    precreated_memtable_list_.emplace_back(tab);
+  }
+}
+
+MemTable* ColumnFamilyData::ConstructNewMemtable(
+    const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
+  MemTable* tab = nullptr;
+  {
+    std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+    if (!precreated_memtable_list_.empty()) {
+      tab = precreated_memtable_list_.front().release();
+      precreated_memtable_list_.pop_front();
+    }
+  }
+  if (tab) {
+    tab->SetCreationSeq(earliest_seq);
+    tab->SetEarliestSequenceNumber(earliest_seq);
+  } else {
+  #if !defined(ROCKSDB_UNIT_TEST)
+    auto beg = ioptions_.clock->NowNanos();
+  #endif
+    tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
+                      write_buffer_manager_, earliest_seq, id_);
+  #if !defined(ROCKSDB_UNIT_TEST)
+    auto end = ioptions_.clock->NowNanos();
+    RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
+  #endif
+  }
   return tab;
 }
 

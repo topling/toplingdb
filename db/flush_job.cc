@@ -1019,6 +1019,9 @@ UseBuildTable:
           DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
     }
     TEST_SYNC_POINT_CALLBACK("FlushJob::WriteLevel0Table", &mems_);
+
+    cfd_->PrepareNewMemtableInBackground(mutable_cf_options_);
+
     db_mutex_->Lock();
   }
   base_->Unref();

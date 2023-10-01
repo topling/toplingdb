@@ -370,6 +370,8 @@ class ColumnFamilyData {
   // calculate the oldest log needed for the durability of this column family
   uint64_t OldestLogToKeep();
 
+  void PrepareNewMemtableInBackground(const MutableCFOptions&);
+
   // See Memtable constructor for explanation of earliest_seq param.
   MemTable* ConstructNewMemtable(const MutableCFOptions& mutable_cf_options,
                                  SequenceNumber earliest_seq);
@@ -587,6 +589,10 @@ class ColumnFamilyData {
   std::unique_ptr<InternalStats> internal_stats_;
 
   WriteBufferManager* write_buffer_manager_;
+
+  // precreated_memtable_list_.size() is normally 1
+  std::list<std::unique_ptr<MemTable> > precreated_memtable_list_;
+  std::mutex precreated_memtable_mutex_;
 
   MemTable* mem_;
   MemTableList imm_;

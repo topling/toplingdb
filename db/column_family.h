@@ -29,6 +29,8 @@
 #include "util/hash_containers.h"
 #include "util/thread_local.h"
 
+#include <terark/circular_queue.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 class Version;
@@ -592,7 +594,7 @@ class ColumnFamilyData {
 
  #if !defined(ROCKSDB_UNIT_TEST)
   // precreated_memtable_list_.size() is normally 1
-  std::list<std::unique_ptr<MemTable> > precreated_memtable_list_;
+  terark::circular_queue<std::unique_ptr<MemTable>, true> precreated_memtable_list_;
   std::mutex precreated_memtable_mutex_;
  #endif
 

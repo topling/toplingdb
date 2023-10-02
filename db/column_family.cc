@@ -555,6 +555,9 @@ ColumnFamilyData::ColumnFamilyData(
       mutable_cf_options_(initial_cf_options_),
       is_delete_range_supported_(
           cf_options.table_factory->IsDeleteRangeSupported()),
+    #if !defined(ROCKSDB_UNIT_TEST)
+      precreated_memtable_list_(8), // real cap is 8-1 = 7
+    #endif
       write_buffer_manager_(write_buffer_manager),
       mem_(nullptr),
       imm_(ioptions_.min_write_buffer_number_to_merge,
@@ -1127,7 +1130,7 @@ void ColumnFamilyData::PrepareNewMemtableInBackground(
  #if !defined(ROCKSDB_UNIT_TEST)
   {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
-    if (precreated_memtable_list_.size() > 2) {
+    if (precreated_memtable_list_.full()) {
       // do nothing
       return;
     }

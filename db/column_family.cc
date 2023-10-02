@@ -1139,7 +1139,17 @@ void ColumnFamilyData::PrepareNewMemtableInBackground(
   RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
   {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
-    precreated_memtable_list_.emplace_back(tab);
+    if (LIKELY(!precreated_memtable_list_.full())) {
+      precreated_memtable_list_.emplace_back(tab);
+      tab = nullptr;
+    }
+  }
+  if (UNLIKELY(nullptr != tab)) { // precreated_memtable_list_ is full
+    // this is very rare, we have not put `tab` to precreated_memtable_list_,
+    // but this thread must keep going on, just delete `tab`
+    ROCKS_LOG_WARN(ioptions_.info_log,
+      "precreated_memtable_list_ is full, discard the newly created memtab");
+    delete tab;
   }
  #endif
 }

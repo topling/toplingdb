@@ -33,6 +33,7 @@ namespace ROCKSDB_NAMESPACE {
 
 // -- Block-based Table
 class Cache;
+class CompactionInputFiles;
 class FilterPolicy;
 class FlushBlockPolicyFactory;
 class PersistentCache;
@@ -918,6 +919,11 @@ class TableFactory : public Customizable {
   virtual bool InputCompressionMatchesOutput(const class Compaction*) const;
 
   virtual bool SupportAutoSort() const { return false; }
+
+  virtual bool ShouldCompactMarkForCompaction(const CompactionInputFiles**,
+                                              size_t num) const {
+    return true;
+  }
 };
 
 // Create a special table factory that can open either of the supported

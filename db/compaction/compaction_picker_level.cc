@@ -451,6 +451,15 @@ bool LevelCompactionBuilder::SetupOtherInputsIfNeeded() {
       return false;
     }
 
+    if (CompactionReason::kFilesMarkedForCompaction == compaction_reason_) {
+      const CompactionInputFiles* inputs[] = {
+        &start_level_inputs_, &output_level_inputs_,
+      };
+      if (!ioptions_.table_factory->ShouldCompactMarkForCompaction(inputs, 2)) {
+        return false;
+      }
+    }
+
     compaction_inputs_.push_back(start_level_inputs_);
     if (!output_level_inputs_.empty()) {
       compaction_inputs_.push_back(output_level_inputs_);

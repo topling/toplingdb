@@ -1759,8 +1759,7 @@ class MemTableInserter : public WriteBatch::Handler {
   // Make creation optional but do not incur
   // std::unique_ptr additional allocation
   using MemPostInfoMap = std::map<MemTable*, MemTablePostProcessInfo>;
-  using PostMapType = std::aligned_storage<sizeof(MemPostInfoMap)>::type;
-  PostMapType mem_post_info_map_;
+  union { MemPostInfoMap mem_post_info_map_; };
   // current recovered transaction we are rebuilding (recovery)
   WriteBatch* rebuilding_trx_;
   SequenceNumber rebuilding_trx_seq_;
@@ -1773,16 +1772,14 @@ class MemTableInserter : public WriteBatch::Handler {
   bool write_before_prepare_;
   // Whether this batch was unprepared or not
   bool unprepared_batch_;
-  using DupDetector = std::aligned_storage<sizeof(DuplicateDetector)>::type;
-  DupDetector duplicate_detector_;
+  union { DuplicateDetector duplicate_detector_; };
   bool dup_dectector_on_;
 
   bool hint_per_batch_;
   bool hint_created_;
   // Hints for this batch
   using HintMap = std::map<MemTable*, void*>;
-  using HintMapType = std::aligned_storage<sizeof(HintMap)>::type;
-  HintMapType hint_;
+  union { HintMap hint_; };
 
   HintMap& GetHintMap() {
     assert(hint_per_batch_);
@@ -1877,7 +1874,6 @@ class MemTableInserter : public WriteBatch::Handler {
         // batch_per_txn being false indicates write_before_prepare.
         write_before_prepare_(!batch_per_txn),
         unprepared_batch_(false),
-        duplicate_detector_(),
         dup_dectector_on_(false),
         hint_per_batch_(hint_per_batch),
         hint_created_(false) {

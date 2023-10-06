@@ -921,7 +921,7 @@ class TableFactory : public Customizable {
   virtual bool SupportAutoSort() const { return false; }
 
   virtual bool ShouldCompactMarkForCompaction(const CompactionInputFiles**,
-                                              size_t num) const {
+                                              size_t) const {
     return true;
   }
 };

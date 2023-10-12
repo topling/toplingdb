@@ -125,6 +125,8 @@ struct SstFileMetaData : public FileStorageInfo {
   std::string smallest_ikey;      // Smallest internal key in the file.
   std::string largest_ikey;       // Largest internal key in the file.
   uint64_t num_reads_sampled = 0;     // How many times the file is read.
+  int job_id = -1;
+  short job_attempt = -1;
   bool being_compacted =
       false;  // true if the file is currently being compacted.
 

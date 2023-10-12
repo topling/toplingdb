@@ -2064,6 +2064,8 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
       files.back().smallest_ikey = file->smallest.Encode().ToString();
       files.back().largest_ikey = file->largest.Encode().ToString();
       files.back().num_deletions = file->num_deletions;
+      files.back().job_id = file->job_id;
+      files.back().job_attempt = file->job_attempt;
       level_size += file->fd.GetFileSize();
     }
     cf_meta->levels.emplace_back(level, level_size, std::move(files));

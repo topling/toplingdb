@@ -1759,7 +1759,7 @@ class MemTableInserter : public WriteBatch::Handler {
   // cause memory allocations though unused.
   // Make creation optional but do not incur
   // std::unique_ptr additional allocation
-  using MemPostInfoMap = terark::SmartMap<MemTable*, MemTablePostProcessInfo, 4>;
+  using MemPostInfoMap = terark::SmartMap<MemTable*, MemTablePostProcessInfo, 1>;
   MemPostInfoMap mem_post_info_map_;
   // current recovered transaction we are rebuilding (recovery)
   WriteBatch* rebuilding_trx_;
@@ -1778,7 +1778,7 @@ class MemTableInserter : public WriteBatch::Handler {
 
   bool hint_per_batch_;
   // Hints for this batch
-  using HintMap = terark::SmartMap<MemTable*, void*, 4>;
+  using HintMap = terark::SmartMap<MemTable*, void*, 1>;
   HintMap hint_;
 
   HintMap& GetHintMap() {

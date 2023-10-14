@@ -1744,12 +1744,10 @@ class MemTableInserter : public WriteBatch::Handler {
   ColumnFamilyMemTables* const cf_mems_;
   FlushScheduler* const flush_scheduler_;
   TrimHistoryScheduler* const trim_history_scheduler_;
-  const bool ignore_missing_column_families_;
   const uint64_t recovering_log_number_;
   // log number that all Memtables inserted into should reference
   uint64_t log_number_ref_;
   DBImpl* db_;
-  const bool concurrent_memtable_writes_;
   const WriteBatch::ProtectionInfo* prot_info_;
   size_t prot_info_idx_;
 
@@ -1764,6 +1762,8 @@ class MemTableInserter : public WriteBatch::Handler {
   // current recovered transaction we are rebuilding (recovery)
   WriteBatch* rebuilding_trx_;
   SequenceNumber rebuilding_trx_seq_;
+  const bool ignore_missing_column_families_;
+  const bool concurrent_memtable_writes_;
   // Increase seq number once per each write batch. Otherwise increase it once
   // per key.
   bool seq_per_batch_;
@@ -1773,13 +1773,15 @@ class MemTableInserter : public WriteBatch::Handler {
   bool write_before_prepare_;
   // Whether this batch was unprepared or not
   bool unprepared_batch_;
-  union { DuplicateDetector duplicate_detector_; };
   bool dup_dectector_on_;
 
   bool hint_per_batch_;
+
   // Hints for this batch
   using HintMap = terark::SmartMap<MemTable*, void*, 1>;
   HintMap hint_;
+
+  union { DuplicateDetector duplicate_detector_; };
 
   HintMap& GetHintMap() {
     assert(hint_per_batch_ || hint_.empty());
@@ -1846,16 +1848,16 @@ class MemTableInserter : public WriteBatch::Handler {
         cf_mems_(cf_mems),
         flush_scheduler_(flush_scheduler),
         trim_history_scheduler_(trim_history_scheduler),
-        ignore_missing_column_families_(ignore_missing_column_families),
         recovering_log_number_(recovering_log_number),
         log_number_ref_(0),
         db_(static_cast_with_check<DBImpl>(db)),
-        concurrent_memtable_writes_(concurrent_memtable_writes),
         prot_info_(prot_info),
         prot_info_idx_(0),
         has_valid_writes_(has_valid_writes),
         rebuilding_trx_(nullptr),
         rebuilding_trx_seq_(0),
+        ignore_missing_column_families_(ignore_missing_column_families),
+        concurrent_memtable_writes_(concurrent_memtable_writes),
         seq_per_batch_(seq_per_batch),
         // Write after commit currently uses one seq per key (instead of per
         // batch). So seq_per_batch being false indicates write_after_commit

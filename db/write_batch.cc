@@ -69,6 +69,8 @@
 #include "util/duplicate_detector.h"
 #include "util/string_util.h"
 
+#include <terark/smartmap.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 // anon namespace for file-local types
@@ -1748,7 +1750,6 @@ class MemTableInserter : public WriteBatch::Handler {
   uint64_t log_number_ref_;
   DBImpl* db_;
   const bool concurrent_memtable_writes_;
-  bool post_info_created_;
   const WriteBatch::ProtectionInfo* prot_info_;
   size_t prot_info_idx_;
 
@@ -1758,8 +1759,8 @@ class MemTableInserter : public WriteBatch::Handler {
   // cause memory allocations though unused.
   // Make creation optional but do not incur
   // std::unique_ptr additional allocation
-  using MemPostInfoMap = std::map<MemTable*, MemTablePostProcessInfo>;
-  union { MemPostInfoMap mem_post_info_map_; };
+  using MemPostInfoMap = terark::SmartMap<MemTable*, MemTablePostProcessInfo, 4>;
+  MemPostInfoMap mem_post_info_map_;
   // current recovered transaction we are rebuilding (recovery)
   WriteBatch* rebuilding_trx_;
   SequenceNumber rebuilding_trx_seq_;
@@ -1776,26 +1777,17 @@ class MemTableInserter : public WriteBatch::Handler {
   bool dup_dectector_on_;
 
   bool hint_per_batch_;
-  bool hint_created_;
   // Hints for this batch
-  using HintMap = std::map<MemTable*, void*>;
-  union { HintMap hint_; };
+  using HintMap = terark::SmartMap<MemTable*, void*, 4>;
+  HintMap hint_;
 
   HintMap& GetHintMap() {
-    assert(hint_per_batch_);
-    if (!hint_created_) {
-      new (&hint_) HintMap();
-      hint_created_ = true;
-    }
+    assert(hint_per_batch_ || hint_.empty());
     return *reinterpret_cast<HintMap*>(&hint_);
   }
 
   MemPostInfoMap& GetPostMap() {
-    assert(concurrent_memtable_writes_);
-    if (!post_info_created_) {
-      new (&mem_post_info_map_) MemPostInfoMap();
-      post_info_created_ = true;
-    }
+    assert(concurrent_memtable_writes_ || mem_post_info_map_.empty());
     return *reinterpret_cast<MemPostInfoMap*>(&mem_post_info_map_);
   }
 
@@ -1859,7 +1851,6 @@ class MemTableInserter : public WriteBatch::Handler {
         log_number_ref_(0),
         db_(static_cast_with_check<DBImpl>(db)),
         concurrent_memtable_writes_(concurrent_memtable_writes),
-        post_info_created_(false),
         prot_info_(prot_info),
         prot_info_idx_(0),
         has_valid_writes_(has_valid_writes),
@@ -1875,8 +1866,7 @@ class MemTableInserter : public WriteBatch::Handler {
         write_before_prepare_(!batch_per_txn),
         unprepared_batch_(false),
         dup_dectector_on_(false),
-        hint_per_batch_(hint_per_batch),
-        hint_created_(false) {
+        hint_per_batch_(hint_per_batch) {
     assert(cf_mems_);
   }
 
@@ -1885,17 +1875,11 @@ class MemTableInserter : public WriteBatch::Handler {
       reinterpret_cast<DuplicateDetector*>(&duplicate_detector_)
           ->~DuplicateDetector();
     }
-    if (post_info_created_) {
-      reinterpret_cast<MemPostInfoMap*>(&mem_post_info_map_)->~MemPostInfoMap();
-    }
-    if (hint_created_) {
-      for (auto iter : GetHintMap()) {
-        // In base MemTableRep, FinishHint do delete [] (char*)(hint).
-        // In ToplingDB CSPP PatriciaTrie, FinishHint idle/release token.
-        iter.first->FinishHint(iter.second);
-      }
-      reinterpret_cast<HintMap*>(&hint_)->~HintMap();
-    }
+    GetHintMap().for_each([](auto& iter) {
+      // In base MemTableRep, FinishHint do delete [] (char*)(hint).
+      // In ToplingDB CSPP PatriciaTrie, FinishHint idle/release token.
+      iter.first->FinishHint(iter.second);
+    });
     delete rebuilding_trx_;
   }
 
@@ -1930,11 +1914,9 @@ class MemTableInserter : public WriteBatch::Handler {
     assert(concurrent_memtable_writes_);
     // If post info was not created there is nothing
     // to process and no need to create on demand
-    if (post_info_created_) {
-      for (auto& pair : GetPostMap()) {
-        pair.first->BatchPostProcess(pair.second);
-      }
-    }
+    GetPostMap().for_each([](auto& pair) {
+      pair.first->BatchPostProcess(pair.second);
+    });
   }
 
   bool SeekToColumnFamily(uint32_t column_family_id, Status* s) {

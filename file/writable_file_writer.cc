@@ -309,9 +309,9 @@ IOStatus WritableFileWriter::Close() {
   auto close_tm = finish_ts - start_ts.second;
   if (close_tm > milliseconds(slow_ms)) {
     fprintf(stderr, "WARN: %s: WritableFileWriter::Close(%s): "
-      "fsize = %.6f M, file close = %.3f ms\n",
+      "fsize = %.6f M, file close = %.6f seconds\n",
       terark::StrDateTimeNow(), file_name_.c_str(), filesize_/1e6,
-      duration_cast<microseconds>(close_tm).count()/1e3);
+      duration_cast<microseconds>(close_tm).count()/1e6);
   }
   if (!interim.ok() && s.ok()) {
     s = interim;

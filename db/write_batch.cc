@@ -1780,6 +1780,7 @@ class MemTableInserter : public WriteBatch::Handler {
   // Hints for this batch
   using HintMap = terark::SmartMap<MemTable*, void*, 1>;
   HintMap hint_;
+  uint32_t curr_cf_id_ = UINT32_MAX;
 
   union { DuplicateDetector duplicate_detector_; };
 
@@ -1922,6 +1923,7 @@ class MemTableInserter : public WriteBatch::Handler {
   }
 
   bool SeekToColumnFamily(uint32_t column_family_id, Status* s) {
+   if (UNLIKELY(curr_cf_id_ != column_family_id)) {
     // If we are in a concurrent mode, it is the caller's responsibility
     // to clone the original ColumnFamilyMemTables so that each thread
     // has its own instance.  Otherwise, it must be guaranteed that there
@@ -1934,8 +1936,11 @@ class MemTableInserter : public WriteBatch::Handler {
         *s = Status::InvalidArgument(
             "Invalid column family specified in write batch");
       }
+      curr_cf_id_ = UINT32_MAX; // invalidate is required
       return false;
     }
+    curr_cf_id_ = column_family_id;
+   }
     if (recovering_log_number_ != 0 &&
         recovering_log_number_ < cf_mems_->GetLogNumber()) {
       // This is true only in recovery environment (recovering_log_number_ is
@@ -1995,11 +2000,14 @@ class MemTableInserter : public WriteBatch::Handler {
     // inplace_update_support is inconsistent with snapshots, and therefore with
     // any kind of transactions including the ones that use seq_per_batch
     assert(!seq_per_batch_ || !moptions->inplace_update_support);
-    if (!moptions->inplace_update_support) {
-      ret_status =
+    if (LIKELY(!moptions->inplace_update_support)) {
+      Status add_status =
           mem->Add(sequence_, value_type, key, value, kv_prot_info,
                    concurrent_memtable_writes_, get_post_process_info(mem),
                    hint_per_batch_ ? &GetHintMap()[mem] : nullptr);
+      if (UNLIKELY(!add_status.ok())) {
+        ret_status = add_status;
+      }
     } else if (moptions->inplace_callback == nullptr ||
                value_type != kTypeValue) {
       assert(!concurrent_memtable_writes_);

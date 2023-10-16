@@ -427,11 +427,11 @@ Status ExternalSstFileIngestionJob::Run() {
     // exclusive endpoint.
     ParsedInternalKey smallest_parsed, largest_parsed;
     if (status.ok()) {
-      status = ParseInternalKey(*f.smallest_internal_key.rep(),
+      status = ParseInternalKey(f.smallest_internal_key.Encode(),
                                 &smallest_parsed, false /* log_err_key */);
     }
     if (status.ok()) {
-      status = ParseInternalKey(*f.largest_internal_key.rep(), &largest_parsed,
+      status = ParseInternalKey(f.largest_internal_key.Encode(), &largest_parsed,
                                 false /* log_err_key */);
     }
     if (!status.ok()) {

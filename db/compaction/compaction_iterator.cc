@@ -356,7 +356,7 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
   }
 
   if (decision == CompactionFilter::Decision::kRemoveAndSkipUntil &&
-      cmp_->Compare(*compaction_filter_skip_until_.rep(), ikey_.user_key) <=
+      cmp_->Compare(compaction_filter_skip_until_.Encode(), ikey_.user_key) <=
           0) {
     // Can't skip to a key smaller than the current one.
     // Keep the key as per FilterV2/FilterV3 documentation.

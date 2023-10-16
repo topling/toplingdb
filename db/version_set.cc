@@ -3806,6 +3806,17 @@ void VersionStorageInfo::ComputeCompactionScore(
             if (score > 1.0) {
               score *= kScoreScale;
             }
+#if !defined(ROCKSDB_UNIT_TEST)
+          } else if (mutable_cf_options.write_buffer_size >=
+                     mutable_cf_options.max_bytes_for_level_base / 2) {
+            uint64_t base_level_bytes = 0;
+            for (auto f : files_[1]) { // base level is 1
+              base_level_bytes += FileSizeForScore(f);
+            }
+            // do not consider level0_file_num_compaction_trigger
+            score = static_cast<double>(total_size) / std::max
+              (base_level_bytes, mutable_cf_options.max_bytes_for_level_base);
+#endif // ROCKSDB_UNIT_TEST
           } else {
             score = std::max(score,
                              static_cast<double>(total_size) /

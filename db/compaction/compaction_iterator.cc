@@ -260,7 +260,7 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
     if (ikey_.type == kTypeBlobIndex) {
       decision = compaction_filter_->FilterBlobByKey(
           level_, filter_key, &compaction_filter_value_,
-          compaction_filter_skip_until_.rep());
+          IF_TOPLINGDB_INCOMPATIBLE_OPTIMIZATION(nullptr, compaction_filter_skip_until_.rep()));
       if (decision == CompactionFilter::Decision::kUndetermined &&
           !compaction_filter_->IsStackedBlobDbInternalCompactionFilter()) {
         if (!compaction_) {
@@ -339,7 +339,7 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       decision = compaction_filter_->FilterV3(
           level_, filter_key, value_type, existing_val, existing_col,
           &compaction_filter_value_, &new_columns,
-          compaction_filter_skip_until_.rep());
+          IF_TOPLINGDB_INCOMPATIBLE_OPTIMIZATION(nullptr, compaction_filter_skip_until_.rep()));
     }
 
     iter_stats_.total_filter_time +=

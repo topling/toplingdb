@@ -239,6 +239,13 @@ extern void AppendInternalKeyWithDifferentTimestamp(
 extern void AppendInternalKeyFooter(std::string* result, SequenceNumber s,
                                     ValueType t);
 
+#if !defined(DISABLE_TOPLINGDB_INCOMPATIBLE_OPTIMIZATION)
+extern void AppendInternalKey(KeyMemory* result, const ParsedInternalKey& key);
+extern void AppendInternalKeyWithDifferentTimestamp(
+    KeyMemory* result, const ParsedInternalKey&, const Slice& ts);
+extern void AppendInternalKeyFooter(KeyMemory* result, SequenceNumber, ValueType);
+#endif
+
 // Append the key and a minimal timestamp to *result
 extern void AppendKeyWithMinTimestamp(std::string* result, const Slice& key,
                                       size_t ts_sz);
@@ -369,7 +376,7 @@ class InternalKeyComparator
 // The class represent the internal key in encoded form.
 class InternalKey {
  private:
-  std::string rep_;
+  KeyMemory rep_;
 
  public:
   InternalKey() {}  // Leave rep_ as empty to indicate it is invalid
@@ -437,7 +444,7 @@ class InternalKey {
 
   // The underlying representation.
   // Intended only to be used together with ConvertFromUserKey().
-  std::string* rep() { return &rep_; }
+  auto rep() { return &rep_; }
 
   // Assuming that *rep() contains a user key, this method makes internal key
   // out of it in-place. This saves a memcpy compared to Set()/SetFrom().
@@ -479,7 +486,8 @@ inline Status ParseInternalKey(const Slice& internal_key,
 
 // Update the sequence number in the internal key.
 // Guarantees not to invalidate ikey.data().
-inline void UpdateInternalKey(std::string* ikey, uint64_t seq, ValueType t) {
+template<class ByteArray>
+inline void UpdateInternalKey(ByteArray* ikey, uint64_t seq, ValueType t) {
   size_t ikey_sz = ikey->size();
   assert(ikey_sz >= kNumInternalBytes);
   uint64_t newval = (seq << 8) | t;

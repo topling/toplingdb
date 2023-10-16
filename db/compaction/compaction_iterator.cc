@@ -1036,8 +1036,10 @@ void CompactionIterator::NextFromInput() {
       // trim_ts.
       bool should_delete = false;
       if (!timestamp_size_ || cmp_with_history_ts_low_ < 0) {
+       if (!range_del_agg_->IsEmpty()) {
         should_delete = range_del_agg_->ShouldDelete(
             key_, RangeDelPositioningMode::kForwardTraversal);
+       }
       }
       if (should_delete) {
         ++iter_stats_.num_record_drop_hidden;

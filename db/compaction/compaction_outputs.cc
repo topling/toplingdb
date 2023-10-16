@@ -117,21 +117,20 @@ bool CompactionOutputs::UpdateFilesToCutForTTLStates(
   return false;
 }
 
-size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(
-    const Slice& internal_key) {
+size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(const Slice& ikey) {
   size_t curr_key_boundary_switched_num = 0;
-  const std::vector<FileMetaData*>& grandparents = compaction_->grandparents();
+  const auto grandparents      = compaction_->grandparents().data();
+  const auto grandparents_size = compaction_->grandparents().size();
 
-  if (grandparents.empty()) {
+  if (grandparents_size == 0) {
     return curr_key_boundary_switched_num;
   }
-  const Slice& ikey = internal_key; // alias, reduce code changes
   const Comparator* ucmp = compaction_->column_family_data()->user_comparator();
 
   // Move the grandparent_index_ to the file containing the current user_key.
   // If there are multiple files containing the same user_key, make sure the
   // index points to the last file containing the key.
-  while (grandparent_index_ < grandparents.size()) {
+  while (grandparent_index_ < grandparents_size) {
     if (being_grandparent_gap_) {
       if (sstableKeyCompare(ucmp, ikey,
                             grandparents[grandparent_index_]->smallest) < 0) {
@@ -151,7 +150,7 @@ size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(
       // one.
       if (cmp_result < 0 ||
           (cmp_result == 0 &&
-           (grandparent_index_ == grandparents.size() - 1 ||
+           (grandparent_index_ == grandparents_size - 1 ||
             sstableKeyCompare(ucmp, ikey,
                               grandparents[grandparent_index_ + 1]->smallest) <
                 0))) {
@@ -171,7 +170,7 @@ size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(
   if (!seen_key_ && !being_grandparent_gap_) {
     assert(grandparent_overlapped_bytes_ == 0);
     grandparent_overlapped_bytes_ =
-        GetCurrentKeyGrandparentOverlappedBytes(internal_key);
+        GetCurrentKeyGrandparentOverlappedBytes(ikey);
   }
 
   seen_key_ = true;
@@ -352,17 +351,16 @@ Status CompactionOutputs::AddToOutput(
     const CompactionIterator& c_iter,
     const CompactionFileOpenFunc& open_file_func,
     const CompactionFileCloseFunc& close_file_func) {
-  Status s;
   bool is_range_del = c_iter.IsDeleteRangeSentinelKey();
   if (is_range_del && compaction_->bottommost_level()) {
     // We don't consider range tombstone for bottommost level since:
     // 1. there is no grandparent and hence no overlap to consider
     // 2. range tombstone may be dropped at bottommost level.
-    return s;
+    return Status::OK();
   }
   const Slice& key = c_iter.key();
   if (ShouldStopBefore(c_iter) && HasBuilder()) {
-    s = close_file_func(*this, c_iter.InputStatus(), key);
+    Status s = close_file_func(*this, c_iter.InputStatus(), key);
     if (!s.ok()) {
       return s;
     }
@@ -381,7 +379,7 @@ Status CompactionOutputs::AddToOutput(
 
   // Open output file if necessary
   if (!HasBuilder()) {
-    s = open_file_func(*this);
+    Status s = open_file_func(*this);
     if (!s.ok()) {
       return s;
     }
@@ -395,13 +393,12 @@ Status CompactionOutputs::AddToOutput(
   }
 
   if (UNLIKELY(is_range_del)) {
-    return s;
+    return Status::OK();
   }
 
   assert(builder_ != nullptr);
   const Slice& value = c_iter.value();
-  s = current_output().validator.Add(key, value);
-  if (!s.ok()) {
+  if (Status s = current_output().validator.Add(key, value); !s.ok()) {
     return s;
   }
   builder_->Add(key, value);
@@ -410,15 +407,14 @@ Status CompactionOutputs::AddToOutput(
   current_output_file_size_ = builder_->EstimatedFileSize();
 
   if (blob_garbage_meter_) {
-    s = blob_garbage_meter_->ProcessOutFlow(key, value);
-  }
-
-  if (!s.ok()) {
-    return s;
+    Status s = blob_garbage_meter_->ProcessOutFlow(key, value);
+    if (!s.ok()) {
+      return s;
+    }
   }
 
   const ParsedInternalKey& ikey = c_iter.ikey();
-  s = current_output().meta.UpdateBoundaries(key, value, ikey.sequence,
+  Status s = current_output().meta.UpdateBoundaries(key, value, ikey.sequence,
                                              ikey.type);
 
   return s;

@@ -377,7 +377,7 @@ class DBIter final : public Iterator {
 
   const SliceTransform* prefix_extractor_;
   Env* const env_;
-#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
   SystemClock* clock_;
 #else
   static constexpr SystemClock* clock_ = nullptr;

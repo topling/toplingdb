@@ -50,7 +50,7 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
                ColumnFamilyData* cfd, bool expose_blob_index)
     : prefix_extractor_(mutable_cf_options.prefix_extractor.get()),
       env_(_env),
-#if !defined(CLOCK_MONOTONIC_RAW) || defined(ROCKSDB_UNIT_TEST)
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
       clock_(ioptions.clock),
 #endif
       logger_(ioptions.logger),

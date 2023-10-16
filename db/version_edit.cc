@@ -49,7 +49,7 @@ Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
     }
   }
 
-  if (smallest.size() == 0) {
+  if (smallest.empty()) {
     smallest.DecodeFrom(key);
   }
   largest.DecodeFrom(key);

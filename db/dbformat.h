@@ -409,6 +409,7 @@ class InternalKey {
 
   Slice user_key() const { return ExtractUserKey(rep_); }
   size_t size() const { return rep_.size(); }
+  bool  empty() const { return rep_.empty(); }
 
   void Set(const Slice& _user_key, SequenceNumber s, ValueType t) {
     SetFrom(ParsedInternalKey(_user_key, s, t));

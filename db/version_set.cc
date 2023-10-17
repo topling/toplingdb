@@ -4780,6 +4780,12 @@ uint64_t VersionStorageInfo::NumLevelBytes(int level) const {
   return TotalFileSize(files_[level]);
 }
 
+uint64_t VersionStorageInfo::NumLevelRawKV(int level) const {
+  assert(level >= 0);
+  assert(level < num_levels());
+  return TotalFileRawKV(files_[level]);
+}
+
 int VersionStorageInfo::FindFileInRange(int level, const Slice& key,
                                         uint32_t left, uint32_t right) const {
   return ROCKSDB_NAMESPACE::FindFileInRange(*internal_comparator_,

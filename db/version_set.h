@@ -321,6 +321,9 @@ class VersionStorageInfo {
   // Return the combined file size of all files at the specified level.
   uint64_t NumLevelBytes(int level) const;
 
+  // Return the combined raw kv size of all files at the specified level.
+  uint64_t NumLevelRawKV(int level) const;
+
   // REQUIRES: This version has been saved (see VersionBuilder::SaveTo)
   const std::vector<FileMetaData*>& LevelFiles(int level) const {
     return files_[level];

@@ -64,6 +64,15 @@ uint64_t TotalFileSize(const std::vector<FileMetaData*>& files) {
   return sum;
 }
 
+uint64_t TotalFileRawKV(const std::vector<FileMetaData*>& files) {
+  uint64_t sum = 0;
+  for (size_t i = 0; i < files.size() && files[i]; i++) {
+    if (auto reader = files[i]->fd.table_reader)
+      sum += reader->GetTableProperties()->raw_size();
+  }
+  return sum;
+}
+
 void Compaction::SetInputVersion(Version* _input_version) {
   input_version_ = _input_version;
   cfd_ = input_version_->cfd();

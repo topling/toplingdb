@@ -3686,6 +3686,15 @@ inline uint64_t CompensatedFileSizeForScore(const FileMetaData* f) {
   return f->compensated_file_size;
 }
 
+size_t NumCompactingFiles(const std::vector<FileMetaData*>& files) {
+  size_t num = 0;
+  for (FileMetaData* file : files) {
+    if (file->being_compacted)
+      num++;
+  }
+  return num;
+}
+
 }  // anonymous namespace
 
 void VersionStorageInfo::ComputeCompactionScore(
@@ -3807,10 +3816,7 @@ void VersionStorageInfo::ComputeCompactionScore(
               score *= kScoreScale;
             }
 #if !defined(ROCKSDB_UNIT_TEST)
-          } else if (total_size >
-                     mutable_cf_options.write_buffer_size * num_sorted_runs / 2 &&
-                     mutable_cf_options.write_buffer_size >=
-                     mutable_cf_options.max_bytes_for_level_base / 2) {
+          } else if (NumCompactingFiles(files_[1])) {
             uint64_t base_level_bytes = 0;
             for (auto f : files_[1]) { // base level is 1
               base_level_bytes += FileSizeForScore(f);
@@ -3818,7 +3824,6 @@ void VersionStorageInfo::ComputeCompactionScore(
             // do not consider level0_file_num_compaction_trigger
             score = static_cast<double>(total_size) / std::max
               (base_level_bytes, mutable_cf_options.max_bytes_for_level_base);
-            //score = std::max(score, 1.01); // worst case protect
 #endif // ROCKSDB_UNIT_TEST
           } else {
             score = std::max(score,

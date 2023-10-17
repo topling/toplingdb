@@ -28,20 +28,7 @@
 #include "rocksdb/cleanable.h"
 #include "preproc.h"
 
-#if !defined(DISABLE_TOPLINGDB_INCOMPATIBLE_OPTIMIZATION)
-#include <terark/valvec.hpp>
-#include <terark/valvec32.hpp>
-#endif
-
 namespace ROCKSDB_NAMESPACE {
-
-#if !defined(DISABLE_TOPLINGDB_INCOMPATIBLE_OPTIMIZATION)
-using KeyMemory = terark::valvec32<char>;
-#define IF_TOPLINGDB_INCOMPATIBLE_OPTIMIZATION(Then, Else) Then
-#else
-using KeyMemory = std::string;
-#define IF_TOPLINGDB_INCOMPATIBLE_OPTIMIZATION(Then, Else) Else
-#endif
 
 class Slice {
  public:
@@ -54,15 +41,6 @@ class Slice {
   Slice(const unsigned char* d, size_t n) : data_((const char*)d), size_(n) {}
 
   Slice(std::nullptr_t, size_t n) : data_(nullptr), size_(n) {}
-
-#if !defined(DISABLE_TOPLINGDB_INCOMPATIBLE_OPTIMIZATION)
-  Slice(const terark::valvec<char>& ba) : data_(ba.data()), size_(ba.size()) {}
-  Slice(const terark::valvec<unsigned char>& ba)
-    : data_((const char*)ba.data()), size_(ba.size()) {}
-  Slice(const terark::valvec32<char>& ba) : data_(ba.data()), size_(ba.size()) {}
-  Slice(const terark::valvec32<unsigned char>& ba)
-    : data_((const char*)ba.data()), size_(ba.size()) {}
-#endif
 
   // Create a slice that refers to the contents of "s"
   /* implicit */

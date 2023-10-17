@@ -33,7 +33,6 @@ namespace ROCKSDB_NAMESPACE {
 // The maximum length of a varint in bytes for 64-bit.
 const uint32_t kMaxVarint64Length = 10;
 
-#if 0
 // Standard Put... routines append to a string
 extern void PutFixed16(std::string* dst, uint16_t value);
 extern void PutFixed32(std::string* dst, uint32_t value);
@@ -55,7 +54,6 @@ extern void PutLengthPrefixedSliceParts(std::string* dst,
                                         const SliceParts& slice_parts);
 extern void PutLengthPrefixedSlicePartsWithPadding(
     std::string* dst, const SliceParts& slice_parts, size_t pad_sz);
-#endif
 
 // Standard Get... routines parse a value from the beginning of a Slice
 // and advance the slice past the parsed value.
@@ -143,8 +141,7 @@ inline void PutFixed32(std::string* dst, uint32_t value) {
   }
 }
 
-template<class ByteArray>
-inline void PutFixed64(ByteArray* dst, uint64_t value) {
+inline void PutFixed64(std::string* dst, uint64_t value) {
   if (port::kLittleEndian) {
     dst->append(const_cast<const char*>(reinterpret_cast<char*>(&value)),
                 sizeof(value));

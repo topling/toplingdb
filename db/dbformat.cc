@@ -74,31 +74,6 @@ void AppendInternalKeyFooter(std::string* result, SequenceNumber s,
   PutFixed64(result, PackSequenceAndType(s, t));
 }
 
-#if !defined(DISABLE_TOPLINGDB_INCOMPATIBLE_OPTIMIZATION)
-void AppendInternalKey(KeyMemory* result, const ParsedInternalKey& key) {
-  size_t uklen = key.user_key.size();
-  char* data = result->grow_no_init(uklen + 8);
-  memcpy(data, key.user_key.data(), uklen);
-  static_assert(port::kLittleEndian);
-  unaligned_save(data + uklen, PackSequenceAndType(key.sequence, key.type));
-}
-
-void AppendInternalKeyWithDifferentTimestamp(KeyMemory* result,
-                                             const ParsedInternalKey& key,
-                                             const Slice& ts) {
-  assert(key.user_key.size() >= ts.size());
-  result->reserve(key.user_key.size() + 8);
-  result->append(key.user_key.data(), key.user_key.size() - ts.size());
-  result->append(ts.data(), ts.size());
-  PutFixed64(result, PackSequenceAndType(key.sequence, key.type));
-}
-
-void AppendInternalKeyFooter(KeyMemory* result, SequenceNumber s,
-                             ValueType t) {
-  PutFixed64(result, PackSequenceAndType(s, t));
-}
-#endif
-
 void AppendKeyWithMinTimestamp(std::string* result, const Slice& key,
                                size_t ts_sz) {
   assert(ts_sz > 0);

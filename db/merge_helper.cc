@@ -585,8 +585,7 @@ CompactionFilter::Decision MergeHelper::FilterMerge(const Slice& user_key,
   auto ret = compaction_filter_->FilterV3(
       level_, user_key, CompactionFilter::ValueType::kMergeOperand,
       &value_slice, /* existing_columns */ nullptr, &compaction_filter_value_,
-      /* new_columns */ nullptr,
-      IF_TOPLINGDB_INCOMPATIBLE_OPTIMIZATION(nullptr, compaction_filter_skip_until_.rep()));
+      /* new_columns */ nullptr, compaction_filter_skip_until_.rep());
   if (ret == CompactionFilter::Decision::kRemoveAndSkipUntil) {
     if (user_comparator_->Compare(compaction_filter_skip_until_.Encode(),
                                   user_key) <= 0) {

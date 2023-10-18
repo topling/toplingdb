@@ -144,10 +144,10 @@ class CompactionMergingIterTmpl : public InternalIterator {
     HeapItem() = default;
 
     IteratorWrapper iter;
-    size_t level = 0;
-    std::string tombstone_str;
+    unsigned level = 0;
     enum Type { ITERATOR, DELETE_RANGE_START };
     Type type = ITERATOR;
+    std::string tombstone_str;
 
     explicit HeapItem(size_t _level, InternalIteratorBase<Slice>* _iter)
         : level(_level), type(Type::ITERATOR) {

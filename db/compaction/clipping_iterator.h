@@ -46,7 +46,7 @@ class ClippingIterator : public InternalIterator {
       iter_->SeekForPrev(*end_);
 
       // Upper bound is exclusive, so we need a key which is strictly smaller
-      if (iter_->Valid() && cmp_->Compare(iter_->key(), *end_) == 0) {
+      if (iter_->Valid() && !(cmp_->Compare(iter_->key(), *end_) < 0)) {
         iter_->Prev();
       }
     } else {

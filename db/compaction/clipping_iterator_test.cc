@@ -111,7 +111,8 @@ TEST_P(ClippingIteratorTest, Clip) {
                                              &end, BytewiseComparator())
           : new VectorIterator(input_keys, input_values, BytewiseComparator()));
 
-  ClippingIterator clip(input.get(), &start, &end, BytewiseComparator());
+  auto p_clip = MakeClippingIterator(input.get(), &start, &end, BytewiseComparator());
+  auto& clip = *p_clip;
 
   // The range the clipping iterator should return values from. This is
   // essentially the intersection of the input range [1, 4) and the clipping

@@ -17,14 +17,54 @@ namespace ROCKSDB_NAMESPACE {
 // iterator has already performed the bounds checking, it relies on that result;
 // otherwise, it performs the necessary key comparisons itself. Both bounds
 // are optional.
-class ClippingIterator : public InternalIterator {
+template<bool HasBegin, bool HasEnd>
+struct ClippingIterBounds;
+
+template<> struct ClippingIterBounds<true, true> {
+  Slice m_start, m_end;
+  ClippingIterBounds(const Slice* start, const Slice* end)
+    : m_start(*start), m_end(*end) {
+    assert(nullptr != start);
+    assert(nullptr != end);
+  }
+  const Slice* start_() const { return &m_start; }
+  const Slice* end_() const { return &m_end; }
+};
+template<> struct ClippingIterBounds<true, false> {
+  Slice m_start;
+  ClippingIterBounds(const Slice* start, const Slice* end)
+    : m_start(*start) {
+    assert(nullptr != start);
+    assert(nullptr == end);
+  }
+  const Slice* start_() const { return &m_start; }
+  const Slice* end_() const { return nullptr; }
+};
+template<> struct ClippingIterBounds<false, true> {
+  Slice m_end;
+  ClippingIterBounds(const Slice* start, const Slice* end)
+    : m_end(*end) {
+    assert(nullptr == start);
+    assert(nullptr != end);
+  }
+  const Slice* start_() const { return nullptr; }
+  const Slice* end_() const { return &m_end; }
+};
+
+template<bool HasBegin, bool HasEnd, class LessCMP>
+class ClippingIterator final : public InternalIterator, ClippingIterBounds<HasBegin, HasEnd>, LessCMP {
+  using bounds = ClippingIterBounds<HasBegin, HasEnd>;
+  using bounds::start_;
+  using bounds::end_;
+  bool less(const Slice& x, const Slice& y) const {
+    return static_cast<const LessCMP&>(*this)(x, y);
+  }
  public:
   ClippingIterator(InternalIterator* iter, const Slice* start, const Slice* end,
-                   const CompareInterface* cmp)
-      : iter_(iter), start_(start), end_(end), cmp_(cmp), valid_(false) {
+                   const LessCMP& cmp)
+      : bounds(start, end), LessCMP(cmp), iter_(iter), valid_(false) {
     assert(iter_);
-    assert(cmp_);
-    assert(!start_ || !end_ || cmp_->Compare(*start_, *end_) <= 0);
+    assert(!start || !end || !less(*end, *start));
 
     UpdateAndEnforceBounds();
   }
@@ -32,71 +72,77 @@ class ClippingIterator : public InternalIterator {
   bool Valid() const override { return valid_; }
 
   void SeekToFirst() override {
-    if (start_) {
-      iter_->Seek(*start_);
+    if (start_()) {
+      iter_->Seek(*start_());
     } else {
       iter_->SeekToFirst();
     }
 
+    UpdateValid();
     UpdateAndEnforceUpperBound();
   }
 
   void SeekToLast() override {
-    if (end_) {
-      iter_->SeekForPrev(*end_);
+    if (end_()) {
+      iter_->SeekForPrev(*end_());
 
       // Upper bound is exclusive, so we need a key which is strictly smaller
-      if (iter_->Valid() && !(cmp_->Compare(iter_->key(), *end_) < 0)) {
+      if (iter_->Valid() && !less(iter_->key(), *end_())) {
         iter_->Prev();
       }
     } else {
       iter_->SeekToLast();
     }
 
+    UpdateValid();
     UpdateAndEnforceLowerBound();
   }
 
   void Seek(const Slice& target) override {
-    if (start_ && cmp_->Compare(target, *start_) < 0) {
-      iter_->Seek(*start_);
+    if (start_() && less(target, *start_())) {
+      iter_->Seek(*start_());
+      UpdateValid();
       UpdateAndEnforceUpperBound();
       return;
     }
 
-    if (end_ && cmp_->Compare(target, *end_) >= 0) {
+    if (end_() && !less(target, *end_())) {
       valid_ = false;
       return;
     }
 
     iter_->Seek(target);
+    UpdateValid();
     UpdateAndEnforceUpperBound();
   }
 
   void SeekForPrev(const Slice& target) override {
-    if (start_ && cmp_->Compare(target, *start_) < 0) {
+    if (start_() && less(target, *start_())) {
       valid_ = false;
       return;
     }
 
-    if (end_ && cmp_->Compare(target, *end_) >= 0) {
-      iter_->SeekForPrev(*end_);
+    if (end_() && !less(target, *end_())) {
+      iter_->SeekForPrev(*end_());
 
       // Upper bound is exclusive, so we need a key which is strictly smaller
-      if (iter_->Valid() && cmp_->Compare(iter_->key(), *end_) == 0) {
+      if (iter_->Valid() && !less(iter_->key(), *end_())) {
         iter_->Prev();
       }
 
+      UpdateValid();
       UpdateAndEnforceLowerBound();
       return;
     }
 
     iter_->SeekForPrev(target);
+    UpdateValid();
     UpdateAndEnforceLowerBound();
   }
 
   void Next() override {
     assert(valid_);
-    iter_->Next();
+    valid_ = iter_->NextAndCheckValid();
     UpdateAndEnforceUpperBound();
   }
 
@@ -106,11 +152,11 @@ class ClippingIterator : public InternalIterator {
 
     valid_ = iter_->NextAndGetResult(result);
 
-    if (!valid_) {
+    if (UNLIKELY(!valid_)) {
       return false;
     }
 
-    if (end_) {
+    if (end_()) {
       EnforceUpperBoundImpl(result->bound_check_result);
       result->is_valid = valid_;
       if (!valid_) {
@@ -125,7 +171,7 @@ class ClippingIterator : public InternalIterator {
 
   void Prev() override {
     assert(valid_);
-    iter_->Prev();
+    valid_ = iter_->PrevAndCheckValid();
     UpdateAndEnforceLowerBound();
   }
 
@@ -199,18 +245,18 @@ class ClippingIterator : public InternalIterator {
   }
 
   void EnforceUpperBoundImpl(IterBoundCheck bound_check_result) {
-    if (bound_check_result == IterBoundCheck::kInbound) {
+    if (UNLIKELY(bound_check_result == IterBoundCheck::kInbound)) {
       return;
     }
 
-    if (bound_check_result == IterBoundCheck::kOutOfBound) {
+    if (UNLIKELY(bound_check_result == IterBoundCheck::kOutOfBound)) {
       valid_ = false;
       return;
     }
 
     assert(bound_check_result == IterBoundCheck::kUnknown);
 
-    if (cmp_->Compare(key(), *end_) >= 0) {
+    if (!less(key(), *end_())) {
       valid_ = false;
     }
   }
@@ -220,7 +266,7 @@ class ClippingIterator : public InternalIterator {
       return;
     }
 
-    if (!end_) {
+    if (!end_()) {
       return;
     }
 
@@ -232,7 +278,7 @@ class ClippingIterator : public InternalIterator {
       return;
     }
 
-    if (!start_) {
+    if (!start_()) {
       return;
     }
 
@@ -240,14 +286,14 @@ class ClippingIterator : public InternalIterator {
       return;
     }
 
-    if (cmp_->Compare(key(), *start_) < 0) {
+    if (less(key(), *start_())) {
       valid_ = false;
     }
   }
 
   void AssertBounds() {
-    assert(!valid_ || !start_ || cmp_->Compare(key(), *start_) >= 0);
-    assert(!valid_ || !end_ || cmp_->Compare(key(), *end_) < 0);
+    assert(!valid_ || !start_() || !less(key(), *start_()));
+    assert(!valid_ || !end_() || less(key(), *end_()));
   }
 
   void UpdateAndEnforceBounds() {
@@ -258,22 +304,55 @@ class ClippingIterator : public InternalIterator {
   }
 
   void UpdateAndEnforceUpperBound() {
-    UpdateValid();
     EnforceUpperBound();
     AssertBounds();
   }
 
   void UpdateAndEnforceLowerBound() {
-    UpdateValid();
     EnforceLowerBound();
     AssertBounds();
   }
 
   InternalIterator* iter_;
-  const Slice* start_;
-  const Slice* end_;
-  const CompareInterface* cmp_;
   bool valid_;
 };
+
+template<class LessCMP>
+std::unique_ptr<InternalIterator>
+MakeClippingIteratorAux(InternalIterator* iter,
+                        const Slice* start, const Slice* end, LessCMP cmp) {
+  if (nullptr == start)
+    return std::make_unique<ClippingIterator<false, true, LessCMP> >(iter, start, end, cmp);
+  else if (nullptr == end)
+    return std::make_unique<ClippingIterator<true, false, LessCMP> >(iter, start, end, cmp);
+  else
+    return std::make_unique<ClippingIterator<true,  true, LessCMP> >(iter, start, end, cmp);
+}
+
+inline
+std::unique_ptr<InternalIterator>
+MakeClippingIterator(InternalIterator* iter,
+                     const Slice* start, const Slice* end,
+                     const InternalKeyComparator* cmp) {
+  if (cmp->IsForwardBytewise())
+    return MakeClippingIteratorAux<BytewiseCompareInternalKey>(iter, start, end, {});
+  else if (cmp->IsReverseBytewise())
+    return MakeClippingIteratorAux<RevBytewiseCompareInternalKey>(iter, start, end, {});
+  else
+    return MakeClippingIteratorAux<FallbackVirtCmp>(iter, start, end, {cmp});
+}
+
+inline
+std::unique_ptr<InternalIterator>
+MakeClippingIterator(InternalIterator* iter,
+                     const Slice* start, const Slice* end,
+                     const Comparator* cmp) {
+  if (cmp->IsForwardBytewise())
+    return MakeClippingIteratorAux<ForwardBytewiseLessUserKey>(iter, start, end, {});
+  else if (cmp->IsReverseBytewise())
+    return MakeClippingIteratorAux<ReverseBytewiseLessUserKey>(iter, start, end, {});
+  else
+    return MakeClippingIteratorAux<VirtualFunctionLessUserKey>(iter, start, end, {cmp});
+}
 
 }  // namespace ROCKSDB_NAMESPACE

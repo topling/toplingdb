@@ -1506,7 +1506,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
 
   std::unique_ptr<InternalIterator> clip;
   if (start.has_value() || end.has_value()) {
-    clip = std::make_unique<ClippingIterator>(
+    clip = MakeClippingIterator(
         raw_input.get(), start.has_value() ? &start_slice : nullptr,
         end.has_value() ? &end_slice : nullptr, &cfd->internal_comparator());
     input = clip.get();

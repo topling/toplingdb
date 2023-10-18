@@ -1052,6 +1052,7 @@ struct FallbackVirtCmp {
     return icmp->Compare(x, y) < 0;
   }
   const InternalKeyComparator* icmp;
+  FallbackVirtCmp(const InternalKeyComparator* ic) : icmp(ic) {}
 };
 
 __always_inline int BytewiseCompare(Slice x, Slice y) noexcept {

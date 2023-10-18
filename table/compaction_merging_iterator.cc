@@ -6,9 +6,11 @@
 #include "table/compaction_merging_iterator.h"
 
 namespace ROCKSDB_NAMESPACE {
-class CompactionMergingIterator : public InternalIterator {
+
+template<class LessCMP>
+class CompactionMergingIterTmpl : public InternalIterator {
  public:
-  CompactionMergingIterator(
+  CompactionMergingIterTmpl(
       const InternalKeyComparator* comparator, InternalIterator** children,
       int n, bool is_arena_mode,
       std::vector<
@@ -46,7 +48,7 @@ class CompactionMergingIterator : public InternalIterator {
     }
   }
 
-  ~CompactionMergingIterator() override {
+  ~CompactionMergingIterTmpl() override {
     // TODO: use unique_ptr for range_tombstone_iters_
     for (auto child : range_tombstone_iters_) {
       delete child;
@@ -169,6 +171,9 @@ class CompactionMergingIterator : public InternalIterator {
         : comparator_(comparator) {}
 
     bool operator()(HeapItem* a, HeapItem* b) const {
+    #if 1
+      return comparator_(b->key(), a->key());
+    #else
       int r = comparator_->Compare(a->key(), b->key());
       // For each file, we assume all range tombstone start keys come before
       // its file boundary sentinel key (file's meta.largest key).
@@ -178,10 +183,11 @@ class CompactionMergingIterator : public InternalIterator {
       // constructor). The following assertion validates this assumption.
       assert(a->type == b->type || r != 0);
       return r > 0;
+    #endif
     }
 
    private:
-    const InternalKeyComparator* comparator_;
+    LessCMP comparator_;
   };
 
   using CompactionMinHeap = BinaryHeap<HeapItem*, CompactionHeapItemComparator>;
@@ -227,7 +233,10 @@ class CompactionMergingIterator : public InternalIterator {
   }
 };
 
-void CompactionMergingIterator::SeekToFirst() {
+#define CompactionMergingIteratorF(Return) \
+  template<class LessCMP> Return CompactionMergingIterTmpl<LessCMP>::
+
+CompactionMergingIteratorF(void)SeekToFirst() {
   minHeap_.clear();
   status_ = Status::OK();
   for (auto& child : children_) {
@@ -246,7 +255,7 @@ void CompactionMergingIterator::SeekToFirst() {
   current_ = CurrentForward();
 }
 
-void CompactionMergingIterator::Seek(const Slice& target) {
+CompactionMergingIteratorF(void)Seek(const Slice& target) {
   minHeap_.clear();
   status_ = Status::OK();
   for (auto& child : children_) {
@@ -274,7 +283,7 @@ void CompactionMergingIterator::Seek(const Slice& target) {
   current_ = CurrentForward();
 }
 
-void CompactionMergingIterator::Next() {
+CompactionMergingIteratorF(void)Next() {
   assert(Valid());
   // For the heap modifications below to be correct, current_ must be the
   // current top of the heap.
@@ -310,7 +319,7 @@ void CompactionMergingIterator::Next() {
   current_ = CurrentForward();
 }
 
-void CompactionMergingIterator::FindNextVisibleKey() {
+CompactionMergingIteratorF(void)FindNextVisibleKey() {
   while (!minHeap_.empty()) {
     HeapItem* current = minHeap_.top();
     // IsDeleteRangeSentinelKey() here means file boundary sentinel keys.
@@ -337,7 +346,7 @@ void CompactionMergingIterator::FindNextVisibleKey() {
   }
 }
 
-void CompactionMergingIterator::AddToMinHeapOrCheckStatus(HeapItem* child) {
+CompactionMergingIteratorF(void)AddToMinHeapOrCheckStatus(HeapItem* child) {
   if (child->iter.Valid()) {
     assert(child->iter.status().ok());
     minHeap_.push(child);
@@ -346,11 +355,14 @@ void CompactionMergingIterator::AddToMinHeapOrCheckStatus(HeapItem* child) {
   }
 }
 
-InternalIterator* NewCompactionMergingIterator(
+template<class LessCMP>
+static
+InternalIterator* NewCompactionMergingIterTmpl(
     const InternalKeyComparator* comparator, InternalIterator** children, int n,
     std::vector<std::pair<TruncatedRangeDelIterator*,
                           TruncatedRangeDelIterator***>>& range_tombstone_iters,
     Arena* arena) {
+  using CompactionMergingIterator = CompactionMergingIterTmpl<LessCMP>;
   assert(n >= 0);
   if (n == 0) {
     return NewEmptyInternalIterator<Slice>(arena);
@@ -367,4 +379,23 @@ InternalIterator* NewCompactionMergingIterator(
     }
   }
 }
+
+InternalIterator* NewCompactionMergingIterator(
+    const InternalKeyComparator* comparator, InternalIterator** children, int n,
+    std::vector<std::pair<TruncatedRangeDelIterator*,
+                          TruncatedRangeDelIterator***>>& range_tombstone_iters,
+    Arena* arena) {
+  if (comparator->IsForwardBytewise()) {
+    return NewCompactionMergingIterTmpl<BytewiseCompareInternalKey>
+                  (comparator, children, n, range_tombstone_iters, arena);
+  }
+  if (comparator->IsReverseBytewise()) {
+    return NewCompactionMergingIterTmpl<RevBytewiseCompareInternalKey>
+                  (comparator, children, n, range_tombstone_iters, arena);
+  } else {
+    return NewCompactionMergingIterTmpl<FallbackVirtCmp>
+                  (comparator, children, n, range_tombstone_iters, arena);
+  }
+}
+
 }  // namespace ROCKSDB_NAMESPACE

@@ -1014,4 +1014,69 @@ struct ParsedInternalKeyComparator {
   const InternalKeyComparator* cmp;
 };
 
+///////////////////////////////////////////////////////////////////////////
+
+__always_inline uint64_t GetUnalignedU64(const void* ptr) noexcept {
+  uint64_t x;
+  memcpy(&x, ptr, sizeof(uint64_t));
+  return x;
+}
+struct BytewiseCompareInternalKey {
+  __always_inline bool operator()(Slice x, Slice y) const noexcept {
+    size_t n = std::min(x.size_, y.size_) - 8;
+    int cmp = memcmp(x.data_, y.data_, n);
+    if (0 != cmp) return cmp < 0;
+    if (x.size_ != y.size_) return x.size_ < y.size_;
+    return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+  }
+  __always_inline bool operator()(uint64_t x, uint64_t y) const noexcept {
+    return x < y;
+  }
+  BytewiseCompareInternalKey(...) {}
+};
+struct RevBytewiseCompareInternalKey {
+  __always_inline bool operator()(Slice x, Slice y) const noexcept {
+    size_t n = std::min(x.size_, y.size_) - 8;
+    int cmp = memcmp(x.data_, y.data_, n);
+    if (0 != cmp) return cmp > 0;
+    if (x.size_ != y.size_) return x.size_ > y.size_;
+    return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+  }
+  __always_inline bool operator()(uint64_t x, uint64_t y) const noexcept {
+    return x > y;
+  }
+  RevBytewiseCompareInternalKey(...) {}
+};
+struct FallbackVirtCmp {
+  __always_inline bool operator()(Slice x, Slice y) const {
+    return icmp->Compare(x, y) < 0;
+  }
+  const InternalKeyComparator* icmp;
+};
+
+__always_inline int BytewiseCompare(Slice x, Slice y) noexcept {
+  size_t n = std::min(x.size_, y.size_);
+  int cmp = memcmp(x.data_, y.data_, n);
+  if (cmp)
+    return cmp;
+  else
+    return int(x.size_ - y.size_); // ignore key len larger than 2G-1
+}
+struct ForwardBytewiseCompareUserKey {
+  __always_inline int operator()(Slice x, Slice y) const noexcept {
+    return BytewiseCompare(x, y);
+  }
+};
+struct ReverseBytewiseCompareUserKey {
+  __always_inline int operator()(Slice x, Slice y) const noexcept {
+    return BytewiseCompare(y, x);
+  }
+};
+struct VirtualFunctionCompareUserKey {
+  __always_inline int operator()(Slice x, Slice y) const noexcept {
+    return cmp->CompareWithoutTimestamp(x, y);
+  }
+  const Comparator* cmp;
+};
+
 }  // namespace ROCKSDB_NAMESPACE

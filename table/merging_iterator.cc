@@ -228,12 +228,6 @@ struct HeapItemAndPrefix {
 };
 inline static void UpdatePrefixCache(HeapItem*) {} // do nothing
 
-static FORCE_INLINE uint64_t GetUnalignedU64(const void* ptr) noexcept {
-  uint64_t x;
-  memcpy(&x, ptr, sizeof(uint64_t));
-  return x;
-}
-
 static FORCE_INLINE bool BytewiseCompareInternalKey(Slice x, Slice y) noexcept {
   size_t n = std::min(x.size_, y.size_) - 8;
   int cmp = memcmp(x.data_, y.data_, n);

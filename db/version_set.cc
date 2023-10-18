@@ -98,48 +98,15 @@ FindFileInRangeUdfa(const LevelFilesBrief&, const Slice& key);
 namespace {
 
 #if defined(_MSC_VER) /* Visual Studio */
-#define FORCE_INLINE __forceinline
 #define __attribute_noinline__
 #define __builtin_prefetch(ptr) _mm_prefetch((const char*)(ptr), _MM_HINT_T0)
 #elif defined(__GNUC__)
-#define FORCE_INLINE __always_inline
 #pragma GCC diagnostic ignored "-Wattributes"
 #else
-#define FORCE_INLINE inline
 #define __attribute_noinline__
 #define __builtin_prefetch(ptr)
 #endif
 
-static FORCE_INLINE uint64_t GetUnalignedU64(const void* ptr) noexcept {
-  uint64_t x;
-  memcpy(&x, ptr, sizeof(uint64_t));
-  return x;
-}
-
-struct BytewiseCompareInternalKey {
-  FORCE_INLINE bool operator()(Slice x, Slice y) const noexcept {
-    size_t n = std::min(x.size_, y.size_) - 8;
-    int cmp = memcmp(x.data_, y.data_, n);
-    if (0 != cmp) return cmp < 0;
-    if (x.size_ != y.size_) return x.size_ < y.size_;
-    return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
-  }
-  FORCE_INLINE bool operator()(uint64_t x, uint64_t y) const noexcept {
-    return x < y;
-  }
-};
-struct RevBytewiseCompareInternalKey {
-  FORCE_INLINE bool operator()(Slice x, Slice y) const noexcept {
-    size_t n = std::min(x.size_, y.size_) - 8;
-    int cmp = memcmp(x.data_, y.data_, n);
-    if (0 != cmp) return cmp > 0;
-    if (x.size_ != y.size_) return x.size_ > y.size_;
-    return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
-  }
-  FORCE_INLINE bool operator()(uint64_t x, uint64_t y) const noexcept {
-    return x > y;
-  }
-};
 template<class Cmp>
 size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
                            Slice key, size_t lo, size_t hi) {
@@ -169,13 +136,6 @@ size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
   }
   return lo;
 }
-
-struct FallbackVirtCmp {
-  bool operator()(Slice x, Slice y) const {
-    return icmp->Compare(x, y) < 0;
-  }
-  const InternalKeyComparator* icmp;
-};
 
 static
 size_t FindFileInRangeTmpl(FallbackVirtCmp cmp, const LevelFilesBrief& brief,
@@ -255,31 +215,6 @@ Status OverlapWithIterator(const Comparator* ucmp,
 
   return iter->status();
 }
-
-static FORCE_INLINE int BytewiseCompare(Slice x, Slice y) noexcept {
-  size_t n = std::min(x.size_, y.size_);
-  int cmp = memcmp(x.data_, y.data_, n);
-  if (cmp)
-    return cmp;
-  else
-    return int(x.size_ - y.size_); // ignore key len larger than 2G-1
-}
-struct ForwardBytewiseCompareUserKey {
-  FORCE_INLINE int operator()(Slice x, Slice y) const noexcept {
-    return BytewiseCompare(x, y);
-  }
-};
-struct ReverseBytewiseCompareUserKey {
-  FORCE_INLINE int operator()(Slice x, Slice y) const noexcept {
-    return BytewiseCompare(y, x);
-  }
-};
-struct VirtualFunctionCompareUserKey {
-  FORCE_INLINE int operator()(Slice x, Slice y) const noexcept {
-    return cmp->CompareWithoutTimestamp(x, y);
-  }
-  const Comparator* cmp;
-};
 
 // Class to help choose the next file to search for the particular key.
 // Searches and returns files level by level.

@@ -1055,14 +1055,6 @@ struct FallbackVirtCmp {
   FallbackVirtCmp(const InternalKeyComparator* ic) : icmp(ic) {}
 };
 
-__always_inline int BytewiseCompare(Slice x, Slice y) noexcept {
-  size_t n = std::min(x.size_, y.size_);
-  int cmp = memcmp(x.data_, y.data_, n);
-  if (cmp)
-    return cmp;
-  else
-    return int(x.size_ - y.size_); // ignore key len larger than 2G-1
-}
 struct ForwardBytewiseLessUserKey {
   __always_inline bool operator()(Slice x, Slice y) const noexcept {
     return x < y;
@@ -1082,17 +1074,25 @@ struct VirtualFunctionLessUserKey {
   const Comparator* cmp;
 };
 
-struct ForwardBytewiseCompareUserKey {
+__always_inline int BytewiseCompare(Slice x, Slice y) noexcept {
+  size_t n = std::min(x.size_, y.size_);
+  int cmp = memcmp(x.data_, y.data_, n);
+  if (cmp)
+    return cmp;
+  else
+    return int(x.size_ - y.size_); // ignore key len larger than 2G-1
+}
+struct ForwardBytewiseCompareUserKeyNoTS {
   __always_inline int operator()(Slice x, Slice y) const noexcept {
     return BytewiseCompare(x, y);
   }
 };
-struct ReverseBytewiseCompareUserKey {
+struct ReverseBytewiseCompareUserKeyNoTS {
   __always_inline int operator()(Slice x, Slice y) const noexcept {
     return BytewiseCompare(y, x);
   }
 };
-struct VirtualFunctionCompareUserKey {
+struct VirtualFunctionCompareUserKeyNoTS {
   __always_inline int operator()(Slice x, Slice y) const noexcept {
     return cmp->CompareWithoutTimestamp(x, y);
   }

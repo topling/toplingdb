@@ -258,12 +258,13 @@ class FilePicker {
   int GetCurrentLevel() const { return curr_level_; }
 
   FdWithKeyRange* GetNextFile() {
-    if (IsForwardBytewiseComparator(user_comparator_))
-      return GetNextFileTmpl(ForwardBytewiseCompareUserKey());
-    else if (IsReverseBytewiseComparator(user_comparator_))
-      return GetNextFileTmpl(ReverseBytewiseCompareUserKey());
+    auto ucmp = user_comparator_;
+    if (IsForwardBytewiseComparator(ucmp))
+      return GetNextFileTmpl(ForwardBytewiseCompareUserKeyNoTS());
+    else if (IsReverseBytewiseComparator(ucmp))
+      return GetNextFileTmpl(ReverseBytewiseCompareUserKeyNoTS());
     else
-      return GetNextFileTmpl(VirtualFunctionCompareUserKey{user_comparator_});
+      return GetNextFileTmpl(VirtualFunctionCompareUserKeyNoTS{ucmp});
   }
   template<class Compare>
   FdWithKeyRange* GetNextFileTmpl(Compare cmp) {

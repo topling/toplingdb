@@ -1064,19 +1064,19 @@ __always_inline int BytewiseCompare(Slice x, Slice y) noexcept {
     return int(x.size_ - y.size_); // ignore key len larger than 2G-1
 }
 struct ForwardBytewiseLessUserKey {
-  __always_inline int operator()(Slice x, Slice y) const noexcept {
+  __always_inline bool operator()(Slice x, Slice y) const noexcept {
     return x < y;
   }
   ForwardBytewiseLessUserKey(...) {}
 };
 struct ReverseBytewiseLessUserKey {
-  __always_inline int operator()(Slice x, Slice y) const noexcept {
+  __always_inline bool operator()(Slice x, Slice y) const noexcept {
     return y < x;
   }
   ReverseBytewiseLessUserKey(...) {}
 };
 struct VirtualFunctionLessUserKey {
-  __always_inline int operator()(Slice x, Slice y) const noexcept {
+  __always_inline bool operator()(Slice x, Slice y) const noexcept {
     return cmp->Compare(x, y) < 0;
   }
   const Comparator* cmp;

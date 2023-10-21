@@ -27,10 +27,11 @@ uint64_t PackFileNumberAndPathId(uint64_t number, uint64_t path_id) {
   return number | (path_id * (kFileNumberMask + 1));
 }
 
+ROCKSDB_FLATTEN
 Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
                                       SequenceNumber seqno,
                                       ValueType value_type) {
-  if (value_type == kTypeBlobIndex) {
+  if (UNLIKELY(value_type == kTypeBlobIndex)) {
     BlobIndex blob_index;
     const Status s = blob_index.DecodeFrom(value);
     if (!s.ok()) {

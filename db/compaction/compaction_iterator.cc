@@ -1253,6 +1253,7 @@ void CompactionIterator::DecideOutputLevel() {
   }
 }
 
+ROCKSDB_FLATTEN
 void CompactionIterator::PrepareOutput() {
   if (Valid()) {
     if (LIKELY(!is_range_del_)) {
@@ -1324,15 +1325,19 @@ void CompactionIterator::PrepareOutput() {
 
 inline SequenceNumber CompactionIterator::findEarliestVisibleSnapshot(
     SequenceNumber in, SequenceNumber* prev_snapshot) {
+  auto const snapshots_beg = snapshots_->begin();
+  auto const snapshots_end = snapshots_->end();
+  auto const snapshots_num = snapshots_end - snapshots_beg;
   assert(snapshots_->size());
-  if (snapshots_->size() == 0) {
+  if (snapshots_num == 0) {
     ROCKS_LOG_FATAL(info_log_,
                     "No snapshot left in findEarliestVisibleSnapshot");
   }
   auto snapshots_iter =
-      std::lower_bound(snapshots_->begin(), snapshots_->end(), in);
+      //std::lower_bound(snapshots_->begin(), snapshots_->end(), in);
+      snapshots_beg + terark::lower_bound_0(snapshots_beg, snapshots_num, in);
   assert(prev_snapshot != nullptr);
-  if (snapshots_iter == snapshots_->begin()) {
+  if (snapshots_iter == snapshots_beg) {
     *prev_snapshot = 0;
   } else {
     *prev_snapshot = *std::prev(snapshots_iter);
@@ -1345,11 +1350,11 @@ inline SequenceNumber CompactionIterator::findEarliestVisibleSnapshot(
     }
   }
   if (snapshot_checker_ == nullptr) {
-    return snapshots_iter != snapshots_->end() ? *snapshots_iter
+    return snapshots_iter != snapshots_end ? *snapshots_iter
                                                : kMaxSequenceNumber;
   }
   bool has_released_snapshot = !released_snapshots_.empty();
-  for (; snapshots_iter != snapshots_->end(); ++snapshots_iter) {
+  for (; snapshots_iter != snapshots_end; ++snapshots_iter) {
     auto cur = *snapshots_iter;
     if (in > cur) {
       ROCKS_LOG_FATAL(info_log_,

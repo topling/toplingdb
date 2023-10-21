@@ -117,6 +117,7 @@ bool CompactionOutputs::UpdateFilesToCutForTTLStates(
   return false;
 }
 
+ROCKSDB_FLATTEN
 size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(const Slice& ikey) {
   size_t curr_key_boundary_switched_num = 0;
   const auto grandparents      = compaction_->grandparents().data();

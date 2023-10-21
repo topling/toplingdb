@@ -684,7 +684,11 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
         return Status::TryAgain("key+seq exists");
       }
     } else {
-      bool res = table->InsertKeyValue(key_slice, value);
+      // CSPPMemTab: with hint, it just needs 1 tls access
+      //             and 1 token acquire per WriteBatch
+      bool res = (hint == nullptr)
+               ? table->InsertKeyValue(key_slice, value)
+               : table->InsertKeyValueWithHint(key_slice, value, hint);
       if (UNLIKELY(!res)) {
         return Status::TryAgain("key+seq exists");
       }

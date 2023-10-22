@@ -316,18 +316,30 @@ class CompactionOutputs {
   // Basic compaction output stats for this level's outputs
   InternalStats::CompactionOutputsStats stats_;
 
+
   // indicate if this CompactionOutputs obj for penultimate_level, should always
   // be false if per_key_placement feature is not enabled.
   const bool is_penultimate_level_;
+
+  // A flag determines if this subcompaction has been split by the cursor
+  // for RoundRobin compaction
+  bool is_split_ = false;
+
+  // if the output key is being grandparent files gap, so:
+  //  key > grandparents[grandparent_index_ - 1].largest &&
+  //  key < grandparents[grandparent_index_].smallest
+  bool being_grandparent_gap_ = true;
+
+  // A flag determines whether the key has been seen in ShouldStopBefore()
+  bool seen_key_ = false;
+
+  const Comparator* user_cmp_;
+
   std::unique_ptr<CompactionRangeDelAggregator> range_del_agg_ = nullptr;
 
   // partitioner information
   terark::valvec32<char> last_key_for_partitioner_;
   std::unique_ptr<SstPartitioner> partitioner_;
-
-  // A flag determines if this subcompaction has been split by the cursor
-  // for RoundRobin compaction
-  bool is_split_ = false;
 
   // We also maintain the output split key for each subcompaction to avoid
   // repetitive comparison in ShouldStopBefore()
@@ -343,17 +355,9 @@ class CompactionOutputs {
   // An index that used to speed up ShouldStopBefore().
   size_t grandparent_index_ = 0;
 
-  // if the output key is being grandparent files gap, so:
-  //  key > grandparents[grandparent_index_ - 1].largest &&
-  //  key < grandparents[grandparent_index_].smallest
-  bool being_grandparent_gap_ = true;
-
   // The number of bytes overlapping between the current output and
   // grandparent files used in ShouldStopBefore().
   uint64_t grandparent_overlapped_bytes_ = 0;
-
-  // A flag determines whether the key has been seen in ShouldStopBefore()
-  bool seen_key_ = false;
 
   // for the current output file, how many file boundaries has it crossed,
   // basically number of files overlapped * 2

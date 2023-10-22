@@ -122,7 +122,7 @@ size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(const Slice& ikey) {
   if (compaction_->grandparents().empty()) {
     return 0;
   }
-  const Comparator* ucmp = compaction_->column_family_data()->user_comparator();
+  const Comparator* ucmp = user_cmp_;
   if (ucmp->IsForwardBytewise())
     return UpdateGrandparentBoundaryInfoTmpl(ForwardBytewiseCompareUserKeyNoTS(), ikey);
   if (ucmp->IsReverseBytewise())
@@ -782,6 +782,7 @@ void CompactionOutputs::FillFilesToCutForTtl() {
 CompactionOutputs::CompactionOutputs(const Compaction* compaction,
                                      const bool is_penultimate_level)
     : compaction_(compaction), is_penultimate_level_(is_penultimate_level) {
+  user_cmp_ = compaction->immutable_options()->user_comparator;
   partitioner_ = compaction->output_level() == 0
                      ? nullptr
                      : compaction->CreateSstPartitioner();

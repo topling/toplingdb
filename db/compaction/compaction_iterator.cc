@@ -77,6 +77,8 @@ CompactionIterator::CompactionIterator(
       clock_(env_->GetSystemClock().get()),
       report_detailed_time_(report_detailed_time),
       expect_valid_internal_key_(expect_valid_internal_key),
+      allow_ingest_behind_(compaction && compaction->allow_ingest_behind()),
+      supports_per_key_placement_(compaction && compaction->SupportsPerKeyPlacement()),
       range_del_agg_(range_del_agg),
       blob_file_builder_(blob_file_builder),
       compaction_(std::move(compaction)),
@@ -1264,7 +1266,7 @@ void CompactionIterator::PrepareOutput() {
       }
     }
 
-    if (compaction_ != nullptr && compaction_->SupportsPerKeyPlacement()) {
+    if (compaction_ != nullptr && supports_per_key_placement_) {
       DecideOutputLevel();
     }
 
@@ -1280,7 +1282,7 @@ void CompactionIterator::PrepareOutput() {
     // Can we do the same for levels above bottom level as long as
     // KeyNotExistsBeyondOutputLevel() return true?
     if (Valid() && compaction_ != nullptr &&
-        !compaction_->allow_ingest_behind() && bottommost_level_ &&
+        !allow_ingest_behind_ && bottommost_level_ &&
         DefinitelyInSnapshot(ikey_.sequence, earliest_snapshot_) &&
         ikey_.type != kTypeMerge && current_key_committed_ &&
         !output_to_penultimate_level_ &&

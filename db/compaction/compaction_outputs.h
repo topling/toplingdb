@@ -243,6 +243,9 @@ class CompactionOutputs {
   // It returns how many boundaries it crosses by including current key.
   size_t UpdateGrandparentBoundaryInfo(const Slice& internal_key);
 
+  template<class UKCmpNoTS>
+  size_t UpdateGrandparentBoundaryInfoTmpl(UKCmpNoTS ucmp, const Slice& internal_key);
+
   // helper function to get the overlapped grandparent files size, it's only
   // used for calculating the first key's overlap.
   uint64_t GetCurrentKeyGrandparentOverlappedBytes(

@@ -23,8 +23,10 @@ namespace ROCKSDB_NAMESPACE {
 const uint64_t kRangeTombstoneSentinel =
     PackSequenceAndType(kMaxSequenceNumber, kTypeRangeDeletion);
 
-int sstableKeyCompare(const Comparator* uc, const Slice& a, const Slice& b) {
-  auto c = uc->CompareWithoutTimestamp(ExtractUserKey(a), ExtractUserKey(b));
+template<class CmpNoTS>
+ROCKSDB_FLATTEN
+int sstableKeyCompare(CmpNoTS ucmp, const Slice& a, const Slice& b) {
+  auto c = ucmp(ExtractUserKey(a), ExtractUserKey(b));
   if (c != 0) {
     return c;
   }
@@ -39,22 +41,12 @@ int sstableKeyCompare(const Comparator* uc, const Slice& a, const Slice& b) {
   }
   return 0;
 }
+#define sstableKeyCompareInstantiate(CmpNoTS) \
+  template int sstableKeyCompare<CmpNoTS>(CmpNoTS, const Slice&, const Slice&)
 
-int sstableKeyCompare(const Comparator* user_cmp, const InternalKey* a,
-                      const InternalKey& b) {
-  if (a == nullptr) {
-    return -1;
-  }
-  return sstableKeyCompare(user_cmp, *a, b);
-}
-
-int sstableKeyCompare(const Comparator* user_cmp, const InternalKey& a,
-                      const InternalKey* b) {
-  if (b == nullptr) {
-    return -1;
-  }
-  return sstableKeyCompare(user_cmp, a, *b);
-}
+sstableKeyCompareInstantiate(ForwardBytewiseCompareUserKeyNoTS);
+sstableKeyCompareInstantiate(ReverseBytewiseCompareUserKeyNoTS);
+sstableKeyCompareInstantiate(VirtualFunctionCompareUserKeyNoTS);
 
 uint64_t TotalFileSize(const std::vector<FileMetaData*>& files) {
   uint64_t sum = 0;

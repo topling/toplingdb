@@ -119,14 +119,22 @@ bool CompactionOutputs::UpdateFilesToCutForTTLStates(
 
 ROCKSDB_FLATTEN
 size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(const Slice& ikey) {
+  if (compaction_->grandparents().empty()) {
+    return 0;
+  }
+  const Comparator* ucmp = compaction_->column_family_data()->user_comparator();
+  if (ucmp->IsForwardBytewise())
+    return UpdateGrandparentBoundaryInfoTmpl(ForwardBytewiseCompareUserKeyNoTS(), ikey);
+  if (ucmp->IsReverseBytewise())
+    return UpdateGrandparentBoundaryInfoTmpl(ReverseBytewiseCompareUserKeyNoTS(), ikey);
+  else
+    return UpdateGrandparentBoundaryInfoTmpl(VirtualFunctionCompareUserKeyNoTS{ucmp}, ikey);
+}
+template<class UKCmpNoTS>
+size_t CompactionOutputs::UpdateGrandparentBoundaryInfoTmpl(UKCmpNoTS ucmp, const Slice& ikey) {
   size_t curr_key_boundary_switched_num = 0;
   const auto grandparents      = compaction_->grandparents().data();
   const auto grandparents_size = compaction_->grandparents().size();
-
-  if (grandparents_size == 0) {
-    return curr_key_boundary_switched_num;
-  }
-  const Comparator* ucmp = compaction_->column_family_data()->user_comparator();
 
   // Move the grandparent_index_ to the file containing the current user_key.
   // If there are multiple files containing the same user_key, make sure the

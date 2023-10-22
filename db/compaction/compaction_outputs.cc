@@ -122,13 +122,13 @@ size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(const Slice& ikey) {
   if (compaction_->grandparents().empty()) {
     return 0;
   }
-  const Comparator* ucmp = user_cmp_;
-  if (ucmp->IsForwardBytewise())
+  if (cmp_meta_.IsForwardBytewise())
     return UpdateGrandparentBoundaryInfoTmpl(ForwardBytewiseCompareUserKeyNoTS(), ikey);
-  if (ucmp->IsReverseBytewise())
+  if (cmp_meta_.IsReverseBytewise())
     return UpdateGrandparentBoundaryInfoTmpl(ReverseBytewiseCompareUserKeyNoTS(), ikey);
   else
-    return UpdateGrandparentBoundaryInfoTmpl(VirtualFunctionCompareUserKeyNoTS{ucmp}, ikey);
+    return UpdateGrandparentBoundaryInfoTmpl(VirtualFunctionCompareUserKeyNoTS
+                             {compaction_->immutable_options()->user_comparator}, ikey);
 }
 template<class UKCmpNoTS>
 size_t CompactionOutputs::UpdateGrandparentBoundaryInfoTmpl(UKCmpNoTS ucmp, const Slice& ikey) {
@@ -781,7 +781,7 @@ void CompactionOutputs::FillFilesToCutForTtl() {
 CompactionOutputs::CompactionOutputs(const Compaction* compaction,
                                      const bool is_penultimate_level)
     : compaction_(compaction), is_penultimate_level_(is_penultimate_level) {
-  user_cmp_ = compaction->immutable_options()->user_comparator;
+  cmp_meta_ = *compaction->immutable_options()->user_comparator;
   partitioner_ = compaction->output_level() == 0
                      ? nullptr
                      : compaction->CreateSstPartitioner();

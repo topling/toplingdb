@@ -333,7 +333,7 @@ class CompactionOutputs {
   // A flag determines whether the key has been seen in ShouldStopBefore()
   bool seen_key_ = false;
 
-  const Comparator* user_cmp_;
+  ComparatorMetaData cmp_meta_;
 
   std::unique_ptr<CompactionRangeDelAggregator> range_del_agg_ = nullptr;
 

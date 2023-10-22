@@ -15,17 +15,14 @@ namespace ROCKSDB_NAMESPACE {
 
 // Wrapper of user comparator, with auto increment to
 // perf_context.user_key_comparison_count.
-class UserComparatorWrapper {
+class UserComparatorWrapper : public ComparatorMetaData {
  public:
   // `UserComparatorWrapper`s constructed with the default constructor are not
   // usable and will segfault on any attempt to use them for comparisons.
   UserComparatorWrapper() : user_comparator_(nullptr) {}
 
   explicit UserComparatorWrapper(const Comparator* const user_cmp)
-      : user_comparator_(user_cmp) {
-    this->opt_cmp_type_ = user_cmp->opt_cmp_type();
-    this->timestamp_size_ = user_cmp->timestamp_size();
-  }
+      : ComparatorMetaData(*user_cmp), user_comparator_(user_cmp) { }
 
   ~UserComparatorWrapper() = default;
 
@@ -60,17 +57,8 @@ class UserComparatorWrapper {
     return user_comparator_->EqualWithoutTimestamp(a, b);
   }
 
-  bool IsForwardBytewise() const noexcept { return 0 == opt_cmp_type_; }
-  bool IsReverseBytewise() const noexcept { return 1 == opt_cmp_type_; }
-  bool IsBytewise() const noexcept { return opt_cmp_type_ <= 1; }
-  uint8_t opt_cmp_type() const noexcept { return opt_cmp_type_; }
-  size_t timestamp_size() const noexcept { return timestamp_size_; }
-
  private:
   const Comparator* user_comparator_;
-  uint16_t timestamp_size_;
-  // 0: forward bytewise, 1: rev byitewise, others: unknown
-  uint8_t opt_cmp_type_ = 255;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

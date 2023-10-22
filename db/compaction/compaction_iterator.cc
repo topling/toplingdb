@@ -348,24 +348,34 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
         env_ != nullptr && report_detailed_time_ ? timer.ElapsedNanos() : 0;
   }
 
-  if (decision == CompactionFilter::Decision::kUndetermined) {
+  switch (decision) {
+  default:
+    ROCKSDB_DIE("Bad decision = %d", int(decision));
+    break;
+  case CompactionFilter::Decision::kUndetermined:
     // Should not reach here, since FilterV2/FilterV3 should never return
     // kUndetermined.
     status_ = Status::NotSupported(
         "FilterV2/FilterV3 should never return kUndetermined");
     validity_info_.Invalidate();
     return false;
-  }
-
-  if (decision == CompactionFilter::Decision::kRemoveAndSkipUntil &&
-      cmp_->Compare(compaction_filter_skip_until_.Encode(), ikey_.user_key) <=
+  case CompactionFilter::Decision::kRemoveAndSkipUntil:
+    if (cmp_->Compare(compaction_filter_skip_until_.Encode(), ikey_.user_key) <=
           0) {
-    // Can't skip to a key smaller than the current one.
-    // Keep the key as per FilterV2/FilterV3 documentation.
-    decision = CompactionFilter::Decision::kKeep;
-  }
-
-  if (decision == CompactionFilter::Decision::kRemove) {
+      // Can't skip to a key smaller than the current one.
+      // Keep the key as per FilterV2/FilterV3 documentation.
+      // decision = CompactionFilter::Decision::kKeep;
+    } else {
+      *need_skip = true;
+      compaction_filter_skip_until_.ConvertFromUserKey(kMaxSequenceNumber,
+                                                       kValueTypeForSeek);
+      *skip_until = compaction_filter_skip_until_.Encode();
+    }
+    break;
+  case CompactionFilter::Decision::kKeep:
+    // do nothing
+    break;
+  case CompactionFilter::Decision::kRemove:
     // convert the current key to a delete; key_ is pointing into
     // current_key_ at this point, so updating current_key_ updates key()
     ikey_.type = kTypeDeletion;
@@ -373,7 +383,8 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
     // no value associated with delete
     value_.clear();
     iter_stats_.num_record_drop_user++;
-  } else if (decision == CompactionFilter::Decision::kPurge) {
+    break;
+  case CompactionFilter::Decision::kPurge:
     // convert the current key to a single delete; key_ is pointing into
     // current_key_ at this point, so updating current_key_ updates key()
     ikey_.type = kTypeSingleDeletion;
@@ -381,19 +392,16 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
     // no value associated with single delete
     value_.clear();
     iter_stats_.num_record_drop_user++;
-  } else if (decision == CompactionFilter::Decision::kChangeValue) {
+    break;
+  case CompactionFilter::Decision::kChangeValue:
     if (ikey_.type != kTypeValue) {
       ikey_.type = kTypeValue;
       current_key_.UpdateInternalKey(ikey_.sequence, kTypeValue);
     }
 
     value_ = compaction_filter_value_;
-  } else if (decision == CompactionFilter::Decision::kRemoveAndSkipUntil) {
-    *need_skip = true;
-    compaction_filter_skip_until_.ConvertFromUserKey(kMaxSequenceNumber,
-                                                     kValueTypeForSeek);
-    *skip_until = compaction_filter_skip_until_.Encode();
-  } else if (decision == CompactionFilter::Decision::kChangeBlobIndex) {
+    break;
+  case CompactionFilter::Decision::kChangeBlobIndex:
     // Only the StackableDB-based BlobDB impl's compaction filter should return
     // kChangeBlobIndex. Decision about rewriting blob and changing blob index
     // in the integrated BlobDB impl is made in subsequent call to
@@ -412,18 +420,18 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
     }
 
     value_ = compaction_filter_value_;
-  } else if (decision == CompactionFilter::Decision::kIOError) {
+    break;
+  case CompactionFilter::Decision::kIOError:
     if (!compaction_filter_->IsStackedBlobDbInternalCompactionFilter()) {
       status_ = Status::NotSupported(
           "CompactionFilter for integrated BlobDB should not return kIOError");
-      validity_info_.Invalidate();
-      return false;
+    } else {
+      status_ = Status::IOError("Failed to access blob during compaction filter");
     }
-
-    status_ = Status::IOError("Failed to access blob during compaction filter");
     validity_info_.Invalidate();
     return false;
-  } else if (decision == CompactionFilter::Decision::kChangeWideColumnEntity) {
+  case CompactionFilter::Decision::kChangeWideColumnEntity:
+   {
     WideColumns sorted_columns;
 
     sorted_columns.reserve(new_columns.size());
@@ -452,7 +460,9 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
     }
 
     value_ = compaction_filter_value_;
-  }
+   }
+   break;
+  } // switch
 
   return true;
 }

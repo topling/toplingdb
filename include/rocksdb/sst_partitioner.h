@@ -29,11 +29,11 @@ struct PartitionerRequest {
   PartitionerRequest(const Slice& prev_user_key_,
                      const Slice& current_user_key_,
                      uint64_t current_output_file_size_)
-      : prev_user_key(&prev_user_key_),
-        current_user_key(&current_user_key_),
+      : prev_user_key(prev_user_key_),
+        current_user_key(current_user_key_),
         current_output_file_size(current_output_file_size_) {}
-  const Slice* prev_user_key;
-  const Slice* current_user_key;
+  const Slice prev_user_key;
+  const Slice current_user_key;
   uint64_t current_output_file_size;
 };
 

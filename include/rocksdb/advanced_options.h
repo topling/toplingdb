@@ -1086,6 +1086,8 @@ struct AdvancedColumnFamilyOptions {
   // Dynamically changeable through the SetOptions() API
   int blob_file_starting_level = 0;
 
+  int min_filter_level = 0;
+
   // The Cache object to use for blobs. Using a dedicated object for blobs and
   // using the same object for the block and blob caches are both supported. In
   // the latter case, note that blobs are less valuable from a caching

@@ -110,6 +110,7 @@ AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions(const Options& options)
           options.blob_garbage_collection_force_threshold),
       blob_compaction_readahead_size(options.blob_compaction_readahead_size),
       blob_file_starting_level(options.blob_file_starting_level),
+      min_filter_level(options.min_filter_level),
       blob_cache(options.blob_cache),
       prepopulate_blob_cache(options.prepopulate_blob_cache),
       persist_user_defined_timestamps(options.persist_user_defined_timestamps) {
@@ -448,6 +449,8 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
         blob_compaction_readahead_size);
     ROCKS_LOG_HEADER(log, "               Options.blob_file_starting_level: %d",
                      blob_file_starting_level);
+    ROCKS_LOG_HEADER(log, "                       Options.min_filter_level: %d",
+                     min_filter_level);
     if (blob_cache) {
       ROCKS_LOG_HEADER(log, "                          Options.blob_cache: %s",
                        blob_cache->Name());

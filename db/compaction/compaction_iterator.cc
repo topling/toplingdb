@@ -117,6 +117,11 @@ CompactionIterator::CompactionIterator(
 
   if (compaction_ != nullptr) {
     level_ptrs_ = std::vector<size_t>(compaction_->number_levels(), 0);
+    if (auto c = compaction_->real_compaction()) {
+      if (level_ >= 0 && level_ < c->mutable_cf_options()->min_filter_level) {
+        compaction_filter_ = nullptr; // ignore compaction_filter_
+      }
+    }
   }
 #ifndef NDEBUG
   // findEarliestVisibleSnapshot assumes this ordering.

@@ -158,6 +158,7 @@ struct MutableCFOptions {
             options.blob_garbage_collection_force_threshold),
         blob_compaction_readahead_size(options.blob_compaction_readahead_size),
         blob_file_starting_level(options.blob_file_starting_level),
+        min_filter_level(options.min_filter_level),
         prepopulate_blob_cache(options.prepopulate_blob_cache),
         max_sequential_skip_in_iterations(
             options.max_sequential_skip_in_iterations),
@@ -217,6 +218,7 @@ struct MutableCFOptions {
         blob_garbage_collection_force_threshold(0.0),
         blob_compaction_readahead_size(0),
         blob_file_starting_level(0),
+        min_filter_level(0),
         prepopulate_blob_cache(PrepopulateBlobCache::kDisable),
         max_sequential_skip_in_iterations(0),
         check_flush_compaction_key_order(true),
@@ -304,6 +306,7 @@ struct MutableCFOptions {
   double blob_garbage_collection_force_threshold;
   uint64_t blob_compaction_readahead_size;
   int blob_file_starting_level;
+  int min_filter_level;
   PrepopulateBlobCache prepopulate_blob_cache;
 
   // Misc options

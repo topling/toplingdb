@@ -256,6 +256,7 @@ void UpdateColumnFamilyOptions(const MutableCFOptions& moptions,
   cf_opts->blob_compaction_readahead_size =
       moptions.blob_compaction_readahead_size;
   cf_opts->blob_file_starting_level = moptions.blob_file_starting_level;
+  cf_opts->min_filter_level = moptions.min_filter_level;
   cf_opts->prepopulate_blob_cache = moptions.prepopulate_blob_cache;
 
   // Misc options

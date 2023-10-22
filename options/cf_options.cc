@@ -482,6 +482,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct MutableCFOptions, blob_file_starting_level),
           OptionType::kInt, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
+        {"min_filter_level",
+         {offsetof(struct MutableCFOptions, min_filter_level),
+          OptionType::kInt, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
         {"prepopulate_blob_cache",
          OptionTypeInfo::Enum<PrepopulateBlobCache>(
              offsetof(struct MutableCFOptions, prepopulate_blob_cache),

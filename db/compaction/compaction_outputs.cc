@@ -247,7 +247,7 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
   // etc., and TTL states.
   // If compaction_->output_level() == 0, there is no need to update grandparent
   // info, and that `grandparent` should be empty.
-  if (compaction_->output_level() > 0) {
+  if (output_level_ > 0) {
     num_grandparent_boundaries_crossed =
         UpdateGrandparentBoundaryInfo(internal_key);
     should_stop_for_ttl = UpdateFilesToCutForTTLStates(internal_key);
@@ -269,12 +269,12 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
   }
 
   // files output to Level 0 won't be split
-  if (compaction_->output_level() == 0) {
+  if (output_level_ == 0) {
     return false;
   }
 
   // reach the max file size
-  if (current_output_file_size_ >= compaction_->max_output_file_size()) {
+  if (current_output_file_size_ >= max_output_file_size_) {
     return true;
   }
 
@@ -297,7 +297,7 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
     // max_compaction_bytes. Which is to prevent future bigger than
     // max_compaction_bytes compaction from the current output level.
     if (grandparent_overlapped_bytes_ + current_output_file_size_ >
-        compaction_->max_compaction_bytes()) {
+        max_compaction_bytes_) {
       return true;
     }
 
@@ -319,13 +319,12 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
     // More details, check PR #1963
     const size_t num_skippable_boundaries_crossed =
         being_grandparent_gap_ ? 2 : 3;
-    if (compaction_->immutable_options()->compaction_style ==
-            kCompactionStyleLevel &&
-        compaction_->immutable_options()->level_compaction_dynamic_file_size &&
+    if (compaction_style_ == kCompactionStyleLevel &&
+        level_compaction_dynamic_file_size_ &&
         num_grandparent_boundaries_crossed >=
             num_skippable_boundaries_crossed &&
         grandparent_overlapped_bytes_ - previous_overlapped_bytes >
-            compaction_->target_output_file_size() / 8) {
+            target_output_file_size_ / 8) {
       return true;
     }
 
@@ -341,11 +340,10 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
     // target file size. The test shows it can generate larger files than a
     // static threshold like 75% and has a similar write amplification
     // improvement.
-    if (compaction_->immutable_options()->compaction_style ==
-            kCompactionStyleLevel &&
-        compaction_->immutable_options()->level_compaction_dynamic_file_size &&
+    if (compaction_style_ == kCompactionStyleLevel &&
+        level_compaction_dynamic_file_size_ &&
         current_output_file_size_ >=
-            ((compaction_->target_output_file_size() + 99) / 100) *
+            ((target_output_file_size_ + 99) / 100) *
                 (50 + std::min(grandparent_boundary_switched_num_ * 5,
                                size_t{40}))) {
       return true;
@@ -781,7 +779,15 @@ void CompactionOutputs::FillFilesToCutForTtl() {
 CompactionOutputs::CompactionOutputs(const Compaction* compaction,
                                      const bool is_penultimate_level)
     : compaction_(compaction), is_penultimate_level_(is_penultimate_level) {
-  cmp_meta_ = *compaction->immutable_options()->user_comparator;
+  auto& io = *compaction->immutable_options();
+  cmp_meta_ = *io.user_comparator;
+  compaction_style_ = io.compaction_style;
+  level_compaction_dynamic_file_size_ = io.level_compaction_dynamic_file_size;
+  output_level_ = compaction->output_level();
+  max_compaction_bytes_ = compaction->max_compaction_bytes();
+  max_output_file_size_ = compaction->max_output_file_size();
+  target_output_file_size_ = compaction->target_output_file_size();
+
   partitioner_ = compaction->output_level() == 0
                      ? nullptr
                      : compaction->CreateSstPartitioner();

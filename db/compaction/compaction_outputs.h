@@ -334,6 +334,12 @@ class CompactionOutputs {
   bool seen_key_ = false;
 
   ComparatorMetaData cmp_meta_;
+  CompactionStyle compaction_style_;
+  bool level_compaction_dynamic_file_size_;
+  int output_level_;
+  uint64_t max_compaction_bytes_;
+  uint64_t max_output_file_size_;
+  uint64_t target_output_file_size_;
 
   std::unique_ptr<CompactionRangeDelAggregator> range_del_agg_ = nullptr;
 

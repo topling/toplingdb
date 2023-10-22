@@ -119,7 +119,7 @@ bool CompactionOutputs::UpdateFilesToCutForTTLStates(
 
 ROCKSDB_FLATTEN
 size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(const Slice& ikey) {
-  if (compaction_->grandparents().empty()) {
+  if (0 == grandparents_size_) {
     return 0;
   }
   if (cmp_meta_.IsForwardBytewise())
@@ -133,8 +133,8 @@ size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(const Slice& ikey) {
 template<class UKCmpNoTS>
 size_t CompactionOutputs::UpdateGrandparentBoundaryInfoTmpl(UKCmpNoTS ucmp, const Slice& ikey) {
   size_t curr_key_boundary_switched_num = 0;
-  const auto grandparents      = compaction_->grandparents().data();
-  const auto grandparents_size = compaction_->grandparents().size();
+  const auto grandparents      = grandparents_data_;
+  const auto grandparents_size = grandparents_size_;
 
   // Move the grandparent_index_ to the file containing the current user_key.
   // If there are multiple files containing the same user_key, make sure the
@@ -194,7 +194,7 @@ uint64_t CompactionOutputs::GetCurrentKeyGrandparentOverlappedBytes(
   }
   uint64_t overlapped_bytes = 0;
 
-  const std::vector<FileMetaData*>& grandparents = compaction_->grandparents();
+  const auto grandparents = grandparents_data_;
   const Comparator* ucmp = compaction_->column_family_data()->user_comparator();
   InternalKey ikey;
   ikey.DecodeFrom(internal_key);
@@ -206,7 +206,7 @@ uint64_t CompactionOutputs::GetCurrentKeyGrandparentOverlappedBytes(
   assert(
       cmp_result < 0 ||
       (cmp_result == 0 &&
-       (grandparent_index_ == grandparents.size() - 1 ||
+       (grandparent_index_ == grandparents_size_ - 1 ||
         sstableKeyCompare(
             ucmp, ikey, grandparents[grandparent_index_ + 1]->smallest) < 0)));
   assert(sstableKeyCompare(ucmp, ikey,
@@ -787,6 +787,8 @@ CompactionOutputs::CompactionOutputs(const Compaction* compaction,
   max_compaction_bytes_ = compaction->max_compaction_bytes();
   max_output_file_size_ = compaction->max_output_file_size();
   target_output_file_size_ = compaction->target_output_file_size();
+  grandparents_data_ = compaction->grandparents().data();
+  grandparents_size_ = compaction->grandparents().size();
 
   partitioner_ = compaction->output_level() == 0
                      ? nullptr

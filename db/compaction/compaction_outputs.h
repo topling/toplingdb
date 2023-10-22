@@ -340,6 +340,8 @@ class CompactionOutputs {
   uint64_t max_compaction_bytes_;
   uint64_t max_output_file_size_;
   uint64_t target_output_file_size_;
+  FileMetaData* const * grandparents_data_;
+  size_t grandparents_size_;
 
   std::unique_ptr<CompactionRangeDelAggregator> range_del_agg_ = nullptr;
 

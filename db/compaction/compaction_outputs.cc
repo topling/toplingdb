@@ -241,8 +241,6 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
   }
 #endif  // NDEBUG
   const uint64_t previous_overlapped_bytes = grandparent_overlapped_bytes_;
-  const InternalKeyComparator* icmp =
-      &compaction_->column_family_data()->internal_comparator();
   size_t num_grandparent_boundaries_crossed = 0;
   bool should_stop_for_ttl = false;
   // Always update grandparent information like overlapped file number, size
@@ -283,6 +281,7 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
   // Check if it needs to split for RoundRobin
   // Invalid local_output_split_key indicates that we do not need to split
   if (local_output_split_key_ != nullptr && !is_split_) {
+    auto icmp = &compaction_->immutable_options()->internal_comparator;
     // Split occurs when the next key is larger than/equal to the cursor
     if (icmp->Compare(internal_key, local_output_split_key_->Encode()) >= 0) {
       is_split_ = true;

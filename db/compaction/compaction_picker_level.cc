@@ -207,13 +207,6 @@ void LevelCompactionBuilder::SetupInitialFiles() {
           compaction_reason_ = CompactionReason::kLevelMaxLevelSize;
         }
         break;
-      } else if (mutable_cf_options_.level0_file_num_compaction_trigger <= 0) {
-        // topling default = 0 for disable intra level0 compaction
-        // because with distributed compaction, compaction is no longer
-        // a bottle neck, and intra level0 compaction makes negative impact!
-        //
-        // at here, level0 is select because score > 1.0, but we skip level0
-        // compaction, this is somewhat weired!
       } else {
         // didn't find the compaction, clear the inputs
         start_level_inputs_.clear();

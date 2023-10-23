@@ -121,7 +121,7 @@ struct SstFileWriter::Rep {
 
   Status Add(const Slice& user_key, const Slice& value, ValueType value_type) {
    #if defined(TOPLINGDB_WITH_TIMESTAMP)
-    if (internal_comparator.user_comparator()->timestamp_size() != 0) {
+    if (internal_comparator.timestamp_size() != 0) {
       return Status::InvalidArgument("Timestamp size mismatch");
     }
    #endif
@@ -132,8 +132,7 @@ struct SstFileWriter::Rep {
              ValueType value_type) {
     const size_t timestamp_size = timestamp.size();
 
-    if (internal_comparator.user_comparator()->timestamp_size() !=
-        timestamp_size) {
+    if (internal_comparator.timestamp_size() != timestamp_size) {
       return Status::InvalidArgument("Timestamp size mismatch");
     }
 
@@ -198,7 +197,7 @@ struct SstFileWriter::Rep {
   }
 
   Status DeleteRange(const Slice& begin_key, const Slice& end_key) {
-    if (internal_comparator.user_comparator()->timestamp_size() != 0) {
+    if (internal_comparator.timestamp_size() != 0) {
       return Status::InvalidArgument("Timestamp size mismatch");
     }
     return DeleteRangeImpl(begin_key, end_key);
@@ -209,8 +208,7 @@ struct SstFileWriter::Rep {
                      const Slice& timestamp) {
     const size_t timestamp_size = timestamp.size();
 
-    if (internal_comparator.user_comparator()->timestamp_size() !=
-        timestamp_size) {
+    if (internal_comparator.timestamp_size() != timestamp_size) {
       return Status::InvalidArgument("Timestamp size mismatch");
     }
 

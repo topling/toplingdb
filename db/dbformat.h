@@ -360,6 +360,7 @@ class InternalKeyComparator
   int Compare(const Slice& a, SequenceNumber a_global_seqno, const Slice& b,
               SequenceNumber b_global_seqno) const;
 
+  size_t timestamp_size() const noexcept { return user_comparator_.timestamp_size(); }
   uint8_t opt_cmp_type() const noexcept { return user_comparator_.opt_cmp_type(); }
   bool IsForwardBytewise() const noexcept { return user_comparator_.IsForwardBytewise(); }
   bool IsReverseBytewise() const noexcept { return user_comparator_.IsReverseBytewise(); }

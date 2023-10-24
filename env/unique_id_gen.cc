@@ -15,6 +15,17 @@
 #include "rocksdb/version.h"
 #include "util/hash.h"
 
+#ifdef __SSE4_2__
+#ifdef _WIN32
+#include <intrin.h>
+#define _rdtsc() __rdtsc()
+#else
+#include <x86intrin.h>
+#endif
+#else
+#include "rocksdb/system_clock.h"
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 namespace {

@@ -2096,7 +2096,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
 
   assert(get_impl_options.column_family);
 
-  if (read_options.io_activity != Env::IOActivity::kUnknown) {
+  if (UNLIKELY(read_options.io_activity != Env::IOActivity::kUnknown)) {
     return Status::InvalidArgument(
         "Cannot call Get with `ReadOptions::io_activity` != "
         "`Env::IOActivity::kUnknown`");
@@ -2134,7 +2134,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
       get_impl_options.column_family);
   auto cfd = cfh->cfd();
 
-  if (tracer_) {
+  if (UNLIKELY(tracer_ != nullptr)) {
     // TODO: This mutex should be removed later, to improve performance when
     // tracing is enabled.
     InstrumentedMutexLock lock(&trace_mutex_);
@@ -2144,7 +2144,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
     }
   }
 
-  if (get_impl_options.get_merge_operands_options != nullptr) {
+  if (UNLIKELY(get_impl_options.get_merge_operands_options != nullptr)) {
     for (int i = 0; i < get_impl_options.get_merge_operands_options
                             ->expected_max_number_of_operands;
          ++i) {
@@ -2440,7 +2440,7 @@ std::vector<Status> DBImpl::MultiGet(
   }
 #endif
 
-  if (tracer_) {
+  if (UNLIKELY(tracer_ != nullptr)) {
     // TODO: This mutex should be removed later, to improve performance when
     // tracing is enabled.
     InstrumentedMutexLock lock(&trace_mutex_);
@@ -2758,7 +2758,7 @@ void DBImpl::MultiGetCommon(const ReadOptions& read_options,
                             PinnableWideColumns* columns,
                             std::string* timestamps, Status* statuses,
                             const bool sorted_input) {
-  if (num_keys == 0) {
+  if (UNLIKELY(num_keys == 0)) {
     return;
   }
 
@@ -2791,7 +2791,7 @@ void DBImpl::MultiGetCommon(const ReadOptions& read_options,
   }
 #endif
 
-  if (tracer_) {
+  if (UNLIKELY(tracer_ != nullptr)) {
     // TODO: This mutex should be removed later, to improve performance when
     // tracing is enabled.
     InstrumentedMutexLock lock(&trace_mutex_);
@@ -2979,7 +2979,7 @@ void DBImpl::MultiGetCommon(const ReadOptions& read_options,
                             PinnableSlice* values, PinnableWideColumns* columns,
                             std::string* timestamps, Status* statuses,
                             bool sorted_input) {
-  if (tracer_) {
+  if (UNLIKELY(tracer_ != nullptr)) {
     // TODO: This mutex should be removed later, to improve performance when
     // tracing is enabled.
     InstrumentedMutexLock lock(&trace_mutex_);
@@ -3294,7 +3294,7 @@ Status DBImpl::MultiGetImpl(
     autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE>* sorted_keys,
     SuperVersion* super_version, SequenceNumber snapshot,
     ReadCallback* callback) {
-  if (read_options.io_activity != Env::IOActivity::kUnknown) {
+  if (UNLIKELY(read_options.io_activity != Env::IOActivity::kUnknown)) {
     return Status::InvalidArgument(
         "Cannot call MultiGet with `ReadOptions::io_activity` != "
         "`Env::IOActivity::kUnknown`");

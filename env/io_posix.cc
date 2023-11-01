@@ -165,6 +165,7 @@ bool PosixPositionedWrite(int fd, const char* buf, size_t nbyte, off_t offset) {
 #endif
 
 bool IsSyncFileRangeSupported(int fd) {
+ #if 0 // do not superfluous
   // This function tracks and checks for cases where we know `sync_file_range`
   // definitely will not work properly despite passing the compile-time check
   // (`ROCKSDB_RANGESYNC_PRESENT`). If we are unsure, or if any of the checks
@@ -191,6 +192,7 @@ bool IsSyncFileRangeSupported(int fd) {
     // ("Function not implemented").
     return false;
   }
+ #endif
   // None of the known cases matched, so allow `sync_file_range` use.
   return true;
 }
@@ -1291,11 +1293,7 @@ PosixWritableFile::PosixWritableFile(const std::string& fname, int fd,
   fallocate_with_keep_size_ = options.fallocate_with_keep_size;
 #endif
 #ifdef ROCKSDB_RANGESYNC_PRESENT
- #if 0
   sync_file_range_supported_ = IsSyncFileRangeSupported(fd_);
- #else
-  sync_file_range_supported_ = true;
- #endif
 #endif  // ROCKSDB_RANGESYNC_PRESENT
   assert(!options.use_mmap_writes);
 }

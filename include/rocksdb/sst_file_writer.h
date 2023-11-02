@@ -180,10 +180,6 @@ class SstFileWriter {
   // Return the current file size.
   uint64_t FileSize();
 
-  // topling: this is a patch, do not expect it be graceful
-  int fixed_key_len = 0; // default = 0 for var key len
-  int fixed_value_len = -1; // default = -1 for var value len
-
  private:
   void InvalidatePageCache(bool closing);
   struct Rep;

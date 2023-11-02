@@ -352,8 +352,7 @@ Status SstFileWriter::Open(const std::string& file_path) {
       TableFileCreationReason::kMisc, 0 /* oldest_key_time */,
       0 /* file_creation_time */, "SST Writer" /* db_id */, r->db_session_id,
       0 /* target_file_size */, r->next_file_number);
-  table_builder_options.fixed_key_len = fixed_key_len;
-  table_builder_options.fixed_value_len = fixed_value_len;
+
   // External SST files used to each get a unique session id. Now for
   // slightly better uniqueness probability in constructing cache keys, we
   // assign fake file numbers to each file (into table properties) and keep

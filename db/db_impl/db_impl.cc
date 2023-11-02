@@ -1329,7 +1329,7 @@ Status DBImpl::SetDBOptions(
     s = GetMutableDBOptionsFromStrings(mutable_db_options_, options_map,
                                        &new_options);
 
-#if 0 // the document says bytes_per_sync == 0 means turn off
+#ifdef ROCKSDB_UNIT_TEST // the document says bytes_per_sync == 0 means turn off
     if (new_options.bytes_per_sync == 0) {
       new_options.bytes_per_sync = 1024 * 1024;
     }

@@ -8,7 +8,7 @@ ToplingDB has much more key features than RocksDB:
 1. [SidePlugin](https://github.com/topling/rockside/wiki) enables users to write a json(or yaml) to define DB configs
 1. [Embedded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
 1. [Embedded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to [online change](https://github.com/topling/rockside/wiki/Online-Change-Options) db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...) without restart the running process
-1. Many improves and refactories on RocksDB, aimed for performance and extendibility
+1. Many improvements and refactories on RocksDB, aimed for performance and extendibility
 1. Topling transaction lock management, 5x faster than rocksdb
 1. MultiGet with concurrent IO by fiber/coroutine + io_uring, much faster than RocksDB's async MultiGet
 1. Topling [de-virtualization](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Principle), de-virtualize hotspot (virtual) functions, and key prefix caches, [bechmarks](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Benchmark)

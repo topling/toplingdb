@@ -4464,7 +4464,7 @@ struct ReadOptionsTLS {
   class SuperVersion* sv = nullptr;
   class DBImpl* db_impl = nullptr;
   std::vector<class SuperVersion*> cfsv;
-  class SuperVersion*& GetSuperVersionRef(size_t cfid);
+  SuperVersion*& GetSuperVersionRef(size_t cfid);
   void FinishPin();
   ReadOptionsTLS();
   ~ReadOptionsTLS();

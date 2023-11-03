@@ -33,7 +33,7 @@ namespace ROCKSDB_NAMESPACE {
 
 // -- Block-based Table
 class Cache;
-class CompactionInputFiles;
+struct CompactionInputFiles;
 class FilterPolicy;
 class FlushBlockPolicyFactory;
 class PersistentCache;

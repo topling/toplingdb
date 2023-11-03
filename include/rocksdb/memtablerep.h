@@ -49,7 +49,7 @@ namespace ROCKSDB_NAMESPACE {
 class Arena;
 class Allocator;
 class InternalKeyComparator;
-class IterateResult;
+struct IterateResult;
 class LookupKey;
 class SliceTransform;
 class Logger;

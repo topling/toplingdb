@@ -908,6 +908,7 @@ endif
 
 # topling specific WARNING_FLAGS
 WARNING_FLAGS := -Wall -Wno-shadow
+WARNING_FLAGS += -Wno-deprecated-builtins
 
 ifdef LUA_PATH
 

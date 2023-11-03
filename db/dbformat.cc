@@ -201,7 +201,7 @@ LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
   static_assert(offsetof(LookupKey, longstart_) == 8);
   size_t usize = _user_key.size();
   size_t ts_sz = (nullptr == ts) ? 0 : ts->size();
-  klength_ = usize + ts_sz + 8;
+  klength_ = uint32_t(usize + ts_sz + 8);
   char buf[8];
   auto klen_len = EncodeVarint32(buf, klength_) - buf;
   klen_len_ = char(klen_len);

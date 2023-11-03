@@ -101,6 +101,11 @@
 
 #include "sideplugin/rockside/src/topling/side_plugin_repo.h"
 
+#if defined(__clang__)
+  #pragma clang diagnostic ignored "-Wunused-lambda-capture"
+#endif
+
+
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
 using GFLAGS_NAMESPACE::RegisterFlagValidator;
 using GFLAGS_NAMESPACE::SetUsageMessage;
@@ -1674,7 +1679,7 @@ DEFINE_int64(multiread_stride, 0,
 DEFINE_bool(multiread_batched, false, "Use the new MultiGet API");
 DEFINE_bool(multiread_check, false, "check MultiGet result with Get");
 DEFINE_bool(multiread_async, false, "MultiGet async");
-DEFINE_int64(multiread_async_qd, 32, "MultiGet async queue depth");
+DEFINE_int32(multiread_async_qd, 32, "MultiGet async queue depth");
 
 DEFINE_string(memtablerep, "skip_list", "");
 DEFINE_int64(hash_bucket_count, 1024 * 1024, "hash bucket count");

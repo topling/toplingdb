@@ -107,6 +107,12 @@
 #include "util/stop_watch.h"
 #include "util/string_util.h"
 #include "utilities/trace/replayer_impl.h"
+
+#if defined(__clang__)
+  #pragma clang diagnostic ignored "-Wshorten-64-to-32"
+  #pragma clang diagnostic ignored "-Wunused-but-set-variable"
+#endif
+
 #include <terark/fstring.hpp>
 #include <terark/thread/fiber_pool.hpp>
 #include <terark/util/function.hpp>
@@ -4461,9 +4467,9 @@ terark_pure_func inline static size_t ThisThreadID() {
 
 struct ReadOptionsTLS {
   size_t thread_id = size_t(-1);
-  class SuperVersion* sv = nullptr;
-  class DBImpl* db_impl = nullptr;
-  std::vector<class SuperVersion*> cfsv;
+  SuperVersion* sv = nullptr;
+  DBImpl* db_impl = nullptr;
+  std::vector<SuperVersion*> cfsv;
   SuperVersion*& GetSuperVersionRef(size_t cfid);
   void FinishPin();
   ReadOptionsTLS();

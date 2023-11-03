@@ -6897,7 +6897,7 @@ VersionSet::ApproximateSizeTmpl(const SizeApproximationOptions& options,
 
     // identify the file position for start key
     const int idx_start =
-        FindFileInRangeTmpl(cmp, files_brief, start, 0,
+        (int)FindFileInRangeTmpl(cmp, files_brief, start, 0,
                             static_cast<uint32_t>(files_brief.num_files - 1));
     assert(static_cast<size_t>(idx_start) < files_brief.num_files);
 
@@ -6905,7 +6905,7 @@ VersionSet::ApproximateSizeTmpl(const SizeApproximationOptions& options,
     int idx_end = idx_start;
     if (cmp(files_brief.files[idx_end].largest_key, end)) {
       idx_end =
-          FindFileInRangeTmpl(cmp, files_brief, end, idx_start,
+          (int)FindFileInRangeTmpl(cmp, files_brief, end, idx_start,
                               static_cast<uint32_t>(files_brief.num_files - 1));
     }
     assert(idx_end >= idx_start &&

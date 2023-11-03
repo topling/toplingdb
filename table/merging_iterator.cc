@@ -11,6 +11,11 @@
 
 #include "db/arena_wrapped_db_iter.h"
 
+#if defined(__clang__)
+  #pragma clang diagnostic ignored "-Winconsistent-missing-override"
+  #pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 // MergingIterator uses a min/max heap to combine data from point iterators.
 // Range tombstones can be added and keys covered by range tombstones will be

@@ -362,6 +362,8 @@ Status ImportColumnFamilyJob::GetIngestedFileInfo(
       iter->SeekToLast();
       file_to_import->largest_internal_key.DecodeFrom(iter->key());
       bound_set = true;
+    } else if (!iter->status().ok()) {
+      return iter->status();
     }
 
     std::unique_ptr<InternalIterator> range_del_iter{

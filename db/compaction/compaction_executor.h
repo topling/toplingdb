@@ -171,6 +171,7 @@ class CompactionExecutorFactory {
   virtual bool AllowFallbackToLocal() const = 0;
   virtual CompactionExecutor* NewExecutor(const Compaction*) const = 0;
   virtual const char* Name() const = 0;
+  virtual std::string JobUrl(const std::string& dbname, int job_id, int attempt) const;
 };
 
 /////////////////////////////////////////////////////////////////////////////

@@ -216,6 +216,10 @@ void VersionSetSerDe::To(VersionSet* vs) const {
 CompactionExecutor::~CompactionExecutor() = default;
 CompactionExecutorFactory::~CompactionExecutorFactory() = default;
 
+std::string CompactionExecutorFactory::JobUrl(const std::string&, int, int) const {
+  return std::string(); // empty string
+}
+
 static bool g_is_compaction_worker = false;
 bool IsCompactionWorker() {
   return g_is_compaction_worker;

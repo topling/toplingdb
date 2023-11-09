@@ -1614,6 +1614,10 @@ void ColumnFamilyData::RecoverEpochNumbers() {
   vstorage->RecoverEpochNumbers(this);
 }
 
+const std::string& ColumnFamilyData::GetDBName() const {
+  return column_family_set_->db_name_;
+}
+
 ColumnFamilySet::ColumnFamilySet(const std::string& dbname,
                                  const ImmutableDBOptions* db_options,
                                  const FileOptions& file_options,

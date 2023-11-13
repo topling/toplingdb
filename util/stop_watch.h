@@ -50,6 +50,11 @@ class StopWatch {
   uint64_t start_time() const { return start_time_ / 1000; }
 
 #if defined(CLOCK_MONOTONIC) && !defined(ROCKSDB_UNIT_TEST)
+  static uint64_t s_now_micros(SystemClock*) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000000 + ts.tv_nsec;
+  }
   inline uint64_t now_nanos() const noexcept {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -61,6 +66,9 @@ class StopWatch {
     return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
   }
 #else
+  static uint64_t s_now_micros(SystemClock* clock) {
+    return clock->NowNanos() / 1000;
+  }
   inline uint64_t now_nanos() const noexcept { return clock_->NowNanos(); }
   inline uint64_t now_micros() const noexcept { return clock_->NowNanos() / 1000; }
 #endif

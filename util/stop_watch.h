@@ -53,7 +53,7 @@ class StopWatch {
   static uint64_t s_now_micros(SystemClock*) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000000000 + ts.tv_nsec;
+    return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
   }
   inline uint64_t now_nanos() const noexcept {
     struct timespec ts;

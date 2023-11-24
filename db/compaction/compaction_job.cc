@@ -1020,6 +1020,12 @@ try {
       uint64_t file_number = versions_->NewFileNumber();
       std::string new_fname = TableFileName(cf_paths, file_number, path_id);
       Status st = env_->RenameFile(old_fname, new_fname);
+      if (!st.ok() && st.subcode() == Status::kCrossDevice) {
+        st = CopyFile(env_->GetFileSystem(), old_fname, new_fname,
+                min_meta.file_size, true, nullptr, Temperature::kUnknown);
+        if (st.ok())
+          st = env_->DeleteFile(old_fname);
+      }
       if (!st.ok()) {
         ROCKS_LOG_ERROR(db_options_.info_log, "rename(%s, %s) = %s",
             old_fname.c_str(), new_fname.c_str(), st.ToString().c_str());

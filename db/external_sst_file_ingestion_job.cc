@@ -116,6 +116,12 @@ Status ExternalSstFileIngestionJob::Prepare(
           path_outside_db, path_inside_db, IOOptions(), nullptr);
       }
      #endif
+      if (!status.ok() && status.subcode() == Status::kCrossDevice) {
+        status = CopyFile(fs_.get(), path_outside_db, path_inside_db,
+            f.fd.file_size, true, nullptr, Temperature::kUnknown);
+        if (status.ok())
+          status = fs_->DeleteFile(path_outside_db, IOOptions(), nullptr);
+      }
       if (status.ok() && ingestion_options_.sync_file) {
         // It is unsafe to assume application had sync the file and file
         // directory before ingest the file. For integrity of RocksDB we need

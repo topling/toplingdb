@@ -70,6 +70,8 @@ IOStatus IOError(const std::string& context, const std::string& file_name,
     case ENOENT:
       return IOStatus::PathNotFound(IOErrorMsg(context, file_name),
                                     errnoStr(err_number).c_str());
+    case EXDEV:
+      return IOStatus::IOError(IOStatus::kCrossDevice);
     default:
       return IOStatus::IOError(IOErrorMsg(context, file_name),
                                errnoStr(err_number).c_str());

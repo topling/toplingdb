@@ -121,6 +121,7 @@ class Status {
     kTxnNotPrepared = 13,
     kIOFenced = 14,
     kMergeOperatorFailed = 15,
+    kCrossDevice = 16,
     kMaxSubCode
   };
 

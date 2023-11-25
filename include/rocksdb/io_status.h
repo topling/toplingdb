@@ -93,6 +93,9 @@ class IOStatus : public Status {
     return IOStatus(kInvalidArgument, msg);
   }
 
+  static IOStatus IOError(const Slice& msg, const Slice& msg2, SubCode sub) {
+    return IOStatus(kIOError, sub, msg, msg2);
+  }
   static IOStatus IOError(const Slice& msg, const Slice& msg2 = Slice()) {
     return IOStatus(kIOError, msg, msg2);
   }

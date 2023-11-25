@@ -160,6 +160,8 @@ class CompactionExecutor {
  public:
   virtual ~CompactionExecutor();
   virtual void SetParams(CompactionParams*, const Compaction*) = 0;
+  virtual Status CopyOneFile(const std::string& src, const std::string& dst, off_t fsize) = 0;
+  virtual Status RenameFile(const std::string& src, const std::string& dst, off_t fsize) = 0;
   virtual Status Execute(const CompactionParams&, CompactionResults*) = 0;
   virtual void CleanFiles(const CompactionParams&, const CompactionResults&) = 0;
 };

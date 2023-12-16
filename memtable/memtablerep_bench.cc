@@ -332,12 +332,9 @@ class ReadBenchmarkThread : public BenchmarkThread {
       callback_args->found = true;
       return true;
     }
-    Slice internal_key = kv.ikey;
-    size_t key_length = internal_key.size();
-    const char* key_ptr = internal_key.data();
     if ((callback_args->comparator)
             ->user_comparator()
-            ->Equal(Slice(key_ptr, key_length - 8),
+            ->Equal(kv.ukey,
                     callback_args->key->user_key())) {
       callback_args->found = true;
     }

@@ -876,12 +876,8 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
   // Check that it belongs to same user key.  We do not check the
   // sequence number since the Seek() call above should have skipped
   // all entries with overly large sequence numbers.
-  const Slice ikey = pair.ikey;
   Slice v = pair.value;
-  const size_t key_length = ikey.size();
-  const char* key_ptr = ikey.data();
-  assert(key_length >= 8);
-  Slice user_key_slice = Slice(key_ptr, key_length - 8);
+  const Slice& user_key_slice = pair.ukey;
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* user_comparator =
       s->mem->GetInternalKeyComparator().user_comparator();
@@ -912,7 +908,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
                                              s->key->user_key()));
 #endif
     // Correct user key
-    const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
+    const uint64_t tag = pair.tag;
     ValueType type;
     SequenceNumber seq;
     UnPackSequenceAndType(tag, &seq, &type);
@@ -1642,9 +1638,12 @@ size_t MemTable::CountSuccessiveMergeEntries(const LookupKey& key) {
   return num_successive_merges;
 }
 
-MemTableRep::KeyValuePair::KeyValuePair(const char* key)
-  : ikey(GetLengthPrefixedSlice(key)),
-    value(GetLengthPrefixedSlice(ikey.end())) {}
+MemTableRep::KeyValuePair::KeyValuePair(const char* key) {
+  Slice ikey = GetLengthPrefixedSlice(key);
+  ukey = Slice(ikey.data(), ikey.size() - 8);
+  tag = DecodeFixed64(ukey.end());
+  value = GetLengthPrefixedSlice(ikey.end());
+}
 
 Slice MemTableRep::Iterator::key() const {
   assert(Valid());

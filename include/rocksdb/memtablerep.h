@@ -204,12 +204,11 @@ class MemTableRep {
   virtual void MarkFlushed() {}
 
   struct KeyValuePair {
-    Slice ikey;
+    Slice ukey;
+    uint64_t tag;
     Slice value;
     explicit KeyValuePair(const char* key); ///< cons from varlen prefixed kv
-    KeyValuePair(Slice ik, Slice v) : ikey(ik), value(v) {}
-    KeyValuePair(const std::pair<Slice, Slice>& kv) // implicit cons
-      : ikey(kv.first), value(kv.second) {}
+    explicit KeyValuePair(Slice uk) : ukey(uk) {} // dont init tag
   };
 
   template <class Legacy>

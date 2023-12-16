@@ -91,6 +91,10 @@ class VectorRep : public MemTableRep {
     // Position at the last entry in collection.
     // Final state of iterator is Valid() iff collection is not empty.
     void SeekToLast() override;
+
+    KeyValuePair GetKeyValuePair() const {
+      return KeyValuePair(varlen_key());
+    }
   };
 
   // Return an iterator over the keys in this representation.
@@ -268,7 +272,7 @@ void VectorRep::Get(const ReadOptions&,
   rwlock_.ReadUnlock();
 
   for (iter.Seek(k.user_key(), k.memtable_key_data());
-       iter.Valid() && callback_func(callback_args, iter.GetKeyValue()); iter.Next()) {
+       iter.Valid() && callback_func(callback_args, iter.GetKeyValuePair()); iter.Next()) {
   }
 }
 

@@ -22,16 +22,22 @@ using LockString = terark::fstring;
 
 // Request for locking a single key.
 struct PointLockRequest {
-  // The id of the key's column family.
-  ColumnFamilyId column_family_id = 0;
   // The key to lock.
   Slice key;
   // The sequence number from which there is no concurrent update to key.
   SequenceNumber seq = 0;
+  // The id of the key's column family.
+  ColumnFamilyId column_family_id = 0;
   // Whether the lock is acquired only for read.
   bool read_only = false;
   // Whether the lock is in exclusive mode.
   bool exclusive = true;
+
+  PointLockRequest() = default;
+  PointLockRequest(ColumnFamilyId cfh_id, Slice k, SequenceNumber s,
+                   bool rdonly, bool exclusive1)
+    : key(k), seq(s), column_family_id(cfh_id),
+      read_only(rdonly), exclusive(exclusive1) {}
 };
 
 // Request for locking a range of keys.

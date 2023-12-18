@@ -2157,6 +2157,11 @@ TEST_P(EnvPosixTestWithParam, WritableFileWrapper) {
       return Status::OK();
     }
 
+    intptr_t FileDescriptor() const final {
+      ROCKSDB_DIE("Should not goes here");
+      return -1;
+    }
+
    public:
     ~Base() override { inc(23); }
   };

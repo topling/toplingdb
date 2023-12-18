@@ -485,6 +485,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct MutableCFOptions, blob_file_starting_level),
           OptionType::kInt, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
+        {"min_filter_level",
+         {offsetof(struct MutableCFOptions, min_filter_level),
+          OptionType::kInt, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
         {"prepopulate_blob_cache",
          OptionTypeInfo::Enum<PrepopulateBlobCache>(
              offsetof(struct MutableCFOptions, prepopulate_blob_cache),
@@ -958,6 +962,8 @@ ImmutableCFOptions::ImmutableCFOptions(const ColumnFamilyOptions& cf_options)
           cf_options.memtable_insert_with_hint_prefix_extractor),
       cf_paths(cf_options.cf_paths),
       compaction_thread_limiter(cf_options.compaction_thread_limiter),
+      compaction_executor_factory(cf_options.compaction_executor_factory),
+      html_user_key_coder(cf_options.html_user_key_coder),
       sst_partitioner_factory(cf_options.sst_partitioner_factory),
       blob_cache(cf_options.blob_cache),
       persist_user_defined_timestamps(

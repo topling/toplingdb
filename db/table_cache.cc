@@ -109,7 +109,9 @@ Status TableCache::GetTableReader(
   }
   if (s.ok()) {
     RecordTick(ioptions_.stats, NO_FILE_OPENS);
-  } else if (s.IsPathNotFound()) {
+  }
+#ifdef ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
+  if (s.IsPathNotFound()) {
     fname = Rocks2LevelTableFileName(fname);
     // If this file is also not found, we want to use the error message
     // that contains the table file name which is less confusing.
@@ -124,6 +126,7 @@ Status TableCache::GetTableReader(
       s = temp_s;
     }
   }
+#endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
 
   if (s.ok()) {
     if (!sequential_mode && ioptions_.advise_random_on_open) {
@@ -251,7 +254,7 @@ InternalIterator* TableCache::NewIterator(
   InternalIterator* result = nullptr;
   if (s.ok()) {
     if (options.table_filter &&
-        !options.table_filter(*table_reader->GetTableProperties())) {
+        !options.table_filter(*table_reader->GetTableProperties(), file_meta)) {
       result = NewEmptyInternalIterator<Slice>(arena);
     } else {
       result = table_reader->NewIterator(

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "db/db_impl/db_impl.h"
+#include "db/db_impl/db_impl_secondary.h"
 #include "logging/logging.h"
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
@@ -72,6 +73,7 @@ PessimisticTransactionDB::~PessimisticTransactionDB() {
 
 Status PessimisticTransactionDB::VerifyCFOptions(
     const ColumnFamilyOptions& cf_options) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = cf_options.comparator;
   assert(ucmp);
   size_t ts_sz = ucmp->timestamp_size();
@@ -88,6 +90,7 @@ Status PessimisticTransactionDB::VerifyCFOptions(
   if (txn_db_options_.write_policy != WRITE_COMMITTED) {
     return Status::NotSupported("Only WriteCommittedTxn supports timestamp");
   }
+#endif
   return Status::OK();
 }
 
@@ -186,6 +189,46 @@ Transaction* WriteCommittedTxnDB::BeginTransaction(
   }
 }
 
+Status SecondaryTxnDB::Initialize(
+      const std::vector<size_t>& compaction_enabled_cf_indices,
+      const std::vector<ColumnFamilyHandle*>& handles) {
+
+  // it seems secondary instance should not do any recovered transactions.
+  auto dbimpl = static_cast_with_check<DBImpl>(GetRootDB());
+  assert(dbimpl != nullptr);
+  auto rtrxs = dbimpl->recovered_transactions();
+  assert(rtrxs.empty());
+
+  for (auto cf_ptr : handles) {
+    AddColumnFamily(cf_ptr);
+  }
+  // Verify cf options
+  for (auto handle : handles) {
+    ColumnFamilyDescriptor cfd;
+    Status s = handle->GetDescriptor(&cfd);
+    if (!s.ok()) {
+      return s;
+    }
+    s = VerifyCFOptions(cfd.options);
+    if (!s.ok()) {
+      return s;
+    }
+  }
+
+  return Status::OK();
+}
+
+Transaction* SecondaryTxnDB::BeginTransaction(
+    const WriteOptions& write_options, const TransactionOptions& txn_options,
+    Transaction* old_txn) {
+  if (old_txn != nullptr) {
+    ReinitializeTransaction(old_txn, write_options, txn_options);
+    return old_txn;
+  } else {
+    return new ReadOnlyTxn(this, write_options, txn_options);
+  }
+}
+
 TransactionDBOptions PessimisticTransactionDB::ValidateTxnDBOptions(
     const TransactionDBOptions& txn_db_options) {
   TransactionDBOptions validated = txn_db_options;
@@ -196,6 +239,9 @@ TransactionDBOptions PessimisticTransactionDB::ValidateTxnDBOptions(
 
   return validated;
 }
+
+TransactionDBOptions::TransactionDBOptions() {}
+TransactionDBOptions::~TransactionDBOptions() = default;
 
 Status TransactionDB::Open(const Options& options,
                            const TransactionDBOptions& txn_db_options,
@@ -225,6 +271,10 @@ Status TransactionDB::Open(
     std::vector<ColumnFamilyHandle*>* handles, TransactionDB** dbptr) {
   Status s;
   DB* db = nullptr;
+  if (txn_db_options.write_policy == WRITE_READ_ONLY) {
+    return Status::NotSupported(
+        "WRITE_READ_ONLY is used in a secondary instance of TransactionDB");
+  }
   if (txn_db_options.write_policy == WRITE_COMMITTED &&
       db_options.unordered_write) {
     return Status::NotSupported(
@@ -258,11 +308,56 @@ Status TransactionDB::Open(
                    use_seq_per_batch, use_batch_per_txn);
   if (s.ok()) {
     ROCKS_LOG_WARN(db->GetDBOptions().info_log,
-                   "Transaction write_policy is %" PRId32,
-                   static_cast<int>(txn_db_options.write_policy));
+                   "Transaction write_policy is %s",
+                   enum_stdstr(txn_db_options.write_policy).c_str());
     // if WrapDB return non-ok, db will be deleted in WrapDB() via
     // ~StackableDB().
     s = WrapDB(db, txn_db_options, compaction_enabled_cf_indices, *handles,
+               dbptr);
+  }
+  return s;
+}
+
+Status TransactionDB::OpenAsSecondary(const Options& options,
+                           const TransactionDBOptions& txn_db_options,
+                           const std::string& dbname, const std::string& secondary_path,
+                           TransactionDB** dbptr) {
+  DBOptions db_options(options);
+  ColumnFamilyOptions cf_options(options);
+  TransactionDBOptions tmp_txn_db_options = txn_db_options;
+  tmp_txn_db_options.write_policy = WRITE_READ_ONLY;
+  std::vector<ColumnFamilyDescriptor> column_families;
+  column_families.push_back(
+      ColumnFamilyDescriptor(kDefaultColumnFamilyName, cf_options));
+  std::vector<ColumnFamilyHandle*> handles;
+  Status s = TransactionDB::OpenAsSecondary(db_options, tmp_txn_db_options, dbname,
+                                 secondary_path, column_families, &handles, dbptr);
+
+  return s;
+}
+
+Status TransactionDB::OpenAsSecondary(
+    const DBOptions& db_options, const TransactionDBOptions& txn_db_options,
+    const std::string& dbname, const std::string& secondary_path,
+    const std::vector<ColumnFamilyDescriptor>& column_families,
+    std::vector<ColumnFamilyHandle*>* handles, TransactionDB** dbptr) {
+  Status s;
+  DB* db = nullptr;
+
+  std::vector<ColumnFamilyDescriptor> column_families_copy = column_families;
+  std::vector<size_t> compaction_enabled_cf_indices;
+  DBOptions db_options_2pc = db_options;
+  TransactionDBOptions tmp_txn_db_options = txn_db_options;
+  tmp_txn_db_options.write_policy = WRITE_READ_ONLY;
+
+  PrepareWrap(&db_options_2pc, &column_families_copy,
+              &compaction_enabled_cf_indices);
+  s = DB::OpenAsSecondary(db_options_2pc, dbname, secondary_path,
+                          column_families_copy, handles, &db);
+  if (s.ok()) {
+    // if WrapDB return non-ok, db will be deleted in WrapDB() via
+    // ~StackableDB().
+    s = WrapDB(db, tmp_txn_db_options, compaction_enabled_cf_indices, *handles,
                dbptr);
   }
   return s;
@@ -304,6 +399,10 @@ Status WrapAnotherDBInternal(
   std::unique_ptr<PessimisticTransactionDB> txn_db;
   // txn_db owns object pointed to by the raw db pointer.
   switch (txn_db_options.write_policy) {
+    case WRITE_READ_ONLY:
+      txn_db.reset(new SecondaryTxnDB(
+          db, PessimisticTransactionDB::ValidateTxnDBOptions(txn_db_options)));
+      break;
     case WRITE_UNPREPARED:
       txn_db.reset(new WriteUnpreparedTxnDB(
           db, PessimisticTransactionDB::ValidateTxnDBOptions(txn_db_options)));
@@ -385,6 +484,13 @@ Status PessimisticTransactionDB::CreateColumnFamilies(
     const ColumnFamilyOptions& options,
     const std::vector<std::string>& column_family_names,
     std::vector<ColumnFamilyHandle*>* handles) {
+#if !defined(ROCKSDB_DYNAMIC_CREATE_CF)
+  DBImpl* impl = dynamic_cast<DBImpl*>(this->GetRootDB());
+  ROCKSDB_VERIFY(nullptr != impl);
+  if (impl->opened_successfully()) {
+    ROCKSDB_DIE("Not Supported after db is opened, because ROCKSDB_DYNAMIC_CREATE_CF is not defined");
+  }
+#endif
   InstrumentedMutexLock l(&column_family_mutex_);
 
   Status s = VerifyCFOptions(options);
@@ -406,6 +512,13 @@ Status PessimisticTransactionDB::CreateColumnFamilies(
 Status PessimisticTransactionDB::CreateColumnFamilies(
     const std::vector<ColumnFamilyDescriptor>& column_families,
     std::vector<ColumnFamilyHandle*>* handles) {
+#if !defined(ROCKSDB_DYNAMIC_CREATE_CF)
+  DBImpl* impl = dynamic_cast<DBImpl*>(this->GetRootDB());
+  ROCKSDB_VERIFY(nullptr != impl);
+  if (impl->opened_successfully()) {
+    ROCKSDB_DIE("Not Supported after db is opened, because ROCKSDB_DYNAMIC_CREATE_CF is not defined");
+  }
+#endif
   InstrumentedMutexLock l(&column_family_mutex_);
 
   for (auto& cf_desc : column_families) {
@@ -456,7 +569,7 @@ Status PessimisticTransactionDB::DropColumnFamilies(
 
 Status PessimisticTransactionDB::TryLock(PessimisticTransaction* txn,
                                          uint32_t cfh_id,
-                                         const std::string& key,
+                                         const Slice& key,
                                          bool exclusive) {
   return lock_manager_->TryLock(txn, cfh_id, key, GetEnv(), exclusive);
 }
@@ -475,7 +588,7 @@ void PessimisticTransactionDB::UnLock(PessimisticTransaction* txn,
 }
 
 void PessimisticTransactionDB::UnLock(PessimisticTransaction* txn,
-                                      uint32_t cfh_id, const std::string& key) {
+                                      uint32_t cfh_id, const Slice& key) {
   lock_manager_->UnLock(txn, cfh_id, key, GetEnv());
 }
 

@@ -11,21 +11,33 @@
 #include "rocksdb/status.h"
 #include "rocksdb/types.h"
 #include "rocksdb/utilities/transaction_db.h"
+#include <terark/fstring.hpp>
 
 namespace ROCKSDB_NAMESPACE {
+#if 0
+using LockString = std::string;
+#else
+using LockString = terark::fstring;
+#endif
 
 // Request for locking a single key.
 struct PointLockRequest {
-  // The id of the key's column family.
-  ColumnFamilyId column_family_id = 0;
   // The key to lock.
-  std::string key;
+  Slice key;
   // The sequence number from which there is no concurrent update to key.
   SequenceNumber seq = 0;
+  // The id of the key's column family.
+  ColumnFamilyId column_family_id = 0;
   // Whether the lock is acquired only for read.
   bool read_only = false;
   // Whether the lock is in exclusive mode.
   bool exclusive = true;
+
+  PointLockRequest() = default;
+  PointLockRequest(ColumnFamilyId cfh_id, Slice k, SequenceNumber s,
+                   bool rdonly, bool exclusive1)
+    : key(k), seq(s), column_family_id(cfh_id),
+      read_only(rdonly), exclusive(exclusive1) {}
 };
 
 // Request for locking a range of keys.
@@ -145,7 +157,7 @@ class LockTracker {
   // locked=false.
   virtual PointLockStatus GetPointLockStatus(
       ColumnFamilyId /*column_family_id*/,
-      const std::string& /*key*/) const = 0;
+      const LockString& /*key*/) const = 0;
 
   // Gets number of tracked point locks.
   //
@@ -183,7 +195,11 @@ class LockTracker {
     // Gets the next key.
     //
     // If HasNext is false, calling this method has undefined behavior.
+  #if 0
     virtual const std::string& Next() = 0;
+  #else
+    virtual const terark::fstring Next() = 0;
+  #endif
   };
 
   // Gets an iterator for keys with tracked point locks in the column family.

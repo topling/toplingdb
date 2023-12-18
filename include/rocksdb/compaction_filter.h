@@ -168,6 +168,9 @@ class CompactionFilter : public Customizable {
     uint32_t column_family_id;
     // Reason this table file is being created.
     TableFileCreationReason reason;
+
+    uint64_t smallest_seqno;
+
     // Map from all the input files (if any) used in table creation to their
     // table properties. When there are such input files but RocksDB fail to
     // load their table properties, `input_table_properties` will be an empty
@@ -337,6 +340,8 @@ class CompactionFilter : public Customizable {
     return Decision::kUndetermined;
   }
 };
+
+typedef CompactionFilter::Context CompactionFilterContext;
 
 // Each thread of work involving creating table files will create a new
 // `CompactionFilter` according to `ShouldFilterTableFileCreation()`. This

@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #include "rocksdb/slice.h"
+#include "enum_reflection.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -27,12 +28,12 @@ using TablePropertiesCollection =
 
 const SequenceNumber kMinUnCommittedSeq = 1;  // 0 is always committed
 
-enum class TableFileCreationReason {
+ROCKSDB_ENUM_CLASS(TableFileCreationReason, unsigned char,
   kFlush,
   kCompaction,
   kRecovery,
-  kMisc,
-};
+  kMisc
+);
 
 enum class BlobFileCreationReason {
   kFlush,
@@ -91,11 +92,11 @@ enum class WriteStallCause {
   kNone,
 };
 
-enum class WriteStallCondition {
+ROCKSDB_ENUM_CLASS(WriteStallCondition, unsigned char,
   kDelayed,
   kStopped,
   // Always add new WriteStallCondition before `kNormal`
-  kNormal,
-};
+  kNormal
+);
 
 }  // namespace ROCKSDB_NAMESPACE

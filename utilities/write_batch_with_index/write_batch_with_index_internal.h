@@ -19,6 +19,7 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
 #include "rocksdb/utilities/write_batch_with_index.h"
+#include "table/internal_iterator.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -26,13 +27,48 @@ class WBWIIteratorImpl;
 struct Options;
 struct ImmutableOptions;
 
+// We move WBWIIterator out of public include, but old WBWIIterator::Result was
+// used by WriteBatchWithIndex::GetFromBatchRaw(), so WBWIIterator::Result is
+// moved from here to write_batch_with_index.h and named as WBWIIterEnum::Result,
+// derive from WBWIIterEnum is to avoid change old code
+class WBWIIterator : public InternalIterator, public WBWIIterEnum {
+ public:
+  // the return WriteEntry is only valid until the next mutation of
+  // WriteBatchWithIndex
+  virtual WriteEntry Entry() const = 0;
+
+  Slice key() const override {
+    ROCKSDB_DIE("This function should not be called");
+  }
+  Slice value() const override { return Entry().value; }
+
+  // Moves the iterator to first entry of the previous key.
+  virtual bool PrevKey() = 0; // returns same as following Valid()
+  // Moves the iterator to first entry of the next key.
+  virtual bool NextKey() = 0; // returns same as following Valid()
+
+  virtual bool EqualsKey(const Slice& key) const = 0;
+
+  // Moves the iterator to the Update (Put or Delete) for the current key
+  // If there are no Put/Delete, the Iterator will point to the first entry for
+  // this key
+  // @return kFound if a Put was found for the key
+  // @return kDeleted if a delete was found for the key
+  // @return kMergeInProgress if only merges were fouund for the key
+  // @return kError if an unsupported operation was found for the key
+  // @return kNotFound if no operations were found for this key
+  //
+  virtual Result FindLatestUpdate(const Slice& key, MergeContext*);
+  virtual Result FindLatestUpdate(MergeContext*);
+};
+
 // when direction == forward
 // * current_at_base_ <=> base_iterator > delta_iterator
 // when direction == backwards
 // * current_at_base_ <=> base_iterator < delta_iterator
 // always:
 // * equal_keys_ <=> base_iterator == delta_iterator
-class BaseDeltaIterator : public Iterator {
+class BaseDeltaIterator final : public Iterator {
  public:
   BaseDeltaIterator(ColumnFamilyHandle* column_family, Iterator* base_iterator,
                     WBWIIteratorImpl* delta_iterator,
@@ -52,27 +88,35 @@ class BaseDeltaIterator : public Iterator {
   const WideColumns& columns() const override { return columns_; }
   Slice timestamp() const override;
   Status status() const override;
+  Status Refresh(const Snapshot*, bool keep_iter_pos) override;
+  using Iterator::Refresh;
   void Invalidate(Status s);
+  bool PrepareValue() override;
 
  private:
   void AssertInvariants();
-  void Advance();
-  void AdvanceDelta();
-  void AdvanceBase();
+  void Advance(bool const_forward);
+  void AdvanceDelta(bool const_forward);
+  void AdvanceBase(bool const_forward);
   bool BaseValid() const;
   bool DeltaValid() const;
   void ResetValueAndColumns();
   void SetValueAndColumnsFromBase();
   void SetValueAndColumnsFromDelta();
   void UpdateCurrent();
+  void UpdateCurrent(bool const_forward);
+  template<class CmpNoTS>
+  void UpdateCurrentTpl(bool const_forward, CmpNoTS);
 
   bool forward_;
   bool current_at_base_;
   bool equal_keys_;
   Status status_;
   ColumnFamilyHandle* column_family_;
+  bool delta_valid_;
+  unsigned char opt_cmp_type_;
   std::unique_ptr<Iterator> base_iterator_;
-  std::unique_ptr<WBWIIteratorImpl> delta_iterator_;
+  std::unique_ptr<WBWIIterator> delta_iterator_;
   const Comparator* comparator_;  // not owned
   MergeContext merge_context_;
   std::string merge_result_;
@@ -192,13 +236,6 @@ using WriteBatchEntrySkipList =
 
 class WBWIIteratorImpl : public WBWIIterator {
  public:
-  enum Result : uint8_t {
-    kFound,
-    kDeleted,
-    kNotFound,
-    kMergeInProgress,
-    kError
-  };
   WBWIIteratorImpl(uint32_t column_family_id,
                    WriteBatchEntrySkipList* skip_list,
                    const ReadableWriteBatch* write_batch,
@@ -306,6 +343,8 @@ class WBWIIteratorImpl : public WBWIIterator {
 
   WriteEntry Entry() const override;
 
+  Slice user_key() const override;
+
   Status status() const override {
     // this is in-memory data structure, so the only way status can be non-ok is
     // through memory corruption
@@ -319,9 +358,9 @@ class WBWIIteratorImpl : public WBWIIterator {
   bool MatchesKey(uint32_t cf_id, const Slice& key);
 
   // Moves the iterator to first entry of the previous key.
-  void PrevKey();
+  bool PrevKey() final;
   // Moves the iterator to first entry of the next key.
-  void NextKey();
+  bool NextKey() final;
 
   // Moves the iterator to the Update (Put, PutEntity or Delete) for the current
   // key. If there is no Put/PutEntity/Delete, the Iterator will point to the
@@ -337,6 +376,7 @@ class WBWIIteratorImpl : public WBWIIterator {
 
  protected:
   void AdvanceKey(bool forward);
+  bool EqualsKey(const Slice& key) const final;
 
  private:
   uint32_t column_family_id_;

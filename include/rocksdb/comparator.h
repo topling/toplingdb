@@ -33,6 +33,22 @@ class CompareInterface {
   virtual int Compare(const Slice& a, const Slice& b) const = 0;
 };
 
+class ComparatorMetaData {
+ public:
+  explicit ComparatorMetaData(size_t ts_size = 0, uint8_t cmp_type = 255)
+    : timestamp_size_(uint16_t(ts_size)), opt_cmp_type_(cmp_type) {}
+  bool IsForwardBytewise() const noexcept { return 0 == opt_cmp_type_; }
+  bool IsReverseBytewise() const noexcept { return 1 == opt_cmp_type_; }
+  bool IsBytewise() const noexcept { return opt_cmp_type_ <= 1; }
+  uint8_t opt_cmp_type() const noexcept { return opt_cmp_type_; }
+  inline size_t timestamp_size() const { return timestamp_size_; }
+
+ protected:
+  uint16_t timestamp_size_;
+  // 0: forward bytewise, 1: rev byitewise, others: unknown
+  uint8_t opt_cmp_type_;
+};
+
 // A Comparator object provides a total order across slices that are
 // used as keys in an sstable or a database.  A Comparator implementation
 // must be thread-safe since rocksdb may invoke its methods concurrently
@@ -41,17 +57,18 @@ class CompareInterface {
 // Exceptions MUST NOT propagate out of overridden functions into RocksDB,
 // because RocksDB is not exception-safe. This could cause undefined behavior
 // including data loss, unreported corruption, deadlocks, and more.
-class Comparator : public Customizable, public CompareInterface {
+class Comparator : public Customizable, public CompareInterface, public ComparatorMetaData {
  public:
-  Comparator() : timestamp_size_(0) {}
+  Comparator() : ComparatorMetaData(0) {}
 
-  Comparator(size_t ts_sz) : timestamp_size_(ts_sz) {}
+  Comparator(size_t ts_sz) : ComparatorMetaData(ts_sz) {}
 
-  Comparator(const Comparator& orig) : timestamp_size_(orig.timestamp_size_) {}
+  Comparator(const Comparator&) = default;
 
   Comparator& operator=(const Comparator& rhs) {
     if (this != &rhs) {
       timestamp_size_ = rhs.timestamp_size_;
+      opt_cmp_type_ = rhs.opt_cmp_type_;
     }
     return *this;
   }
@@ -118,8 +135,6 @@ class Comparator : public Customizable, public CompareInterface {
   // return itself it is not wrapped.
   virtual const Comparator* GetRootComparator() const { return this; }
 
-  inline size_t timestamp_size() const { return timestamp_size_; }
-
   int CompareWithoutTimestamp(const Slice& a, const Slice& b) const {
     return CompareWithoutTimestamp(a, /*a_has_ts=*/true, b, /*b_has_ts=*/true);
   }
@@ -147,9 +162,6 @@ class Comparator : public Customizable, public CompareInterface {
     return 0 ==
            CompareWithoutTimestamp(a, /*a_has_ts=*/true, b, /*b_has_ts=*/true);
   }
-
- private:
-  size_t timestamp_size_;
 };
 
 // Return a builtin comparator that uses lexicographic byte-wise
@@ -200,5 +212,22 @@ Slice MaxU64Ts();
 // The returned `Slice` is backed by some static storage, so it's valid until
 // program destruction.
 Slice MinU64Ts();
+
+bool IsForwardBytewiseComparator(const Slice& name);
+bool IsReverseBytewiseComparator(const Slice& name);
+bool IsBytewiseComparator(const Slice& name);
+
+inline bool IsForwardBytewiseComparator(const Comparator* cmp) {
+  assert(cmp->IsForwardBytewise() == IsForwardBytewiseComparator(cmp->Name()));
+  return cmp->IsForwardBytewise();
+}
+inline bool IsReverseBytewiseComparator(const Comparator* cmp) {
+  assert(cmp->IsReverseBytewise() == IsReverseBytewiseComparator(cmp->Name()));
+  return cmp->IsReverseBytewise();
+}
+inline bool IsBytewiseComparator(const Comparator* cmp) {
+  assert(cmp->IsBytewise() == IsBytewiseComparator(cmp->Name()));
+  return cmp->IsBytewise();
+}
 
 }  // namespace ROCKSDB_NAMESPACE

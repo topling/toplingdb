@@ -6,6 +6,13 @@
 #pragma once
 #include "monitoring/statistics_impl.h"
 #include "rocksdb/system_clock.h"
+#include <time.h> // for clock_gettime
+
+#if defined(__GNUC__)
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wunused-parameter"
+  // for waring: unused parameter ‘clock’ [-Wunused-parameter]
+#endif
 
 namespace ROCKSDB_NAMESPACE {
 // Auto-scoped.
@@ -16,105 +23,172 @@ namespace ROCKSDB_NAMESPACE {
 // added to *elapsed if overwrite is false.
 class StopWatch {
  public:
-  StopWatch(SystemClock* clock, Statistics* statistics,
-            const uint32_t hist_type_1,
-            const uint32_t hist_type_2 = Histograms::HISTOGRAM_ENUM_MAX,
-            uint64_t* elapsed = nullptr, bool overwrite = true,
-            bool delay_enabled = false)
-      : clock_(clock),
+  inline
+  StopWatch(SystemClock* clock, Statistics* statistics, const uint32_t hist_type)
+  noexcept :
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
+        clock_(clock),
+#endif
         statistics_(statistics),
-        hist_type_1_(statistics && statistics->HistEnabledForType(hist_type_1)
-                         ? hist_type_1
-                         : Histograms::HISTOGRAM_ENUM_MAX),
-        hist_type_2_(statistics && statistics->HistEnabledForType(hist_type_2)
-                         ? hist_type_2
-                         : Histograms::HISTOGRAM_ENUM_MAX),
-        elapsed_(elapsed),
+        hist_type_(uint16_t(hist_type)),
+        hist_type_2_(Histograms::HISTOGRAM_ENUM_MAX),
+        overwrite_(false),
+        stats_enabled_(statistics &&
+                       statistics->get_stats_level() >=
+                           StatsLevel::kExceptTimers &&
+                       statistics->HistEnabledForType(hist_type)),
+        delay_enabled_(false),
+        start_time_((stats_enabled_) ? now_nanos() : 0) {}
+
+  ~StopWatch() {
+    if (stats_enabled_) {
+      statistics_->reportTimeToHistogram(
+          hist_type_, (now_nanos() - start_time_) / 1000);
+    }
+  }
+
+  uint64_t start_time() const { return start_time_ / 1000; }
+
+#if defined(CLOCK_MONOTONIC) && !defined(ROCKSDB_UNIT_TEST)
+  static uint64_t s_now_micros(SystemClock*) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+  }
+  inline uint64_t now_nanos() const noexcept {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000000 + ts.tv_nsec;
+  }
+  inline uint64_t now_micros() const noexcept {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+  }
+#else
+  static uint64_t s_now_micros(SystemClock* clock) {
+    return clock->NowNanos() / 1000;
+  }
+  inline uint64_t now_nanos() const noexcept { return clock_->NowNanos(); }
+  inline uint64_t now_micros() const noexcept { return clock_->NowNanos() / 1000; }
+#endif
+
+ protected:
+   StopWatch(SystemClock* clock, Statistics* statistics,
+             const uint32_t hist_type,
+             const uint32_t hist_type_2,
+             uint64_t* elapsed,
+             bool overwrite, bool delay_enabled)
+   noexcept :
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
+        clock_(clock),
+#endif
+        statistics_(statistics),
+        hist_type_(uint16_t(hist_type)),
+        hist_type_2_(uint16_t(hist_type_2)),
         overwrite_(overwrite),
         stats_enabled_(statistics &&
                        statistics->get_stats_level() >
                            StatsLevel::kExceptTimers &&
-                       (hist_type_1_ != Histograms::HISTOGRAM_ENUM_MAX ||
-                        hist_type_2_ != Histograms::HISTOGRAM_ENUM_MAX)),
+                       statistics->HistEnabledForType(hist_type)),
         delay_enabled_(delay_enabled),
-        total_delay_(0),
-        delay_start_time_(0),
-        start_time_((stats_enabled_ || elapsed != nullptr) ? clock->NowMicros()
+        start_time_((stats_enabled_ || elapsed != nullptr) ? now_nanos()
                                                            : 0) {}
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
+  SystemClock* clock_;
+#endif
+  Statistics* statistics_;
+  const uint16_t hist_type_;
+  const uint16_t hist_type_2_;
+  bool overwrite_;
+  bool stats_enabled_;
+  bool delay_enabled_;
+  const uint64_t start_time_;
+};
 
-  ~StopWatch() {
+class StopWatchEx : public StopWatch {
+public:
+  inline
+  StopWatchEx(SystemClock* clock, Statistics* statistics,
+              const uint32_t hist_type,
+              const uint32_t hist_type_2,
+              uint64_t* elapsed = nullptr,
+              bool overwrite = true, bool delay_enabled = false)
+  noexcept
+  : StopWatch(clock, statistics, hist_type, hist_type_2, elapsed, overwrite, delay_enabled),
+    elapsed_(elapsed),
+    total_delay_(0),
+    delay_start_time_(0) {}
+
+  ~StopWatchEx() {
     if (elapsed_) {
       if (overwrite_) {
-        *elapsed_ = clock_->NowMicros() - start_time_;
+        *elapsed_ = (now_nanos() - start_time_) / 1000;
       } else {
-        *elapsed_ += clock_->NowMicros() - start_time_;
+        *elapsed_ += (now_nanos() - start_time_) / 1000;
       }
     }
     if (elapsed_ && delay_enabled_) {
-      *elapsed_ -= total_delay_;
+      *elapsed_ -= total_delay_ / 1000;
     }
     if (stats_enabled_) {
       const auto time = (elapsed_ != nullptr)
                             ? *elapsed_
-                            : (clock_->NowMicros() - start_time_);
-      if (hist_type_1_ != Histograms::HISTOGRAM_ENUM_MAX) {
-        statistics_->reportTimeToHistogram(hist_type_1_, time);
+                            : (now_nanos() - start_time_) / 1000;
+      if (hist_type_ != Histograms::HISTOGRAM_ENUM_MAX) {
+        statistics_->reportTimeToHistogram(hist_type_, time);
       }
       if (hist_type_2_ != Histograms::HISTOGRAM_ENUM_MAX) {
         statistics_->reportTimeToHistogram(hist_type_2_, time);
       }
     }
+    stats_enabled_ = false; // skip base class StopWatch destructor
   }
 
   void DelayStart() {
     // if delay_start_time_ is not 0, it means we are already tracking delay,
     // so delay_start_time_ should not be overwritten
     if (elapsed_ && delay_enabled_ && delay_start_time_ == 0) {
-      delay_start_time_ = clock_->NowMicros();
+      delay_start_time_ = now_nanos();
     }
   }
 
   void DelayStop() {
     if (elapsed_ && delay_enabled_ && delay_start_time_ != 0) {
-      total_delay_ += clock_->NowMicros() - delay_start_time_;
+      total_delay_ += now_nanos() - delay_start_time_;
     }
     // reset to 0 means currently no delay is being tracked, so two consecutive
     // calls to DelayStop will not increase total_delay_
     delay_start_time_ = 0;
   }
 
-  uint64_t GetDelay() const { return delay_enabled_ ? total_delay_ : 0; }
+  uint64_t GetDelay() const { return delay_enabled_ ? total_delay_/1000 : 0; }
 
-  uint64_t start_time() const { return start_time_; }
-
- private:
-  SystemClock* clock_;
-  Statistics* statistics_;
-  const uint32_t hist_type_1_;
-  const uint32_t hist_type_2_;
+ protected:
   uint64_t* elapsed_;
-  bool overwrite_;
-  bool stats_enabled_;
-  bool delay_enabled_;
   uint64_t total_delay_;
   uint64_t delay_start_time_;
-  const uint64_t start_time_;
 };
 
 // a nano second precision stopwatch
 class StopWatchNano {
  public:
+  inline
   explicit StopWatchNano(SystemClock* clock, bool auto_start = false)
-      : clock_(clock), start_(0) {
+      :
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
+      clock_(clock),
+#endif
+      start_(0) {
     if (auto_start) {
       Start();
     }
   }
 
-  void Start() { start_ = clock_->NowNanos(); }
+  void Start() { start_ = now_nanos(); }
 
   uint64_t ElapsedNanos(bool reset = false) {
-    auto now = clock_->NowNanos();
+    auto now = now_nanos();
     auto elapsed = now - start_;
     if (reset) {
       start_ = now;
@@ -123,14 +197,33 @@ class StopWatchNano {
   }
 
   uint64_t ElapsedNanosSafe(bool reset = false) {
+#if defined(CLOCK_MONOTONIC) && !defined(ROCKSDB_UNIT_TEST)
+    return ElapsedNanos(reset);
+#else
     return (clock_ != nullptr) ? ElapsedNanos(reset) : 0U;
+#endif
   }
 
   bool IsStarted() { return start_ != 0; }
 
  private:
+  inline uint64_t now_nanos() {
+#if defined(CLOCK_MONOTONIC) && !defined(ROCKSDB_UNIT_TEST)
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000000 + ts.tv_nsec;
+#else
+    return clock_->NowNanos();
+#endif
+  }
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
   SystemClock* clock_;
+#endif
   uint64_t start_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE
+
+#if defined(__GNUC__)
+  #pragma GCC diagnostic pop
+#endif

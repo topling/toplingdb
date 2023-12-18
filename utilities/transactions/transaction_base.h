@@ -44,7 +44,7 @@ class TransactionBaseImpl : public Transaction {
   virtual Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
                          bool read_only, bool exclusive,
                          const bool do_validate = true,
-                         const bool assume_tracked = false) = 0;
+                         const bool assume_tracked = false) override = 0;
 
   void SetSavePoint() override;
 
@@ -53,9 +53,8 @@ class TransactionBaseImpl : public Transaction {
   Status PopSavePoint() override;
 
   using Transaction::Get;
-  Status Get(const ReadOptions& _read_options,
-             ColumnFamilyHandle* column_family, const Slice& key,
-             std::string* value) override;
+  Status Get(const ReadOptions& options, ColumnFamilyHandle* column_family,
+             const Slice& key, std::string* value) override;
 
   Status Get(const ReadOptions& _read_options,
              ColumnFamilyHandle* column_family, const Slice& key,
@@ -63,6 +62,10 @@ class TransactionBaseImpl : public Transaction {
 
   Status Get(const ReadOptions& options, const Slice& key,
              std::string* value) override {
+    return Get(options, db_->DefaultColumnFamily(), key, value);
+  }
+  Status Get(const ReadOptions& options, const Slice& key,
+             PinnableSlice* value) override {
     return Get(options, db_->DefaultColumnFamily(), key, value);
   }
 
@@ -274,8 +277,7 @@ class TransactionBaseImpl : public Transaction {
   //
   // seqno is the earliest seqno this key was involved with this transaction.
   // readonly should be set to true if no data was written for this key
-  void TrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
-                bool readonly, bool exclusive);
+  void TrackKey(const PointLockRequest&);
 
   // Called when UndoGetForUpdate determines that this key can be unlocked.
   virtual void UnlockGetForUpdate(ColumnFamilyHandle* column_family,
@@ -328,8 +330,8 @@ class TransactionBaseImpl : public Transaction {
     // Record all locks tracked since the last savepoint
     std::shared_ptr<LockTracker> new_locks_;
 
-    SavePoint(std::shared_ptr<const Snapshot> snapshot, bool snapshot_needed,
-              std::shared_ptr<TransactionNotifier> snapshot_notifier,
+    SavePoint(const std::shared_ptr<const Snapshot>& snapshot, bool snapshot_needed,
+              const std::shared_ptr<TransactionNotifier>& snapshot_notifier,
               uint64_t num_puts, uint64_t num_deletes, uint64_t num_merges,
               const LockTrackerFactory& lock_tracker_factory)
         : snapshot_(snapshot),
@@ -345,7 +347,9 @@ class TransactionBaseImpl : public Transaction {
   };
 
   // Records writes pending in this transaction
-  WriteBatchWithIndex write_batch_;
+  // topling spec: should use union{ptr,ref}, but ref can not be in union
+  WriteBatchWithIndex* write_batch_pre_ = nullptr;
+  WriteBatchWithIndex& write_batch_;
 
   // For Pessimistic Transactions this is the set of acquired locks.
   // Optimistic Transactions will keep note the requested locks (not actually
@@ -355,9 +359,7 @@ class TransactionBaseImpl : public Transaction {
 
   // Stack of the Snapshot saved at each save point. Saved snapshots may be
   // nullptr if there was no snapshot at the time SetSavePoint() was called.
-  std::unique_ptr<std::stack<TransactionBaseImpl::SavePoint,
-                             autovector<TransactionBaseImpl::SavePoint>>>
-      save_points_;
+  std::unique_ptr<autovector<SavePoint>> save_points_;
 
  private:
   friend class WriteCommittedTxn;

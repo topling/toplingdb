@@ -34,6 +34,12 @@ class MockColumnFamilyHandle : public ColumnFamilyHandle {
     return BytewiseComparator();
   }
 
+  ColumnFamilyHandle* CloneHandle() const override {
+    auto p = new MockColumnFamilyHandle(cf_id_);
+    p->name_ = this->name_;
+    return p;
+  }
+
  private:
   ColumnFamilyId cf_id_;
   std::string name_ = "MockCF";

@@ -27,11 +27,11 @@ SstPartitionerFixedPrefixFactory::SstPartitionerFixedPrefixFactory(size_t len)
 
 PartitionerResult SstPartitionerFixedPrefix::ShouldPartition(
     const PartitionerRequest& request) {
-  Slice last_key_fixed(*request.prev_user_key);
+  Slice last_key_fixed(request.prev_user_key);
   if (last_key_fixed.size() > len_) {
     last_key_fixed.size_ = len_;
   }
-  Slice current_key_fixed(*request.current_user_key);
+  Slice current_key_fixed(request.current_user_key);
   if (current_key_fixed.size() > len_) {
     current_key_fixed.size_ = len_;
   }

@@ -61,6 +61,13 @@ class Status {
   bool operator==(const Status& rhs) const;
   bool operator!=(const Status& rhs) const;
 
+  void SetAsOK() {
+    if (kOk != code_) {
+      pack8_ = 0;
+      state_.reset(nullptr);
+    }
+  }
+
   // In case of intentionally swallowing an error, user must explicitly call
   // this function. That way we are easily able to search the code to find where
   // error swallowing occurs.
@@ -115,6 +122,7 @@ class Status {
     kIOFenced = 14,
     kMergeOperatorFailed = 15,
     kMergeOperandThresholdExceeded = 16,
+    kCrossDevice = 17,
     kMaxSubCode
   };
 
@@ -488,19 +496,31 @@ class Status {
   // Returns the string "OK" for success.
   std::string ToString() const;
 
+  void swap(Status& y) {
+    static_assert(sizeof(Status) == 2*sizeof(uint64_t));
+    std::swap(pack8_, y.pack8_);
+    std::swap(state_, y.state_);
+  }
+
  protected:
+// with this union, we can assign multiple fields by pack8_
+union {
+ struct {
   Code code_;
   SubCode subcode_;
   Severity sev_;
   bool retryable_;
   bool data_loss_;
   unsigned char scope_;
-  // A nullptr state_ (which is at least the case for OK) means the extra
-  // message is empty.
-  std::unique_ptr<const char[]> state_;
 #ifdef ROCKSDB_ASSERT_STATUS_CHECKED
   mutable bool checked_ = false;
 #endif  // ROCKSDB_ASSERT_STATUS_CHECKED
+ }; // struct
+ uint64_t pack8_; // packed to 8 bytes for fast copy
+}; // union
+  // A nullptr state_ (which is at least the case for OK) means the extra
+  // message is empty.
+  std::unique_ptr<const char[]> state_;
 
   explicit Status(Code _code, SubCode _subcode = kNone)
       : code_(_code),
@@ -534,63 +554,39 @@ class Status {
 };
 
 inline Status::Status(const Status& s)
-    : code_(s.code_),
-      subcode_(s.subcode_),
-      sev_(s.sev_),
-      retryable_(s.retryable_),
-      data_loss_(s.data_loss_),
-      scope_(s.scope_) {
+    : pack8_(s.pack8_) {
   s.MarkChecked();
   state_ = (s.state_ == nullptr) ? nullptr : CopyState(s.state_.get());
 }
 inline Status::Status(const Status& s, Severity sev)
-    : code_(s.code_),
-      subcode_(s.subcode_),
-      sev_(sev),
-      retryable_(s.retryable_),
-      data_loss_(s.data_loss_),
-      scope_(s.scope_) {
+    : pack8_(s.pack8_) {
+  sev_ = sev;
   s.MarkChecked();
   state_ = (s.state_ == nullptr) ? nullptr : CopyState(s.state_.get());
 }
 inline Status& Status::operator=(const Status& s) {
-  if (this != &s) {
-    s.MarkChecked();
-    MustCheck();
-    code_ = s.code_;
-    subcode_ = s.subcode_;
-    sev_ = s.sev_;
-    retryable_ = s.retryable_;
-    data_loss_ = s.data_loss_;
-    scope_ = s.scope_;
-    state_ = (s.state_ == nullptr) ? nullptr : CopyState(s.state_.get());
-  }
+  pack8_ = s.pack8_;
+  s.MarkChecked();
+  MustCheck();
+  state_ = (s.state_ == nullptr) ? nullptr : CopyState(s.state_.get());
   return *this;
 }
 
-inline Status::Status(Status&& s) noexcept : Status() {
+inline Status::Status(Status&& s) noexcept : state_(std::move(s.state_)) {
+  static_assert(sizeof(Status) == 2*sizeof(uint64_t));
+  pack8_ = s.pack8_;
+  s.pack8_ = 0;
   s.MarkChecked();
-  *this = std::move(s);
 }
 
 inline Status& Status::operator=(Status&& s) noexcept {
-  if (this != &s) {
-    s.MarkChecked();
-    MustCheck();
-    code_ = std::move(s.code_);
-    s.code_ = kOk;
-    subcode_ = std::move(s.subcode_);
-    s.subcode_ = kNone;
-    sev_ = std::move(s.sev_);
-    s.sev_ = kNoError;
-    retryable_ = std::move(s.retryable_);
-    s.retryable_ = false;
-    data_loss_ = std::move(s.data_loss_);
-    s.data_loss_ = false;
-    scope_ = std::move(s.scope_);
-    s.scope_ = 0;
-    state_ = std::move(s.state_);
-  }
+  static_assert(sizeof(Status) == 2*sizeof(uint64_t));
+  pack8_ = s.pack8_;
+  s.pack8_ = 0;
+  s.MarkChecked();
+  MustCheck();
+  // safe for self-assign
+  state_ = std::move(s.state_);
   return *this;
 }
 

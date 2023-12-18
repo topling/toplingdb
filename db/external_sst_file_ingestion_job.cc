@@ -110,7 +110,19 @@ Status ExternalSstFileIngestionJob::Prepare(
     if (ingestion_options_.move_files) {
       status =
           fs_->LinkFile(path_outside_db, path_inside_db, IOOptions(), nullptr);
-      if (status.ok()) {
+     #if !defined(ROCKSDB_UNIT_TEST)
+      if (!status.ok()) {
+        status = fs_->RenameFile(
+          path_outside_db, path_inside_db, IOOptions(), nullptr);
+      }
+     #endif
+      if (!status.ok() && status.subcode() == Status::kCrossDevice) {
+        status = CopyFile(fs_.get(), path_outside_db, path_inside_db,
+            f.fd.file_size, true, nullptr, Temperature::kUnknown);
+        if (status.ok())
+          status = fs_->DeleteFile(path_outside_db, IOOptions(), nullptr);
+      }
+      if (status.ok() && ingestion_options_.sync_file) {
         // It is unsafe to assume application had sync the file and file
         // directory before ingest the file. For integrity of RocksDB we need
         // to sync the file.
@@ -137,6 +149,8 @@ Status ExternalSstFileIngestionJob::Prepare(
             }
           }
         }
+      } else if (status.ok()) {
+        // ToplingDB: ingestion_options_.sync_file is false, do nothing
       } else if (status.IsNotSupported() &&
                  ingestion_options_.failed_move_fall_back_to_copy) {
         // Original file is on a different FS, use copy instead of hard linking.
@@ -421,11 +435,11 @@ Status ExternalSstFileIngestionJob::Run() {
     // exclusive endpoint.
     ParsedInternalKey smallest_parsed, largest_parsed;
     if (status.ok()) {
-      status = ParseInternalKey(*f.smallest_internal_key.rep(),
+      status = ParseInternalKey(f.smallest_internal_key.Encode(),
                                 &smallest_parsed, false /* log_err_key */);
     }
     if (status.ok()) {
-      status = ParseInternalKey(*f.largest_internal_key.rep(), &largest_parsed,
+      status = ParseInternalKey(f.largest_internal_key.Encode(), &largest_parsed,
                                 false /* log_err_key */);
     }
     if (!status.ok()) {
@@ -722,6 +736,14 @@ Status ExternalSstFileIngestionJob::GetIngestedFileInfo(
 
   // Get the external file properties
   auto props = table_reader->GetTableProperties();
+
+#if defined(ROCKSDB_UNIT_TEST)
+  // ToplingDB: now rocksdb store global_seqno in manifest file, we does not
+  // need to read global_seqno from sst, so version and global_seqno are
+  // all not needed, so we skip it!
+  // if we does not skip it, the ingest will failed when ingest sst files
+  // from MergeTables!
+  // Now global_seqno are load from TableReaderOptions::largest_seqno
   const auto& uprops = props->user_collected_properties;
 
   // Get table version
@@ -759,6 +781,8 @@ Status ExternalSstFileIngestionJob::GetIngestedFileInfo(
   } else {
     return Status::InvalidArgument("External file version is not supported");
   }
+#endif
+
   // Get number of entries in table
   file_to_ingest->num_entries = props->num_entries;
   file_to_ingest->num_range_deletions = props->num_range_deletions;
@@ -871,9 +895,12 @@ Status ExternalSstFileIngestionJob::GetIngestedFileInfo(
                                   props->orig_file_number,
                                   &(file_to_ingest->unique_id));
   if (!s.ok()) {
+   if (db_options_.verify_sst_unique_id_in_manifest) {
     ROCKS_LOG_WARN(db_options_.info_log,
-                   "Failed to get SST unique id for file %s",
-                   file_to_ingest->internal_file_path.c_str());
+                   "Failed to get SST unique id for file %s, reason = %s",
+                   external_file.c_str(),
+                   s.ToString().c_str());
+   }
     file_to_ingest->unique_id = kNullUniqueId64x2;
   }
 
@@ -1027,7 +1054,8 @@ Status ExternalSstFileIngestionJob::AssignGlobalSeqnoForIngestedFile(
     return Status::OK();
   } else if (!ingestion_options_.allow_global_seqno) {
     return Status::InvalidArgument("Global seqno is required, but disabled");
-  } else if (file_to_ingest->global_seqno_offset == 0) {
+  } else if (file_to_ingest->global_seqno_offset == 0 &&
+             ingestion_options_.write_global_seqno) {
     return Status::InvalidArgument(
         "Trying to set global seqno for a file that don't have a global seqno "
         "field");

@@ -29,6 +29,8 @@
 #include "util/hash_containers.h"
 #include "util/thread_local.h"
 
+#include <terark/fixed_circular_queue.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 class Version;
@@ -167,12 +169,13 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
                          InstrumentedMutex* mutex);
   // destroy without mutex
   virtual ~ColumnFamilyHandleImpl();
-  virtual ColumnFamilyData* cfd() const { return cfd_; }
+  virtual ColumnFamilyData* cfd() const override { return cfd_; }
 
   virtual uint32_t GetID() const override;
   virtual const std::string& GetName() const override;
   virtual Status GetDescriptor(ColumnFamilyDescriptor* desc) override;
   virtual const Comparator* GetComparator() const override;
+  virtual ColumnFamilyHandle* CloneHandle() const override;
 
  private:
   ColumnFamilyData* cfd_;
@@ -194,6 +197,10 @@ class ColumnFamilyHandleInternal : public ColumnFamilyHandleImpl {
 
   void SetCFD(ColumnFamilyData* _cfd) { internal_cfd_ = _cfd; }
   virtual ColumnFamilyData* cfd() const override { return internal_cfd_; }
+  uint32_t GetID() const final;
+  const std::string& GetName() const final;
+  const Comparator* GetComparator() const override;
+  ColumnFamilyHandle* CloneHandle() const override;
 
  private:
   ColumnFamilyData* internal_cfd_;
@@ -371,6 +378,8 @@ class ColumnFamilyData {
   // calculate the oldest log needed for the durability of this column family
   uint64_t OldestLogToKeep();
 
+  void PrepareNewMemtableInBackground(const MutableCFOptions&);
+
   // See Memtable constructor for explanation of earliest_seq param.
   MemTable* ConstructNewMemtable(const MutableCFOptions& mutable_cf_options,
                                  SequenceNumber earliest_seq);
@@ -450,6 +459,9 @@ class ColumnFamilyData {
   uint64_t GetSuperVersionNumber() const {
     return super_version_number_.load();
   }
+  uint64_t GetSuperVersionNumberNoAtomic() const {
+    return reinterpret_cast<const uint64_t&>(super_version_number_);
+  }
   // will return a pointer to SuperVersion* if previous SuperVersion
   // if its reference count is zero and needs deletion or nullptr if not
   // As argument takes a pointer to allocated SuperVersion to enable
@@ -518,7 +530,7 @@ class ColumnFamilyData {
   // user's setting. Called by background flush job.
   bool ShouldPostponeFlushToRetainUDT(uint64_t max_memtable_id);
 
-  ThreadLocalPtr* TEST_GetLocalSV() { return local_sv_.get(); }
+  ThreadLocalPtr* TEST_GetLocalSV() { return &local_sv_; }
   WriteBufferManager* write_buffer_mgr() { return write_buffer_manager_; }
   std::shared_ptr<CacheReservationManager>
   GetFileMetadataCacheReservationManager() {
@@ -548,6 +560,8 @@ class ColumnFamilyData {
   // Recover the next epoch number of this CF and epoch number
   // of its files (if missing)
   void RecoverEpochNumbers();
+
+  const std::string& GetDBName() const;
 
  private:
   friend class ColumnFamilySet;
@@ -590,6 +604,12 @@ class ColumnFamilyData {
 
   WriteBufferManager* write_buffer_manager_;
 
+ #if !defined(ROCKSDB_UNIT_TEST)
+  // precreated_memtable_list_.size() is normally 1
+  terark::fixed_circular_queue<std::unique_ptr<MemTable>, 4> precreated_memtable_list_;
+  std::mutex precreated_memtable_mutex_;
+ #endif
+
   MemTable* mem_;
   MemTableList imm_;
   SuperVersion* super_version_;
@@ -601,7 +621,7 @@ class ColumnFamilyData {
 
   // Thread's local copy of SuperVersion pointer
   // This needs to be destructed before mutex_
-  std::unique_ptr<ThreadLocalPtr> local_sv_;
+  ThreadLocalPtr local_sv_;
 
   // pointers for a circular linked list. we use it to support iterations over
   // all column families that are alive (note: dropped column families can also

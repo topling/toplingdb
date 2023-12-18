@@ -7,6 +7,7 @@
 // calling c++ ROCKSDB_NAMESPACE::WriteBatchWithIndex methods from Java side.
 
 #include "rocksdb/utilities/write_batch_with_index.h"
+#include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 
 #include "include/org_rocksdb_WBWIRocksIterator.h"
 #include "include/org_rocksdb_WriteBatchWithIndex.h"

@@ -34,6 +34,7 @@
 
 #include "rocksdb/status.h"
 #include "rocksdb/write_batch_base.h"
+#include "fake_atomic.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -492,7 +493,11 @@ class WriteBatch : public WriteBatchBase {
   bool has_key_with_ts_ = false;
 
   // For HasXYZ.  Mutable to allow lazy computation of results
+#if 0
   mutable std::atomic<uint32_t> content_flags_;
+#else
+  mutable fake_atomic<uint32_t> content_flags_;
+#endif
 
   // Performs deferred computation of content_flags if necessary
   uint32_t ComputeContentFlags() const;

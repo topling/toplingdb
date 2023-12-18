@@ -23,6 +23,8 @@
 #include "util/random.h"
 #include "util/rate_limiter_impl.h"
 
+#include <terark/util/nolocks_localtime.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 IOStatus WritableFileWriter::Create(const std::shared_ptr<FileSystem>& fs,
                                     const std::string& fname,
@@ -287,19 +289,29 @@ IOStatus WritableFileWriter::Close() {
   }
 
   TEST_KILL_RANDOM("WritableFileWriter::Close:0");
-  {
-    FileOperationInfo::StartTimePoint start_ts;
-    if (ShouldNotifyListeners()) {
-      start_ts = FileOperationInfo::StartNow();
+  auto start_ts = FileOperationInfo::StartNow();
+  interim = writable_file_->Close(io_options, nullptr);
+  auto finish_ts = FileOperationInfo::FinishNow();
+  if (ShouldNotifyListeners()) {
+    NotifyOnFileCloseFinish(start_ts, finish_ts, s);
+    if (!interim.ok()) {
+      NotifyOnIOError(interim, FileOperationType::kClose, file_name());
     }
-    interim = writable_file_->Close(io_options, nullptr);
-    if (ShouldNotifyListeners()) {
-      auto finish_ts = FileOperationInfo::FinishNow();
-      NotifyOnFileCloseFinish(start_ts, finish_ts, s);
-      if (!interim.ok()) {
-        NotifyOnIOError(interim, FileOperationType::kClose, file_name());
-      }
-    }
+  }
+  if (filesize_ != writable_file_->GetFileSize(io_options, nullptr)) {
+    fprintf(stderr, "WARN: %s: WritableFileWriter::Close(%s): "
+      "(fsize = %lld) != (file->fsize = %lld)\n",
+      terark::StrDateTimeNow(), file_name_.c_str(), (long long)filesize_,
+      (long long)writable_file_->GetFileSize(io_options, nullptr));
+  }
+  using namespace std::chrono;
+  auto slow_ms = atoi(getenv("WritableFileWriterSlowCloseMS") ?: "5000");
+  auto close_tm = finish_ts - start_ts.second;
+  if (close_tm > milliseconds(slow_ms)) {
+    fprintf(stderr, "WARN: %s: WritableFileWriter::Close(%s): "
+      "fsize = %.6f M, file close = %.6f seconds\n",
+      terark::StrDateTimeNow(), file_name_.c_str(), filesize_/1e6,
+      duration_cast<microseconds>(close_tm).count()/1e6);
   }
   if (!interim.ok() && s.ok()) {
     s = interim;

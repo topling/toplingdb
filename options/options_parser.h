@@ -21,7 +21,7 @@ class TableFactory;
 #define ROCKSDB_OPTION_FILE_MAJOR 1
 #define ROCKSDB_OPTION_FILE_MINOR 1
 
-enum OptionSection : char {
+enum OptionSection : unsigned char {
   kOptionSectionVersion = 0,
   kOptionSectionDBOptions,
   kOptionSectionCFOptions,

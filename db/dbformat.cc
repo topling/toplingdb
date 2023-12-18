@@ -217,7 +217,7 @@ LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
   memcpy(dst, buf, klen_len); dst += klen_len;
   memcpy(dst, _user_key.data(), usize);
   dst += usize;
-  if (nullptr != ts) {
+  if (UNLIKELY(nullptr != ts)) {
     memcpy(dst, ts->data(), ts_sz);
     dst += ts_sz;
   }

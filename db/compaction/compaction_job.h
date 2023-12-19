@@ -191,6 +191,11 @@ class CompactionJob {
   Status Install(const MutableCFOptions& mutable_cf_options,
                  bool* compaction_released);
 
+  Status Install(const MutableCFOptions& mutable_cf_options) {
+    bool compaction_released = false;
+    return Install(mutable_cf_options, &compaction_released);
+  }
+
   // Return the IO status
   IOStatus io_status() const { return io_status_; }
 

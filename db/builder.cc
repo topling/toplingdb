@@ -397,7 +397,7 @@ Status BuildTable(
         if (s.ok() && !output_validator.CompareValidator(file_validator)) {
          #if !defined(ROCKSDB_UNIT_TEST)
           auto& fd = meta->fd;
-          ROCKSDB_DIE("BuildTable: Paranoid checksums do not match(%d/%lld.sst)",
+          ROCKSDB_DIE("BuildTable: Paranoid checksums do not match(%d:%lld.sst)",
                       fd.GetPathId(), (long long)fd.GetNumber());
          #else
           s = Status::Corruption("BuildTable: Paranoid checksums do not match");

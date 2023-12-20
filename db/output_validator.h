@@ -8,6 +8,7 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
 #include <terark/valvec32.hpp>
+#include <terark/util/fstrvec.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 // A class that validates key/value that is inserted to an SST file.
@@ -53,6 +54,7 @@ class OutputValidator {
   uint64_t paranoid_hash_ = 0;
   bool enable_order_check_;
   bool enable_hash_;
-  std::vector<std::pair<std::string, std::string> > kv_vec_;
+  bool full_check_ = false;
+  terark::fstrvecll kv_vec_{terark::valvec_no_init()};
 };
 }  // namespace ROCKSDB_NAMESPACE

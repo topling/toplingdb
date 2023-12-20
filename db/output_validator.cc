@@ -8,16 +8,17 @@
 #include "test_util/sync_point.h"
 #include "util/hash.h"
 #include <terark/fstring.hpp>
+#include <terark/io/var_int.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
+using terark::fstring;
 static bool g_full_check = terark::getEnvBool("OutputValidator_full_check");
 
 void OutputValidator::Init() {
   full_check_ = g_full_check;
   if (full_check_) {
-    std::destroy_at(&kv_vec_);
-    new(&kv_vec_)decltype(kv_vec_)(terark::valvec_reserve(), 128<<10, 32<<20);
+    kv_vec_.reserve(32 << 20); // 32M
   }
   if (icmp_.IsForwardBytewise())
     m_add = &OutputValidator::Add_tpl<BytewiseCompareInternalKey>;
@@ -54,23 +55,44 @@ Status OutputValidator::Add_tpl(const Slice key, const Slice value) {
    #endif
   }
   if (full_check_) {
-    kv_vec_.push_back(key);
-    kv_vec_.push_back(value);
+    auto WriteSlice = [this](Slice s) {
+      unsigned char buf[16];
+      size_t len = terark::save_var_uint64(buf, s.size_) - buf;
+      kv_vec_.append(buf, len);
+      kv_vec_.append(s.data_, s.size_);
+    };
+    WriteSlice(key);
+    WriteSlice(value);
   }
+  num_kv_++;
   return Status::OK();
 }
 
-static inline Slice SliceOf(terark::fstring s) { return {s.p, s.size()}; }
+static Slice ReadSlice(const unsigned char** ptr) {
+  size_t len = (size_t)terark::load_var_uint64(*ptr, ptr);
+  auto data = (const char*)(*ptr);
+  *ptr += len;
+  return Slice(data, len);
+}
+
 bool OutputValidator::CompareValidator(const OutputValidator& other) {
   if (full_check_) {
     long long file_number = m_file_number ? m_file_number : other.m_file_number;
     ROCKSDB_VERIFY_EQ(kv_vec_.size(), other.kv_vec_.size());
-    for (size_t i = 0, n = kv_vec_.size() / 2; i < n; i++) {
-      #define hex(deref, field) ParsedInternalKey(SliceOf(deref kv_vec_[field])).DebugString(true, true).c_str()
-      size_t key = 2*i + 0, val = 2*i + 1;
-      ROCKSDB_VERIFY_F(kv_vec_[key] == other.kv_vec_[key], "%06lld.sst[%zd]: %s %s", file_number, i, hex(,key), hex(other.,key));
-      ROCKSDB_VERIFY_F(kv_vec_[val] == other.kv_vec_[val], "%06lld.sst[%zd]: %s %s", file_number, i, hex(,val), hex(other.,val));
+    ROCKSDB_VERIFY_EQ(num_kv_, other.num_kv_);
+    const unsigned char* x_reader = kv_vec_.begin();
+    const unsigned char* y_reader = other.kv_vec_.begin();
+    for (size_t i = 0, n = num_kv_; i < n; i++) {
+      Slice kx = ReadSlice(&x_reader);
+      Slice vx = ReadSlice(&x_reader);
+      Slice ky = ReadSlice(&y_reader);
+      Slice vy = ReadSlice(&y_reader);
+      #define HexKey(key) ParsedInternalKey(key).DebugString(true, true).c_str()
+      ROCKSDB_VERIFY_F(kx == ky, "%06lld.sst[%zd]: %s %s", file_number, i, HexKey(kx), HexKey(ky));
+      ROCKSDB_VERIFY_F(vx == vy, "%06lld.sst[%zd]: %s %s", file_number, i, vx.hex().c_str(), vy.hex().c_str());
     }
+    ROCKSDB_VERIFY_EQ(x_reader, kv_vec_.end());
+    ROCKSDB_VERIFY_EQ(y_reader, other.kv_vec_.end());
     ROCKSDB_VERIFY_EQ(GetHash(), other.GetHash());
   }
   return GetHash() == other.GetHash();

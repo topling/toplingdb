@@ -78,7 +78,11 @@ static Slice ReadSlice(const unsigned char** ptr) {
 bool OutputValidator::CompareValidator(const OutputValidator& other) {
   if (full_check_) {
     long long file_number = m_file_number ? m_file_number : other.m_file_number;
-    ROCKSDB_VERIFY_EQ(kv_vec_.size(), other.kv_vec_.size());
+    if (kv_vec_.size() != other.kv_vec_.size()) {
+      fprintf(stderr,
+        "FATAL: OutputValidator::CompareValidator: kv_vec_.size: %zd != %zd\n",
+        kv_vec_.size(), other.kv_vec_.size());
+    }
     ROCKSDB_VERIFY_EQ(num_kv_, other.num_kv_);
     const unsigned char* x_reader = kv_vec_.begin();
     const unsigned char* y_reader = other.kv_vec_.begin();

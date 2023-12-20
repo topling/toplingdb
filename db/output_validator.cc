@@ -14,6 +14,11 @@ namespace ROCKSDB_NAMESPACE {
 static bool g_full_check = terark::getEnvBool("OutputValidator_full_check");
 
 void OutputValidator::Init() {
+  full_check_ = g_full_check;
+  if (full_check_) {
+    std::destroy_at(&kv_vec_);
+    new(&kv_vec_)decltype(kv_vec_)(terark::valvec_reserve(), 128<<10, 32<<20);
+  }
   if (icmp_.IsForwardBytewise())
     m_add = &OutputValidator::Add_tpl<BytewiseCompareInternalKey>;
   else if (icmp_.IsReverseBytewise())
@@ -48,20 +53,23 @@ Status OutputValidator::Add_tpl(const Slice key, const Slice value) {
     memcpy(prev_key_.data(), key.data(), key.size());
    #endif
   }
-  if (g_full_check) {
-    kv_vec_.emplace_back(key.ToString(), value.ToString());
+  if (full_check_) {
+    kv_vec_.push_back(key);
+    kv_vec_.push_back(value);
   }
   return Status::OK();
 }
 
+static inline Slice SliceOf(terark::fstring s) { return {s.p, s.size()}; }
 bool OutputValidator::CompareValidator(const OutputValidator& other) {
-  if (g_full_check) {
+  if (full_check_) {
     long long file_number = m_file_number ? m_file_number : other.m_file_number;
     ROCKSDB_VERIFY_EQ(kv_vec_.size(), other.kv_vec_.size());
-    for (size_t i = 0, n = kv_vec_.size(); i < n; i++) {
-      #define hex(deref, field) ParsedInternalKey(deref kv_vec_[i].field).DebugString(true, true).c_str()
-      ROCKSDB_VERIFY_F(kv_vec_[i].first  == other.kv_vec_[i].first , "%06lld.sst[%zd]: %s %s", file_number, i, hex(,first ), hex(other., first ));
-      ROCKSDB_VERIFY_F(kv_vec_[i].second == other.kv_vec_[i].second, "%06lld.sst[%zd]: %s %s", file_number, i, hex(,second), hex(other., second));
+    for (size_t i = 0, n = kv_vec_.size() / 2; i < n; i++) {
+      #define hex(deref, field) ParsedInternalKey(SliceOf(deref kv_vec_[field])).DebugString(true, true).c_str()
+      size_t key = 2*i + 0, val = 2*i + 1;
+      ROCKSDB_VERIFY_F(kv_vec_[key] == other.kv_vec_[key], "%06lld.sst[%zd]: %s %s", file_number, i, hex(,key), hex(other.,key));
+      ROCKSDB_VERIFY_F(kv_vec_[val] == other.kv_vec_[val], "%06lld.sst[%zd]: %s %s", file_number, i, hex(,val), hex(other.,val));
     }
     ROCKSDB_VERIFY_EQ(GetHash(), other.GetHash());
   }

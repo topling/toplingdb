@@ -92,8 +92,8 @@ bool OutputValidator::CompareValidator(const OutputValidator& other) {
       Slice ky = ReadSlice(&y_reader);
       Slice vy = ReadSlice(&y_reader);
       #define HexKey(key) ParsedInternalKey(key).DebugString(true, true).c_str()
-      ROCKSDB_VERIFY_F(kx == ky, "%06lld.sst[%zd]: %s %s", file_number, i, HexKey(kx), HexKey(ky));
-      ROCKSDB_VERIFY_F(vx == vy, "%06lld.sst[%zd]: %s %s", file_number, i, vx.hex().c_str(), vy.hex().c_str());
+      ROCKSDB_VERIFY_F(kx == ky, "%06lld.sst[%zd]: %zd(%s) %zd(%s)", file_number, i, kx.size_, HexKey(kx), ky.size_, HexKey(ky));
+      ROCKSDB_VERIFY_F(vx == vy, "%06lld.sst[%zd]: %zd(%s) %zd(%s)", file_number, i, vx.size_, vx.hex().c_str(), vy.size_, vy.hex().c_str());
     }
     ROCKSDB_VERIFY_EQ(x_reader, kv_vec_.end());
     ROCKSDB_VERIFY_EQ(y_reader, other.kv_vec_.end());

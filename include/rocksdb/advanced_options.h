@@ -463,6 +463,9 @@ struct AdvancedColumnFamilyOptions {
   // Dynamically changeable through SetOptions() API
   double memtable_prefix_bloom_size_ratio = 0.0;
 
+  // set as false to avoid flush output large SSTs
+  bool allow_merge_memtables = true;
+
   // Enable whole key bloom filter in memtable. Note this will only take effect
   // if memtable_prefix_bloom_size_ratio is not 0. Enabling whole key filtering
   // can potentially reduce CPU usage for point-look-ups.

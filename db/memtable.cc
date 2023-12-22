@@ -55,6 +55,7 @@ ImmutableMemTableOptions::ImmutableMemTableOptions(
               mutable_cf_options.memtable_prefix_bloom_size_ratio) *
           8u),
       memtable_huge_page_size(mutable_cf_options.memtable_huge_page_size),
+      allow_merge_memtables(mutable_cf_options.allow_merge_memtables),
       memtable_whole_key_filtering(
           mutable_cf_options.memtable_whole_key_filtering),
       inplace_update_support(ioptions.inplace_update_support),

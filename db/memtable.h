@@ -47,6 +47,7 @@ struct ImmutableMemTableOptions {
   size_t arena_block_size;
   uint32_t memtable_prefix_bloom_bits;
   size_t memtable_huge_page_size;
+  bool allow_merge_memtables;
   bool memtable_whole_key_filtering;
   bool inplace_update_support;
   size_t inplace_update_num_locks;

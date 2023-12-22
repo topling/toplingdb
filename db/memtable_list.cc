@@ -419,6 +419,9 @@ void MemTableList::PickMemtablesToFlush(uint64_t max_memtable_id,
             std::max(m->GetNextLogNumber(), *max_next_log_number);
       }
       ret->push_back(m);
+      if (!m->GetImmutableMemTableOptions()->allow_merge_memtables) {
+        break;
+      }
     } else if (!ret->empty()) {
       // This `break` is necessary to prevent picking non-consecutive memtables
       // in case `memlist` has one or more entries with

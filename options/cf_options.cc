@@ -360,6 +360,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
         {"memtable_prefix_bloom_probes",
          {0, OptionType::kUInt32T, OptionVerificationType::kDeprecated,
           OptionTypeFlags::kMutable}},
+        {"allow_merge_memtables",
+         {offsetof(struct MutableCFOptions, allow_merge_memtables),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
         {"memtable_whole_key_filtering",
          {offsetof(struct MutableCFOptions, memtable_whole_key_filtering),
           OptionType::kBoolean, OptionVerificationType::kNormal,
@@ -1053,6 +1057,9 @@ void MutableCFOptions::Dump(Logger* log) const {
                  arena_block_size);
   ROCKS_LOG_INFO(log, "              memtable_prefix_bloom_ratio: %f",
                  memtable_prefix_bloom_size_ratio);
+
+  ROCKS_LOG_INFO(log, "                     allow_merge_memtables: %d",
+                 allow_merge_memtables);
   ROCKS_LOG_INFO(log, "              memtable_whole_key_filtering: %d",
                  memtable_whole_key_filtering);
   ROCKS_LOG_INFO(log,

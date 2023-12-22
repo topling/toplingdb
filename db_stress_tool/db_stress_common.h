@@ -108,6 +108,7 @@ DECLARE_int32(min_write_buffer_number_to_merge);
 DECLARE_int32(max_write_buffer_number_to_maintain);
 DECLARE_int64(max_write_buffer_size_to_maintain);
 DECLARE_double(memtable_prefix_bloom_size_ratio);
+DECLARE_bool(allow_merge_memtables);
 DECLARE_bool(memtable_whole_key_filtering);
 DECLARE_int32(open_files);
 DECLARE_int64(compressed_cache_size);

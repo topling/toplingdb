@@ -190,6 +190,10 @@ DEFINE_double(memtable_prefix_bloom_size_ratio,
               "creates prefix blooms for memtables, each with size "
               "`write_buffer_size * memtable_prefix_bloom_size_ratio`.");
 
+DEFINE_bool(allow_merge_memtables,
+            ROCKSDB_NAMESPACE::Options().allow_merge_memtables,
+            "allow merge memtables on flush.");
+
 DEFINE_bool(memtable_whole_key_filtering,
             ROCKSDB_NAMESPACE::Options().memtable_whole_key_filtering,
             "Enable whole key filtering in memtables.");

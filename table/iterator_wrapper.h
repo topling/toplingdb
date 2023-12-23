@@ -74,9 +74,9 @@ class IteratorWrapperBase {
   // Iterator interface methods
   bool Valid() const {
 #ifdef ROCKSDB_ASSERT_STATUS_CHECKED
-    status_checked_after_invalid_ = valid_;
+    status_checked_after_invalid_ = result.is_valid;
 #endif
-    return result_.valid_;
+    return result_.is_valid;
   }
   Slice key() const {
     assert(Valid());

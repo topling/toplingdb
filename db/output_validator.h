@@ -7,6 +7,7 @@
 #include "db/dbformat.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
+#include <terark/valvec.hpp>
 #include <terark/valvec32.hpp>
 
 namespace ROCKSDB_NAMESPACE {
@@ -53,6 +54,8 @@ class OutputValidator {
   uint64_t paranoid_hash_ = 0;
   bool enable_order_check_;
   bool enable_hash_;
-  std::vector<std::pair<std::string, std::string> > kv_vec_;
+  bool full_check_ = false;
+  size_t num_kv_ = 0;
+  terark::valvec<unsigned char> kv_vec_;
 };
 }  // namespace ROCKSDB_NAMESPACE

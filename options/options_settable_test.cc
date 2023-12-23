@@ -536,6 +536,7 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
       "merge_operator=aabcxehazrMergeOperator;"
       "memtable_prefix_bloom_size_ratio=0.4642;"
       "memtable_whole_key_filtering=true;"
+      "allow_merge_memtables=true;"
       "memtable_insert_with_hint_prefix_extractor=rocksdb.CappedPrefix.13;"
       "check_flush_compaction_key_order=false;"
       "paranoid_file_checks=true;"

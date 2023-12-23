@@ -31,6 +31,11 @@
 #include "util/hash_containers.h"
 #include "util/string_util.h"
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wnonnull" // for boost::replace_all_copy
+#endif
+#include<boost/algorithm/string.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 
@@ -1729,6 +1734,34 @@ void InternalStats::DumpDBMapStatsWriteStall(
   }
 }
 
+static void DumpWriteStalls(std::ostringstream& str,
+                            std::map<std::string, std::string>& stats_map) {
+  str << "Write Stall (count): ";
+
+  for (auto iter = stats_map.begin(); iter != stats_map.end(); ) {
+    std::string name = boost::replace_all_copy(iter->first, "-delays", "");
+    str << name << ": delays " << iter->second;
+    ++iter;
+    if (stats_map.end() == iter) {
+      break; // should not goes here, check for safe
+    }
+    std::string name2 = boost::replace_all_copy(iter->first, "-stops", "");
+    if (name2 == name) {
+      str << ", stops " << iter->second;
+    }
+    else { // should not goes here
+      str << iter->first << ": " << iter->second;
+    }
+    auto next = std::next(iter);
+    if (stats_map.end() == next) {
+      str << "\n";
+    } else {
+      str << " | ";
+    }
+    iter = next;
+  }
+}
+
 void InternalStats::DumpDBStatsWriteStall(std::string* value) {
   assert(value);
 
@@ -1736,19 +1769,7 @@ void InternalStats::DumpDBStatsWriteStall(std::string* value) {
   DumpDBMapStatsWriteStall(&write_stall_stats_map);
 
   std::ostringstream str;
-  str << "Write Stall (count): ";
-
-  for (auto write_stall_stats_map_iter = write_stall_stats_map.begin();
-       write_stall_stats_map_iter != write_stall_stats_map.end();
-       write_stall_stats_map_iter++) {
-    const auto& name_and_stat = *write_stall_stats_map_iter;
-    str << name_and_stat.first << ": " << name_and_stat.second;
-    if (std::next(write_stall_stats_map_iter) == write_stall_stats_map.end()) {
-      str << "\n";
-    } else {
-      str << ", ";
-    }
-  }
+  DumpWriteStalls(str, write_stall_stats_map);
   *value = str.str();
 }
 
@@ -1935,19 +1956,7 @@ void InternalStats::DumpCFStatsWriteStall(std::string* value,
   DumpCFMapStatsWriteStall(&write_stall_stats_map);
 
   std::ostringstream str;
-  str << "Write Stall (count): ";
-
-  for (auto write_stall_stats_map_iter = write_stall_stats_map.begin();
-       write_stall_stats_map_iter != write_stall_stats_map.end();
-       write_stall_stats_map_iter++) {
-    const auto& name_and_stat = *write_stall_stats_map_iter;
-    str << name_and_stat.first << ": " << name_and_stat.second;
-    if (std::next(write_stall_stats_map_iter) == write_stall_stats_map.end()) {
-      str << "\n";
-    } else {
-      str << ", ";
-    }
-  }
+  DumpWriteStalls(str, write_stall_stats_map);
 
   if (total_stall_count) {
     *total_stall_count =

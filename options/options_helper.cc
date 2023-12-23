@@ -206,6 +206,7 @@ void UpdateColumnFamilyOptions(const MutableCFOptions& moptions,
   cf_opts->arena_block_size = moptions.arena_block_size;
   cf_opts->memtable_prefix_bloom_size_ratio =
       moptions.memtable_prefix_bloom_size_ratio;
+  cf_opts->allow_merge_memtables = moptions.allow_merge_memtables;
   cf_opts->memtable_whole_key_filtering = moptions.memtable_whole_key_filtering;
   cf_opts->memtable_huge_page_size = moptions.memtable_huge_page_size;
   cf_opts->max_successive_merges = moptions.max_successive_merges;

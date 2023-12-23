@@ -174,6 +174,7 @@ inline Status WriteCommittedTxn::GetForUpdateImpl(
   column_family =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
   assert(column_family);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (!read_options.timestamp) {
     const Comparator* const ucmp = column_family->GetComparator();
     assert(ucmp);
@@ -214,6 +215,7 @@ inline Status WriteCommittedTxn::GetForUpdateImpl(
   if (ts != read_timestamp_) {
     return Status::InvalidArgument("Must read from the same read_timestamp");
   }
+#endif
   return TransactionBaseImpl::GetForUpdate(read_options, column_family, key,
                                            value, exclusive, do_validate);
 }
@@ -405,6 +407,7 @@ Status WriteCommittedTxn::Operate(ColumnFamilyHandle* column_family,
   column_family =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
   assert(column_family);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = column_family->GetComparator();
   assert(ucmp);
   size_t ts_sz = ucmp->timestamp_size();
@@ -415,6 +418,7 @@ Status WriteCommittedTxn::Operate(ColumnFamilyHandle* column_family,
           column_family->GetID());
     }
   }
+#endif
   return operation();
 }
 
@@ -668,6 +672,7 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
   WriteBatch* wb = wbwi->GetWriteBatch();
   assert(wb);
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const bool needs_ts = WriteBatchInternal::HasKeyWithTimestamp(*wb);
   if (needs_ts && commit_timestamp_ == kMaxTxnTimestamp) {
     return Status::InvalidArgument("Must assign a commit timestamp");
@@ -694,6 +699,7 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
       return s;
     }
   }
+#endif
 
   uint64_t seq_used = kMaxSequenceNumber;
   SnapshotCreationCallback snapshot_creation_cb(db_impl_, commit_timestamp_,
@@ -736,7 +742,11 @@ Status WriteCommittedTxn::CommitInternal() {
   WriteBatch* wb = wbwi->GetWriteBatch();
   assert(wb);
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const bool needs_ts = WriteBatchInternal::HasKeyWithTimestamp(*wb);
+#else
+  const bool needs_ts = false; // let compiler do optimization
+#endif
   if (needs_ts && commit_timestamp_ == kMaxTxnTimestamp) {
     return Status::InvalidArgument("Must assign a commit timestamp");
   }
@@ -962,14 +972,16 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   if (UNLIKELY(skip_concurrency_control_)) {
     return s;
   }
-  uint32_t cfh_id = GetColumnFamilyID(column_family);
-  std::string key_str = key.ToString();
+  const ColumnFamilyHandle* const cfh =
+      column_family ? column_family : db_impl_->DefaultColumnFamily();
+  assert(cfh);
+  uint32_t cfh_id = cfh->GetID();
 
   PointLockStatus status;
   bool lock_upgrade;
   bool previously_locked;
   if (tracked_locks_->IsPointLockSupported()) {
-    status = tracked_locks_->GetPointLockStatus(cfh_id, key_str);
+    status = tracked_locks_->GetPointLockStatus(cfh_id, key);
     previously_locked = status.locked;
     lock_upgrade = previously_locked && exclusive && !status.exclusive;
   } else {
@@ -982,15 +994,16 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   // Lock this key if this transactions hasn't already locked it or we require
   // an upgrade.
   if (!previously_locked || lock_upgrade) {
-    s = txn_db_impl_->TryLock(this, cfh_id, key_str, exclusive);
+    s = txn_db_impl_->TryLock(this, cfh_id, key, exclusive);
   }
 
-  const ColumnFamilyHandle* const cfh =
-      column_family ? column_family : db_impl_->DefaultColumnFamily();
-  assert(cfh);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = cfh->GetComparator();
   assert(ucmp);
   size_t ts_sz = ucmp->timestamp_size();
+#else
+  constexpr size_t ts_sz = 0;
+#endif
 
   SetSnapshotIfNeeded();
 
@@ -1033,10 +1046,10 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
       // Failed to validate key
       // Unlock key we just locked
       if (lock_upgrade) {
-        s = txn_db_impl_->TryLock(this, cfh_id, key_str, false /* exclusive */);
+        s = txn_db_impl_->TryLock(this, cfh_id, key, false /* exclusive */);
         assert(s.ok());
       } else if (!previously_locked) {
-        txn_db_impl_->UnLock(this, cfh_id, key.ToString());
+        txn_db_impl_->UnLock(this, cfh_id, key);
       }
     }
   }
@@ -1055,12 +1068,12 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
     // setting, and at a lower sequence number, so skipping here should be
     // safe.
     if (!assume_tracked) {
-      TrackKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
+      TrackKey({cfh_id, key, tracked_at_seq, read_only, exclusive});
     } else {
 #ifndef NDEBUG
       if (tracked_locks_->IsPointLockSupported()) {
         PointLockStatus lock_status =
-            tracked_locks_->GetPointLockStatus(cfh_id, key_str);
+            tracked_locks_->GetPointLockStatus(cfh_id, key);
         assert(lock_status.locked);
         assert(lock_status.seq <= tracked_at_seq);
         assert(lock_status.exclusive == exclusive);
@@ -1077,7 +1090,7 @@ Status PessimisticTransaction::GetRangeLock(ColumnFamilyHandle* column_family,
                                             const Endpoint& end_endp) {
   ColumnFamilyHandle* cfh =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
-  uint32_t cfh_id = GetColumnFamilyID(cfh);
+  uint32_t cfh_id = cfh->GetID();
 
   Status s = txn_db_impl_->TryRangeLock(this, cfh_id, start_endp, end_endp);
 
@@ -1121,6 +1134,7 @@ Status PessimisticTransaction::ValidateSnapshot(
   ColumnFamilyHandle* cfh =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   assert(cfh);
   const Comparator* const ucmp = cfh->GetComparator();
   assert(ucmp);
@@ -1130,9 +1144,14 @@ Status PessimisticTransaction::ValidateSnapshot(
     assert(ts_sz == sizeof(read_timestamp_));
     PutFixed64(&ts_buf, read_timestamp_);
   }
+#endif
 
   return TransactionUtil::CheckKeyForConflicts(
-      db_impl_, cfh, key.ToString(), snap_seq, ts_sz == 0 ? nullptr : &ts_buf,
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+      db_impl_, cfh, key, snap_seq, ts_sz == 0 ? nullptr : &ts_buf,
+#else
+      db_impl_, cfh, key, snap_seq, nullptr,
+#endif
       false /* cache_only */);
 }
 
@@ -1145,7 +1164,7 @@ bool PessimisticTransaction::TryStealingLocks() {
 
 void PessimisticTransaction::UnlockGetForUpdate(
     ColumnFamilyHandle* column_family, const Slice& key) {
-  txn_db_impl_->UnLock(this, GetColumnFamilyID(column_family), key.ToString());
+  txn_db_impl_->UnLock(this, GetColumnFamilyID(column_family), key);
 }
 
 Status PessimisticTransaction::SetName(const TransactionName& name) {

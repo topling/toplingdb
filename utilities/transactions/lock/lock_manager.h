@@ -41,7 +41,7 @@ class LockManager {
   // is responsible for calling UnLock() on this key.
   virtual Status TryLock(PessimisticTransaction* txn,
                          ColumnFamilyId column_family_id,
-                         const std::string& key, Env* env, bool exclusive) = 0;
+                         const Slice& key, Env* env, bool exclusive) = 0;
   // The range [start, end] are inclusive at both sides.
   virtual Status TryLock(PessimisticTransaction* txn,
                          ColumnFamilyId column_family_id, const Endpoint& start,
@@ -52,7 +52,7 @@ class LockManager {
   virtual void UnLock(PessimisticTransaction* txn, const LockTracker& tracker,
                       Env* env) = 0;
   virtual void UnLock(PessimisticTransaction* txn,
-                      ColumnFamilyId column_family_id, const std::string& key,
+                      ColumnFamilyId column_family_id, const Slice& key,
                       Env* env) = 0;
   virtual void UnLock(PessimisticTransaction* txn,
                       ColumnFamilyId column_family_id, const Endpoint& start,

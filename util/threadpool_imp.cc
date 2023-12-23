@@ -399,6 +399,20 @@ void ThreadPoolImpl::Impl::StartBGThreads() {
   }
 }
 
+bool IsRocksBackgroundThread() {
+#if defined(_GNU_SOURCE) && defined(__GLIBC_PREREQ)
+#if __GLIBC_PREREQ(2, 12)
+  char tname[128] = {};
+  pthread_getname_np(pthread_self(), tname, sizeof(tname));
+  if (Slice(tname).starts_with("rocksdb:")) {
+    // this is background thread
+    return true;
+  }
+#endif
+#endif
+  return false;
+}
+
 void ThreadPoolImpl::Impl::Submit(std::function<void()>&& schedule,
                                   std::function<void()>&& unschedule,
                                   void* tag) {

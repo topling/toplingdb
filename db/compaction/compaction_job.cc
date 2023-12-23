@@ -8,6 +8,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/compaction/compaction_job.h"
+#include "compaction_executor.h"
 
 #include <algorithm>
 #include <cinttypes>
@@ -47,6 +48,8 @@
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
+#include "rocksdb/merge_operator.h"
+#include "rocksdb/sst_partitioner.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
 #include "rocksdb/table.h"
@@ -195,6 +198,11 @@ CompactionJob::CompactionJob(
   ThreadStatusUtil::SetEnableTracking(db_options_.enable_thread_tracking);
   ThreadStatusUtil::SetColumnFamily(cfd);
   ThreadStatusUtil::SetThreadOperation(ThreadStatus::OP_COMPACTION);
+  for (auto& level : *compaction->inputs()) {
+    for (auto& file : level.files) {
+      file->job_id = job_id;
+    }
+  }
   ReportStartedCompaction(compaction);
 }
 
@@ -356,6 +364,7 @@ uint64_t CompactionJob::GetSubcompactionsLimit() {
 
 void CompactionJob::AcquireSubcompactionResources(
     int num_extra_required_subcompactions) {
+#if defined(ROCKSDB_UNIT_TEST)
   TEST_SYNC_POINT("CompactionJob::AcquireSubcompactionResources:0");
   TEST_SYNC_POINT("CompactionJob::AcquireSubcompactionResources:1");
   int max_db_compactions =
@@ -392,9 +401,11 @@ void CompactionJob::AcquireSubcompactionResources(
   } else {
     *bg_compaction_scheduled_ += extra_num_subcompaction_threads_reserved_;
   }
+#endif
 }
 
 void CompactionJob::ShrinkSubcompactionResources(uint64_t num_extra_resources) {
+#if defined(ROCKSDB_UNIT_TEST)
   // Do nothing when we have zero resources to shrink
   if (num_extra_resources == 0) return;
   db_mutex_->Lock();
@@ -419,9 +430,11 @@ void CompactionJob::ShrinkSubcompactionResources(uint64_t num_extra_resources) {
   }
   db_mutex_->Unlock();
   TEST_SYNC_POINT("CompactionJob::ShrinkSubcompactionResources:0");
+#endif
 }
 
 void CompactionJob::ReleaseSubcompactionResources() {
+#if defined(ROCKSDB_UNIT_TEST)
   if (extra_num_subcompaction_threads_reserved_ == 0) {
     return;
   }
@@ -440,6 +453,7 @@ void CompactionJob::ReleaseSubcompactionResources() {
                1 + extra_num_subcompaction_threads_reserved_);
   }
   ShrinkSubcompactionResources(extra_num_subcompaction_threads_reserved_);
+#endif
 }
 
 struct RangeWithSize {
@@ -478,11 +492,15 @@ void CompactionJob::GenSubcompactionBoundaries() {
   // cause relatively small inaccuracy.
   const ReadOptions read_options(Env::IOActivity::kCompaction);
   auto* c = compact_->compaction;
+#if defined(ROCKSDB_UNIT_TEST)
   if (c->max_subcompactions() <= 1 &&
       !(c->immutable_options()->compaction_pri == kRoundRobin &&
         c->immutable_options()->compaction_style == kCompactionStyleLevel)) {
     return;
   }
+#else
+  if (c->max_subcompactions() <= 1) return;
+#endif
   auto* cfd = c->column_family_data();
   const Comparator* cfd_comparator = cfd->user_comparator();
   const InternalKeyComparator& icomp = cfd->internal_comparator();
@@ -548,6 +566,7 @@ void CompactionJob::GenSubcompactionBoundaries() {
                   }),
       all_anchors.end());
 
+#if defined(ROCKSDB_UNIT_TEST)
   // Get the number of planned subcompactions, may update reserve threads
   // and update extra_num_subcompaction_threads_reserved_ for round-robin
   uint64_t num_planned_subcompactions;
@@ -580,6 +599,9 @@ void CompactionJob::GenSubcompactionBoundaries() {
   } else {
     num_planned_subcompactions = GetSubcompactionsLimit();
   }
+#else
+  uint64_t num_planned_subcompactions = std::max(1u, c->max_subcompactions());
+#endif
 
   TEST_SYNC_POINT_CALLBACK("CompactionJob::GenSubcompactionBoundaries:0",
                            &num_planned_subcompactions);
@@ -620,6 +642,23 @@ void CompactionJob::GenSubcompactionBoundaries() {
 }
 
 Status CompactionJob::Run() {
+  auto icf_opt = compact_->compaction->immutable_options();
+  auto exec = icf_opt->compaction_executor_factory.get();
+  if (!exec || exec->ShouldRunLocal(compact_->compaction)) {
+    return RunLocal();
+  }
+  Status s = RunRemote();
+  if (!s.ok()) {
+    if (exec->AllowFallbackToLocal()) {
+      s = RunLocal();
+    } else {
+      // fatal, rocksdb does not handle compact errors properly
+    }
+  }
+  return s;
+}
+
+Status CompactionJob::RunLocal() {
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_RUN);
   TEST_SYNC_POINT("CompactionJob::Run():Start");
@@ -646,6 +685,26 @@ Status CompactionJob::Run() {
   for (auto& thread : thread_pool) {
     thread.join();
   }
+  auto GetPath = [this]() {
+    size_t pathId = compact_->compaction->output_path_id();
+    auto& paths = compact_->compaction->immutable_options()->cf_paths;
+    return paths[std::min(paths.size()-1, pathId)].path.c_str();
+  };
+  for (const auto& state : compact_->sub_compact_states) {
+    std::string filelist;
+    long long size = 0;
+    for (const auto& output : state.GetOutputs()) {
+      auto& fd = output.meta.fd;
+      char buf[32];
+      auto len = sprintf(buf, "%06lld,", (long long)fd.GetNumber());
+      filelist.append(buf, len);
+      size += fd.file_size;
+    }
+    if (!filelist.empty()) filelist.pop_back();
+    ROCKS_LOG_INFO(db_options_.info_log,
+        "job-%05d: subcompact[%d], size: %.6f G, files: %s [%s]",
+         job_id_, state.sub_job_id, size/1e9, GetPath(), filelist.c_str());
+  }
 
   compaction_stats_.SetMicros(db_options_.clock->NowMicros() - start_micros);
 
@@ -654,8 +713,28 @@ Status CompactionJob::Run() {
     state.RemoveLastEmptyOutput();
   }
 
-  RecordTimeToHistogram(stats_, COMPACTION_TIME,
-                        compaction_stats_.stats.micros);
+  for (size_t i = 0; i < compact_->sub_compact_states.size(); i++) {
+    auto& sub = compact_->sub_compact_states[i];
+    for (size_t j = 0; j < sub.outputs.size(); ++j) {
+      auto& meta = sub.outputs[j].meta;
+      auto  raw = meta.raw_key_size + meta.raw_value_size;
+      auto  zip = meta.fd.file_size;
+      RecordTick(stats_, LCOMPACT_WRITE_BYTES_RAW, raw);
+      RecordTimeToHistogram(stats_, LCOMPACTION_OUTPUT_FILE_RAW_SIZE, raw);
+      RecordTimeToHistogram(stats_, LCOMPACTION_OUTPUT_FILE_ZIP_SIZE, zip);
+    }
+  }
+  uint64_t sum_raw = 0, sum_zip = 0;
+  for (auto& each_level : *compact_->compaction->inputs()) {
+    for (FileMetaData* fmd : each_level.files) {
+      sum_raw += fmd->raw_key_size + fmd->raw_value_size;
+      sum_zip += fmd->fd.file_size;
+    }
+  }
+  RecordTimeToHistogram(stats_, LCOMPACTION_INPUT_RAW_BYTES, sum_raw);
+  RecordTimeToHistogram(stats_, LCOMPACTION_INPUT_ZIP_BYTES, sum_zip);
+
+  RecordTimeToHistogram(stats_, COMPACTION_TIME, compaction_stats_.stats.micros);
   RecordTimeToHistogram(stats_, COMPACTION_CPU_TIME,
                         compaction_stats_.stats.cpu_micros);
 
@@ -752,6 +831,8 @@ Status CompactionJob::Run() {
           OutputValidator validator(cfd->internal_comparator(),
                                     /*_enable_order_check=*/true,
                                     /*_enable_hash=*/true);
+          auto& fd = files_output[file_idx]->meta.fd;
+          validator.m_file_number = fd.GetNumber();
           for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
             s = validator.Add(iter->key(), iter->value());
             if (!s.ok()) {
@@ -763,7 +844,13 @@ Status CompactionJob::Run() {
           }
           if (s.ok() &&
               !validator.CompareValidator(files_output[file_idx]->validator)) {
-            s = Status::Corruption("Paranoid checksums do not match");
+           #if !defined(ROCKSDB_UNIT_TEST)
+            ROCKSDB_DIE("Compact: Paranoid checksums do not match(%s/%lld.sst)",
+                        compact_->compaction->output_path().path.c_str(),
+                        (long long)fd.GetNumber());
+           #else
+            s = Status::Corruption("Compact: Paranoid checksums do not match");
+           #endif
           }
         }
 
@@ -850,9 +937,269 @@ Status CompactionJob::Run() {
   return status;
 }
 
+void CompactionJob::GetSubCompactOutputs(
+        std::vector<std::vector<const FileMetaData*> >* outputs) const {
+  outputs->clear();
+  outputs->reserve(compact_->sub_compact_states.size());
+  for (const auto& state : compact_->sub_compact_states) {
+    outputs->emplace_back();
+    auto& cur_sub = outputs->back();
+    for (const auto& output : state.outputs) {
+      cur_sub.push_back(&output.meta);
+    }
+  }
+}
+
+Status CompactionJob::RunRemote()
+try {
+  ROCKSDB_VERIFY_F(nullptr == snapshot_checker_,
+    "dcompact does not support snapshot_checker, ex: WritePreparedTxnDB "
+    "and WriteUnpreparedTxnDB are not supported because they use "
+    "WritePreparedSnapshotChecker"
+  );
+
+  AutoThreadOperationStageUpdater stage_updater(
+      ThreadStatus::STAGE_COMPACTION_RUN);
+  TEST_SYNC_POINT("CompactionJob::RunRemote():Start");
+  log_buffer_->FlushBufferToLog();
+  LogCompaction();
+
+  size_t num_threads = compact_->sub_compact_states.size();
+  assert(num_threads > 0);
+  const Compaction* c = compact_->compaction;
+  ColumnFamilyData* cfd = c->column_family_data();
+  auto imm_cfo = c->immutable_options();
+  auto mut_cfo = c->mutable_cf_options();
+
+  // if with compaction filter, always use compaction filter factory
+  assert(nullptr == imm_cfo->compaction_filter);
+  CompactionParams rpc_params;
+  CompactionResults rpc_results;
+
+  rpc_results.status = Status::Incomplete("Just Created");
+  rpc_params.job_id = job_id_;
+  rpc_params.version_set.From(versions_);
+ #if (ROCKSDB_MAJOR * 10000 + ROCKSDB_MINOR * 10 + ROCKSDB_PATCH) < 70030
+  rpc_params.preserve_deletes_seqnum = preserve_deletes_seqnum_;
+ #endif
+  rpc_params.existing_snapshots = &existing_snapshots_;
+  rpc_params.earliest_write_conflict_snapshot = earliest_write_conflict_snapshot_;
+  rpc_params.paranoid_file_checks = paranoid_file_checks_;
+  rpc_params.dbname = this->dbname_;
+  rpc_params.db_id = this->db_id_;
+  rpc_params.db_session_id = this->db_session_id_;
+  rpc_params.full_history_ts_low = this->full_history_ts_low_;
+//rpc_params.compaction_job_stats = this->compaction_job_stats_;
+//rpc_params.max_subcompactions = uint32_t(num_threads);
+  rpc_params.max_subcompactions = c->max_subcompactions();
+  rpc_params.shutting_down = this->shutting_down_;
+
+  const uint64_t start_micros = env_->NowMicros();
+  auto exec_factory = imm_cfo->compaction_executor_factory.get();
+  assert(nullptr != exec_factory);
+  auto exec = exec_factory->NewExecutor(c);
+  std::unique_ptr<CompactionExecutor> exec_auto_del(exec);
+  exec->SetParams(&rpc_params, c);
+  Status s = exec->Execute(rpc_params, &rpc_results);
+  if (!s.ok()) {
+    compact_->status = s;
+    return s;
+  }
+  if (!rpc_results.status.ok()) {
+    compact_->status = rpc_results.status;
+    return rpc_results.status;
+  }
+  //exec->NotifyResults(&rpc_results, c);
+
+  // remote compact fabricates a version_set, which may cause
+  // GenSubcompactionBoundaries yield different num of sub_compact_states,
+  // thus makes the following assert fail:
+  //assert(rpc_results.output_files.size() == num_threads); // can be diff
+
+  const uint64_t elapsed_us = env_->NowMicros() - start_micros;
+  compaction_stats_.stats = rpc_results.compaction_stats;
+  *compaction_job_stats_ = rpc_results.job_stats;
+
+  // remote statistics will be merged to stat_ later: stats_->Merge(..)
+  //RecordTimeToHistogram(stats_, COMPACTION_TIME, compaction_stats_.micros);
+  //RecordTimeToHistogram(stats_, COMPACTION_CPU_TIME, compaction_stats_.cpu_micros);
+
+  TablePropertiesCollection tp_map;
+  auto& cf_paths = imm_cfo->cf_paths;
+  compact_->num_output_files = 0;
+
+  if (rpc_results.output_files.size() != num_threads) {
+    size_t result_sub_num = rpc_results.output_files.size();
+    // this will happen, but is rare, log it
+    ROCKS_LOG_INFO(db_options_.info_log,
+                   "job-%05d: subcompact num diff: rpc = %zd, local = %zd",
+                   job_id_, result_sub_num, num_threads);
+    num_threads = result_sub_num;
+    auto& sub_vec = compact_->sub_compact_states;
+    while (sub_vec.size() < result_sub_num) {
+      int sub_job_id = (int)sub_vec.size();
+      sub_vec.emplace_back(compact_->compaction, nullptr, nullptr, sub_job_id);
+    }
+    while (sub_vec.size() > result_sub_num) {
+      sub_vec.pop_back();
+    }
+  }
+
+  long long rename_t0 = env_->NowMicros();
+  size_t out_raw_bytes = 0;
+  uint64_t epoch_number = c->MinInputFileEpochNumber();
+  for (size_t i = 0; i < num_threads; ++i) {
+    auto& sub_state = compact_->sub_compact_states[i];
+    for (const auto& min_meta : rpc_results.output_files[i]) {
+      auto old_fnum = min_meta.file_number;
+      auto old_fname = MakeTableFileName(rpc_results.output_dir, old_fnum);
+      auto path_id = c->output_path_id();
+      uint64_t file_number = versions_->NewFileNumber();
+      std::string new_fname = TableFileName(cf_paths, file_number, path_id);
+      Status st = exec->RenameFile(old_fname, new_fname, min_meta.file_size);
+      if (!st.ok()) {
+        ROCKS_LOG_ERROR(db_options_.info_log, "rename(%s, %s) = %s",
+            old_fname.c_str(), new_fname.c_str(), st.ToString().c_str());
+        compact_->status = st;
+        return st;
+      }
+      FileDescriptor fd(file_number, path_id, min_meta.file_size,
+                        min_meta.smallest_seqno, min_meta.largest_seqno);
+      FileMetaData meta;
+      meta.fd = fd;
+      TableCache* tc = cfd->table_cache();
+      TableCache::TypedHandle* ch = nullptr;
+      auto& icmp = cfd->internal_comparator();
+      auto& fopt = *cfd->soptions(); // file_options
+      auto& pref_ext = mut_cfo->prefix_extractor;
+      st = tc->FindTable(ReadOptions(), fopt, icmp, meta, &ch,
+                         mut_cfo->block_protection_bytes_per_key, pref_ext);
+      if (!st.ok()) {
+        compact_->status = st;
+        return st;
+      }
+      assert(nullptr != ch);
+      TableReader* tr = tc->GetTableReaderFromHandle(ch);
+      auto tp = tr->GetTableProperties();
+      tp_map[new_fname] = tp;
+      out_raw_bytes += tp->raw_key_size + tp->raw_value_size;
+      tc->ReleaseHandle(ch); // end use of TableReader in handle
+      meta.smallest = min_meta.smallest_ikey;
+      meta.largest = min_meta.largest_ikey;
+      meta.num_deletions = tp->num_deletions;
+      meta.num_entries = tp->num_entries;
+      meta.raw_key_size = tp->raw_key_size;
+      meta.raw_value_size = tp->raw_value_size;
+      meta.marked_for_compaction = min_meta.marked_for_compaction;
+      meta.epoch_number = epoch_number;
+      bool enable_order_check = mut_cfo->check_flush_compaction_key_order;
+      bool enable_hash = paranoid_file_checks_;
+      uint64_t precalculated_hash = 0;
+      sub_state.outputs.emplace_back(std::move(meta), icmp,
+          enable_order_check, enable_hash, true, precalculated_hash);
+      sub_state.total_bytes += min_meta.file_size;
+      sub_state.num_output_records += tp->num_entries;
+      rpc_results.output_index_size += tp->index_size;
+      rpc_results.output_data_size += tp->data_size;
+    }
+    // instead AggregateStatistics:
+    compact_->num_output_files += sub_state.outputs.size();
+    compact_->total_bytes += sub_state.total_bytes;
+    compact_->num_output_records += sub_state.num_output_records;
+  }
+  compact_->compaction->SetOutputTableProperties(std::move(tp_map));
+  long long rename_t1 = env_->NowMicros();
+
+  {
+    Compaction::InputLevelSummaryBuffer inputs_summary; // NOLINT
+    double work_time_us = rpc_results.work_time_usec;
+    if (work_time_us <= 1) work_time_us = 1;
+    ROCKS_LOG_INFO(db_options_.info_log,
+      "[%s] [JOB %d] Dcompacted %s [%zd] => time sec: "
+      "curl = %6.3f, mount = %6.3f, prepare = %6.3f, "
+      "wait = %6.3f, work = %6.3f, e2e = %6.3f, rename = %6.3f, "
+      "out zip = %9.6f GB %8.3f MB/sec, "
+      "out raw = %9.6f GB %8.3f MB/sec",
+      c->column_family_data()->GetName().c_str(), job_id_,
+      c->InputLevelSummary(&inputs_summary), compact_->num_output_files,
+      rpc_results.curl_time_usec/1e6,
+      rpc_results.mount_time_usec/1e6,
+      rpc_results.prepare_time_usec/1e6,
+      (elapsed_us - work_time_us)/1e6, // wait is non-work
+      work_time_us/1e6, elapsed_us/1e6, (rename_t1 - rename_t0)/1e9,
+      compact_->total_bytes/1e9, compact_->total_bytes/work_time_us,
+      out_raw_bytes/1e9, out_raw_bytes/work_time_us);
+  }
+  // Finish up all book-keeping to unify the subcompaction results
+  // these were run on remote compaction worker node
+  //AggregateStatistics();
+  //UpdateCompactionStats();
+  //compaction_job_stats_->Add(rpc_results.job_stats); // instead AggregateStatistics
+
+  //RecordCompactionIOStats(); // update remote statistics to local -->>
+#if defined(__GNUC__) && !defined(__clang__)
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
+#define MoveHG(dst,src) \
+  memcpy(&rpc_results.statistics.histograms[dst], \
+         &rpc_results.statistics.histograms[src], \
+   sizeof rpc_results.statistics.histograms[src]), \
+  rpc_results.statistics.histograms[src].Clear()
+  MoveHG(DCOMPACTION_INPUT_RAW_BYTES, LCOMPACTION_INPUT_RAW_BYTES);
+  MoveHG(DCOMPACTION_INPUT_ZIP_BYTES, LCOMPACTION_INPUT_ZIP_BYTES);
+  MoveHG(DCOMPACTION_OUTPUT_FILE_RAW_SIZE, LCOMPACTION_OUTPUT_FILE_RAW_SIZE);
+  MoveHG(DCOMPACTION_OUTPUT_FILE_ZIP_SIZE, LCOMPACTION_OUTPUT_FILE_ZIP_SIZE);
+#if defined(__GNUC__) && !defined(__clang__)
+  #pragma GCC diagnostic pop
+#endif
+
+#define MoveTK(dst, src) \
+  rpc_results.statistics.tickers[dst] = rpc_results.statistics.tickers[src]; \
+  rpc_results.statistics.tickers[src] = 0
+
+  MoveTK(DCOMPACT_WRITE_BYTES_RAW,  LCOMPACT_WRITE_BYTES_RAW);
+  MoveTK(REMOTE_COMPACT_READ_BYTES,  COMPACT_READ_BYTES);
+  MoveTK(REMOTE_COMPACT_WRITE_BYTES, COMPACT_WRITE_BYTES);
+
+  stats_->Merge(rpc_results.statistics.tickers,
+                rpc_results.statistics.histograms);
+
+  LogFlush(db_options_.info_log);
+  TEST_SYNC_POINT("CompactionJob::RunRemote():End");
+
+  exec->CleanFiles(rpc_params, rpc_results);
+
+  compact_->status = Status::OK();
+  return Status::OK();
+}
+catch (const std::exception& ex) {
+  compact_->status = Status::Corruption(ROCKSDB_FUNC, ex.what());
+  return compact_->status;
+}
+catch (const Status& s) {
+  compact_->status = s;
+  return s;
+}
+
 Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options,
                               bool* compaction_released) {
   assert(compact_);
+#if 0
+  // this fails unit test:
+  // DBCompactionTestBlobError/DBCompactionTestBlobError.CompactionError/1
+  // and does not help for error checking
+  if (!compact_->status.ok()) { // caller does not check retval of Run()
+    ColumnFamilyData* cfd = compact_->compaction->column_family_data();
+    assert(cfd);
+    ROCKS_LOG_BUFFER(log_buffer_, "[%s] compaction failed, job_id = %d : %s",
+                     cfd->GetName().c_str(), job_id_,
+                     compact_->status.ToString().c_str());
+    Status s = compact_->status;
+    CleanupCompaction();
+    return s;
+  }
+#endif
 
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_INSTALL);
@@ -952,6 +1299,7 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options,
   UpdateCompactionJobStats(stats);
 
   auto stream = event_logger_->LogToBuffer(log_buffer_, 8192);
+  stream << "cf" << cfd->GetName();
   stream << "job" << job_id_ << "event"
          << "compaction_finished"
          << "compaction_time_micros" << stats.micros
@@ -1196,7 +1544,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
 
   std::unique_ptr<InternalIterator> clip;
   if (start.has_value() || end.has_value()) {
-    clip = std::make_unique<ClippingIterator>(
+    clip = MakeClippingIterator(
         raw_input.get(), start.has_value() ? &start_slice : nullptr,
         end.has_value() ? &end_slice : nullptr, &cfd->internal_comparator());
     input = clip.get();
@@ -1621,6 +1969,10 @@ Status CompactionJob::FinishCompactionOutputFile(
   TableProperties tp;
   if (s.ok()) {
     tp = outputs.GetTableProperties();
+    meta->num_entries = tp.num_entries;
+    meta->num_deletions = tp.num_deletions;
+    meta->raw_key_size = tp.raw_key_size;
+    meta->raw_value_size = tp.raw_value_size;
   }
 
   if (s.ok() && current_entries == 0 && tp.num_range_deletions == 0) {
@@ -1773,6 +2125,7 @@ Status CompactionJob::InstallCompactionResults(
                              stats.GetBytes());
   }
 
+#if defined(ROCKSDB_UNIT_TEST)
   if ((compaction->compaction_reason() ==
            CompactionReason::kLevelMaxLevelSize ||
        compaction->compaction_reason() == CompactionReason::kRoundRobinTtl) &&
@@ -1785,6 +2138,7 @@ Status CompactionJob::InstallCompactionResults(
                                  start_level, compaction->num_input_files(0)));
     }
   }
+#endif
 
   auto manifest_wcb = [&compaction, &compaction_released](const Status& s) {
     compaction->ReleaseCompactionFiles(s);
@@ -2077,15 +2431,17 @@ void CompactionJob::LogCompaction() {
   if (db_options_.info_log_level <= InfoLogLevel::INFO_LEVEL) {
     Compaction::InputLevelSummaryBuffer inputs_summary;
     ROCKS_LOG_INFO(
-        db_options_.info_log, "[%s] [JOB %d] Compacting %s, score %.2f",
+        db_options_.info_log,
+        "[%s] [JOB %d] Compacting %s, score %.2f, subcompactions %d : %zd",
         cfd->GetName().c_str(), job_id_,
-        compaction->InputLevelSummary(&inputs_summary), compaction->score());
+        compaction->InputLevelSummary(&inputs_summary), compaction->score(),
+        compaction->max_subcompactions(), compact_->sub_compact_states.size());
     char scratch[2345];
     compaction->Summary(scratch, sizeof(scratch));
     ROCKS_LOG_INFO(db_options_.info_log, "[%s]: Compaction start summary: %s\n",
                    cfd->GetName().c_str(), scratch);
     // build event logger report
-    auto stream = event_logger_->Log();
+    auto stream = event_logger_->LogToBuffer(log_buffer_, 64*1024);
     stream << "job" << job_id_ << "event"
            << "compaction_started"
            << "compaction_reason"

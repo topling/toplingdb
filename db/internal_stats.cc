@@ -31,6 +31,11 @@
 #include "util/hash_containers.h"
 #include "util/string_util.h"
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wnonnull" // for boost::replace_all_copy
+#endif
+#include<boost/algorithm/string.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 
@@ -40,6 +45,7 @@ const std::map<LevelStatType, LevelStat> InternalStats::compaction_level_stats =
         {LevelStatType::COMPACTED_FILES,
          LevelStat{"CompactedFiles", "CompactedFiles"}},
         {LevelStatType::SIZE_BYTES, LevelStat{"SizeBytes", "Size"}},
+        {LevelStatType::SIZE_RAW_KV, LevelStat{"SizeRawKV", "RawKV"}},
         {LevelStatType::SCORE, LevelStat{"Score", "Score"}},
         {LevelStatType::READ_GB, LevelStat{"ReadGB", "Read(GB)"}},
         {LevelStatType::RN_GB, LevelStat{"RnGB", "Rn(GB)"}},
@@ -87,10 +93,11 @@ const std::map<InternalStats::InternalDBStatsType, DBStatInfo>
 namespace {
 const double kMB = 1048576.0;
 const double kGB = kMB * 1024;
+const double kTB = kGB * 1024;
 const double kMicrosInSec = 1000000.0;
 
 void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
-                           const std::string& group_by) {
+                           const char* group_by) {
   int written_size =
       snprintf(buf, len, "\n** Compaction Stats [%s] **\n", cf_name.c_str());
   written_size = std::min(written_size, static_cast<int>(len));
@@ -99,11 +106,33 @@ void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
   };
   int line_size = snprintf(
       buf + written_size, len - written_size,
-      "%s    %s   %s     %s %s  %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s "
-      "%s\n",
+      "%-8s "       // group_by
+      "%s      "    // NUM_FILES
+      "%s   "       // SIZE_BYTES
+      "%8s   "      // SIZE_RAW_KV
+      "   %s "      // SCORE
+      " %s "        // READ_GB
+      "  %s "       // RN_GB
+      " %s "        // RNP1_GB
+      " %s "        // WRITE_GB
+      " %s "        // W_NEW_GB
+      "%s "         // MOVED_GB
+      "%s "         // WRITE_AMP
+      "%s "         // READ_MBPS
+      "%s "         // WRITE_MBPS
+      "  %s "       // COMP_SEC
+      "%s "         // COMP_CPU_SEC
+      " %s "        // COMP_COUNT
+      "%s "         // AVG_SEC
+      " %s "        // KEY_IN
+      "%s "         // KEY_DROP
+      "  %s "       // R_BLOB_GB
+      "  %s\n",     // W_BLOB_GB
       // Note that we skip COMPACTED_FILES and merge it with Files column
-      group_by.c_str(), hdr(LevelStatType::NUM_FILES),
-      hdr(LevelStatType::SIZE_BYTES), hdr(LevelStatType::SCORE),
+      group_by, hdr(LevelStatType::NUM_FILES),
+      hdr(LevelStatType::SIZE_BYTES),
+      hdr(LevelStatType::SIZE_RAW_KV),
+      hdr(LevelStatType::SCORE),
       hdr(LevelStatType::READ_GB), hdr(LevelStatType::RN_GB),
       hdr(LevelStatType::RNP1_GB), hdr(LevelStatType::WRITE_GB),
       hdr(LevelStatType::W_NEW_GB), hdr(LevelStatType::MOVED_GB),
@@ -122,7 +151,8 @@ void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
 
 void PrepareLevelStats(std::map<LevelStatType, double>* level_stats,
                        int num_files, int being_compacted,
-                       double total_file_size, double score, double w_amp,
+                       double total_file_size, double total_raw_kv,
+                       double score, double w_amp,
                        const InternalStats::CompactionStats& stats) {
   const uint64_t bytes_read = stats.bytes_read_non_output_levels +
                               stats.bytes_read_output_level +
@@ -134,6 +164,7 @@ void PrepareLevelStats(std::map<LevelStatType, double>* level_stats,
   (*level_stats)[LevelStatType::NUM_FILES] = num_files;
   (*level_stats)[LevelStatType::COMPACTED_FILES] = being_compacted;
   (*level_stats)[LevelStatType::SIZE_BYTES] = total_file_size;
+  (*level_stats)[LevelStatType::SIZE_RAW_KV] = total_raw_kv;
   (*level_stats)[LevelStatType::SCORE] = score;
   (*level_stats)[LevelStatType::READ_GB] = bytes_read / kGB;
   (*level_stats)[LevelStatType::RN_GB] =
@@ -163,30 +194,34 @@ void PrintLevelStats(char* buf, size_t len, const std::string& name,
   snprintf(
       buf, len,
       "%4s "      /*  Level */
-      "%6d/%-3d " /*  Files */
-      "%8s "      /*  Size */
-      "%5.1f "    /*  Score */
-      "%8.1f "    /*  Read(GB) */
-      "%7.1f "    /*  Rn(GB) */
-      "%8.1f "    /*  Rnp1(GB) */
-      "%9.1f "    /*  Write(GB) */
-      "%8.1f "    /*  Wnew(GB) */
+      "%6d/%-4d " /*  Files */
+      "%10s "     /*  Size */
+      "%10s "     /*  SIZE_RAW_KV */
+      "%6.1f "    /*  Score */
+      "%9.1f "    /*  Read(GB) */
+      "%8.1f "    /*  Rn(GB) */
+      "%9.1f "    /*  Rnp1(GB) */
+      "%10.1f "   /*  Write(GB) */
+      "%9.1f "    /*  Wnew(GB) */
       "%9.1f "    /*  Moved(GB) */
       "%5.1f "    /*  W-Amp */
       "%8.1f "    /*  Rd(MB/s) */
       "%8.1f "    /*  Wr(MB/s) */
-      "%9.2f "    /*  Comp(sec) */
+      "%11.2f "   /*  Comp(sec) */
       "%17.2f "   /*  CompMergeCPU(sec) */
-      "%9d "      /*  Comp(cnt) */
+      "%10d "     /*  Comp(cnt) */
       "%8.3f "    /*  Avg(sec) */
       "%7s "      /*  KeyIn */
       "%6s "      /*  KeyDrop */
-      "%9.1f "    /*  Rblob(GB) */
-      "%9.1f\n",  /*  Wblob(GB) */
+      "%11.1f "   /*  Rblob(GB) */
+      "%11.1f\n", /*  Wblob(GB) */
       name.c_str(), static_cast<int>(stat_value.at(LevelStatType::NUM_FILES)),
       static_cast<int>(stat_value.at(LevelStatType::COMPACTED_FILES)),
       BytesToHumanString(
           static_cast<uint64_t>(stat_value.at(LevelStatType::SIZE_BYTES)))
+          .c_str(),
+      BytesToHumanString(
+          static_cast<uint64_t>(stat_value.at(LevelStatType::SIZE_RAW_KV)))
           .c_str(),
       stat_value.at(LevelStatType::SCORE),
       stat_value.at(LevelStatType::READ_GB),
@@ -214,10 +249,12 @@ void PrintLevelStats(char* buf, size_t len, const std::string& name,
 
 void PrintLevelStats(char* buf, size_t len, const std::string& name,
                      int num_files, int being_compacted, double total_file_size,
+                     double total_raw_kv,
                      double score, double w_amp,
                      const InternalStats::CompactionStats& stats) {
   std::map<LevelStatType, double> level_stats;
   PrepareLevelStats(&level_stats, num_files, being_compacted, total_file_size,
+                    total_raw_kv,
                     score, w_amp, stats);
   PrintLevelStats(buf, len, name, level_stats);
 }
@@ -1497,7 +1534,13 @@ bool InternalStats::HandleEstimateOldestKeyTime(uint64_t* value, DBImpl* /*db*/,
 Cache* InternalStats::GetBlockCacheForStats() {
   auto* table_factory = cfd_->ioptions()->table_factory.get();
   assert(table_factory != nullptr);
+#if 0
   return table_factory->GetOptions<Cache>(TableFactory::kBlockCacheOpts());
+#else
+  // defined in rockside: builtin_table_factory.cc
+  Cache* GetBlockCacheFromAnyTableFactory(TableFactory*);
+  return GetBlockCacheFromAnyTableFactory(table_factory);
+#endif
 }
 
 bool InternalStats::HandleBlockCacheCapacity(uint64_t* value, DBImpl* /*db*/,
@@ -1691,6 +1734,34 @@ void InternalStats::DumpDBMapStatsWriteStall(
   }
 }
 
+static void DumpWriteStalls(std::ostringstream& str,
+                            std::map<std::string, std::string>& stats_map) {
+  str << "Write Stall (count): ";
+
+  for (auto iter = stats_map.begin(); iter != stats_map.end(); ) {
+    std::string name = boost::replace_all_copy(iter->first, "-delays", "");
+    str << name << ": delays " << iter->second;
+    ++iter;
+    if (stats_map.end() == iter) {
+      break; // should not goes here, check for safe
+    }
+    std::string name2 = boost::replace_all_copy(iter->first, "-stops", "");
+    if (name2 == name) {
+      str << ", stops " << iter->second;
+    }
+    else { // should not goes here
+      str << iter->first << ": " << iter->second;
+    }
+    auto next = std::next(iter);
+    if (stats_map.end() == next) {
+      str << "\n";
+    } else {
+      str << " | ";
+    }
+    iter = next;
+  }
+}
+
 void InternalStats::DumpDBStatsWriteStall(std::string* value) {
   assert(value);
 
@@ -1698,19 +1769,7 @@ void InternalStats::DumpDBStatsWriteStall(std::string* value) {
   DumpDBMapStatsWriteStall(&write_stall_stats_map);
 
   std::ostringstream str;
-  str << "Write Stall (count): ";
-
-  for (auto write_stall_stats_map_iter = write_stall_stats_map.begin();
-       write_stall_stats_map_iter != write_stall_stats_map.end();
-       write_stall_stats_map_iter++) {
-    const auto& name_and_stat = *write_stall_stats_map_iter;
-    str << name_and_stat.first << ": " << name_and_stat.second;
-    if (std::next(write_stall_stats_map_iter) == write_stall_stats_map.end()) {
-      str << "\n";
-    } else {
-      str << ", ";
-    }
-  }
+  DumpWriteStalls(str, write_stall_stats_map);
   *value = str.str();
 }
 
@@ -1774,6 +1833,7 @@ void InternalStats::DumpCFMapStats(
   int total_files = 0;
   int total_files_being_compacted = 0;
   double total_file_size = 0;
+  double total_file_raw_kv = 0;
   uint64_t flush_ingest = cf_stats_value_[BYTES_FLUSHED];
   uint64_t add_file_ingest = cf_stats_value_[BYTES_INGESTED_ADD_FILE];
   uint64_t curr_ingest = flush_ingest + add_file_ingest;
@@ -1784,7 +1844,10 @@ void InternalStats::DumpCFMapStats(
     if (comp_stats_[level].micros > 0 || comp_stats_[level].cpu_micros > 0 ||
         files > 0) {
       compaction_stats_sum->Add(comp_stats_[level]);
-      total_file_size += vstorage->NumLevelBytes(level);
+      auto level_bytes = vstorage->NumLevelBytes(level);
+      auto level_raw_kv = vstorage->NumLevelRawKV(level);
+      total_file_size += level_bytes;
+      total_file_raw_kv += level_raw_kv;
       uint64_t input_bytes;
       if (level == 0) {
         input_bytes = curr_ingest;
@@ -1800,7 +1863,8 @@ void InternalStats::DumpCFMapStats(
                     input_bytes;
       std::map<LevelStatType, double> level_stats;
       PrepareLevelStats(&level_stats, files, files_being_compacted[level],
-                        static_cast<double>(vstorage->NumLevelBytes(level)),
+                        static_cast<double>(level_bytes),
+                        static_cast<double>(level_raw_kv),
                         compaction_score[level], w_amp, comp_stats_[level]);
       (*levels_stats)[level] = level_stats;
     }
@@ -1814,7 +1878,9 @@ void InternalStats::DumpCFMapStats(
   // Stats summary across levels
   std::map<LevelStatType, double> sum_stats;
   PrepareLevelStats(&sum_stats, total_files, total_files_being_compacted,
-                    total_file_size, 0, w_amp, *compaction_stats_sum);
+                    total_file_size,
+                    total_file_raw_kv,
+                    0, w_amp, *compaction_stats_sum);
   (*levels_stats)[-1] = sum_stats;  //  -1 is for the Sum level
 }
 
@@ -1825,6 +1891,7 @@ void InternalStats::DumpCFMapStatsByPriority(
       std::map<LevelStatType, double> priority_stats;
       PrepareLevelStats(&priority_stats, 0 /* num_files */,
                         0 /* being_compacted */, 0 /* total_file_size */,
+                        0 /* total_file_raw_kv */,
                         0 /* compaction_score */, 0 /* w_amp */,
                         comp_stats_by_pri_[priority]);
       (*priorities_stats)[static_cast<int>(priority)] = priority_stats;
@@ -1889,19 +1956,7 @@ void InternalStats::DumpCFStatsWriteStall(std::string* value,
   DumpCFMapStatsWriteStall(&write_stall_stats_map);
 
   std::ostringstream str;
-  str << "Write Stall (count): ";
-
-  for (auto write_stall_stats_map_iter = write_stall_stats_map.begin();
-       write_stall_stats_map_iter != write_stall_stats_map.end();
-       write_stall_stats_map_iter++) {
-    const auto& name_and_stat = *write_stall_stats_map_iter;
-    str << name_and_stat.first << ": " << name_and_stat.second;
-    if (std::next(write_stall_stats_map_iter) == write_stall_stats_map.end()) {
-      str << "\n";
-    } else {
-      str << ", ";
-    }
-  }
+  DumpWriteStalls(str, write_stall_stats_map);
 
   if (total_stall_count) {
     *total_stall_count =
@@ -1958,13 +2013,13 @@ void InternalStats::DumpCFStatsNoFileHistogram(bool is_periodic,
   uint64_t interval_add_file_inget =
       add_file_ingest - cf_stats_snapshot_.ingest_bytes_addfile;
   uint64_t interval_ingest =
-      interval_flush_ingest + interval_add_file_inget + 1;
+      interval_flush_ingest + interval_add_file_inget;
   CompactionStats interval_stats(compaction_stats_sum);
   interval_stats.Subtract(cf_stats_snapshot_.comp_stats);
-  double w_amp =
+  double w_amp = 0 == interval_ingest ? 0 :
       (interval_stats.bytes_written + interval_stats.bytes_written_blob) /
       static_cast<double>(interval_ingest);
-  PrintLevelStats(buf, sizeof(buf), "Int", 0, 0, 0, 0, w_amp, interval_stats);
+  PrintLevelStats(buf, sizeof(buf), "Int", 0, 0, 0, 0, 0, w_amp, interval_stats);
   value->append(buf);
 
   PrintLevelStatsHeader(buf, sizeof(buf), cfd_->GetName(), "Priority");
@@ -2040,11 +2095,15 @@ void InternalStats::DumpCFStatsNoFileHistogram(bool is_periodic,
   }
 
   snprintf(buf, sizeof(buf),
-           "Cumulative compaction: %.2f GB write, %.2f MB/s write, "
-           "%.2f GB read, %.2f MB/s read, %.1f seconds\n",
-           compact_bytes_write / kGB,
+           "Cumulative compaction: %11.6f %s write, %7.2f MB/s write, "
+           "%11.6f %s read, %7.2f MB/s read, %7.1f seconds\n",
+           compact_bytes_write /
+          (compact_bytes_write < (1LL<<40) ? kGB  : kTB ),
+          (compact_bytes_write < (1LL<<40) ? "GB" : "TB"),
            compact_bytes_write / kMB / std::max(seconds_up, 0.001),
-           compact_bytes_read / kGB,
+           compact_bytes_read /
+          (compact_bytes_read < (1LL<<40) ? kGB  : kTB ),
+          (compact_bytes_read < (1LL<<40) ? "GB" : "TB"),
            compact_bytes_read / kMB / std::max(seconds_up, 0.001),
            compact_micros / kMicrosInSec);
   value->append(buf);
@@ -2059,8 +2118,8 @@ void InternalStats::DumpCFStatsNoFileHistogram(bool is_periodic,
 
   snprintf(
       buf, sizeof(buf),
-      "Interval compaction: %.2f GB write, %.2f MB/s write, "
-      "%.2f GB read, %.2f MB/s read, %.1f seconds\n",
+      "Interval   compaction: %11.6f GB write, %7.2f MB/s write, "
+      "%11.6f GB read, %7.2f MB/s read, %7.1f seconds\n",
       interval_compact_bytes_write / kGB,
       interval_compact_bytes_write / kMB / std::max(interval_seconds_up, 0.001),
       interval_compact_bytes_read / kGB,

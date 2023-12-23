@@ -363,6 +363,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
         {"memtable_prefix_bloom_probes",
          {0, OptionType::kUInt32T, OptionVerificationType::kDeprecated,
           OptionTypeFlags::kMutable}},
+        {"allow_merge_memtables",
+         {offsetof(struct MutableCFOptions, allow_merge_memtables),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
         {"memtable_whole_key_filtering",
          {offsetof(struct MutableCFOptions, memtable_whole_key_filtering),
           OptionType::kBoolean, OptionVerificationType::kNormal,
@@ -483,6 +487,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
           OptionTypeFlags::kMutable}},
         {"blob_file_starting_level",
          {offsetof(struct MutableCFOptions, blob_file_starting_level),
+          OptionType::kInt, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"min_filter_level",
+         {offsetof(struct MutableCFOptions, min_filter_level),
           OptionType::kInt, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
         {"prepopulate_blob_cache",
@@ -958,6 +966,8 @@ ImmutableCFOptions::ImmutableCFOptions(const ColumnFamilyOptions& cf_options)
           cf_options.memtable_insert_with_hint_prefix_extractor),
       cf_paths(cf_options.cf_paths),
       compaction_thread_limiter(cf_options.compaction_thread_limiter),
+      compaction_executor_factory(cf_options.compaction_executor_factory),
+      html_user_key_coder(cf_options.html_user_key_coder),
       sst_partitioner_factory(cf_options.sst_partitioner_factory),
       blob_cache(cf_options.blob_cache),
       persist_user_defined_timestamps(
@@ -1052,6 +1062,9 @@ void MutableCFOptions::Dump(Logger* log) const {
                  arena_block_size);
   ROCKS_LOG_INFO(log, "              memtable_prefix_bloom_ratio: %f",
                  memtable_prefix_bloom_size_ratio);
+
+  ROCKS_LOG_INFO(log, "                     allow_merge_memtables: %d",
+                 allow_merge_memtables);
   ROCKS_LOG_INFO(log, "              memtable_whole_key_filtering: %d",
                  memtable_whole_key_filtering);
   ROCKS_LOG_INFO(log,

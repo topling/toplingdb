@@ -121,20 +121,29 @@ bool CompactionOutputs::UpdateFilesToCutForTTLStates(
   return false;
 }
 
-size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(
-    const Slice& internal_key) {
-  size_t curr_key_boundary_switched_num = 0;
-  const std::vector<FileMetaData*>& grandparents = compaction_->grandparents();
-
-  if (grandparents.empty()) {
-    return curr_key_boundary_switched_num;
+ROCKSDB_FLATTEN
+size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(const Slice& ikey) {
+  if (0 == grandparents_size_) {
+    return 0;
   }
-  const Comparator* ucmp = compaction_->column_family_data()->user_comparator();
+  if (cmp_meta_.IsForwardBytewise())
+    return UpdateGrandparentBoundaryInfoTmpl(ForwardBytewiseCompareUserKeyNoTS(), ikey);
+  if (cmp_meta_.IsReverseBytewise())
+    return UpdateGrandparentBoundaryInfoTmpl(ReverseBytewiseCompareUserKeyNoTS(), ikey);
+  else
+    return UpdateGrandparentBoundaryInfoTmpl(VirtualFunctionCompareUserKeyNoTS
+                             {compaction_->immutable_options()->user_comparator}, ikey);
+}
+template<class UKCmpNoTS>
+size_t CompactionOutputs::UpdateGrandparentBoundaryInfoTmpl(UKCmpNoTS ucmp, const Slice& ikey) {
+  size_t curr_key_boundary_switched_num = 0;
+  const auto grandparents      = grandparents_data_;
+  const auto grandparents_size = grandparents_size_;
 
   // Move the grandparent_index_ to the file containing the current user_key.
   // If there are multiple files containing the same user_key, make sure the
   // index points to the last file containing the key.
-  while (grandparent_index_ < grandparents.size()) {
+  while (grandparent_index_ < grandparents_size) {
     if (being_grandparent_gap_) {
       if (sstableKeyCompare(ucmp, internal_key,
                             grandparents[grandparent_index_]->smallest) < 0) {
@@ -154,8 +163,8 @@ size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(
       // one.
       if (cmp_result < 0 ||
           (cmp_result == 0 &&
-           (grandparent_index_ == grandparents.size() - 1 ||
-            sstableKeyCompare(ucmp, internal_key,
+           (grandparent_index_ == grandparents_size - 1 ||
+            sstableKeyCompare(ucmp, ikey,
                               grandparents[grandparent_index_ + 1]->smallest) <
                 0))) {
         break;
@@ -174,7 +183,7 @@ size_t CompactionOutputs::UpdateGrandparentBoundaryInfo(
   if (!seen_key_ && !being_grandparent_gap_) {
     assert(grandparent_overlapped_bytes_ == 0);
     grandparent_overlapped_bytes_ =
-        GetCurrentKeyGrandparentOverlappedBytes(internal_key);
+        GetCurrentKeyGrandparentOverlappedBytes(ikey);
   }
 
   seen_key_ = true;
@@ -189,7 +198,7 @@ uint64_t CompactionOutputs::GetCurrentKeyGrandparentOverlappedBytes(
   }
   uint64_t overlapped_bytes = 0;
 
-  const std::vector<FileMetaData*>& grandparents = compaction_->grandparents();
+  const auto grandparents = grandparents_data_;
   const Comparator* ucmp = compaction_->column_family_data()->user_comparator();
   InternalKey ikey;
   ikey.DecodeFrom(internal_key);
@@ -201,7 +210,7 @@ uint64_t CompactionOutputs::GetCurrentKeyGrandparentOverlappedBytes(
   assert(
       cmp_result < 0 ||
       (cmp_result == 0 &&
-       (grandparent_index_ == grandparents.size() - 1 ||
+       (grandparent_index_ == grandparents_size_ - 1 ||
         sstableKeyCompare(
             ucmp, ikey, grandparents[grandparent_index_ + 1]->smallest) < 0)));
   assert(sstableKeyCompare(ucmp, ikey,
@@ -236,15 +245,13 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
   }
 #endif  // NDEBUG
   const uint64_t previous_overlapped_bytes = grandparent_overlapped_bytes_;
-  const InternalKeyComparator* icmp =
-      &compaction_->column_family_data()->internal_comparator();
   size_t num_grandparent_boundaries_crossed = 0;
   bool should_stop_for_ttl = false;
   // Always update grandparent information like overlapped file number, size
   // etc., and TTL states.
   // If compaction_->output_level() == 0, there is no need to update grandparent
   // info, and that `grandparent` should be empty.
-  if (compaction_->output_level() > 0) {
+  if (output_level_ > 0) {
     num_grandparent_boundaries_crossed =
         UpdateGrandparentBoundaryInfo(internal_key);
     should_stop_for_ttl = UpdateFilesToCutForTTLStates(internal_key);
@@ -260,24 +267,25 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
 
   // If there's user defined partitioner, check that first
   if (partitioner_ && partitioner_->ShouldPartition(PartitionerRequest(
-                          last_key_for_partitioner_, c_iter.user_key(),
+                          SliceOf(last_key_for_partitioner_), c_iter.user_key(),
                           current_output_file_size_)) == kRequired) {
     return true;
   }
 
   // files output to Level 0 won't be split
-  if (compaction_->output_level() == 0) {
+  if (output_level_ == 0) {
     return false;
   }
 
   // reach the max file size
-  if (current_output_file_size_ >= compaction_->max_output_file_size()) {
+  if (current_output_file_size_ >= max_output_file_size_) {
     return true;
   }
 
   // Check if it needs to split for RoundRobin
   // Invalid local_output_split_key indicates that we do not need to split
   if (local_output_split_key_ != nullptr && !is_split_) {
+    auto icmp = &compaction_->immutable_options()->internal_comparator;
     // Split occurs when the next key is larger than/equal to the cursor
     if (icmp->Compare(internal_key, local_output_split_key_->Encode()) >= 0) {
       is_split_ = true;
@@ -293,7 +301,7 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
     // max_compaction_bytes. Which is to prevent future bigger than
     // max_compaction_bytes compaction from the current output level.
     if (grandparent_overlapped_bytes_ + current_output_file_size_ >
-        compaction_->max_compaction_bytes()) {
+        max_compaction_bytes_) {
       return true;
     }
 
@@ -315,13 +323,12 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
     // More details, check PR #1963
     const size_t num_skippable_boundaries_crossed =
         being_grandparent_gap_ ? 2 : 3;
-    if (compaction_->immutable_options()->compaction_style ==
-            kCompactionStyleLevel &&
-        compaction_->immutable_options()->level_compaction_dynamic_file_size &&
+    if (compaction_style_ == kCompactionStyleLevel &&
+        level_compaction_dynamic_file_size_ &&
         num_grandparent_boundaries_crossed >=
             num_skippable_boundaries_crossed &&
         grandparent_overlapped_bytes_ - previous_overlapped_bytes >
-            compaction_->target_output_file_size() / 8) {
+            target_output_file_size_ / 8) {
       return true;
     }
 
@@ -337,11 +344,10 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
     // target file size. The test shows it can generate larger files than a
     // static threshold like 75% and has a similar write amplification
     // improvement.
-    if (compaction_->immutable_options()->compaction_style ==
-            kCompactionStyleLevel &&
-        compaction_->immutable_options()->level_compaction_dynamic_file_size &&
+    if (compaction_style_ == kCompactionStyleLevel &&
+        level_compaction_dynamic_file_size_ &&
         current_output_file_size_ >=
-            ((compaction_->target_output_file_size() + 99) / 100) *
+            ((target_output_file_size_ + 99) / 100) *
                 (50 + std::min(grandparent_boundary_switched_num_ * 5,
                                size_t{40}))) {
       return true;
@@ -355,17 +361,16 @@ Status CompactionOutputs::AddToOutput(
     const CompactionIterator& c_iter,
     const CompactionFileOpenFunc& open_file_func,
     const CompactionFileCloseFunc& close_file_func) {
-  Status s;
   bool is_range_del = c_iter.IsDeleteRangeSentinelKey();
   if (is_range_del && compaction_->bottommost_level()) {
     // We don't consider range tombstone for bottommost level since:
     // 1. there is no grandparent and hence no overlap to consider
     // 2. range tombstone may be dropped at bottommost level.
-    return s;
+    return Status::OK();
   }
   const Slice& key = c_iter.key();
   if (ShouldStopBefore(c_iter) && HasBuilder()) {
-    s = close_file_func(*this, c_iter.InputStatus(), key);
+    Status s = close_file_func(*this, c_iter.InputStatus(), key);
     if (!s.ok()) {
       return s;
     }
@@ -384,7 +389,7 @@ Status CompactionOutputs::AddToOutput(
 
   // Open output file if necessary
   if (!HasBuilder()) {
-    s = open_file_func(*this);
+    Status s = open_file_func(*this);
     if (!s.ok()) {
       return s;
     }
@@ -398,13 +403,12 @@ Status CompactionOutputs::AddToOutput(
   }
 
   if (UNLIKELY(is_range_del)) {
-    return s;
+    return Status::OK();
   }
 
   assert(builder_ != nullptr);
   const Slice& value = c_iter.value();
-  s = current_output().validator.Add(key, value);
-  if (!s.ok()) {
+  if (Status s = current_output().validator.Add(key, value); !s.ok()) {
     return s;
   }
   builder_->Add(key, value);
@@ -413,15 +417,14 @@ Status CompactionOutputs::AddToOutput(
   current_output_file_size_ = builder_->EstimatedFileSize();
 
   if (blob_garbage_meter_) {
-    s = blob_garbage_meter_->ProcessOutFlow(key, value);
-  }
-
-  if (!s.ok()) {
-    return s;
+    Status s = blob_garbage_meter_->ProcessOutFlow(key, value);
+    if (!s.ok()) {
+      return s;
+    }
   }
 
   const ParsedInternalKey& ikey = c_iter.ikey();
-  s = current_output().meta.UpdateBoundaries(key, value, ikey.sequence,
+  Status s = current_output().meta.UpdateBoundaries(key, value, ikey.sequence,
                                              ikey.type);
 
   return s;
@@ -780,6 +783,17 @@ void CompactionOutputs::FillFilesToCutForTtl() {
 CompactionOutputs::CompactionOutputs(const Compaction* compaction,
                                      const bool is_penultimate_level)
     : compaction_(compaction), is_penultimate_level_(is_penultimate_level) {
+  auto& io = *compaction->immutable_options();
+  cmp_meta_ = *io.user_comparator;
+  compaction_style_ = io.compaction_style;
+  level_compaction_dynamic_file_size_ = io.level_compaction_dynamic_file_size;
+  output_level_ = compaction->output_level();
+  max_compaction_bytes_ = compaction->max_compaction_bytes();
+  max_output_file_size_ = compaction->max_output_file_size();
+  target_output_file_size_ = compaction->target_output_file_size();
+  grandparents_data_ = compaction->grandparents().data();
+  grandparents_size_ = compaction->grandparents().size();
+
   partitioner_ = compaction->output_level() == 0
                      ? nullptr
                      : compaction->CreateSstPartitioner();

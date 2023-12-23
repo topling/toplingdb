@@ -1943,13 +1943,13 @@ class ThreeRangesPartitioner : public SstPartitioner {
 
   PartitionerResult ShouldPartition(
       const PartitionerRequest& request) override {
-    if ((cmp->CompareWithoutTimestamp(*request.current_user_key,
+    if ((cmp->CompareWithoutTimestamp(request.current_user_key,
                                       DBTestBase::Key(20)) >= 0 &&
-         cmp->CompareWithoutTimestamp(*request.prev_user_key,
+         cmp->CompareWithoutTimestamp(request.prev_user_key,
                                       DBTestBase::Key(20)) < 0) ||
-        (cmp->CompareWithoutTimestamp(*request.current_user_key,
+        (cmp->CompareWithoutTimestamp(request.current_user_key,
                                       DBTestBase::Key(40)) >= 0 &&
-         cmp->CompareWithoutTimestamp(*request.prev_user_key,
+         cmp->CompareWithoutTimestamp(request.prev_user_key,
                                       DBTestBase::Key(40)) < 0)) {
       return kRequired;
     } else {

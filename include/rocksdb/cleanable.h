@@ -125,4 +125,6 @@ class SharedCleanablePtr {
   Impl* ptr_ = nullptr;
 };
 
+bool IsCompactionWorker();
+
 }  // namespace ROCKSDB_NAMESPACE

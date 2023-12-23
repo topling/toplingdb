@@ -552,7 +552,7 @@ void PlainTableReader::Prepare(const Slice& target) {
   }
 }
 
-Status PlainTableReader::Get(const ReadOptions& /*ro*/, const Slice& target,
+Status PlainTableReader::Get(const ReadOptions& ro, const Slice& target,
                              GetContext* get_context,
                              const SliceTransform* /* prefix_extractor */,
                              bool /*skip_filters*/) {
@@ -615,8 +615,10 @@ Status PlainTableReader::Get(const ReadOptions& /*ro*/, const Slice& target,
     // can we enable the fast path?
     if (internal_comparator_.Compare(found_key, parsed_target) >= 0) {
       bool dont_care __attribute__((__unused__));
+      Cleanable noop_pinner;
       if (!get_context->SaveValue(found_key, found_value, &dont_care,
-                                  dummy_cleanable_.get())) {
+                                  ro.pinning_tls ? &noop_pinner
+                                                 : dummy_cleanable_.get())) {
         break;
       }
     }

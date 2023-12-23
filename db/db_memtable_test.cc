@@ -39,11 +39,25 @@ class MockMemTableRep : public MemTableRep {
     last_hint_out_ = *hint;
   }
 
-  bool Contains(const char* key) const override { return rep_->Contains(key); }
+  bool InsertKeyValue(const Slice& ikey, const Slice& value) override {
+    return rep_->InsertKeyValue(ikey, value);
+  }
 
-  void Get(const LookupKey& k, void* callback_args,
-           bool (*callback_func)(void* arg, const char* entry)) override {
-    rep_->Get(k, callback_args, callback_func);
+  bool InsertKeyValueWithHint(const Slice& ikey,
+                              const Slice& value, void** hint) override {
+    num_insert_with_hint_++;
+    EXPECT_NE(nullptr, hint);
+    last_hint_in_ = *hint;
+    bool ret = rep_->InsertKeyValueWithHint(ikey, value, hint);
+    last_hint_out_ = *hint;
+    return ret;
+  }
+
+  bool Contains(const Slice& key) const override { return rep_->Contains(key); }
+
+  void Get(const ReadOptions& ro, const LookupKey& k, void* callback_args,
+           bool (*callback_func)(void* arg, const KeyValuePair&)) override {
+    rep_->Get(ro, k, callback_args, callback_func);
   }
 
   size_t ApproximateMemoryUsage() override {
@@ -65,12 +79,45 @@ class MockMemTableRep : public MemTableRep {
   int num_insert_with_hint_;
 };
 
+static auto g_cspp_fac = []()-> std::shared_ptr<MemTableRepFactory> {
+  const char* memtab_opt = getenv("MemTableRepFactory");
+  if (memtab_opt && strncmp(memtab_opt, "cspp:", 5) == 0) {
+   #ifdef HAS_TOPLING_CSPP_MEMTABLE
+    extern MemTableRepFactory* NewCSPPMemTabForPlain(const std::string&);
+    return std::shared_ptr<MemTableRepFactory>(NewCSPPMemTabForPlain(memtab_opt + 5));
+   #else
+    fprintf(stderr, "env MemTableRepFactory is cspp but HAS_TOPLING_CSPP_MEMTABLE is not defined\n");
+   #endif
+  }
+  return nullptr;
+}();
+
 class MockMemTableRepFactory : public MemTableRepFactory {
  public:
   MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator& cmp,
                                  Allocator* allocator,
                                  const SliceTransform* transform,
                                  Logger* logger) override {
+    return CreateMemTableRep(cmp, allocator, transform, logger, 0);
+  }
+
+  virtual MemTableRep* CreateMemTableRep(
+      const std::string& level0_dir,
+      const MutableCFOptions& mcfo,
+      const MemTableRep::KeyComparator& cmp, Allocator* allocator,
+      const SliceTransform* transform, Logger* logger,
+      uint32_t column_family_id) {
+    last_column_family_id_ = column_family_id;
+    if (g_cspp_fac) {
+      auto ucmp = cmp.icomparator()->user_comparator();
+      if (IsBytewiseComparator(ucmp)) {
+        auto rep = g_cspp_fac->CreateMemTableRep
+          (level0_dir, mcfo, cmp, allocator, transform, logger, column_family_id);
+        mock_rep_ = new MockMemTableRep(allocator, rep);
+        return mock_rep_;
+      }
+      fprintf(stderr, "MemTableTest skip %s\n", ucmp->Name());
+    }
     SkipListFactory factory;
     MemTableRep* skiplist_rep =
         factory.CreateMemTableRep(cmp, allocator, transform, logger);
@@ -83,8 +130,9 @@ class MockMemTableRepFactory : public MemTableRepFactory {
                                  const SliceTransform* transform,
                                  Logger* logger,
                                  uint32_t column_family_id) override {
-    last_column_family_id_ = column_family_id;
-    return CreateMemTableRep(cmp, allocator, transform, logger);
+    MutableCFOptions mcfo;
+    return CreateMemTableRep("/tmp", mcfo, cmp, allocator, transform, logger,
+                             column_family_id);
   }
 
   const char* Name() const override { return "MockMemTableRepFactory"; }
@@ -262,12 +310,13 @@ TEST_F(DBMemTableTest, ConcurrentMergeWrite) {
   ReadOptions roptions;
   SequenceNumber max_covering_tombstone_seq = 0;
   LookupKey lkey("key", kMaxSequenceNumber);
-  bool res = mem->Get(lkey, &value, /*columns=*/nullptr, /*timestamp=*/nullptr,
+  PinnableSlice pin;
+  bool res = mem->Get(lkey, &pin, /*columns=*/nullptr, /*timestamp=*/nullptr,
                       &status, &merge_context, &max_covering_tombstone_seq,
                       roptions, false /* immutable_memtable */);
   ASSERT_OK(status);
   ASSERT_TRUE(res);
-  uint64_t ivalue = DecodeFixed64(Slice(value).data());
+  uint64_t ivalue = DecodeFixed64(pin.data());
   uint64_t sum = 0;
   for (int seq = 0; seq < num_ops; seq++) {
     sum += seq;
@@ -278,6 +327,9 @@ TEST_F(DBMemTableTest, ConcurrentMergeWrite) {
 }
 
 TEST_F(DBMemTableTest, InsertWithHint) {
+  if (g_cspp_fac) {
+    return; // skip this test for cspp
+  }
   Options options;
   options.allow_concurrent_memtable_write = false;
   options.create_if_missing = true;

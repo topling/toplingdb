@@ -42,17 +42,17 @@ Status Transaction::CommitAndTryCreateSnapshot(
       return Status::InvalidArgument("Different commit ts specified");
     }
   }
-  SetSnapshotOnNextOperation(notifier);
+  SetSnapshotOnNextOperation(std::move(notifier));
   Status s = Commit();
   if (!s.ok()) {
     return s;
   }
   assert(s.ok());
   // If we reach here, we must return ok status for this function.
-  std::shared_ptr<const Snapshot> new_snapshot = GetTimestampedSnapshot();
+  // std::shared_ptr<const Snapshot> new_snapshot = GetTimestampedSnapshot();
 
   if (snapshot) {
-    *snapshot = new_snapshot;
+    *snapshot = GetTimestampedSnapshot();
   }
   return Status::OK();
 }
@@ -66,7 +66,9 @@ TransactionBaseImpl::TransactionBaseImpl(
       cmp_(GetColumnFamilyUserComparator(db->DefaultColumnFamily())),
       lock_tracker_factory_(lock_tracker_factory),
       start_time_(dbimpl_->GetSystemClock()->NowMicros()),
-      write_batch_(cmp_, 0, true, 0, write_options.protection_bytes_per_key),
+      write_batch_(*dbimpl_->mutable_db_options_.wbwi_factory->
+            NewWriteBatchWithIndex(cmp_, true,
+                    write_options.protection_bytes_per_key)),
       tracked_locks_(lock_tracker_factory_.Create()),
       commit_time_batch_(0 /* reserved_bytes */, 0 /* max_bytes */,
                          write_options.protection_bytes_per_key,
@@ -82,10 +84,13 @@ TransactionBaseImpl::TransactionBaseImpl(
 TransactionBaseImpl::~TransactionBaseImpl() {
   // Release snapshot if snapshot is set
   SetSnapshotInternal(nullptr);
+  delete &write_batch_; // weired for minimize code change
 }
 
 void TransactionBaseImpl::Clear() {
-  save_points_.reset(nullptr);
+  if (save_points_) {
+    save_points_->clear();
+  }
   write_batch_.Clear();
   commit_time_batch_.Clear();
   tracked_locks_->Clear();
@@ -137,7 +142,7 @@ void TransactionBaseImpl::SetSnapshotInternal(const Snapshot* snapshot) {
 void TransactionBaseImpl::SetSnapshotOnNextOperation(
     std::shared_ptr<TransactionNotifier> notifier) {
   snapshot_needed_ = true;
-  snapshot_notifier_ = notifier;
+  snapshot_notifier_ = std::move(notifier);
 }
 
 void TransactionBaseImpl::SetSnapshotIfNeeded() {
@@ -172,11 +177,9 @@ Status TransactionBaseImpl::TryLock(ColumnFamilyHandle* column_family,
 
 void TransactionBaseImpl::SetSavePoint() {
   if (save_points_ == nullptr) {
-    save_points_.reset(
-        new std::stack<TransactionBaseImpl::SavePoint,
-                       autovector<TransactionBaseImpl::SavePoint>>());
+    save_points_.reset(new autovector<TransactionBaseImpl::SavePoint>());
   }
-  save_points_->emplace(snapshot_, snapshot_needed_, snapshot_notifier_,
+  save_points_->emplace_back(snapshot_, snapshot_needed_, snapshot_notifier_,
                         num_puts_, num_deletes_, num_merges_,
                         lock_tracker_factory_);
   write_batch_.SetSavePoint();
@@ -686,16 +689,7 @@ uint64_t TransactionBaseImpl::GetNumKeys() const {
   return tracked_locks_->GetNumPointLocks();
 }
 
-void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,
-                                   SequenceNumber seq, bool read_only,
-                                   bool exclusive) {
-  PointLockRequest r;
-  r.column_family_id = cfh_id;
-  r.key = key;
-  r.seq = seq;
-  r.read_only = read_only;
-  r.exclusive = exclusive;
-
+void TransactionBaseImpl::TrackKey(const PointLockRequest& r) {
   // Update map of all tracked keys for this transaction
   tracked_locks_->Track(r);
 
@@ -732,7 +726,7 @@ void TransactionBaseImpl::UndoGetForUpdate(ColumnFamilyHandle* column_family,
                                            const Slice& key) {
   PointLockRequest r;
   r.column_family_id = GetColumnFamilyID(column_family);
-  r.key = key.ToString();
+  r.key = key;
   r.read_only = true;
 
   bool can_untrack = false;

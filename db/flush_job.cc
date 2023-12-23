@@ -688,7 +688,7 @@ bool FlushJob::MemPurgeDecider(double threshold) {
   Slice key_slice, value_slice;
   ParsedInternalKey res;
   SnapshotImpl min_snapshot;
-  std::string vget;
+  PinnableSlice vget;
   Status mget_s, parse_s;
   MergeContext merge_context;
   SequenceNumber max_covering_tombstone_seq = 0, sqno = 0,
@@ -920,9 +920,6 @@ Status FlushJob::WriteLevel0Table() {
                          << GetFlushReasonString(flush_reason_);
 
     {
-      ScopedArenaIterator iter(
-          NewMergingIterator(&cfd_->internal_comparator(), memtables.data(),
-                             static_cast<int>(memtables.size()), &arena));
       ROCKS_LOG_INFO(db_options_.info_log,
                      "[%s] [JOB %d] Level-0 flush table #%" PRIu64 ": started",
                      cfd_->GetName().c_str(), job_context_->job_id,
@@ -954,13 +951,6 @@ Status FlushJob::WriteLevel0Table() {
       meta_.oldest_ancester_time = oldest_ancester_time;
       meta_.file_creation_time = current_time;
 
-      uint64_t num_input_entries = 0;
-      uint64_t memtable_payload_bytes = 0;
-      uint64_t memtable_garbage_bytes = 0;
-      IOStatus io_s;
-
-      const std::string* const full_history_ts_low =
-          (full_history_ts_low_.empty()) ? nullptr : &full_history_ts_low_;
       TableBuilderOptions tboptions(
           *cfd_->ioptions(), mutable_cf_options_, cfd_->internal_comparator(),
           cfd_->int_tbl_prop_collector_factories(), output_compression_,
@@ -969,9 +959,49 @@ Status FlushJob::WriteLevel0Table() {
           TableFileCreationReason::kFlush, oldest_key_time, current_time,
           db_id_, db_session_id_, 0 /* target_file_size */,
           meta_.fd.GetNumber());
+    if (mems_.size() == 1 && mems_.front()->SupportConvertToSST()) {
+        // convert MemTable to sst
+        MemTable* memtable = mems_.front();
+        // pass these fields to ConvertToSST, to fill TableProperties
+        meta_.num_entries = memtable->num_entries();
+        meta_.num_deletions = memtable->num_deletes();
+        meta_.num_merges = memtable->num_merges();
+        meta_.num_range_deletions = 0;
+        meta_.raw_key_size = memtable->raw_key_size();
+        meta_.raw_value_size = memtable->raw_value_size();
+        s = memtable->ConvertToSST(&meta_, tboptions);
+        if (!s.ok()) {
+          ROCKS_LOG_BUFFER(log_buffer_,
+                          "[%s] [JOB %d] Level-0 ConvertToSST #%" PRIu64 ": ApproximateMemoryUsage %" PRIu64
+                          " bytes %s",
+                          cfd_->GetName().c_str(), job_context_->job_id,
+                          meta_.fd.GetNumber(), memtable->ApproximateMemoryUsage(),
+                          s.ToString().c_str());
+          goto UseBuildTable;
+        }
+        meta_.fd.smallest_seqno = std::min(memtable->GetEarliestSequenceNumber(),
+                                           memtable->GetFirstSequenceNumber());
+        meta_.fd.largest_seqno = memtable->largest_seqno();
+        meta_.marked_for_compaction = true;
+        for (auto* p_iter : memtables) { // memtables is vec of memtab iters
+          std::destroy_at(p_iter); // Attention!!! must!
+        }
+        memtables.clear();
+    }
+    else { // call BuildTable
+UseBuildTable:
+      uint64_t num_input_entries = 0;
+      uint64_t memtable_payload_bytes = 0;
+      uint64_t memtable_garbage_bytes = 0;
+      IOStatus io_s;
+      const std::string* const full_history_ts_low =
+          (full_history_ts_low_.empty()) ? nullptr : &full_history_ts_low_;
       const SequenceNumber job_snapshot_seq =
           job_context_->GetJobSnapshotSequence();
       const ReadOptions read_options(Env::IOActivity::kFlush);
+      ScopedArenaIterator iter(
+          NewMergingIterator(&cfd_->internal_comparator(), memtables.data(),
+                             static_cast<int>(memtables.size()), &arena));
       s = BuildTable(dbname_, versions_, db_options_, tboptions, file_options_,
                      read_options, cfd_->table_cache(), iter.get(),
                      std::move(range_del_iters), &meta_, &blob_file_additions,
@@ -1007,6 +1037,7 @@ Status FlushJob::WriteLevel0Table() {
                    memtable_garbage_bytes);
       }
       LogFlush(db_options_.info_log);
+    } // end call BuildTable
     }
     ROCKS_LOG_BUFFER(log_buffer_,
                      "[%s] [JOB %d] Level-0 flush table #%" PRIu64 ": %" PRIu64
@@ -1023,6 +1054,9 @@ Status FlushJob::WriteLevel0Table() {
           DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
     }
     TEST_SYNC_POINT_CALLBACK("FlushJob::WriteLevel0Table", &mems_);
+
+    cfd_->PrepareNewMemtableInBackground(mutable_cf_options_);
+
     db_mutex_->Lock();
   }
   base_->Unref();

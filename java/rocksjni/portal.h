@@ -4918,7 +4918,7 @@ class TickerTypeJni {
         return 0x31;
       case ROCKSDB_NAMESPACE::Tickers::STALL_MICROS:
         return 0x35;
-      case ROCKSDB_NAMESPACE::Tickers::DB_MUTEX_WAIT_MICROS:
+      case ROCKSDB_NAMESPACE::Tickers::DB_MUTEX_WAIT_NANOS:
         return 0x36;
       case ROCKSDB_NAMESPACE::Tickers::NUMBER_MULTIGET_CALLS:
         return 0x39;
@@ -5301,7 +5301,7 @@ class TickerTypeJni {
       case 0x35:
         return ROCKSDB_NAMESPACE::Tickers::STALL_MICROS;
       case 0x36:
-        return ROCKSDB_NAMESPACE::Tickers::DB_MUTEX_WAIT_MICROS;
+        return ROCKSDB_NAMESPACE::Tickers::DB_MUTEX_WAIT_NANOS;
       case 0x39:
         return ROCKSDB_NAMESPACE::Tickers::NUMBER_MULTIGET_CALLS;
       case 0x3A:

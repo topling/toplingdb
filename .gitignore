@@ -7,6 +7,7 @@ rocksdb.pc
 *.dylib*
 *.gcda
 *.gcno
+*.log
 *.o
 *.o.tmp
 *.so
@@ -25,11 +26,13 @@ rocksdb.pc
 *.vcxproj
 *.vcxproj.filters
 *.sln
+*.sst
 *.cmake
 .watchmanconfig
 CMakeCache.txt
 CMakeFiles/
 build/
+build-ut/
 
 ldb
 manifest_dump
@@ -98,3 +101,8 @@ cmake-build-*
 third-party/folly/
 .cache
 *.sublime-*
+*_dbg
+*_test
+
+generated-sources
+target

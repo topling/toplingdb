@@ -231,7 +231,7 @@ class WritableFileWriter {
     s.PermitUncheckedError();
   }
 
-  std::string file_name() const { return file_name_; }
+  const std::string& file_name() const { return file_name_; }
 
   // When this Append API is called, if the crc32c_checksum is not provided, we
   // will calculate the checksum internally.
@@ -255,6 +255,7 @@ class WritableFileWriter {
   uint64_t GetFileSize() const {
     return filesize_.load(std::memory_order_acquire);
   }
+  void SetFileSize(uint64_t fsize) { filesize_ = fsize; }
 
   // Returns the size of data flushed to the underlying `FSWritableFile`.
   // Expected to match `writable_file()->GetFileSize()`.

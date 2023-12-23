@@ -198,27 +198,27 @@ Status WriteUnpreparedTxn::RebuildFromWriteBatch(WriteBatch* wb) {
         : txn_(txn), rollback_merge_operands_(rollback_merge_operands) {}
 
     Status PutCF(uint32_t cf, const Slice& key, const Slice&) override {
-      txn_->TrackKey(cf, key.ToString(), kMaxSequenceNumber,
-                     false /* read_only */, true /* exclusive */);
+      txn_->TrackKey({cf, key, kMaxSequenceNumber,
+                      false /* read_only */, true /* exclusive */});
       return Status::OK();
     }
 
     Status DeleteCF(uint32_t cf, const Slice& key) override {
-      txn_->TrackKey(cf, key.ToString(), kMaxSequenceNumber,
-                     false /* read_only */, true /* exclusive */);
+      txn_->TrackKey({cf, key, kMaxSequenceNumber,
+                      false /* read_only */, true /* exclusive */});
       return Status::OK();
     }
 
     Status SingleDeleteCF(uint32_t cf, const Slice& key) override {
-      txn_->TrackKey(cf, key.ToString(), kMaxSequenceNumber,
-                     false /* read_only */, true /* exclusive */);
+      txn_->TrackKey({cf, key, kMaxSequenceNumber,
+                      false /* read_only */, true /* exclusive */});
       return Status::OK();
     }
 
     Status MergeCF(uint32_t cf, const Slice& key, const Slice&) override {
       if (rollback_merge_operands_) {
-        txn_->TrackKey(cf, key.ToString(), kMaxSequenceNumber,
-                       false /* read_only */, true /* exclusive */);
+        txn_->TrackKey({cf, key, kMaxSequenceNumber,
+                        false /* read_only */, true /* exclusive */});
       }
       return Status::OK();
     }
@@ -462,12 +462,22 @@ Status WriteUnpreparedTxn::FlushWriteBatchWithSavePointToDB() {
   // initialization of TransactionBaseImpl::write_batch_. This comparator is
   // only used if the write batch encounters an invalid cf id, and falls back to
   // this comparator.
+#if 0
   WriteBatchWithIndex wb(wpt_db_->DefaultColumnFamily()->GetComparator(), 0,
                          true, 0, write_options_.protection_bytes_per_key);
   // Swap with write_batch_ so that wb contains the complete write batch. The
   // actual write batch that will be flushed to DB will be built in
   // write_batch_, and will be read by FlushWriteBatchToDBInternal.
   std::swap(wb, write_batch_);
+#else
+  auto ucmp = wpt_db_->DefaultColumnFamily()->GetComparator();
+  auto wfac = dbimpl_->mutable_db_options_.wbwi_factory.get();
+  auto prot = write_options_.protection_bytes_per_key;
+  auto wbwi = wfac->NewWriteBatchWithIndex(ucmp, true, prot);
+  std::swap(wbwi, (&write_batch_pre_)[1]); // note trick!
+  std::unique_ptr<WriteBatchWithIndex> wbwi_up(wbwi);
+  auto& wb = *wbwi;
+#endif
   TransactionBaseImpl::InitWriteBatch();
 
   size_t prev_boundary = WriteBatchInternal::kHeader;
@@ -659,7 +669,8 @@ Status WriteUnpreparedTxn::WriteRollbackKeys(
   // This assertion can be removed when range lock is supported.
   assert(lock_tracker.IsPointLockSupported());
   const auto& cf_map = *wupt_db_->GetCFHandleMap();
-  auto WriteRollbackKey = [&](const std::string& key, uint32_t cfid) {
+  auto WriteRollbackKey = [&](const LockString& key0, uint32_t cfid) {
+    const Slice key(key0.data(), key0.size());
     const auto& cf_handle = cf_map.at(cfid);
     PinnableSlice pinnable_val;
     bool not_used;
@@ -696,7 +707,7 @@ Status WriteUnpreparedTxn::WriteRollbackKeys(
         lock_tracker.GetKeyIterator(cf));
     assert(key_it != nullptr);
     while (key_it->HasNext()) {
-      const std::string& key = key_it->Next();
+      const auto& key = key_it->Next();
       auto s = WriteRollbackKey(key, cf);
       if (!s.ok()) {
         return s;
@@ -720,9 +731,18 @@ Status WriteUnpreparedTxn::WriteRollbackKeys(
 
 Status WriteUnpreparedTxn::RollbackInternal() {
   // TODO(lth): Reduce duplicate code with WritePrepared rollback logic.
+#if 0
   WriteBatchWithIndex rollback_batch(
       wpt_db_->DefaultColumnFamily()->GetComparator(), 0, true, 0,
       write_options_.protection_bytes_per_key);
+#else
+  auto ucmp = wpt_db_->DefaultColumnFamily()->GetComparator();
+  auto wfac = dbimpl_->mutable_db_options_.wbwi_factory.get();
+  auto prot = write_options_.protection_bytes_per_key;
+  auto wbwi = wfac->NewWriteBatchWithIndex(ucmp, true, prot);
+  std::unique_ptr<WriteBatchWithIndex> wbwi_up(wbwi);
+  WriteBatchWithIndex& rollback_batch = *wbwi;
+#endif
   assert(GetId() != kMaxSequenceNumber);
   assert(GetId() > 0);
   Status s;
@@ -1073,7 +1093,7 @@ Status WriteUnpreparedTxn::ValidateSnapshot(ColumnFamilyHandle* column_family,
       wupt_db_, snap_seq, min_uncommitted, unprep_seqs_, kBackedByDBSnapshot);
   // TODO(yanqin): Support user-defined timestamp.
   return TransactionUtil::CheckKeyForConflicts(
-      db_impl_, cfh, key.ToString(), snap_seq, /*ts=*/nullptr,
+      db_impl_, cfh, key, snap_seq, /*ts=*/nullptr,
       false /* cache_only */, &snap_checker, min_uncommitted);
 }
 

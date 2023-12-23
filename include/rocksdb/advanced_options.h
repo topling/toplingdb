@@ -23,7 +23,7 @@ class TablePropertiesCollectorFactory;
 class TableFactory;
 struct Options;
 
-enum CompactionStyle : char {
+ROCKSDB_ENUM_PLAIN(CompactionStyle, unsigned char,
   // level based compaction style
   kCompactionStyleLevel = 0x0,
   // Universal compaction style
@@ -32,13 +32,13 @@ enum CompactionStyle : char {
   kCompactionStyleFIFO = 0x2,
   // Disable background compaction. Compaction jobs are submitted
   // via CompactFiles().
-  kCompactionStyleNone = 0x3,
-};
+  kCompactionStyleNone = 0x3
+);
 
 // In Level-based compaction, it Determines which file from a level to be
 // picked to merge to the next level. We suggest people try
 // kMinOverlappingRatio first when you tune your database.
-enum CompactionPri : char {
+ROCKSDB_ENUM_PLAIN(CompactionPri, unsigned char,
   // Slightly prioritize larger files by size compensated by #deletes
   kByCompensatedSize = 0x0,
   // First compact files whose data's latest update time is oldest.
@@ -57,7 +57,15 @@ enum CompactionPri : char {
   // level. The file picking process will cycle through all the files in a
   // round-robin manner.
   kRoundRobin = 0x4,
-};
+
+  // kMinOverlappingRatio may generate many very small files, because a very
+  // small file can overlap a normal file in next level, thus the small file
+  // will not likely to be picked.
+  // kMinOverlappingBytes ignore current file size, it is equivalent to we
+  // assume all files in current level are same size, thus small files are
+  // treated equally.
+  kMinOverlappingBytes = 0x5
+);
 
 // Compression options for different compression algorithms like Zlib
 struct CompressionOptions {
@@ -208,13 +216,13 @@ struct CompressionOptions {
 // placement and/or coding.
 // Reserve some numbers in the middle, in case we need to insert new tier
 // there.
-enum class Temperature : uint8_t {
+ROCKSDB_ENUM_CLASS(Temperature, uint8_t,
   kUnknown = 0,
   kHot = 0x04,
   kWarm = 0x08,
   kCold = 0x0C,
-  kLastTemperature,
-};
+  kLastTemperature
+);
 
 struct FileTemperatureAge {
   Temperature temperature = Temperature::kUnknown;
@@ -273,11 +281,11 @@ struct CompactionOptionsFIFO {
 // The control option of how the cache tiers will be used. Currently rocksdb
 // support block cache (volatile tier), secondary cache (non-volatile tier).
 // In the future, we may add more caching layers.
-enum class CacheTier : uint8_t {
+ROCKSDB_ENUM_CLASS(CacheTier, uint8_t,
   kVolatileTier = 0,
   kVolatileCompressedTier = 0x01,
-  kNonVolatileBlockTier = 0x02,
-};
+  kNonVolatileBlockTier = 0x02
+);
 
 enum UpdateStatus {     // Return status For inplace update callback
   UPDATE_FAILED = 0,    // Nothing to update
@@ -470,6 +478,9 @@ struct AdvancedColumnFamilyOptions {
   //
   // Dynamically changeable through SetOptions() API
   double memtable_prefix_bloom_size_ratio = 0.0;
+
+  // set as false to avoid flush output large SSTs
+  bool allow_merge_memtables = true;
 
   // Enable whole key bloom filter in memtable. Note this will only take effect
   // if memtable_prefix_bloom_size_ratio is not 0. Enabling whole key filtering
@@ -1125,6 +1136,8 @@ struct AdvancedColumnFamilyOptions {
   //
   // Dynamically changeable through the SetOptions() API
   int blob_file_starting_level = 0;
+
+  int min_filter_level = 0;
 
   // The Cache object to use for blobs. Using a dedicated object for blobs and
   // using the same object for the block and blob caches are both supported. In

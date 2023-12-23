@@ -142,6 +142,11 @@ class Transaction {
 
   virtual ~Transaction() {}
 
+  virtual Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
+                         bool read_only, bool exclusive,
+                         const bool do_validate = true,
+                         const bool assume_tracked = false) = 0;
+
   // If a transaction has a snapshot set, the transaction will ensure that
   // any keys successfully written(or fetched via GetForUpdate()) have not
   // been modified outside of this transaction since the time the snapshot was

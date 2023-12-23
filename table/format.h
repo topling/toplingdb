@@ -298,6 +298,12 @@ Status ReadFooterFromFile(const IOOptions& opts, RandomAccessFileReader* file,
                           uint64_t file_size, Footer* footer,
                           uint64_t enforce_table_magic_number = 0);
 
+// ToplingDB, add the removed ReadFooterFromFile overload
+Status ReadFooterFromFile(const IOOptions& opts, RandomAccessFileReader* file,
+                          FilePrefetchBuffer* prefetch_buffer,
+                          uint64_t file_size, Footer* footer,
+                          uint64_t enforce_table_magic_number = 0);
+
 // Computes a checksum using the given ChecksumType. Sometimes we need to
 // include one more input byte logically at the end but not part of the main
 // data buffer. If data_size >= 1, then

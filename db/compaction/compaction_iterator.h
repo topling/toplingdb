@@ -369,6 +369,8 @@ class CompactionIterator {
   SystemClock* clock_;
   const bool report_detailed_time_;
   const bool expect_valid_internal_key_;
+  const bool allow_ingest_behind_;
+  const bool supports_per_key_placement_;
   CompactionRangeDelAggregator* range_del_agg_;
   BlobFileBuilder* blob_file_builder_;
   std::unique_ptr<CompactionProxy> compaction_;

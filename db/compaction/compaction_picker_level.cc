@@ -444,6 +444,15 @@ bool LevelCompactionBuilder::SetupOtherInputsIfNeeded() {
       return false;
     }
 
+    if (CompactionReason::kFilesMarkedForCompaction == compaction_reason_) {
+      const CompactionInputFiles* inputs[] = {
+        &start_level_inputs_, &output_level_inputs_,
+      };
+      if (!ioptions_.table_factory->ShouldCompactMarkForCompaction(inputs, 2)) {
+        return false;
+      }
+    }
+
     compaction_inputs_.push_back(start_level_inputs_);
     if (!output_level_inputs_.empty()) {
       compaction_inputs_.push_back(output_level_inputs_);
@@ -858,6 +867,9 @@ bool LevelCompactionBuilder::PickFileToCompact() {
 }
 
 bool LevelCompactionBuilder::PickIntraL0Compaction() {
+  if (mutable_db_options_.max_level1_subcompactions > 1) {
+    return false;
+  }
   start_level_inputs_.clear();
   const std::vector<FileMetaData*>& level_files =
       vstorage_->LevelFiles(0 /* level */);

@@ -20,6 +20,7 @@
 #include "rocksdb/env.h"
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/utilities/write_batch_with_index.h"
+#include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 #include "rocksdb/write_buffer_manager.h"
 #include "table/scoped_arena_iterator.h"
 #include "test_util/testharness.h"

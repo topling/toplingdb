@@ -107,21 +107,18 @@ class Iterator : public Cleanable {
   // satisfied without doing some IO, then this returns Status::Incomplete().
   virtual Status status() const = 0;
 
-  // If supported, the DB state that the iterator reads from is updated to
-  // the latest state. The iterator will be invalidated after the call.
-  // Regardless of whether the iterator was created/refreshed previously
-  // with or without a snapshot, the iterator will be reading the
-  // latest DB state after this call.
-  // Note that you will need to call a Seek*() function to get the iterator
-  // back into a valid state before calling a function that assumes the
-  // state is already valid, like Next().
-  virtual Status Refresh() { return Refresh(nullptr); }
+  // If supported, renew the iterator to represent the latest state. The
+  // iterator will be invalidated after the call. Not supported if
+  // ReadOptions.snapshot is given when creating the iterator.
+  virtual Status Refresh() {
+    return Refresh(nullptr, false);
+  }
 
-  // Similar to Refresh() but the iterator will be reading the latest DB state
-  // under the given snapshot.
-  virtual Status Refresh(const class Snapshot*) {
+  virtual Status Refresh(const class Snapshot*, bool/*keep_iter_pos*/) {
     return Status::NotSupported("Refresh() is not supported");
   }
+
+  Status RefreshKeepSnapshot(bool keep_iter_pos = true);
 
   // Property "rocksdb.iterator.is-key-pinned":
   //   If returning "1", this means that the Slice returned by key() is valid
@@ -152,6 +149,8 @@ class Iterator : public Cleanable {
     assert(false);
     return Slice();
   }
+
+  virtual bool PrepareValue() { return true; }
 };
 
 // Return an empty iterator (yields nothing).

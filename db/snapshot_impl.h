@@ -84,15 +84,27 @@ class SnapshotList {
   SnapshotImpl* New(SnapshotImpl* s, SequenceNumber seq, uint64_t unix_time,
                     bool is_write_conflict_boundary,
                     uint64_t ts = std::numeric_limits<uint64_t>::max()) {
+    // snapshots in list_ was ordered by number_, but now we may create snapshots
+    // by specify seqnum in ArenaWrappedDBIter::Refresh() for pinning, which
+    // seqnum maybe smaller than the largest seqnum in list_, so the newly created
+    // snapshot can not be put to list_ tail, we should find the insert position.
+    // it is lucky that list_ is short, and the target should be near list tail,
+    // the search should be fast.
+    SnapshotImpl* s_prev = list_.prev_; // init to tail
+    for (; s_prev != &list_; s_prev = s_prev->prev_) {
+      if (s_prev->number_ <= seq)
+        break;
+    }
+    SnapshotImpl* s_next = s_prev->next_;
     s->number_ = seq;
     s->unix_time_ = unix_time;
     s->timestamp_ = ts;
     s->is_write_conflict_boundary_ = is_write_conflict_boundary;
     s->list_ = this;
-    s->next_ = &list_;
-    s->prev_ = list_.prev_;
-    s->prev_->next_ = s;
-    s->next_->prev_ = s;
+    s->next_ = s_next;
+    s->prev_ = s_prev;
+    s_prev->next_ = s;
+    s_next->prev_ = s;
     count_++;
     return s;
   }

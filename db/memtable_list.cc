@@ -422,6 +422,9 @@ void MemTableList::PickMemtablesToFlush(uint64_t max_memtable_id,
       if (!m->GetImmutableMemTableOptions()->allow_merge_memtables) {
         break;
       }
+      if (m->SupportConvertToSST()) {
+        break;
+      }
     } else if (!ret->empty()) {
       // This `break` is necessary to prevent picking non-consecutive memtables
       // in case `memlist` has one or more entries with

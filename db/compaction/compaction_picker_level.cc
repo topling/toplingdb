@@ -444,11 +444,16 @@ bool LevelCompactionBuilder::SetupOtherInputsIfNeeded() {
       return false;
     }
 
+    const CompactionInputFiles* inputs[] = {
+      &start_level_inputs_, &output_level_inputs_,
+    };
     if (CompactionReason::kFilesMarkedForCompaction == compaction_reason_) {
-      const CompactionInputFiles* inputs[] = {
-        &start_level_inputs_, &output_level_inputs_,
-      };
       if (!ioptions_.table_factory->ShouldCompactMarkForCompaction(inputs, 2)) {
+        return false;
+      }
+    }
+    else if (CompactionReason::kLevelMaxLevelSize == compaction_reason_) {
+      if (!ioptions_.table_factory->ShouldCompactAutoCompaction(inputs, 2)) {
         return false;
       }
     }

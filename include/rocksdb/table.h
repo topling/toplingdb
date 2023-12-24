@@ -924,6 +924,10 @@ class TableFactory : public Customizable {
                                               size_t) const {
     return true;
   }
+  virtual bool ShouldCompactAutoCompaction(const CompactionInputFiles**,
+                                           size_t) const {
+    return true;
+  }
 };
 
 // Create a special table factory that can open either of the supported

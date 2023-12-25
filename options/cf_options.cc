@@ -1037,8 +1037,10 @@ void MutableCFOptions::RefreshDerivedOptions(int num_levels,
     if (i == 0 && compaction_style == kCompactionStyleUniversal) {
       max_file_size[i] = ULLONG_MAX;
     } else if (i > 1) {
-      max_file_size[i] = MultiplyCheckOverflow(max_file_size[i - 1],
-                                               target_file_size_multiplier);
+      double q = target_file_size_multiplier < 100
+               ? target_file_size_multiplier
+               : target_file_size_multiplier / 100.0;
+      max_file_size[i] = MultiplyCheckOverflow(max_file_size[i - 1], q);
     } else {
       max_file_size[i] = target_file_size_base;
     }

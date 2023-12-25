@@ -908,6 +908,11 @@ Status BlockBasedTableFactory::ParseOption(const ConfigOptions& config_options,
   return status;
 }
 
+bool BlockBasedTableFactory::InputCompressionMatchesOutput(const Compaction* c)
+const {
+  return c->InputCompressionMatchesOutput();
+}
+
 Status GetBlockBasedTableOptionsFromString(
     const ConfigOptions& config_options,
     const BlockBasedTableOptions& table_options, const std::string& opts_str,

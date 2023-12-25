@@ -442,8 +442,8 @@ bool Compaction::InputCompressionMatchesOutput() const {
   return matches;
 }
 
-bool TableFactory::InputCompressionMatchesOutput(const Compaction* c) const {
-  return c->InputCompressionMatchesOutput();
+bool TableFactory::InputCompressionMatchesOutput(const Compaction*) const {
+  return true; // default returns true
 }
 
 bool Compaction::IsTrivialMove() const {

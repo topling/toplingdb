@@ -83,6 +83,8 @@ class BlockBasedTableFactory : public TableFactory {
 
   const BlockBasedTableOptions& table_options() const { return table_options_; }
 
+  bool InputCompressionMatchesOutput(const class Compaction*) const override;
+
  protected:
   const void* GetOptionsPtr(const std::string& name) const override;
   Status ParseOption(const ConfigOptions& config_options,

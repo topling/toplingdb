@@ -540,10 +540,11 @@ class Compaction {
   // compaction
   bool is_trivial_move_;
 
+public:
   // Does input compression match the output compression?
   bool InputCompressionMatchesOutput() const;
-  friend class TableFactory; // use InputCompressionMatchesOutput
 
+private:
   // table properties of output files
   TablePropertiesCollection output_table_properties_;
 

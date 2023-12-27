@@ -686,6 +686,7 @@ Status CompactionJob::RunLocal() {
   };
   for (const auto& state : compact_->sub_compact_states) {
     std::string filelist;
+    filelist.reserve(10 * state.outputs.size());
     long long size = 0;
     for (const auto& output : state.GetOutputs()) {
       auto& fd = output.meta.fd;

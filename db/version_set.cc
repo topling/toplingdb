@@ -1763,6 +1763,7 @@ Status Version::GetTableProperties(const ReadOptions& read_options,
     return s;
   }
   *tp = std::move(props);
+  ROCKS_LOG_DEBUG(info_log_, "Direct load table props %s", file_name.c_str());
   RecordTick(ioptions->stats, NUMBER_DIRECT_LOAD_TABLE_PROPERTIES);
   return s;
 }

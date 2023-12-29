@@ -203,7 +203,6 @@ class autovector {
         new ((void*)(&values_[num_stack_items_])) value_type();
         num_stack_items_++;  // exception-safe: inc after cons finish
       }
-      num_stack_items_ = kSize;
     } else {
       vect_.clear();
       while (num_stack_items_ < n) {
@@ -298,9 +297,11 @@ class autovector {
   template <class... Args>
 #if _LIBCPP_STD_VER > 14
   reference emplace_back(Args&&... args) {
-    if (num_stack_items_ < kSize) {
-      return *(new ((void*)(&values_[num_stack_items_++]))
-                   value_type(std::forward<Args>(args)...));
+    size_t oldsize = num_stack_items_;
+    if (oldsize < kSize) {
+      new ((void*)(&values_[oldsize]))
+                   value_type(std::forward<Args>(args)...);
+      return values_[oldsize];
     } else {
       return vect_.emplace_back(std::forward<Args>(args)...);
     }
@@ -327,9 +328,13 @@ class autovector {
   }
 
   void clear() {
-    while (num_stack_items_ > 0) {
-      values_[--num_stack_items_].~value_type();
+    if (!std::is_trivially_destructible<T>::value) {
+      size_t cnt = num_stack_items_;
+      while (cnt) {
+        values_[--cnt].~value_type();
+      }
     }
+    num_stack_items_ = 0;
     vect_.clear();
   }
 

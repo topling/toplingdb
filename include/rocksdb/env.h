@@ -427,7 +427,7 @@ class Env : public Customizable {
   }
 
   // Priority for scheduling job in thread pool
-  enum Priority { BOTTOM, LOW, HIGH, USER, TOTAL };
+  enum Priority : unsigned char { BOTTOM, LOW, HIGH, USER, TOTAL };
 
   static std::string PriorityToString(Priority priority);
 

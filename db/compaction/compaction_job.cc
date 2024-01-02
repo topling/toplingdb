@@ -1051,6 +1051,7 @@ try {
       meta.smallest = min_meta.smallest_ikey;
       meta.largest = min_meta.largest_ikey;
       meta.num_deletions = tp->num_deletions;
+      meta.num_range_deletions = tp->num_range_deletions;
       meta.num_entries = tp->num_entries;
       meta.raw_key_size = tp->raw_key_size;
       meta.raw_value_size = tp->raw_value_size;
@@ -1906,6 +1907,7 @@ Status CompactionJob::FinishCompactionOutputFile(
     tp = outputs.GetTableProperties();
     meta->num_entries = tp.num_entries;
     meta->num_deletions = tp.num_deletions;
+    meta->num_range_deletions = tp.num_range_deletions;
     meta->raw_key_size = tp.raw_key_size;
     meta->raw_value_size = tp.raw_value_size;
   }

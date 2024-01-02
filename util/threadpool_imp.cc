@@ -372,7 +372,6 @@ void ThreadPoolImpl::Impl::SetBackgroundThreadsInternal(int num,
 }
 
 int ThreadPoolImpl::Impl::GetBackgroundThreads() {
-  std::unique_lock<std::mutex> lock(mu_);
   return total_threads_limit_;
 }
 

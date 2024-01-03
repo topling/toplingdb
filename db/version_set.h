@@ -1107,6 +1107,12 @@ class Version {
   std::shared_ptr<IOTracer> io_tracer_;
   bool use_async_io_;
 
+ public:
+  // ToplingDB specific:
+  TablePropertiesCollection props_of_all_tables_; // just for dcompact worker
+
+ private:
+
   Version(ColumnFamilyData* cfd, VersionSet* vset, const FileOptions& file_opt,
           MutableCFOptions mutable_cf_options,
           const std::shared_ptr<IOTracer>& io_tracer,

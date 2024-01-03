@@ -104,6 +104,7 @@ struct CompactionParams {
   CompactionPri   compaction_pri;
   std::vector<ObjectRpcParam> listeners;
   std::vector<ObjectRpcParam> table_properties_collector_factories;
+  std::map<uint64_t, std::shared_ptr<const TableProperties> > table_properties_map;
   std::string extensible_js_data;
 
   // CompactionFilterFactory ... can have individual serde files

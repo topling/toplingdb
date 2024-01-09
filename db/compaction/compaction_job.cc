@@ -758,7 +758,7 @@ Status CompactionJob::RunLocal() {
   if (status.ok()) {
     constexpr IODebugContext* dbg = nullptr;
 
-    if (output_directory_) {
+    if (output_directory_ && !IsCompactionWorker()) {
       io_s = output_directory_->FsyncWithDirOptions(
           IOOptions(), dbg,
           DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));

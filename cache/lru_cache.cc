@@ -221,12 +221,12 @@ size_t LRUCacheShard::TEST_GetLRUSize() {
 }
 
 double LRUCacheShard::GetHighPriPoolRatio() {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   return high_pri_pool_ratio_;
 }
 
 double LRUCacheShard::GetLowPriPoolRatio() {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   return low_pri_pool_ratio_;
 }
 
@@ -364,7 +364,7 @@ void LRUCacheShard::SetCapacity(size_t capacity) {
 }
 
 void LRUCacheShard::SetStrictCapacityLimit(bool strict_capacity_limit) {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   strict_capacity_limit_ = strict_capacity_limit;
 }
 
@@ -613,7 +613,7 @@ void LRUCacheShard::Erase(const Slice& key, uint32_t hash) {
 }
 
 size_t LRUCacheShard::GetUsage() const {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   return usage_;
 }
 
@@ -624,12 +624,12 @@ size_t LRUCacheShard::GetPinnedUsage() const {
 }
 
 size_t LRUCacheShard::GetOccupancyCount() const {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   return table_.GetOccupancyCount();
 }
 
 size_t LRUCacheShard::GetTableAddressCount() const {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   return size_t{1} << table_.GetLengthBits();
 }
 

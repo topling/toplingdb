@@ -2111,6 +2111,76 @@ void CompactionJob::RecordCompactionIOStats() {
   IOSTATS_RESET(bytes_written);
 }
 
+class LazyWritableFile : public FSWritableFile {
+  std::unique_ptr<FSWritableFile> m_target;
+ public:
+  std::function<void (std::unique_ptr<FSWritableFile>*)> m_create;
+  using FSWritableFile::FSWritableFile;
+  inline FSWritableFile* EnsureTarget() {
+    if (UNLIKELY(!m_target)) {
+      m_create(&m_target); // intend for create on first write
+      ROCKSDB_VERIFY(m_target != nullptr);
+    }
+    return m_target.get();
+  }
+  IOStatus Append(const Slice& data, const IOOptions& options, IODebugContext* dbg) override {
+    return EnsureTarget()->Append(data, options, dbg);
+  }
+  IOStatus Append(const Slice& data, const IOOptions& options, const DataVerificationInfo& vi, IODebugContext* dbg) override {
+    return EnsureTarget()->Append(data, options, vi, dbg);
+  }
+  IOStatus PositionedAppend(const Slice& data, uint64_t offset, const IOOptions& options, IODebugContext* dbg) override {
+    return EnsureTarget()->PositionedAppend(data, offset, options, dbg);
+  }
+  IOStatus PositionedAppend(const Slice& data, uint64_t offset, const IOOptions& options, const DataVerificationInfo& vi, IODebugContext* dbg) override {
+    return EnsureTarget()->PositionedAppend(data, offset, options, vi, dbg);
+  }
+  IOStatus Truncate(uint64_t size, const IOOptions& options, IODebugContext* dbg) override {
+    return EnsureTarget()->Truncate(size, options, dbg);
+  }
+  IOStatus Close(const IOOptions& options, IODebugContext* dbg) override {
+    return EnsureTarget()->Close(options, dbg);
+  }
+  IOStatus Flush(const IOOptions& options, IODebugContext* dbg) override {
+    return EnsureTarget()->Flush(options, dbg);
+  }
+  IOStatus Sync(const IOOptions& options, IODebugContext* dbg) override {
+    return EnsureTarget()->Sync(options, dbg);
+  }
+  IOStatus Fsync(const IOOptions& options, IODebugContext* dbg) override {
+    return EnsureTarget()->Fsync(options, dbg);
+  }
+  //bool IsSyncThreadSafe() const override { return false; }
+  //bool use_direct_io() const override { return false; }
+  //size_t GetRequiredBufferAlignment() const override { return kDefaultPageSize; }
+  //void SetWriteLifeTimeHint(Env::WriteLifeTimeHint hint) override { write_hint_ = hint; }
+  //void SetIOPriority(Env::IOPriority pri) override { io_priority_ = pri; }
+  //Env::IOPriority GetIOPriority() { return io_priority_; }
+  //Env::WriteLifeTimeHint GetWriteLifeTimeHint() { return write_hint_; }
+  uint64_t GetFileSize(const IOOptions& options, IODebugContext* dbg) override {
+    return m_target ? m_target->GetFileSize(options, dbg) : 0;
+  }
+  //void SetPreallocationBlockSize(size_t size) override { preallocation_block_size_ = size; }
+  //void GetPreallocationStatus(size_t* block_size, size_t* last_allocated_block) overrdie;
+  size_t GetUniqueId(char* id, size_t max_size) const override {
+    return m_target ? m_target->GetUniqueId(id, max_size) : 0;
+  }
+  IOStatus InvalidateCache(size_t offset, size_t length) override {
+    return m_target ? m_target->InvalidateCache(offset, length) : IOStatus::OK();
+  }
+  //IOStatus RangeSync(uint64_t offset, uint64_t nbytes, const IOOptions& options, IODebugContext* dbg) override;
+  void PrepareWrite(size_t offset, size_t len, const IOOptions& options, IODebugContext* dbg) override {
+    // do nothing
+  }
+  IOStatus Allocate(uint64_t /*offset*/, uint64_t /*len*/, const IOOptions& /*options*/, IODebugContext* /*dbg*/) override {
+    return IOStatus::OK(); // do nothing
+  }
+  intptr_t FileDescriptor() const {
+    return const_cast<LazyWritableFile*>(this)->EnsureTarget()->FileDescriptor();
+  }
+  void SetFileSize(uint64_t fsize) override { EnsureTarget()->SetFileSize(fsize); }
+};
+
 Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
                                                CompactionOutputs& outputs) {
   assert(sub_compact != nullptr);
@@ -2145,7 +2215,18 @@ Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
   fo_copy.temperature = temperature;
 
   Status s;
-  IOStatus io_s = NewWritableFile(fs_.get(), fname, &writable_file, fo_copy);
+  IOStatus io_s;
+  if (IsCompactionWorker()) { // maybe s3/oss
+    auto lazy = new LazyWritableFile(); // to avoid stat cache being stale
+    lazy->m_create = [=](std::unique_ptr<FSWritableFile>* wfp) {
+      ROCKS_LOG_DEBUG(db_options_.info_log, "Lazy create %s", fname.c_str());
+      IOStatus s = NewWritableFile(fs_.get(), fname, wfp, fo_copy);
+      TERARK_VERIFY_S(s.ok(), "NewWritableFile(%s) = %s", fname, s.ToString());
+    };
+    writable_file.reset(lazy);
+  } else {
+    io_s = NewWritableFile(fs_.get(), fname, &writable_file, fo_copy);
+  }
   s = io_s;
   if (sub_compact->io_status.ok()) {
     sub_compact->io_status = io_s;

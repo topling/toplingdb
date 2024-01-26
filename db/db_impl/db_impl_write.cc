@@ -2115,8 +2115,10 @@ void DBImpl::NotifyOnMemTableSealed(ColumnFamilyData* /*cfd*/,
 // two_write_queues_ is true (This is to simplify the reasoning.)
 Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
   mutex_.AssertHeld();
+  if (cfd->mem()->IsEmpty()) {
+    return Status::OK();
+  }
   // TODO: plumb Env::IOActivity
-  const ReadOptions read_options;
   log::Writer* new_log = nullptr;
   MemTable* new_mem = nullptr;
   IOStatus io_s;
@@ -2266,6 +2268,7 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
         }
       }
 
+      const ReadOptions read_options;
       VersionEdit wal_deletion;
       wal_deletion.DeleteWalsBefore(min_wal_number_to_keep);
       s = versions_->LogAndApplyToDefaultColumnFamily(

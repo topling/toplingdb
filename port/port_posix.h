@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <assert.h>
 #include <thread>
 
 #include "rocksdb/port_defs.h"
@@ -111,7 +112,7 @@ class Mutex {
 
   // this will assert if the mutex is not locked
   // it does NOT verify that mutex is held by a calling thread
-  void AssertHeld();
+  void AssertHeld() { assert(locked_); }
 
   // Also implement std Lockable
   inline void lock() { Lock(); }

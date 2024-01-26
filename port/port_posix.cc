@@ -102,12 +102,6 @@ bool Mutex::TryLock() {
   return ret;
 }
 
-void Mutex::AssertHeld() {
-#ifndef NDEBUG
-  assert(locked_);
-#endif
-}
-
 CondVar::CondVar(Mutex* mu) : mu_(mu) {
   PthreadCall("init cv", pthread_cond_init(&cv_, nullptr));
 }

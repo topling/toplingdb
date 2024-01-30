@@ -34,6 +34,9 @@
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wnonnull" // for boost::replace_all_copy
 #endif
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
 #include<boost/algorithm/string.hpp>
 
 namespace ROCKSDB_NAMESPACE {

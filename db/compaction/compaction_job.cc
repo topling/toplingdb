@@ -2175,7 +2175,7 @@ class LazyWritableFile : public FSWritableFile {
   IOStatus Allocate(uint64_t /*offset*/, uint64_t /*len*/, const IOOptions& /*options*/, IODebugContext* /*dbg*/) override {
     return IOStatus::OK(); // do nothing
   }
-  intptr_t FileDescriptor() const {
+  intptr_t FileDescriptor() const override {
     return const_cast<LazyWritableFile*>(this)->EnsureTarget()->FileDescriptor();
   }
   void SetFileSize(uint64_t fsize) override { EnsureTarget()->SetFileSize(fsize); }

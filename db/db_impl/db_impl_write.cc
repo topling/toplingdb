@@ -2115,9 +2115,11 @@ void DBImpl::NotifyOnMemTableSealed(ColumnFamilyData* /*cfd*/,
 // two_write_queues_ is true (This is to simplify the reasoning.)
 Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
   mutex_.AssertHeld();
+#if !defined(ROCKSDB_UNIT_TEST)
   if (cfd->mem()->IsEmpty()) {
     return Status::OK();
   }
+#endif
   // TODO: plumb Env::IOActivity
   log::Writer* new_log = nullptr;
   MemTable* new_mem = nullptr;

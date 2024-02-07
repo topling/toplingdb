@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "port/lang.h"
+#include "rocksdb/preproc.h"
 #include "rocksdb/rocksdb_namespace.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -343,14 +344,32 @@ class autovector {
 
   autovector(const autovector& other) : vect_(other.vect_) {
     num_stack_items_ = other.num_stack_items_;
+  #if 0
     std::uninitialized_copy_n(other.values_, other.num_stack_items_, values_);
+  #else
+    // num_stack_items_ is small, manually move should be faster
+    const size_t n = other.num_stack_items_;
+    ROCKSDB_ASSUME(n <= kSize); // let compiler do vectorization
+    for (size_t i = 0; i < n; i++) {
+      new (&values_[i]) T (other.values_[i]); // copy cons
+    }
+  #endif
   }
 
   autovector& operator=(const autovector& other) { return assign(other); }
 
   autovector(autovector&& other) noexcept : vect_(std::move(other.vect_)) {
     num_stack_items_ = other.num_stack_items_;
+  #if 0
     std::uninitialized_move_n(other.values_, other.num_stack_items_, values_);
+  #else
+    // num_stack_items_ is small, manually move should be faster
+    const size_t n = other.num_stack_items_;
+    ROCKSDB_ASSUME(n <= kSize); // let compiler do vectorization
+    for (size_t i = 0; i < n; i++) {
+      new (&values_[i]) T (std::move(other.values_[i])); // move cons
+    }
+  #endif
     other.num_stack_items_ = 0;
   }
   autovector& operator=(autovector&& other) noexcept;

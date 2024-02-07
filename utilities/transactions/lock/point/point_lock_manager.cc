@@ -91,7 +91,7 @@ struct LockMap : private boost::noncopyable {
     else
       super_stripes_ = std::max<uint16_t>(1, super_stripes);
     num_stripes_ = uint32_t(std::max<size_t>(1, num_stripes));
-    lock_map_stripes_.reserve(num_stripes * super_stripes);
+    lock_map_stripes_.reserve_aligned(128, num_stripes * super_stripes);
     for (size_t i = 0; i < num_stripes * super_stripes; i++) {
       lock_map_stripes_.unchecked_emplace_back(factory);
     }

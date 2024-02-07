@@ -19,13 +19,12 @@ struct TrackedKeyInfo {
   // Earliest sequence number that is relevant to this transaction for this key
   SequenceNumber seq;
 
-  uint32_t num_writes;
+  uint32_t num_writes : 31;
+  uint32_t exclusive  :  1;
   uint32_t num_reads;
 
-  bool exclusive;
-
   explicit TrackedKeyInfo(SequenceNumber seq_no)
-      : seq(seq_no), num_writes(0), num_reads(0), exclusive(false) {}
+      : seq(seq_no), num_writes(0), exclusive(false), num_reads(0) {}
 
   void Merge(const TrackedKeyInfo& info) {
     assert(seq <= info.seq);
@@ -38,7 +37,12 @@ struct TrackedKeyInfo {
 #if 0
 using TrackedKeyInfos = std::unordered_map<std::string, TrackedKeyInfo>;
 #else
-struct TrackedKeyInfos : terark::hash_strmap<TrackedKeyInfo> {
+struct TrackedKeyInfos : terark::hash_strmap<TrackedKeyInfo
+      , terark::fstring_func::hash_align
+      , terark::fstring_func::equal_align
+      , terark::ValueInline, terark::FastCopy
+      , unsigned, size_t, false
+      > {
   TrackedKeyInfos() {
     size_t cap = 8;
     size_t strpool_cap = 1024;

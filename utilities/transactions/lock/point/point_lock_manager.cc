@@ -47,7 +47,7 @@ struct LockInfo {
   DECLARE_DEFAULT_MOVES(LockInfo);
 };
 
-struct LockMapStripe {
+struct LockMapStripe : private boost::noncopyable {
   explicit LockMapStripe(TransactionDBMutexFactory* factory) {
     stripe_mutex = factory->AllocateMutex();
     stripe_cv = factory->AllocateCondVar();
@@ -60,6 +60,8 @@ struct LockMapStripe {
 
   // Condition Variable per stripe for waiting on a lock
   std::shared_ptr<TransactionDBCondVar> stripe_cv;
+
+  size_t padding[2] = {0};
 
   // Locked keys mapped to the info about the transactions that locked them.
   // TODO(agiardullo): Explore performance of other data structures.
@@ -77,9 +79,10 @@ struct LockMapStripe {
   KeyStrMap keys;
 #endif
 };
+static_assert(sizeof(LockMapStripe) == 128);
 
 // Map of #num_stripes LockMapStripes
-struct LockMap {
+struct LockMap : private boost::noncopyable {
   explicit LockMap(uint16_t key_prefix_len, uint16_t super_stripes,
                    size_t num_stripes, TransactionDBMutexFactory* factory) {
     key_prefix_len_ = std::min<uint16_t>(8, key_prefix_len);
@@ -88,16 +91,9 @@ struct LockMap {
     else
       super_stripes_ = std::max<uint16_t>(1, super_stripes);
     num_stripes_ = uint32_t(std::max<size_t>(1, num_stripes));
-    lock_map_stripes_.reserve(num_stripes);
+    lock_map_stripes_.reserve(num_stripes * super_stripes);
     for (size_t i = 0; i < num_stripes * super_stripes; i++) {
-      LockMapStripe* stripe = new LockMapStripe(factory);
-      lock_map_stripes_.push_back(stripe);
-    }
-  }
-
-  ~LockMap() {
-    for (auto stripe : lock_map_stripes_) {
-      delete stripe;
+      lock_map_stripes_.unchecked_emplace_back(factory);
     }
   }
 
@@ -106,7 +102,7 @@ struct LockMap {
   uint16_t super_stripes_;
   uint32_t num_stripes_;
 
-  terark::valvec<LockMapStripe*> lock_map_stripes_;
+  terark::valvec<LockMapStripe> lock_map_stripes_;
 
   char padding[48] = {0}; // to avoid false sharing on lock_cnt
 
@@ -287,7 +283,7 @@ Status PointLockManager::TryLock(PessimisticTransaction* txn,
   // Need to lock the mutex for the stripe that this key hashes to
   size_t stripe_num = lock_map->GetStripe(key);
   assert(lock_map->lock_map_stripes_.size() > stripe_num);
-  LockMapStripe* stripe = lock_map->lock_map_stripes_[stripe_num];
+  LockMapStripe* stripe = &lock_map->lock_map_stripes_[stripe_num];
 
   LockInfo lock_info(txn->GetID(), txn->GetExpirationTime(), exclusive);
   int64_t timeout = txn->GetLockTimeout();
@@ -641,7 +637,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
   // Lock the mutex for the stripe that this key hashes to
   size_t stripe_num = lock_map->GetStripe(key);
   assert(lock_map->lock_map_stripes_.size() > stripe_num);
-  LockMapStripe* stripe = lock_map->lock_map_stripes_[stripe_num];
+  LockMapStripe* stripe = &lock_map->lock_map_stripes_[stripe_num];
 
   stripe->stripe_mutex->Lock().PermitUncheckedError();
   UnLockKey(txn, key, stripe, lock_map, env);
@@ -677,7 +673,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     for (size_t strip_idx = 0; strip_idx < num_stripes; strip_idx++) {
       uint32_t head = stripe_heads[strip_idx];
       if (nil == head) continue;
-      LockMapStripe* stripe = lock_map->lock_map_stripes_[strip_idx];
+      LockMapStripe* stripe = &lock_map->lock_map_stripes_[strip_idx];
       stripe->stripe_mutex->Lock().PermitUncheckedError();
       for (uint32_t idx = head; nil != idx; idx = keys_link[idx]) {
         const fstring key = keyinfos.key(idx);
@@ -710,8 +706,8 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
     const auto& stripes = lock_maps_[i]->lock_map_stripes_;
     // Iterate and lock all stripes in ascending order.
     for (const auto& j : stripes) {
-      j->stripe_mutex->Lock().PermitUncheckedError();
-      for (const auto& it : j->keys) {
+      j.stripe_mutex->Lock().PermitUncheckedError();
+      for (const auto& it : j.keys) {
         struct KeyLockInfo info;
         info.exclusive = it.second.exclusive;
         info.key.assign(it.first.data(), it.first.size());
@@ -728,7 +724,7 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
     auto i = cf_ids[k];
     const auto& stripes = lock_maps_[i]->lock_map_stripes_;
     for (const auto& j : stripes) {
-      j->stripe_mutex->UnLock();
+      j.stripe_mutex->UnLock();
     }
   }
 

@@ -109,7 +109,7 @@ class BinaryHeap : private Compare {
     reset_root_cmp_cache();
   }
 
-  void reserve(size_t cap) { data_.reserve(cap); }
+  void reserve(size_t cap) { data_.reserve_aligned(128, cap); }
 
   bool empty() const { return data_.empty(); }
 

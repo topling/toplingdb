@@ -25,26 +25,19 @@
 namespace ROCKSDB_NAMESPACE {
 
 struct LockInfo {
-  bool exclusive;
+  static_assert(sizeof(bool) == 1);
+  bool& exclusive() { return reinterpret_cast<bool&>(txn_ids.pad_u08()); }
+  bool exclusive() const { return txn_ids.pad_u08() != 0; }
   autovector<TransactionID> txn_ids;
 
   // Transaction locks are not valid after this time in us
   uint64_t expiration_time;
 
   LockInfo(TransactionID id, uint64_t time, bool ex)
-      : exclusive(ex), expiration_time(time) {
+      : expiration_time(time) {
+    exclusive() = ex;
     txn_ids.push_back(id);
   }
-  LockInfo(const LockInfo& lock_info)
-      : exclusive(lock_info.exclusive),
-        txn_ids(lock_info.txn_ids),
-        expiration_time(lock_info.expiration_time) {}
-  void operator=(const LockInfo& lock_info) {
-    exclusive = lock_info.exclusive;
-    txn_ids = lock_info.txn_ids;
-    expiration_time = lock_info.expiration_time;
-  }
-  DECLARE_DEFAULT_MOVES(LockInfo);
 };
 
 struct LockMapStripe : private boost::noncopyable {
@@ -347,7 +340,7 @@ Status PointLockManager::AcquireWithTimeout(
       if (!wait_ids.empty()) {
         if (txn->IsDeadlockDetect()) {
           if (IncrementWaiters(txn, wait_ids, key, column_family_id,
-                               lock_info.exclusive, env)) {
+                               lock_info.exclusive(), env)) {
             result = Status::Busy(Status::SubCode::kDeadlock);
             stripe->stripe_mutex->UnLock();
             return result;
@@ -549,13 +542,13 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
   auto [idx, miss] = stripe->keys.lazy_insert_i(key, cons, check);
   if (!miss) {
     LockInfo& lock_info = stripe->keys.val(idx);
-    assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
+    assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive());
 
-    if (lock_info.exclusive || txn_lock_info.exclusive) {
+    if (lock_info.exclusive() || txn_lock_info.exclusive()) {
       if (lock_info.txn_ids.num_stack_items() == 1 &&
           lock_info.txn_ids[0] == txn_lock_info.txn_ids[0]) {
         // The list contains one txn and we're it, so just take it.
-        lock_info.exclusive = txn_lock_info.exclusive;
+        lock_info.exclusive() = txn_lock_info.exclusive();
         lock_info.expiration_time = txn_lock_info.expiration_time;
       } else {
         // Check if it's expired. Skips over txn_lock_info.txn_ids[0] in case
@@ -565,7 +558,7 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
                           expire_time)) {
           // lock is expired, can steal it
           lock_info.txn_ids = std::move(txn_lock_info.txn_ids);
-          lock_info.exclusive = txn_lock_info.exclusive;
+          lock_info.exclusive() = txn_lock_info.exclusive();
           lock_info.expiration_time = txn_lock_info.expiration_time;
           // lock_cnt does not change
         } else {
@@ -709,7 +702,7 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
       j.stripe_mutex->Lock().PermitUncheckedError();
       for (const auto& it : j.keys) {
         struct KeyLockInfo info;
-        info.exclusive = it.second.exclusive;
+        info.exclusive = it.second.exclusive();
         info.key.assign(it.first.data(), it.first.size());
         for (const auto& id : it.second.txn_ids) {
           info.ids.push_back(id);

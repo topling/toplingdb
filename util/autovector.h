@@ -14,6 +14,7 @@
 #include "port/lang.h"
 #include "rocksdb/preproc.h"
 #include "rocksdb/rocksdb_namespace.h"
+#include <terark/valvec32.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -344,6 +345,8 @@ class autovector {
 
   autovector(const autovector& other) : vect_(other.vect_) {
     num_stack_items_ = other.num_stack_items_;
+    pad_u08_ = other.pad_u08_;
+    pad_u16_ = other.pad_u16_;
   #if 0
     std::uninitialized_copy_n(other.values_, other.num_stack_items_, values_);
   #else
@@ -360,6 +363,8 @@ class autovector {
 
   autovector(autovector&& other) noexcept : vect_(std::move(other.vect_)) {
     num_stack_items_ = other.num_stack_items_;
+    pad_u08_ = other.pad_u08_;
+    pad_u16_ = other.pad_u16_;
   #if 0
     std::uninitialized_move_n(other.values_, other.num_stack_items_, values_);
   #else
@@ -399,6 +404,11 @@ class autovector {
   T& top() noexcept { return back(); }
   void pop() { pop_back(); }
 
+  uint8_t   pad_u08() const { return pad_u08_; }
+  uint16_t  pad_u16() const { return pad_u16_; }
+  uint8_t & pad_u08() { return pad_u08_; }
+  uint16_t& pad_u16() { return pad_u16_; }
+
  private:
   static void destroy(value_type* p, size_t n) {
     if (!std::is_trivially_destructible<value_type>::value) {
@@ -407,8 +417,13 @@ class autovector {
   }
 
   // used only if there are more than `kSize` items.
-  std::vector<T> vect_;
-  size_type num_stack_items_ = 0;  // current number of items
+  static_assert(kSize <= 255);
+  using HeapVector = std::conditional_t<std::is_trivially_destructible_v<T>,
+                                        terark::valvec32<T>, std::vector<T> >;
+  HeapVector vect_;
+  uint8_t  num_stack_items_ = 0;  // current number of items
+  uint8_t  pad_u08_ = 0;
+  uint16_t pad_u16_ = 0;
   union {
     value_type values_[kSize];
   };
@@ -423,6 +438,8 @@ inline autovector<T, kSize>& autovector<T, kSize>::assign(
   destroy(values_, num_stack_items_);
   // copy array
   num_stack_items_ = other.num_stack_items_;
+  pad_u08_ = other.pad_u08_;
+  pad_u16_ = other.pad_u16_;
   std::uninitialized_copy_n(other.values_, num_stack_items_, values_);
 
   return *this;
@@ -435,6 +452,8 @@ inline autovector<T, kSize>& autovector<T, kSize>::operator=(
   destroy(values_, num_stack_items_);
   size_t n = other.num_stack_items_;
   num_stack_items_ = n;
+  pad_u08_ = other.pad_u08_;
+  pad_u16_ = other.pad_u16_;
   other.num_stack_items_ = 0;
   std::uninitialized_move_n(other.values_, n, values_);
   return *this;

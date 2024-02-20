@@ -126,7 +126,7 @@ using MultiGetRange = MultiGetContext::Range;
 // Eg: The Superversion stores a pointer to the current MemTable (that can
 // be modified) and a separate list of the MemTables that can no longer be
 // written to (aka the 'immutable memtables').
-class MemTable {
+class MemTable : public CacheAlignedNewDelete {
  public:
   struct KeyComparator : public MemTableRep::KeyComparator {
     const InternalKeyComparator comparator;

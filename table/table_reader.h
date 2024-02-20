@@ -37,7 +37,7 @@ class MultiGetContext;
 // multiple threads without external synchronization. Table readers are used
 // for reading various types of table formats supported by rocksdb including
 // BlockBasedTable, PlainTable and CuckooTable format.
-class TableReader {
+class TableReader : public CacheAlignedNewDelete {
  public:
   virtual ~TableReader() {}
 

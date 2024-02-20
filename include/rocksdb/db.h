@@ -151,7 +151,7 @@ using TablePropertiesCollection =
 // any external synchronization.
 // DB is an abstract base class with one primary implementation (DBImpl)
 // and a number of wrapper implementations.
-class DB {
+class DB : public CacheAlignedNewDelete {
  public:
   // Open the database with the specified "name" for reads and writes.
   // Stores a pointer to a heap-allocated database in *dbptr and returns

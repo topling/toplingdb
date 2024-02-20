@@ -61,7 +61,7 @@ using KeyHandle = void*;
 extern Slice GetLengthPrefixedSlice(const char* data);
 extern const char* EncodeKey(std::string* scratch, const Slice& target);
 
-class MemTableRep {
+class MemTableRep : public CacheAlignedNewDelete {
  public:
   // KeyComparator provides a means to compare keys, which are internal keys
   // concatenated with values.

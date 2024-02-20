@@ -549,12 +549,12 @@ ColumnFamilyData::ColumnFamilyData(
       refs_(0),
       initialized_(false),
       dropped_(false),
+      is_delete_range_supported_(
+          cf_options.table_factory->IsDeleteRangeSupported()),
       internal_comparator_(cf_options.comparator),
       initial_cf_options_(SanitizeOptions(db_options, cf_options)),
       ioptions_(db_options, initial_cf_options_),
       mutable_cf_options_(initial_cf_options_),
-      is_delete_range_supported_(
-          cf_options.table_factory->IsDeleteRangeSupported()),
       write_buffer_manager_(write_buffer_manager),
       mem_(nullptr),
       imm_(ioptions_.min_write_buffer_number_to_merge,
@@ -567,14 +567,10 @@ ColumnFamilyData::ColumnFamilyData(
       prev_(nullptr),
       log_number_(0),
       column_family_set_(column_family_set),
-      queued_for_flush_(false),
-      queued_for_compaction_(false),
       prev_compaction_needed_bytes_(0),
-      allow_2pc_(db_options.allow_2pc),
       last_memtable_id_(0),
-      db_paths_registered_(false),
-      mempurge_used_(false),
       next_epoch_number_(1) {
+  allow_2pc_ = db_options.allow_2pc;
   if (id_ != kDummyColumnFamilyDataId) {
     // TODO(cc): RegisterDbPaths can be expensive, considering moving it
     // outside of this constructor which might be called with db mutex held.

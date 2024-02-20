@@ -569,6 +569,19 @@ class ColumnFamilyData {
   std::vector<std::string> GetDbPaths() const;
 
   uint32_t id_;
+
+  // If true --> this ColumnFamily is currently present in DBImpl::flush_queue_
+  bool queued_for_flush_ = false;
+
+  // If true --> this ColumnFamily is currently present in
+  // DBImpl::compaction_queue_
+  bool queued_for_compaction_ = false;
+
+  // if the database was opened with 2pc enabled
+  bool allow_2pc_ = false;
+
+  bool db_paths_registered_ = false;
+
   const std::string name_;
   Version* dummy_versions_;  // Head of circular doubly-linked list of versions.
   Version* current_;         // == dummy_versions->prev_
@@ -576,6 +589,8 @@ class ColumnFamilyData {
   std::atomic<int> refs_;  // outstanding references to ColumnFamilyData
   std::atomic<bool> initialized_;
   std::atomic<bool> dropped_;  // true if client dropped it
+  const bool is_delete_range_supported_;
+  bool mempurge_used_ = false;
 
   const InternalKeyComparator internal_comparator_;
   IntTblPropCollectorFactories int_tbl_prop_collector_factories_;
@@ -583,8 +598,6 @@ class ColumnFamilyData {
   const ColumnFamilyOptions initial_cf_options_;
   const ImmutableOptions ioptions_;
   MutableCFOptions mutable_cf_options_;
-
-  const bool is_delete_range_supported_;
 
   std::unique_ptr<TableCache> table_cache_;
   std::unique_ptr<BlobFileCache> blob_file_cache_;
@@ -632,17 +645,7 @@ class ColumnFamilyData {
 
   std::unique_ptr<WriteControllerToken> write_controller_token_;
 
-  // If true --> this ColumnFamily is currently present in DBImpl::flush_queue_
-  bool queued_for_flush_;
-
-  // If true --> this ColumnFamily is currently present in
-  // DBImpl::compaction_queue_
-  bool queued_for_compaction_;
-
   uint64_t prev_compaction_needed_bytes_;
-
-  // if the database was opened with 2pc enabled
-  bool allow_2pc_;
 
   // Memtable id to track flush.
   std::atomic<uint64_t> last_memtable_id_;
@@ -650,14 +653,11 @@ class ColumnFamilyData {
   // Directories corresponding to cf_paths.
   std::vector<std::shared_ptr<FSDirectory>> data_dirs_;
 
-  bool db_paths_registered_;
-
   std::string full_history_ts_low_;
 
   // For charging memory usage of file metadata created for newly added files to
   // a Version associated with this CFD
   std::shared_ptr<CacheReservationManager> file_metadata_cache_res_mgr_;
-  bool mempurge_used_;
 
   std::atomic<uint64_t> next_epoch_number_;
 };

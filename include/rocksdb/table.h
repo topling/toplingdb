@@ -36,6 +36,7 @@ class Cache;
 struct CompactionInputFiles;
 class FilterPolicy;
 class FlushBlockPolicyFactory;
+struct ImmutableOptions;
 class PersistentCache;
 class RandomAccessFile;
 struct TableReaderOptions;
@@ -921,11 +922,13 @@ class TableFactory : public Customizable {
   virtual bool SupportAutoSort() const { return false; }
 
   virtual bool ShouldCompactMarkForCompaction(const CompactionInputFiles**,
-                                              size_t) const {
+                                              size_t,
+                                              const ImmutableOptions&) const {
     return true;
   }
   virtual bool ShouldCompactAutoCompaction(const CompactionInputFiles**,
-                                           size_t) const {
+                                           size_t,
+                                           const ImmutableOptions&) const {
     return true;
   }
 };

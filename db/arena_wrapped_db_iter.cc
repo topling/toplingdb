@@ -39,7 +39,6 @@ Status Iterator::RefreshKeepSnapshot(bool keep_iter_pos) {
 ArenaWrappedDBIter::ArenaWrappedDBIter() {
   // do nothing
 }
-#define db_iter_  (&db_iter_obj_)
 
 Status ArenaWrappedDBIter::GetProperty(std::string prop_name,
                                        std::string* prop) {

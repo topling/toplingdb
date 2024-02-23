@@ -721,6 +721,9 @@ public:
   }
 
   void Next() override {
+    DoNext(); // ignore return value
+  }
+  bool DoNext() {
     assert(Valid());
     // Ensure that all children are positioned after key().
     // If we are moving in the forward direction, it is already
@@ -745,7 +748,7 @@ public:
       minHeap_.update_top();
       if (LIKELY(range_tombstone_iters_.empty())) {
         current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
-        return;
+        return status_.ok();
       }
     } else {
       // current stopped being valid, remove it from the heap.
@@ -759,12 +762,17 @@ public:
     // minHeap_.top()->key() is the first key >= k from any children_ that is
     // not covered by any range tombstone.
     FindNextVisibleKey();
-    current_ = CurrentForward();
+    if (LIKELY(!minHeap_.empty())) {
+      current_ = &minHeap_.top()->iter;
+      return status_.ok();
+    } else {
+      current_ = nullptr;
+      return false;
+    }
   }
 
   bool NextAndGetResult(IterateResult* result) override {
-    Next();
-    bool is_valid = Valid();
+    bool is_valid = DoNext();
     result->is_valid = is_valid;
     if (LIKELY(is_valid)) {
       result->SetKey(this->key());

@@ -14,6 +14,12 @@
 #include "table/internal_iterator.h"
 #include "test_util/sync_point.h"
 
+#if defined(_MSC_VER) || defined(__clang__)
+#else
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wpmf-conversions"
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 // A internal wrapper class with an interface similar to Iterator that caches
@@ -40,6 +46,13 @@ class IteratorWrapperBase {
     if (iter_ == nullptr) {
       result_.is_valid = false;
     } else {
+     #if defined(_MSC_VER) || defined(__clang__)
+     #else
+      next_and_get_result_ = (NextAndGetResultFN)
+          (_iter->*(&InternalIteratorBase<TValue>::NextAndGetResult));
+      prepare_and_get_value_ = (PrepareAndGetValueFN)
+          (_iter->*(&InternalIteratorBase<TValue>::PrepareAndGetValue));
+     #endif
       Update();
     }
     return old_iter;
@@ -100,14 +113,22 @@ class IteratorWrapperBase {
     }
     */
     //return result_.value_prepared = iter_->PrepareAndGetValue(v);
+   #if defined(_MSC_VER) || defined(__clang__)
     return iter_->PrepareAndGetValue(v); // do minimal work
+   #else
+    return prepare_and_get_value_(iter_, v);
+   #endif
   }
 #ifdef __GNUC__
   inline __attribute__((always_inline))
 #endif
   bool Next() {
     assert(iter_);
+#if defined(_MSC_VER) || defined(__clang__)
     const bool is_valid = iter_->NextAndGetResult(&result_);
+#else
+    const bool is_valid = next_and_get_result_(iter_, &result_);
+#endif
     assert(is_valid == result_.is_valid);
     assert(!result_.is_valid || iter_->status().ok());
     return is_valid;
@@ -208,18 +229,34 @@ class IteratorWrapperBase {
 
   InternalIteratorBase<TValue>* iter_;
   IterateResult result_;
+#if defined(_MSC_VER) || defined(__clang__)
+#else
+  typedef bool (*NextAndGetResultFN)(InternalIteratorBase<TValue>*, IterateResult*);
+  typedef bool (*PrepareAndGetValueFN)(InternalIteratorBase<TValue>*, TValue*);
+  NextAndGetResultFN next_and_get_result_ = nullptr;
+  PrepareAndGetValueFN prepare_and_get_value_ = nullptr;
+#endif
 };
 
 template <class TValue = Slice>
 class ThinIteratorWrapperBase {
  public:
   ThinIteratorWrapperBase() : iter_(nullptr) {}
-  explicit ThinIteratorWrapperBase(InternalIteratorBase<TValue>* i) : iter_(i) {}
+  explicit ThinIteratorWrapperBase(InternalIteratorBase<TValue>* i) { Set(i); }
   InternalIteratorBase<TValue>* iter() const { return iter_; }
 
   InternalIteratorBase<TValue>* Set(InternalIteratorBase<TValue>* i) {
     auto old_iter = iter_;
     iter_ = i;
+    if (i) {
+     #if defined(_MSC_VER) || defined(__clang__)
+     #else
+      next_and_get_result_ = (NextAndGetResultFN)
+          (i->*(&InternalIteratorBase<TValue>::NextAndGetResult));
+      prepare_and_get_value_ = (PrepareAndGetValueFN)
+          (i->*(&InternalIteratorBase<TValue>::PrepareAndGetValue));
+     #endif
+    }
     return old_iter;
   }
 
@@ -243,12 +280,20 @@ class ThinIteratorWrapperBase {
   bool PrepareValue() { assert(Valid()); return iter_->PrepareValue(); }
   bool PrepareAndGetValue(TValue* v) {
     assert(Valid());
+   #if defined(_MSC_VER) || defined(__clang__)
     return iter_->PrepareAndGetValue(v);
+   #else
+    return prepare_and_get_value_(iter_, v);
+   #endif
   }
   void Next() { assert(Valid()); iter_->Next(); }
   bool NextAndGetResult(IterateResult* r) {
     assert(iter_);
+   #if defined(_MSC_VER) || defined(__clang__)
     return iter_->NextAndGetResult(r);
+   #else
+    return next_and_get_result_(iter_, r);
+   #endif
   }
   void Prev() { assert(iter_); iter_->Prev(); }
   void Seek(const Slice& k) { assert(iter_); iter_->Seek(k); }
@@ -283,6 +328,13 @@ class ThinIteratorWrapperBase {
   }
  private:
   InternalIteratorBase<TValue>* iter_;
+#if defined(_MSC_VER) || defined(__clang__)
+#else
+  typedef bool (*NextAndGetResultFN)(InternalIteratorBase<TValue>*, IterateResult*);
+  typedef bool (*PrepareAndGetValueFN)(InternalIteratorBase<TValue>*, TValue*);
+  NextAndGetResultFN next_and_get_result_ = nullptr;
+  PrepareAndGetValueFN prepare_and_get_value_ = nullptr;
+#endif
 };
 using ThinIteratorWrapper = ThinIteratorWrapperBase<Slice>;
 
@@ -294,3 +346,8 @@ template <class TValue = Slice>
 extern InternalIteratorBase<TValue>* NewEmptyInternalIterator(Arena* arena);
 
 }  // namespace ROCKSDB_NAMESPACE
+
+#if defined(_MSC_VER) || defined(__clang__)
+#else
+  #pragma GCC diagnostic pop
+#endif

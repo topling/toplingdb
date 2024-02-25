@@ -112,6 +112,22 @@ class BaseDeltaIterator final : public Iterator {
   mutable Status status_;
   std::unique_ptr<Iterator> base_iterator_;
   std::unique_ptr<WBWIIterator> delta_iterator_;
+ #if defined(_MSC_VER) || defined(__clang__)
+ #else
+  typedef bool  (*BaseIterValidFN)(const Iterator*);
+  typedef void  (*BaseIterScanFN)(Iterator*); // Prev/Next
+  typedef Slice (*BaseIterGetSliceFN)(const Iterator*); // key/value
+  typedef bool  (*DeltaIterScanKeyFN)(WBWIIterator*); // PrevKey/NextKey
+  typedef Slice (*DeltaIterUserKeyFN)(const InternalIterator*); // user_key()
+  BaseIterValidFN    base_iter_valid_;
+  BaseIterScanFN     base_iter_next_;
+  BaseIterGetSliceFN base_iter_get_key_;
+  BaseIterGetSliceFN base_iter_get_value_;
+  DeltaIterScanKeyFN delta_iter_next_key_;
+  DeltaIterUserKeyFN delta_iter_user_key_;
+ #endif
+  inline void AdvanceIter(Iterator* i, bool forward);
+  inline bool AdvanceIter(WBWIIterator* i, bool forward);
   const Comparator* comparator_;  // not owned
   const Slice* iterate_upper_bound_;
   mutable PinnableSlice merge_result_;

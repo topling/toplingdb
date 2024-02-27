@@ -11,6 +11,10 @@
 
 #include "db/arena_wrapped_db_iter.h"
 
+#if defined(__AVX512VL__) && defined(__AVX512VBMI2__)
+  #include <immintrin.h>
+#endif
+
 #if defined(__clang__)
   #pragma clang diagnostic ignored "-Winconsistent-missing-override"
   #pragma clang diagnostic ignored "-Wshorten-64-to-32"
@@ -183,8 +187,15 @@ FORCE_INLINE UintPrefix HostPrefixCacheUK(const Slice& uk) {
     }
     return data & (UintPrefix(-1) << ((sizeof(UintPrefix) - uk.size_) * 8));
   } else {
+   #if defined(__AVX512VL__) && defined(__AVX512VBMI2__)
+   #pragma message "__AVX512VL__ && __AVX512VBMI2__, use _mm_maskz_expandloadu_epi8"
+    auto mask = uint16_t(~(-1 << uk.size_));
+    data = (UintPrefix)_mm_maskz_expandloadu_epi8(mask, uk.data_);
+   #else
+   //#pragma message "!(__AVX512VL__ && __AVX512VBMI2__), no _mm_maskz_expandloadu_epi8"
     data = 0;
     memcpy(&data, uk.data_, uk.size_);
+   #endif
   }
   if (port::kLittleEndian)
     return bswap_prefix(data);
@@ -202,8 +213,13 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
     }
     return data & (UintPrefix(-1) << ((sizeof(UintPrefix) + 8 - ik.size_) * 8));
   } else {
+   #if defined(__AVX512VL__) && defined(__AVX512VBMI2__)
+    auto mask = uint16_t(~(-1 << (ik.size_ - 8)));
+    data = (UintPrefix)_mm_maskz_expandloadu_epi8(mask, ik.data_);
+   #else
     data = 0;
     memcpy(&data, ik.data_, ik.size_ - 8);
+   #endif
   }
   if (port::kLittleEndian)
     return bswap_prefix(data);

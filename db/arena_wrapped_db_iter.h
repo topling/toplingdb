@@ -33,7 +33,7 @@ class Version;
 // to allocate.
 // When using the class's Iterator interface, the behavior is exactly
 // the same as the inner DBIter.
-class ArenaWrappedDBIter : public Iterator {
+class ArenaWrappedDBIter final : public Iterator {
  public:
   ArenaWrappedDBIter();
   ~ArenaWrappedDBIter() override {

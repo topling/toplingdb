@@ -620,6 +620,7 @@ class IterKey {
     SetKey(new_key);
   }
 
+  __always_inline
   Slice SetKey(const Slice& key, bool copy = true) {
     // is_user_key_ expected to be set already via SetIsUserKey
     return SetKeyImpl(key, copy);
@@ -628,11 +629,13 @@ class IterKey {
   // If user-defined timestamp is enabled, then `key` includes timestamp.
   // TODO(yanqin) this is also used to set prefix, which do not include
   // timestamp. Should be handled.
+  __always_inline
   Slice SetUserKey(const Slice& key, bool copy = true) {
     is_user_key_ = true;
     return SetKeyImpl(key, copy);
   }
 
+  __always_inline
   Slice SetInternalKey(const Slice& key, bool copy = true) {
     is_user_key_ = false;
     return SetKeyImpl(key, copy);

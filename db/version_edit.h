@@ -208,6 +208,7 @@ struct FileMetaData {
   short job_attempt = -1;
 
   CompactionReason compaction_reason = CompactionReason::kUnknown;
+  bool is_bottom_most_compaction = false; // for webview
   bool being_compacted = false;       // Is this file undergoing compaction?
   bool init_stats_from_file = false;  // true if the data-entry stats of this
                                       // file has initialized from file.

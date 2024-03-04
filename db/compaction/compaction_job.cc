@@ -199,10 +199,12 @@ CompactionJob::CompactionJob(
   ThreadStatusUtil::SetColumnFamily(cfd);
   ThreadStatusUtil::SetThreadOperation(ThreadStatus::OP_COMPACTION);
   auto compaction_reason = compaction->compaction_reason();
+  bool is_bottom_most_compaction = compaction->bottommost_level();
   for (auto& level : *compaction->inputs()) {
     for (auto& file : level.files) {
       file->job_id = job_id;
       file->compaction_reason = compaction_reason;
+      file->is_bottom_most_compaction = is_bottom_most_compaction;
     }
   }
   ReportStartedCompaction(compaction);

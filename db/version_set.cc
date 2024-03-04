@@ -2004,6 +2004,7 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
       files.back().job_id = file->job_id;
       files.back().job_attempt = file->job_attempt;
       files.back().compaction_reason = file->compaction_reason;
+      files.back().is_bottom_most_compaction = file->is_bottom_most_compaction;
       level_size += file->fd.GetFileSize();
     }
     cf_meta->levels.emplace_back(level, level_size, std::move(files));

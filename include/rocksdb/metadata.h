@@ -34,6 +34,8 @@ struct FileStorageInfo {
   // The type of the file as part of a DB.
   FileType file_type = kTempFile;
 
+  bool is_bottom_most_compaction = false; // for webview
+
   // File size in bytes. See also `trim_to_size`.
   uint64_t size = 0;
 

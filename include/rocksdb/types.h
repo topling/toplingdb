@@ -28,7 +28,7 @@ ROCKSDB_ENUM_CLASS(TableFileCreationReason, unsigned char,
   kMisc
 );
 
-enum class BlobFileCreationReason {
+enum class BlobFileCreationReason : unsigned char {
   kFlush,
   kCompaction,
   kRecovery,
@@ -36,7 +36,7 @@ enum class BlobFileCreationReason {
 
 // The types of files RocksDB uses in a DB directory. (Available for
 // advanced options.)
-enum FileType {
+enum FileType : unsigned char {
   kWalFile,
   kDBLockFile,
   kTableFile,
@@ -52,7 +52,7 @@ enum FileType {
 
 // User-oriented representation of internal key types.
 // Ordering of this enum entries should not change.
-enum EntryType {
+enum EntryType : unsigned char {
   kEntryPut,
   kEntryDelete,
   kEntrySingleDelete,
@@ -64,7 +64,7 @@ enum EntryType {
   kEntryOther,
 };
 
-enum class WriteStallCause {
+enum class WriteStallCause : unsigned char {
   // Beginning of CF-scope write stall causes
   //
   // Always keep `kMemtableLimit` as the first stat in this section

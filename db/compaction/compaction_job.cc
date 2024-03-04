@@ -198,9 +198,11 @@ CompactionJob::CompactionJob(
   ThreadStatusUtil::SetEnableTracking(db_options_.enable_thread_tracking);
   ThreadStatusUtil::SetColumnFamily(cfd);
   ThreadStatusUtil::SetThreadOperation(ThreadStatus::OP_COMPACTION);
+  auto compaction_reason = compaction->compaction_reason();
   for (auto& level : *compaction->inputs()) {
     for (auto& file : level.files) {
       file->job_id = job_id;
+      file->compaction_reason = compaction_reason;
     }
   }
   ReportStartedCompaction(compaction);

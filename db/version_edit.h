@@ -205,8 +205,9 @@ struct FileMetaData {
   int refs = 0;  // Reference count
 
   int job_id = -1;
-  int job_attempt = -1;
+  short job_attempt = -1;
 
+  CompactionReason compaction_reason = CompactionReason::kUnknown;
   bool being_compacted = false;       // Is this file undergoing compaction?
   bool init_stats_from_file = false;  // true if the data-entry stats of this
                                       // file has initialized from file.

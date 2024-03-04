@@ -127,6 +127,7 @@ struct SstFileMetaData : public FileStorageInfo {
   uint64_t num_reads_sampled = 0;     // How many times the file is read.
   int job_id = -1;
   short job_attempt = -1;
+  CompactionReason compaction_reason = CompactionReason::kUnknown;
   bool being_compacted =
       false;  // true if the file is currently being compacted.
 

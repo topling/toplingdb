@@ -2003,6 +2003,7 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
       files.back().num_deletions = file->num_deletions;
       files.back().job_id = file->job_id;
       files.back().job_attempt = file->job_attempt;
+      files.back().compaction_reason = file->compaction_reason;
       level_size += file->fd.GetFileSize();
     }
     cf_meta->levels.emplace_back(level, level_size, std::move(files));

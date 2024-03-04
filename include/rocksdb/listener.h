@@ -110,7 +110,7 @@ struct BlobFileCreationInfo : public BlobFileCreationBriefInfo {
   std::string file_checksum_func_name;
 };
 
-ROCKSDB_ENUM_CLASS(CompactionReason, int,
+ROCKSDB_ENUM_CLASS(CompactionReason, uint8_t,
   kUnknown = 0,
   // [Level] number of L0 files > level0_file_num_compaction_trigger
   kLevelL0FilesNum,

@@ -434,7 +434,7 @@ class MemTable : public CacheAlignedNewDelete {
   // memtable prefix bloom is disabled, since we can't easily allocate more
   // space.
   void UpdateWriteBufferSize(size_t new_write_buffer_size) {
-    if (bloom_filter_ == nullptr ||
+    if (IF_ROCKSDB_UNIT_TEST(bloom_filter_ == nullptr, false) ||
         new_write_buffer_size < write_buffer_size_) {
       write_buffer_size_.store(new_write_buffer_size,
                                std::memory_order_relaxed);

@@ -488,6 +488,12 @@
 #define ROCKSDB_ASSUME(cond) static_cast<void>(!!(cond))
 #endif
 
+#ifdef ROCKSDB_UNIT_TEST
+#define IF_ROCKSDB_UNIT_TEST(Then, Else) Then
+#else
+#define IF_ROCKSDB_UNIT_TEST(Then, Else) Else
+#endif
+
 #define ROCKSDB_DIE(fmt, ...) \
 	do { \
         fprintf(stderr, "%s:%d: %s: die: " fmt " !\n", \

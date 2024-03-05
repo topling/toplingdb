@@ -447,7 +447,9 @@ class MemTable : public CacheAlignedNewDelete {
   // Returns if there is no entry inserted to the mem table.
   // REQUIRES: external synchronization to prevent simultaneous
   // operations on the same MemTable (unless this Memtable is immutable).
-  bool IsEmpty() const { return first_seqno_ == 0; }
+  bool IsEmpty() const {
+    return first_seqno_.load(std::memory_order_relaxed) == 0;
+  }
 
   // Returns the sequence number of the first element that was inserted
   // into the memtable.

@@ -30,6 +30,8 @@
 #include "rocksdb/version.h"
 #include "rocksdb/wide_columns.h"
 
+#include <terark/hash_strmap.hpp>
+
 #ifdef _WIN32
 // Windows API macro interference
 #undef DeleteFile
@@ -144,7 +146,7 @@ struct GetMergeOperandsOptions {
 //  key: is the table's file name.
 //  value: the table properties object of the given table.
 using TablePropertiesCollection =
-    std::unordered_map<std::string, std::shared_ptr<const TableProperties>>;
+    terark::hash_strmap<std::shared_ptr<const TableProperties>>;
 
 // A DB is a persistent, versioned ordered map from keys to values.
 // A DB is safe for concurrent access from multiple threads without

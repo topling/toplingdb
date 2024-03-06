@@ -1852,7 +1852,7 @@ Status Version::GetPropertiesOfAllTables(const ReadOptions& read_options,
     Status s =
         GetTableProperties(read_options, &table_properties, file_meta, &fname);
     if (s.ok()) {
-      props->insert({fname, table_properties});
+      props->emplace(fname, table_properties);
     } else {
       return s;
     }
@@ -1883,7 +1883,7 @@ Status Version::GetPropertiesOfTablesInRange(
           Status s = GetTableProperties(read_options, &table_properties,
                                         file_meta, &fname);
           if (s.ok()) {
-            props->insert({fname, table_properties});
+            props->emplace(fname, table_properties);
           } else {
             return s;
           }

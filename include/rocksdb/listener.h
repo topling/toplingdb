@@ -21,10 +21,12 @@
 #include "rocksdb/table_properties.h"
 #include "rocksdb/types.h"
 
+#include <terark/hash_strmap.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 using TablePropertiesCollection =
-    std::unordered_map<std::string, std::shared_ptr<const TableProperties>>;
+    terark::hash_strmap<std::shared_ptr<const TableProperties>>;
 
 class DB;
 class ColumnFamilyHandle;

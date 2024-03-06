@@ -139,7 +139,7 @@ TEST_F(DBTablePropertiesTest, GetPropertiesOfAllTablesTest) {
 
     TablePropertiesCollection props;
     ASSERT_OK(db_->GetPropertiesOfAllTables(&props));
-    std::string sst_file = props.begin()->first;
+    const std::string sst_file = stdstrof(props.begin()->first);
 
     // Corrupt the file's TableProperties using session id
     std::string contents;

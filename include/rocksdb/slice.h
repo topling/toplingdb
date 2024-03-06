@@ -154,6 +154,9 @@ class Slice {
   // Intentionally copyable
 };
 
+template<class Str>
+std::string stdstrof(const Str& s) { return std::string(s.data(), s.size()); }
+
 /**
  * A Slice that can be pinned with some cleanup tasks, which will be run upon
  * ::Reset() or object destruction, whichever is invoked first. This can be used

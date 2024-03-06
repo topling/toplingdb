@@ -1521,7 +1521,7 @@ bool InternalStats::HandleEstimateOldestKeyTime(uint64_t* value, DBImpl* /*db*/,
     return false;
   }
   *value = std::numeric_limits<uint64_t>::max();
-  for (auto& p : collection) {
+  for (const auto& p : collection) {
     *value = std::min(*value, p.second->oldest_key_time);
     if (*value == 0) {
       break;

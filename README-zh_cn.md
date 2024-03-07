@@ -17,8 +17,8 @@ ToplingDB 兼容 RocksDB API 的同时，增加了很多非常重要的功能与
 1. 修复了很多 RocksDB 的 bug，我们已将其中易于合并到 RocksDB 的很多修复与改进给上游 RocksDB 发了 [Pull Request](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet)
 
 ## ToplingDB 云原生数据库服务
-1. [MyTopling](https://github.com/topling/mytopling)(MySQL on ToplingDB), [阿里云上的托管 MyTopling](https://topling.cn/products/mytopling/)
-1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB), [阿里云上的托管 Todis](https://topling.cn/products/todis-enterprise/)
+1. [MyTopling](https://github.com/topling/mytopling)(MySQL on ToplingDB), [阿里云上的 MyTopling](https://market.aliyun.com/products?k=mytopling)
+1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB)
 
 ## ToplingDB 组件
 通过 SidePlugin 的实现机制，插件（组件）可以与 ToplingDB 的核心代码实现物理隔离

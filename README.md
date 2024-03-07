@@ -18,8 +18,8 @@ ToplingDB has much more key features than RocksDB:
 1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
 
 ## ToplingDB cloud native DB services
-1. [MyTopling](https://github.com/topling/mytopling)(MySQL on ToplingDB), [Managed MyTopling on aliyun](https://topling.cn/products/mytopling/)
-1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB), [Managed Todis on aliyun](https://topling.cn/products/todis-enterprise/)
+1. [MyTopling](https://github.com/topling/mytopling)(MySQL on ToplingDB), [MyTopling on aliyun](https://market.aliyun.com/products?k=mytopling)
+1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB)
 
 ## ToplingDB Components
 With SidePlugin mechanics, plugins/components can be physically separated from core toplingdb

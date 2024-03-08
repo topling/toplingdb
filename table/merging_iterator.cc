@@ -752,6 +752,8 @@ public:
       // The loop advanced all non-current children to be > key() so current_
       // should still be strictly the smallest key.
       SwitchToForward();
+      if (UNLIKELY(!status_.ok()))
+        return false;
     }
 
     // For the heap modifications below to be correct, current_ must be the

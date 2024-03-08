@@ -760,12 +760,14 @@ class IterKey {
       char*  bufp = buf();
       key_ = bufp;
       memcpy(bufp, key.data(), size);
+      key_size_ = size;
+      return Slice(bufp, size);
     } else {
       // Update key_ to point to external memory
       key_ = key.data();
+      key_size_ = size;
+      return Slice(key_, size);
     }
-    key_size_ = size;
-    return Slice(key_, size);
   }
 
   void ResetBuffer() {

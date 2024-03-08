@@ -459,9 +459,9 @@ public:
       : is_arena_mode_(is_arena_mode),
         prefix_seek_mode_(prefix_seek_mode),
         direction_(kForward),
-        comparator_(comparator),
         current_(nullptr),
-        minHeap_(MinHeapComparator(comparator_)),
+        minHeap_(MinHeapComparator(comparator)),
+        comparator_(comparator),
         pinned_iters_mgr_(nullptr),
         iterate_upper_bound_(iterate_upper_bound) {
     children_.resize(n);
@@ -469,6 +469,9 @@ public:
       children_[i].level = i;
       children_[i].iter.Set(children[i]);
     }
+    static_assert( // Hot fields should lie in same cache line
+      (offsetof(MergingIterTmpl, range_tombstone_iters_)) / CACHE_LINE_SIZE ==
+      (offsetof(MergingIterTmpl, comparator_) - 1) / CACHE_LINE_SIZE);
   }
 
   void considerStatus(Status s) {
@@ -934,6 +937,19 @@ public:
   // Which direction is the iterator moving?
   enum Direction : uint8_t { kForward, kReverse };
   Direction direction_;
+
+  // Invariant: at the end of each InternalIterator API,
+  // current_ points to minHeap_.top().iter (maxHeap_ if backward scanning)
+  // or nullptr if no child iterator is valid.
+  // This follows from that current_ = CurrentForward()/CurrentReverse() is
+  // called at the end of each InternalIterator API.
+  IteratorWrapper* current_;
+
+  union {
+    MergerMinIterHeap minHeap_;
+    MergerMaxIterHeap maxHeap_;
+  };
+
   const InternalKeyComparator* comparator_;
   // HeapItem for range tombstone start and end keys. Each range tombstone
   // iterator will have at most one side (start key or end key) in a heap
@@ -953,19 +969,8 @@ public:
 
   bool SkipPrevDeleted();
 
-  // Invariant: at the end of each InternalIterator API,
-  // current_ points to minHeap_.top().iter (maxHeap_ if backward scanning)
-  // or nullptr if no child iterator is valid.
-  // This follows from that current_ = CurrentForward()/CurrentReverse() is
-  // called at the end of each InternalIterator API.
-  IteratorWrapper* current_;
   // If any of the children have non-ok status, this is one of them.
   Status status_;
-  union {
-    MergerMinIterHeap minHeap_;
-    MergerMaxIterHeap maxHeap_;
-  };
-
   PinnedIteratorsManager* pinned_iters_mgr_;
 
   // Used to bound range tombstones. For point keys, DBIter and SSTable iterator

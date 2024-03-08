@@ -1283,7 +1283,6 @@ class LevelIterator final : public InternalIterator {
   const InternalKeyComparator& icomparator_;
   const UserComparatorWrapper user_comparator_;
   const LevelFilesBrief* flevel_;
-  mutable FileDescriptor current_value_;
   // `prefix_extractor_` may be non-null even for total order seek. Checking
   // this variable is not the right way to identify whether prefix iterator
   // is used.

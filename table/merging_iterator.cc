@@ -767,7 +767,7 @@ public:
       minHeap_.update_top();
       if (LIKELY(range_tombstone_iters_.empty())) {
         current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
-        return status_.ok();
+        return true;
       }
     } else {
       // current stopped being valid, remove it from the heap.

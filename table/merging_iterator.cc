@@ -543,7 +543,14 @@ public:
 
   bool Valid() const override { return current_ != nullptr && status_.ok(); }
 
-  Status status() const override { return status_; }
+  Status status() const override {
+    // this function should be called very rarely, so it can be slow.
+    // pay this function slow to gain PrepareAndGetValue faster.
+    if (status_.ok() && current_) {
+      const_cast<Status&>(status_) = current_->status();
+    }
+    return status_;
+  }
 
   // Add range_tombstone_iters_[level] into min heap.
   // Updates active_ if the end key of a range tombstone is inserted.
@@ -862,12 +869,7 @@ public:
 
   bool PrepareAndGetValue(Slice* v) override {
     assert(Valid());
-    if (LIKELY(current_->PrepareAndGetValue(v))) {
-      return true;
-    }
-    considerStatus(current_->status());
-    assert(!status_.ok());
-    return false;
+    return current_->PrepareAndGetValue(v);
   }
 
   // Here we simply relay MayBeOutOfLowerBound/MayBeOutOfUpperBound result

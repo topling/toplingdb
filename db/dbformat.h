@@ -759,8 +759,8 @@ class IterKey {
       EnlargeBufferIfNeeded(size);
       char*  bufp = buf();
       key_ = bufp;
-      memcpy(bufp, key.data(), size);
       key_size_ = size;
+      memcpy(bufp, key.data(), size);
       return Slice(bufp, size);
     } else {
       // Update key_ to point to external memory

@@ -91,6 +91,8 @@ DEFINE_bool(if_log_bucket_dist_when_flash, true,
 
 DEFINE_bool(enable_zero_copy, false, "enable zero copy");
 
+DEFINE_bool(reverse, false, "readseq/scan in reverse order");
+
 DEFINE_int32(
     threshold_use_skiplist, 256,
     "threshold_use_skiplist parameter to pass into NewHashLinkListRepFactory");
@@ -376,6 +378,19 @@ class SeqReadBenchmarkThread : public BenchmarkThread {
 
   void ReadOneSeq() {
     std::unique_ptr<MemTableRep::Iterator> iter(table_->GetIterator());
+    if (FLAGS_reverse)
+      ReadReverse(iter.get());
+    else
+      ReadForward(iter.get());
+  }
+  void ReadReverse(MemTableRep::Iterator* iter) {
+    for (iter->SeekToLast(); iter->Valid(); iter->Prev()) {
+      // pretend to read the value
+      *bytes_read_ += VarintLength(16) + 16 + FLAGS_item_size;
+    }
+    ++*read_hits_;
+  }
+  void ReadForward(MemTableRep::Iterator* iter) {
     for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
       // pretend to read the value
       *bytes_read_ += VarintLength(16) + 16 + FLAGS_item_size;

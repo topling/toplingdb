@@ -1032,6 +1032,10 @@ size_t MaxFileSizeForL0MetaPin(const MutableCFOptions& cf_options) {
 
 void MutableCFOptions::RefreshDerivedOptions(int num_levels,
                                              CompactionStyle compaction_style) {
+#if defined(NDEBUG)
+  uint64_t min_size = 512<<10; // 512K, to prevent typo in http set options
+  target_file_size_base = std::max(target_file_size_base, min_size);
+#endif
   max_file_size.resize(num_levels);
   for (int i = 0; i < num_levels; ++i) {
     if (i == 0 && compaction_style == kCompactionStyleUniversal) {

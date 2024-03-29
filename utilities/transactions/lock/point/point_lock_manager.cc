@@ -398,12 +398,13 @@ void PointLockManager::DecrementWaitersImpl(
     const PessimisticTransaction* txn,
     const autovector<TransactionID>& wait_ids) {
   auto id = txn->GetID();
-  assert(wait_txn_map_.Contains(id));
-  wait_txn_map_.Delete(id);
+  assert(wait_txn_map_.contains(id));
+  wait_txn_map_.erase(id);
 
   for (auto wait_id : wait_ids) {
-    if (--rev_wait_txn_map_.Get(wait_id) == 0) {
-      rev_wait_txn_map_.Delete(wait_id);
+    auto idx = rev_wait_txn_map_.find_i(wait_id);
+    if (--rev_wait_txn_map_.val(idx) == 0) {
+      rev_wait_txn_map_.erase_i(idx);
     }
   }
 }
@@ -427,20 +428,16 @@ bool PointLockManager::IncrementWaiters(
   static_assert(std::is_trivially_destructible<TransactionID>::value);
 #endif
   std::lock_guard<std::mutex> lock(wait_txn_map_mutex_);
-  assert(!wait_txn_map_.Contains(id));
+  assert(!wait_txn_map_.contains(id));
 
-  wait_txn_map_.Insert(id, {wait_ids, cf_id, exclusive, key});
+  wait_txn_map_.insert_i(id, {wait_ids, cf_id, exclusive, key});
 
   for (auto wait_id : wait_ids) {
-    if (rev_wait_txn_map_.Contains(wait_id)) {
-      rev_wait_txn_map_.Get(wait_id)++;
-    } else {
-      rev_wait_txn_map_.Insert(wait_id, 1);
-    }
+    rev_wait_txn_map_[wait_id]++;
   }
 
   // No deadlock if nobody is waiting on self.
-  if (!rev_wait_txn_map_.Contains(id)) {
+  if (!rev_wait_txn_map_.contains(id)) {
     return false;
   }
 
@@ -468,9 +465,9 @@ bool PointLockManager::IncrementWaiters(
     if (next == id) {
       std::vector<DeadlockInfo> path;
       while (head != -1) {
-        assert(wait_txn_map_.Contains(queue_values[head]));
+        assert(wait_txn_map_.contains(queue_values[head]));
 
-        auto extracted_info = wait_txn_map_.Get(queue_values[head]);
+        auto extracted_info = wait_txn_map_.at(queue_values[head]);
         path.push_back({queue_values[head], extracted_info.m_cf_id,
                         extracted_info.m_exclusive,
                         extracted_info.m_waiting_key.ToString()});
@@ -489,12 +486,13 @@ bool PointLockManager::IncrementWaiters(
       deadlock_time = 0;
       DecrementWaitersImpl(txn, wait_ids);
       return true;
-    } else if (!wait_txn_map_.Contains(next)) {
+    } else if (auto idx  = wait_txn_map_.find_i(next);
+                    idx == wait_txn_map_.end_i()) {
       next_ids = nullptr;
       continue;
     } else {
       parent = head;
-      next_ids = &(wait_txn_map_.Get(next).m_neighbors);
+      next_ids = &(wait_txn_map_.val(idx).m_neighbors);
     }
   }
 

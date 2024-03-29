@@ -15,11 +15,11 @@
 #include "rocksdb/utilities/transaction.h"
 #include "util/autovector.h"
 #include "util/hash_containers.h"
-#include "util/hash_map.h"
 #include "util/thread_local.h"
 #include "utilities/transactions/lock/lock_manager.h"
 #include "utilities/transactions/lock/point/point_lock_tracker.h"
 
+#include <terark/gold_hash_map.hpp>
 #include <terark/util/vec_idx_map.hpp>
 
 namespace ROCKSDB_NAMESPACE {
@@ -197,9 +197,9 @@ class PointLockManager : public LockManager {
   std::mutex wait_txn_map_mutex_;
 
   // Maps from waitee -> number of waiters.
-  HashMap<TransactionID, int> rev_wait_txn_map_;
+  terark::gold_hash_map<TransactionID, int> rev_wait_txn_map_;
   // Maps from waiter -> waitee.
-  HashMap<TransactionID, TrackedTrxInfo> wait_txn_map_;
+  terark::gold_hash_map<TransactionID, TrackedTrxInfo> wait_txn_map_;
   DeadlockInfoBuffer dlock_buffer_;
 
   // Used to allocate mutexes/condvars to use when locking keys

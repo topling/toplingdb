@@ -218,6 +218,7 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
     data = (UintPrefix)_mm_maskz_expandloadu_epi8(mask, ik.data_);
    #else
     data = 0;
+    ROCKSDB_ASSUME(ik.size_ >= 8);
     memcpy(&data, ik.data_, ik.size_ - 8);
    #endif
   }

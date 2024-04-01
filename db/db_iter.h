@@ -272,7 +272,7 @@ class DBIter final : public Iterator {
   // Internal implementation of FindNextUserEntry().
   bool FindNextUserEntryInternal(bool skipping_saved_key, const Slice* prefix);
   template<class CmpNoTS>
-  bool FindNextUserEntryInternalTmpl(bool, const Slice* prefix, CmpNoTS);
+  bool FindNextUserEntryInternalTmpl(bool, const Slice* prefix);
   bool ParseKey(ParsedInternalKey* key);
   bool MergeValuesNewToOld();
 

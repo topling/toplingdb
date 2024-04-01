@@ -340,12 +340,14 @@ struct FixedLenCmpNoTS {
 };
 
 struct BytewiseCmpNoTS {
+  BytewiseCmpNoTS(const Comparator*) {}
   bool equal(const Slice& x, const Slice& y) const { return x == y; }
   bool operator()(const Slice& x, const Slice& y) const { return x < y; }
   int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
 };
 
 struct RevBytewiseCmpNoTS {
+  RevBytewiseCmpNoTS(const Comparator*) {}
   bool equal(const Slice& x, const Slice& y) const { return x == y; }
   bool operator()(const Slice& x, const Slice& y) const { return y < x; }
   int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
@@ -369,22 +371,19 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                                        const Slice* prefix) {
   if (user_comparator_.IsForwardBytewise()) {
     ROCKSDB_ASSERT_EZ(user_comparator_.timestamp_size());
-    BytewiseCmpNoTS cmp;
-    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+    return FindNextUserEntryInternalTmpl<BytewiseCmpNoTS>(skipping_saved_key, prefix);
   } else if (user_comparator_.IsReverseBytewise()) {
     ROCKSDB_ASSERT_EZ(user_comparator_.timestamp_size());
-    RevBytewiseCmpNoTS cmp;
-    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+    return FindNextUserEntryInternalTmpl<RevBytewiseCmpNoTS>(skipping_saved_key, prefix);
   } else {
-    VirtualCmpNoTS cmp{user_comparator_.user_comparator()};
-    return FindNextUserEntryInternalTmpl(skipping_saved_key, prefix, cmp);
+    return FindNextUserEntryInternalTmpl<VirtualCmpNoTS>(skipping_saved_key, prefix);
   }
 }
 
 template<class CmpNoTS>
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
-                                           const Slice* prefix,
-                                           CmpNoTS cmpNoTS) {
+                                           const Slice* prefix) {
+  CmpNoTS cmpNoTS{user_comparator_.user_comparator()};
   // Loop until we hit an acceptable entry to yield
   assert(iter_.Valid());
   assert(status_.ok());

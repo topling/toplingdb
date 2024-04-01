@@ -34,6 +34,8 @@
 #include "util/string_util.h"
 #include "util/user_comparator_wrapper.h"
 
+#include <terark/io/DataIO_Basic.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 #if !defined(TOPLINGDB_WITH_TIMESTAMP)
@@ -286,6 +288,56 @@ bool DBIter::FindNextUserEntry(bool skipping_saved_key, const Slice* prefix) {
     return FindNextUserEntryInternal(skipping_saved_key, prefix);
   }
 }
+
+template<size_t KeyLen>
+struct FixedLenCmpNoTS {
+  static_assert(KeyLen % 4 == 0);
+  __always_inline bool equal(const Slice& x, const Slice& y) const {
+    const char* px = x.data();
+    const char* py = y.data();
+    for (size_t i = 0; i < KeyLen / 8; i++) {
+      if (((const uint64_t*)(px))[i] != ((const uint64_t*)(py))[i])
+        return false;
+    }
+    if (KeyLen % 8)
+      return ((const uint32_t*)(px))[KeyLen/4 - 1] == ((const uint32_t*)(py))[KeyLen/4 - 1];
+    else
+      return true;
+  }
+  __always_inline bool operator()(const Slice& x, const Slice& y) const {
+    const char* px = x.data();
+    const char* py = y.data();
+    for (size_t i = 0; i < KeyLen / 8; i++) {
+      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(px))[i]);
+      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(py))[i]);
+      if (ux != uy)
+        return ux < uy;
+    }
+    if (KeyLen % 8) {
+      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(px))[KeyLen/4 - 1]);
+      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(py))[KeyLen/4 - 1]);
+      return ux < uy;
+    } else
+      return false; // equal
+  }
+  __always_inline int compare(const Slice& x, const Slice& y) const {
+    const char* px = x.data();
+    const char* py = y.data();
+    for (size_t i = 0; i < KeyLen / 8; i++) {
+      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(px))[i]);
+      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(py))[i]);
+      if (ux != uy)
+        return ux < uy ? -1 : +1;
+    }
+    if (KeyLen % 8) {
+      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(px))[KeyLen/4 - 1]);
+      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(py))[KeyLen/4 - 1]);
+      if (ux != uy)
+        return ux < uy ? -1 : +1;
+    }
+    return 0;
+  }
+};
 
 struct BytewiseCmpNoTS {
   bool equal(const Slice& x, const Slice& y) const { return x == y; }

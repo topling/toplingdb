@@ -63,8 +63,6 @@ namespace ROCKSDB_NAMESPACE {
 // point iterator or a range tombstone iterator, differentiated by
 // HeapItem::type.
 struct HeapItem {
-  // corresponding point iterator
-  IteratorWrapper iter;
   enum Type : uint8_t { ITERATOR, DELETE_RANGE_START, DELETE_RANGE_END };
 
   // corresponding range tombstone iterator's start or end key value
@@ -72,31 +70,24 @@ struct HeapItem {
   // Will be overwritten before use, initialize here so compiler does not
   // complain.
   union {
+    IteratorWrapper   iter;
     ParsedInternalKey tombstone_pik;
-    struct {
-      const char* tombstone_pik_user_key_data;
-      size_t      tombstone_pik_user_key_size;
-      uint64_t    tombstone_pik_sequence;
-      uint8_t     tombstone_pik_type;
-      Type type;                       // tombstone_pik.ext_ui08
-      uint16_t tombstone_pik_ext_ui16; // tombstone_pik.ext_ui16
-      uint32_t level;                  // tombstone_pik.ext_ui32
-    };
   };
+  Type type;
+  uint32_t level;
 
-  HeapItem() {
+  HeapItem() : iter() {
     level = 0;
     type = Type::ITERATOR;
   }
 
-  HeapItem(size_t _level, InternalIteratorBase<Slice>* _iter) {
-    static_assert(offsetof(HeapItem, tombstone_pik.ext_ui08) == offsetof(HeapItem, type));
-    static_assert(offsetof(HeapItem, tombstone_pik.ext_ui32) == offsetof(HeapItem, level));
-    static_assert(sizeof(HeapItem) == sizeof(iter) + sizeof(tombstone_pik));
+  HeapItem(size_t _level, InternalIteratorBase<Slice>* _iter) : iter() {
     level = uint32_t(_level);
     type = Type::ITERATOR;
     iter.Set(_iter);
   }
+
+  ~HeapItem() {}
 
   void SetTombstoneKey(ParsedInternalKey&& pik) {
     // op_type is already initialized in MergingIterator::Finish().

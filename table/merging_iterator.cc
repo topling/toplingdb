@@ -239,6 +239,14 @@ struct HeapItemAndPrefix {
       x.key_prefix = HostPrefixCacheUK(p->tombstone_pik.user_key);
   }
 };
+struct HeapItemAndPrefixFast : HeapItemAndPrefix {
+  using HeapItemAndPrefix::HeapItemAndPrefix;
+  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefixFast& x) {
+    ROCKSDB_ASSERT_EQ(HeapItem::ITERATOR, x.iter_type);
+    x.key_prefix = HostPrefixCacheIK(x.item_ptr->iter.key());
+  }
+};
+static_assert(sizeof(HeapItemAndPrefixFast) == sizeof(HeapItemAndPrefix));
 inline static void UpdatePrefixCache(HeapItem*) {} // do nothing
 
 static FORCE_INLINE bool BytewiseCompareInternalKey(Slice x, Slice y) noexcept {
@@ -338,6 +346,19 @@ class MinHeapBytewiseComp {
         return BytewiseCompareInternalKey(b->tombstone_pik, a->tombstone_pik);
     }
   }
+  class IterOnly {
+  public:
+    IterOnly(const InternalKeyComparator*) {}
+    FORCE_INLINE
+    bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
+      if (a.key_prefix > b.key_prefix)
+        return true;
+      else if (a.key_prefix < b.key_prefix)
+        return false;
+      else
+        return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
+    }
+  };
 };
 
 class MaxHeapBytewiseComp {
@@ -362,6 +383,19 @@ class MaxHeapBytewiseComp {
         return BytewiseCompareInternalKey(a->tombstone_pik, b->tombstone_pik);
     }
   }
+  class IterOnly {
+  public:
+    IterOnly(const InternalKeyComparator*) {}
+    FORCE_INLINE
+    bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
+      if (a.key_prefix < b.key_prefix)
+        return true;
+      else if (a.key_prefix > b.key_prefix)
+        return false;
+      else
+        return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
+    }
+  };
 };
 
 class MinHeapRevBytewiseComp {
@@ -386,6 +420,19 @@ class MinHeapRevBytewiseComp {
         return RevBytewiseCompareInternalKey(b->tombstone_pik, a->tombstone_pik);
     }
   }
+  class IterOnly {
+  public:
+    IterOnly(const InternalKeyComparator*) {}
+    FORCE_INLINE
+    bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
+      if (a.key_prefix < b.key_prefix)
+        return true;
+      else if (a.key_prefix > b.key_prefix)
+        return false;
+      else
+        return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
+    }
+  };
 };
 
 class MaxHeapRevBytewiseComp {
@@ -410,6 +457,19 @@ class MaxHeapRevBytewiseComp {
         return RevBytewiseCompareInternalKey(a->tombstone_pik, b->tombstone_pik);
     }
   }
+  class IterOnly {
+  public:
+    IterOnly(const InternalKeyComparator*) {}
+    FORCE_INLINE
+    bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
+      if (a.key_prefix > b.key_prefix)
+        return true;
+      else if (a.key_prefix < b.key_prefix)
+        return false;
+      else
+        return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
+    }
+  };
 };
 
 class MergingIterator : public InternalIterator {
@@ -420,6 +480,7 @@ class MergingIterator : public InternalIterator {
   virtual void AddIterator(InternalIterator*) = 0;
   virtual void AddRangeTombstoneIterator(TruncatedRangeDelIterator*) = 0;
   virtual void Finish() = 0;
+  virtual void OptimizeVtable() = 0;
 
   // We could also use an autovector with a larger reserved size.
   // HeapItem for all child point iterators.
@@ -444,6 +505,17 @@ class MergingIterTmpl final : public MergingIterator {
   static_assert(sizeof(MergerMinIterHeap) == sizeof(MergerMaxIterHeap));
 
 public:
+  MergingIterTmpl() {}
+  void OptimizeVtable() final {
+    if constexpr (std::is_same_v<Item, HeapItemAndPrefix>) {
+      static MergingIterTmpl<typename MinHeapComparator::IterOnly,
+                             typename MaxHeapComparator::IterOnly,
+                             HeapItemAndPrefixFast> iter_only;
+      void*& vtab = reinterpret_cast<void**>(this)[0];
+      vtab = reinterpret_cast<void**>(&iter_only)[0];
+    }
+  }
+
   MergingIterTmpl(const InternalKeyComparator* comparator,
                   InternalIterator** children, int n, bool is_arena_mode,
                   bool prefix_seek_mode,
@@ -2083,6 +2155,10 @@ InternalIterator* MergeIteratorBuilder::Finish(ArenaWrappedDBIter* db_iter) {
     ret = first_iter;
     first_iter = nullptr;
   } else {
+    if (range_del_iter_ptrs_.empty() &&
+        merge_iter->range_tombstone_iters_.empty()) {
+      merge_iter->OptimizeVtable();
+    }
     for (auto& p : range_del_iter_ptrs_) {
       *(p.second) = &(merge_iter->range_tombstone_iters_[p.first]);
     }

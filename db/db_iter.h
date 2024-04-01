@@ -392,6 +392,15 @@ class DBIter final : public Iterator {
   // uncommitted data in db as in WriteUnCommitted.
   SequenceNumber sequence_;
 
+#if defined(_MSC_VER) || defined(__clang__)
+#else
+  template<class CmpNoTS>
+  bool FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix);
+  void SetFuncPtr();
+  typedef bool (*FindNextUserEntryFN)(DBIter*, bool, const Slice*);
+  FindNextUserEntryFN m_find_next_entry;
+#endif
+
   IterKey saved_key_;
   // Reusable internal key data structure. This is only used inside one function
   // and should not be used across functions. Reusing this object can reduce

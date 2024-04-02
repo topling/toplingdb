@@ -288,12 +288,7 @@ bool DBIter::SetValueAndColumnsFromEntity(Slice slice) {
 __always_inline
 bool DBIter::FindNextUserEntry(bool skipping_saved_key, const Slice* prefix) {
 #if defined(_MSC_VER) || defined(__clang__)
-  if (enable_perf_timer_) {
-    PERF_TIMER_GUARD(find_next_user_entry_time);
-    return FindNextUserEntryInternal(skipping_saved_key, prefix);
-  } else {
-    return FindNextUserEntryInternal(skipping_saved_key, prefix);
-  }
+  return (this->*m_find_next_entry)(skipping_saved_key, prefix);
 #else
   return m_find_next_entry(this, skipping_saved_key, prefix);
 #endif
@@ -376,56 +371,46 @@ struct VirtualCmpNoTS {
   const Comparator* cmp;
 };
 
-#if defined(_MSC_VER) || defined(__clang__)
-// Actual implementation of DBIter::FindNextUserEntry()
-bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
-                                       const Slice* prefix) {
-  if (user_comparator_.IsForwardBytewise()) {
-    ROCKSDB_ASSERT_EZ(user_comparator_.timestamp_size());
-    return FindNextUserEntryInternalTmpl<BytewiseCmpNoTS>(skipping_saved_key, prefix);
-  } else if (user_comparator_.IsReverseBytewise()) {
-    ROCKSDB_ASSERT_EZ(user_comparator_.timestamp_size());
-    return FindNextUserEntryInternalTmpl<RevBytewiseCmpNoTS>(skipping_saved_key, prefix);
-  } else {
-    return FindNextUserEntryInternalTmpl<VirtualCmpNoTS>(skipping_saved_key, prefix);
-  }
-}
-#else
-template<class CmpNoTS>
+template<bool HasPrefix, class CmpNoTS>
 bool DBIter::FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix) {
   PERF_TIMER_GUARD(find_next_user_entry_time);
-  return FindNextUserEntryInternalTmpl<CmpNoTS>(skipping_saved_key, prefix);
+  return FindNextUserEntryInternalTmpl<HasPrefix, CmpNoTS>(skipping_saved_key, prefix);
 }
 void DBIter::SetFuncPtr() {
+#if defined(_MSC_VER) || defined(__clang__)
+  #define BOUND_PMF(func) func
+#else
+  #define BOUND_PMF(func) (FindNextUserEntryFN)(this->*func)
+#endif
+  #define SetFindNext(FuncName, CmpNoTS) \
+    do { \
+      auto func = prefix_same_as_start_ \
+                ? &DBIter::template FuncName<true , CmpNoTS>  \
+                : &DBIter::template FuncName<false, CmpNoTS>; \
+      m_find_next_entry = BOUND_PMF(func); \
+    } while (0)
   if (enable_perf_timer_) {
     if (user_comparator_.IsForwardBytewise()) {
-      auto func = &DBIter::template FindNextUserEntryPerf<BytewiseCmpNoTS>;
-      m_find_next_entry = (FindNextUserEntryFN)(this->*func);
+      SetFindNext(FindNextUserEntryPerf, BytewiseCmpNoTS);
     }
     else if (user_comparator_.IsReverseBytewise()) {
-      auto func = &DBIter::template FindNextUserEntryPerf<RevBytewiseCmpNoTS>;
-      m_find_next_entry = (FindNextUserEntryFN)(this->*func);
+      SetFindNext(FindNextUserEntryPerf, RevBytewiseCmpNoTS);
     } else {
-      auto func = &DBIter::template FindNextUserEntryPerf<VirtualCmpNoTS>;
-      m_find_next_entry = (FindNextUserEntryFN)(this->*func);
+      SetFindNext(FindNextUserEntryPerf, VirtualCmpNoTS);
     }
   }
   else {
     if (user_comparator_.IsForwardBytewise()) {
-      auto func = &DBIter::template FindNextUserEntryInternalTmpl<BytewiseCmpNoTS>;
-      m_find_next_entry = (FindNextUserEntryFN)(this->*func);
+      SetFindNext(FindNextUserEntryInternalTmpl, BytewiseCmpNoTS);
     } else if (user_comparator_.IsReverseBytewise()) {
-      auto func = &DBIter::template FindNextUserEntryInternalTmpl<RevBytewiseCmpNoTS>;
-      m_find_next_entry = (FindNextUserEntryFN)(this->*func);
+      SetFindNext(FindNextUserEntryInternalTmpl, RevBytewiseCmpNoTS);
     } else {
-      auto func = &DBIter::template FindNextUserEntryInternalTmpl<VirtualCmpNoTS>;
-      m_find_next_entry = (FindNextUserEntryFN)(this->*func);
+      SetFindNext(FindNextUserEntryInternalTmpl, VirtualCmpNoTS);
     }
   }
 }
-#endif
 
-template<class CmpNoTS>
+template<bool HasPrefix, class CmpNoTS>
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                            const Slice* prefix) {
   CmpNoTS cmpNoTS{user_comparator_.user_comparator()};
@@ -483,7 +468,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
     }
 
     assert(prefix == nullptr || prefix_extractor_ != nullptr);
-    if (prefix != nullptr &&
+    if (HasPrefix &&
         prefix_extractor_->Transform(user_key_without_ts).compare(*prefix) !=
             0) {
       assert(prefix_same_as_start_);

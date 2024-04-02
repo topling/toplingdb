@@ -269,9 +269,7 @@ class DBIter final : public Iterator {
   // If `prefix` is not null, the iterator needs to stop when all keys for the
   // prefix are exhausted and the iterator is set to invalid.
   bool FindNextUserEntry(bool skipping_saved_key, const Slice* prefix);
-  // Internal implementation of FindNextUserEntry().
-  bool FindNextUserEntryInternal(bool skipping_saved_key, const Slice* prefix);
-  template<class CmpNoTS>
+  template<bool HasPrefix, class CmpNoTS>
   bool FindNextUserEntryInternalTmpl(bool, const Slice* prefix);
   bool ParseKey(ParsedInternalKey* key);
   bool MergeValuesNewToOld();
@@ -392,14 +390,15 @@ class DBIter final : public Iterator {
   // uncommitted data in db as in WriteUnCommitted.
   SequenceNumber sequence_;
 
-#if defined(_MSC_VER) || defined(__clang__)
-#else
-  template<class CmpNoTS>
+  template<bool HasPrefix, class CmpNoTS>
   bool FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix);
   void SetFuncPtr();
+#if defined(_MSC_VER) || defined(__clang__)
+  typedef bool (DBIter::*FindNextUserEntryFN)(bool, const Slice*);
+#else
   typedef bool (*FindNextUserEntryFN)(DBIter*, bool, const Slice*);
-  FindNextUserEntryFN m_find_next_entry;
 #endif
+  FindNextUserEntryFN m_find_next_entry;
 
   IterKey saved_key_;
   // Reusable internal key data structure. This is only used inside one function

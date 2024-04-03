@@ -21,6 +21,8 @@
 #include "table/iterator_wrapper.h"
 #include "util/autovector.h"
 
+#include <terark/sso.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 class Version;
 
@@ -400,7 +402,58 @@ class DBIter final : public Iterator {
 #endif
   FindNextUserEntryFN m_find_next_entry;
 
+#if 0
   IterKey saved_key_;
+#else
+  struct FastIterKey {
+    terark::minimal_sso<64, false> key;
+    void Clear() { key.clear(); }
+    void SetUserKey(const Slice& uk, bool copy = true) {
+      key.assign(uk.size_ + 8, [=](char* buf, size_t len) {
+        memcpy(buf, uk.data_, uk.size_);
+        // do not write last 8 bytes(seq + value_type)
+      });
+    }
+    void SetInternalKey(const ParsedInternalKey& ikey) {
+      SetInternalKey(ikey.user_key, ikey.sequence, ikey.type);
+    }
+    void SetInternalKey(const Slice& uk, uint64_t seq,
+                        ValueType vt = kValueTypeForSeek,
+                        const Slice* ts = nullptr) {
+      if (ts) {
+        key.assign(uk.size_ + ts->size_ + 8, [=](char* buf, size_t len) {
+          memcpy(buf, uk.data_, uk.size_);
+          memcpy(buf + uk.size_, ts->data_, ts->size_);
+          rocksdb::EncodeFixed64(buf + len - 8, PackSequenceAndType(seq, vt));
+        });
+      } else {
+        key.assign(uk.size_ + 8, [=](char* buf, size_t len) {
+          memcpy(buf, uk.data_, uk.size_);
+          rocksdb::EncodeFixed64(buf + uk.size_, PackSequenceAndType(seq, vt));
+        });
+      }
+    }
+    void UpdateInternalKey(uint64_t seq, ValueType vt,
+                           const Slice* ts = nullptr) {
+      char* end = key.end();
+      if (ts) {
+        ROCKSDB_ASSERT_GE(key.size(), 8 + ts->size_);
+        memcpy(end - 8 - ts->size_, ts->data_, ts->size_);
+      } else {
+        ROCKSDB_ASSERT_GE(key.size(), 8);
+      }
+      rocksdb::EncodeFixed64(end - 8, PackSequenceAndType(seq, vt));
+    }
+    Slice GetUserKey() const {
+      Slice ik = key.to<Slice>();
+      return Slice(ik.data_, ik.size_ - 8);
+    }
+    Slice GetInternalKey() const { return key.to<Slice>(); }
+    size_t Size() const { return key.size() - 8; }
+    bool IsKeyPinned() const { return false; }
+  };
+  FastIterKey saved_key_;
+#endif
   // Reusable internal key data structure. This is only used inside one function
   // and should not be used across functions. Reusing this object can reduce
   // overhead of calling construction of the function if creating it each time.

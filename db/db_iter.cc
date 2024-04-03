@@ -344,17 +344,48 @@ struct FixedLenCmpNoTS {
   }
 };
 
+__always_inline bool SliceBytewiseLess(const Slice& x, const Slice& y) {
+  auto px = (const unsigned char*)x.data(); size_t nx = x.size();
+  auto py = (const unsigned char*)y.data(); size_t ny = y.size();
+  size_t i = 0, nmin = std::min(nx, ny);
+  for (; i + 8 <= nmin; i += 8) {
+    auto ux = NATIVE_OF_BIG_ENDIAN(*(const uint64_t*)(px + i));
+    auto uy = NATIVE_OF_BIG_ENDIAN(*(const uint64_t*)(py + i));
+    if (ux != uy)
+      return ux < uy;
+  }
+  if (nmin % sizeof(uint64_t) >= 4) {
+    auto ux = NATIVE_OF_BIG_ENDIAN(*(const uint32_t*)(px + i));
+    auto uy = NATIVE_OF_BIG_ENDIAN(*(const uint32_t*)(py + i));
+    if (ux != uy)
+      return ux < uy;
+    else
+      i += 4;
+  }
+  for (; i < nmin; i++) {
+    int ux = px[i], uy = py[i];
+    if (ux != uy)
+      return ux < uy;
+  }
+  return nx < ny;
+}
 struct BytewiseCmpNoTS {
   BytewiseCmpNoTS(const Comparator*) {}
   bool equal(const Slice& x, const Slice& y) const { return x == y; }
-  bool operator()(const Slice& x, const Slice& y) const { return x < y; }
+  __always_inline bool operator()(const Slice& x, const Slice& y) const {
+    // return x < y;
+    return SliceBytewiseLess(x, y);
+  }
   int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
 };
 
 struct RevBytewiseCmpNoTS {
   RevBytewiseCmpNoTS(const Comparator*) {}
   bool equal(const Slice& x, const Slice& y) const { return x == y; }
-  bool operator()(const Slice& x, const Slice& y) const { return y < x; }
+  __always_inline bool operator()(const Slice& x, const Slice& y) const {
+    // return y < x;
+    return SliceBytewiseLess(y, x);
+  }
   int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
 };
 

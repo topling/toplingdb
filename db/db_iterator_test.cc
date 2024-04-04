@@ -1421,6 +1421,7 @@ TEST_P(DBIteratorTest, PrevAfterAndNextAfterMerge) {
   ASSERT_EQ("2", it->key().ToString());
 }
 
+#if ROCKSDB_TEST_PinnedDataIterator
 class DBIteratorTestForPinnedData : public DBIteratorTest {
  public:
   enum TestConfig {
@@ -1792,6 +1793,7 @@ TEST_P(DBIteratorTest, PinnedDataIteratorReadAfterUpdate) {
 
   delete iter;
 }
+#endif // ROCKSDB_TEST_PinnedDataIterator
 
 class SliceTransformLimitedDomainGeneric : public SliceTransform {
   const char* Name() const override {

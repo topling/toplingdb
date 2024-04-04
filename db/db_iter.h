@@ -404,7 +404,9 @@ class DBIter final : public Iterator {
 
 #if 0
   IterKey saved_key_;
+  #define ROCKSDB_TEST_PinnedDataIterator 1
 #else
+  #define ROCKSDB_TEST_PinnedDataIterator 0
   struct FastIterKey {
     terark::minimal_sso<64, false> key;
     void Clear() { key.clear(); }

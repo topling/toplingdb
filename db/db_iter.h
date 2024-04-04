@@ -446,10 +446,7 @@ class DBIter final : public Iterator {
       }
       rocksdb::EncodeFixed64(end - 8, PackSequenceAndType(seq, vt));
     }
-    Slice GetUserKey() const {
-      Slice ik = key.to<Slice>();
-      return Slice(ik.data_, ik.size_ - 8);
-    }
+    Slice GetUserKey() const { return key.notail<Slice>(8); }
     Slice GetInternalKey() const { return key.to<Slice>(); }
     size_t Size() const { return key.size() - 8; }
     bool IsKeyPinned() const { return false; }

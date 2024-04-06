@@ -1027,13 +1027,92 @@ __always_inline uint64_t GetUnalignedU64(const void* ptr) noexcept {
   memcpy(&x, ptr, sizeof(uint64_t));
   return x;
 }
+
+__always_inline bool MemoryEqual(const void* vx, const void* vy, size_t n) {
+  auto px = (const unsigned char*)vx;
+  auto py = (const unsigned char*)vy;
+  size_t i = 0;
+  for (; i + 8 <= n; i += 8) {
+    if (*(const uint64_t*)(px + i) != *(const uint64_t*)(py + i))
+      return false;
+  }
+  if (n % sizeof(uint64_t) >= 4) {
+    if (*(const uint32_t*)(px + i) != *(const uint32_t*)(py + i))
+      return false;
+    else
+      i += 4;
+  }
+  for (; i < n; i++) {
+    if (px[i] != py[i])
+      return false;
+  }
+  return true;
+}
+__always_inline bool SliceEqual(const Slice& x, const Slice& y) {
+  return x.size() == y.size() && MemoryEqual(x.data(), y.data(), x.size());
+}
+
+__always_inline bool SliceBytewiseLess(const Slice& x, const Slice& y) {
+  auto px = (const unsigned char*)x.data(); size_t nx = x.size();
+  auto py = (const unsigned char*)y.data(); size_t ny = y.size();
+  size_t i = 0, n = std::min(nx, ny);
+  for (; i + 8 <= n; i += 8) {
+    auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
+    auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+    if (ux != uy)
+      return ux < uy;
+  }
+  if (n % sizeof(uint64_t) >= 4) {
+    auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
+    auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+    if (ux != uy)
+      return ux < uy;
+    else
+      i += 4;
+  }
+  for (; i < n; i++) {
+    int ux = px[i], uy = py[i];
+    if (ux != uy)
+      return ux < uy;
+  }
+  return nx < ny;
+}
+
 struct BytewiseCompareInternalKey {
   __always_inline bool operator()(Slice x, Slice y) const noexcept {
+  #if 0 // when unaligned load is slow
     size_t n = std::min(x.size_, y.size_) - 8;
     int cmp = memcmp(x.data_, y.data_, n);
     if (0 != cmp) return cmp < 0;
     if (x.size_ != y.size_) return x.size_ < y.size_;
     return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+  #else
+    auto px = (const unsigned char*)x.data(); size_t nx = x.size();
+    auto py = (const unsigned char*)y.data(); size_t ny = y.size();
+    size_t i = 0, n = std::min(nx, ny) - 8;
+    for (; i + 8 <= n; i += 8) {
+      auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
+      auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+      if (ux != uy)
+        return ux < uy;
+    }
+    if (n % sizeof(uint64_t) >= 4) {
+      auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
+      auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+      if (ux != uy)
+        return ux < uy;
+      else
+        i += 4;
+    }
+    for (; i < n; i++) {
+      int ux = px[i], uy = py[i];
+      if (ux != uy)
+        return ux < uy;
+    }
+    if (nx != ny)
+      return nx < ny;
+    return GetUnalignedU64(px + n) > GetUnalignedU64(py + n);
+  #endif
   }
   __always_inline bool operator()(uint64_t x, uint64_t y) const noexcept {
     return x < y;
@@ -1063,13 +1142,13 @@ struct FallbackVirtCmp {
 
 struct ForwardBytewiseLessUserKey {
   __always_inline bool operator()(Slice x, Slice y) const noexcept {
-    return x < y;
+    return SliceBytewiseLess(x, y);
   }
   ForwardBytewiseLessUserKey(...) {}
 };
 struct ReverseBytewiseLessUserKey {
   __always_inline bool operator()(Slice x, Slice y) const noexcept {
-    return y < x;
+    return SliceBytewiseLess(y, x);
   }
   ReverseBytewiseLessUserKey(...) {}
 };
@@ -1080,6 +1159,7 @@ struct VirtualFunctionLessUserKey {
   const Comparator* cmp;
 };
 
+#if 0
 __always_inline int BytewiseCompare(Slice x, Slice y) noexcept {
   size_t n = std::min(x.size_, y.size_);
   int cmp = memcmp(x.data_, y.data_, n);
@@ -1088,6 +1168,33 @@ __always_inline int BytewiseCompare(Slice x, Slice y) noexcept {
   else
     return int(x.size_ - y.size_); // ignore key len larger than 2G-1
 }
+#else
+__always_inline int BytewiseCompare(const Slice& x, const Slice& y) {
+  auto px = (const unsigned char*)x.data(); size_t nx = x.size();
+  auto py = (const unsigned char*)y.data(); size_t ny = y.size();
+  size_t i = 0, n = std::min(nx, ny);
+  for (; i + 8 <= n; i += 8) {
+    auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
+    auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+    if (ux != uy)
+      return ux < uy ? -1 : +1;
+  }
+  if (n % sizeof(uint64_t) >= 4) {
+    auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
+    auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+    if (ux != uy)
+      return ux < uy ? -1 : +1;
+    else
+      i += 4;
+  }
+  for (; i < n; i++) {
+    int ux = px[i], uy = py[i];
+    if (ux != uy)
+      return ux - uy;
+  }
+  return int(nx - ny); // ignore key len larger than 2G-1
+}
+#endif
 struct ForwardBytewiseCompareUserKeyNoTS {
   __always_inline int operator()(Slice x, Slice y) const noexcept {
     return BytewiseCompare(x, y);

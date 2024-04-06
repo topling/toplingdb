@@ -344,55 +344,6 @@ struct FixedLenCmpNoTS {
   }
 };
 
-__always_inline bool MemoryEqual(const void* vx, const void* vy, size_t n) {
-  auto px = (const unsigned char*)vx;
-  auto py = (const unsigned char*)vy;
-  size_t i = 0;
-  for (; i + 8 <= n; i += 8) {
-    if (*(const uint64_t*)(px + i) != *(const uint64_t*)(py + i))
-      return false;
-  }
-  if (n % sizeof(uint64_t) >= 4) {
-    if (*(const uint32_t*)(px + i) != *(const uint32_t*)(py + i))
-      return false;
-    else
-      i += 4;
-  }
-  for (; i < n; i++) {
-    if (px[i] != py[i])
-      return false;
-  }
-  return true;
-}
-__always_inline bool SliceEqual(const Slice& x, const Slice& y) {
-  return x.size() == y.size() && MemoryEqual(x.data(), y.data(), x.size());
-}
-
-__always_inline bool SliceBytewiseLess(const Slice& x, const Slice& y) {
-  auto px = (const unsigned char*)x.data(); size_t nx = x.size();
-  auto py = (const unsigned char*)y.data(); size_t ny = y.size();
-  size_t i = 0, nmin = std::min(nx, ny);
-  for (; i + 8 <= nmin; i += 8) {
-    auto ux = NATIVE_OF_BIG_ENDIAN(*(const uint64_t*)(px + i));
-    auto uy = NATIVE_OF_BIG_ENDIAN(*(const uint64_t*)(py + i));
-    if (ux != uy)
-      return ux < uy;
-  }
-  if (nmin % sizeof(uint64_t) >= 4) {
-    auto ux = NATIVE_OF_BIG_ENDIAN(*(const uint32_t*)(px + i));
-    auto uy = NATIVE_OF_BIG_ENDIAN(*(const uint32_t*)(py + i));
-    if (ux != uy)
-      return ux < uy;
-    else
-      i += 4;
-  }
-  for (; i < nmin; i++) {
-    int ux = px[i], uy = py[i];
-    if (ux != uy)
-      return ux < uy;
-  }
-  return nx < ny;
-}
 struct BytewiseCmpNoTS {
   BytewiseCmpNoTS(const Comparator*) {}
   __always_inline bool equal(const Slice& x, const Slice& y) const {

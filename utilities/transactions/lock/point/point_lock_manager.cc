@@ -139,7 +139,9 @@ size_t LockMap::GetStripe(const LockString& key) const {
     return col;
   } else {
     uint64_t pref = 0;
-    memcpy(&pref, key.data(), std::min(size_t(key_prefix_len_), key.size()));
+    size_t   plen = std::min(size_t(key_prefix_len_), key.size());
+    ROCKSDB_ASSUME(plen <= sizeof(pref));
+    memcpy(&pref, key.data(), plen);
     size_t row = pref % super_stripes_;
     return row * num_stripes_ + col;
   }

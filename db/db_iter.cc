@@ -344,6 +344,30 @@ struct FixedLenCmpNoTS {
   }
 };
 
+__always_inline bool MemoryEqual(const void* vx, const void* vy, size_t n) {
+  auto px = (const unsigned char*)vx;
+  auto py = (const unsigned char*)vy;
+  size_t i = 0;
+  for (; i + 8 <= n; i += 8) {
+    if (*(const uint64_t*)(px + i) != *(const uint64_t*)(py + i))
+      return false;
+  }
+  if (n % sizeof(uint64_t) >= 4) {
+    if (*(const uint32_t*)(px + i) != *(const uint32_t*)(py + i))
+      return false;
+    else
+      i += 4;
+  }
+  for (; i < n; i++) {
+    if (px[i] != py[i])
+      return false;
+  }
+  return true;
+}
+__always_inline bool SliceEqual(const Slice& x, const Slice& y) {
+  return x.size() == y.size() && MemoryEqual(x.data(), y.data(), x.size());
+}
+
 __always_inline bool SliceBytewiseLess(const Slice& x, const Slice& y) {
   auto px = (const unsigned char*)x.data(); size_t nx = x.size();
   auto py = (const unsigned char*)y.data(); size_t ny = y.size();
@@ -371,7 +395,9 @@ __always_inline bool SliceBytewiseLess(const Slice& x, const Slice& y) {
 }
 struct BytewiseCmpNoTS {
   BytewiseCmpNoTS(const Comparator*) {}
-  bool equal(const Slice& x, const Slice& y) const { return x == y; }
+  __always_inline bool equal(const Slice& x, const Slice& y) const {
+    return SliceEqual(x, y);
+  }
   __always_inline bool operator()(const Slice& x, const Slice& y) const {
     // return x < y;
     return SliceBytewiseLess(x, y);
@@ -381,7 +407,9 @@ struct BytewiseCmpNoTS {
 
 struct RevBytewiseCmpNoTS {
   RevBytewiseCmpNoTS(const Comparator*) {}
-  bool equal(const Slice& x, const Slice& y) const { return x == y; }
+  __always_inline bool equal(const Slice& x, const Slice& y) const {
+    return SliceEqual(x, y);
+  }
   __always_inline bool operator()(const Slice& x, const Slice& y) const {
     // return y < x;
     return SliceBytewiseLess(y, x);

@@ -402,10 +402,11 @@ struct VirtualCmpNoTS {
   const Comparator* cmp;
 };
 
-template<bool HasPrefix, class CmpNoTS>
+template<bool HasPrefix, bool HasUpperBound, class CmpNoTS>
 bool DBIter::FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix) {
   PERF_TIMER_GUARD(find_next_user_entry_time);
-  return FindNextUserEntryInternalTmpl<HasPrefix, CmpNoTS>(skipping_saved_key, prefix);
+  return FindNextUserEntryInternalTmpl<HasPrefix, HasUpperBound, CmpNoTS>
+          (skipping_saved_key, prefix);
 }
 void DBIter::SetFuncPtr() {
 #if defined(_MSC_VER) || defined(__clang__)
@@ -416,8 +417,12 @@ void DBIter::SetFuncPtr() {
   #define SetFindNext(FuncName, CmpNoTS) \
     do { \
       auto func = prefix_same_as_start_ \
-                ? &DBIter::template FuncName<true , CmpNoTS>  \
-                : &DBIter::template FuncName<false, CmpNoTS>; \
+              ? iterate_upper_bound_ \
+                ? &DBIter::template FuncName<true , true , CmpNoTS>  \
+                : &DBIter::template FuncName<true , false, CmpNoTS>  \
+              : iterate_upper_bound_ \
+                ? &DBIter::template FuncName<false, true , CmpNoTS>  \
+                : &DBIter::template FuncName<false, false, CmpNoTS>; \
       m_find_next_entry = BOUND_PMF(func); \
     } while (0)
   if (enable_perf_timer_) {
@@ -441,7 +446,7 @@ void DBIter::SetFuncPtr() {
   }
 }
 
-template<bool HasPrefix, class CmpNoTS>
+template<bool HasPrefix, bool HasUpperBound, class CmpNoTS>
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                            const Slice* prefix) {
   CmpNoTS cmpNoTS{user_comparator_.user_comparator()};
@@ -490,7 +495,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
            user_comparator_.CompareWithoutTimestamp(
                user_key_without_ts, /*a_has_ts=*/false, *iterate_upper_bound_,
                /*b_has_ts=*/false) < 0);
-    if (iterate_upper_bound_ != nullptr &&
+    if (HasUpperBound &&
         // ToplingDB: for speed up, do not call UpperBoundCheckResult()
         // The following cmpNoTS has same semantic as UpperBoundCheckResult()
         // iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&

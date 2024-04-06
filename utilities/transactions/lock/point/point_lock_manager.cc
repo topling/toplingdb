@@ -405,6 +405,7 @@ void PointLockManager::DecrementWaitersImpl(
 
   for (auto wait_id : wait_ids) {
     auto idx = rev_wait_txn_map_.find_i(wait_id);
+    ROCKSDB_ASSERT_LT(idx, rev_wait_txn_map_.end_i());
     if (--rev_wait_txn_map_.val(idx) == 0) {
       rev_wait_txn_map_.erase_i(idx);
     }

@@ -2581,6 +2581,7 @@ void Version::MultiGetBlob(
   }
 }
 
+ROCKSDB_FLATTEN
 void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                   PinnableSlice* value, PinnableWideColumns* columns,
                   std::string* timestamp, Status* status,
@@ -2644,7 +2645,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     }
 
     bool timer_enabled =
-        GetPerfLevel() >= PerfLevel::kEnableTimeExceptForMutex &&
+        perf_level >= PerfLevel::kEnableTimeExceptForMutex &&
         get_perf_context()->per_level_perf_context_enabled;
     StopWatchNano timer(clock_, timer_enabled /* auto_start */);
     *status = table_cache_->Get(

@@ -99,4 +99,11 @@ class PerfStepTimer {
   Statistics* statistics_;
 };
 
+struct FakePerfStepTimer {
+  FakePerfStepTimer(...) {}
+  void Start() {}
+  void Stop() {}
+  void Measure() {}
+};
+
 }  // namespace ROCKSDB_NAMESPACE

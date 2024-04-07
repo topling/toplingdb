@@ -222,6 +222,17 @@ class StopWatchNano {
   uint64_t start_;
 };
 
+struct FakeStopWatch {
+  FakeStopWatch(...) {}
+  void DelayStart() {}
+  void DelayStop() {}
+  uint64_t GetDelay() const { return 0; }
+  uint64_t ElapsedNanos() const { return 0; }
+  uint64_t ElapsedNanosSafe(bool reset = false) { return 0; }
+  void Start() {}
+  bool IsStarted() { return false; }
+};
+
 }  // namespace ROCKSDB_NAMESPACE
 
 #if defined(__GNUC__)

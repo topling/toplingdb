@@ -639,6 +639,10 @@ class DBImpl : public DB {
   Status GetImpl(const ReadOptions& options, const Slice& key,
                  GetImplOptions& get_impl_options);
 
+  template<class PerfStepTimer, class StopWatch> // for hajacking
+  Status GetInst(const ReadOptions& options, const Slice& key,
+                 GetImplOptions& get_impl_options);
+
   // If `snapshot` == kMaxSequenceNumber, set a recent one inside the file.
   ArenaWrappedDBIter* NewIteratorImpl(const ReadOptions& options,
                                       ColumnFamilyData* cfd,

@@ -2078,6 +2078,10 @@ bool DBImpl::ShouldReferenceSuperVersion(const MergeContext& merge_context) {
 ROCKSDB_FLATTEN
 Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
                        GetImplOptions& get_impl_options) {
+#if defined(ROCKSDB_UNIT_TEST)
+  return GetInst<PerfStepTimer, StopWatch>
+            (read_options, key, get_impl_options);
+#else
   if (stats_ && stats_->get_stats_level() >= StatsLevel::kExceptTimers) {
     return GetInst<PerfStepTimer, StopWatch>
               (read_options, key, get_impl_options);
@@ -2085,6 +2089,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
     return GetInst<FakePerfStepTimer, FakeStopWatch>
               (read_options, key, get_impl_options);
   }
+#endif
 }
 template<class PerfStepTimer, class StopWatch> // for hajacking
 Status DBImpl::GetInst(const ReadOptions& read_options, const Slice& key,

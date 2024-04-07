@@ -1175,11 +1175,13 @@ struct ForwardBytewiseCompareUserKeyNoTS {
   __always_inline int operator()(Slice x, Slice y) const noexcept {
     return BytewiseCompare(x, y);
   }
+  ForwardBytewiseCompareUserKeyNoTS(const Comparator* = nullptr) {}
 };
 struct ReverseBytewiseCompareUserKeyNoTS {
   __always_inline int operator()(Slice x, Slice y) const noexcept {
     return BytewiseCompare(y, x);
   }
+  ReverseBytewiseCompareUserKeyNoTS(const Comparator* = nullptr) {}
 };
 struct VirtualFunctionCompareUserKeyNoTS {
   __always_inline int operator()(Slice x, Slice y) const noexcept {

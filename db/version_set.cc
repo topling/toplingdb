@@ -151,6 +151,14 @@ size_t FindFileInRangeTmpl(FallbackVirtCmp cmp, const LevelFilesBrief& brief,
   return lo;
 }
 
+template<class Cmp>
+static ROCKSDB_FLATTEN
+int FindFileInRangeInst(const InternalKeyComparator* icmp,
+                        const LevelFilesBrief& brief,
+                        Slice key, size_t lo, size_t hi) {
+  return (int)FindFileInRangeTmpl(Cmp{icmp}, brief, key, lo, hi);
+}
+
 // Find File in LevelFilesBrief data structure
 // Within an index range defined by left and right
 #ifdef TOPLINGDB_NO_OPT_FindFileInRange
@@ -170,10 +178,12 @@ int FindFileInRange(const InternalKeyComparator& icmp,
 #else // ToplingDB Devirtualization and Key Prefix Cache optimization
   if (icmp.IsForwardBytewise()) {
     ROCKSDB_ASSERT_EQ(icmp.user_comparator()->timestamp_size(), 0);
+   #if 0
     if (file_level.udfa) {
       assert(&FindFileInRangeUdfa != nullptr);
       return FindFileInRangeUdfa(file_level, key);
     }
+   #endif
     BytewiseCompareInternalKey cmp;
     return (int)FindFileInRangeTmpl(cmp, file_level, key, left, right);
   }
@@ -223,6 +233,30 @@ Status OverlapWithIterator(const Comparator* ucmp,
 // in a smaller level, later levels are irrelevant (unless we
 // are MergeInProgress).
 class FilePicker {
+#if defined(_MSC_VER) || defined(__clang__)
+  typedef FdWithKeyRange* (FilePicker::*GetNextFileFN)();
+  #define Set_m_get_next_file(Cmp) \
+    m_get_next_file = &FilePicker::GetNextFileTmpl<Cmp>
+#else
+  typedef FdWithKeyRange* (*GetNextFileFN)(FilePicker*);
+  #pragma GCC diagnostic ignored "-Wpmf-conversions"
+  #define Set_m_get_next_file(Cmp) \
+    do { \
+      auto func = &FilePicker::GetNextFileTmpl<Cmp>;  \
+      m_get_next_file = (GetNextFileFN)(this->*func); \
+    } while (0)
+#endif
+  GetNextFileFN m_get_next_file;
+  typedef int (*FindFileInRangeFN)(const InternalKeyComparator*,
+                    const LevelFilesBrief& file_level, Slice key,
+                    size_t left, size_t right);
+  FindFileInRangeFN m_find_file_in_range;
+  __always_inline
+  int FindFileInRange(const InternalKeyComparator& icmp,
+                      const LevelFilesBrief& file_level, const Slice& key,
+                      size_t left, size_t right) {
+    return m_find_file_in_range(&icmp, file_level, key, left, right);
+  }
  public:
   FilePicker(const Slice& user_key, const Slice& ikey,
              autovector<LevelFilesBrief>* file_levels, unsigned int num_levels,
@@ -242,6 +276,18 @@ class FilePicker {
         file_indexer_(file_indexer),
         user_comparator_(user_comparator),
         internal_comparator_(internal_comparator) {
+    if (IsForwardBytewiseComparator(user_comparator)) {
+      Set_m_get_next_file(ForwardBytewiseCompareUserKeyNoTS);
+      m_find_file_in_range = &FindFileInRangeInst<BytewiseCompareInternalKey>;
+    }
+    else if (IsReverseBytewiseComparator(user_comparator)) {
+      Set_m_get_next_file(ReverseBytewiseCompareUserKeyNoTS);
+      m_find_file_in_range = &FindFileInRangeInst<RevBytewiseCompareInternalKey>;
+    }
+    else {
+      Set_m_get_next_file(VirtualFunctionCompareUserKeyNoTS);
+      m_find_file_in_range = &FindFileInRangeInst<FallbackVirtCmp>;
+    }
     // Setup member variables to search first level.
     search_ended_ = !PrepareNextLevel();
     if (!search_ended_) {
@@ -257,17 +303,17 @@ class FilePicker {
 
   int GetCurrentLevel() const { return curr_level_; }
 
+  __always_inline
   FdWithKeyRange* GetNextFile() {
-    auto ucmp = user_comparator_;
-    if (IsForwardBytewiseComparator(ucmp))
-      return GetNextFileTmpl(ForwardBytewiseCompareUserKeyNoTS());
-    else if (IsReverseBytewiseComparator(ucmp))
-      return GetNextFileTmpl(ReverseBytewiseCompareUserKeyNoTS());
-    else
-      return GetNextFileTmpl(VirtualFunctionCompareUserKeyNoTS{ucmp});
+  #if defined(_MSC_VER) || defined(__clang__)
+    return (this->*m_get_next_file)();
+  #else
+    return m_get_next_file(this);
+  #endif
   }
   template<class Compare>
-  FdWithKeyRange* GetNextFileTmpl(Compare cmp) {
+  FdWithKeyRange* GetNextFileTmpl() {
+    Compare cmp{user_comparator_};
     while (!search_ended_) {  // Loops over different levels.
       while (curr_index_in_curr_level_ < curr_file_level_->num_files) {
         // Loops over all files in current level.

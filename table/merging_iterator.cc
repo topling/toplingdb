@@ -329,10 +329,8 @@ class MinHeapBytewiseComp {
   MinHeapBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    if (a.key_prefix > b.key_prefix)
-      return true;
-    else if (a.key_prefix < b.key_prefix)
-      return false;
+    if (LIKELY(a.key_prefix != b.key_prefix))
+      return a.key_prefix > b.key_prefix;
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
@@ -351,10 +349,8 @@ class MinHeapBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-      if (a.key_prefix > b.key_prefix)
-        return true;
-      else if (a.key_prefix < b.key_prefix)
-        return false;
+      if (LIKELY(a.key_prefix != b.key_prefix))
+        return a.key_prefix > b.key_prefix;
       else
         return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
     }
@@ -366,10 +362,8 @@ class MaxHeapBytewiseComp {
   MaxHeapBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    if (a.key_prefix < b.key_prefix)
-      return true;
-    else if (a.key_prefix > b.key_prefix)
-      return false;
+    if (LIKELY(a.key_prefix != b.key_prefix))
+      return a.key_prefix < b.key_prefix;
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
@@ -388,10 +382,8 @@ class MaxHeapBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-      if (a.key_prefix < b.key_prefix)
-        return true;
-      else if (a.key_prefix > b.key_prefix)
-        return false;
+      if (LIKELY(a.key_prefix != b.key_prefix))
+        return a.key_prefix < b.key_prefix;
       else
         return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
     }
@@ -403,10 +395,8 @@ class MinHeapRevBytewiseComp {
   MinHeapRevBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    if (a.key_prefix < b.key_prefix)
-      return true;
-    else if (a.key_prefix > b.key_prefix)
-      return false;
+    if (LIKELY(a.key_prefix != b.key_prefix))
+      return a.key_prefix < b.key_prefix;
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
@@ -425,10 +415,8 @@ class MinHeapRevBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-      if (a.key_prefix < b.key_prefix)
-        return true;
-      else if (a.key_prefix > b.key_prefix)
-        return false;
+      if (LIKELY(a.key_prefix != b.key_prefix))
+        return a.key_prefix < b.key_prefix;
       else
         return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
     }
@@ -440,10 +428,8 @@ class MaxHeapRevBytewiseComp {
   MaxHeapRevBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    if (a.key_prefix > b.key_prefix)
-      return true;
-    else if (a.key_prefix < b.key_prefix)
-      return false;
+    if (LIKELY(a.key_prefix != b.key_prefix))
+      return a.key_prefix > b.key_prefix;
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
@@ -462,10 +448,8 @@ class MaxHeapRevBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-      if (a.key_prefix > b.key_prefix)
-        return true;
-      else if (a.key_prefix < b.key_prefix)
-        return false;
+      if (LIKELY(a.key_prefix != b.key_prefix))
+        return a.key_prefix > b.key_prefix;
       else
         return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
     }

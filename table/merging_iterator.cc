@@ -167,6 +167,12 @@ private:
 #endif
 // if true, it should be a little faster
 static constexpr bool allow_read_beyond_key_mem = false;
+
+template<size_t Len>
+__always_inline void Load16BytesZeroAppend(void* dst, const void* src) {
+  memcpy(dst, src, Len);
+  memset((char*)dst + Len, 0, 16 - Len);
+}
 FORCE_INLINE UintPrefix HostPrefixCacheUK(const Slice& uk) {
   UintPrefix data;
   if (LIKELY(uk.size_ >= sizeof(UintPrefix))) {
@@ -208,9 +214,17 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
     auto mask = uint16_t(~(-1 << (ik.size_ - 8)));
     data = (UintPrefix)_mm_maskz_expandloadu_epi8(mask, ik.data_);
    #else
-    data = 0;
-    ROCKSDB_ASSUME(ik.size_ >= 8);
-    memcpy(&data, ik.data_, ik.size_ - 8);
+    if (LIKELY(8 + 8 == ik.size_)) {
+      Load16BytesZeroAppend<8>(&data, ik.data_);
+    }
+    else if (LIKELY(12 + 8 == ik.size_)) {
+      Load16BytesZeroAppend<12>(&data, ik.data_);
+    }
+    else {
+      data = 0;
+      ROCKSDB_ASSUME(ik.size_ >= 8);
+      memcpy(&data, ik.data_, ik.size_ - 8);
+    }
    #endif
   }
   if (port::kLittleEndian)

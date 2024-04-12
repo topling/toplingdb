@@ -35,6 +35,7 @@ BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
   assert(comparator_);
   wbwii_.reset(new WriteBatchWithIndexInternal(column_family));
   delta_valid_ = false;
+  delta_status_code_ = Status::kOk;
   opt_cmp_type_ = comparator->opt_cmp_type();
  #if defined(_MSC_VER) || defined(__clang__)
  #else
@@ -48,6 +49,20 @@ BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
  #endif
 }
 
+__always_inline bool BaseDeltaIterator::UpdateDeltaKey(bool is_valid) {
+  if (LIKELY(is_valid)) {
+    #if defined(_MSC_VER) || defined(__clang__)
+      this->delta_key = delta_iterator_->user_key();
+    #else
+      this->delta_key = delta_iter_user_key_(delta_iterator_.get());
+    #endif
+  }
+  else {
+    delta_status_code_ = delta_iterator_->status().code();
+  }
+  return is_valid;
+}
+
 ROCKSDB_FLATTEN
 bool BaseDeltaIterator::Valid() const {
   return status_.ok() ? (current_at_base_ ? BaseValid() : DeltaValid()) : false;
@@ -58,6 +73,8 @@ void BaseDeltaIterator::SeekToFirst() {
   base_iterator_->SeekToFirst();
   delta_iterator_->SeekToFirst();
   delta_valid_ = delta_iterator_->Valid();
+  delta_status_code_ = Status::kOk;
+  UpdateDeltaKey(delta_valid_);
   UpdateCurrent(true);
 }
 
@@ -66,6 +83,8 @@ void BaseDeltaIterator::SeekToLast() {
   base_iterator_->SeekToLast();
   delta_iterator_->SeekToLast();
   delta_valid_ = delta_iterator_->Valid();
+  delta_status_code_ = Status::kOk;
+  UpdateDeltaKey(delta_valid_);
   UpdateCurrent(false);
 }
 
@@ -74,6 +93,8 @@ void BaseDeltaIterator::Seek(const Slice& k) {
   base_iterator_->Seek(k);
   delta_iterator_->Seek(k);
   delta_valid_ = delta_iterator_->Valid();
+  delta_status_code_ = Status::kOk;
+  UpdateDeltaKey(delta_valid_);
   UpdateCurrent(true);
 }
 
@@ -82,6 +103,8 @@ void BaseDeltaIterator::SeekForPrev(const Slice& k) {
   base_iterator_->SeekForPrev(k);
   delta_iterator_->SeekForPrev(k);
   delta_valid_ = delta_iterator_->Valid();
+  delta_status_code_ = Status::kOk;
+  UpdateDeltaKey(delta_valid_);
   UpdateCurrent(false);
 }
 
@@ -109,6 +132,8 @@ void BaseDeltaIterator::Next() {
     } else if (!DeltaValid()) {
       delta_iterator_->SeekToFirst();
       delta_valid_ = delta_iterator_->Valid();
+      delta_status_code_ = Status::kOk;
+      UpdateDeltaKey(delta_valid_);
     } else if (current_at_base_) {
       // Change delta from larger than base to smaller
       AdvanceDelta(true);
@@ -119,10 +144,10 @@ void BaseDeltaIterator::Next() {
     if (DeltaValid() && BaseValid()) {
       if (0 == comparator_->CompareWithoutTimestamp(
                 #if defined(_MSC_VER) || defined(__clang__)
-                   delta_iterator_->user_key(), /*a_has_ts=*/false,
+                   delta_key, /*a_has_ts=*/false,
                    base_iterator_->key(),
                 #else
-                   delta_iter_user_key_(delta_iterator_.get()),
+                   delta_key,
                    /*a_has_ts=*/false,
                    base_iter_get_key_(base_iterator_.get()),
                 #endif
@@ -158,6 +183,8 @@ void BaseDeltaIterator::Prev() {
     } else if (!DeltaValid()) {
       delta_iterator_->SeekToLast();
       delta_valid_ = delta_iterator_->Valid();
+      delta_status_code_ = Status::kOk;
+      UpdateDeltaKey(delta_valid_);
     } else if (current_at_base_) {
       // Change delta from less advanced than base to more advanced
       AdvanceDelta(false);
@@ -167,7 +194,7 @@ void BaseDeltaIterator::Prev() {
     }
     if (DeltaValid() && BaseValid()) {
       if (0 == comparator_->CompareWithoutTimestamp(
-                   delta_iterator_->user_key(), /*a_has_ts=*/false,
+                   delta_key, /*a_has_ts=*/false,
                    base_iterator_->key(), /*b_has_ts=*/false)) {
         equal_keys_ = true;
       }
@@ -180,10 +207,10 @@ void BaseDeltaIterator::Prev() {
 Slice BaseDeltaIterator::key() const {
  #if defined(_MSC_VER) || defined(__clang__)
   return current_at_base_ ? base_iterator_->key()
-                          : delta_iterator_->user_key();
+                          : delta_key;
  #else
   return current_at_base_ ? base_iter_get_key_(base_iterator_.get())
-                          : delta_iter_user_key_(delta_iterator_.get());
+                          : delta_key;
  #endif
 }
 
@@ -314,6 +341,9 @@ void BaseDeltaIterator::Advance(bool const_forward) {
 }
 
 inline bool BaseDeltaIterator::AdvanceIter(WBWIIterator* i, bool forward) {
+  return UpdateDeltaKey(AdvanceIterImpl(i, forward));
+}
+inline bool BaseDeltaIterator::AdvanceIterImpl(WBWIIterator* i, bool forward) {
   if (forward) {
    #if defined(_MSC_VER) || defined(__clang__)
     return i->NextKey();
@@ -344,8 +374,10 @@ inline void BaseDeltaIterator::AdvanceDelta(bool const_forward) {
    #else
     delta_valid_ = delta_iter_next_key_(delta_iterator_.get());
    #endif
+    UpdateDeltaKey(delta_valid_);
   } else {
     delta_valid_ = delta_iterator_->PrevKey();
+    UpdateDeltaKey(delta_valid_);
   }
 }
 inline void BaseDeltaIterator::AdvanceBase(bool const_forward) {
@@ -405,7 +437,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(bool const_forward, CmpNoTS cmp) {
   while (true) {
     if (LIKELY(delta_valid_)) {
       assert(delta_iterator_->status().ok());
-    } else if (!delta_iterator_->status().ok()) {
+    } else if (UNLIKELY(Status::kOk != delta_status_code_)) {
       // Expose the error status and stop.
       current_at_base_ = false;
       return;
@@ -429,11 +461,6 @@ void BaseDeltaIterator::UpdateCurrentTpl(bool const_forward, CmpNoTS cmp) {
         return;
       }
       if (iterate_upper_bound_) {
-       #if defined(_MSC_VER) || defined(__clang__)
-        Slice delta_key = delta_iterator_->user_key();
-       #else
-        Slice delta_key = delta_iter_user_key_(delta_iterator_);
-       #endif
         if (cmp.compare(delta_key, *iterate_upper_bound_) >= 0) {
           // out of upper bound -> finished.
           return;
@@ -454,13 +481,11 @@ void BaseDeltaIterator::UpdateCurrentTpl(bool const_forward, CmpNoTS cmp) {
       return;
     } else {
      #if defined(_MSC_VER) || defined(__clang__)
-      Slice delta_key = delta_iterator_->user_key();
       int compare = const_forward
                   ? cmp.compare(delta_key, base_iterator_->key())
                   : cmp.compare(base_iterator_->key(), delta_key)
                   ;
      #else
-      Slice delta_key = delta_iter_user_key_(delta_iterator_);
       int compare = const_forward
                   ? cmp.compare(delta_key, base_iter_get_key_(base_iterator_))
                   : cmp.compare(base_iter_get_key_(base_iterator_), delta_key)

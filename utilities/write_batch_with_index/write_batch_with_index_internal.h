@@ -108,10 +108,12 @@ class BaseDeltaIterator final : public Iterator {
   bool current_at_base_;
   bool equal_keys_;
   bool delta_valid_;
+  Status::Code delta_status_code_;
   unsigned char opt_cmp_type_;
   mutable Status status_;
   std::unique_ptr<Iterator> base_iterator_;
   std::unique_ptr<WBWIIterator> delta_iterator_;
+  Slice delta_key;
  #if defined(_MSC_VER) || defined(__clang__)
  #else
   typedef bool  (*BaseIterValidFN)(const Iterator*);
@@ -128,6 +130,8 @@ class BaseDeltaIterator final : public Iterator {
  #endif
   inline void AdvanceIter(Iterator* i, bool forward);
   inline bool AdvanceIter(WBWIIterator* i, bool forward);
+  inline bool AdvanceIterImpl(WBWIIterator* i, bool forward);
+  inline bool UpdateDeltaKey(bool is_valid);
   const Comparator* comparator_;  // not owned
   const Slice* iterate_upper_bound_;
   mutable PinnableSlice merge_result_;

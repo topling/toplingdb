@@ -836,7 +836,7 @@ public:
       assert(current_->status().ok());
       UpdatePrefixCache(minHeap_.top());
       minHeap_.update_top();
-      if (LIKELY(range_tombstone_iters_.empty())) {
+      if (LIKELY((std::is_same_v<Item, HeapItemAndPrefixFast>) || range_tombstone_iters_.empty())) {
         current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
         return true;
       }

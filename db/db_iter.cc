@@ -109,8 +109,8 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
 #if defined(_MSC_VER) || defined(__clang__)
 #else
   #pragma GCC diagnostic ignored "-Wpmf-conversions"
-  SetFuncPtr();
 #endif
+  SetFuncPtr();
 }
 
 Status DBIter::GetProperty(std::string prop_name, std::string* prop) {

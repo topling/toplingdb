@@ -170,6 +170,18 @@ private:
 
 template<size_t PrefixLen>
 __always_inline UintPrefix LoadPrefixZeroSuffix(const void* src) {
+ #if defined(BOOST_ENDIAN_LITTLE_BYTE)
+  if (PrefixLen == 12) { // gcc can not optimize memcpy + memset gracefully
+    // gcc can optimize this code better
+    union {
+      UintPrefix u128;
+      uint64_t u64[2];
+    } un;
+    un.u64[0] = ((const uint64_t*)src)[0];
+    un.u64[1] = ((const uint32_t*)src)[2]; // zero extend uint32 to uint64
+    return un.u128;
+  }
+ #endif
   UintPrefix dst;
   memcpy(&dst, src, PrefixLen);
   memset((char*)&dst + PrefixLen, 0, sizeof(dst) - PrefixLen);

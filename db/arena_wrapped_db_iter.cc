@@ -81,6 +81,7 @@ Status ArenaWrappedDBIter::Refresh() {
 // when keep_iter_pos is true, user code should ensure ReadOptions's
 // lower_bound and upper_bound are not changed
 Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
+  db_iter_->UpdateCounters();
   if (cfd_ == nullptr || db_impl_ == nullptr || !allow_refresh_) {
     return Status::NotSupported("Creating renew iterator is not allowed.");
   }

@@ -98,6 +98,7 @@ class DBIter final : public Iterator {
       RecordTick(global_statistics, ITER_BYTES_READ, bytes_read_);
       RecordTick(global_statistics, NUMBER_ITER_SKIP, skip_count_);
       PERF_COUNTER_ADD(iter_read_bytes, bytes_read_);
+      PERF_COUNTER_ADD(iter_next_count, next_count_);
       ResetCounters();
     }
 
@@ -247,6 +248,7 @@ class DBIter final : public Iterator {
     }
   }
   void set_valid(bool v) { valid_ = v; }
+  void UpdateCounters();
 
  private:
   // For all methods in this block:

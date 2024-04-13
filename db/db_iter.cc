@@ -157,8 +157,10 @@ void DBIter::Next() {
   assert(valid_);
   assert(status_.ok());
 
-  PERF_COUNTER_ADD(iter_next_count, 1);
+#if defined(ROCKSDB_UNIT_TEST)
   PERF_CPU_TIMER_GUARD(iter_next_cpu_nanos, clock_);
+#endif
+
   // Release temporarily pinned blocks from last operation
   ReleaseTempPinnedData();
   ResetBlobValue();
@@ -1709,6 +1711,11 @@ void DBIter::Seek(const Slice& target) {
     RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
   }
   PERF_COUNTER_ADD(iter_read_bytes, key().size() + value().size());
+  //local_stats_.BumpGlobalStatistics(statistics_);
+}
+
+void DBIter::UpdateCounters() {
+  local_stats_.BumpGlobalStatistics(statistics_);
 }
 
 void DBIter::SeekForPrev(const Slice& target) {
@@ -1779,6 +1786,7 @@ void DBIter::SeekForPrev(const Slice& target) {
     RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
     PERF_COUNTER_ADD(iter_read_bytes, key().size() + value().size());
   }
+  //local_stats_.BumpGlobalStatistics(statistics_);
 }
 
 void DBIter::SeekToFirst() {

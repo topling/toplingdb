@@ -15,6 +15,8 @@
   #include <immintrin.h>
 #endif
 
+#include <boost/predef/other/endian.h>
+
 #if defined(__clang__)
   #pragma clang diagnostic ignored "-Winconsistent-missing-override"
   #pragma clang diagnostic ignored "-Wshorten-64-to-32"
@@ -165,72 +167,61 @@ private:
     }
   #endif
 #endif
-// if true, it should be a little faster
-static constexpr bool allow_read_beyond_key_mem = false;
 
-template<size_t Len>
-__always_inline void Load16BytesZeroAppend(void* dst, const void* src) {
-  memcpy(dst, src, Len);
-  memset((char*)dst + Len, 0, 16 - Len);
+template<size_t PrefixLen>
+__always_inline UintPrefix LoadPrefixZeroSuffix(const void* src) {
+  UintPrefix dst;
+  memcpy(&dst, src, PrefixLen);
+  memset((char*)&dst + PrefixLen, 0, sizeof(dst) - PrefixLen);
+  return dst;
+}
+__always_inline
+UintPrefix LoadPrefixZeroSuffixDynaLen(const void* src, size_t PrefixLen) {
+  UintPrefix dst;
+  memcpy(&dst, src, PrefixLen);
+  memset((char*)&dst + PrefixLen, 0, sizeof(dst) - PrefixLen);
+  return dst;
 }
 FORCE_INLINE UintPrefix HostPrefixCacheUK(const Slice& uk) {
-  UintPrefix data;
+#if defined(BOOST_ENDIAN_LITTLE_BYTE)
   if (LIKELY(uk.size_ >= sizeof(UintPrefix))) {
-    memcpy(&data, uk.data_, sizeof(UintPrefix));
-  } else if (allow_read_beyond_key_mem) {
-    memcpy(&data, uk.data_, sizeof(UintPrefix)); // read beyound uk mem
-    if (port::kLittleEndian) {
-      data = bswap_prefix(data);
-    }
-    return data & (UintPrefix(-1) << ((sizeof(UintPrefix) - uk.size_) * 8));
+    return bswap_prefix(unaligned_load<UintPrefix>(uk.data_));
   } else {
    #if defined(__AVX512VL__) && defined(__AVX512VBMI2__)
    #pragma message "__AVX512VL__ && __AVX512VBMI2__, use _mm_maskz_expandloadu_epi8"
     auto mask = uint16_t(~(-1 << uk.size_));
-    data = (UintPrefix)_mm_maskz_expandloadu_epi8(mask, uk.data_);
+    return bswap_prefix((UintPrefix)_mm_maskz_expandloadu_epi8(mask, uk.data_));
    #else
-   //#pragma message "!(__AVX512VL__ && __AVX512VBMI2__), no _mm_maskz_expandloadu_epi8"
-    data = 0;
-    memcpy(&data, uk.data_, uk.size_);
+    return bswap_prefix(LoadPrefixZeroSuffixDynaLen(uk.data_, uk.size_));
    #endif
   }
-  if (port::kLittleEndian)
-    return bswap_prefix(data);
-  else
-    return data;
+#else
+  #error "HostPrefixCacheUK: Not support bigendian yet"
+#endif
 }
 FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
-  UintPrefix data;
+#if defined(BOOST_ENDIAN_LITTLE_BYTE)
   if (LIKELY(ik.size_ >= sizeof(UintPrefix) + 8)) {
-    memcpy(&data, ik.data_, sizeof(UintPrefix));
-  } else if (allow_read_beyond_key_mem) {
-    memcpy(&data, ik.data_, sizeof(UintPrefix)); // read beyound user key mem
-    if (port::kLittleEndian) {
-      data = bswap_prefix(data);
-    }
-    return data & (UintPrefix(-1) << ((sizeof(UintPrefix) + 8 - ik.size_) * 8));
+    return bswap_prefix(unaligned_load<UintPrefix>(ik.data_));
   } else {
    #if defined(__AVX512VL__) && defined(__AVX512VBMI2__)
     auto mask = uint16_t(~(-1 << (ik.size_ - 8)));
-    data = (UintPrefix)_mm_maskz_expandloadu_epi8(mask, ik.data_);
+    return bswap_prefix((UintPrefix)_mm_maskz_expandloadu_epi8(mask, ik.data_));
    #else
     if (LIKELY(8 + 8 == ik.size_)) {
-      Load16BytesZeroAppend<8>(&data, ik.data_);
+      return bswap_prefix(LoadPrefixZeroSuffix<8>(ik.data_));
     }
     else if (LIKELY(12 + 8 == ik.size_)) {
-      Load16BytesZeroAppend<12>(&data, ik.data_);
+      return bswap_prefix(LoadPrefixZeroSuffix<12>(ik.data_));
     }
     else {
-      data = 0;
-      ROCKSDB_ASSUME(ik.size_ >= 8);
-      memcpy(&data, ik.data_, ik.size_ - 8);
+      return bswap_prefix(LoadPrefixZeroSuffixDynaLen(ik.data_, ik.size_ - 8));
     }
    #endif
   }
-  if (port::kLittleEndian)
-    return bswap_prefix(data);
-  else
-    return data;
+#else
+  #error "HostPrefixCacheIK: Not support bigendian yet"
+#endif
 }
 
 struct HeapItemAndPrefix {

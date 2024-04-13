@@ -779,6 +779,7 @@ WriteEntry WBWIIteratorImpl::Entry() const {
          iter_entry->column_family == column_family_id_);
   auto s = write_batch_->GetEntryFromDataOffset(
       iter_entry->offset, &ret.type, &ret.key, &ret.value, &blob, &xid);
+  ret.key.data_ = (const char*)(iter_entry + 1);
   assert(s.ok());
   assert(ret.type == kPutRecord || ret.type == kDeleteRecord ||
          ret.type == kSingleDeleteRecord || ret.type == kDeleteRangeRecord ||

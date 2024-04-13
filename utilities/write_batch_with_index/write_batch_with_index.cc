@@ -161,10 +161,22 @@ void WriteBatchWithIndex::Rep::AddNewEntry(uint32_t column_family_id) {
     key.remove_suffix(ts_sz);
   }
 
-  auto* mem = arena.Allocate(sizeof(WriteBatchIndexEntry));
+  size_t aligned_key_size = terark::pow2_align_up(key.size(), 8);
+  auto* mem = arena.Allocate(sizeof(WriteBatchIndexEntry) + aligned_key_size);
   auto* index_entry =
       new (mem) WriteBatchIndexEntry(last_entry_offset, column_family_id,
                                      key.data() - wb_data.data(), key.size());
+
+  // WriteBatchWithIndex allowing change during iterating, batch buffer will
+  // be append data during iterating, thus batch buffer may be re-allocated
+  // when reaching capacity, and we save delta_key in BaseDeltaIterator,
+  // which will be invalidated during batch buffer reallocation, so we save
+  // key data in index_entry, which is a stable memory address.
+  //
+  // CSPP_WBWI has no such issue, this is just for RocksDB default WBWI
+  //
+  memcpy(index_entry + 1, key.data(), key.size());
+
   skip_list.Insert(index_entry);
 }
 

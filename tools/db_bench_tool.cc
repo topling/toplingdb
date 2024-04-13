@@ -331,6 +331,7 @@ DEFINE_int64(max_scan_distance, 0,
 DEFINE_bool(use_uint64_comparator, false, "use Uint64 user comparator");
 
 DEFINE_bool(enable_zero_copy, false, "enable zero copy for SST");
+DEFINE_bool(scan_omit_value, false, "omit value while scan");
 
 DEFINE_int64(batch_size, 1, "Batch size");
 
@@ -5821,8 +5822,13 @@ class Benchmark {
     int64_t i = 0;
     int64_t bytes = 0;
     const auto limiter = thread->shared->read_rate_limiter.get();
+    const bool omit_value = FLAGS_scan_omit_value;
     for (iter->SeekToFirst(); i < reads_ && iter->Valid(); iter->Next()) {
-      bytes += iter->key().size() + iter->value().size();
+      if (omit_value) {
+        bytes += iter->key().size();
+      } else {
+        bytes += iter->key().size() + iter->value().size();
+      }
       thread->stats.FinishedOps(nullptr, db, 1, kRead);
       ++i;
 

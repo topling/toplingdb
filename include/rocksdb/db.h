@@ -123,6 +123,15 @@ struct RangePtr {
   RangePtr(const Slice* s, const Slice* l) : start(s), limit(l) {}
 };
 
+struct Anchor {
+  Anchor(const Slice& _user_key, size_t _range_size)
+      : user_key(_user_key.ToStringView()), range_size(_range_size) {}
+  Anchor(std::string&& _user_key, size_t _range_size)
+      : user_key(std::move(_user_key)), range_size(_range_size) {}
+  std::string user_key;
+  size_t range_size;
+};
+
 // It is valid that files_checksums and files_checksum_func_names are both
 // empty (no checksum information is provided for ingestion). Otherwise,
 // their sizes should be the same as external_files. The file order should
@@ -1857,6 +1866,8 @@ class DB : public CacheAlignedNewDelete {
   virtual Status GetPropertiesOfTablesInRange(
       ColumnFamilyHandle* column_family, const Range* range, std::size_t n,
       TablePropertiesCollection* props) = 0;
+
+  virtual Status ApproximateKeyAnchors(ColumnFamilyHandle*, const Range*, std::vector<Anchor>*) = 0;
 
   virtual Status SuggestCompactRange(ColumnFamilyHandle* /*column_family*/,
                                      const Slice* /*begin*/,

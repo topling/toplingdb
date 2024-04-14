@@ -1940,6 +1940,32 @@ Status Version::GetPropertiesOfTablesInRange(
   return Status::OK();
 }
 
+Status Version::ApproximateKeyAnchors(const ReadOptions& ro,
+                                      const Range* range,
+                                      std::vector<Anchor>* anchors) const {
+  anchors->clear();
+  for (int level = 0; level < storage_info_.num_non_empty_levels(); level++) {
+    // Convert user_key into a corresponding internal key.
+    InternalKey k1(range->start, kMaxSequenceNumber, kValueTypeForSeek);
+    InternalKey k2(range->limit, kMaxSequenceNumber, kValueTypeForSeek);
+    std::vector<FileMetaData*> files;
+    storage_info_.GetOverlappingInputs(level, &k1, &k2, &files, -1, nullptr, false);
+    for (const auto& file_meta : files) {
+      if (auto reader = file_meta->fd.table_reader) {
+        std::vector<Anchor> curr;
+        Status s = reader->ApproximateKeyAnchors(ro, curr);
+        if (!s.ok()) {
+          return s;
+        }
+        anchors->insert(anchors->end(), curr.begin(), curr.end());
+      } else {
+        ROCKSDB_DIE("TODO: load the SST: %zd.sst", (size_t)file_meta->fd.GetNumber());
+      }
+    }
+  }
+  return Status::OK();
+}
+
 std::string AggregateNames(const std::map<std::string, int>& map, const char* delim) {
   std::string str;
   size_t dlen = strlen(delim);

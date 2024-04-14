@@ -3127,6 +3127,10 @@ class ModelDB : public DB {
     return Status();
   }
 
+  Status ApproximateKeyAnchors(ColumnFamilyHandle*, const Range*, std::vector<Anchor>*) override {
+    return Status();
+  }
+
   using DB::KeyMayExist;
   bool KeyMayExist(const ReadOptions& /*options*/,
                    ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,

@@ -606,6 +606,7 @@ class DBImpl : public DB {
       ColumnFamilyHandle* column_family, const Range* range, std::size_t n,
       TablePropertiesCollection* props) override;
 
+  Status ApproximateKeyAnchors(ColumnFamilyHandle*, const Range*, std::vector<Anchor>*) override;
 
   // ---- End of implementations of the DB interface ----
   SystemClock* GetSystemClock() const;

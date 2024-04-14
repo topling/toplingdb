@@ -972,6 +972,7 @@ class Version {
   Status GetPropertiesOfTablesInRange(const ReadOptions& read_options,
                                       const Range* range, std::size_t n,
                                       TablePropertiesCollection* props) const;
+  Status ApproximateKeyAnchors(const ReadOptions&, const Range*, std::vector<Anchor>*) const;
 
   // Print summary of range delete tombstones in SST files into out_str,
   // with maximum max_entries_to_print entries printed out.

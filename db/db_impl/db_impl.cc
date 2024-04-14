@@ -4245,6 +4245,29 @@ Status DBImpl::GetPropertiesOfTablesInRange(ColumnFamilyHandle* column_family,
   return s;
 }
 
+Status DBImpl::ApproximateKeyAnchors(ColumnFamilyHandle* column_family,
+                                     const Range* range,
+                                     std::vector<Anchor>* anchors) {
+  auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
+  auto cfd = cfh->cfd();
+
+  // Increment the ref count
+  mutex_.Lock();
+  auto version = cfd->current();
+  version->Ref();
+  mutex_.Unlock();
+
+  // TODO: plumb Env::IOActivity
+  const ReadOptions read_options;
+  auto s = version->ApproximateKeyAnchors(read_options, range, anchors);
+
+  // Decrement the ref count
+  mutex_.Lock();
+  version->Unref();
+  mutex_.Unlock();
+
+  return s;
+}
 
 const std::string& DBImpl::GetName() const { return dbname_; }
 

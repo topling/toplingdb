@@ -27,6 +27,7 @@ class Iterator;
 struct ParsedInternalKey;
 class Slice;
 class Arena;
+struct Anchor;
 struct ReadOptions;
 struct TableProperties;
 class GetContext;
@@ -89,14 +90,7 @@ class TableReader : public CacheAlignedNewDelete {
                                    const Slice& start, const Slice& end,
                                    TableReaderCaller caller) = 0;
 
-  struct Anchor {
-    Anchor(const Slice& _user_key, size_t _range_size)
-        : user_key(_user_key.ToStringView()), range_size(_range_size) {}
-    Anchor(std::string&& _user_key, size_t _range_size)
-        : user_key(std::move(_user_key)), range_size(_range_size) {}
-    std::string user_key;
-    size_t range_size;
-  };
+  using Anchor = ROCKSDB_NAMESPACE::Anchor;
 
   // Now try to return approximately 128 anchor keys.
   // The last one tends to be the largest key.

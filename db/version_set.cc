@@ -1957,7 +1957,9 @@ Status Version::ApproximateKeyAnchors(const ReadOptions& ro,
         if (!s.ok()) {
           return s;
         }
-        anchors->insert(anchors->end(), curr.begin(), curr.end());
+        anchors->insert(anchors->end(),
+          std::make_move_iterator(curr.begin()),
+          std::make_move_iterator(curr.end()));
       } else {
         ROCKSDB_DIE("TODO: load the SST: %zd.sst", (size_t)file_meta->fd.GetNumber());
       }

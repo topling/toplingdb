@@ -31,6 +31,7 @@
 #include "rocksdb/wide_columns.h"
 
 #include <terark/hash_strmap.hpp>
+#include <terark/sso.hpp>
 
 #ifdef _WIN32
 // Windows API macro interference
@@ -128,7 +129,12 @@ struct Anchor {
       : user_key(_user_key.ToStringView()), range_size(_range_size) {}
   Anchor(std::string&& _user_key, size_t _range_size)
       : user_key(std::move(_user_key)), range_size(_range_size) {}
-  std::string user_key;
+  struct UserKeySSO : terark::minimal_sso<40> {
+    using terark::minimal_sso<40>::minimal_sso;
+    operator Slice() const { return to<Slice>(); }
+    operator std::string() const { return to<std::string>(); }
+  };
+  UserKeySSO user_key;
   size_t range_size;
   friend bool operator<(const Anchor& x, const Anchor& y)
   { return x.user_key < y.user_key; }

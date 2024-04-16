@@ -1943,7 +1943,9 @@ Status Version::GetPropertiesOfTablesInRange(
 Status Version::ApproximateKeyAnchors(const ReadOptions& ro,
                                       const Range* range,
                                       std::vector<Anchor>* anchors) const {
-  anchors->clear();
+  TableCache* table_cache = cfd_->table_cache();
+  const InternalKeyComparator& icmp = *internal_comparator();
+  auto prot = mutable_cf_options_.block_protection_bytes_per_key;
   for (int level = 0; level < storage_info_.num_non_empty_levels(); level++) {
     // Convert user_key into a corresponding internal key.
     InternalKey k1(range->start, kMaxSequenceNumber, kValueTypeForSeek);
@@ -1952,18 +1954,7 @@ Status Version::ApproximateKeyAnchors(const ReadOptions& ro,
     storage_info_.GetOverlappingInputs(level, &k1, &k2, &files, -1, nullptr, false);
     anchors->reserve(anchors->capacity() + files.size() * 128);
     for (const auto& file_meta : files) {
-      if (auto reader = file_meta->fd.table_reader) {
-        std::vector<Anchor> curr;
-        Status s = reader->ApproximateKeyAnchors(ro, curr);
-        if (!s.ok()) {
-          return s;
-        }
-        anchors->insert(anchors->end(),
-          std::make_move_iterator(curr.begin()),
-          std::make_move_iterator(curr.end()));
-      } else {
-        ROCKSDB_DIE("TODO: load the SST: %zd.sst", (size_t)file_meta->fd.GetNumber());
-      }
+      table_cache->ApproximateKeyAnchors(ro, icmp, *file_meta, prot, *anchors);
     }
   }
   return Status::OK();

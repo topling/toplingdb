@@ -136,6 +136,10 @@ struct Anchor {
   };
   UserKeySSO user_key;
   size_t range_size;
+  void swap(Anchor& y) {
+    user_key.swap(y.user_key);
+    std::swap(range_size, y.range_size);
+  }
   friend bool operator<(const Anchor& x, const Anchor& y)
   { return x.user_key < y.user_key; }
   friend bool operator>(const Anchor& x, const Anchor& y)
@@ -2045,3 +2049,8 @@ Status RepairDB(const std::string& dbname, const Options& options);
 
 
 }  // namespace ROCKSDB_NAMESPACE
+
+namespace std {
+  inline void swap(ROCKSDB_NAMESPACE::Anchor& x,
+                   ROCKSDB_NAMESPACE::Anchor& y) { x.swap(y); }
+}

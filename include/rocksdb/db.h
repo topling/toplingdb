@@ -130,6 +130,18 @@ struct Anchor {
       : user_key(std::move(_user_key)), range_size(_range_size) {}
   std::string user_key;
   size_t range_size;
+  friend bool operator<(const Anchor& x, const Anchor& y)
+  { return x.user_key < y.user_key; }
+  friend bool operator>(const Anchor& x, const Anchor& y)
+  { return x.user_key > y.user_key; }
+  friend bool operator<=(const Anchor& x, const Anchor& y)
+  { return x.user_key <= y.user_key; }
+  friend bool operator>=(const Anchor& x, const Anchor& y)
+  { return x.user_key >= y.user_key; }
+  friend bool operator==(const Anchor& x, const Anchor& y)
+  { return x.user_key == y.user_key; }
+  friend bool operator!=(const Anchor& x, const Anchor& y)
+  { return x.user_key != y.user_key; }
 };
 
 // It is valid that files_checksums and files_checksum_func_names are both

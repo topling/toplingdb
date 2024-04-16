@@ -1950,6 +1950,7 @@ Status Version::ApproximateKeyAnchors(const ReadOptions& ro,
     InternalKey k2(range->limit, kMaxSequenceNumber, kValueTypeForSeek);
     std::vector<FileMetaData*> files;
     storage_info_.GetOverlappingInputs(level, &k1, &k2, &files, -1, nullptr, false);
+    anchors->reserve(anchors->capacity() + files.size() * 128);
     for (const auto& file_meta : files) {
       if (auto reader = file_meta->fd.table_reader) {
         std::vector<Anchor> curr;

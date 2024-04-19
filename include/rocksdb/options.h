@@ -1525,6 +1525,11 @@ struct ReadOptions {
   // results in multiple reads, each read can last up to io_timeout us.
   std::chrono::microseconds io_timeout = std::chrono::microseconds::zero();
 
+  // It limits the maximum cumulative value size of the keys in batch while
+  // reading through MultiGet. Once the cumulative value size exceeds this
+  // soft limit then all the remaining keys are returned with status Aborted.
+  uint64_t value_size_soft_limit = std::numeric_limits<uint64_t>::max();
+
   // Specify if this read request should process data that ALREADY
   // resides on a particular cache. If the required data is not
   // found at the specified cache, then Status::Incomplete is returned.
@@ -1543,11 +1548,6 @@ struct ReadOptions {
   // since there are some seemingly insignificant reads, like for file
   // headers/footers, that we currently do not charge to rate limiter.
   Env::IOPriority rate_limiter_priority = Env::IO_TOTAL;
-
-  // It limits the maximum cumulative value size of the keys in batch while
-  // reading through MultiGet. Once the cumulative value size exceeds this
-  // soft limit then all the remaining keys are returned with status Aborted.
-  uint64_t value_size_soft_limit = std::numeric_limits<uint64_t>::max();
 
   // If true, all data read from underlying storage will be
   // verified against corresponding checksums.

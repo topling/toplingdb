@@ -434,6 +434,39 @@ void DBIter::SetFuncPtr() {
   }
 }
 
+template<size_t FixLen>
+__always_inline bool RawBytewiseLess(const void* x, const void* y) {
+ #if defined(__clang__)
+  return memcmp(x, y, FixLen) < 0;
+ #else
+  auto px = (const unsigned char*)x;
+  auto py = (const unsigned char*)y;
+  size_t i = 0;
+  for (; i + 8 <= FixLen; i += 8) {
+    auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
+    auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+    if (ux != uy)
+      return ux < uy;
+  }
+  if (FixLen % sizeof(uint64_t) >= 4) {
+    auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
+    auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+    if (ux != uy)
+      return ux < uy;
+    else
+      i += 4;
+  }
+  if (FixLen % sizeof(uint32_t)) {
+    for (; i < FixLen; i++) {
+      int ux = px[i], uy = py[i];
+      if (ux != uy)
+        return ux < uy;
+    }
+  }
+  return false; // equal is not less
+ #endif
+}
+
 template<bool HasPrefix, bool HasUpperBound, size_t FixLen, class CmpNoTS>
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                            const Slice* prefix) {
@@ -484,10 +517,16 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                user_key_without_ts, /*a_has_ts=*/false, *iterate_upper_bound_,
                /*b_has_ts=*/false) < 0);
     if (HasUpperBound &&
+         (0 == FixLen || !std::is_same_v<CmpNoTS, BytewiseCmpNoTS>) &&
         // ToplingDB: for speed up, do not call UpperBoundCheckResult()
         // The following cmpNoTS has same semantic as UpperBoundCheckResult()
         // iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
         !cmpNoTS(user_key_without_ts, *iterate_upper_bound_)) {
+      break;
+    }
+    if (HasUpperBound && FixLen && std::is_same_v<CmpNoTS, BytewiseCmpNoTS> &&
+        !RawBytewiseLess<FixLen>(user_key_without_ts.data_,
+                                 iterate_upper_bound_->data_)) {
       break;
     }
 

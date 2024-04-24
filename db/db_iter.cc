@@ -106,6 +106,7 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
   assert(timestamp_size_ ==
          user_comparator_.user_comparator()->timestamp_size());
   enable_perf_timer_ = perf_level >= PerfLevel::kEnableTimeExceptForMutex;
+  fixed_user_key_len_ = read_options.fixed_user_key_len;
 #if defined(_MSC_VER) || defined(__clang__)
 #else
   #pragma GCC diagnostic ignored "-Wpmf-conversions"
@@ -383,10 +384,10 @@ struct VirtualCmpNoTS {
   const Comparator* cmp;
 };
 
-template<bool HasPrefix, bool HasUpperBound, class CmpNoTS>
+template<bool HasPrefix, bool HasUpperBound, size_t FixLen, class CmpNoTS>
 bool DBIter::FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix) {
   PERF_TIMER_GUARD(find_next_user_entry_time);
-  return FindNextUserEntryInternalTmpl<HasPrefix, HasUpperBound, CmpNoTS>
+  return FindNextUserEntryInternalTmpl<HasPrefix, HasUpperBound, FixLen, CmpNoTS>
           (skipping_saved_key, prefix);
 }
 void DBIter::SetFuncPtr() {
@@ -396,14 +397,20 @@ void DBIter::SetFuncPtr() {
   #define BOUND_PMF(func) (FindNextUserEntryFN)(this->*func)
 #endif
   #define SetFindNext(FuncName, CmpNoTS) \
+    if (false) {} \
+    else if ( 8 == fixed_user_key_len_) SetFindNext3(FuncName,  8, CmpNoTS); \
+    else if (12 == fixed_user_key_len_) SetFindNext3(FuncName, 12, CmpNoTS); \
+    else if (16 == fixed_user_key_len_) SetFindNext3(FuncName, 16, CmpNoTS); \
+    else                                SetFindNext3(FuncName,  0, CmpNoTS)
+  #define SetFindNext3(FuncName, FixLen, CmpNoTS) \
     do { \
       auto func = prefix_same_as_start_ \
               ? iterate_upper_bound_ \
-                ? &DBIter::template FuncName<true , true , CmpNoTS>  \
-                : &DBIter::template FuncName<true , false, CmpNoTS>  \
+                ? &DBIter::template FuncName<true , true , FixLen, CmpNoTS>  \
+                : &DBIter::template FuncName<true , false, FixLen, CmpNoTS>  \
               : iterate_upper_bound_ \
-                ? &DBIter::template FuncName<false, true , CmpNoTS>  \
-                : &DBIter::template FuncName<false, false, CmpNoTS>; \
+                ? &DBIter::template FuncName<false, true , FixLen, CmpNoTS>  \
+                : &DBIter::template FuncName<false, false, FixLen, CmpNoTS>; \
       m_find_next_entry = BOUND_PMF(func); \
     } while (0)
   if (enable_perf_timer_) {
@@ -427,7 +434,7 @@ void DBIter::SetFuncPtr() {
   }
 }
 
-template<bool HasPrefix, bool HasUpperBound, class CmpNoTS>
+template<bool HasPrefix, bool HasUpperBound, size_t FixLen, class CmpNoTS>
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                            const Slice* prefix) {
   CmpNoTS cmpNoTS{user_comparator_.user_comparator()};
@@ -541,6 +548,8 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
         #if !defined(TOPLINGDB_WITH_WIDE_COLUMNS)
             if (timestamp_lb_) {
               saved_key_.SetInternalKey(ikey_);
+            } else if (FixLen != 0) { // to propagate const FixLen
+              saved_key_.SetUserKey(ikey_.user_key.data_, FixLen);
             } else {
               saved_key_.SetUserKey(
                   ikey_.user_key, !pin_thru_lifetime_ ||

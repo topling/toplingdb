@@ -273,7 +273,7 @@ class DBIter final : public Iterator {
   // If `prefix` is not null, the iterator needs to stop when all keys for the
   // prefix are exhausted and the iterator is set to invalid.
   bool FindNextUserEntry(bool skipping_saved_key, const Slice* prefix);
-  template<bool HasPrefix, bool HasUpperBound, class CmpNoTS>
+  template<bool HasPrefix, bool HasUpperBound, size_t FixLen, class CmpNoTS>
   bool FindNextUserEntryInternalTmpl(bool, const Slice* prefix);
   bool ParseKey(ParsedInternalKey* key);
   bool MergeValuesNewToOld();
@@ -394,7 +394,7 @@ class DBIter final : public Iterator {
   // uncommitted data in db as in WriteUnCommitted.
   SequenceNumber sequence_;
 
-  template<bool HasPrefix, bool HasUpperBound, class CmpNoTS>
+  template<bool HasPrefix, bool HasUpperBound, size_t FixLen, class CmpNoTS>
   bool FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix);
   void SetFuncPtr();
 #if defined(_MSC_VER) || defined(__clang__)
@@ -415,6 +415,12 @@ class DBIter final : public Iterator {
     void SetUserKey(const Slice& uk, bool copy = true) {
       key.assign(uk.size_ + 8, [=](char* buf, size_t len) {
         memcpy(buf, uk.data_, uk.size_);
+        // do not write last 8 bytes(seq + value_type)
+      });
+    }
+    void SetUserKey(const char* uk, size_t uk_len) {
+      key.risk_assign_local(uk_len + 8, [=](char* buf, size_t) {
+        memcpy(buf, uk, uk_len);
         // do not write last 8 bytes(seq + value_type)
       });
     }
@@ -512,6 +518,7 @@ class DBIter final : public Iterator {
   bool is_blob_;
   bool arena_mode_;
   bool enable_perf_timer_;
+  uint8_t fixed_user_key_len_;
   // List of operands for merge operator.
   MergeContext merge_context_;
   LocalStatistics local_stats_;

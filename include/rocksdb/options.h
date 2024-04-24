@@ -1716,6 +1716,8 @@ struct ReadOptions {
   // ** For RocksDB internal use only **
   Env::IOActivity io_activity = Env::IOActivity::kUnknown;
 
+  uint8_t fixed_user_key_len = 0; // 0 indicate var len
+
   int async_queue_depth = 16;
 
   // used for ToplingDB fiber MultiGet

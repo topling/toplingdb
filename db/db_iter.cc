@@ -384,10 +384,10 @@ struct VirtualCmpNoTS {
   const Comparator* cmp;
 };
 
-template<bool HasPrefix, bool HasUpperBound, size_t FixLen, class CmpNoTS>
+template<bool HasPrefix, bool HasUpperBound, bool MayHasCallback, size_t FixLen, class CmpNoTS>
 bool DBIter::FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix) {
   PERF_TIMER_GUARD(find_next_user_entry_time);
-  return FindNextUserEntryInternalTmpl<HasPrefix, HasUpperBound, FixLen, CmpNoTS>
+  return FindNextUserEntryInternalTmpl<HasPrefix, HasUpperBound, MayHasCallback, FixLen, CmpNoTS>
           (skipping_saved_key, prefix);
 }
 void DBIter::SetFuncPtr() {
@@ -403,14 +403,18 @@ void DBIter::SetFuncPtr() {
     else if (16 == fixed_user_key_len_) SetFindNext3(FuncName, 16, CmpNoTS); \
     else                                SetFindNext3(FuncName,  0, CmpNoTS)
   #define SetFindNext3(FuncName, FixLen, CmpNoTS) \
+    if (read_callback_) \
+         SetFindNext4(FuncName, true , FixLen, CmpNoTS); \
+    else SetFindNext4(FuncName, false, FixLen, CmpNoTS)
+  #define SetFindNext4(FuncName, MayHasCallback, FixLen, CmpNoTS) \
     do { \
       auto func = prefix_same_as_start_ \
               ? iterate_upper_bound_ \
-                ? &DBIter::template FuncName<true , true , FixLen, CmpNoTS>  \
-                : &DBIter::template FuncName<true , false, FixLen, CmpNoTS>  \
+                ? &DBIter::template FuncName<true , true , MayHasCallback, FixLen, CmpNoTS>  \
+                : &DBIter::template FuncName<true , false, MayHasCallback, FixLen, CmpNoTS>  \
               : iterate_upper_bound_ \
-                ? &DBIter::template FuncName<false, true , FixLen, CmpNoTS>  \
-                : &DBIter::template FuncName<false, false, FixLen, CmpNoTS>; \
+                ? &DBIter::template FuncName<false, true , MayHasCallback, FixLen, CmpNoTS>  \
+                : &DBIter::template FuncName<false, false, MayHasCallback, FixLen, CmpNoTS>; \
       m_find_next_entry = BOUND_PMF(func); \
     } while (0)
   if (enable_perf_timer_) {
@@ -467,7 +471,7 @@ __always_inline bool RawBytewiseLess(const void* x, const void* y) {
  #endif
 }
 
-template<bool HasPrefix, bool HasUpperBound, size_t FixLen, class CmpNoTS>
+template<bool HasPrefix, bool HasUpperBound, bool MayHasCallback, size_t FixLen, class CmpNoTS>
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                            const Slice* prefix) {
   CmpNoTS cmpNoTS{user_comparator_.user_comparator()};
@@ -547,7 +551,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                          ikey_.user_key, timestamp_size_)
                                    : Slice();
     bool more_recent = false;
-    if (IsVisible(ikey_.sequence, ts, &more_recent)) {
+    if (IsVisible<MayHasCallback>(ikey_.sequence, ts, &more_recent)) {
       // If the previous entry is of seqnum 0, the current entry will not
       // possibly be skipped. This condition can potentially be relaxed to
       // prev_key.seq <= ikey_.sequence. We are cautious because it will be more
@@ -1617,12 +1621,14 @@ bool DBIter::TooManyInternalKeysSkipped(bool increment) {
   return false;
 }
 
+
+template<bool MayHasCallback>
 __always_inline
 bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
                        bool* more_recent) {
   // Remember that comparator orders preceding timestamp as larger.
   // TODO(yanqin): support timestamp in read_callback_.
-  bool visible_by_seq = (read_callback_ == nullptr)
+  bool visible_by_seq = !MayHasCallback || (read_callback_ == nullptr)
                             ? sequence <= sequence_
                             : read_callback_->IsVisible(sequence);
 

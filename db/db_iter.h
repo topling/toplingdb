@@ -273,7 +273,7 @@ class DBIter final : public Iterator {
   // If `prefix` is not null, the iterator needs to stop when all keys for the
   // prefix are exhausted and the iterator is set to invalid.
   bool FindNextUserEntry(bool skipping_saved_key, const Slice* prefix);
-  template<bool HasPrefix, bool HasUpperBound, size_t FixLen, class CmpNoTS>
+  template<bool HasPrefix, bool HasUpperBound, bool MayHasCallback, size_t FixLen, class CmpNoTS>
   bool FindNextUserEntryInternalTmpl(bool, const Slice* prefix);
   bool ParseKey(ParsedInternalKey* key);
   bool MergeValuesNewToOld();
@@ -282,6 +282,7 @@ class DBIter final : public Iterator {
   // entry can be found within the prefix.
   void PrevInternal(const Slice* prefix);
   bool TooManyInternalKeysSkipped(bool increment = true);
+  template<bool MayHasCallback = true>
   bool IsVisible(SequenceNumber sequence, const Slice& ts,
                  bool* more_recent = nullptr);
 
@@ -394,7 +395,7 @@ class DBIter final : public Iterator {
   // uncommitted data in db as in WriteUnCommitted.
   SequenceNumber sequence_;
 
-  template<bool HasPrefix, bool HasUpperBound, size_t FixLen, class CmpNoTS>
+  template<bool HasPrefix, bool HasUpperBound, bool MayHasCallback, size_t FixLen, class CmpNoTS>
   bool FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix);
   void SetFuncPtr();
 #if defined(_MSC_VER) || defined(__clang__)

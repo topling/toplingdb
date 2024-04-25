@@ -401,6 +401,10 @@ void DBIter::SetFuncPtr() {
     else if ( 8 == fixed_user_key_len_) SetFindNext3(FuncName,  8, CmpNoTS); \
     else if (12 == fixed_user_key_len_) SetFindNext3(FuncName, 12, CmpNoTS); \
     else if (16 == fixed_user_key_len_) SetFindNext3(FuncName, 16, CmpNoTS); \
+    else if (20 == fixed_user_key_len_) SetFindNext3(FuncName, 20, CmpNoTS); \
+    else if (24 == fixed_user_key_len_) SetFindNext3(FuncName, 24, CmpNoTS); \
+    else if (28 == fixed_user_key_len_) SetFindNext3(FuncName, 28, CmpNoTS); \
+    else if (32 == fixed_user_key_len_) SetFindNext3(FuncName, 32, CmpNoTS); \
     else                                SetFindNext3(FuncName,  0, CmpNoTS)
   #define SetFindNext3(FuncName, FixLen, CmpNoTS) \
     if (read_callback_) \

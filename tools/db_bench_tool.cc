@@ -331,6 +331,7 @@ DEFINE_int64(max_scan_distance, 0,
 DEFINE_bool(use_uint64_comparator, false, "use Uint64 user comparator");
 
 DEFINE_bool(enable_zero_copy, false, "enable zero copy for SST");
+DEFINE_bool(scan_omit_key, false, "omit calling iter->key() while scan");
 DEFINE_bool(scan_omit_value, false, "omit value while scan");
 
 DEFINE_int64(batch_size, 1, "Batch size");
@@ -5818,6 +5819,10 @@ class Benchmark {
     options.adaptive_readahead = FLAGS_adaptive_readahead;
     options.async_io = FLAGS_async_io;
 
+    const int64_t key_size = FLAGS_key_size;
+    const bool omit_key = FLAGS_scan_omit_key;
+    options.fixed_user_key_len = omit_key ? key_size : 0;
+
     Iterator* iter = db->NewIterator(options);
     int64_t i = 0;
     int64_t bytes = 0;
@@ -5825,7 +5830,7 @@ class Benchmark {
     const bool omit_value = FLAGS_scan_omit_value;
     for (iter->SeekToFirst(); i < reads_ && iter->Valid(); iter->Next()) {
       if (omit_value) {
-        bytes += iter->key().size();
+        bytes += omit_key ? key_size : iter->key().size();
       } else {
         bytes += iter->key().size() + iter->value().size();
       }

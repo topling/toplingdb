@@ -384,7 +384,9 @@ struct VirtualCmpNoTS {
   const Comparator* cmp;
 };
 
-template<bool HasPrefix, bool HasUpperBound, bool MayHasCallback, size_t FixLen, class CmpNoTS>
+using TriBool = DBIter::TriBool;
+
+template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
 bool DBIter::FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix) {
   PERF_TIMER_GUARD(find_next_user_entry_time);
   return FindNextUserEntryInternalTmpl<HasPrefix, HasUpperBound, MayHasCallback, FixLen, CmpNoTS>
@@ -408,8 +410,8 @@ void DBIter::SetFuncPtr() {
     else                                SetFindNext3(FuncName,  0, CmpNoTS)
   #define SetFindNext3(FuncName, FixLen, CmpNoTS) \
     if (read_callback_) \
-         SetFindNext4(FuncName, true , FixLen, CmpNoTS); \
-    else SetFindNext4(FuncName, false, FixLen, CmpNoTS)
+         SetFindNext4(FuncName, kTrue , FixLen, CmpNoTS); \
+    else SetFindNext4(FuncName, kFalse, FixLen, CmpNoTS)
   #define SetFindNext4(FuncName, MayHasCallback, FixLen, CmpNoTS) \
     do { \
       auto func = prefix_same_as_start_ \
@@ -475,7 +477,7 @@ __always_inline bool RawBytewiseLess(const void* x, const void* y) {
  #endif
 }
 
-template<bool HasPrefix, bool HasUpperBound, bool MayHasCallback, size_t FixLen, class CmpNoTS>
+template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                            const Slice* prefix) {
   CmpNoTS cmpNoTS{user_comparator_.user_comparator()};
@@ -1626,13 +1628,14 @@ bool DBIter::TooManyInternalKeysSkipped(bool increment) {
 }
 
 
-template<bool MayHasCallback>
+template<TriBool MayHasCallback>
 __always_inline
 bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
                        bool* more_recent) {
   // Remember that comparator orders preceding timestamp as larger.
   // TODO(yanqin): support timestamp in read_callback_.
-  bool visible_by_seq = !MayHasCallback || (read_callback_ == nullptr)
+  bool visible_by_seq = (MayHasCallback == kUnknown && read_callback_ == nullptr)
+                     || (MayHasCallback == kFalse)
                             ? sequence <= sequence_
                             : read_callback_->IsVisible(sequence);
 

@@ -443,16 +443,16 @@ __always_inline bool RawBytewiseLess(const void* x, const void* y) {
   auto py = (const unsigned char*)y;
   size_t i = 0;
   for (; i + 8 <= FixLen; i += 8) {
-    auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
-    auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+    auto ux = *(const uint64_t*)(px + i);
+    auto uy = *(const uint64_t*)(py + i);
     if (ux != uy)
-      return ux < uy;
+      return NativeOfBigEndian64(ux) < NativeOfBigEndian64(uy);
   }
   if (FixLen % sizeof(uint64_t) >= 4) {
-    auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
-    auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+    auto ux = *(const uint32_t*)(px + i);
+    auto uy = *(const uint32_t*)(py + i);
     if (ux != uy)
-      return ux < uy;
+      return NativeOfBigEndian32(ux) < NativeOfBigEndian32(uy);
     else
       i += 4;
   }

@@ -1033,16 +1033,16 @@ __always_inline bool SliceBytewiseLess(const Slice& x, const Slice& y) {
   auto py = (const unsigned char*)y.data(); size_t ny = y.size();
   size_t i = 0, n = std::min(nx, ny);
   for (; i + 8 <= n; i += 8) {
-    auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
-    auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+    auto ux = *(const uint64_t*)(px + i);
+    auto uy = *(const uint64_t*)(py + i);
     if (ux != uy)
-      return ux < uy;
+      return NativeOfBigEndian64(ux) < NativeOfBigEndian64(uy);
   }
   if (n % sizeof(uint64_t) >= 4) {
-    auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
-    auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+    auto ux = *(const uint32_t*)(px + i);
+    auto uy = *(const uint32_t*)(py + i);
     if (ux != uy)
-      return ux < uy;
+      return NativeOfBigEndian32(ux) < NativeOfBigEndian32(uy);
     else
       i += 4;
   }
@@ -1067,16 +1067,16 @@ struct BytewiseCompareInternalKey {
     auto py = (const unsigned char*)y.data(); size_t ny = y.size();
     size_t i = 0, n = std::min(nx, ny) - 8;
     for (; i + 8 <= n; i += 8) {
-      auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
-      auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+      auto ux = *(const uint64_t*)(px + i);
+      auto uy = *(const uint64_t*)(py + i);
       if (ux != uy)
-        return ux < uy;
+        return NativeOfBigEndian64(ux) < NativeOfBigEndian64(uy);
     }
     if (n % sizeof(uint64_t) >= 4) {
-      auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
-      auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+      auto ux = *(const uint32_t*)(px + i);
+      auto uy = *(const uint32_t*)(py + i);
       if (ux != uy)
-        return ux < uy;
+        return NativeOfBigEndian32(ux) < NativeOfBigEndian32(uy);
       else
         i += 4;
     }
@@ -1150,16 +1150,16 @@ __always_inline int BytewiseCompare(const Slice& x, const Slice& y) {
   auto py = (const unsigned char*)y.data(); size_t ny = y.size();
   size_t i = 0, n = std::min(nx, ny);
   for (; i + 8 <= n; i += 8) {
-    auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
-    auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+    auto ux = *(const uint64_t*)(px + i);
+    auto uy = *(const uint64_t*)(py + i);
     if (ux != uy)
-      return ux < uy ? -1 : +1;
+      return NativeOfBigEndian64(ux) < NativeOfBigEndian64(uy) ? -1 : +1;
   }
   if (n % sizeof(uint64_t) >= 4) {
-    auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
-    auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+    auto ux = *(const uint32_t*)(px + i);
+    auto uy = *(const uint32_t*)(py + i);
     if (ux != uy)
-      return ux < uy ? -1 : +1;
+      return NativeOfBigEndian32(ux) < NativeOfBigEndian32(uy) ? -1 : +1;
     else
       i += 4;
   }

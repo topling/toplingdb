@@ -586,6 +586,8 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
               valid_ = true;
               return true;
             } else {
+              FixLen != 0 ? // to propagate const FixLen
+              saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
               saved_key_.SetUserKey(
                   ikey_.user_key, !pin_thru_lifetime_ ||
                                       !iter_.iter()->IsKeyPinned() /* copy */);
@@ -648,6 +650,8 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
               valid_ = false;
               return false;
             }
+            FixLen != 0 ? // to propagate const FixLen
+            saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
             saved_key_.SetUserKey(
                 ikey_.user_key,
                 !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
@@ -677,6 +681,8 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
       if (cmp == 0 || (skipping_saved_key && cmp < 0)) {
         num_skipped++;
       } else {
+        FixLen != 0 ? // to propagate const FixLen
+        saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
         saved_key_.SetUserKey(
             ikey_.user_key,
             !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);

@@ -347,6 +347,39 @@ struct FixedLenCmpNoTS {
   }
 };
 
+__always_inline // const propagate param FixLen
+bool RawBytewiseLess(const void* x, const void* y, size_t FixLen) {
+ #if defined(__clang__)
+  return memcmp(x, y, FixLen) < 0;
+ #else
+  auto px = (const unsigned char*)x;
+  auto py = (const unsigned char*)y;
+  size_t i = 0;
+  for (; i + 8 <= FixLen; i += 8) {
+    auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
+    auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+    if (ux != uy)
+      return ux < uy;
+  }
+  if (FixLen % sizeof(uint64_t) >= 4) {
+    auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
+    auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+    if (ux != uy)
+      return ux < uy;
+    else
+      i += 4;
+  }
+  if (FixLen % sizeof(uint32_t)) {
+    for (; i < FixLen; i++) {
+      int ux = px[i], uy = py[i];
+      if (ux != uy)
+        return ux < uy;
+    }
+  }
+  return false; // equal is not less
+ #endif
+}
+
 struct BytewiseCmpNoTS {
   BytewiseCmpNoTS(const Comparator*) {}
   __always_inline bool equal(const Slice& x, const Slice& y) const {
@@ -355,6 +388,13 @@ struct BytewiseCmpNoTS {
   __always_inline bool operator()(const Slice& x, const Slice& y) const {
     // return x < y;
     return SliceBytewiseLess(x, y);
+  }
+  __always_inline bool operator()(const Slice& x, const Slice& y, size_t FixLen) const {
+    // return x < y;
+    if (FixLen)
+      return RawBytewiseLess(x.data_, y.data_, FixLen);
+    else
+      return SliceBytewiseLess(x, y);
   }
   int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
 };
@@ -368,6 +408,13 @@ struct RevBytewiseCmpNoTS {
     // return y < x;
     return SliceBytewiseLess(y, x);
   }
+  __always_inline bool operator()(const Slice& x, const Slice& y, size_t FixLen) const {
+    // return y < x;
+    if (FixLen)
+      return RawBytewiseLess(y.data_, x.data_, FixLen);
+    else
+      return SliceBytewiseLess(y, x);
+  }
   int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
 };
 
@@ -375,7 +422,7 @@ struct VirtualCmpNoTS {
   bool equal(const Slice& x, const Slice& y) const {
     return cmp->CompareWithoutTimestamp(x, y) == 0;
   }
-  bool operator()(const Slice& x, const Slice& y) const {
+  bool operator()(const Slice& x, const Slice& y, size_t = 0) const {
     return cmp->CompareWithoutTimestamp(x, false, y, false) < 0;
   }
   int compare(const Slice& x, const Slice& y) const {
@@ -444,39 +491,6 @@ void DBIter::SetFuncPtr() {
   }
 }
 
-template<size_t FixLen>
-__always_inline bool RawBytewiseLess(const void* x, const void* y) {
- #if defined(__clang__)
-  return memcmp(x, y, FixLen) < 0;
- #else
-  auto px = (const unsigned char*)x;
-  auto py = (const unsigned char*)y;
-  size_t i = 0;
-  for (; i + 8 <= FixLen; i += 8) {
-    auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
-    auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
-    if (ux != uy)
-      return ux < uy;
-  }
-  if (FixLen % sizeof(uint64_t) >= 4) {
-    auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
-    auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
-    if (ux != uy)
-      return ux < uy;
-    else
-      i += 4;
-  }
-  if (FixLen % sizeof(uint32_t)) {
-    for (; i < FixLen; i++) {
-      int ux = px[i], uy = py[i];
-      if (ux != uy)
-        return ux < uy;
-    }
-  }
-  return false; // equal is not less
- #endif
-}
-
 template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                            const Slice* prefix) {
@@ -527,16 +541,10 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                user_key_without_ts, /*a_has_ts=*/false, *iterate_upper_bound_,
                /*b_has_ts=*/false) < 0);
     if (HasUpperBound &&
-         (0 == FixLen || !std::is_same_v<CmpNoTS, BytewiseCmpNoTS>) &&
         // ToplingDB: for speed up, do not call UpperBoundCheckResult()
         // The following cmpNoTS has same semantic as UpperBoundCheckResult()
         // iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
-        !cmpNoTS(user_key_without_ts, *iterate_upper_bound_)) {
-      break;
-    }
-    if (HasUpperBound && FixLen && std::is_same_v<CmpNoTS, BytewiseCmpNoTS> &&
-        !RawBytewiseLess<FixLen>(user_key_without_ts.data_,
-                                 iterate_upper_bound_->data_)) {
+        !cmpNoTS(user_key_without_ts, *iterate_upper_bound_, FixLen)) {
       break;
     }
 
@@ -1632,7 +1640,6 @@ bool DBIter::TooManyInternalKeysSkipped(bool increment) {
   }
   return false;
 }
-
 
 template<TriBool MayHasCallback>
 __always_inline

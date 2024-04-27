@@ -347,8 +347,9 @@ struct FixedLenCmpNoTS {
   }
 };
 
+template<size_t FixLen>
 __always_inline // const propagate param FixLen
-bool RawBytewiseLess(const void* x, const void* y, size_t FixLen) {
+bool RawBytewiseLess(const void* x, const void* y) {
  #if defined(__clang__)
   return memcmp(x, y, FixLen) < 0;
  #else
@@ -380,6 +381,9 @@ bool RawBytewiseLess(const void* x, const void* y, size_t FixLen) {
  #endif
 }
 
+template<size_t Len>
+using Const = std::integral_constant<size_t, Len>;
+
 struct BytewiseCmpNoTS {
   BytewiseCmpNoTS(const Comparator*) {}
   __always_inline bool equal(const Slice& x, const Slice& y) const {
@@ -389,10 +393,12 @@ struct BytewiseCmpNoTS {
     // return x < y;
     return SliceBytewiseLess(x, y);
   }
-  __always_inline bool operator()(const Slice& x, const Slice& y, size_t FixLen) const {
+  template<size_t FixLen>
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<FixLen>) const {
     // return x < y;
-    if (FixLen)
-      return RawBytewiseLess(x.data_, y.data_, FixLen);
+    if constexpr (FixLen)
+      return RawBytewiseLess<FixLen>(x.data_, y.data_);
     else
       return SliceBytewiseLess(x, y);
   }
@@ -408,10 +414,12 @@ struct RevBytewiseCmpNoTS {
     // return y < x;
     return SliceBytewiseLess(y, x);
   }
-  __always_inline bool operator()(const Slice& x, const Slice& y, size_t FixLen) const {
+  template<size_t FixLen>
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<FixLen>) const {
     // return y < x;
-    if (FixLen)
-      return RawBytewiseLess(y.data_, x.data_, FixLen);
+    if constexpr (FixLen)
+      return RawBytewiseLess<FixLen>(y.data_, x.data_);
     else
       return SliceBytewiseLess(y, x);
   }
@@ -422,7 +430,9 @@ struct VirtualCmpNoTS {
   bool equal(const Slice& x, const Slice& y) const {
     return cmp->CompareWithoutTimestamp(x, y) == 0;
   }
-  bool operator()(const Slice& x, const Slice& y, size_t = 0) const {
+  template<size_t FixLen>
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<FixLen> ={}) const {
     return cmp->CompareWithoutTimestamp(x, false, y, false) < 0;
   }
   int compare(const Slice& x, const Slice& y) const {
@@ -544,7 +554,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
         // ToplingDB: for speed up, do not call UpperBoundCheckResult()
         // The following cmpNoTS has same semantic as UpperBoundCheckResult()
         // iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
-        !cmpNoTS(user_key_without_ts, *iterate_upper_bound_, FixLen)) {
+        !cmpNoTS(user_key_without_ts, *iterate_upper_bound_, Const<FixLen>())) {
       break;
     }
 

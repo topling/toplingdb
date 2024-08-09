@@ -793,6 +793,7 @@ set(SOURCES
         env/env_encryption.cc
         env/file_system.cc
         env/file_system_tracer.cc
+        env/fs_cat.cc
         env/fs_remap.cc
         env/mock_env.cc
         env/unique_id_gen.cc

@@ -967,9 +967,13 @@ IOStatus PosixMmapReadableFile::Read(uint64_t offset, size_t n,
   IOStatus s;
   if (offset > length_) {
     *result = Slice();
+   #if 1
+    return s;
+   #else
     return IOError("While mmap read offset " + std::to_string(offset) +
                        " larger than file length " + std::to_string(length_),
                    filename_, EINVAL);
+   #endif
   } else if (offset + n > length_) {
     n = static_cast<size_t>(length_ - offset);
   }

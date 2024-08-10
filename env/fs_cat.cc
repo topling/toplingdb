@@ -10,19 +10,24 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-IOStatus FetchRemoteFile(FileSystem* local, FileSystem* remote,
-                         const std::string& fname, IODebugContext* dbg) {
+IOStatus CopyAcrossFS(FileSystem* dest, FileSystem* src,
+                      const std::string& fname, IODebugContext* dbg) {
   std::unique_ptr<FSWritableFile> dest_file;
   FileOptions file_opt;
-  IOStatus ios = local->NewWritableFile(fname, file_opt, &dest_file, dbg);
+  IOStatus ios = dest->NewWritableFile(fname, file_opt, &dest_file, dbg);
   if (ios.ok()) {
     auto dest_writer = std::make_unique<WritableFileWriter>(
                    std::move(dest_file), fname, file_opt);
-    ios = CopyFile(remote, fname, dest_writer, 0/*filesize*/,
+    ios = CopyFile(src, fname, dest_writer, 0/*filesize*/,
                    false/*use_fsync*/, nullptr/*io_tracer*/,
                    Temperature::kWarm);
   }
   return ios;
+}
+template<class FileSystemPtr>
+IOStatus CopyAcrossFS(const FileSystemPtr& dest, const FileSystemPtr src,
+                      const std::string& fname, IODebugContext* dbg) {
+  return CopyAcrossFS(dest.get(), src.get(), fname, dbg);
 }
 
 bool CatFileSystem::IsInstanceOf(const std::string& id) const {
@@ -66,7 +71,7 @@ IOStatus CatFileSystem::NewRandomAccessFile(
   auto do_open = [&](const FileOptions& opt) {
     IOStatus ios = m_local->NewRandomAccessFile(fname, opt, result, dbg);
     if (ios.IsNotFound()) {
-      ios = FetchRemoteFile(m_local.get(), m_remote.get(), fname, dbg);
+      ios = CopyAcrossFS(m_local, m_remote, fname, dbg);
       if (ios.ok()) {
         ios = m_local->NewRandomAccessFile(fname, opt, result, dbg);
       }
@@ -314,7 +319,7 @@ IOStatus CatFileSystem::FileExists(const std::string& fname,
   if (!ios.ok()) {
     ios = m_remote->FileExists(fname, options, dbg);
     if (ios.ok()) { // fetch from remote, ignore racing
-      ios = FetchRemoteFile(m_local.get(), m_remote.get(), fname, dbg);
+      ios = CopyAcrossFS(m_local, m_remote, fname, dbg);
     }
   }
   return ios;
@@ -426,6 +431,12 @@ IOStatus CatFileSystem::RenameFile(const std::string& src,
                                    IODebugContext* dbg) {
   IOStatus ios1 = m_local->RenameFile(src, dest, options, dbg);
   IOStatus ios2 = m_remote->RenameFile(src, dest, options, dbg);
+  if (ios1.ok() && ios2.IsNotFound()) {
+    ios2 = CopyAcrossFS(m_remote, m_local, dest, dbg);
+  }
+  if (ios2.ok() && ios1.IsNotFound()) {
+    ios1 = CopyAcrossFS(m_local, m_remote, dest, dbg);
+  }
   return ios1.ok() ? ios2 : ios1;
 }
 
@@ -435,6 +446,12 @@ IOStatus CatFileSystem::LinkFile(const std::string& src,
                                  IODebugContext* dbg) {
   IOStatus ios1 = m_local->LinkFile(src, dest, options, dbg);
   IOStatus ios2 = m_remote->LinkFile(src, dest, options, dbg);
+  if (ios1.ok() && ios2.IsNotFound()) {
+    ios2 = CopyAcrossFS(m_remote, m_local, dest, dbg);
+  }
+  if (ios2.ok() && ios1.IsNotFound()) {
+    ios1 = CopyAcrossFS(m_local, m_remote, dest, dbg);
+  }
   return ios1.ok() ? ios2 : ios1;
 }
 
@@ -449,13 +466,6 @@ struct CatLogger : public Logger {
   std::shared_ptr<Logger> m_local, m_remote;
 
   ~CatLogger() = default;
-
-  Status Close() {
-    Status s1 = m_local->Close();
-    Status s2 = m_remote->Close();
-    this->closed_ = true;
-    return s1.ok() ? s2 : s1;
-  }
 
   void LogHeader(const char* format, va_list ap) override {
     m_local->LogHeader(format, ap);
@@ -480,10 +490,9 @@ struct CatLogger : public Logger {
   }
 
  protected:
-  Status CloseImpl() {
+  Status CloseImpl() override {
     Status s1 = m_local->Close();
     Status s2 = m_remote->Close();
-    this->closed_ = true;
     return s1.ok() ? s2 : s1;
   }
 };

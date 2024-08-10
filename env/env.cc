@@ -840,8 +840,9 @@ Logger::~Logger() {
 
 Status Logger::Close() {
   if (!closed_) {
-    closed_ = true;
-    return CloseImpl();
+    Status s = CloseImpl();
+    closed_ = true; // set after CloseImpl()
+    return s;
   } else {
     return Status::OK();
   }

@@ -304,7 +304,7 @@ IOStatus CatFileSystem::NewDirectory(const std::string& dir,
   auto fsd = std::make_unique<CatFSDirectory>();
   IOStatus ios = m_local->NewDirectory(dir, options, &fsd->m_local, dbg);
   if (ios.ok()) {
-    m_remote->NewDirectory(dir, options, &fsd->m_remote, dbg);
+    ios = m_remote->NewDirectory(dir, options, &fsd->m_remote, dbg);
   }
   if (ios.ok()) {
     *result = std::move(fsd);

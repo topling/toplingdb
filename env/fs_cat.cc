@@ -62,7 +62,17 @@ Status CatFileSystem::UnregisterDbPaths(const std::vector<std::string>& paths) {
 IOStatus CatFileSystem::NewSequentialFile(
     const std::string& fname, const FileOptions& options,
     std::unique_ptr<FSSequentialFile>* result, IODebugContext* dbg) {
-  return m_local->NewSequentialFile(fname, options, result, dbg);
+  IOStatus ios = m_local->NewSequentialFile(fname, options, result, dbg);
+  if (!ios.ok()) {
+    ios = m_local->FileExists(fname, options.io_options, dbg);
+  }
+  if (ios.IsNotFound()) {
+    ios = CopyAcrossFS(m_local, m_remote, fname, dbg);
+    if (ios.ok()) {
+      ios = m_local->NewSequentialFile(fname, options, result, dbg);
+    }
+  }
+  return ios;
 }
 
 IOStatus CatFileSystem::NewRandomAccessFile(

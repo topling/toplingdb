@@ -70,6 +70,9 @@ IOStatus CatFileSystem::NewRandomAccessFile(
     std::unique_ptr<FSRandomAccessFile>* result, IODebugContext* dbg) {
   auto do_open = [&](const FileOptions& opt) {
     IOStatus ios = m_local->NewRandomAccessFile(fname, opt, result, dbg);
+    if (!ios.ok()) {
+      ios = m_local->FileExists(fname, opt.io_options, dbg);
+    }
     if (ios.IsNotFound()) {
       ios = CopyAcrossFS(m_local, m_remote, fname, dbg);
       if (ios.ok()) {
@@ -431,10 +434,10 @@ IOStatus CatFileSystem::RenameFile(const std::string& src,
                                    IODebugContext* dbg) {
   IOStatus ios1 = m_local->RenameFile(src, dest, options, dbg);
   IOStatus ios2 = m_remote->RenameFile(src, dest, options, dbg);
-  if (ios1.ok() && ios2.IsNotFound()) {
+  if (ios1.ok() && !ios2.ok()) {
     ios2 = CopyAcrossFS(m_remote, m_local, dest, dbg);
   }
-  if (ios2.ok() && ios1.IsNotFound()) {
+  if (ios2.ok() && !ios1.ok()) {
     ios1 = CopyAcrossFS(m_local, m_remote, dest, dbg);
   }
   return ios1.ok() ? ios2 : ios1;
@@ -446,10 +449,10 @@ IOStatus CatFileSystem::LinkFile(const std::string& src,
                                  IODebugContext* dbg) {
   IOStatus ios1 = m_local->LinkFile(src, dest, options, dbg);
   IOStatus ios2 = m_remote->LinkFile(src, dest, options, dbg);
-  if (ios1.ok() && ios2.IsNotFound()) {
+  if (ios1.ok() && !ios2.ok()) {
     ios2 = CopyAcrossFS(m_remote, m_local, dest, dbg);
   }
-  if (ios2.ok() && ios1.IsNotFound()) {
+  if (ios2.ok() && !ios1.ok()) {
     ios1 = CopyAcrossFS(m_local, m_remote, dest, dbg);
   }
   return ios1.ok() ? ios2 : ios1;

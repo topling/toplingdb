@@ -245,7 +245,10 @@ class WritableFileCat : public FSWritableFile {
   }
 
   intptr_t FileDescriptor() const final { return m_local->FileDescriptor(); }
-  void SetFileSize(uint64_t fsize) final { m_local->SetFileSize(fsize); }
+  void SetFileSize(uint64_t fsize) final {
+    m_local->SetFileSize(fsize);
+    m_remote->SetFileSize(fsize);
+  }
 };
 
 IOStatus CatFileSystem::NewWritableFile(

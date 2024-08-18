@@ -267,6 +267,28 @@ IOStatus CatFileSystem::NewWritableFile(
   return ios;
 }
 
+IOStatus CatFileSystem::ReopenWritableFile(
+      const std::string& fname, const FileOptions& options,
+      std::unique_ptr<FSWritableFile>* result, IODebugContext* dbg) {
+  std::unique_ptr<FSWritableFile> local, remote;
+  auto ios1 = m_local->ReopenWritableFile(fname, options, &local, dbg);
+  auto ios2 = m_remote->ReopenWritableFile(fname, options, &remote, dbg);
+  if (!ios1.ok() && ios2.ok()) {
+    CopyAcrossFS(m_local, m_remote, fname, dbg);
+    ios1 = m_local->ReopenWritableFile(fname, options, &local, dbg);
+  }
+  if (ios1.ok() && ios2.ok()) {
+    auto file = new WritableFileCat;
+    file->m_local = std::move(local);
+    file->m_remote = std::move(remote);
+    result->reset(file);
+  }
+  else if (ios1.ok()) { // ignore remote
+    *result = std::move(local);
+  }
+  return ios1;
+}
+
 IOStatus CatFileSystem::ReuseWritableFile(
     const std::string& fname, const std::string& old_fname,
     const FileOptions& options, std::unique_ptr<FSWritableFile>* result,

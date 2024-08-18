@@ -40,6 +40,9 @@ class CatFileSystem : public FileSystem {
                            std::unique_ptr<FSWritableFile>* result,
                            IODebugContext* dbg) override;
 
+  IOStatus ReopenWritableFile(const std::string& /*fname*/, const FileOptions&,
+                              std::unique_ptr<FSWritableFile>*, IODebugContext*);
+
   IOStatus ReuseWritableFile(const std::string& fname,
                              const std::string& old_fname,
                              const FileOptions& options,

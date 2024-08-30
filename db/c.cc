@@ -46,6 +46,7 @@
 #include "rocksdb/utilities/write_batch_with_index.h"
 #include "rocksdb/write_batch.h"
 #include "utilities/merge_operators.h"
+#include "topling/side_plugin_repo.h"
 
 using ROCKSDB_NAMESPACE::BackupEngine;
 using ROCKSDB_NAMESPACE::BackupEngineOptions;
@@ -6555,6 +6556,93 @@ void rocksdb_disable_manual_compaction(rocksdb_t* db) {
 
 void rocksdb_enable_manual_compaction(rocksdb_t* db) {
   db->rep->EnableManualCompaction();
+}
+
+////////////////////////////////////////////////////////////////
+/// ToplingDB SidePlugin Minimal Interface
+//
+struct side_plugin_repo_t {
+  ROCKSDB_NAMESPACE::SidePluginRepo repo;
+};
+
+side_plugin_repo_t*
+side_plugin_repo_import_auto_file(const char* fname, char** errptr) {
+  auto r = new side_plugin_repo_t;
+  auto s = r->repo.ImportAutoFile(fname);
+  SaveError(errptr, s);
+  if (s.ok()) {
+    return r;
+  }
+  delete r;
+  return nullptr;
+}
+
+rocksdb_t* side_plugin_repo_open_cf(side_plugin_repo_t* r,
+    rocksdb_column_family_handle_t** cfhs, size_t* num_cf, char** errptr) {
+  if (cfhs) { // Open with column families
+    ROCKSDB_VERIFY(num_cf != nullptr);
+    ROCKSDB_NAMESPACE::DB_MultiCF* dbm = nullptr;
+    auto s = r->repo.OpenDB(&dbm);
+    SaveError(errptr, s);
+    if (s.ok()) {
+      size_t num = *num_cf = dbm->cf_handles.size();
+      for (size_t i = 0; i < num; i++) {
+        cfhs[i] = new rocksdb_column_family_handle_t{dbm->cf_handles[i]};
+      }
+      return new rocksdb_t{dbm->db};
+    }
+  }
+  else {
+    ROCKSDB_NAMESPACE::DB* db = nullptr;
+    auto s = r->repo.OpenDB(&db);
+    SaveError(errptr, s);
+    if (s.ok())
+      return new rocksdb_t{db};
+  }
+  return nullptr;
+}
+
+void side_plugin_repo_start_http(side_plugin_repo_t* r, char** errptr) {
+  auto s = r->repo.StartHttpServer();
+  SaveError(errptr, s);
+}
+void side_plugin_repo_close_http(side_plugin_repo_t* r) {
+  r->repo.CloseHttpServer();
+}
+
+rocksdb_options_t*
+side_plugin_repo_get_db_options(side_plugin_repo_t* r,
+                                const char* name, char** errptr) {
+  if (std::shared_ptr<DBOptions> opt = r->repo[name]) {
+    return new rocksdb_options_t{{*opt, {}}};
+  }
+  SaveError(errptr, Status::NotFound("DBOptions", name));
+  return nullptr;
+}
+
+void side_plugin_repo_put_db_options(side_plugin_repo_t* r, const char* name,
+                                     rocksdb_options_t* opt) {
+  r->repo.Put(name, std::make_shared<DBOptions>(opt->rep));
+}
+
+rocksdb_options_t*
+side_plugin_repo_get_cf_options(side_plugin_repo_t* r,
+                                const char* name, char** errptr) {
+  if (std::shared_ptr<ColumnFamilyOptions> opt = r->repo[name]) {
+    return new rocksdb_options_t{{{}, *opt}};
+  }
+  SaveError(errptr, Status::NotFound("CFOptions", name));
+  return nullptr;
+}
+
+void side_plugin_repo_put_cf_options(side_plugin_repo_t* r, const char* name,
+                                     rocksdb_options_t* opt) {
+  r->repo.Put(name, std::make_shared<ColumnFamilyOptions>(opt->rep));
+}
+
+void side_plugin_repo_close_all(side_plugin_repo_t* r) {
+  r->repo.CloseAllDB(); // also close http
+  delete r;
 }
 
 }  // end extern "C"

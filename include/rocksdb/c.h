@@ -2860,6 +2860,35 @@ extern ROCKSDB_LIBRARY_API void rocksdb_disable_manual_compaction(
 
 extern ROCKSDB_LIBRARY_API void rocksdb_enable_manual_compaction(rocksdb_t* db);
 
+////////////////////////////////////////////////////////////////
+/// ToplingDB SidePlugin Minimal Interface
+//
+typedef struct side_plugin_repo_t side_plugin_repo_t;
+
+extern ROCKSDB_LIBRARY_API side_plugin_repo_t*
+side_plugin_repo_import_auto_file(const char* fname, char** errptr);
+
+extern ROCKSDB_LIBRARY_API rocksdb_t*
+side_plugin_repo_open(side_plugin_repo_t*, rocksdb_column_family_handle_t**,
+                      size_t* num_cf, char** errptr);
+
+extern ROCKSDB_LIBRARY_API void side_plugin_repo_start_http(side_plugin_repo_t*, char** errptr);
+extern ROCKSDB_LIBRARY_API void side_plugin_repo_close_http(side_plugin_repo_t*);
+
+extern ROCKSDB_LIBRARY_API rocksdb_options_t*
+side_plugin_repo_get_db_options(side_plugin_repo_t*, const char* name, char** errptr);
+
+extern ROCKSDB_LIBRARY_API void
+side_plugin_repo_put_db_options(side_plugin_repo_t*, const char* name, rocksdb_options_t*);
+
+extern ROCKSDB_LIBRARY_API rocksdb_options_t*
+side_plugin_repo_get_cf_options(side_plugin_repo_t*, const char* name, char** errptr);
+
+extern ROCKSDB_LIBRARY_API void
+side_plugin_repo_put_cf_options(side_plugin_repo_t*, const char* name, rocksdb_options_t*);
+
+extern ROCKSDB_LIBRARY_API void side_plugin_repo_close_all(side_plugin_repo_t*);
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif

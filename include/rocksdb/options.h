@@ -1711,6 +1711,8 @@ struct ReadOptions {
   // Default: empty (every table will be scanned)
   std::function<bool(const TableProperties&, const FileMetaData&)> table_filter;
 
+  bool auto_readahead_size = true; // conform new upstream rocksdb
+
   // *** END options only relevant to iterators or scans ***
 
   // ** For RocksDB internal use only **

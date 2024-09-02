@@ -1418,6 +1418,7 @@ void LevelIterator::Seek(const Slice& target) {
       break;
     case 1: // IsReverseBytewise()
       check_need_to_reseek(RevBytewiseCompareInternalKey());
+      break;
     default:
       check_need_to_reseek(FallbackVirtCmp{&icomparator_});
       break;

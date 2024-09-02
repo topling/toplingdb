@@ -6919,14 +6919,16 @@ side_plugin_repo_import_auto_file(const char* fname, char** errptr) {
 }
 
 rocksdb_t* side_plugin_repo_open_cf(side_plugin_repo_t* r,
-    rocksdb_column_family_handle_t** cfhs, size_t* num_cf, char** errptr) {
-  if (cfhs) { // Open with column families
+    rocksdb_column_family_handle_t*** p_cfhs, size_t* num_cf, char** errptr) {
+  if (p_cfhs) { // Open with column families
     ROCKSDB_VERIFY(num_cf != nullptr);
     ROCKSDB_NAMESPACE::DB_MultiCF* dbm = nullptr;
     auto s = r->repo.OpenDB(&dbm);
     SaveError(errptr, s);
+    *p_cfhs = nullptr;
     if (s.ok()) {
       size_t num = *num_cf = dbm->cf_handles.size();
+      auto cfhs = *p_cfhs = new rocksdb_column_family_handle_t*[num];
       for (size_t i = 0; i < num; i++) {
         cfhs[i] = new rocksdb_column_family_handle_t{dbm->cf_handles[i]};
       }

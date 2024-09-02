@@ -3036,7 +3036,7 @@ extern ROCKSDB_LIBRARY_API side_plugin_repo_t*
 side_plugin_repo_import_auto_file(const char* fname, char** errptr);
 
 extern ROCKSDB_LIBRARY_API rocksdb_t*
-side_plugin_repo_open(side_plugin_repo_t*, rocksdb_column_family_handle_t**,
+side_plugin_repo_open(side_plugin_repo_t*, rocksdb_column_family_handle_t***,
                       size_t* num_cf, char** errptr);
 
 extern ROCKSDB_LIBRARY_API void side_plugin_repo_start_http(side_plugin_repo_t*, char** errptr);

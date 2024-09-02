@@ -3136,13 +3136,16 @@ ${OBJ_DIR}/sideplugin/rockside/src/topling/web/civetweb.o: CFLAGS += -DUSE_ZLIB
 rust-support: $(filter-out util/build_version.cc, ${LIB_SOURCES})
 	rm -f rust-rocksdb-src.txt
 	rm -f rust-rocksdb-cxxflags.txt
+	echo sideplugin/rockside/src/topling/web/civetweb.c >> rust-rocksdb-src.txt
+	echo "" -DUSE_ZLIB=1 >> rust-rocksdb-cxxflags.txt
 	for f in $^; do echo $$f >> rust-rocksdb-src.txt; done
 	for f in ${CXXFLAGS}; do echo $$f >> rust-rocksdb-cxxflags.txt; done
 
 
 # Remove the rules for which dependencies should not be generated and see if any are left.
 #If so, include the dependencies; if not, do not include the dependency files
-ROCKS_DEP_RULES=$(filter-out clean format check-format check-buck-targets check-headers check-sources jclean jtest package analyze tags rocksdbjavastatic% unity.% unity_test checkout_folly, $(MAKECMDGOALS))
+ROCKS_DEP_RULES:=$(filter-out clean format check-format check-buck-targets check-headers check-sources jclean jtest package analyze tags rocksdbjavastatic% unity.% unity_test checkout_folly, $(MAKECMDGOALS))
+ROCKS_DEP_RULES:=$(filter-out rust-support, $(ROCKS_DEP_RULES))
 ifneq ("$(ROCKS_DEP_RULES)", "")
 -include $(DEPFILES)
 endif

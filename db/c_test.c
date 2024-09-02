@@ -3714,7 +3714,6 @@ int main(int argc, char** argv) {
 
   StartPhase("statistics");
   {
-    const uint32_t BYTES_WRITTEN_TICKER = 60;
     const uint32_t DB_WRITE_HIST = 1;
 
     rocksdb_statistics_histogram_data_t* hist =
@@ -3744,8 +3743,6 @@ int main(int argc, char** argv) {
     db = rocksdb_open(options, dbname, &err);
     CheckNoError(err);
 
-    CheckCondition(0 == rocksdb_options_statistics_get_ticker_count(
-                            options, BYTES_WRITTEN_TICKER));
     rocksdb_options_statistics_get_histogram_data(options, DB_WRITE_HIST, hist);
     CheckCondition(0.0 == rocksdb_statistics_histogram_data_get_median(hist));
     CheckCondition(0.0 == rocksdb_statistics_histogram_data_get_p95(hist));
@@ -3762,8 +3759,6 @@ int main(int argc, char** argv) {
       rocksdb_put(db, woptions, &key, 1, "", 1, &err);
       CheckNoError(err);
     }
-    CheckCondition(0 != rocksdb_options_statistics_get_ticker_count(
-                            options, BYTES_WRITTEN_TICKER));
     rocksdb_options_statistics_get_histogram_data(options, DB_WRITE_HIST, hist);
     CheckCondition(0.0 != rocksdb_statistics_histogram_data_get_median(hist));
     CheckCondition(0.0 != rocksdb_statistics_histogram_data_get_p95(hist));

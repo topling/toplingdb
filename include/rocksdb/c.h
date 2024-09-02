@@ -3056,6 +3056,8 @@ side_plugin_repo_put_cf_options(side_plugin_repo_t*, const char* name, rocksdb_o
 
 extern ROCKSDB_LIBRARY_API void side_plugin_repo_close_all(side_plugin_repo_t*);
 
+extern ROCKSDB_LIBRARY_API const char* rocksdb_get_name(rocksdb_t*);
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif

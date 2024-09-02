@@ -6988,4 +6988,8 @@ void side_plugin_repo_close_all(side_plugin_repo_t* r) {
   delete r;
 }
 
+const char* rocksdb_get_name(rocksdb_t* p) {
+  return p->rep->GetName().c_str();
+}
+
 }  // end extern "C"

@@ -6982,7 +6982,7 @@ void side_plugin_repo_put_cf_options(side_plugin_repo_t* r, const char* name,
 }
 
 void side_plugin_repo_close_all(side_plugin_repo_t* r) {
-  r->repo.CloseAllDB(); // also close http
+  r->repo.CloseAllDB(false); // also close http
   delete r;
 }
 

@@ -3845,11 +3845,12 @@ int main(int argc, char** argv) {
   StartPhase("side_plugin_repo");
   {
     const char* conf = "sideplugin/rockside/sample-conf/db_bench_enterprise.yaml";
-    side_plugin_repo_t* repo = side_plugin_repo_import_auto_file(conf, &err);
+    side_plugin_repo_t* repo = side_plugin_repo_create();
     rocksdb_options_t *cfo = NULL, *dbo = NULL;
     rocksdb_column_family_handle_t** cfhs = NULL;
     size_t cfnum = 0, vlen = 0;
     const char* val = NULL;
+    side_plugin_repo_import_auto_file(repo, conf, &err);
     CheckCondition(err == NULL);
     cfo = side_plugin_repo_get_cf_options(repo, "default", &err);
     CheckCondition(cfo != NULL);

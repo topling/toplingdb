@@ -6906,16 +6906,14 @@ struct side_plugin_repo_t {
   ROCKSDB_NAMESPACE::SidePluginRepo repo;
 };
 
-side_plugin_repo_t*
-side_plugin_repo_import_auto_file(const char* fname, char** errptr) {
-  auto r = new side_plugin_repo_t;
+side_plugin_repo_t* side_plugin_repo_create(void) {
+  return new side_plugin_repo_t;
+}
+
+void side_plugin_repo_import_auto_file(side_plugin_repo_t* r,
+                                       const char* fname, char** errptr) {
   auto s = r->repo.ImportAutoFile(fname);
   SaveError(errptr, s);
-  if (s.ok()) {
-    return r;
-  }
-  delete r;
-  return nullptr;
 }
 
 rocksdb_t* side_plugin_repo_open(side_plugin_repo_t* r,

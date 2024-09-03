@@ -3032,8 +3032,10 @@ rocksdb_wait_for_compact_options_get_timeout(
 //
 typedef struct side_plugin_repo_t side_plugin_repo_t;
 
-extern ROCKSDB_LIBRARY_API side_plugin_repo_t*
-side_plugin_repo_import_auto_file(const char* fname, char** errptr);
+extern ROCKSDB_LIBRARY_API side_plugin_repo_t* side_plugin_repo_create(void);
+
+extern ROCKSDB_LIBRARY_API void side_plugin_repo_import_auto_file
+(side_plugin_repo_t*, const char* fname, char** errptr);
 
 extern ROCKSDB_LIBRARY_API rocksdb_t*
 side_plugin_repo_open(side_plugin_repo_t*, rocksdb_column_family_handle_t***,

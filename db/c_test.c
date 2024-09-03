@@ -3842,6 +3842,53 @@ int main(int argc, char** argv) {
   rocksdb_dbpath_destroy(dbpath);
   rocksdb_env_destroy(env);
 
+  StartPhase("side_plugin_repo");
+  {
+    const char* conf = "sideplugin/rockside/sample-conf/db_bench_enterprise.yaml";
+    side_plugin_repo_t* repo = side_plugin_repo_import_auto_file(conf, &err);
+    rocksdb_options_t *cfo = NULL, *dbo = NULL;
+    rocksdb_column_family_handle_t** cfhs = NULL;
+    size_t cfnum = 0, vlen = 0;
+    const char* val = NULL;
+    CheckCondition(err == NULL);
+    cfo = side_plugin_repo_get_cf_options(repo, "default", &err);
+    CheckCondition(cfo != NULL);
+    dbo = side_plugin_repo_get_db_options(repo, "dbo", &err);
+    CheckCondition(dbo != NULL);
+    side_plugin_repo_put_cf_options(repo, "default", cfo);
+    side_plugin_repo_put_db_options(repo, "default", dbo);
+    if (getenv("CARGO_SIDE_PLUGIN_OPEN_CF")) {
+      db = side_plugin_repo_open(repo, &cfhs, &cfnum, &err);
+      CheckCondition(db != NULL);
+    } else {
+      db = side_plugin_repo_open(repo, NULL, NULL, &err);
+      CheckCondition(db != NULL);
+    }
+    side_plugin_repo_start_http(repo, &err);
+    CheckCondition(err == NULL);
+    woptions = rocksdb_writeoptions_create();
+    roptions = rocksdb_readoptions_create();
+    rocksdb_put(db, woptions, "a", 1, "aa", 2, &err);
+    CheckCondition(err == NULL);
+    rocksdb_put(db, woptions, "b", 1, "bb", 2, &err);
+    CheckCondition(err == NULL);
+    val = rocksdb_get(db, roptions, "a", 1, &vlen, &err);
+    CheckCondition(val != NULL);
+    CheckCondition(vlen == 2);
+    CheckCondition(memcmp(val, "aa", 2) == 0);
+    val = rocksdb_get(db, roptions, "b", 1, &vlen, &err);
+    CheckCondition(val != NULL);
+    CheckCondition(vlen == 2);
+    CheckCondition(memcmp(val, "bb", 2) == 0);
+    for (size_t i = 0; i < cfnum; i++) {
+      rocksdb_column_family_handle_destroy(cfhs[i]);
+    }
+    rocksdb_create_column_families_destroy(cfhs);
+    side_plugin_repo_close_all(repo);
+    side_plugin_repo_close_http(repo);
+    rocksdb_close(db);
+  }
+
   fprintf(stderr, "PASS\n");
   return 0;
 }

@@ -6918,7 +6918,7 @@ side_plugin_repo_import_auto_file(const char* fname, char** errptr) {
   return nullptr;
 }
 
-rocksdb_t* side_plugin_repo_open_cf(side_plugin_repo_t* r,
+rocksdb_t* side_plugin_repo_open(side_plugin_repo_t* r,
     rocksdb_column_family_handle_t*** p_cfhs, size_t* num_cf, char** errptr) {
   if (p_cfhs) { // Open with column families
     ROCKSDB_VERIFY(num_cf != nullptr);

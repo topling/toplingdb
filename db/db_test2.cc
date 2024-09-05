@@ -5489,6 +5489,8 @@ class DummyOldStats : public Statistics {
   }
   bool HistEnabledForType(uint32_t /*type*/) const override { return false; }
   std::string ToString() const override { return ""; }
+  void GetAggregated(uint64_t* tickers, struct HistogramStat*) const override {}
+  void Merge(const uint64_t* tickers, const struct HistogramStat*) override {}
   std::atomic<int> num_rt{0};
   std::atomic<int> num_mt{0};
 };

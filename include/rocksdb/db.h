@@ -30,6 +30,9 @@
 #include "rocksdb/version.h"
 #include "rocksdb/wide_columns.h"
 
+#include <terark/hash_strmap.hpp>
+#include <terark/sso.hpp>
+
 #ifdef _WIN32
 // Windows API macro interference
 #undef DeleteFile
@@ -93,6 +96,12 @@ class ColumnFamilyHandle {
   // Returns the comparator of the column family associated with the
   // current handle.
   virtual const Comparator* GetComparator() const = 0;
+
+  virtual class ColumnFamilyData* cfd() const {
+    ROCKSDB_DIE("Unexpected");
+    return nullptr;
+  }
+  virtual ColumnFamilyHandle* CloneHandle() const = 0;
 };
 
 static const int kMajorVersion = __ROCKSDB_MAJOR__;
@@ -113,6 +122,36 @@ struct RangePtr {
 
   RangePtr() : start(nullptr), limit(nullptr) {}
   RangePtr(const Slice* s, const Slice* l) : start(s), limit(l) {}
+};
+
+struct Anchor {
+  Anchor(const Slice& _user_key, size_t _range_size)
+      : user_key(_user_key.ToStringView()), range_size(_range_size) {}
+  Anchor(std::string&& _user_key, size_t _range_size)
+      : user_key(std::move(_user_key)), range_size(_range_size) {}
+  struct UserKeySSO : terark::minimal_sso<40> {
+    using terark::minimal_sso<40>::minimal_sso;
+    operator Slice() const { return to<Slice>(); }
+    operator std::string() const { return to<std::string>(); }
+  };
+  UserKeySSO user_key;
+  size_t range_size;
+  void swap(Anchor& y) {
+    user_key.swap(y.user_key);
+    std::swap(range_size, y.range_size);
+  }
+  friend bool operator<(const Anchor& x, const Anchor& y)
+  { return x.user_key < y.user_key; }
+  friend bool operator>(const Anchor& x, const Anchor& y)
+  { return x.user_key > y.user_key; }
+  friend bool operator<=(const Anchor& x, const Anchor& y)
+  { return x.user_key <= y.user_key; }
+  friend bool operator>=(const Anchor& x, const Anchor& y)
+  { return x.user_key >= y.user_key; }
+  friend bool operator==(const Anchor& x, const Anchor& y)
+  { return x.user_key == y.user_key; }
+  friend bool operator!=(const Anchor& x, const Anchor& y)
+  { return x.user_key != y.user_key; }
 };
 
 // It is valid that files_checksums and files_checksum_func_names are both
@@ -138,14 +177,14 @@ struct GetMergeOperandsOptions {
 //  key: is the table's file name.
 //  value: the table properties object of the given table.
 using TablePropertiesCollection =
-    std::unordered_map<std::string, std::shared_ptr<const TableProperties>>;
+    terark::hash_strmap<std::shared_ptr<const TableProperties>>;
 
 // A DB is a persistent, versioned ordered map from keys to values.
 // A DB is safe for concurrent access from multiple threads without
 // any external synchronization.
 // DB is an abstract base class with one primary implementation (DBImpl)
 // and a number of wrapper implementations.
-class DB {
+class DB : public CacheAlignedNewDelete {
  public:
   // Open the database with the specified "name" for reads and writes.
   // Stores a pointer to a heap-allocated database in *dbptr and returns
@@ -535,6 +574,8 @@ class DB {
     assert(!pinnable_val.IsPinned());
     auto s = Get(options, column_family, key, &pinnable_val);
     if (s.ok() && pinnable_val.IsPinned()) {
+      value->clear(); // will not free memory, to avoid reserve copy old data
+      value->reserve(pinnable_val.size() + 16); // reserve some extra space
       value->assign(pinnable_val.data(), pinnable_val.size());
     }  // else value is already assigned
     return s;
@@ -683,22 +724,10 @@ class DB {
                         ColumnFamilyHandle* column_family,
                         const size_t num_keys, const Slice* keys,
                         PinnableSlice* values, Status* statuses,
-                        const bool /*sorted_input*/ = false) {
-    std::vector<ColumnFamilyHandle*> cf;
-    std::vector<Slice> user_keys;
-    std::vector<Status> status;
-    std::vector<std::string> vals;
-
-    for (size_t i = 0; i < num_keys; ++i) {
-      cf.emplace_back(column_family);
-      user_keys.emplace_back(keys[i]);
-    }
-    status = MultiGet(options, cf, user_keys, &vals);
-    std::copy(status.begin(), status.end(), statuses);
-    for (auto& value : vals) {
-      values->PinSelf(value);
-      values++;
-    }
+                        const bool sorted_input = false) {
+    std::string* timestamps = nullptr;
+    MultiGet(options, column_family, num_keys, keys, values, timestamps,
+             statuses, sorted_input);
   }
 
   virtual void MultiGet(const ReadOptions& options,
@@ -1860,6 +1889,8 @@ class DB {
       ColumnFamilyHandle* column_family, const Range* range, std::size_t n,
       TablePropertiesCollection* props) = 0;
 
+  virtual Status ApproximateKeyAnchors(ColumnFamilyHandle*, const Range*, std::vector<Anchor>*) = 0;
+
   virtual Status SuggestCompactRange(ColumnFamilyHandle* /*column_family*/,
                                      const Slice* /*begin*/,
                                      const Slice* /*end*/) {
@@ -2018,3 +2049,8 @@ Status RepairDB(const std::string& dbname, const Options& options);
 
 
 }  // namespace ROCKSDB_NAMESPACE
+
+namespace std {
+  inline void swap(ROCKSDB_NAMESPACE::Anchor& x,
+                   ROCKSDB_NAMESPACE::Anchor& y) { x.swap(y); }
+}

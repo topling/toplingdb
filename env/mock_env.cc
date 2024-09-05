@@ -321,6 +321,10 @@ class MockRandomAccessFile : public FSRandomAccessFile {
       return file_->Read(offset, n, options, result, scratch, dbg);
     }
   }
+  intptr_t FileDescriptor() const final {
+    assert(false);
+    return -1;
+  }
 
  private:
   MemFile* file_;
@@ -421,6 +425,15 @@ class MockWritableFile : public FSWritableFile {
                        IODebugContext* /*dbg*/) override {
     return file_->Size();
   }
+
+    intptr_t FileDescriptor() const final {
+      ROCKSDB_DIE("Should not goes here");
+      return -1;
+    }
+    void SetFileSize(uint64_t fsize) final {
+      //file_->Truncate(fsize, IOOptions(), nullptr);
+      // ignore
+    }
 
  private:
   inline size_t RequestToken(size_t bytes) {

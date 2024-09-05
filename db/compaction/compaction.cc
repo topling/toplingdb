@@ -23,14 +23,15 @@ namespace ROCKSDB_NAMESPACE {
 const uint64_t kRangeTombstoneSentinel =
     PackSequenceAndType(kMaxSequenceNumber, kTypeRangeDeletion);
 
-int sstableKeyCompare(const Comparator* user_cmp, const InternalKey& a,
-                      const InternalKey& b) {
-  auto c = user_cmp->CompareWithoutTimestamp(a.user_key(), b.user_key());
+template<class CmpNoTS>
+ROCKSDB_FLATTEN
+int sstableKeyCompare(CmpNoTS ucmp, const Slice& a, const Slice& b) {
+  auto c = ucmp(ExtractUserKey(a), ExtractUserKey(b));
   if (c != 0) {
     return c;
   }
-  auto a_footer = ExtractInternalKeyFooter(a.Encode());
-  auto b_footer = ExtractInternalKeyFooter(b.Encode());
+  auto a_footer = ExtractInternalKeyFooter(a);
+  auto b_footer = ExtractInternalKeyFooter(b);
   if (a_footer == kRangeTombstoneSentinel) {
     if (b_footer != kRangeTombstoneSentinel) {
       return -1;
@@ -40,27 +41,26 @@ int sstableKeyCompare(const Comparator* user_cmp, const InternalKey& a,
   }
   return 0;
 }
+#define sstableKeyCompareInstantiate(CmpNoTS) \
+  template int sstableKeyCompare<CmpNoTS>(CmpNoTS, const Slice&, const Slice&)
 
-int sstableKeyCompare(const Comparator* user_cmp, const InternalKey* a,
-                      const InternalKey& b) {
-  if (a == nullptr) {
-    return -1;
-  }
-  return sstableKeyCompare(user_cmp, *a, b);
-}
-
-int sstableKeyCompare(const Comparator* user_cmp, const InternalKey& a,
-                      const InternalKey* b) {
-  if (b == nullptr) {
-    return -1;
-  }
-  return sstableKeyCompare(user_cmp, a, *b);
-}
+sstableKeyCompareInstantiate(ForwardBytewiseCompareUserKeyNoTS);
+sstableKeyCompareInstantiate(ReverseBytewiseCompareUserKeyNoTS);
+sstableKeyCompareInstantiate(VirtualFunctionCompareUserKeyNoTS);
 
 uint64_t TotalFileSize(const std::vector<FileMetaData*>& files) {
   uint64_t sum = 0;
   for (size_t i = 0; i < files.size() && files[i]; i++) {
     sum += files[i]->fd.GetFileSize();
+  }
+  return sum;
+}
+
+uint64_t TotalFileRawKV(const std::vector<FileMetaData*>& files) {
+  uint64_t sum = 0;
+  for (size_t i = 0; i < files.size() && files[i]; i++) {
+    if (auto reader = files[i]->fd.table_reader)
+      sum += reader->GetTableProperties()->raw_size();
   }
   return sum;
 }
@@ -274,12 +274,16 @@ Compaction::Compaction(
               ? Compaction::kInvalidLevel
               : EvaluatePenultimateLevel(vstorage, immutable_options_,
                                          start_level_, output_level_)) {
+  is_compaction_woker_ = IsCompactionWorker(); // preload to speed up
   MarkFilesBeingCompacted(true);
   if (is_manual_compaction_) {
     compaction_reason_ = CompactionReason::kManualCompaction;
   }
   if (max_subcompactions_ == 0) {
-    max_subcompactions_ = _mutable_db_options.max_subcompactions;
+    if (output_level_ > 0 && 0 == start_level_ && _mutable_db_options.max_level1_subcompactions)
+      max_subcompactions_ = _mutable_db_options.max_level1_subcompactions;
+    else
+      max_subcompactions_ = _mutable_db_options.max_subcompactions;
   }
 
   // for the non-bottommost levels, it tries to build files match the target
@@ -310,6 +314,7 @@ Compaction::Compaction(
   // Every compaction regardless of any compaction reason may respect the
   // existing compact cursor in the output level to split output files
   output_split_key_ = nullptr;
+#if defined(ROCKSDB_UNIT_TEST)
   if (immutable_options_.compaction_style == kCompactionStyleLevel &&
       immutable_options_.compaction_pri == kRoundRobin) {
     const InternalKey* cursor =
@@ -327,6 +332,7 @@ Compaction::Compaction(
       }
     }
   }
+#endif
 
   PopulatePenultimateLevelOutputRange();
 }
@@ -436,6 +442,10 @@ bool Compaction::InputCompressionMatchesOutput() const {
   return matches;
 }
 
+bool TableFactory::InputCompressionMatchesOutput(const Compaction*) const {
+  return true; // default returns true
+}
+
 bool Compaction::IsTrivialMove() const {
   // Avoid a move if there is lots of overlapping grandparent data.
   // Otherwise, the move could create a parent file that will require
@@ -470,6 +480,17 @@ bool Compaction::IsTrivialMove() const {
     return false;
   }
 
+#if !defined(ROCKSDB_UNIT_TEST) // ToplingDB specific
+  if (kCompactionStyleLevel == immutable_options_.compaction_style) {
+    auto& cfo = mutable_cf_options_;
+    if (1 == output_level_ &&
+        immutable_options_.compaction_executor_factory &&
+        cfo.write_buffer_size > cfo.target_file_size_base * 3/2) {
+      return false;
+    }
+  }
+#endif
+
   // Used in universal compaction, where trivial move can be done if the
   // input files are non overlapping
   if ((mutable_cf_options_.compaction_options_universal.allow_trivial_move) &&
@@ -480,7 +501,7 @@ bool Compaction::IsTrivialMove() const {
 
   if (!(start_level_ != output_level_ && num_input_levels() == 1 &&
         input(0, 0)->fd.GetPathId() == output_path_id() &&
-        InputCompressionMatchesOutput())) {
+        immutable_options_.table_factory->InputCompressionMatchesOutput(this))) {
     return false;
   }
 
@@ -531,6 +552,8 @@ bool Compaction::KeyNotExistsBeyondOutputLevel(
   assert(level_ptrs->size() == static_cast<size_t>(number_levels_));
   if (bottommost_level_) {
     return true;
+  } else if (is_compaction_woker_) {
+    return false;
   } else if (output_level_ != 0 &&
              cfd_->ioptions()->compaction_style == kCompactionStyleLevel) {
     // Maybe use binary search to find right entry instead of linear search?
@@ -748,6 +771,7 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter() const {
   context.is_manual_compaction = is_manual_compaction_;
   context.column_family_id = cfd_->GetID();
   context.reason = TableFileCreationReason::kCompaction;
+  context.smallest_seqno = GetSmallestSeqno();
   return cfd_->ioptions()->compaction_filter_factory->CreateCompactionFilter(
       context);
 }
@@ -763,6 +787,7 @@ std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
   context.output_level = output_level_;
   context.smallest_user_key = smallest_user_key_;
   context.largest_user_key = largest_user_key_;
+  context.target_output_file_size = target_output_file_size_;
   return immutable_options_.sst_partitioner_factory->CreatePartitioner(context);
 }
 
@@ -775,12 +800,14 @@ bool Compaction::ShouldFormSubcompactions() const {
     return false;
   }
 
+#if defined(ROCKSDB_UNIT_TEST)
   // Round-Robin pri under leveled compaction allows subcompactions by default
   // and the number of subcompactions can be larger than max_subcompactions_
   if (cfd_->ioptions()->compaction_pri == kRoundRobin &&
       cfd_->ioptions()->compaction_style == kCompactionStyleLevel) {
     return output_level_ > 0;
   }
+#endif
 
   if (max_subcompactions_ <= 1) {
     return false;
@@ -894,6 +921,16 @@ int Compaction::EvaluatePenultimateLevel(
   }
 
   return penultimate_level;
+}
+
+uint64_t Compaction::GetSmallestSeqno() const {
+  uint64_t smallest_seqno = UINT64_MAX;
+  for (auto& eachlevel : inputs_) {
+    for (auto& eachfile : eachlevel.files)
+      if (smallest_seqno > eachfile->fd.smallest_seqno)
+          smallest_seqno = eachfile->fd.smallest_seqno;
+  }
+  return smallest_seqno;
 }
 
 }  // namespace ROCKSDB_NAMESPACE

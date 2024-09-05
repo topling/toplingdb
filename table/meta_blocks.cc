@@ -85,6 +85,9 @@ void PropertyBlockBuilder::AddTableProperty(const TableProperties& props) {
   Add(TablePropertiesNames::kRawValueSize, props.raw_value_size);
   Add(TablePropertiesNames::kDataSize, props.data_size);
   Add(TablePropertiesNames::kIndexSize, props.index_size);
+  if (props.tag_size) {
+    Add(TablePropertiesNames::kTagSize, props.tag_size);
+  }
   if (props.index_partitions != 0) {
     Add(TablePropertiesNames::kIndexPartitions, props.index_partitions);
     Add(TablePropertiesNames::kTopLevelIndexSize, props.top_level_index_size);
@@ -101,6 +104,9 @@ void PropertyBlockBuilder::AddTableProperty(const TableProperties& props) {
   Add(TablePropertiesNames::kFilterSize, props.filter_size);
   Add(TablePropertiesNames::kFormatVersion, props.format_version);
   Add(TablePropertiesNames::kFixedKeyLen, props.fixed_key_len);
+  if (int64_t(props.fixed_value_len) >= 0) {
+    Add(TablePropertiesNames::kFixedValueLen, props.fixed_value_len);
+  }
   Add(TablePropertiesNames::kColumnFamilyId, props.column_family_id);
   Add(TablePropertiesNames::kCreationTime, props.creation_time);
   Add(TablePropertiesNames::kOldestKeyTime, props.oldest_key_time);
@@ -273,6 +279,7 @@ Status ReadTablePropertiesHelper(
        &new_table_properties->orig_file_number},
       {TablePropertiesNames::kDataSize, &new_table_properties->data_size},
       {TablePropertiesNames::kIndexSize, &new_table_properties->index_size},
+      {TablePropertiesNames::kTagSize, &new_table_properties->tag_size},
       {TablePropertiesNames::kIndexPartitions,
        &new_table_properties->index_partitions},
       {TablePropertiesNames::kTopLevelIndexSize,
@@ -300,6 +307,8 @@ Status ReadTablePropertiesHelper(
        &new_table_properties->format_version},
       {TablePropertiesNames::kFixedKeyLen,
        &new_table_properties->fixed_key_len},
+      {TablePropertiesNames::kFixedValueLen,
+       &new_table_properties->fixed_value_len},
       {TablePropertiesNames::kColumnFamilyId,
        &new_table_properties->column_family_id},
       {TablePropertiesNames::kCreationTime,

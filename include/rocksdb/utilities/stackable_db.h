@@ -558,6 +558,10 @@ class StackableDB : public DB {
       TablePropertiesCollection* props) override {
     return db_->GetPropertiesOfTablesInRange(column_family, range, n, props);
   }
+  Status ApproximateKeyAnchors(ColumnFamilyHandle* cf, const Range* rng,
+                               std::vector<Anchor>* a) override {
+    return db_->ApproximateKeyAnchors(cf, rng, a);
+  }
 
   virtual Status GetUpdatesSince(
       SequenceNumber seq_number, std::unique_ptr<TransactionLogIterator>* iter,

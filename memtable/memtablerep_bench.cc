@@ -89,6 +89,10 @@ DEFINE_bool(if_log_bucket_dist_when_flash, true,
             "if_log_bucket_dist_when_flash parameter to pass into "
             "NewHashLinkListRepFactory");
 
+DEFINE_bool(enable_zero_copy, false, "enable zero copy");
+
+DEFINE_bool(reverse, false, "readseq/scan in reverse order");
+
 DEFINE_int32(
     threshold_use_skiplist, 256,
     "threshold_use_skiplist parameter to pass into NewHashLinkListRepFactory");
@@ -122,13 +126,15 @@ DEFINE_int64(seed, 0,
              "Seed base for random number generators. "
              "When 0 it is deterministic.");
 
+bool g_is_cspp = false;
+
 namespace ROCKSDB_NAMESPACE {
 
 namespace {
 struct CallbackVerifyArgs {
   bool found;
+  bool needs_user_key_cmp;
   LookupKey* key;
-  MemTableRep* table;
   InternalKeyComparator* comparator;
 };
 }  // namespace
@@ -235,6 +241,21 @@ class FillBenchmarkThread : public BenchmarkThread {
                         num_ops, read_hits) {}
 
   void FillOne() {
+    if (g_is_cspp) {
+      auto internal_key_size = 16;
+      uint64_t key = key_gen_->Next();
+      char key_buf[16];
+      EncodeFixed64(key_buf+0, key);
+      EncodeFixed64(key_buf+8, ++(*sequence_));
+      Slice value = generator_.Generate(FLAGS_item_size);
+      table_->InsertKeyValueConcurrently(Slice(key_buf, sizeof(key_buf)), value);
+      *bytes_written_ += internal_key_size + FLAGS_item_size + 1;
+    }
+    else {
+      FillOneEncode();
+    }
+  }
+  void FillOneEncode() {
     char* buf = nullptr;
     auto internal_key_size = 16;
     auto encoded_len =
@@ -287,21 +308,35 @@ class ConcurrentFillBenchmarkThread : public FillBenchmarkThread {
 };
 
 class ReadBenchmarkThread : public BenchmarkThread {
+  ReadOptions read_opt_;
+  bool needs_user_key_cmp_;
  public:
   ReadBenchmarkThread(MemTableRep* table, KeyGenerator* key_gen,
                       uint64_t* bytes_written, uint64_t* bytes_read,
                       uint64_t* sequence, uint64_t num_ops, uint64_t* read_hits)
       : BenchmarkThread(table, key_gen, bytes_written, bytes_read, sequence,
-                        num_ops, read_hits) {}
+                        num_ops, read_hits) {
+    if (FLAGS_enable_zero_copy) {
+      read_opt_.StartPin();
+    }
+    needs_user_key_cmp_ = table->NeedsUserKeyCompareInGet();
+  }
+  ~ReadBenchmarkThread() {
+    if (FLAGS_enable_zero_copy) {
+      read_opt_.FinishPin();
+    }
+  }
 
-  static bool callback(void* arg, const char* entry) {
+  static bool callback(void* arg, const MemTableRep::KeyValuePair& kv) {
     CallbackVerifyArgs* callback_args = static_cast<CallbackVerifyArgs*>(arg);
     assert(callback_args != nullptr);
-    uint32_t key_length;
-    const char* key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
+    if (!callback_args->needs_user_key_cmp) {
+      callback_args->found = true;
+      return true;
+    }
     if ((callback_args->comparator)
             ->user_comparator()
-            ->Equal(Slice(key_ptr, key_length - 8),
+            ->Equal(kv.ukey,
                     callback_args->key->user_key())) {
       callback_args->found = true;
     }
@@ -309,17 +344,17 @@ class ReadBenchmarkThread : public BenchmarkThread {
   }
 
   void ReadOne() {
-    std::string user_key;
+    char user_key[sizeof(uint64_t)];
     auto key = key_gen_->Next();
-    PutFixed64(&user_key, key);
-    LookupKey lookup_key(user_key, *sequence_);
+    EncodeFixed64(user_key, key);
+    LookupKey lookup_key(Slice(user_key, sizeof(user_key)), *sequence_);
     InternalKeyComparator internal_key_comp(BytewiseComparator());
     CallbackVerifyArgs verify_args;
+    verify_args.needs_user_key_cmp = needs_user_key_cmp_;
     verify_args.found = false;
     verify_args.key = &lookup_key;
-    verify_args.table = table_;
     verify_args.comparator = &internal_key_comp;
-    table_->Get(lookup_key, &verify_args, callback);
+    table_->Get(read_opt_, lookup_key, &verify_args, callback);
     if (verify_args.found) {
       *bytes_read_ += VarintLength(16) + 16 + FLAGS_item_size;
       ++*read_hits_;
@@ -343,6 +378,19 @@ class SeqReadBenchmarkThread : public BenchmarkThread {
 
   void ReadOneSeq() {
     std::unique_ptr<MemTableRep::Iterator> iter(table_->GetIterator());
+    if (FLAGS_reverse)
+      ReadReverse(iter.get());
+    else
+      ReadForward(iter.get());
+  }
+  void ReadReverse(MemTableRep::Iterator* iter) {
+    for (iter->SeekToLast(); iter->Valid(); iter->Prev()) {
+      // pretend to read the value
+      *bytes_read_ += VarintLength(16) + 16 + FLAGS_item_size;
+    }
+    ++*read_hits_;
+  }
+  void ReadForward(MemTableRep::Iterator* iter) {
     for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
       // pretend to read the value
       *bytes_read_ += VarintLength(16) + 16 + FLAGS_item_size;
@@ -566,6 +614,11 @@ void PrintWarnings() {
 #endif
 }
 
+#ifdef HAS_TOPLING_CSPP_MEMTABLE
+namespace ROCKSDB_NAMESPACE {
+  extern MemTableRepFactory* NewCSPPMemTabForPlain(const std::string&);
+}
+#endif
 int main(int argc, char** argv) {
   ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   SetUsageMessage(std::string("\nUSAGE:\n") + std::string(argv[0]) +
@@ -579,6 +632,12 @@ int main(int argc, char** argv) {
   std::unique_ptr<ROCKSDB_NAMESPACE::MemTableRepFactory> factory;
   if (FLAGS_memtablerep == "skiplist") {
     factory.reset(new ROCKSDB_NAMESPACE::SkipListFactory);
+#ifdef HAS_TOPLING_CSPP_MEMTABLE
+  } else if (FLAGS_memtablerep.substr(0, 5) == "cspp:") {
+    std::string jstr = FLAGS_memtablerep.substr(5);
+    factory.reset(ROCKSDB_NAMESPACE::NewCSPPMemTabForPlain(jstr));
+    g_is_cspp = true;
+#endif
   } else if (FLAGS_memtablerep == "vector") {
     factory.reset(new ROCKSDB_NAMESPACE::VectorRepFactory);
   } else if (FLAGS_memtablerep == "hashskiplist" ||

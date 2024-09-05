@@ -29,9 +29,11 @@
 #include "rocksdb/sst_partitioner.h"
 #include "rocksdb/table.h"
 #include "rocksdb/table_properties.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 #include "rocksdb/wal_filter.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "util/compression.h"
+#include <terark/fstring.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -53,6 +55,7 @@ AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions(const Options& options)
       inplace_callback(options.inplace_callback),
       memtable_prefix_bloom_size_ratio(
           options.memtable_prefix_bloom_size_ratio),
+      allow_merge_memtables(options.allow_merge_memtables),
       memtable_whole_key_filtering(options.memtable_whole_key_filtering),
       memtable_huge_page_size(options.memtable_huge_page_size),
       memtable_insert_with_hint_prefix_extractor(
@@ -71,8 +74,6 @@ AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions(const Options& options)
       max_bytes_for_level_multiplier_additional(
           options.max_bytes_for_level_multiplier_additional),
       max_compaction_bytes(options.max_compaction_bytes),
-      ignore_max_compaction_bytes_for_input(
-          options.ignore_max_compaction_bytes_for_input),
       soft_pending_compaction_bytes_limit(
           options.soft_pending_compaction_bytes_limit),
       hard_pending_compaction_bytes_limit(
@@ -108,6 +109,7 @@ AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions(const Options& options)
           options.blob_garbage_collection_force_threshold),
       blob_compaction_readahead_size(options.blob_compaction_readahead_size),
       blob_file_starting_level(options.blob_file_starting_level),
+      min_filter_level(options.min_filter_level),
       blob_cache(options.blob_cache),
       prepopulate_blob_cache(options.prepopulate_blob_cache),
       persist_user_defined_timestamps(options.persist_user_defined_timestamps) {
@@ -126,7 +128,16 @@ ColumnFamilyOptions::ColumnFamilyOptions()
 ColumnFamilyOptions::ColumnFamilyOptions(const Options& options)
     : ColumnFamilyOptions(*static_cast<const ColumnFamilyOptions*>(&options)) {}
 
-DBOptions::DBOptions() {}
+DBOptions::DBOptions() {
+  wbwi_factory = SingleSkipListWBWIFactory();
+ #if defined(HAS_TOPLING_CSPP_WBWI)
+  extern WBWIFactory* NewCSPP_WBWIForPlain(const std::string& jstr);
+  if (auto var = getenv("DefaultWBWIFactory")) {
+    if (Slice(var).starts_with("cspp:"))
+      wbwi_factory.reset(NewCSPP_WBWIForPlain(var+5));
+  }
+ #endif
+}
 DBOptions::DBOptions(const Options& options)
     : DBOptions(*static_cast<const DBOptions*>(&options)) {}
 
@@ -289,8 +300,6 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
     ROCKS_LOG_HEADER(
         log, "                   Options.max_compaction_bytes: %" PRIu64,
         max_compaction_bytes);
-    ROCKS_LOG_HEADER(log, "  Options.ignore_max_compaction_bytes_for_input: %s",
-                     ignore_max_compaction_bytes_for_input ? "true" : "false");
     ROCKS_LOG_HEADER(
         log,
         "                       Options.arena_block_size: %" ROCKSDB_PRIszt,
@@ -385,6 +394,9 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
         log, "              Options.memtable_prefix_bloom_size_ratio: %f",
         memtable_prefix_bloom_size_ratio);
     ROCKS_LOG_HEADER(log,
+                     "                     Options.allow_merge_memtables: %d",
+                     allow_merge_memtables);
+    ROCKS_LOG_HEADER(log,
                      "              Options.memtable_whole_key_filtering: %d",
                      memtable_whole_key_filtering);
 
@@ -437,6 +449,8 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
         blob_compaction_readahead_size);
     ROCKS_LOG_HEADER(log, "               Options.blob_file_starting_level: %d",
                      blob_file_starting_level);
+    ROCKS_LOG_HEADER(log, "                       Options.min_filter_level: %d",
+                     min_filter_level);
     if (blob_cache) {
       ROCKS_LOG_HEADER(log, "                          Options.blob_cache: %s",
                        blob_cache->Name());
@@ -685,10 +699,17 @@ DBOptions* DBOptions::IncreaseParallelism(int total_threads) {
   return this;
 }
 
+static const bool g_cache_sst_file_iter =
+    terark::getEnvBool("TOPLINGDB_CACHE_SST_FILE_ITER", false);
+
 ReadOptions::ReadOptions(bool _verify_checksums, bool _fill_cache)
-    : verify_checksums(_verify_checksums), fill_cache(_fill_cache) {}
+    : verify_checksums(_verify_checksums), fill_cache(_fill_cache) {
+  cache_sst_file_iter = g_cache_sst_file_iter;
+}
 
 ReadOptions::ReadOptions(Env::IOActivity _io_activity)
-    : io_activity(_io_activity) {}
+    : io_activity(_io_activity) {
+  cache_sst_file_iter = g_cache_sst_file_iter;
+}
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -479,6 +479,7 @@ class TraceFileEnv : public EnvWrapper {
                   char* scratch) const override {
         return target_->Read(offset, n, result, scratch);
       }
+      intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
      private:
       std::unique_ptr<RandomAccessFile> target_;

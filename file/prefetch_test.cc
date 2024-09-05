@@ -338,6 +338,7 @@ TEST_P(PrefetchTailTest, Basic) {
   HistogramData post_flush_file_read;
   options.statistics->histogramData(FILE_READ_FLUSH_MICROS,
                                     &post_flush_file_read);
+
   if (UseFilePrefetchBuffer()) {
     // `PartitionedFilterBlockReader/PartitionIndexReader::CacheDependencies()`
     // should read from the prefetched tail in file prefetch buffer instead of
@@ -350,6 +351,7 @@ TEST_P(PrefetchTailTest, Basic) {
     // will initiate extra SST reads
     ASSERT_GT(post_flush_file_read.count - pre_flush_file_read.count, 1);
   }
+
   ASSERT_OK(Put("k1", "v2"));
   ASSERT_OK(Put("k2", "v2"));
   ASSERT_OK(Flush());
@@ -382,6 +384,7 @@ TEST_P(PrefetchTailTest, Basic) {
     ASSERT_GT(post_compaction_file_read.count - pre_compaction_file_read.count,
               3);
   }
+
   Close();
 }
 
@@ -1389,7 +1392,10 @@ TEST_P(PrefetchTest, DBIterLevelReadAheadWithAsyncIO) {
 
     // For index and data blocks.
     if (is_adaptive_readahead) {
+     #if !defined(TOPLINGDB_DISABLE_ITER_WRAPPER)
       ASSERT_EQ(readahead_carry_over_count, 2 * (num_sst_files - 1));
+     #endif
+      ASSERT_GT(buff_async_prefetch_count, 0);
     } else {
       ASSERT_EQ(readahead_carry_over_count, 0);
     }

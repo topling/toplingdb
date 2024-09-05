@@ -299,6 +299,8 @@ class EncryptedRandomAccessFile : public FSRandomAccessFile {
   // of this file. If the length is 0, then it refers to the end of file.
   // If the system is not caching the file contents, then this is a noop.
   IOStatus InvalidateCache(size_t offset, size_t length) override;
+
+  intptr_t FileDescriptor() const override;
 };
 
 // A file abstraction for sequential writing.  The implementation

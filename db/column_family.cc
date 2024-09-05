@@ -79,10 +79,10 @@ ColumnFamilyHandleImpl::~ColumnFamilyHandleImpl() {
   }
 }
 
-uint32_t ColumnFamilyHandleImpl::GetID() const { return cfd()->GetID(); }
+uint32_t ColumnFamilyHandleImpl::GetID() const { return cfd_->GetID(); }
 
 const std::string& ColumnFamilyHandleImpl::GetName() const {
-  return cfd()->GetName();
+  return cfd_->GetName();
 }
 
 Status ColumnFamilyHandleImpl::GetDescriptor(ColumnFamilyDescriptor* desc) {
@@ -93,7 +93,25 @@ Status ColumnFamilyHandleImpl::GetDescriptor(ColumnFamilyDescriptor* desc) {
 }
 
 const Comparator* ColumnFamilyHandleImpl::GetComparator() const {
-  return cfd()->user_comparator();
+  return cfd_->user_comparator();
+}
+ColumnFamilyHandle* ColumnFamilyHandleImpl::CloneHandle() const {
+  return new ColumnFamilyHandleImpl(cfd_, db_, mutex_);
+}
+
+uint32_t ColumnFamilyHandleInternal::GetID() const {
+  return internal_cfd_->GetID();
+}
+const std::string& ColumnFamilyHandleInternal::GetName() const {
+  return internal_cfd_->GetName();
+}
+const Comparator* ColumnFamilyHandleInternal::GetComparator() const {
+  return internal_cfd_->user_comparator();
+}
+ColumnFamilyHandle* ColumnFamilyHandleInternal::CloneHandle() const {
+  auto p = new ColumnFamilyHandleInternal();
+  p->SetCFD(internal_cfd_);
+  return p;
 }
 
 void GetIntTblPropCollectorFactory(
@@ -322,8 +340,8 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
     }
     ROCKS_LOG_WARN(db_options.logger,
                    "Adjust the value to "
-                   "level0_stop_writes_trigger(%d)"
-                   "level0_slowdown_writes_trigger(%d)"
+                   "level0_stop_writes_trigger(%d) "
+                   "level0_slowdown_writes_trigger(%d) "
                    "level0_file_num_compaction_trigger(%d)",
                    result.level0_stop_writes_trigger,
                    result.level0_slowdown_writes_trigger,
@@ -359,15 +377,15 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
   if (result.level_compaction_dynamic_level_bytes) {
     if (result.compaction_style != kCompactionStyleLevel) {
       ROCKS_LOG_WARN(db_options.info_log.get(),
-                     "level_compaction_dynamic_level_bytes only makes sense"
+                     "level_compaction_dynamic_level_bytes only makes sense "
                      "for level-based compaction");
       result.level_compaction_dynamic_level_bytes = false;
     } else if (result.cf_paths.size() > 1U) {
       // we don't yet know how to make both of this feature and multiple
       // DB path work.
       ROCKS_LOG_WARN(db_options.info_log.get(),
-                     "multiple cf_paths/db_paths and"
-                     "level_compaction_dynamic_level_bytes"
+                     "multiple cf_paths/db_paths and "
+                     "level_compaction_dynamic_level_bytes "
                      "can't be used together");
       result.level_compaction_dynamic_level_bytes = false;
     }
@@ -531,12 +549,12 @@ ColumnFamilyData::ColumnFamilyData(
       refs_(0),
       initialized_(false),
       dropped_(false),
+      is_delete_range_supported_(
+          cf_options.table_factory->IsDeleteRangeSupported()),
       internal_comparator_(cf_options.comparator),
       initial_cf_options_(SanitizeOptions(db_options, cf_options)),
       ioptions_(db_options, initial_cf_options_),
       mutable_cf_options_(initial_cf_options_),
-      is_delete_range_supported_(
-          cf_options.table_factory->IsDeleteRangeSupported()),
       write_buffer_manager_(write_buffer_manager),
       mem_(nullptr),
       imm_(ioptions_.min_write_buffer_number_to_merge,
@@ -544,19 +562,15 @@ ColumnFamilyData::ColumnFamilyData(
            ioptions_.max_write_buffer_size_to_maintain),
       super_version_(nullptr),
       super_version_number_(0),
-      local_sv_(new ThreadLocalPtr(&SuperVersionUnrefHandle)),
+      local_sv_(&SuperVersionUnrefHandle),
       next_(nullptr),
       prev_(nullptr),
       log_number_(0),
       column_family_set_(column_family_set),
-      queued_for_flush_(false),
-      queued_for_compaction_(false),
       prev_compaction_needed_bytes_(0),
-      allow_2pc_(db_options.allow_2pc),
       last_memtable_id_(0),
-      db_paths_registered_(false),
-      mempurge_used_(false),
       next_epoch_number_(1) {
+  allow_2pc_ = db_options.allow_2pc;
   if (id_ != kDummyColumnFamilyDataId) {
     // TODO(cc): RegisterDbPaths can be expensive, considering moving it
     // outside of this constructor which might be called with db mutex held.
@@ -720,7 +734,12 @@ bool ColumnFamilyData::UnrefAndTryDelete() {
     super_version_ = nullptr;
 
     // Release SuperVersion references kept in ThreadLocalPtr.
-    local_sv_.reset();
+   #if 0
+    local_sv_.~ThreadLocalPtr();
+    new(&local_sv_)ThreadLocalPtr(&SuperVersionUnrefHandle);
+   #else
+    local_sv_.Destroy();
+   #endif
 
     if (sv->Unref()) {
       // Note: sv will delete this ColumnFamilyData during Cleanup()
@@ -766,7 +785,11 @@ uint64_t ColumnFamilyData::OldestLogToKeep() {
   return current_log;
 }
 
+#if defined(ROCKSDB_UNIT_TEST)
 const double kIncSlowdownRatio = 0.8;
+#else
+const double kIncSlowdownRatio = 0.97; // topling specific
+#endif
 const double kDecSlowdownRatio = 1 / kIncSlowdownRatio;
 const double kNearStopSlowdownRatio = 0.6;
 const double kDelayRecoverSlowdownRatio = 1.4;
@@ -1125,10 +1148,65 @@ uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
   return current_->GetSstFilesSize();
 }
 
+void ColumnFamilyData::PrepareNewMemtableInBackground(
+    const MutableCFOptions& mutable_cf_options) {
+ #if !defined(ROCKSDB_UNIT_TEST)
+  {
+    std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+    if (precreated_memtable_list_.full()) {
+      // do nothing
+      return;
+    }
+  }
+  auto beg = ioptions_.clock->NowNanos();
+  auto tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
+                          write_buffer_manager_, 0/*earliest_seq*/, id_);
+  auto end = ioptions_.clock->NowNanos();
+  RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
+  {
+    std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+    if (LIKELY(!precreated_memtable_list_.full())) {
+      precreated_memtable_list_.emplace_back(tab);
+      tab = nullptr;
+    }
+  }
+  if (UNLIKELY(nullptr != tab)) { // precreated_memtable_list_ is full
+    // this is very rare, we have not put `tab` to precreated_memtable_list_,
+    // but this thread must keep going on, just delete `tab`
+    ROCKS_LOG_WARN(ioptions_.info_log,
+      "precreated_memtable_list_ is full, discard the newly created memtab");
+    delete tab;
+  }
+ #endif
+}
+
 MemTable* ColumnFamilyData::ConstructNewMemtable(
     const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
-  return new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
+  MemTable* tab = nullptr;
+ #if !defined(ROCKSDB_UNIT_TEST)
+  {
+    std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+    if (!precreated_memtable_list_.empty()) {
+      tab = precreated_memtable_list_.front().release();
+      precreated_memtable_list_.pop_front();
+    }
+  }
+ #endif
+  if (tab) {
+    tab->SetCreationSeq(earliest_seq);
+    tab->SetEarliestSequenceNumber(earliest_seq);
+  } else {
+  #if !defined(ROCKSDB_UNIT_TEST)
+    auto beg = ioptions_.clock->NowNanos();
+  #endif
+    tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
                       write_buffer_manager_, earliest_seq, id_);
+  #if !defined(ROCKSDB_UNIT_TEST)
+    auto end = ioptions_.clock->NowNanos();
+    RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
+  #endif
+  }
+  return tab;
 }
 
 void ColumnFamilyData::CreateNewMemtable(
@@ -1255,6 +1333,12 @@ SuperVersion* ColumnFamilyData::GetReferencedSuperVersion(DBImpl* db) {
   return sv;
 }
 
+template<class T>
+inline T NoAtomicLoad(const std::atomic<T>& x) {
+  static_assert(sizeof(x) == sizeof(T));
+  return reinterpret_cast<const T&>(x);
+}
+
 SuperVersion* ColumnFamilyData::GetThreadLocalSuperVersion(DBImpl* db) {
   // The SuperVersion is cached in thread local storage to avoid acquiring
   // mutex when SuperVersion does not change since the last use. When a new
@@ -1267,7 +1351,7 @@ SuperVersion* ColumnFamilyData::GetThreadLocalSuperVersion(DBImpl* db) {
   // have swapped in kSVObsolete. We re-check the value at when returning
   // SuperVersion back to thread local, with an atomic compare and swap.
   // The superversion will need to be released if detected to be stale.
-  void* ptr = local_sv_->Swap(SuperVersion::kSVInUse);
+  void* ptr = local_sv_.Swap(SuperVersion::kSVInUse);
   // Invariant:
   // (1) Scrape (always) installs kSVObsolete in ThreadLocal storage
   // (2) the Swap above (always) installs kSVInUse, ThreadLocal storage
@@ -1289,7 +1373,7 @@ bool ColumnFamilyData::ReturnThreadLocalSuperVersion(SuperVersion* sv) {
   assert(sv != nullptr);
   // Put the SuperVersion back
   void* expected = SuperVersion::kSVInUse;
-  if (local_sv_->CompareAndSwap(static_cast<void*>(sv), expected)) {
+  if (local_sv_.CompareAndSwap(static_cast<void*>(sv), expected)) {
     // When we see kSVInUse in the ThreadLocal, we are sure ThreadLocal
     // storage has not been altered and no Scrape has happened. The
     // SuperVersion is still current.
@@ -1357,7 +1441,7 @@ void ColumnFamilyData::InstallSuperVersion(
 
 void ColumnFamilyData::ResetThreadLocalSuperVersions() {
   autovector<void*> sv_ptrs;
-  local_sv_->Scrape(&sv_ptrs, SuperVersion::kSVObsolete);
+  local_sv_.Scrape(&sv_ptrs, SuperVersion::kSVObsolete);
   for (auto ptr : sv_ptrs) {
     assert(ptr);
     if (ptr == SuperVersion::kSVInUse) {
@@ -1554,6 +1638,10 @@ void ColumnFamilyData::RecoverEpochNumbers() {
   auto* vstorage = current_->storage_info();
   assert(vstorage);
   vstorage->RecoverEpochNumbers(this);
+}
+
+const std::string& ColumnFamilyData::GetDBName() const {
+  return column_family_set_->db_name_;
 }
 
 ColumnFamilySet::ColumnFamilySet(const std::string& dbname,

@@ -46,10 +46,9 @@ bool FindIntraL0Compaction(const std::vector<FileMetaData*>& level_files,
   size_t limit;
   // Pull in files until the amount of compaction work per deleted file begins
   // increasing or maximum total compaction size is reached.
-  size_t new_compact_bytes_per_del_file = 0;
   for (limit = start + 1; limit < level_files.size(); ++limit) {
     compact_bytes += static_cast<size_t>(level_files[limit]->fd.file_size);
-    new_compact_bytes_per_del_file = compact_bytes / (limit - start);
+    size_t new_compact_bytes_per_del_file = compact_bytes / (limit - start);
     if (level_files[limit]->being_compacted ||
         new_compact_bytes_per_del_file > compact_bytes_per_del_file ||
         compact_bytes > max_compaction_bytes) {

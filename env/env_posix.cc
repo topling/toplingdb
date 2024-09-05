@@ -81,7 +81,10 @@
 #define EXT4_SUPER_MAGIC 0xEF53
 #endif
 
+#include <terark/util/nolocks_localtime.hpp>
+
 namespace ROCKSDB_NAMESPACE {
+#ifndef ROCKSDB_NO_DYNAMIC_EXTENSION
 #if defined(OS_WIN)
 static const std::string kSharedLibExt = ".dll";
 static const char kPathSeparator = ';';
@@ -93,6 +96,15 @@ static const std::string kSharedLibExt = ".dylib";
 static const std::string kSharedLibExt = ".so";
 #endif
 #endif
+#endif
+
+namespace port {
+
+struct tm* LocalTimeR(const time_t* timep, struct tm* result) {
+  return terark::nolocks_localtime_r(timep, result);
+}
+
+} // namespace port
 
 namespace {
 

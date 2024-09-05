@@ -221,12 +221,12 @@ size_t LRUCacheShard::TEST_GetLRUSize() {
 }
 
 double LRUCacheShard::GetHighPriPoolRatio() {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   return high_pri_pool_ratio_;
 }
 
 double LRUCacheShard::GetLowPriPoolRatio() {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   return low_pri_pool_ratio_;
 }
 
@@ -364,7 +364,7 @@ void LRUCacheShard::SetCapacity(size_t capacity) {
 }
 
 void LRUCacheShard::SetStrictCapacityLimit(bool strict_capacity_limit) {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   strict_capacity_limit_ = strict_capacity_limit;
 }
 
@@ -526,14 +526,14 @@ LRUHandle* LRUCacheShard::CreateHandle(const Slice& key, uint32_t hash,
   // Allocate the memory here outside of the mutex.
   // If the cache is full, we'll have to release it.
   // It shouldn't happen very often though.
-  LRUHandle* e =
-      static_cast<LRUHandle*>(malloc(sizeof(LRUHandle) - 1 + key.size()));
-
+  static_assert(sizeof(LRUHandle) == 64);
+  auto e = static_cast<LRUHandle*>(malloc(sizeof(LRUHandle) + key.size()));
+  e->padding = 0; // padding makes key_data aligned better
   e->value = value;
   e->m_flags = 0;
   e->im_flags = 0;
   e->helper = helper;
-  e->key_length = key.size();
+  e->key_length = (uint32_t)key.size();
   e->hash = hash;
   e->refs = 0;
   e->next = e->prev = nullptr;
@@ -613,7 +613,7 @@ void LRUCacheShard::Erase(const Slice& key, uint32_t hash) {
 }
 
 size_t LRUCacheShard::GetUsage() const {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   return usage_;
 }
 
@@ -624,12 +624,12 @@ size_t LRUCacheShard::GetPinnedUsage() const {
 }
 
 size_t LRUCacheShard::GetOccupancyCount() const {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   return table_.GetOccupancyCount();
 }
 
 size_t LRUCacheShard::GetTableAddressCount() const {
-  DMutexLock l(mutex_);
+  //DMutexLock l(mutex_);
   return size_t{1} << table_.GetLengthBits();
 }
 

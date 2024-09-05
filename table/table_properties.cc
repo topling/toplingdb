@@ -170,6 +170,7 @@ std::string TableProperties::ToString(const std::string& prop_delim,
 void TableProperties::Add(const TableProperties& tp) {
   data_size += tp.data_size;
   index_size += tp.index_size;
+  tag_size += tp.tag_size;
   index_partitions += tp.index_partitions;
   top_level_index_size += tp.top_level_index_size;
   index_key_is_user_key += tp.index_key_is_user_key;
@@ -187,6 +188,17 @@ void TableProperties::Add(const TableProperties& tp) {
       tp.slow_compression_estimated_data_size;
   fast_compression_estimated_data_size +=
       tp.fast_compression_estimated_data_size;
+  oldest_key_time = std::min(oldest_key_time, tp.oldest_key_time);
+  auto agg_time = [](uint64_t& x, uint64_t y) {
+    if (y) {
+      if (x)
+        x = std::min(x, y);
+      else
+        x = y;
+    }
+  };
+  //agg_time(creation_time, tp.creation_time);
+  agg_time(file_creation_time, tp.file_creation_time);
 }
 
 std::map<std::string, uint64_t>
@@ -251,6 +263,7 @@ const std::string TablePropertiesNames::kOriginalFileNumber =
     "rocksdb.original.file.number";
 const std::string TablePropertiesNames::kDataSize = "rocksdb.data.size";
 const std::string TablePropertiesNames::kIndexSize = "rocksdb.index.size";
+const std::string TablePropertiesNames::kTagSize = "rocksdb.tag.size";
 const std::string TablePropertiesNames::kIndexPartitions =
     "rocksdb.index.partitions";
 const std::string TablePropertiesNames::kTopLevelIndexSize =
@@ -278,6 +291,8 @@ const std::string TablePropertiesNames::kFormatVersion =
     "rocksdb.format.version";
 const std::string TablePropertiesNames::kFixedKeyLen =
     "rocksdb.fixed.key.length";
+const std::string TablePropertiesNames::kFixedValueLen =
+    "rocksdb.fixed.value.length";
 const std::string TablePropertiesNames::kColumnFamilyId =
     "rocksdb.column.family.id";
 const std::string TablePropertiesNames::kColumnFamilyName =

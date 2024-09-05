@@ -14,6 +14,7 @@
 #include "rocksdb/convenience.h"
 #include "rocksdb/utilities/ldb_cmd.h"
 #include "table/sst_file_dumper.h"
+#include <topling/side_plugin_repo.h>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -149,6 +150,20 @@ bool ParseIntArg(const char* arg, const std::string arg_name,
 }  // namespace
 
 int SSTDumpTool::Run(int argc, char const* const* argv, Options options) {
+  SidePluginRepo repo;
+  if (auto conf = getenv("TOPLING_SIDEPLUGIN_CONF")) {
+    auto s = repo.ImportAutoFile(conf);
+    if (!s.ok()) {
+      fprintf(stderr, "FATAL: ImportAutoFile(%s) = %s\n", conf, s.ToString().c_str());
+      return 1;
+    }
+    std::string tfname = "dispatch";
+    if (auto tf_of_env = getenv("TABLE_FACTORY")) {
+      tfname = tf_of_env;
+    }
+    options.table_factory = repo[tfname];
+    ROCKSDB_VERIFY(options.table_factory != nullptr);
+  }
   std::string env_uri, fs_uri;
   const char* dir_or_file = nullptr;
   uint64_t read_num = std::numeric_limits<uint64_t>::max();

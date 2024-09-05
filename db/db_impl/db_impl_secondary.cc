@@ -302,11 +302,8 @@ Status DBImplSecondary::RecoverLogFiles(
           if (cfd == nullptr) {
             continue;
           }
-          std::unordered_map<ColumnFamilyData*, uint64_t>::iterator iter =
-              cfd_to_current_log_.find(cfd);
-          if (iter == cfd_to_current_log_.end()) {
-            cfd_to_current_log_.insert({cfd, log_number});
-          } else if (log_number > iter->second) {
+          auto [iter, success] = cfd_to_current_log_.emplace(cfd, log_number);
+          if (!success && log_number > iter->second) {
             iter->second = log_number;
           }
         }
@@ -339,6 +336,7 @@ Status DBImplSecondary::RecoverLogFiles(
   return status;
 }
 
+#if defined(ROCKSDB_UNIT_TEST)
 // Implementation of the DB interface
 Status DBImplSecondary::Get(const ReadOptions& read_options,
                             ColumnFamilyHandle* column_family, const Slice& key,
@@ -396,7 +394,7 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
     }
   }
   // Acquire SuperVersion
-  SuperVersion* super_version = GetAndRefSuperVersion(cfd);
+  SuperVersion* super_version = GetAndRefSuperVersion(cfd, &read_options);
   SequenceNumber snapshot = versions_->LastSequence();
   GetWithTimestampReadCallback read_cb(snapshot);
   MergeContext merge_context;
@@ -409,24 +407,23 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
   const Comparator* ucmp = column_family->GetComparator();
   assert(ucmp);
   std::string* ts = ucmp->timestamp_size() > 0 ? timestamp : nullptr;
-  if (super_version->mem->Get(lkey, pinnable_val->GetSelf(),
+  if (super_version->mem->Get(lkey, pinnable_val,
                               /*columns=*/nullptr, ts, &s, &merge_context,
                               &max_covering_tombstone_seq, read_options,
                               false /* immutable_memtable */, &read_cb)) {
     done = true;
-    pinnable_val->PinSelf();
     RecordTick(stats_, MEMTABLE_HIT);
   } else if ((s.ok() || s.IsMergeInProgress()) &&
              super_version->imm->Get(
-                 lkey, pinnable_val->GetSelf(), /*columns=*/nullptr, ts, &s,
+                 lkey, pinnable_val, /*columns=*/nullptr, ts, &s,
                  &merge_context, &max_covering_tombstone_seq, read_options,
                  &read_cb)) {
     done = true;
-    pinnable_val->PinSelf();
     RecordTick(stats_, MEMTABLE_HIT);
   }
   if (!done && !s.ok() && !s.IsMergeInProgress()) {
-    ReturnAndCleanupSuperVersion(cfd, super_version);
+    if (!read_options.pinning_tls)
+      ReturnAndCleanupSuperVersion(cfd, super_version);
     return s;
   }
   if (!done) {
@@ -442,7 +439,8 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
   }
   {
     PERF_TIMER_GUARD(get_post_process_time);
-    ReturnAndCleanupSuperVersion(cfd, super_version);
+    if (!read_options.pinning_tls)
+      ReturnAndCleanupSuperVersion(cfd, super_version);
     RecordTick(stats_, NUMBER_KEYS_READ);
     size_t size = pinnable_val->size();
     RecordTick(stats_, BYTES_READ, size);
@@ -490,9 +488,16 @@ Iterator* DBImplSecondary::NewIterator(const ReadOptions& read_options,
     return NewErrorIterator(Status::NotSupported(
         "tailing iterator not supported in secondary mode"));
   } else if (read_options.snapshot != nullptr) {
+   #if defined(ROCKSDB_UNIT_TEST)
     // TODO (yanqin) support snapshot.
     return NewErrorIterator(
         Status::NotSupported("snapshot not supported in secondary mode"));
+   #else
+    // I dont know why does not support iterator, I just add snapshot
+    // read stupidly
+    SequenceNumber snapshot(read_options.snapshot->GetSequenceNumber());
+    result = NewIteratorImpl(read_options, cfd, snapshot, read_callback);
+   #endif
   } else {
     SequenceNumber snapshot(kMaxSequenceNumber);
     result = NewIteratorImpl(read_options, cfd, snapshot, read_callback);
@@ -510,11 +515,8 @@ ArenaWrappedDBIter* DBImplSecondary::NewIteratorImpl(
   snapshot = versions_->LastSequence();
   assert(snapshot != kMaxSequenceNumber);
   auto db_iter = NewArenaWrappedDbIterator(
-      env_, read_options, *cfd->ioptions(), super_version->mutable_cf_options,
-      super_version->current, snapshot,
-      super_version->mutable_cf_options.max_sequential_skip_in_iterations,
-      super_version->version_number, read_callback, this, cfd,
-      expose_blob_index, read_options.snapshot ? false : allow_refresh);
+      read_options, super_version, snapshot, read_callback, this,
+      expose_blob_index, allow_refresh);
   auto internal_iter = NewInternalIterator(
       db_iter->GetReadOptions(), cfd, super_version, db_iter->GetArena(),
       snapshot, /* allow_unprepared_value */ true, db_iter);
@@ -579,6 +581,7 @@ Status DBImplSecondary::NewIterators(
   }
   return Status::OK();
 }
+#endif // ROCKSDB_UNIT_TEST
 
 Status DBImplSecondary::CheckConsistency() {
   mutex_.AssertHeld();
@@ -609,11 +612,17 @@ Status DBImplSecondary::CheckConsistency() {
 
     uint64_t fsize = 0;
     s = env_->GetFileSize(file_path, &fsize);
+#ifdef ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
     if (!s.ok() &&
         (env_->GetFileSize(Rocks2LevelTableFileName(file_path), &fsize).ok() ||
          s.IsPathNotFound())) {
       s = Status::OK();
     }
+#else
+    if (s.IsPathNotFound()) {
+      s = Status::OK();
+    }
+#endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
     if (!s.ok()) {
       corruption_messages +=
           "Can't access " + md.name + ": " + s.ToString() + "\n";
@@ -636,7 +645,7 @@ Status DBImplSecondary::TryCatchUpWithPrimary() {
             ->ReadAndApply(&mutex_, &manifest_reader_,
                            manifest_reader_status_.get(), &cfds_changed);
 
-    ROCKS_LOG_INFO(immutable_db_options_.info_log, "Last sequence is %" PRIu64,
+    ROCKS_LOG_DEBUG(immutable_db_options_.info_log, "Last sequence is %" PRIu64,
                    static_cast<uint64_t>(versions_->LastSequence()));
     for (ColumnFamilyData* cfd : cfds_changed) {
       if (cfd->IsDropped()) {

@@ -191,8 +191,17 @@ class CompactionJob {
   Status Install(const MutableCFOptions& mutable_cf_options,
                  bool* compaction_released);
 
+  Status Install(const MutableCFOptions& mutable_cf_options) {
+    bool compaction_released = false;
+    return Install(mutable_cf_options, &compaction_released);
+  }
+
   // Return the IO status
   IOStatus io_status() const { return io_status_; }
+
+  void GetSubCompactOutputs(std::vector<std::vector<const FileMetaData*> >*) const;
+  CompactionJobStats* GetCompactionJobStats() const { return compaction_job_stats_; }
+  const InternalStats::CompactionStatsFull& GetCompactionStats() const { return compaction_stats_; }
 
  protected:
   void UpdateCompactionStats();
@@ -278,6 +287,9 @@ class CompactionJob {
 
   void NotifyOnSubcompactionCompleted(SubcompactionState* sub_compact);
 
+  Status RunLocal();
+  Status RunRemote();
+
   uint32_t job_id_;
 
   // DBImpl state
@@ -350,6 +362,8 @@ class CompactionJob {
   // key has bigger (newer) sequence number than this, it will be precluded from
   // the last level (output to penultimate level).
   SequenceNumber preclude_last_level_min_seqno_ = kMaxSequenceNumber;
+
+  std::vector<std::vector<std::string> > rand_key_store_;
 
   // Get table file name in where it's outputting to, which should also be in
   // `output_directory_`.

@@ -107,6 +107,7 @@ class AutoRollLogger : public Logger {
  protected:
   // Implementation of Close()
   virtual Status CloseImpl() override {
+    this->closed_ = true;
     if (logger_) {
       return logger_->Close();
     } else {
@@ -129,6 +130,7 @@ class AutoRollLogger : public Logger {
   std::string ValistToString(const char* format, va_list args) const;
   // Write the logs marked as headers to the new log file
   void WriteHeaderInfo();
+  bool SanitizeLogFile();
   std::string log_fname_;  // Current active info log's file name.
   std::string dbname_;
   std::string db_log_dir_;

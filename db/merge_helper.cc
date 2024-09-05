@@ -587,7 +587,7 @@ CompactionFilter::Decision MergeHelper::FilterMerge(const Slice& user_key,
       &value_slice, /* existing_columns */ nullptr, &compaction_filter_value_,
       /* new_columns */ nullptr, compaction_filter_skip_until_.rep());
   if (ret == CompactionFilter::Decision::kRemoveAndSkipUntil) {
-    if (user_comparator_->Compare(*compaction_filter_skip_until_.rep(),
+    if (user_comparator_->Compare(compaction_filter_skip_until_.Encode(),
                                   user_key) <= 0) {
       // Invalid skip_until returned from compaction filter.
       // Keep the key as per FilterV2/FilterV3 documentation.

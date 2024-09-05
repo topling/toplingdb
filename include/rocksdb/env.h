@@ -30,6 +30,7 @@
 #include "rocksdb/port_defs.h"
 #include "rocksdb/status.h"
 #include "rocksdb/thread_status.h"
+#include "rocksdb/enum_reflection.h"
 
 #ifdef _WIN32
 // Windows API macro interference
@@ -96,6 +97,9 @@ struct EnvOptions {
 
   // If true, set the FD_CLOEXEC on open fd.
   bool set_fd_cloexec = true;
+
+  // If false, fdatasync() calls are bypassed
+  bool allow_fdatasync = true;
 
   // Allows OS to incrementally sync files to disk while they are being
   // written, in the background. Issue one request for every bytes_per_sync
@@ -423,12 +427,12 @@ class Env : public Customizable {
   }
 
   // Priority for scheduling job in thread pool
-  enum Priority { BOTTOM, LOW, HIGH, USER, TOTAL };
+  enum Priority : unsigned char { BOTTOM, LOW, HIGH, USER, TOTAL };
 
   static std::string PriorityToString(Priority priority);
 
   // Priority for requesting bytes in rate limiter scheduler
-  enum IOPriority {
+  enum IOPriority : unsigned char {
     IO_LOW = 0,
     IO_MID = 1,
     IO_HIGH = 2,
@@ -849,6 +853,8 @@ class RandomAccessFile {
         "RandomAccessFile::InvalidateCache not supported.");
   }
 
+  virtual intptr_t FileDescriptor() const = 0;
+
   // If you're adding methods here, remember to add them to
   // RandomAccessFileWrapper too.
 };
@@ -985,7 +991,7 @@ class WritableFile {
   /*
    * Get the size of valid data in the file.
    */
-  virtual uint64_t GetFileSize() { return 0; }
+  virtual uint64_t GetFileSize() = 0;
 
   /*
    * Get and set the default pre-allocation block size for writes to
@@ -1062,6 +1068,8 @@ class WritableFile {
 
   // If you're adding methods here, remember to add them to
   // WritableFileWrapper too.
+  virtual intptr_t FileDescriptor() const = 0;
+  virtual void SetFileSize(uint64_t) { assert(false); }
 
  protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
@@ -1161,15 +1169,15 @@ class Directory {
   // DirectoryWrapper too.
 };
 
-enum InfoLogLevel : unsigned char {
+ROCKSDB_ENUM_PLAIN(InfoLogLevel, unsigned char,
   DEBUG_LEVEL = 0,
   INFO_LEVEL,
   WARN_LEVEL,
   ERROR_LEVEL,
   FATAL_LEVEL,
   HEADER_LEVEL,
-  NUM_INFO_LOG_LEVELS,
-};
+  NUM_INFO_LOG_LEVELS
+);
 
 // An interface for writing log messages.
 //
@@ -1178,7 +1186,7 @@ enum InfoLogLevel : unsigned char {
 // including data loss, unreported corruption, deadlocks, and more.
 class Logger {
  public:
-  size_t kDoNotSupportGetLogFileSize = (std::numeric_limits<size_t>::max)();
+  static constexpr size_t kDoNotSupportGetLogFileSize = SIZE_MAX;
 
   explicit Logger(const InfoLogLevel log_level = InfoLogLevel::INFO_LEVEL)
       : closed_(false), log_level_(log_level) {}
@@ -1708,6 +1716,7 @@ class RandomAccessFileWrapper : public RandomAccessFile {
   Status InvalidateCache(size_t offset, size_t length) override {
     return target_->InvalidateCache(offset, length);
   }
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
  private:
   RandomAccessFile* target_;
@@ -1786,6 +1795,14 @@ class WritableFileWrapper : public WritableFile {
 
   Status Allocate(uint64_t offset, uint64_t len) override {
     return target_->Allocate(offset, len);
+  }
+
+  intptr_t FileDescriptor() const override {
+    return target_->FileDescriptor();
+  }
+
+  void SetFileSize(uint64_t fsize) override {
+    return target_->SetFileSize(fsize);
   }
 
  private:

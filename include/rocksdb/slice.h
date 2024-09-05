@@ -26,6 +26,7 @@
 #include <string_view>  // RocksDB now requires C++17 support
 
 #include "rocksdb/cleanable.h"
+#include "preproc.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -36,6 +37,10 @@ class Slice {
 
   // Create a slice that refers to d[0,n-1].
   Slice(const char* d, size_t n) : data_(d), size_(n) {}
+
+  Slice(const unsigned char* d, size_t n) : data_((const char*)d), size_(n) {}
+
+  Slice(std::nullptr_t, size_t n) : data_(nullptr), size_(n) {}
 
   // Create a slice that refers to the contents of "s"
   /* implicit */
@@ -52,6 +57,18 @@ class Slice {
   // Create a single slice from SliceParts using buf as storage.
   // buf must exist as long as the returned Slice exists.
   Slice(const struct SliceParts& parts, std::string* buf);
+
+  const char* begin() const { return data_; }
+  const char* end() const { return data_ + size_; }
+  Slice substr(size_t pos) const {
+    assert(pos <= size_);
+    return Slice(data_ + pos, size_ - pos);
+  }
+  Slice substr(size_t pos, size_t len) const {
+    assert(pos <= size_);
+    assert(pos + len <= size_);
+    return Slice(data_ + pos, len);
+  }
 
   // Return a pointer to the beginning of the referenced data
   const char* data() const { return data_; }
@@ -89,7 +106,9 @@ class Slice {
 
   // Return a string that contains the copy of the referenced data.
   // when hex is true, returns a string of twice the length hex encoded (0-9A-F)
-  std::string ToString(bool hex = false) const;
+  std::string ToString(bool hex) const;
+  std::string ToString() const { return std::string(data_, size_); }
+  std::string hex() const { return ToString(true); }
 
   // Return a string_view that references the same data as this slice.
   std::string_view ToStringView() const {
@@ -119,6 +138,12 @@ class Slice {
             (memcmp(data_ + size_ - x.size_, x.data_, x.size_) == 0));
   }
 
+  // trim spaces
+  void trim() {
+    while (size_ && isspace((unsigned char)data_[0])) data_++, size_--;
+    while (size_ && isspace((unsigned char)data_[size_-1])) size_--;
+  }
+
   // Compare two slices and returns the first byte where they differ
   size_t difference_offset(const Slice& b) const;
 
@@ -128,6 +153,9 @@ class Slice {
 
   // Intentionally copyable
 };
+
+template<class Str>
+std::string stdstrof(const Str& s) { return std::string(s.data(), s.size()); }
 
 /**
  * A Slice that can be pinned with some cleanup tasks, which will be run upon
@@ -167,6 +195,17 @@ class PinnableSlice : public Slice, public Cleanable {
     }
     assert(pinned_);
   }
+
+  inline void SyncToString(std::string* s) const {
+    assert(s == buf_);
+    if (pinned_) {
+      s->assign(data_, size_);
+    } else {
+      assert(size_ == s->size());
+      assert(data_ == s->data() || size_ == 0);
+    }
+  }
+  inline void SyncToString() const { SyncToString(buf_); }
 
   inline void PinSelf(const Slice& slice) {
     assert(!pinned_);
@@ -232,6 +271,30 @@ struct SliceParts {
   int num_parts;
 };
 
+__always_inline bool MemoryEqual(const void* vx, const void* vy, size_t n) {
+  auto px = (const unsigned char*)vx;
+  auto py = (const unsigned char*)vy;
+  size_t i = 0;
+  for (; i + 8 <= n; i += 8) {
+    if (*(const uint64_t*)(px + i) != *(const uint64_t*)(py + i))
+      return false;
+  }
+  if (n % sizeof(uint64_t) >= 4) {
+    if (*(const uint32_t*)(px + i) != *(const uint32_t*)(py + i))
+      return false;
+    else
+      i += 4;
+  }
+  for (; i < n; i++) {
+    if (px[i] != py[i])
+      return false;
+  }
+  return true;
+}
+__always_inline bool SliceEqual(const Slice& x, const Slice& y) {
+  return x.size() == y.size() && MemoryEqual(x.data(), y.data(), x.size());
+}
+
 inline bool operator==(const Slice& x, const Slice& y) {
   return ((x.size() == y.size()) &&
           (memcmp(x.data(), y.data(), x.size()) == 0));
@@ -252,6 +315,25 @@ inline int Slice::compare(const Slice& b) const {
   return r;
 }
 
+inline bool operator<(const Slice& x, const Slice& y) {
+  const size_t min_len = (x.size_ < y.size_) ? x.size_ : y.size_;
+  int r = memcmp(x.data_, y.data_, min_len);
+  if (r != 0)
+    return r < 0;
+  else
+    return x.size_ < y.size_;
+}
+inline bool operator>(const Slice& x, const Slice& y) { return y < x; }
+inline bool operator>=(const Slice& x, const Slice& y) { return !(x < y); }
+inline bool operator<=(const Slice& x, const Slice& y) { return !(y < x); }
+
+inline std::string operator+(const Slice& x, const Slice& y) {
+  std::string z; z.reserve(x.size_ + y.size_);
+  z.append(x.data_, x.size_);
+  z.append(y.data_, y.size_);
+  return z;
+}
+
 inline size_t Slice::difference_offset(const Slice& b) const {
   size_t off = 0;
   const size_t len = (size_ < b.size_) ? size_ : b.size_;
@@ -259,6 +341,27 @@ inline size_t Slice::difference_offset(const Slice& b) const {
     if (data_[off] != b.data_[off]) break;
   }
   return off;
+}
+
+template<class ByteArray>
+inline Slice SliceOf(const ByteArray& ba) {
+  static_assert(sizeof(ba[0]) == 1);
+  return Slice((const char*)ba.data(), ba.size());
+}
+
+template<class ByteArray>
+inline Slice SubSlice(const ByteArray& x, size_t pos) {
+  static_assert(sizeof(x.data()[0]) == 1, "ByteArray elem size must be 1");
+  ROCKSDB_ASSERT_LE(pos, x.size());
+  return Slice((const char*)x.data() + pos, x.size() - pos);
+}
+
+template<class ByteArray>
+inline Slice SubSlice(const ByteArray& x, size_t pos, size_t len) {
+  static_assert(sizeof(x.data()[0]) == 1, "ByteArray elem size must be 1");
+  ROCKSDB_ASSERT_LE(pos, x.size());
+  ROCKSDB_ASSERT_LE(pos + len, x.size());
+  return Slice((const char*)x.data() + pos, len);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

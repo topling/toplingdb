@@ -62,12 +62,14 @@ TEST_F(DBIteratorBaseTest, APICallsWithPerfContext) {
   iter->SeekToFirst();
   iter->SeekToLast();
   iter->SeekForPrev(key);
+  iter->Refresh();
   ASSERT_EQ(4, get_perf_context()->iter_seek_count);
   ASSERT_EQ(0, get_perf_context()->iter_next_count);
   ASSERT_EQ(0, get_perf_context()->iter_prev_count);
 
   // Test Next() calls PerfContext counter
   iter->Next();
+  iter->Refresh();
   ASSERT_EQ(4, get_perf_context()->iter_seek_count);
   ASSERT_EQ(1, get_perf_context()->iter_next_count);
   ASSERT_EQ(0, get_perf_context()->iter_prev_count);
@@ -1421,6 +1423,7 @@ TEST_P(DBIteratorTest, PrevAfterAndNextAfterMerge) {
   ASSERT_EQ("2", it->key().ToString());
 }
 
+#if ROCKSDB_TEST_PinnedDataIterator
 class DBIteratorTestForPinnedData : public DBIteratorTest {
  public:
   enum TestConfig {
@@ -1792,6 +1795,7 @@ TEST_P(DBIteratorTest, PinnedDataIteratorReadAfterUpdate) {
 
   delete iter;
 }
+#endif // ROCKSDB_TEST_PinnedDataIterator
 
 class SliceTransformLimitedDomainGeneric : public SliceTransform {
   const char* Name() const override {
@@ -2441,7 +2445,9 @@ TEST_P(DBIteratorTest, RefreshWithSnapshot) {
 
   ASSERT_OK(iter->status());
   Status s = iter->Refresh();
-  ASSERT_TRUE(s.IsNotSupported());
+  ASSERT_TRUE(s.ok());
+  s = iter->Refresh(snapshot, false);
+  ASSERT_TRUE(s.ok());
   db_->ReleaseSnapshot(snapshot);
   delete iter;
 }
@@ -2511,7 +2517,7 @@ TEST_P(DBIteratorTest, TableFilter) {
   {
     std::set<uint64_t> unseen{1, 2, 3};
     ReadOptions opts;
-    opts.table_filter = [&](const TableProperties& props) {
+    opts.table_filter = [&](const TableProperties& props, const FileMetaData&) {
       auto it = unseen.find(props.num_entries);
       if (it == unseen.end()) {
         ADD_FAILURE() << "saw table properties with an unexpected "
@@ -2544,7 +2550,7 @@ TEST_P(DBIteratorTest, TableFilter) {
   // during iteration.
   {
     ReadOptions opts;
-    opts.table_filter = [](const TableProperties& props) {
+    opts.table_filter = [](const TableProperties& props, const FileMetaData&) {
       return props.num_entries != 2;
     };
     auto iter = NewIterator(opts);

@@ -118,6 +118,7 @@ void EventHelpers::LogAndNotifyTableFileCreationFinished(
               << "num_range_deletions" << table_properties.num_range_deletions
               << "format_version" << table_properties.format_version
               << "fixed_key_len" << table_properties.fixed_key_len
+              << "fixed_value_len" << table_properties.fixed_value_len
               << "filter_policy" << table_properties.filter_policy_name
               << "column_family_name" << table_properties.column_family_name
               << "column_family_id" << table_properties.column_family_id

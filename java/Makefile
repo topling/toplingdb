@@ -61,6 +61,7 @@ NATIVE_JAVA_CLASSES = \
 	org.rocksdb.RocksEnv\
 	org.rocksdb.RocksIterator\
 	org.rocksdb.RocksMemEnv\
+	org.rocksdb.SidePluginRepo\
 	org.rocksdb.SkipListMemTableConfig\
 	org.rocksdb.Slice\
 	org.rocksdb.SstFileManager\

@@ -1997,6 +1997,9 @@ bool BlockBasedTableBuilder::IsEmpty() const {
 uint64_t BlockBasedTableBuilder::FileSize() const { return rep_->offset; }
 
 uint64_t BlockBasedTableBuilder::EstimatedFileSize() const {
+  if (rep_->table_options.use_raw_size_as_estimated_file_size) {
+    return rep_->props.raw_key_size + rep_->props.raw_value_size;
+  }
   if (rep_->IsParallelCompressionEnabled()) {
     // Use compression ratio so far and inflight uncompressed bytes to estimate
     // final SST size.

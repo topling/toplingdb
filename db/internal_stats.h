@@ -66,6 +66,7 @@ enum class LevelStatType {
   NUM_FILES,
   COMPACTED_FILES,
   SIZE_BYTES,
+  SIZE_RAW_KV,
   SCORE,
   READ_GB,
   RN_GB,

@@ -9,6 +9,7 @@
 
 #include "db/table_cache.h"
 
+#include "cache/lru_cache.h"
 #include "db/dbformat.h"
 #include "db/range_tombstone_fragmenter.h"
 #include "db/snapshot_impl.h"
@@ -16,6 +17,7 @@
 #include "file/file_util.h"
 #include "file/filename.h"
 #include "file/random_access_file_reader.h"
+#include "logging/logging.h"
 #include "monitoring/perf_context_imp.h"
 #include "rocksdb/advanced_options.h"
 #include "rocksdb/statistics.h"
@@ -109,7 +111,9 @@ Status TableCache::GetTableReader(
   }
   if (s.ok()) {
     RecordTick(ioptions_.stats, NO_FILE_OPENS);
-  } else if (s.IsPathNotFound()) {
+  }
+#ifdef ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
+  if (s.IsPathNotFound()) {
     fname = Rocks2LevelTableFileName(fname);
     s = PrepareIOFromReadOptions(ro, ioptions_.clock, fopts.io_options);
     if (s.ok()) {
@@ -120,6 +124,7 @@ Status TableCache::GetTableReader(
       RecordTick(ioptions_.stats, NO_FILE_OPENS);
     }
   }
+#endif // ROCKSDB_SUPPORT_LEVELDB_FILE_LDB
 
   if (s.ok()) {
     if (!sequential_mode && ioptions_.advise_random_on_open) {
@@ -174,6 +179,13 @@ Status TableCache::FindTable(
     if (no_io) {
       return Status::Incomplete("Table not found in table_cache, no_io is set");
     }
+    size_t used = cache_.get()->GetOccupancyCount();
+    size_t cap = cache_.get()->GetCapacity();
+    ROCKS_LOG_DEBUG(ioptions_.info_log,
+        "Cache used %6zd/%zd %6.2f%%, Find(%u:%06lld.sst) miss, load, fsize %.3f MiB",
+        used, cap, 100.0*used / cap,
+        file_meta.fd.GetPathId(), (long long)number,
+        file_meta.fd.file_size/double(1<<20));
     MutexLock load_lock(&loader_mutex_.Get(key));
     // We check the cache again under loading mutex
     *handle = cache_.Lookup(key);
@@ -242,7 +254,7 @@ InternalIterator* TableCache::NewIterator(
   InternalIterator* result = nullptr;
   if (s.ok()) {
     if (options.table_filter &&
-        !options.table_filter(*table_reader->GetTableProperties())) {
+        !options.table_filter(*table_reader->GetTableProperties(), file_meta)) {
       result = NewEmptyInternalIterator<Slice>(arena);
     } else {
       result = table_reader->NewIterator(

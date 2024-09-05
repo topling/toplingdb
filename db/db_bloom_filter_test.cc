@@ -51,7 +51,7 @@ T Pop(T& var) {
   return rv;
 }
 PerfContextByLevel& GetLevelPerfContext(uint32_t level) {
-  return (*(get_perf_context()->level_to_perf_context))[level];
+  return ((get_perf_context()->level_to_perf_context))[level];
 }
 }  // anonymous namespace
 
@@ -508,9 +508,9 @@ TEST_F(DBBloomFilterTest, WholeKeyFilterProp) {
     EXPECT_EQ(PopTicker(options, BLOOM_FILTER_PREFIX_USEFUL), 0);
     EXPECT_EQ(PopTicker(options, BLOOM_FILTER_USEFUL), 0);
     uint64_t bloom_filter_useful_all_levels = 0;
-    for (auto& kv : (*(get_perf_context()->level_to_perf_context))) {
-      if (kv.second.bloom_filter_useful > 0) {
-        bloom_filter_useful_all_levels += kv.second.bloom_filter_useful;
+    for (auto& perf : get_perf_context()->level_to_perf_context) {
+      if (perf.bloom_filter_useful > 0) {
+        bloom_filter_useful_all_levels += perf.bloom_filter_useful;
       }
     }
     ASSERT_EQ(12, bloom_filter_useful_all_levels);
@@ -2523,9 +2523,9 @@ TEST_F(DBBloomFilterTest, OptimizeFiltersForHits) {
   ASSERT_GT(TestGetTickerCount(options, BLOOM_FILTER_USEFUL), 65000 * 2);
   ASSERT_LT(TestGetTickerCount(options, BLOOM_FILTER_USEFUL), 120000 * 2);
   uint64_t bloom_filter_useful_all_levels = 0;
-  for (auto& kv : (*(get_perf_context()->level_to_perf_context))) {
-    if (kv.second.bloom_filter_useful > 0) {
-      bloom_filter_useful_all_levels += kv.second.bloom_filter_useful;
+  for (auto& perf : get_perf_context()->level_to_perf_context) {
+    if (perf.bloom_filter_useful > 0) {
+      bloom_filter_useful_all_levels += perf.bloom_filter_useful;
     }
   }
   ASSERT_GT(bloom_filter_useful_all_levels, 65000 * 2);

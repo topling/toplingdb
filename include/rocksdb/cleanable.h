@@ -9,10 +9,18 @@
 #pragma once
 
 #include "rocksdb/rocksdb_namespace.h"
+#include <stddef.h>
 
 namespace ROCKSDB_NAMESPACE {
 
-class Cleanable {
+class CacheAlignedNewDelete {
+public:
+  void* operator new(size_t size);
+  void* operator new(size_t, void* mem) { return mem; } // placement new
+  void operator delete(void* p, size_t);
+};
+
+class Cleanable : public CacheAlignedNewDelete {
  public:
   Cleanable();
   // No copy constructor and copy assignment allowed.
@@ -124,5 +132,7 @@ class SharedCleanablePtr {
   struct Impl;
   Impl* ptr_ = nullptr;
 };
+
+bool IsCompactionWorker();
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -114,7 +114,9 @@ Status OptimisticTransaction::CommitWithParallelValidate() {
         tracked_locks_->GetKeyIterator(cf));
     assert(key_it != nullptr);
     while (key_it->HasNext()) {
-      auto lock_bucket_ptr = &txn_db_impl->GetLockBucket(key_it->Next(), seed);
+      const auto& k1 = key_it->Next();
+      const Slice key(k1.data(), k1.size());
+      auto lock_bucket_ptr = &txn_db_impl->GetLockBucket(key, seed);
       TEST_SYNC_POINT_CALLBACK(
           "OptimisticTransaction::CommitWithParallelValidate::lock_bucket_ptr",
           lock_bucket_ptr);
@@ -177,9 +179,7 @@ Status OptimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
     seq = db_->GetLatestSequenceNumber();
   }
 
-  std::string key_str = key.ToString();
-
-  TrackKey(cfh_id, key_str, seq, read_only, exclusive);
+  TrackKey({cfh_id, key, seq, read_only, exclusive});
 
   // Always return OK. Confilct checking will happen at commit time.
   return Status::OK();

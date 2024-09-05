@@ -73,8 +73,8 @@ class SkipListRep : public MemTableRep {
   }
 
   // Returns true iff an entry that compares equal to key is in the list.
-  bool Contains(const char* key) const override {
-    return skip_list_.Contains(key);
+  bool Contains(const Slice& internal_key) const override {
+    return ContainsForwardToLegacy(skip_list_, internal_key);
   }
 
   size_t ApproximateMemoryUsage() override {
@@ -82,12 +82,12 @@ class SkipListRep : public MemTableRep {
     return 0;
   }
 
-  void Get(const LookupKey& k, void* callback_args,
-           bool (*callback_func)(void* arg, const char* entry)) override {
+  void Get(const ReadOptions&, const LookupKey& k, void* callback_args,
+           bool (*callback_func)(void* arg, const KeyValuePair&)) override {
     SkipListRep::Iterator iter(&skip_list_);
     Slice dummy_slice;
-    for (iter.Seek(dummy_slice, k.memtable_key().data());
-         iter.Valid() && callback_func(callback_args, iter.key());
+    for (iter.Seek(dummy_slice, k.memtable_key_data());
+         iter.Valid() && callback_func(callback_args, KeyValuePair(iter.varlen_key()));
          iter.Next()) {
     }
   }
@@ -130,7 +130,7 @@ class SkipListRep : public MemTableRep {
         // Add entry to sample set with probability
         // num_samples_left/(num_entries - counter).
         if (rnd->Next() % (num_entries - counter) < num_samples_left) {
-          entries->insert(iter.key());
+          entries->insert(iter.varlen_key());
           num_samples_left--;
         }
       }
@@ -153,7 +153,7 @@ class SkipListRep : public MemTableRep {
           // The second element is true if an insert successfully happened.
           // If element is already in the set, this bool will be false, and
           // true otherwise.
-          if ((entries->insert(iter.key())).second) {
+          if ((entries->insert(iter.varlen_key())).second) {
             break;
           }
         }
@@ -181,7 +181,9 @@ class SkipListRep : public MemTableRep {
 
     // Returns the key at the current position.
     // REQUIRES: Valid()
-    const char* key() const override { return iter_.key(); }
+    const char* varlen_key() const override { return iter_.key(); }
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
 
     // Advances to the next position.
     // REQUIRES: Valid()
@@ -236,7 +238,9 @@ class SkipListRep : public MemTableRep {
 
     bool Valid() const override { return iter_.Valid(); }
 
-    const char* key() const override {
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
+    const char* varlen_key() const override {
       assert(Valid());
       return iter_.key();
     }

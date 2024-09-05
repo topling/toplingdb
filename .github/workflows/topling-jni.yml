@@ -55,7 +55,7 @@ jobs:
       #    path: ~/.m2/repository
       #    key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
       #    restore-keys: ${{ runner.os }}-m2
-          
+
       - name: Init Env & Compile RocksDB
         run: |
          cat $GITHUB_WORKSPACE/settings.xml
@@ -101,7 +101,7 @@ jobs:
           pwd && ls -l
           (cd java/jmh && ls -l && pwd) || exit
           mvn clean package -e -ntp -f $GITHUB_WORKSPACE/java/jmh/pom.xml # -B in non-interactive (Batch) mode
-          
+
       - name: Run SideGetBenchmarks & Check it
         if: ${{ inputs.test }}
         run: |

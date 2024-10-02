@@ -2214,7 +2214,7 @@ class TombstoneTestSstPartitioner : public SstPartitioner {
 
   PartitionerResult ShouldPartition(
       const PartitionerRequest& request) override {
-    if (cmp->Compare(*request.current_user_key, DBTestBase::Key(5)) == 0) {
+    if (cmp->Compare(request.current_user_key, DBTestBase::Key(5)) == 0) {
       return kRequired;
     } else {
       return kNotRequired;

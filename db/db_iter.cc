@@ -35,7 +35,13 @@
 #include "util/string_util.h"
 #include "util/user_comparator_wrapper.h"
 
+#include <terark/io/DataIO_Basic.hpp>
+
 namespace ROCKSDB_NAMESPACE {
+
+#if !defined(TOPLINGDB_WITH_TIMESTAMP)
+std::string DBIter::saved_timestamp_;
+#endif
 
 DBIter::DBIter(Env* _env, const ReadOptions& read_options,
                const ImmutableOptions& ioptions,
@@ -47,7 +53,9 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
                ColumnFamilyData* cfd, bool expose_blob_index)
     : prefix_extractor_(mutable_cf_options.prefix_extractor.get()),
       env_(_env),
+#if !defined(CLOCK_MONOTONIC) || defined(ROCKSDB_UNIT_TEST)
       clock_(ioptions.clock),
+#endif
       logger_(ioptions.logger),
       user_comparator_(cmp),
       merge_operator_(ioptions.merge_operator.get()),
@@ -57,7 +65,7 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       sequence_(s),
       statistics_(ioptions.stats),
       max_skip_(max_sequential_skip_in_iterations),
-      max_skippable_internal_keys_(read_options.max_skippable_internal_keys),
+      max_skippable_internal_keys_(read_options.max_skippable_internal_keys?:UINT64_MAX),
       num_internal_keys_skipped_(0),
       iterate_lower_bound_(read_options.iterate_lower_bound),
       iterate_upper_bound_(read_options.iterate_upper_bound),
@@ -68,7 +76,9 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       prefix_same_as_start_(mutable_cf_options.prefix_extractor
                                 ? read_options.prefix_same_as_start
                                 : false),
+#if defined(ROCKSDB_UNIT_TEST)
       pin_thru_lifetime_(read_options.pin_data),
+#endif
       expect_total_order_inner_iter_(prefix_extractor_ == nullptr ||
                                      read_options.total_order_seek ||
                                      read_options.auto_prefix_mode),
@@ -79,11 +89,14 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       is_blob_(false),
       arena_mode_(arena_mode),
       io_activity_(read_options.io_activity),
-      db_impl_(db_impl),
-      cfd_(cfd),
+    #if defined(TOPLINGDB_WITH_TIMESTAMP)
       timestamp_ub_(read_options.timestamp),
       timestamp_lb_(read_options.iter_start_ts),
-      timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0) {
+      timestamp_size_(timestamp_ub_ ? timestamp_ub_->size() : 0),
+      saved_timestamp_(),
+    #endif
+      db_impl_(db_impl),
+      cfd_(cfd) {
   RecordTick(statistics_, NO_ITERATOR_CREATED);
   if (pin_thru_lifetime_) {
     pinned_iters_mgr_.StartPinning();
@@ -94,6 +107,13 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
   status_.PermitUncheckedError();
   assert(timestamp_size_ ==
          user_comparator_.user_comparator()->timestamp_size());
+  enable_perf_timer_ = perf_level >= PerfLevel::kEnableTimeExceptForMutex;
+  fixed_user_key_len_ = read_options.fixed_user_key_len;
+#if defined(_MSC_VER) || defined(__clang__)
+#else
+  #pragma GCC diagnostic ignored "-Wpmf-conversions"
+#endif
+  SetFuncPtr();
 }
 
 Status DBIter::GetProperty(std::string prop_name, std::string* prop) {
@@ -120,7 +140,9 @@ Status DBIter::GetProperty(std::string prop_name, std::string* prop) {
   return Status::InvalidArgument("Unidentified property.");
 }
 
+__always_inline
 bool DBIter::ParseKey(ParsedInternalKey* ikey) {
+#if 0
   Status s = ParseInternalKey(iter_.key(), ikey, false /* log_err_key */);
   if (!s.ok()) {
     status_ = Status::Corruption("In DBIter: ", s.getState());
@@ -130,14 +152,21 @@ bool DBIter::ParseKey(ParsedInternalKey* ikey) {
   } else {
     return true;
   }
+#else
+  ikey->FastParseInternalKey(iter_.key());
+  return true;
+#endif
 }
 
+ROCKSDB_FLATTEN
 void DBIter::Next() {
   assert(valid_);
   assert(status_.ok());
 
-  PERF_COUNTER_ADD(iter_next_count, 1);
+#if defined(ROCKSDB_UNIT_TEST)
   PERF_CPU_TIMER_GUARD(iter_next_cpu_nanos, clock_);
+#endif
+
   // Release temporarily pinned blocks from last operation
   ReleaseTempPinnedData();
   ResetBlobValue();
@@ -146,10 +175,12 @@ void DBIter::Next() {
   local_stats_.skip_count_--;
   num_internal_keys_skipped_ = 0;
   bool ok = true;
-  if (direction_ == kReverse) {
+  if (UNLIKELY(direction_ == kReverse)) {
     is_key_seqnum_zero_ = false;
     if (!ReverseToForward()) {
       ok = false;
+    } else {
+      ok = iter_.Valid();
     }
   } else if (!current_entry_is_merged_) {
     // If the current value is not a merge, the iter position is the
@@ -158,12 +189,14 @@ void DBIter::Next() {
     // If the current key is a merge, very likely iter already points
     // to the next internal position.
     assert(iter_.Valid());
-    iter_.Next();
+    ok = iter_.Next();
     PERF_COUNTER_ADD(internal_key_skipped_count, 1);
+  } else {
+    ok = iter_.Valid();
   }
 
   local_stats_.next_count_++;
-  if (ok && iter_.Valid()) {
+  if (ok) {
     ClearSavedValue();
 
     if (prefix_same_as_start_) {
@@ -173,13 +206,15 @@ void DBIter::Next() {
     } else {
       FindNextUserEntry(true /* skipping the current user key */, nullptr);
     }
+    if (LIKELY(valid_)) {
+      local_stats_.next_found_count_++;
+      local_stats_.bytes_read_ += saved_key_.Size();
+      if (is_value_prepared_)
+        local_stats_.bytes_read_ += value_.size_;
+    }
   } else {
     is_key_seqnum_zero_ = false;
     valid_ = false;
-  }
-  if (statistics_ != nullptr && valid_) {
-    local_stats_.next_found_count_++;
-    local_stats_.bytes_read_ += (key().size() + value().size());
   }
 }
 
@@ -223,6 +258,7 @@ bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
 }
 
 bool DBIter::SetValueAndColumnsFromEntity(Slice slice) {
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   assert(value_.empty());
   assert(wide_columns_.empty());
 
@@ -237,6 +273,7 @@ bool DBIter::SetValueAndColumnsFromEntity(Slice slice) {
   if (WideColumnsHelper::HasDefaultColumn(wide_columns_)) {
     value_ = WideColumnsHelper::GetDefaultColumn(wide_columns_);
   }
+#endif
 
   return true;
 }
@@ -279,14 +316,223 @@ bool DBIter::SetValueAndColumnsFromMergeResult(const Status& merge_status,
 // The prefix parameter, if not null, indicates that we need to iterate
 // within the prefix, and the iterator needs to be made invalid, if no
 // more entry for the prefix can be found.
+__always_inline
 bool DBIter::FindNextUserEntry(bool skipping_saved_key, const Slice* prefix) {
-  PERF_TIMER_GUARD(find_next_user_entry_time);
-  return FindNextUserEntryInternal(skipping_saved_key, prefix);
+#if defined(_MSC_VER) || defined(__clang__)
+  return (this->*m_find_next_entry)(skipping_saved_key, prefix);
+#else
+  return m_find_next_entry(this, skipping_saved_key, prefix);
+#endif
 }
 
-// Actual implementation of DBIter::FindNextUserEntry()
-bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
-                                       const Slice* prefix) {
+template<size_t KeyLen>
+struct FixedLenCmpNoTS {
+  static_assert(KeyLen % 4 == 0);
+  __always_inline bool equal(const Slice& x, const Slice& y) const {
+    const char* px = x.data();
+    const char* py = y.data();
+    for (size_t i = 0; i < KeyLen / 8; i++) {
+      if (((const uint64_t*)(px))[i] != ((const uint64_t*)(py))[i])
+        return false;
+    }
+    if (KeyLen % 8)
+      return ((const uint32_t*)(px))[KeyLen/4 - 1] == ((const uint32_t*)(py))[KeyLen/4 - 1];
+    else
+      return true;
+  }
+  __always_inline bool operator()(const Slice& x, const Slice& y) const {
+    const char* px = x.data();
+    const char* py = y.data();
+    for (size_t i = 0; i < KeyLen / 8; i++) {
+      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(px))[i]);
+      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(py))[i]);
+      if (ux != uy)
+        return ux < uy;
+    }
+    if (KeyLen % 8) {
+      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(px))[KeyLen/4 - 1]);
+      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(py))[KeyLen/4 - 1]);
+      return ux < uy;
+    } else
+      return false; // equal
+  }
+  __always_inline int compare(const Slice& x, const Slice& y) const {
+    const char* px = x.data();
+    const char* py = y.data();
+    for (size_t i = 0; i < KeyLen / 8; i++) {
+      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(px))[i]);
+      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(py))[i]);
+      if (ux != uy)
+        return ux < uy ? -1 : +1;
+    }
+    if (KeyLen % 8) {
+      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(px))[KeyLen/4 - 1]);
+      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(py))[KeyLen/4 - 1]);
+      if (ux != uy)
+        return ux < uy ? -1 : +1;
+    }
+    return 0;
+  }
+};
+
+template<size_t FixLen>
+__always_inline // const propagate param FixLen
+bool RawBytewiseLess(const void* x, const void* y) {
+ #if defined(__clang__)
+  return memcmp(x, y, FixLen) < 0;
+ #else
+  auto px = (const unsigned char*)x;
+  auto py = (const unsigned char*)y;
+  size_t i = 0;
+  for (; i + 8 <= FixLen; i += 8) {
+    auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
+    auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+    if (ux != uy)
+      return ux < uy;
+  }
+  if (FixLen % sizeof(uint64_t) >= 4) {
+    auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
+    auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+    if (ux != uy)
+      return ux < uy;
+    else
+      i += 4;
+  }
+  if (FixLen % sizeof(uint32_t)) {
+    for (; i < FixLen; i++) {
+      int ux = px[i], uy = py[i];
+      if (ux != uy)
+        return ux < uy;
+    }
+  }
+  return false; // equal is not less
+ #endif
+}
+
+template<size_t Len>
+using Const = std::integral_constant<size_t, Len>;
+
+struct BytewiseCmpNoTS {
+  BytewiseCmpNoTS(const Comparator*) {}
+  __always_inline bool equal(const Slice& x, const Slice& y) const {
+    return SliceEqual(x, y);
+  }
+  __always_inline bool operator()(const Slice& x, const Slice& y) const {
+    // return x < y;
+    return SliceBytewiseLess(x, y);
+  }
+  template<size_t FixLen>
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<FixLen>) const {
+    // return x < y;
+    if constexpr (FixLen)
+      return RawBytewiseLess<FixLen>(x.data_, y.data_);
+    else
+      return SliceBytewiseLess(x, y);
+  }
+  int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
+};
+
+struct RevBytewiseCmpNoTS {
+  RevBytewiseCmpNoTS(const Comparator*) {}
+  __always_inline bool equal(const Slice& x, const Slice& y) const {
+    return SliceEqual(x, y);
+  }
+  __always_inline bool operator()(const Slice& x, const Slice& y) const {
+    // return y < x;
+    return SliceBytewiseLess(y, x);
+  }
+  template<size_t FixLen>
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<FixLen>) const {
+    // return y < x;
+    if constexpr (FixLen)
+      return RawBytewiseLess<FixLen>(y.data_, x.data_);
+    else
+      return SliceBytewiseLess(y, x);
+  }
+  int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
+};
+
+struct VirtualCmpNoTS {
+  bool equal(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, y) == 0;
+  }
+  template<size_t FixLen>
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<FixLen> ={}) const {
+    return cmp->CompareWithoutTimestamp(x, false, y, false) < 0;
+  }
+  int compare(const Slice& x, const Slice& y) const {
+    return cmp->CompareWithoutTimestamp(x, y);
+  }
+  const Comparator* cmp;
+};
+
+using TriBool = DBIter::TriBool;
+
+template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
+bool DBIter::FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix) {
+  PERF_TIMER_GUARD(find_next_user_entry_time);
+  return FindNextUserEntryInternalTmpl<HasPrefix, HasUpperBound, MayHasCallback, FixLen, CmpNoTS>
+          (skipping_saved_key, prefix);
+}
+void DBIter::SetFuncPtr() {
+#if defined(_MSC_VER) || defined(__clang__)
+  #define BOUND_PMF(func) func
+#else
+  #define BOUND_PMF(func) (FindNextUserEntryFN)(this->*func)
+#endif
+  #define SetFindNext(FuncName, CmpNoTS) \
+    if (false) {} \
+    else if ( 8 == fixed_user_key_len_) SetFindNext3(FuncName,  8, CmpNoTS); \
+    else if (12 == fixed_user_key_len_) SetFindNext3(FuncName, 12, CmpNoTS); \
+    else if (16 == fixed_user_key_len_) SetFindNext3(FuncName, 16, CmpNoTS); \
+    else if (20 == fixed_user_key_len_) SetFindNext3(FuncName, 20, CmpNoTS); \
+    else if (24 == fixed_user_key_len_) SetFindNext3(FuncName, 24, CmpNoTS); \
+    else if (28 == fixed_user_key_len_) SetFindNext3(FuncName, 28, CmpNoTS); \
+    else if (32 == fixed_user_key_len_) SetFindNext3(FuncName, 32, CmpNoTS); \
+    else                                SetFindNext3(FuncName,  0, CmpNoTS)
+  #define SetFindNext3(FuncName, FixLen, CmpNoTS) \
+    if (read_callback_) \
+         SetFindNext4(FuncName, kTrue , FixLen, CmpNoTS); \
+    else SetFindNext4(FuncName, kFalse, FixLen, CmpNoTS)
+  #define SetFindNext4(FuncName, MayHasCallback, FixLen, CmpNoTS) \
+    do { \
+      auto func = prefix_same_as_start_ \
+              ? iterate_upper_bound_ \
+                ? &DBIter::template FuncName<true , true , MayHasCallback, FixLen, CmpNoTS>  \
+                : &DBIter::template FuncName<true , false, MayHasCallback, FixLen, CmpNoTS>  \
+              : iterate_upper_bound_ \
+                ? &DBIter::template FuncName<false, true , MayHasCallback, FixLen, CmpNoTS>  \
+                : &DBIter::template FuncName<false, false, MayHasCallback, FixLen, CmpNoTS>; \
+      m_find_next_entry = BOUND_PMF(func); \
+    } while (0)
+  if (enable_perf_timer_) {
+    if (user_comparator_.IsForwardBytewise()) {
+      SetFindNext(FindNextUserEntryPerf, BytewiseCmpNoTS);
+    }
+    else if (user_comparator_.IsReverseBytewise()) {
+      SetFindNext(FindNextUserEntryPerf, RevBytewiseCmpNoTS);
+    } else {
+      SetFindNext(FindNextUserEntryPerf, VirtualCmpNoTS);
+    }
+  }
+  else {
+    if (user_comparator_.IsForwardBytewise()) {
+      SetFindNext(FindNextUserEntryInternalTmpl, BytewiseCmpNoTS);
+    } else if (user_comparator_.IsReverseBytewise()) {
+      SetFindNext(FindNextUserEntryInternalTmpl, RevBytewiseCmpNoTS);
+    } else {
+      SetFindNext(FindNextUserEntryInternalTmpl, VirtualCmpNoTS);
+    }
+  }
+}
+
+template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
+bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
+                                           const Slice* prefix) {
+  CmpNoTS cmpNoTS{user_comparator_.user_comparator()};
   // Loop until we hit an acceptable entry to yield
   assert(iter_.Valid());
   assert(status_.ok());
@@ -311,17 +557,19 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
   // an infinite loop of reseeks. To avoid that, we limit the number of reseeks
   // to one.
   bool reseek_done = false;
+  is_value_prepared_ = true;
 
   do {
     // Will update is_key_seqnum_zero_ as soon as we parsed the current key
     // but we need to save the previous value to be used in the loop.
     bool is_prev_key_seqnum_zero = is_key_seqnum_zero_;
-    if (!ParseKey(&ikey_)) {
-      is_key_seqnum_zero_ = false;
-      return false;
-    }
+    ParsedInternalKey ikey_(iter_.key()); // ToplingDB, move field as local var
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
     Slice user_key_without_ts =
         StripTimestampFromUserKey(ikey_.user_key, timestamp_size_);
+#else
+    Slice& user_key_without_ts = ikey_.user_key;
+#endif
 
     is_key_seqnum_zero_ = (ikey_.sequence == 0);
 
@@ -330,16 +578,16 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
            user_comparator_.CompareWithoutTimestamp(
                user_key_without_ts, /*a_has_ts=*/false, *iterate_upper_bound_,
                /*b_has_ts=*/false) < 0);
-    if (iterate_upper_bound_ != nullptr &&
-        iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
-        user_comparator_.CompareWithoutTimestamp(
-            user_key_without_ts, /*a_has_ts=*/false, *iterate_upper_bound_,
-            /*b_has_ts=*/false) >= 0) {
+    if (HasUpperBound &&
+        // ToplingDB: for speed up, do not call UpperBoundCheckResult()
+        // The following cmpNoTS has same semantic as UpperBoundCheckResult()
+        // iter_.UpperBoundCheckResult() != IterBoundCheck::kInbound &&
+        !cmpNoTS(user_key_without_ts, *iterate_upper_bound_, Const<FixLen>())) {
       break;
     }
 
     assert(prefix == nullptr || prefix_extractor_ != nullptr);
-    if (prefix != nullptr &&
+    if (HasPrefix &&
         prefix_extractor_->Transform(user_key_without_ts).compare(*prefix) !=
             0) {
       assert(prefix_same_as_start_);
@@ -355,7 +603,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                                          ikey_.user_key, timestamp_size_)
                                    : Slice();
     bool more_recent = false;
-    if (IsVisible(ikey_.sequence, ts, &more_recent)) {
+    if (IsVisible<MayHasCallback>(ikey_.sequence, ts, &more_recent)) {
       // If the previous entry is of seqnum 0, the current entry will not
       // possibly be skipped. This condition can potentially be relaxed to
       // prev_key.seq <= ikey_.sequence. We are cautious because it will be more
@@ -365,7 +613,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
       // level. This may change in the future.
       if ((!is_prev_key_seqnum_zero || timestamp_size_ > 0) &&
           skipping_saved_key &&
-          CompareKeyForSkip(ikey_.user_key, saved_key_.GetUserKey()) <= 0) {
+          EqKeyForSkip(saved_key_.GetUserKey(), ikey_.user_key, cmpNoTS)) {
         num_skipped++;  // skip this entry
         PERF_COUNTER_ADD(internal_key_skipped_count, 1);
       } else {
@@ -384,6 +632,8 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
               valid_ = true;
               return true;
             } else {
+              FixLen != 0 ? // to propagate const FixLen
+              saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
               saved_key_.SetUserKey(
                   ikey_.user_key, !pin_thru_lifetime_ ||
                                       !iter_.iter()->IsKeyPinned() /* copy */);
@@ -392,9 +642,23 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
             }
             break;
           case kTypeValue:
+        #if !defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+            if (timestamp_lb_) {
+              saved_key_.SetInternalKey(ikey_);
+            } else if (FixLen != 0) { // to propagate const FixLen
+              saved_key_.SetUserKey(ikey_.user_key.data_, FixLen);
+            } else {
+              saved_key_.SetUserKey(
+                  ikey_.user_key, !pin_thru_lifetime_ ||
+                                      !iter_.iter()->IsKeyPinned() /* copy */);
+            }
+            is_value_prepared_ = false;
+            valid_ = true;
+            return true;
+        #endif
           case kTypeBlobIndex:
           case kTypeWideColumnEntity:
-            if (!PrepareValue()) {
+            if (!RocksPrepareValue(ikey_)) {
               return false;
             }
             if (timestamp_lb_) {
@@ -425,9 +689,13 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
             return true;
             break;
           case kTypeMerge:
-            if (!PrepareValue()) {
+            if (UNLIKELY(!RocksPrepareValue(ikey_))) {
+              assert(!iter_.status().ok());
+              valid_ = false;
               return false;
             }
+            FixLen != 0 ? // to propagate const FixLen
+            saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
             saved_key_.SetUserKey(
                 ikey_.user_key,
                 !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
@@ -452,14 +720,16 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
       // This key was inserted after our snapshot was taken or skipped by
       // timestamp range. If this happens too many times in a row for the same
       // user key, we want to seek to the target sequence number.
-      int cmp = user_comparator_.CompareWithoutTimestamp(
+      int cmp = cmpNoTS.compare(
           ikey_.user_key, saved_key_.GetUserKey());
       if (cmp == 0 || (skipping_saved_key && cmp < 0)) {
         num_skipped++;
       } else {
+        FixLen != 0 ? // to propagate const FixLen
+        saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
         saved_key_.SetUserKey(
             ikey_.user_key,
-            !iter_.iter()->IsKeyPinned() || !pin_thru_lifetime_ /* copy */);
+            !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
         skipping_saved_key = false;
         num_skipped = 0;
         reseek_done = false;
@@ -518,7 +788,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
       iter_.Seek(last_key);
       RecordTick(statistics_, NUMBER_OF_RESEEKS_IN_ITERATION);
     } else {
-      iter_.Next();
+      if (iter_.Next()) continue; else break; // omit iter_.Valid()
     }
   } while (iter_.Valid());
 
@@ -563,6 +833,7 @@ bool DBIter::MergeValuesNewToOld() {
       // hit the next user key, stop right here
       break;
     }
+    ROCKSDB_ASSUME(ikey.type < kTypeMaxValid);
     if (kTypeDeletion == ikey.type || kTypeSingleDeletion == ikey.type ||
         kTypeDeletionWithTimestamp == ikey.type) {
       // hit a delete with the same user key, stop right here
@@ -570,7 +841,7 @@ bool DBIter::MergeValuesNewToOld() {
       iter_.Next();
       break;
     }
-    if (!PrepareValue()) {
+    if (!RocksPrepareValue()) {
       return false;
     }
 
@@ -668,7 +939,7 @@ void DBIter::Prev() {
   ResetValueAndColumns();
   ResetInternalKeysSkippedCounter();
   bool ok = true;
-  if (direction_ == kForward) {
+  if (UNLIKELY(direction_ == kForward)) {
     if (!ReverseToBackward()) {
       ok = false;
     }
@@ -769,10 +1040,11 @@ bool DBIter::ReverseToBackward() {
 }
 
 void DBIter::PrevInternal(const Slice* prefix) {
+  is_value_prepared_ = true;
   while (iter_.Valid()) {
     saved_key_.SetUserKey(
         ExtractUserKey(iter_.key()),
-        !iter_.iter()->IsKeyPinned() || !pin_thru_lifetime_ /* copy */);
+        !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
 
     assert(prefix == nullptr || prefix_extractor_ != nullptr);
     if (prefix != nullptr &&
@@ -848,6 +1120,8 @@ bool DBIter::FindValueForCurrentKey() {
   // last_key_entry_type is initialized to kTypeDeletion.
   bool valid_entry_seen = false;
 
+  ParsedInternalKey ikey_; // ToplingDB, move field as local var
+
   // Temporarily pin blocks that hold (merge operands / the value)
   ReleaseTempPinnedData();
   TempPinData();
@@ -881,9 +1155,11 @@ bool DBIter::FindValueForCurrentKey() {
       break;
     }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP) // ts may need runtime check
     if (!ts.empty()) {
       saved_timestamp_.assign(ts.data(), ts.size());
     }
+#endif
 
     if (TooManyInternalKeysSkipped()) {
       return false;
@@ -896,7 +1172,7 @@ bool DBIter::FindValueForCurrentKey() {
       return FindValueForCurrentKeyUsingSeek();
     }
 
-    if (!PrepareValue()) {
+    if (!RocksPrepareValue(ikey_)) {
       return false;
     }
 
@@ -997,6 +1273,7 @@ bool DBIter::FindValueForCurrentKey() {
       return true;
     case kTypeMerge:
       current_entry_is_merged_ = true;
+      ROCKSDB_ASSUME(last_not_merge_type < kTypeMaxValid);
       if (last_not_merge_type == kTypeDeletion ||
           last_not_merge_type == kTypeSingleDeletion ||
           last_not_merge_type == kTypeDeletionWithTimestamp) {
@@ -1135,13 +1412,14 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
     }
     return true;
   }
-  if (!PrepareValue()) {
+  if (!RocksPrepareValue()) {
     return false;
   }
   if (timestamp_size_ > 0) {
     Slice ts = ExtractTimestampFromUserKey(ikey.user_key, timestamp_size_);
     saved_timestamp_.assign(ts.data(), ts.size());
   }
+  ROCKSDB_ASSUME(ikey.type < kTypeMaxValid);
   if (ikey.type == kTypeValue || ikey.type == kTypeBlobIndex ||
       ikey.type == kTypeWideColumnEntity) {
     assert(iter_.iter()->IsValuePinned());
@@ -1153,10 +1431,12 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
 
       SetValueAndColumnsFromPlain(expose_blob_index_ ? pinned_value_
                                                      : blob_value_);
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
     } else if (ikey.type == kTypeWideColumnEntity) {
       if (!SetValueAndColumnsFromEntity(pinned_value_)) {
         return false;
       }
+#endif
     } else {
       assert(ikey.type == kTypeValue);
       SetValueAndColumnsFromPlain(pinned_value_);
@@ -1196,11 +1476,12 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
                                                 saved_key_.GetUserKey())) {
       break;
     }
+    ROCKSDB_ASSUME(ikey.type < kTypeMaxValid);
     if (ikey.type == kTypeDeletion || ikey.type == kTypeSingleDeletion ||
         ikey.type == kTypeDeletionWithTimestamp) {
       break;
     }
-    if (!PrepareValue()) {
+    if (!RocksPrepareValue()) {
       return false;
     }
 
@@ -1373,9 +1654,9 @@ bool DBIter::FindUserKeyBeforeSavedKey() {
   return true;
 }
 
+__always_inline
 bool DBIter::TooManyInternalKeysSkipped(bool increment) {
-  if ((max_skippable_internal_keys_ > 0) &&
-      (num_internal_keys_skipped_ > max_skippable_internal_keys_)) {
+  if (UNLIKELY(num_internal_keys_skipped_ > max_skippable_internal_keys_)) {
     valid_ = false;
     status_ = Status::Incomplete("Too many internal keys skipped.");
     return true;
@@ -1385,11 +1666,14 @@ bool DBIter::TooManyInternalKeysSkipped(bool increment) {
   return false;
 }
 
+template<TriBool MayHasCallback>
+__always_inline
 bool DBIter::IsVisible(SequenceNumber sequence, const Slice& ts,
                        bool* more_recent) {
   // Remember that comparator orders preceding timestamp as larger.
   // TODO(yanqin): support timestamp in read_callback_.
-  bool visible_by_seq = (read_callback_ == nullptr)
+  bool visible_by_seq = (MayHasCallback == kUnknown && read_callback_ == nullptr)
+                     || (MayHasCallback == kFalse)
                             ? sequence <= sequence_
                             : read_callback_->IsVisible(sequence);
 
@@ -1453,6 +1737,7 @@ void DBIter::SetSavedKeyToSeekForPrevTarget(const Slice& target) {
   }
 }
 
+ROCKSDB_FLATTEN
 void DBIter::Seek(const Slice& target) {
   PERF_COUNTER_ADD(iter_seek_count, 1);
   PERF_CPU_TIMER_GUARD(iter_seek_cpu_nanos, clock_);
@@ -1525,6 +1810,11 @@ void DBIter::Seek(const Slice& target) {
     RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
   }
   PERF_COUNTER_ADD(iter_read_bytes, key().size() + value().size());
+  //local_stats_.BumpGlobalStatistics(statistics_);
+}
+
+void DBIter::UpdateCounters() {
+  local_stats_.BumpGlobalStatistics(statistics_);
 }
 
 void DBIter::SeekForPrev(const Slice& target) {
@@ -1595,6 +1885,7 @@ void DBIter::SeekForPrev(const Slice& target) {
     RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
     PERF_COUNTER_ADD(iter_read_bytes, key().size() + value().size());
   }
+  //local_stats_.BumpGlobalStatistics(statistics_);
 }
 
 void DBIter::SeekToFirst() {
@@ -1629,7 +1920,7 @@ void DBIter::SeekToFirst() {
   if (iter_.Valid()) {
     saved_key_.SetUserKey(
         ExtractUserKey(iter_.key()),
-        !iter_.iter()->IsKeyPinned() || !pin_thru_lifetime_ /* copy */);
+        !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
     FindNextUserEntry(false /* not skipping saved_key */,
                       nullptr /* no prefix check */);
     if (statistics_ != nullptr) {

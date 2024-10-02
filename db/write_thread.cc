@@ -13,6 +13,22 @@
 #include "port/port.h"
 #include "test_util/sync_point.h"
 #include "util/random.h"
+#if defined(OS_LINUX)
+  #include <linux/futex.h>
+  #include <sys/syscall.h>   /* For SYS_xxx definitions */
+  #include <sys/time.h>
+//template<class Type>
+inline long //typename std::enable_if<sizeof(Type) == 4, int>::type
+futex(void* uaddr, uint32_t op, uint32_t val, const timespec* timeout = NULL,
+      void* uaddr2 = NULL, uint32_t val3 = 0) {
+  return syscall(SYS_futex, uaddr, (unsigned long)op, (unsigned long)val,
+                 timeout, uaddr2, (unsigned long)val3);
+}
+  #define TOPLINGDB_HAS_FUTEX 1
+#else
+  #define TOPLINGDB_HAS_FUTEX 0
+  #define futex(...)
+#endif
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -63,6 +79,22 @@ uint8_t WriteThread::BlockingAwaitState(Writer* w, uint8_t goal_mask) {
 
 uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
                                 AdaptationContext* ctx) {
+ if (TOPLINGDB_HAS_FUTEX && w->reduce_cpu_usage) {
+  uint32_t state = w->state.load(std::memory_order_acquire);
+  while (!(state & goal_mask)) {
+    if (w->state.compare_exchange_weak(state, STATE_LOCKED_WAITING, std::memory_order_acq_rel)) {
+      TEST_SYNC_POINT_CALLBACK("WriteThread::AwaitState:BlockingWaiting", w);
+      if (futex(&w->state, FUTEX_WAIT_PRIVATE, STATE_LOCKED_WAITING) < 0) {
+        int err = errno;
+        if (!(EINTR == err || EAGAIN == err))
+          ROCKSDB_DIE("futex(WAIT) = %d: %s", err, strerror(err));
+      }
+      state = w->state.load(std::memory_order_acquire);
+    }
+  }
+  return (uint8_t)state;
+ }
+ else {
   uint8_t state = 0;
 
   // 1. Busy loop using "pause" for 1 micro sec
@@ -207,10 +239,21 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
 
   assert((state & goal_mask) != 0);
   return state;
+ }
 }
 
 void WriteThread::SetState(Writer* w, uint8_t new_state) {
   assert(w);
+ if (TOPLINGDB_HAS_FUTEX && w->reduce_cpu_usage) {
+  uint32_t state = w->state.load(std::memory_order_acquire);
+  while (state != new_state &&
+!w->state.compare_exchange_weak(state,new_state,std::memory_order_acq_rel)){
+    // w->state may have been updated by other threads
+  }
+  if (STATE_LOCKED_WAITING == state)
+    futex(&w->state, FUTEX_WAKE_PRIVATE, INT_MAX);
+ }
+ else {
   auto state = w->state.load(std::memory_order_acquire);
   if (state == STATE_LOCKED_WAITING ||
       !w->state.compare_exchange_strong(state, new_state)) {
@@ -221,6 +264,7 @@ void WriteThread::SetState(Writer* w, uint8_t new_state) {
     w->state.store(new_state, std::memory_order_relaxed);
     w->StateCV().notify_one();
   }
+ }
 }
 
 bool WriteThread::LinkOne(Writer* w, std::atomic<Writer*>* newest_writer) {
@@ -415,9 +459,9 @@ void WriteThread::JoinBatchGroup(Writer* w) {
     /**
      * Wait util:
      * 1) An existing leader pick us as the new leader when it finishes
-     * 2) An existing leader pick us as its follewer and
+     * 2) An existing leader pick us as its follower and
      * 2.1) finishes the memtable writes on our behalf
-     * 2.2) Or tell us to finish the memtable writes in pralallel
+     * 2.2) Or tell us to finish the memtable writes in parallel
      * 3) (pipelined write) An existing leader pick us as its follower and
      *    finish book-keeping and WAL write for us, enqueue us as pending
      *    memtable writer, and
@@ -631,8 +675,16 @@ static WriteThread::AdaptationContext cpmtw_ctx(
 bool WriteThread::CompleteParallelMemTableWriter(Writer* w) {
   auto* write_group = w->write_group;
   if (!w->status.ok()) {
+   if (TOPLINGDB_HAS_FUTEX && w->reduce_cpu_usage) {
+    static std::mutex mtx;
+    auto tmp = w->status;
+    std::lock_guard<std::mutex> guard(mtx);
+    write_group->status = std::move(tmp);
+   }
+   else {
     std::lock_guard<std::mutex> guard(write_group->leader->StateMutex());
     write_group->status = w->status;
+   }
   }
 
   if (write_group->running-- > 1) {

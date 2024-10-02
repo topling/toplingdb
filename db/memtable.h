@@ -27,11 +27,15 @@
 #include "options/cf_options.h"
 #include "rocksdb/db.h"
 #include "rocksdb/memtablerep.h"
+#include "table/internal_iterator.h"
 #include "table/multiget_context.h"
 #include "util/dynamic_bloom.h"
 #include "util/hash.h"
 #include "util/hash_containers.h"
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+#include <terark/sso.hpp>
+#endif
 namespace ROCKSDB_NAMESPACE {
 
 struct FlushJobInfo;
@@ -46,6 +50,7 @@ struct ImmutableMemTableOptions {
   size_t arena_block_size;
   uint32_t memtable_prefix_bloom_bits;
   size_t memtable_huge_page_size;
+  bool allow_merge_memtables;
   bool memtable_whole_key_filtering;
   bool inplace_update_support;
   size_t inplace_update_num_locks;
@@ -58,7 +63,6 @@ struct ImmutableMemTableOptions {
   MergeOperator* merge_operator;
   Logger* info_log;
   bool allow_data_in_errors;
-  uint32_t protection_bytes_per_key;
 };
 
 // Batched counters to updated when inserting keys in one write batch.
@@ -68,7 +72,47 @@ struct MemTablePostProcessInfo {
   uint64_t data_size = 0;
   uint64_t num_entries = 0;
   uint64_t num_deletes = 0;
+  uint64_t num_merges = 0;
   uint64_t num_range_deletes = 0;
+  uint64_t largest_seqno = 0;
+  uint64_t raw_key_size = 0; // internal key
+  uint64_t raw_value_size = 0;
+};
+
+// Iteration over the contents of a skip collection
+class MemTableRep::Iterator : public InternalIterator {
+  public:
+  // Returns the key at the current position.
+  // REQUIRES: Valid()
+  virtual const char* varlen_key() const = 0;
+
+  // Returns the key at the current position.
+  // REQUIRES: Valid()
+  virtual Slice key() const override;
+
+  // Returns the value at the current position.
+  // REQUIRES: Valid()
+  virtual Slice value() const override;
+
+  // Returns the key & value at the current position.
+  // REQUIRES: Valid()
+  virtual std::pair<Slice, Slice> GetKeyValue() const;
+
+  void Seek(const Slice& ikey) override;
+  // Advance to the first entry with a key >= target
+  virtual void Seek(const Slice& internal_key, const char* memtable_key) = 0;
+
+  void SeekForPrev(const Slice& ikey) override;
+  // retreat to the first entry with a key <= target
+  virtual void SeekForPrev(const Slice& internal_key,
+                           const char* memtable_key) = 0;
+
+  virtual void RandomSeek() {}
+
+  // If true, this means that the Slice returned by GetKey() is always valid
+  virtual bool IsKeyPinned() const override { return true; }
+  virtual bool IsValuePinned() const override { return true; }
+  virtual Status status() const override;
 };
 
 using MultiGetRange = MultiGetContext::Range;
@@ -85,7 +129,7 @@ using MultiGetRange = MultiGetContext::Range;
 // Eg: The Superversion stores a pointer to the current MemTable (that can
 // be modified) and a separate list of the MemTables that can no longer be
 // written to (aka the 'immutable memtables').
-class MemTable {
+class MemTable : public CacheAlignedNewDelete {
  public:
   struct KeyComparator : public MemTableRep::KeyComparator {
     const InternalKeyComparator comparator;
@@ -94,6 +138,7 @@ class MemTable {
                            const char* prefix_len_key2) const override;
     virtual int operator()(const char* prefix_len_key,
                            const DecodedType& key) const override;
+    virtual const InternalKeyComparator* icomparator() const override;
   };
 
   // MemTables are reference counted.  The initial reference count
@@ -218,7 +263,7 @@ class MemTable {
       const ReadOptions& read_options, SequenceNumber read_seq,
       bool immutable_memtable);
 
-  Status VerifyEncodedEntry(Slice encoded,
+  Status VerifyEncodedEntry(Slice ikey, Slice value,
                             const ProtectionInfoKVOS64& kv_prot_info);
 
   // Add an entry into memtable that maps key to value at the
@@ -260,7 +305,7 @@ class MemTable {
   // @param immutable_memtable Whether this memtable is immutable. Used
   // internally by NewRangeTombstoneIterator(). See comment above
   // NewRangeTombstoneIterator() for more detail.
-  bool Get(const LookupKey& key, std::string* value,
+  bool Get(const LookupKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq, SequenceNumber* seq,
@@ -268,7 +313,7 @@ class MemTable {
            ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
            bool do_merge = true);
 
-  bool Get(const LookupKey& key, std::string* value,
+  bool Get(const LookupKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
@@ -333,6 +378,15 @@ class MemTable {
       num_deletes_.fetch_add(update_counters.num_deletes,
                              std::memory_order_relaxed);
     }
+    if (update_counters.num_merges != 0) {
+      num_merges_.fetch_add(update_counters.num_merges,
+                             std::memory_order_relaxed);
+    }
+    if (largest_seqno_.load(std::memory_order_relaxed) < update_counters.largest_seqno) {
+      largest_seqno_.store(update_counters.largest_seqno, std::memory_order_relaxed);
+    }
+    raw_key_size_.fetch_add(update_counters.raw_key_size, std::memory_order_relaxed);
+    raw_value_size_.fetch_add(update_counters.raw_value_size, std::memory_order_relaxed);
     if (update_counters.num_range_deletes > 0) {
       num_range_deletes_.fetch_add(update_counters.num_range_deletes,
                                    std::memory_order_relaxed);
@@ -353,6 +407,9 @@ class MemTable {
   uint64_t num_deletes() const {
     return num_deletes_.load(std::memory_order_relaxed);
   }
+  uint64_t num_merges() const {
+    return num_merges_.load(std::memory_order_relaxed);
+  }
 
   // Get total number of range deletions in the mem table.
   // REQUIRES: external synchronization to prevent simultaneous
@@ -368,13 +425,22 @@ class MemTable {
   size_t write_buffer_size() const {
     return write_buffer_size_.load(std::memory_order_relaxed);
   }
+  uint64_t largest_seqno() const {
+    return largest_seqno_.load(std::memory_order_relaxed);
+  }
+  uint64_t raw_key_size() const {
+    return raw_key_size_.load(std::memory_order_relaxed);
+  }
+  uint64_t raw_value_size() const {
+    return raw_value_size_.load(std::memory_order_relaxed);
+  }
 
   // Dynamically change the memtable's capacity. If set below the current usage,
   // the next key added will trigger a flush. Can only increase size when
   // memtable prefix bloom is disabled, since we can't easily allocate more
   // space.
   void UpdateWriteBufferSize(size_t new_write_buffer_size) {
-    if (bloom_filter_ == nullptr ||
+    if (IF_ROCKSDB_UNIT_TEST(bloom_filter_ == nullptr, false) ||
         new_write_buffer_size < write_buffer_size_) {
       write_buffer_size_.store(new_write_buffer_size,
                                std::memory_order_relaxed);
@@ -387,7 +453,9 @@ class MemTable {
   // Returns if there is no entry inserted to the mem table.
   // REQUIRES: external synchronization to prevent simultaneous
   // operations on the same MemTable (unless this Memtable is immutable).
-  bool IsEmpty() const { return first_seqno_ == 0; }
+  bool IsEmpty() const {
+    return first_seqno_.load(std::memory_order_relaxed) == 0;
+  }
 
   // Returns the sequence number of the first element that was inserted
   // into the memtable.
@@ -477,6 +545,12 @@ class MemTable {
     return table_->IsSnapshotSupported() && !moptions_.inplace_update_support;
   }
 
+  void FinishHint(void* hint) const { table_->FinishHint(hint); }
+  bool SupportConvertToSST() const {
+    return table_->SupportConvertToSST() && is_range_del_table_empty_;
+  }
+  Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
+
   struct MemTableStats {
     uint64_t size;
     uint64_t count;
@@ -549,12 +623,7 @@ class MemTable {
   // `persist_user_defined_timestamps` to false. The tracked newest UDT will be
   // used by flush job in the background to help check the MemTable's
   // eligibility for Flush.
-  const Slice& GetNewestUDT() const;
-
-  // Returns Corruption status if verification fails.
-  static Status VerifyEntryChecksum(const char* entry,
-                                    uint32_t protection_bytes_per_key,
-                                    bool allow_data_in_errors = false);
+  const Slice GetNewestUDT() const;
 
  private:
   enum FlushStateEnum { FLUSH_NOT_REQUESTED, FLUSH_REQUESTED, FLUSH_SCHEDULED };
@@ -577,7 +646,11 @@ class MemTable {
   std::atomic<uint64_t> data_size_;
   std::atomic<uint64_t> num_entries_;
   std::atomic<uint64_t> num_deletes_;
+  std::atomic<uint64_t> num_merges_;
   std::atomic<uint64_t> num_range_deletes_;
+  std::atomic<uint64_t> largest_seqno_;
+  std::atomic<uint64_t> raw_key_size_;
+  std::atomic<uint64_t> raw_value_size_;
 
   // Dynamically changeable memtable option
   std::atomic<size_t> write_buffer_size_;
@@ -585,6 +658,7 @@ class MemTable {
   // These are used to manage memtable flushes to storage
   bool flush_in_progress_;  // started the flush
   bool flush_completed_;    // finished the flush
+  bool needs_user_key_cmp_in_get_;
   uint64_t file_number_;    // filled up after flush is complete
 
   // The updates to be applied to the transaction log when this
@@ -646,6 +720,7 @@ class MemTable {
   // Flush job info of the current memtable.
   std::unique_ptr<FlushJobInfo> flush_job_info_;
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   // Size in bytes for the user-defined timestamps.
   size_t ts_sz_;
 
@@ -657,20 +732,14 @@ class MemTable {
   // ts2. We track this field for a MemTable if its column family has UDT
   // feature enabled and the `persist_user_defined_timestamp` flag is false.
   // Otherwise, this field just contains an empty Slice.
-  Slice newest_udt_;
+  terark::minimal_sso<32> newest_udt_;
+#endif
 
   // Updates flush_state_ using ShouldFlushNow()
   void UpdateFlushState();
 
   void UpdateOldestKeyTime();
 
-  void GetFromTable(const LookupKey& key,
-                    SequenceNumber max_covering_tombstone_seq, bool do_merge,
-                    ReadCallback* callback, bool* is_blob_index,
-                    std::string* value, PinnableWideColumns* columns,
-                    std::string* timestamp, Status* s,
-                    MergeContext* merge_context, SequenceNumber* seq,
-                    bool* found_final_value, bool* merge_in_progress);
 
   // Always returns non-null and assumes certain pre-checks (e.g.,
   // is_range_del_table_empty_) are done. This is only valid during the lifetime

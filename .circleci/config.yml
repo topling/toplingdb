@@ -577,7 +577,6 @@ jobs:
       CMAKE_HOME: C:/Program Files/CMake
       CMAKE_BIN: C:/Program Files/CMake/bin/cmake.exe
       CTEST_BIN: C:/Program Files/CMake/bin/ctest.exe
-      JAVA_HOME: C:/Program Files/BellSoft/LibericaJDK-8
       SNAPPY_HOME: C:/Users/circleci/thirdparty/snappy-1.1.8
       SNAPPY_INCLUDE: C:/Users/circleci/thirdparty/snappy-1.1.8;C:/Users/circleci/thirdparty/snappy-1.1.8/build
       SNAPPY_LIB_DEBUG: C:/Users/circleci/thirdparty/snappy-1.1.8/build/Debug/snappy.lib

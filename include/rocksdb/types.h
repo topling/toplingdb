@@ -11,6 +11,8 @@
 #include <unordered_map>
 
 #include "rocksdb/slice.h"
+#include "enum_reflection.h"
+#include <terark/hash_strmap.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -23,18 +25,18 @@ using SequenceNumber = uint64_t;
 
 struct TableProperties;
 using TablePropertiesCollection =
-    std::unordered_map<std::string, std::shared_ptr<const TableProperties>>;
+    terark::hash_strmap<std::shared_ptr<const TableProperties>>;
 
 const SequenceNumber kMinUnCommittedSeq = 1;  // 0 is always committed
 
-enum class TableFileCreationReason {
+ROCKSDB_ENUM_CLASS(TableFileCreationReason, unsigned char,
   kFlush,
   kCompaction,
   kRecovery,
-  kMisc,
-};
+  kMisc
+);
 
-enum class BlobFileCreationReason {
+enum class BlobFileCreationReason : unsigned char {
   kFlush,
   kCompaction,
   kRecovery,
@@ -42,7 +44,7 @@ enum class BlobFileCreationReason {
 
 // The types of files RocksDB uses in a DB directory. (Available for
 // advanced options.)
-enum FileType {
+enum FileType : unsigned char {
   kWalFile,
   kDBLockFile,
   kTableFile,
@@ -58,7 +60,7 @@ enum FileType {
 
 // User-oriented representation of internal key types.
 // Ordering of this enum entries should not change.
-enum EntryType {
+enum EntryType : unsigned char {
   kEntryPut,
   kEntryDelete,
   kEntrySingleDelete,
@@ -70,7 +72,7 @@ enum EntryType {
   kEntryOther,
 };
 
-enum class WriteStallCause {
+enum class WriteStallCause : unsigned char {
   // Beginning of CF-scope write stall causes
   //
   // Always keep `kMemtableLimit` as the first stat in this section
@@ -91,11 +93,11 @@ enum class WriteStallCause {
   kNone,
 };
 
-enum class WriteStallCondition {
+ROCKSDB_ENUM_CLASS(WriteStallCondition, unsigned char,
   kDelayed,
   kStopped,
   // Always add new WriteStallCondition before `kNormal`
-  kNormal,
-};
+  kNormal
+);
 
 }  // namespace ROCKSDB_NAMESPACE

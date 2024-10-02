@@ -29,7 +29,7 @@ class TraceWriter;
    3. In the FileSystemTracer APIs where this data will be logged with, update
    io_op_data |= (1 << IOTraceOp::kIONewData).
 */
-enum IOTraceOp : char {
+enum IOTraceOp : unsigned char {
   // The value of each enum represents the bitwise position for
   // IOTraceRecord.io_op_data.
   kIOFileSize = 0,

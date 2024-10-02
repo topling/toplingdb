@@ -23,6 +23,8 @@
 #include "util/string_util.h"
 #include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 
+#include <terark/util/function.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 struct WriteBatchWithIndex::Rep {
   explicit Rep(const Comparator* index_comparator, size_t reserved_bytes = 0,
@@ -161,10 +163,22 @@ void WriteBatchWithIndex::Rep::AddNewEntry(uint32_t column_family_id) {
     key.remove_suffix(ts_sz);
   }
 
-  auto* mem = arena.Allocate(sizeof(WriteBatchIndexEntry));
+  size_t aligned_key_size = terark::pow2_align_up(key.size(), 8);
+  auto* mem = arena.Allocate(sizeof(WriteBatchIndexEntry) + aligned_key_size);
   auto* index_entry =
       new (mem) WriteBatchIndexEntry(last_entry_offset, column_family_id,
                                      key.data() - wb_data.data(), key.size());
+
+  // WriteBatchWithIndex allowing change during iterating, batch buffer will
+  // be append data during iterating, thus batch buffer may be re-allocated
+  // when reaching capacity, and we save delta_key in BaseDeltaIterator,
+  // which will be invalidated during batch buffer reallocation, so we save
+  // key data in index_entry, which is a stable memory address.
+  //
+  // CSPP_WBWI has no such issue, this is just for RocksDB default WBWI
+  //
+  memcpy(index_entry + 1, key.data(), key.size());
+
   skip_list.Insert(index_entry);
 }
 
@@ -283,12 +297,13 @@ WriteBatchWithIndex::WriteBatchWithIndex(
     : rep(new Rep(default_index_comparator, reserved_bytes, max_bytes,
                   overwrite_key, protection_bytes_per_key)) {}
 
+WriteBatchWithIndex::WriteBatchWithIndex(Slice/*placeholder*/) {}
+
 WriteBatchWithIndex::~WriteBatchWithIndex() {}
 
-WriteBatchWithIndex::WriteBatchWithIndex(WriteBatchWithIndex&&) = default;
-
-WriteBatchWithIndex& WriteBatchWithIndex::operator=(WriteBatchWithIndex&&) =
-    default;
+const Comparator* WriteBatchWithIndex::GetUserComparator(uint32_t cf_id) const {
+  return rep->comparator.GetComparator(cf_id);
+}
 
 WriteBatch* WriteBatchWithIndex::GetWriteBatch() { return &rep->write_batch; }
 
@@ -487,6 +502,64 @@ Status WriteBatchWithIndex::GetFromBatch(ColumnFamilyHandle* column_family,
   return s;
 }
 
+WBWIIterator::Result
+WriteBatchWithIndex::GetFromBatchRaw(DB* db, ColumnFamilyHandle* cfh,
+    const Slice& key, MergeContext* merge_context, std::string* value,
+    Status* s) {
+  return WriteBatchWithIndexInternal::GetFromBatch(this, cfh, key, merge_context, value, s);
+}
+
+Status WriteBatchWithIndex::MergeKey(
+          DB* db, ColumnFamilyHandle* column_family,
+          const Slice& key, const Slice* origin_value,
+          std::string* result, const MergeContext& mgcontext) {
+  if (UNLIKELY(nullptr == column_family)) {
+    return Status::InvalidArgument("Must provide a column_family");
+  }
+  auto cfh = static_cast<ColumnFamilyHandleImpl*>(column_family);
+  const auto merge_operator = cfh->cfd()->ioptions()->merge_operator.get();
+  if (UNLIKELY(merge_operator == nullptr)) {
+    return Status::InvalidArgument(
+        "Merge_operator must be set for column_family");
+  }
+  auto& idbo = static_cast<DBImpl*>(db->GetRootDB())->immutable_db_options();
+  auto* statistics = idbo.statistics.get();
+  auto* logger = idbo.info_log.get();
+  auto* clock = idbo.clock;
+  return MergeHelper::TimedFullMerge(merge_operator, key, origin_value,
+                                     mgcontext.GetOperands(), result, logger,
+                                     statistics, clock
+                                     , nullptr // result_operand
+                                     , true // update_num_ops_stats
+                                     , nullptr
+                                     );
+}
+
+Status WriteBatchWithIndex::MergeKey(
+          const DBOptions& options, ColumnFamilyHandle* column_family,
+          const Slice& key, const Slice* origin_value,
+          std::string* result, const MergeContext& mgcontext) {
+  if (UNLIKELY(nullptr == column_family)) {
+    return Status::InvalidArgument("Must provide a column_family");
+  }
+  auto cfh = static_cast<ColumnFamilyHandleImpl*>(column_family);
+  const auto merge_operator = cfh->cfd()->ioptions()->merge_operator.get();
+  if (UNLIKELY(merge_operator == nullptr)) {
+    return Status::InvalidArgument(
+        "Merge_operator must be set for column_family");
+  }
+  auto* statistics = options.statistics.get();
+  auto* logger = options.info_log.get();
+  auto* clock = options.env->GetSystemClock().get();
+  return MergeHelper::TimedFullMerge(merge_operator, key, origin_value,
+                                      mgcontext.GetOperands(), result, logger,
+                                      statistics, clock
+                                     , nullptr // result_operand
+                                     , true // update_num_ops_stats
+                                     , nullptr
+                                     );
+}
+
 Status WriteBatchWithIndex::GetFromBatchAndDB(DB* db,
                                               const ReadOptions& read_options,
                                               const Slice& key,
@@ -571,6 +644,9 @@ void WriteBatchWithIndex::MergeAcrossBatchAndDB(
     value->PinSelf();
   }
 }
+#define RepGetUserComparator(cfh) \
+    cfh ? cfh->GetComparator() : \
+    rep ? rep->comparator.GetComparator(cfh) : nullptr
 
 Status WriteBatchWithIndex::GetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
@@ -582,11 +658,13 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(
     column_family = db->DefaultColumnFamily();
   }
 
-  const Comparator* const ucmp = rep->comparator.GetComparator(column_family);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+  const Comparator* const ucmp = RepGetUserComparator(column_family);
   size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
   if (ts_sz > 0 && !read_options.timestamp) {
     return Status::InvalidArgument("Must specify timestamp");
   }
+#endif
 
   // Since the lifetime of the WriteBatch is the same as that of the transaction
   // we cannot pin it as otherwise the returned value will not be available
@@ -644,23 +722,16 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     const size_t num_keys, const Slice* keys, PinnableSlice* values,
     Status* statuses, bool sorted_input) {
   MultiGetFromBatchAndDB(db, read_options, column_family, num_keys, keys,
-                         values, statuses, sorted_input, nullptr);
+                         values, statuses, sorted_input,
+                         read_options.read_callback);
 }
 
 void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const size_t num_keys, const Slice* keys, PinnableSlice* values,
     Status* statuses, bool sorted_input, ReadCallback* callback) {
-  assert(db);
-  assert(keys);
-  assert(values);
-  assert(statuses);
-
-  if (!column_family) {
-    column_family = db->DefaultColumnFamily();
-  }
-
-  const Comparator* const ucmp = rep->comparator.GetComparator(column_family);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+  const Comparator* const ucmp = RepGetUserComparator(column_family);
   size_t ts_sz = ucmp ? ucmp->timestamp_size() : 0;
   if (ts_sz > 0 && !read_options.timestamp) {
     for (size_t i = 0; i < num_keys; ++i) {
@@ -668,104 +739,92 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     }
     return;
   }
-
-  struct MergeTuple {
-    MergeTuple(const Slice& _key, Status* _s, MergeContext&& _merge_context,
-               PinnableSlice* _value)
-        : key(_key),
-          s(_s),
-          merge_context(std::move(_merge_context)),
-          value(_value) {
-      assert(s);
-      assert(value);
+#endif
+  struct Elem : public MergeContext {
+    Elem(WBWIIteratorImpl::Result wbwi_result1, size_t idx, MergeContext&& mg)
+     : MergeContext(std::move(mg)) {
+      ext_flags_ = uint32_t(idx);
+      ext_uint16_ = wbwi_result1;
     }
-
-    Slice key;
-    Status* s;
-    PinnableWideColumns existing;
-    MergeContext merge_context;
-    PinnableSlice* value;
+    WBWIIteratorImpl::Result wbwi_result() const {
+      return (WBWIIteratorImpl::Result)(ext_uint16_);
+    }
+    size_t full_index() const { return ext_flags_; }
   };
-
-  autovector<MergeTuple, MultiGetContext::MAX_BATCH_SIZE> merges;
-
-  autovector<KeyContext, MultiGetContext::MAX_BATCH_SIZE> key_contexts;
-
-  // Since the lifetime of the WriteBatch is the same as that of the transaction
-  // we cannot pin it as otherwise the returned value will not be available
-  // after the transaction finishes.
+  TERARK_FAST_ALLOC(Elem, merges, num_keys);
+  TERARK_FAST_ALLOC(Slice, db_keys, num_keys);
+  size_t num_get_db = 0;
   for (size_t i = 0; i < num_keys; ++i) {
-    const Slice& key = keys[i];
     MergeContext merge_context;
     std::string batch_value;
-    Status* const s = &statuses[i];
-    auto result = WriteBatchWithIndexInternal::GetFromBatch(
-        this, column_family, key, &merge_context, &batch_value, s);
-
-    PinnableSlice* const pinnable_val = &values[i];
+    Status* s = &statuses[i];
+    PinnableSlice* pinnable_val = &values[i];
     pinnable_val->Reset();
-
+    auto result = GetFromBatchRaw(db, column_family, keys[i],
+                                  &merge_context, &batch_value, s);
     if (result == WBWIIteratorImpl::kFound) {
       *pinnable_val->GetSelf() = std::move(batch_value);
       pinnable_val->PinSelf();
       continue;
     }
-
     if (result == WBWIIteratorImpl::kDeleted) {
       *s = Status::NotFound();
       continue;
     }
-
     if (result == WBWIIteratorImpl::kError) {
       continue;
     }
-
-    // Note: we have to retrieve all columns if we have to merge KVs from the
-    // batch and the DB; otherwise, the default column is sufficient.
-    // The columns field will be populated by the loop below to prevent issues
-    // with dangling pointers.
-    if (result == WBWIIteratorImpl::kMergeInProgress) {
-      merges.emplace_back(key, s, std::move(merge_context), pinnable_val);
-      key_contexts.emplace_back(column_family, key, /* value */ nullptr,
-                                /* columns */ nullptr, /* timestamp */ nullptr,
-                                s);
-      continue;
-    }
-
-    assert(result == WBWIIteratorImpl::kNotFound);
-    key_contexts.emplace_back(column_family, key, pinnable_val,
-                              /* columns */ nullptr,
-                              /* timestamp */ nullptr, s);
+    assert(result == WBWIIteratorImpl::kMergeInProgress ||
+           result == WBWIIteratorImpl::kNotFound);
+    db_keys[num_get_db] = keys[i];
+    new(merges + num_get_db)Elem{result, i, std::move(merge_context)};
+    num_get_db++;
   }
-
-  autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
-  sorted_keys.reserve(key_contexts.size());
-
-  size_t merges_idx = 0;
-  for (KeyContext& key_context : key_contexts) {
-    if (!key_context.value) {
-      assert(*key_context.key == merges[merges_idx].key);
-
-      key_context.columns = &merges[merges_idx].existing;
-      ++merges_idx;
-    }
-
-    sorted_keys.emplace_back(&key_context);
-  }
+if (num_get_db) {
+  TERARK_FAST_ARRAY(PinnableSlice, db_values, num_get_db);
+  TERARK_FAST_ARRAY(Status, db_statuses, num_get_db);
 
   // Did not find key in batch OR could not resolve Merges.  Try DB.
-  static_cast_with_check<DBImpl>(db->GetRootDB())
-      ->PrepareMultiGetKeys(sorted_keys.size(), sorted_input, &sorted_keys);
-  static_cast_with_check<DBImpl>(db->GetRootDB())
-      ->MultiGetWithCallback(read_options, column_family, callback,
-                             &sorted_keys);
+  DBImpl* rdb = static_cast_with_check<DBImpl>(db->GetRootDB());
 
-  for (const auto& merge : merges) {
-    if (merge.s->ok() || merge.s->IsNotFound()) {  // DB lookup succeeded
-      MergeAcrossBatchAndDB(column_family, merge.key, merge.existing,
-                            merge.merge_context, merge.value, merge.s);
+  // patch: read_options.read_callback is not thread-safe
+  ReadCallback* old_callback = read_options.read_callback;
+  read_options.read_callback = callback;
+  rdb->MultiGet(read_options, column_family,
+                num_get_db, db_keys, db_values, db_statuses);
+  read_options.read_callback = old_callback;
+
+  for (size_t index = 0; index < num_get_db; index++) {
+    size_t full_index = merges[index].full_index();
+    const Slice& key = db_keys[index];
+    Status& s = statuses[full_index] = std::move(db_statuses[index]);
+    if (s.ok() || s.IsNotFound()) { // DB Get Succeeded
+      auto& mg = merges[index];
+      if (mg.wbwi_result() == WBWIIteratorImpl::kMergeInProgress) {
+        // topling comment: prev MergeKey() in wbwii.GetFromBatch is a waste
+        std::string merged_value;
+        // Merge result from DB with merges in Batch
+        PinnableSlice* db_value = s.ok() ? &db_values[index] : nullptr;
+        s = MergeKey(db, column_family, key, db_value, &merged_value, mg);
+        if (s.ok()) {
+          values[full_index].Reset();
+          *values[full_index].GetSelf() = std::move(merged_value);
+          values[full_index].PinSelf();
+        }
+      }
+      else {
+        values[full_index] = std::move(db_values[index]);
+      }
+    }
+    else {
+      values[full_index] = std::move(db_values[index]);
     }
   }
+  TERARK_FAST_CLEAN(db_statuses, num_get_db, num_get_db);
+  TERARK_FAST_CLEAN(db_values, num_get_db, num_get_db);
+} // num_get_db
+  TERARK_FAST_CLEAN(db_keys, num_get_db, num_keys);
+  TERARK_FAST_CLEAN(merges, num_get_db, num_keys);
 }
 
 void WriteBatchWithIndex::SetSavePoint() { rep->write_batch.SetSavePoint(); }
@@ -796,8 +855,31 @@ size_t WriteBatchWithIndex::GetDataSize() const {
 
 const Comparator* WriteBatchWithIndexInternal::GetUserComparator(
     const WriteBatchWithIndex& wbwi, uint32_t cf_id) {
+#if 0
   const WriteBatchEntryComparator& ucmps = wbwi.rep->comparator;
   return ucmps.GetComparator(cf_id);
+#else // topling
+  return wbwi.GetUserComparator(cf_id);
+#endif
+}
+
+//---------------------------------------------------------------------------
+
+WBWIFactory::~WBWIFactory() {
+  // do nothing
+}
+class SkipListWBWIFactory : public WBWIFactory {
+public:
+  const char* Name() const noexcept final { return "SkipList"; }
+  WriteBatchWithIndex* NewWriteBatchWithIndex(
+      const Comparator* default_comparator, bool overwrite_key,
+      size_t prot) final {
+    return new WriteBatchWithIndex(default_comparator, 0, overwrite_key, 0, prot);
+  }
+};
+std::shared_ptr<WBWIFactory> SingleSkipListWBWIFactory() {
+  static auto fac = std::make_shared<SkipListWBWIFactory>();
+  return fac;
 }
 
 }  // namespace ROCKSDB_NAMESPACE

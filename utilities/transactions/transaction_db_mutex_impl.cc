@@ -37,9 +37,9 @@ class TransactionDBCondVarImpl : public TransactionDBCondVar {
   TransactionDBCondVarImpl() {}
   ~TransactionDBCondVarImpl() override {}
 
-  Status Wait(std::shared_ptr<TransactionDBMutex> mutex) override;
+  Status Wait(const std::shared_ptr<TransactionDBMutex>& mutex) override;
 
-  Status WaitFor(std::shared_ptr<TransactionDBMutex> mutex,
+  Status WaitFor(const std::shared_ptr<TransactionDBMutex>& mutex,
                  int64_t timeout_time) override;
 
   void Notify() override { cv_.notify_one(); }
@@ -90,7 +90,7 @@ Status TransactionDBMutexImpl::TryLockFor(int64_t timeout_time) {
 }
 
 Status TransactionDBCondVarImpl::Wait(
-    std::shared_ptr<TransactionDBMutex> mutex) {
+    const std::shared_ptr<TransactionDBMutex>& mutex) {
   auto mutex_impl = reinterpret_cast<TransactionDBMutexImpl*>(mutex.get());
 
   std::unique_lock<std::mutex> lock(mutex_impl->mutex_, std::adopt_lock);
@@ -103,7 +103,7 @@ Status TransactionDBCondVarImpl::Wait(
 }
 
 Status TransactionDBCondVarImpl::WaitFor(
-    std::shared_ptr<TransactionDBMutex> mutex, int64_t timeout_time) {
+    const std::shared_ptr<TransactionDBMutex>& mutex, int64_t timeout_time) {
   Status s;
 
   auto mutex_impl = reinterpret_cast<TransactionDBMutexImpl*>(mutex.get());

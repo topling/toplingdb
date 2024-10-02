@@ -1,0 +1,129 @@
+# TODO: How to cache make files / speed up build progress here?
+name: "build topling-jni"
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository_url:
+        required: true
+        default: 'topling/toplingdb'
+      repository_branch:
+        required: false
+        default: 'sideplugin-7.10.0-2022-12-21-bec42648'
+      test:
+        required: false
+        type: boolean
+        description: test SideGetBenchmarks
+        default: false
+      deploy_maven:
+        required: false
+        type: boolean
+        description: publish to maven repo
+        default: true
+
+jobs:
+  build:
+    # refer https://github.com/actions/runner-images to get the details
+    runs-on: ubuntu-latest
+    env:
+      GCC_VER: "11.3" # TODO: better get from the 'gcc --version'
+      GITHUB_TOKEN: ${{ github.token }}
+      REP_URL: ${{ inputs.repository_url }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ inputs.repository_url }}
+          ref: ${{ inputs.repository_branch }}
+          fetch-depth: 1
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+          server-id: github # Value of the distributionManagement/repository/id field of the pom.xml
+          settings-path: ${{ github.workspace }} # location for the settings.xml file
+      #- name: Cache Maven # Replace by setup-java now
+      #  uses: actions/cache@v3
+      #  with:
+      #    path: ~/.m2/repository
+      #    key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+      #    restore-keys: ${{ runner.os }}-m2
+
+      - name: Init Env & Compile RocksDB
+        run: |
+         cat $GITHUB_WORKSPACE/settings.xml
+         sudo apt-get update -y && sudo apt-get install -y \
+         libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
+         libbz2-dev libcurl4-gnutls-dev liburing-dev \
+         libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
+
+         gcc --version
+         git submodule update --init --recursive
+         mkdir -p ~/.ssh && mkdir -p /opt/lib
+         ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+         # this step could take a long time?
+         make -j`nproc` DEBUG_LEVEL=0 shared_lib
+         sudo make install-shared PREFIX=/opt
+         ls -l /opt/lib
+
+      - name: Compile RocksDBJava
+        run: |
+          echo $JAVA_HOME
+          make rocksdbjava -j`nproc` DEBUG_LEVEL=0
+
+      - name: Move to Local Maven Repo
+        run: |
+          cd java/target || exit
+          cp -v rocksdbjni-7.10.0-linux64.jar rocksdbjni-7.10.0-SNAPSHOT-linux64.jar
+          mvn install:install-file -ntp -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar \
+          -DgroupId=org.rocksdb -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
+          # TODO: why 'deploy' doesn't include install step here? if we only use deploy, will lack local jar
+          if ${{ inputs.deploy_maven }}; then
+            # TODO: what's the pom file for it? add with '-DpomFile=/xx/pom.xml'
+            mvn deploy:deploy-file -e -s $GITHUB_WORKSPACE/settings.xml \
+                -DpomFile=$GITHUB_WORKSPACE/java/pom.xml.template \
+                -Durl=https://maven.pkg.github.com/$REP_URL -DrepositoryId=github \
+                -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar -DgroupId=org.rocksdb \
+                -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
+          fi
+
+      # for compile jmh.jar to test the performance
+      - name: Build SideGetBenchmarks with Maven
+        run: |
+          echo ${{ github.workspace }} && echo $GITHUB_WORKSPACE
+          pwd && ls -l
+          (cd java/jmh && ls -l && pwd) || exit
+          mvn clean package -e -ntp -f $GITHUB_WORKSPACE/java/jmh/pom.xml # -B in non-interactive (Batch) mode
+
+      - name: Run SideGetBenchmarks & Check it
+        if: ${{ inputs.test }}
+        run: |
+          mkdir -p /dev/shm/db_bench_community
+          cd $GITHUB_WORKSPACE/java/jmh || exit
+          ls ../../sideplugin/rockside/src/topling/web
+          cp -v $GITHUB_WORKSPACE/sideplugin/rockside/src/topling/web/{style.css,index.html} /dev/shm/db_bench_community
+          echo $LD_LIBRARY_PATH
+          export LD_LIBRARY_PATH=/opt/lib:$LD_LIBRARY_PATH # for libterark-*
+          echo $LD_LIBRARY_PATH && ls -l /opt/lib
+          # Note: webserver should visit while running
+          export LD_PRELOAD=libterark-zbs-g++-11.3-r.so:libterark-fsa-g++-11.3-r.so:libjemalloc.so
+          java -jar target/rocksdbjni-jmh-1.0-SNAPSHOT-benchmarks.jar \
+               -p keyCount=1000 -p keySize=128 -p valueSize=32768 \
+               -p sideConf=$GITHUB_WORKSPACE/sideplugin/rockside/sample-conf/db_bench_community.yaml SideGetBenchmarks
+
+      - name: Publish JAR to GitHub Packages
+        if: ${{ inputs.deploy_maven }}
+        run: |
+          cd $GITHUB_WORKSPACE/java/jmh || exit
+          ls -l $GITHUB_WORKSPACE && tail -15 pom.xml
+          mvn deploy -e -f $GITHUB_WORKSPACE/java/jmh/pom.xml -s $GITHUB_WORKSPACE/settings.xml \
+                     -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/$REP_URL
+        #env:
+        #  GITHUB_TOKEN: ${{ github.token }}

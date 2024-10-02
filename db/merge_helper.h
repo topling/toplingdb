@@ -61,6 +61,24 @@ class MergeHelper {
   struct WideBaseValueTag {};
   static constexpr WideBaseValueTag kWideBaseValue{};
 
+  // Old prototype: For conforming existing ToplingDB code
+  static Status TimedFullMerge(
+      const MergeOperator* merge_operator, const Slice& key,
+      const Slice* value, const std::vector<Slice>& operands,
+      std::string* result, Logger* logger, Statistics* statistics,
+      SystemClock* clock, std::vector<std::string>* /*result_operand*/,
+      bool update_num_ops_stats,
+      MergeOperator::OpFailureScope* op_failure_scope) {
+    MergeOperator::MergeOperationInputV3::ExistingValue existing_value;
+    ValueType result_type;
+    if (value) {
+      existing_value = *value;
+    }
+    return TimedFullMergeImpl(merge_operator, key, std::move(existing_value),
+        operands, logger, statistics, clock, update_num_ops_stats,
+        op_failure_scope, result, nullptr, &result_type);
+  }
+
   template <typename... ResultTs>
   static Status TimedFullMerge(const MergeOperator* merge_operator,
                                const Slice& key, NoBaseValueTag,

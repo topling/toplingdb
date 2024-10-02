@@ -608,6 +608,9 @@ extern ROCKSDB_LIBRARY_API const rocksdb_snapshot_t* rocksdb_create_snapshot(
 extern ROCKSDB_LIBRARY_API void rocksdb_release_snapshot(
     rocksdb_t* db, const rocksdb_snapshot_t* snapshot);
 
+extern ROCKSDB_LIBRARY_API uint64_t
+rocksdb_snapshot_get_sequence_number(const rocksdb_snapshot_t* snapshot);
+
 /* Returns NULL if property name is unknown.
    Else returns a pointer to a malloc()-ed null-terminated value. */
 extern ROCKSDB_LIBRARY_API char* rocksdb_property_value(rocksdb_t* db,
@@ -1152,10 +1155,16 @@ extern ROCKSDB_LIBRARY_API void rocksdb_options_set_env(rocksdb_options_t*,
                                                         rocksdb_env_t*);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_info_log(rocksdb_options_t*,
                                                              rocksdb_logger_t*);
+extern ROCKSDB_LIBRARY_API rocksdb_logger_t* rocksdb_options_get_info_log(
+    rocksdb_options_t* opt);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_info_log_level(
     rocksdb_options_t*, int);
 extern ROCKSDB_LIBRARY_API int rocksdb_options_get_info_log_level(
     rocksdb_options_t*);
+extern ROCKSDB_LIBRARY_API rocksdb_logger_t*
+rocksdb_logger_create_stderr_logger(int log_level, const char* prefix);
+extern ROCKSDB_LIBRARY_API void rocksdb_logger_destroy(
+    rocksdb_logger_t* logger);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_write_buffer_size(
     rocksdb_options_t*, size_t);
 extern ROCKSDB_LIBRARY_API size_t
@@ -1261,6 +1270,9 @@ rocksdb_options_set_max_bytes_for_level_multiplier_additional(
     rocksdb_options_t*, int* level_values, size_t num_levels);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_enable_statistics(
     rocksdb_options_t*);
+extern ROCKSDB_LIBRARY_API void rocksdb_options_set_ttl(rocksdb_options_t*,
+                                                        uint64_t);
+extern ROCKSDB_LIBRARY_API uint64_t rocksdb_options_get_ttl(rocksdb_options_t*);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_periodic_compaction_seconds(
     rocksdb_options_t*, uint64_t);
 extern ROCKSDB_LIBRARY_API uint64_t
@@ -1681,6 +1693,10 @@ extern ROCKSDB_LIBRARY_API rocksdb_ratelimiter_t*
 rocksdb_ratelimiter_create_auto_tuned(int64_t rate_bytes_per_sec,
                                       int64_t refill_period_us,
                                       int32_t fairness);
+extern ROCKSDB_LIBRARY_API rocksdb_ratelimiter_t*
+rocksdb_ratelimiter_create_with_mode(int64_t rate_bytes_per_sec,
+                                     int64_t refill_period_us, int32_t fairness,
+                                     int mode, bool auto_tuned);
 extern ROCKSDB_LIBRARY_API void rocksdb_ratelimiter_destroy(
     rocksdb_ratelimiter_t*);
 
@@ -3014,6 +3030,39 @@ extern ROCKSDB_LIBRARY_API void rocksdb_wait_for_compact_options_set_timeout(
 extern ROCKSDB_LIBRARY_API uint64_t
 rocksdb_wait_for_compact_options_get_timeout(
     rocksdb_wait_for_compact_options_t* opt);
+
+////////////////////////////////////////////////////////////////
+/// ToplingDB SidePlugin Minimal Interface
+//
+typedef struct side_plugin_repo_t side_plugin_repo_t;
+
+extern ROCKSDB_LIBRARY_API side_plugin_repo_t* side_plugin_repo_create(void);
+
+extern ROCKSDB_LIBRARY_API void side_plugin_repo_import_auto_file
+(side_plugin_repo_t*, const char* fname, char** errptr);
+
+extern ROCKSDB_LIBRARY_API rocksdb_t*
+side_plugin_repo_open(side_plugin_repo_t*, rocksdb_column_family_handle_t***,
+                      size_t* num_cf, char** errptr);
+
+extern ROCKSDB_LIBRARY_API void side_plugin_repo_start_http(side_plugin_repo_t*, char** errptr);
+extern ROCKSDB_LIBRARY_API void side_plugin_repo_close_http(side_plugin_repo_t*);
+
+extern ROCKSDB_LIBRARY_API rocksdb_options_t*
+side_plugin_repo_get_db_options(side_plugin_repo_t*, const char* name, char** errptr);
+
+extern ROCKSDB_LIBRARY_API void
+side_plugin_repo_put_db_options(side_plugin_repo_t*, const char* name, rocksdb_options_t*);
+
+extern ROCKSDB_LIBRARY_API rocksdb_options_t*
+side_plugin_repo_get_cf_options(side_plugin_repo_t*, const char* name, char** errptr);
+
+extern ROCKSDB_LIBRARY_API void
+side_plugin_repo_put_cf_options(side_plugin_repo_t*, const char* name, rocksdb_options_t*);
+
+extern ROCKSDB_LIBRARY_API void side_plugin_repo_close_all(side_plugin_repo_t*);
+
+extern ROCKSDB_LIBRARY_API const char* rocksdb_get_name(rocksdb_t*);
 
 #ifdef __cplusplus
 } /* end extern "C" */

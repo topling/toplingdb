@@ -104,14 +104,6 @@ struct IOOptions {
   // Type of data being read/written
   IOType type;
 
-  // EXPERIMENTAL
-  // An option map that's opaque to RocksDB. It can be used to implement a
-  // custom contract between a FileSystem user and the provider. This is only
-  // useful in cases where a RocksDB user directly uses the FileSystem or file
-  // object for their own purposes, and wants to pass extra options to APIs
-  // such as NewRandomAccessFile and NewWritableFile.
-  std::unordered_map<std::string, std::string> property_bag;
-
   // Force directory fsync, some file systems like btrfs may skip directory
   // fsync, set this to force the fsync
   bool force_dir_fsync;
@@ -210,7 +202,7 @@ struct IODebugContext {
   // means bit at position 0 is set so TraceData::kRequestID (request_id) will
   // be logged in the trace record.
   //
-  enum TraceData : char {
+  enum TraceData : unsigned char {
     // The value of each enum represents the bitwise position for
     // that information in trace_data which will be used by IOTracer for
     // tracing. Make sure to add them sequentially.
@@ -981,6 +973,8 @@ class FSRandomAccessFile {
 
   // If you're adding methods here, remember to add them to
   // RandomAccessFileWrapper too.
+
+  virtual intptr_t FileDescriptor() const = 0;
 };
 
 // A data structure brings the data verification information, which is
@@ -1226,6 +1220,11 @@ class FSWritableFile {
 
   // If you're adding methods here, remember to add them to
   // WritableFileWrapper too.
+  virtual intptr_t FileDescriptor() const {
+    assert(false);
+    return -1;
+  }
+  virtual void SetFileSize(uint64_t) { assert(false); }
 
  protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
@@ -1698,8 +1697,11 @@ class FSRandomAccessFileWrapper : public FSRandomAccessFile {
     return target_->GetTemperature();
   }
 
- private:
-  std::unique_ptr<FSRandomAccessFile> guard_;
+  intptr_t FileDescriptor() const final {
+    return target_->FileDescriptor();
+  }
+
+ protected:
   FSRandomAccessFile* target_;
 };
 
@@ -1709,10 +1711,14 @@ class FSRandomAccessFileOwnerWrapper : public FSRandomAccessFileWrapper {
   // ownership of the object
   explicit FSRandomAccessFileOwnerWrapper(
       std::unique_ptr<FSRandomAccessFile>&& t)
-      : FSRandomAccessFileWrapper(t.get()), guard_(std::move(t)) {}
+      : FSRandomAccessFileWrapper(t.release()) {}
 
- private:
-  std::unique_ptr<FSRandomAccessFile> guard_;
+  ~FSRandomAccessFileOwnerWrapper() { delete target(); }
+  FSRandomAccessFile* exchange(FSRandomAccessFile* p) {
+    auto old = target_;
+    target_ = p;
+    return old;
+  }
 };
 
 class FSWritableFileWrapper : public FSWritableFile {
@@ -1812,6 +1818,9 @@ class FSWritableFileWrapper : public FSWritableFile {
     return target_->Allocate(offset, len, options, dbg);
   }
 
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
+
  private:
   FSWritableFile* target_;
 };
@@ -1821,10 +1830,8 @@ class FSWritableFileOwnerWrapper : public FSWritableFileWrapper {
   // Creates a FileWrapper around the input File object and takes
   // ownership of the object
   explicit FSWritableFileOwnerWrapper(std::unique_ptr<FSWritableFile>&& t)
-      : FSWritableFileWrapper(t.get()), guard_(std::move(t)) {}
-
- private:
-  std::unique_ptr<FSWritableFile> guard_;
+      : FSWritableFileWrapper(t.release()) {}
+  ~FSWritableFileOwnerWrapper() { delete target(); }
 };
 
 class FSRandomRWFileWrapper : public FSRandomRWFile {

@@ -8,6 +8,8 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <terark/hash_strmap.hpp>
+#include <terark/util/vec_idx_map.hpp>
 
 #include "utilities/transactions/lock/lock_tracker.h"
 
@@ -17,13 +19,12 @@ struct TrackedKeyInfo {
   // Earliest sequence number that is relevant to this transaction for this key
   SequenceNumber seq;
 
-  uint32_t num_writes;
+  uint32_t num_writes : 31;
+  uint32_t exclusive  :  1;
   uint32_t num_reads;
 
-  bool exclusive;
-
   explicit TrackedKeyInfo(SequenceNumber seq_no)
-      : seq(seq_no), num_writes(0), num_reads(0), exclusive(false) {}
+      : seq(seq_no), num_writes(0), exclusive(false), num_reads(0) {}
 
   void Merge(const TrackedKeyInfo& info) {
     assert(seq <= info.seq);
@@ -33,14 +34,30 @@ struct TrackedKeyInfo {
   }
 };
 
+#if 0
 using TrackedKeyInfos = std::unordered_map<std::string, TrackedKeyInfo>;
+#else
+struct TrackedKeyInfos : terark::hash_strmap<TrackedKeyInfo
+      , terark::fstring_func::hash_align
+      , terark::fstring_func::equal_align
+      , terark::ValueInline, terark::FastCopy
+      , unsigned, size_t, false
+      > {
+  TrackedKeyInfos() {
+    size_t cap = 8;
+    size_t strpool_cap = 1024;
+    this->reserve(cap, strpool_cap);
+    //this->enable_freelist();
+  }
+};
+#endif
 
-using TrackedKeys = std::unordered_map<ColumnFamilyId, TrackedKeyInfos>;
+using TrackedKeys = terark::VectorIndexMap<ColumnFamilyId, TrackedKeyInfos>;
 
 // Tracks point locks on single keys.
 class PointLockTracker : public LockTracker {
  public:
-  PointLockTracker() = default;
+  PointLockTracker();
 
   PointLockTracker(const PointLockTracker&) = delete;
   PointLockTracker& operator=(const PointLockTracker&) = delete;
@@ -69,7 +86,7 @@ class PointLockTracker : public LockTracker {
       const LockTracker& save_point_tracker) const override;
 
   PointLockStatus GetPointLockStatus(ColumnFamilyId column_family_id,
-                                     const std::string& key) const override;
+                                     const LockString& key) const override;
 
   uint64_t GetNumPointLocks() const override;
 
@@ -77,7 +94,7 @@ class PointLockTracker : public LockTracker {
 
   KeyIterator* GetKeyIterator(ColumnFamilyId column_family_id) const override;
 
- private:
+ //private:
   TrackedKeys tracked_keys_;
 };
 

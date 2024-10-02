@@ -1703,7 +1703,7 @@ uint64_t DBTestBase::GetSstSizeHelper(Temperature temperature) {
 void VerifySstUniqueIds(const TablePropertiesCollection& props) {
   ASSERT_FALSE(props.empty());  // suspicious test if empty
   std::unordered_set<std::string> seen;
-  for (auto& pair : props) {
+  for (const auto& pair : props) {
     std::string id;
     ASSERT_OK(GetUniqueIdFromTableProperties(*pair.second, &id));
     ASSERT_TRUE(seen.insert(id).second);

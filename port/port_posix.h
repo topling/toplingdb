@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <assert.h>
 #include <thread>
 
 #include "rocksdb/port_defs.h"
@@ -87,6 +88,16 @@ namespace ROCKSDB_NAMESPACE {
 
 extern const bool kDefaultToAdaptiveMutex;
 
+#if PLATFORM_IS_LITTLE_ENDIAN
+inline uint64_t NativeOfBigEndian64(uint64_t x) { return __bswap_64(x); }
+inline uint32_t NativeOfBigEndian32(uint32_t x) { return __bswap_32(x); }
+inline uint16_t NativeOfBigEndian16(uint16_t x) { return __bswap_16(x); }
+#else
+inline uint64_t NativeOfBigEndian64(uint64_t x) { return (x); }
+inline uint32_t NativeOfBigEndian32(uint32_t x) { return (x); }
+inline uint16_t NativeOfBigEndian16(uint16_t x) { return (x); }
+#endif
+
 namespace port {
 constexpr bool kLittleEndian = PLATFORM_IS_LITTLE_ENDIAN;
 #undef PLATFORM_IS_LITTLE_ENDIAN
@@ -109,9 +120,9 @@ class Mutex {
 
   bool TryLock();
 
-  // This will fail assertion if the mutex is not locked.
-  // It does NOT verify that mutex is held by a calling thread.
-  void AssertHeld() const;
+  // this will assert if the mutex is not locked
+  // it does NOT verify that mutex is held by a calling thread
+  void AssertHeld() const { assert(locked_); }
 
   // Also implement std Lockable
   inline void lock() { Lock(); }

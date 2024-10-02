@@ -12,9 +12,16 @@
 #include <vector>
 
 #include "port/lang.h"
+#include "rocksdb/preproc.h"
 #include "rocksdb/rocksdb_namespace.h"
+#include <terark/valvec32.hpp>
 
 namespace ROCKSDB_NAMESPACE {
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#endif
 
 // A vector that leverages pre-allocated stack-based array to achieve better
 // performance for array with small amount of items.
@@ -167,14 +174,15 @@ class autovector {
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-  autovector() : values_(reinterpret_cast<pointer>(buf_)) {}
+  autovector() {}
 
-  autovector(std::initializer_list<T> init_list)
-      : values_(reinterpret_cast<pointer>(buf_)) {
+  autovector(std::initializer_list<T> init_list) {
+    this->reserve(init_list.size());
     for (const T& item : init_list) {
       push_back(item);
     }
   }
+  explicit autovector(size_t sz) { if (sz) resize(sz); }
 
   ~autovector() { clear(); }
 
@@ -186,6 +194,7 @@ class autovector {
   }
 
   size_type size() const { return num_stack_items_ + vect_.size(); }
+  size_type num_stack_items() const { return num_stack_items_; }
 
   // resize does not guarantee anything about the contents of the newly
   // available elements
@@ -193,13 +202,14 @@ class autovector {
     if (n > kSize) {
       vect_.resize(n - kSize);
       while (num_stack_items_ < kSize) {
-        new ((void*)(&values_[num_stack_items_++])) value_type();
+        new ((void*)(&values_[num_stack_items_])) value_type();
+        num_stack_items_++;  // exception-safe: inc after cons finish
       }
-      num_stack_items_ = kSize;
     } else {
       vect_.clear();
       while (num_stack_items_ < n) {
-        new ((void*)(&values_[num_stack_items_++])) value_type();
+        new ((void*)(&values_[num_stack_items_])) value_type();
+        num_stack_items_++;  // exception-safe: inc after cons finish
       }
       while (num_stack_items_ > n) {
         values_[--num_stack_items_].~value_type();
@@ -207,7 +217,7 @@ class autovector {
     }
   }
 
-  bool empty() const { return size() == 0; }
+  bool empty() const { return num_stack_items_ == 0; }
 
   size_type capacity() const { return kSize + vect_.capacity(); }
 
@@ -245,40 +255,42 @@ class autovector {
     return (*this)[n];
   }
 
-  reference front() {
+  reference front() noexcept {
     assert(!empty());
-    return *begin();
+    return values_[0];
   }
 
-  const_reference front() const {
+  const_reference front() const noexcept {
     assert(!empty());
-    return *begin();
+    return values_[0];
   }
 
-  reference back() {
+  reference back() noexcept {
     assert(!empty());
-    return *(end() - 1);
+    return vect_.empty() ? values_[num_stack_items_-1] : vect_.back();
   }
 
-  const_reference back() const {
+  const_reference back() const noexcept {
     assert(!empty());
-    return *(end() - 1);
+    return vect_.empty() ? values_[num_stack_items_-1] : vect_.back();
   }
 
   // -- Mutable Operations
   void push_back(T&& item) {
-    if (num_stack_items_ < kSize) {
-      new ((void*)(&values_[num_stack_items_])) value_type();
-      values_[num_stack_items_++] = std::move(item);
+    size_t oldsize = num_stack_items_;
+    if (oldsize < kSize) {
+      new (&values_[oldsize]) T (std::move(item));
+      num_stack_items_ = oldsize + 1;
     } else {
       vect_.push_back(item);
     }
   }
 
   void push_back(const T& item) {
-    if (num_stack_items_ < kSize) {
-      new ((void*)(&values_[num_stack_items_])) value_type();
-      values_[num_stack_items_++] = item;
+    size_t oldsize = num_stack_items_;
+    if (oldsize < kSize) {
+      new (&values_[oldsize]) T (item);
+      num_stack_items_ = oldsize + 1;
     } else {
       vect_.push_back(item);
     }
@@ -287,18 +299,21 @@ class autovector {
   template <class... Args>
 #if _LIBCPP_STD_VER > 14
   reference emplace_back(Args&&... args) {
-    if (num_stack_items_ < kSize) {
-      return *(new ((void*)(&values_[num_stack_items_++]))
-                   value_type(std::forward<Args>(args)...));
+    size_t oldsize = num_stack_items_;
+    if (oldsize < kSize) {
+      new ((void*)(&values_[oldsize]))
+                   value_type(std::forward<Args>(args)...);
+      return values_[oldsize];
     } else {
       return vect_.emplace_back(std::forward<Args>(args)...);
     }
   }
 #else
   void emplace_back(Args&&... args) {
-    if (num_stack_items_ < kSize) {
-      new ((void*)(&values_[num_stack_items_++]))
-          value_type(std::forward<Args>(args)...);
+    size_t oldsize = num_stack_items_;
+    if (oldsize < kSize) {
+      new ((void*)(&values_[oldsize])) T (std::forward<Args>(args)...);
+      num_stack_items_ = oldsize + 1;
     } else {
       vect_.emplace_back(std::forward<Args>(args)...);
     }
@@ -315,21 +330,54 @@ class autovector {
   }
 
   void clear() {
-    while (num_stack_items_ > 0) {
-      values_[--num_stack_items_].~value_type();
+    if (!std::is_trivially_destructible<T>::value) {
+      size_t cnt = num_stack_items_;
+      while (cnt) {
+        values_[--cnt].~value_type();
+      }
     }
+    num_stack_items_ = 0;
     vect_.clear();
   }
 
   // -- Copy and Assignment
   autovector& assign(const autovector& other);
 
-  autovector(const autovector& other) { assign(other); }
+  autovector(const autovector& other) : vect_(other.vect_) {
+    num_stack_items_ = other.num_stack_items_;
+    pad_u08_ = other.pad_u08_;
+    pad_u16_ = other.pad_u16_;
+  #if 0
+    std::uninitialized_copy_n(other.values_, other.num_stack_items_, values_);
+  #else
+    // num_stack_items_ is small, manually move should be faster
+    const size_t n = other.num_stack_items_;
+    ROCKSDB_ASSUME(n <= kSize); // let compiler do vectorization
+    for (size_t i = 0; i < n; i++) {
+      new (&values_[i]) T (other.values_[i]); // copy cons
+    }
+  #endif
+  }
 
   autovector& operator=(const autovector& other) { return assign(other); }
 
-  autovector(autovector&& other) noexcept { *this = std::move(other); }
-  autovector& operator=(autovector&& other);
+  autovector(autovector&& other) noexcept : vect_(std::move(other.vect_)) {
+    num_stack_items_ = other.num_stack_items_;
+    pad_u08_ = other.pad_u08_;
+    pad_u16_ = other.pad_u16_;
+  #if 0
+    std::uninitialized_move_n(other.values_, other.num_stack_items_, values_);
+  #else
+    // num_stack_items_ is small, manually move should be faster
+    const size_t n = other.num_stack_items_;
+    ROCKSDB_ASSUME(n <= kSize); // let compiler do vectorization
+    for (size_t i = 0; i < n; i++) {
+      new (&values_[i]) T (std::move(other.values_[i])); // move cons
+    }
+  #endif
+    other.num_stack_items_ = 0;
+  }
+  autovector& operator=(autovector&& other) noexcept;
 
   // -- Iterator Operations
   iterator begin() { return iterator(this, 0); }
@@ -352,42 +400,67 @@ class autovector {
     return const_reverse_iterator(begin());
   }
 
+  const T& top() const noexcept { return back(); }
+  T& top() noexcept { return back(); }
+  void pop() { pop_back(); }
+
+  uint8_t   pad_u08() const { return pad_u08_; }
+  uint16_t  pad_u16() const { return pad_u16_; }
+  uint8_t & pad_u08() { return pad_u08_; }
+  uint16_t& pad_u16() { return pad_u16_; }
+
  private:
-  size_type num_stack_items_ = 0;  // current number of items
-  alignas(alignof(
-      value_type)) char buf_[kSize *
-                             sizeof(value_type)];  // the first `kSize` items
-  pointer values_;
+  static void destroy(value_type* p, size_t n) {
+    if (!std::is_trivially_destructible<value_type>::value) {
+      while (n) p[--n].~value_type();
+    }
+  }
+
   // used only if there are more than `kSize` items.
-  std::vector<T> vect_;
+  static_assert(kSize <= 255);
+  using HeapVector = std::conditional_t<std::is_trivially_destructible_v<T>,
+                                        terark::valvec32<T>, std::vector<T> >;
+  HeapVector vect_;
+  uint8_t  num_stack_items_ = 0;  // current number of items
+  uint8_t  pad_u08_ = 0;
+  uint16_t pad_u16_ = 0;
+  union {
+    value_type values_[kSize];
+  };
 };
 
 template <class T, size_t kSize>
-autovector<T, kSize>& autovector<T, kSize>::assign(
+inline autovector<T, kSize>& autovector<T, kSize>::assign(
     const autovector<T, kSize>& other) {
-  values_ = reinterpret_cast<pointer>(buf_);
   // copy the internal vector
   vect_.assign(other.vect_.begin(), other.vect_.end());
 
+  destroy(values_, num_stack_items_);
   // copy array
   num_stack_items_ = other.num_stack_items_;
-  std::copy(other.values_, other.values_ + num_stack_items_, values_);
+  pad_u08_ = other.pad_u08_;
+  pad_u16_ = other.pad_u16_;
+  std::uninitialized_copy_n(other.values_, num_stack_items_, values_);
 
   return *this;
 }
 
 template <class T, size_t kSize>
-autovector<T, kSize>& autovector<T, kSize>::operator=(
-    autovector<T, kSize>&& other) {
-  values_ = reinterpret_cast<pointer>(buf_);
+inline autovector<T, kSize>& autovector<T, kSize>::operator=(
+    autovector<T, kSize>&& other) noexcept {
   vect_ = std::move(other.vect_);
+  destroy(values_, num_stack_items_);
   size_t n = other.num_stack_items_;
   num_stack_items_ = n;
+  pad_u08_ = other.pad_u08_;
+  pad_u16_ = other.pad_u16_;
   other.num_stack_items_ = 0;
-  for (size_t i = 0; i < n; ++i) {
-    values_[i] = std::move(other.values_[i]);
-  }
+  std::uninitialized_move_n(other.values_, n, values_);
   return *this;
 }
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -31,23 +31,39 @@ namespace ROCKSDB_NAMESPACE {
 // that key never appears in the database. We don't want adjacent sstables to
 // be considered overlapping if they are separated by the range tombstone
 // sentinel.
-int sstableKeyCompare(const Comparator* user_cmp, const Slice&, const Slice&);
-inline int sstableKeyCompare(const Comparator* user_cmp, const Slice& a,
-                             const InternalKey& b) {
-  return sstableKeyCompare(user_cmp, a, b.Encode());
+
+template<class CmpNoTS>
+extern int sstableKeyCompare(CmpNoTS, const Slice& a, const Slice& b);
+inline int
+sstableKeyCompare(const Comparator* uc, const Slice& a, const Slice& b) {
+  return sstableKeyCompare(VirtualFunctionCompareUserKeyNoTS{uc}, a, b);
 }
-inline int sstableKeyCompare(const Comparator* user_cmp, const InternalKey& a,
-                             const Slice& b) {
-  return sstableKeyCompare(user_cmp, a.Encode(), b);
+template<class CmpNoTS> inline int
+sstableKeyCompare(CmpNoTS cmp, const Slice& a, const InternalKey& b) {
+  return sstableKeyCompare(cmp, a, b.Encode());
 }
-inline int sstableKeyCompare(const Comparator* user_cmp, const InternalKey& a,
-                             const InternalKey& b) {
-  return sstableKeyCompare(user_cmp, a.Encode(), b.Encode());
+template<class CmpNoTS> inline int
+sstableKeyCompare(CmpNoTS cmp, const InternalKey& a, const Slice& b) {
+  return sstableKeyCompare(cmp, a.Encode(), b);
 }
-int sstableKeyCompare(const Comparator* user_cmp, const InternalKey* a,
-                      const InternalKey& b);
-int sstableKeyCompare(const Comparator* user_cmp, const InternalKey& a,
-                      const InternalKey* b);
+template<class CmpNoTS> inline int
+sstableKeyCompare(CmpNoTS cmp, const InternalKey& a, const InternalKey& b) {
+  return sstableKeyCompare(cmp, a.Encode(), b.Encode());
+}
+template<class CmpNoTS> inline int
+sstableKeyCompare(CmpNoTS cmp, const InternalKey* a, const InternalKey& b) {
+  if (a == nullptr)
+    return -1;
+  else
+    return sstableKeyCompare(cmp, *a, b);
+}
+template<class CmpNoTS> inline int
+sstableKeyCompare(CmpNoTS cmp, const InternalKey& a, const InternalKey* b) {
+  if (b == nullptr)
+    return -1;
+  else
+    return sstableKeyCompare(cmp, a, *b);
+}
 
 // An AtomicCompactionUnitBoundary represents a range of keys [smallest,
 // largest] that exactly spans one ore more neighbouring SSTs on the same
@@ -173,7 +189,7 @@ class Compaction {
     return &inputs_[compaction_input_level].files;
   }
 
-  const std::vector<CompactionInputFiles>* inputs() { return &inputs_; }
+  const std::vector<CompactionInputFiles>* inputs() const { return &inputs_; }
 
   // Returns the LevelFilesBrief of the specified compaction input level.
   const LevelFilesBrief* input_levels(size_t compaction_input_level) const {
@@ -196,6 +212,11 @@ class Compaction {
 
   // Whether need to write output file to second DB path.
   uint32_t output_path_id() const { return output_path_id_; }
+
+  const DbPath& output_path() const {
+    ROCKSDB_VERIFY_LT(output_path_id_, immutable_options_.cf_paths.size());
+    return immutable_options_.cf_paths[output_path_id_];
+  }
 
   // Is this a trivial compaction that can be implemented by just
   // moving a single input file to the next level (no merging or splitting)
@@ -242,6 +263,8 @@ class Compaction {
 
   // Is this compaction creating a file in the bottom most level?
   bool bottommost_level() const { return bottommost_level_; }
+
+  void set_bottommost_level(bool v) { bottommost_level_ = v; }
 
   // Is the compaction compact to the last level
   bool is_last_level() const {
@@ -337,6 +360,10 @@ class Compaction {
     return input_table_properties_;
   }
 
+  void SetOutputTableProperties(const TablePropertiesCollection& props) {
+    output_table_properties_ = props;
+  }
+
   // TODO(hx235): consider making this function symmetric to
   // InitInputTableProperties()
   void SetOutputTableProperties(
@@ -415,6 +442,7 @@ class Compaction {
   bool ShouldNotifyOnCompactionCompleted() const {
     return notify_on_compaction_completion_;
   }
+  uint64_t GetSmallestSeqno() const;
 
   static constexpr int kInvalidLevel = -1;
 
@@ -432,9 +460,9 @@ class Compaction {
                                       const int start_level,
                                       const int output_level);
 
- private:
   void SetInputVersion(Version* input_version);
 
+ private:
   Status InitInputTableProperties();
 
   // mark (or clear) all files that are being compacted
@@ -504,6 +532,7 @@ class Compaction {
   // logic might pick a subset of the files that aren't overlapping. if
   // that is the case, set the value to false. Otherwise, set it true.
   bool l0_files_might_overlap_;
+  bool is_compaction_woker_;
 
   // Compaction input files organized by level. Constant after construction
   const std::vector<CompactionInputFiles> inputs_;
@@ -517,7 +546,7 @@ class Compaction {
   const double score_;  // score that was used to pick this compaction.
 
   // Is this compaction creating a file in the bottom most level?
-  const bool bottommost_level_;
+  bool bottommost_level_;
   // Does this compaction include all sst files?
   const bool is_full_compaction_;
 
@@ -531,10 +560,13 @@ class Compaction {
   // compaction
   bool is_trivial_move_;
 
+public:
   // Does input compression match the output compression?
   bool InputCompressionMatchesOutput() const;
 
+private:
   TablePropertiesCollection input_table_properties_;
+  // table properties of output files
   TablePropertiesCollection output_table_properties_;
 
   // smallest user keys in compaction
@@ -596,5 +628,8 @@ struct PerKeyPlacementContext {
 
 // Return sum of sizes of all files in `files`.
 extern uint64_t TotalFileSize(const std::vector<FileMetaData*>& files);
+
+// Return sum of raw kv sizes of all files in `files`.
+extern uint64_t TotalFileRawKV(const std::vector<FileMetaData*>& files);
 
 }  // namespace ROCKSDB_NAMESPACE

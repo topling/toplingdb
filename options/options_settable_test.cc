@@ -159,6 +159,8 @@ TEST_F(OptionsSettableTest, BlockBasedTableOptionsAllFieldsSettable) {
   FillWithSpecialChar(bbto_ptr, sizeof(BlockBasedTableOptions), kBbtoExcluded);
   // This option is not setable:
   bbto->use_delta_encoding = true;
+  bbto->use_raw_size_as_estimated_file_size = true; // ToplingDB specific
+  bbto->enable_get_random_keys = true; // ToplingDB specific
 
   char* new_bbto_ptr = new char[sizeof(BlockBasedTableOptions)];
   BlockBasedTableOptions* new_bbto =
@@ -253,6 +255,8 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
       {offsetof(struct DBOptions, compaction_service),
        sizeof(std::shared_ptr<CompactionService>)},
       {offsetof(struct DBOptions, daily_offpeak_time_utc), sizeof(std::string)},
+      {offsetof(struct DBOptions, wbwi_factory),
+       sizeof(std::shared_ptr<class WriteBatchWithIndexFactory>)},
   };
 
   char* options_ptr = new char[sizeof(DBOptions)];
@@ -273,6 +277,7 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
 
   options = new (options_ptr) DBOptions();
   FillWithSpecialChar(options_ptr, sizeof(DBOptions), kDBOptionsExcluded);
+  options->allow_fdatasync = true; // ToplingDB specific
 
   char* new_options_ptr = new char[sizeof(DBOptions)];
   DBOptions* new_options = new (new_options_ptr) DBOptions();
@@ -292,6 +297,7 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
                              "wal_dir=path/to/wal_dir;"
                              "db_write_buffer_size=2587;"
                              "max_subcompactions=64330;"
+                             "max_level1_subcompactions=64330;"
                              "table_cache_numshardbits=28;"
                              "max_open_files=72;"
                              "max_file_opening_threads=35;"
@@ -437,6 +443,10 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
        sizeof(std::shared_ptr<ConcurrentTaskLimiter>)},
       {offsetof(struct ColumnFamilyOptions, sst_partitioner_factory),
        sizeof(std::shared_ptr<SstPartitionerFactory>)},
+      {offsetof(struct ColumnFamilyOptions, compaction_executor_factory),
+       sizeof(std::shared_ptr<class CompactionExecutorFactory>)},
+      {offsetof(struct ColumnFamilyOptions, html_user_key_coder),
+       sizeof(std::shared_ptr<class AnyPlugin>)},
   };
 
   char* options_ptr = new char[sizeof(ColumnFamilyOptions)];
@@ -468,6 +478,8 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
   options->num_levels = 42;  // Initialize options for MutableCF
   options->compaction_filter = nullptr;
   options->sst_partitioner_factory = nullptr;
+  options->compaction_executor_factory = nullptr; // ToplingDB specific
+  options->html_user_key_coder = nullptr; // ToplingDB specific
 
   char* new_options_ptr = new char[sizeof(ColumnFamilyOptions)];
   ColumnFamilyOptions* new_options =
@@ -500,7 +512,6 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
       "max_write_buffer_number=84;"
       "write_buffer_size=1653;"
       "max_compaction_bytes=64;"
-      "ignore_max_compaction_bytes_for_input=true;"
       "max_bytes_for_level_multiplier=60;"
       "memtable_factory=SkipListFactory;"
       "compression=kNoCompression;"
@@ -523,6 +534,7 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
       "max_write_buffer_size_to_maintain=2147483648;"
       "merge_operator=aabcxehazrMergeOperator;"
       "memtable_prefix_bloom_size_ratio=0.4642;"
+      "allow_merge_memtables=true;"
       "memtable_whole_key_filtering=true;"
       "memtable_insert_with_hint_prefix_extractor=rocksdb.CappedPrefix.13;"
       "check_flush_compaction_key_order=false;"
@@ -551,6 +563,7 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
       "blob_garbage_collection_force_threshold=0.75;"
       "blob_compaction_readahead_size=262144;"
       "blob_file_starting_level=1;"
+      "min_filter_level=1;"
       "prepopulate_blob_cache=kDisable;"
       "bottommost_temperature=kWarm;"
       "last_level_temperature=kWarm;"

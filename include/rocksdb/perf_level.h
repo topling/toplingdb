@@ -10,11 +10,12 @@
 #include <string>
 
 #include "rocksdb/rocksdb_namespace.h"
+#include "rocksdb/enum_reflection.h"
 
 namespace ROCKSDB_NAMESPACE {
 
 // How much perf stats to collect. Affects perf_context and iostats_context.
-enum PerfLevel : unsigned char {
+ROCKSDB_ENUM_PLAIN(PerfLevel, unsigned char,
   kUninitialized = 0,             // unknown setting
   kDisable = 1,                   // disable perf stats
   kEnableCount = 2,               // enable only count stats
@@ -25,7 +26,7 @@ enum PerfLevel : unsigned char {
   kEnableTimeAndCPUTimeExceptForMutex = 4,
   kEnableTime = 5,  // enable count and time stats
   kOutOfBounds = 6  // N.B. Must always be the last value!
-};
+);
 
 // set the perf stats level for current thread
 void SetPerfLevel(PerfLevel level);

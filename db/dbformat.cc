@@ -54,6 +54,7 @@ EntryType GetEntryType(ValueType value_type) {
 }
 
 void AppendInternalKey(std::string* result, const ParsedInternalKey& key) {
+  result->reserve(key.user_key.size() + 8);
   result->append(key.user_key.data(), key.user_key.size());
   PutFixed64(result, PackSequenceAndType(key.sequence, key.type));
 }
@@ -62,6 +63,7 @@ void AppendInternalKeyWithDifferentTimestamp(std::string* result,
                                              const ParsedInternalKey& key,
                                              const Slice& ts) {
   assert(key.user_key.size() >= ts.size());
+  result->reserve(key.user_key.size() + 8);
   result->append(key.user_key.data(), key.user_key.size() - ts.size());
   result->append(ts.data(), ts.size());
   PutFixed64(result, PackSequenceAndType(key.sequence, key.type));
@@ -213,28 +215,30 @@ int InternalKeyComparator::Compare(const ParsedInternalKey& a,
 
 LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
                      const Slice* ts) {
+  static_assert(offsetof(LookupKey, longstart_) == 8);
   size_t usize = _user_key.size();
   size_t ts_sz = (nullptr == ts) ? 0 : ts->size();
-  size_t needed = usize + ts_sz + 13;  // A conservative estimate
+  klength_ = uint32_t(usize + ts_sz + 8);
+  char buf[8];
+  auto klen_len = EncodeVarint32(buf, klength_) - buf;
+  klen_len_ = char(klen_len);
   char* dst;
-  if (needed <= sizeof(space_)) {
-    dst = space_;
+  if (LIKELY(klength_ <= sizeof(space_) - 4)) {
+    dst = space_ + 4 - klen_len;
   } else {
-    dst = new char[needed];
+    char* ptr = new char[usize + ts_sz + 16]; // precise space
+    dst = ptr + 8 - klen_len;
+    longstart_ = ptr + 8;
   }
-  start_ = dst;
-  // NOTE: We don't support users keys of more than 2GB :)
-  dst = EncodeVarint32(dst, static_cast<uint32_t>(usize + ts_sz + 8));
-  kstart_ = dst;
+  ROCKSDB_ASSUME(klen_len >= 1 && klen_len <= 5);
+  memcpy(dst, buf, klen_len); dst += klen_len;
   memcpy(dst, _user_key.data(), usize);
   dst += usize;
-  if (nullptr != ts) {
+  if (UNLIKELY(nullptr != ts)) {
     memcpy(dst, ts->data(), ts_sz);
     dst += ts_sz;
   }
   EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek));
-  dst += 8;
-  end_ = dst;
 }
 
 void IterKey::EnlargeBuffer(size_t key_size) {
@@ -246,4 +250,32 @@ void IterKey::EnlargeBuffer(size_t key_size) {
   buf_ = new char[key_size];
   buf_size_ = key_size;
 }
+
+void IterKey::TrimAppend(const size_t shared_len, const char* non_shared_data,
+                         const size_t non_shared_len) {
+  assert(shared_len <= key_size_);
+  size_t total_size = shared_len + non_shared_len;
+
+  if (IsKeyPinned() /* key is not in buf_ */) {
+    // Copy the key from external memory to buf_ (copy shared_len bytes)
+    EnlargeBufferIfNeeded(total_size);
+    memcpy(buf(), key_, shared_len);
+  } else if (total_size > buf_size_) {
+    // Need to allocate space, delete previous space
+    char* p = new char[total_size];
+    memcpy(p, key_, shared_len);
+
+    if (buf_size_ != sizeof(space_)) {
+      delete[] buf_;
+    }
+
+    buf_ = p;
+    buf_size_ = total_size;
+  }
+
+  memcpy(buf() + shared_len, non_shared_data, non_shared_len);
+  key_ = buf();
+  key_size_ = total_size;
+}
+
 }  // namespace ROCKSDB_NAMESPACE

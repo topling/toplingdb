@@ -154,6 +154,7 @@ struct TableBuilderOptions {
   // want to skip filters, that should be (for example) null filter_policy
   // in the table options of the ioptions.table_factory
   bool skip_filters = false;
+
   const uint64_t cur_file_num;
 };
 
@@ -216,6 +217,10 @@ class TableBuilder {
 
   // Returns table properties
   virtual TableProperties GetTableProperties() const = 0;
+
+  virtual Status GetBoundaryUserKey(std::string*, std::string*) const {
+    return Status::NotSupported("Only supported by auto sort sst");
+  }
 
   // Return file checksum
   virtual std::string GetFileChecksum() const = 0;

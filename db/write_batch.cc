@@ -71,6 +71,8 @@
 #include "util/duplicate_detector.h"
 #include "util/string_util.h"
 
+#include <terark/smartmap.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 // anon namespace for file-local types
@@ -245,6 +247,9 @@ void WriteBatch::Handler::LogData(const Slice& /*blob*/) {
 bool WriteBatch::Handler::Continue() { return true; }
 
 void WriteBatch::Clear() {
+  if (rep_.capacity() > 512*1024) {
+    std::string().swap(rep_); // free memory
+  }
   rep_.clear();
   rep_.resize(WriteBatchInternal::kHeader);
 
@@ -469,7 +474,8 @@ Status ReadRecordFromWriteBatch(Slice* input, char* tag,
       }
       break;
     default:
-      return Status::Corruption("unknown WriteBatch tag");
+      return Status::Corruption("bad WriteBatch tag = "
+                               + enum_stdstr(ValueType(*tag)));
   }
   return Status::OK();
 }
@@ -811,9 +817,7 @@ Status WriteBatchInternal::Put(WriteBatch* b, uint32_t column_family_id,
   }
   PutLengthPrefixedSlice(&b->rep_, key);
   PutLengthPrefixedSlice(&b->rep_, value);
-  b->content_flags_.store(
-      b->content_flags_.load(std::memory_order_relaxed) | ContentFlags::HAS_PUT,
-      std::memory_order_relaxed);
+  b->content_flags_.fetch_or(ContentFlags::HAS_PUT, std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // Technically the optype could've been `kTypeColumnFamilyValue` with the
     // CF ID encoded in the `WriteBatch`. That distinction is unimportant
@@ -905,9 +909,7 @@ Status WriteBatchInternal::Put(WriteBatch* b, uint32_t column_family_id,
   }
   PutLengthPrefixedSliceParts(&b->rep_, key);
   PutLengthPrefixedSliceParts(&b->rep_, value);
-  b->content_flags_.store(
-      b->content_flags_.load(std::memory_order_relaxed) | ContentFlags::HAS_PUT,
-      std::memory_order_relaxed);
+  b->content_flags_.fetch_or(ContentFlags::HAS_PUT, std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // See comment in first `WriteBatchInternal::Put()` overload concerning the
     // `ValueType` argument passed to `ProtectKVO()`.
@@ -976,9 +978,7 @@ Status WriteBatchInternal::PutEntity(WriteBatch* b, uint32_t column_family_id,
   PutLengthPrefixedSlice(&b->rep_, key);
   PutLengthPrefixedSlice(&b->rep_, entity);
 
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_PUT_ENTITY,
-                          std::memory_order_relaxed);
+  b->content_flags_.fetch_or(HAS_PUT_ENTITY, std::memory_order_relaxed);
 
   if (b->prot_info_ != nullptr) {
     b->prot_info_->entries_.emplace_back(
@@ -1058,14 +1058,16 @@ Status WriteBatchInternal::MarkEndPrepare(WriteBatch* b, const Slice& xid,
                                              : kTypeBeginPersistedPrepareXID));
   b->rep_.push_back(static_cast<char>(kTypeEndPrepareXID));
   PutLengthPrefixedSlice(&b->rep_, xid);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_END_PREPARE |
-                              ContentFlags::HAS_BEGIN_PREPARE,
-                          std::memory_order_relaxed);
   if (unprepared_batch) {
-    b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                                ContentFlags::HAS_BEGIN_UNPREPARE,
-                            std::memory_order_relaxed);
+    b->content_flags_.fetch_or(ContentFlags::HAS_END_PREPARE |
+                               ContentFlags::HAS_BEGIN_PREPARE |
+                               ContentFlags::HAS_BEGIN_UNPREPARE,
+                               std::memory_order_relaxed);
+  }
+  else {
+    b->content_flags_.fetch_or(ContentFlags::HAS_END_PREPARE |
+                               ContentFlags::HAS_BEGIN_PREPARE,
+                               std::memory_order_relaxed);
   }
   return Status::OK();
 }
@@ -1073,9 +1075,8 @@ Status WriteBatchInternal::MarkEndPrepare(WriteBatch* b, const Slice& xid,
 Status WriteBatchInternal::MarkCommit(WriteBatch* b, const Slice& xid) {
   b->rep_.push_back(static_cast<char>(kTypeCommitXID));
   PutLengthPrefixedSlice(&b->rep_, xid);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_COMMIT,
-                          std::memory_order_relaxed);
+  b->content_flags_.fetch_or(ContentFlags::HAS_COMMIT,
+                             std::memory_order_relaxed);
   return Status::OK();
 }
 
@@ -1086,8 +1087,7 @@ Status WriteBatchInternal::MarkCommitWithTimestamp(WriteBatch* b,
   b->rep_.push_back(static_cast<char>(kTypeCommitXIDAndTimestamp));
   PutLengthPrefixedSlice(&b->rep_, commit_ts);
   PutLengthPrefixedSlice(&b->rep_, xid);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_COMMIT,
+  b->content_flags_.fetch_or(ContentFlags::HAS_COMMIT,
                           std::memory_order_relaxed);
   return Status::OK();
 }
@@ -1095,9 +1095,8 @@ Status WriteBatchInternal::MarkCommitWithTimestamp(WriteBatch* b,
 Status WriteBatchInternal::MarkRollback(WriteBatch* b, const Slice& xid) {
   b->rep_.push_back(static_cast<char>(kTypeRollbackXID));
   PutLengthPrefixedSlice(&b->rep_, xid);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_ROLLBACK,
-                          std::memory_order_relaxed);
+  b->content_flags_.fetch_or(ContentFlags::HAS_ROLLBACK,
+                             std::memory_order_relaxed);
   return Status::OK();
 }
 
@@ -1112,9 +1111,8 @@ Status WriteBatchInternal::Delete(WriteBatch* b, uint32_t column_family_id,
     PutVarint32(&b->rep_, column_family_id);
   }
   PutLengthPrefixedSlice(&b->rep_, key);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_DELETE,
-                          std::memory_order_relaxed);
+  b->content_flags_.fetch_or(ContentFlags::HAS_DELETE,
+                             std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // See comment in first `WriteBatchInternal::Put()` overload concerning the
     // `ValueType` argument passed to `ProtectKVO()`.
@@ -1176,9 +1174,8 @@ Status WriteBatchInternal::Delete(WriteBatch* b, uint32_t column_family_id,
     PutVarint32(&b->rep_, column_family_id);
   }
   PutLengthPrefixedSliceParts(&b->rep_, key);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_DELETE,
-                          std::memory_order_relaxed);
+  b->content_flags_.fetch_or(ContentFlags::HAS_DELETE,
+                             std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // See comment in first `WriteBatchInternal::Put()` overload concerning the
     // `ValueType` argument passed to `ProtectKVO()`.
@@ -1226,9 +1223,8 @@ Status WriteBatchInternal::SingleDelete(WriteBatch* b,
     PutVarint32(&b->rep_, column_family_id);
   }
   PutLengthPrefixedSlice(&b->rep_, key);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_SINGLE_DELETE,
-                          std::memory_order_relaxed);
+  b->content_flags_.fetch_or(ContentFlags::HAS_SINGLE_DELETE,
+                             std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // See comment in first `WriteBatchInternal::Put()` overload concerning the
     // `ValueType` argument passed to `ProtectKVO()`.
@@ -1292,8 +1288,7 @@ Status WriteBatchInternal::SingleDelete(WriteBatch* b,
     PutVarint32(&b->rep_, column_family_id);
   }
   PutLengthPrefixedSliceParts(&b->rep_, key);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_SINGLE_DELETE,
+  b->content_flags_.fetch_or(ContentFlags::HAS_SINGLE_DELETE,
                           std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // See comment in first `WriteBatchInternal::Put()` overload concerning the
@@ -1344,8 +1339,7 @@ Status WriteBatchInternal::DeleteRange(WriteBatch* b, uint32_t column_family_id,
   }
   PutLengthPrefixedSlice(&b->rep_, begin_key);
   PutLengthPrefixedSlice(&b->rep_, end_key);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_DELETE_RANGE,
+  b->content_flags_.fetch_or(ContentFlags::HAS_DELETE_RANGE,
                           std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // See comment in first `WriteBatchInternal::Put()` overload concerning the
@@ -1417,8 +1411,7 @@ Status WriteBatchInternal::DeleteRange(WriteBatch* b, uint32_t column_family_id,
   }
   PutLengthPrefixedSliceParts(&b->rep_, begin_key);
   PutLengthPrefixedSliceParts(&b->rep_, end_key);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_DELETE_RANGE,
+  b->content_flags_.fetch_or(ContentFlags::HAS_DELETE_RANGE,
                           std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // See comment in first `WriteBatchInternal::Put()` overload concerning the
@@ -1474,8 +1467,7 @@ Status WriteBatchInternal::Merge(WriteBatch* b, uint32_t column_family_id,
   }
   PutLengthPrefixedSlice(&b->rep_, key);
   PutLengthPrefixedSlice(&b->rep_, value);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_MERGE,
+  b->content_flags_.fetch_or(ContentFlags::HAS_MERGE,
                           std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // See comment in first `WriteBatchInternal::Put()` overload concerning the
@@ -1546,8 +1538,7 @@ Status WriteBatchInternal::Merge(WriteBatch* b, uint32_t column_family_id,
   }
   PutLengthPrefixedSliceParts(&b->rep_, key);
   PutLengthPrefixedSliceParts(&b->rep_, value);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_MERGE,
+  b->content_flags_.fetch_or(ContentFlags::HAS_MERGE,
                           std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // See comment in first `WriteBatchInternal::Put()` overload concerning the
@@ -1594,8 +1585,7 @@ Status WriteBatchInternal::PutBlobIndex(WriteBatch* b,
   }
   PutLengthPrefixedSlice(&b->rep_, key);
   PutLengthPrefixedSlice(&b->rep_, value);
-  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
-                              ContentFlags::HAS_BLOB_INDEX,
+  b->content_flags_.fetch_or(ContentFlags::HAS_BLOB_INDEX,
                           std::memory_order_relaxed);
   if (b->prot_info_ != nullptr) {
     // See comment in first `WriteBatchInternal::Put()` overload concerning the
@@ -1774,13 +1764,10 @@ class MemTableInserter : public WriteBatch::Handler {
   ColumnFamilyMemTables* const cf_mems_;
   FlushScheduler* const flush_scheduler_;
   TrimHistoryScheduler* const trim_history_scheduler_;
-  const bool ignore_missing_column_families_;
   const uint64_t recovering_log_number_;
   // log number that all Memtables inserted into should reference
   uint64_t log_number_ref_;
   DBImpl* db_;
-  const bool concurrent_memtable_writes_;
-  bool post_info_created_;
   const WriteBatch::ProtectionInfo* prot_info_;
   size_t prot_info_idx_;
 
@@ -1790,12 +1777,13 @@ class MemTableInserter : public WriteBatch::Handler {
   // cause memory allocations though unused.
   // Make creation optional but do not incur
   // std::unique_ptr additional allocation
-  using MemPostInfoMap = std::map<MemTable*, MemTablePostProcessInfo>;
-  using PostMapType = std::aligned_storage<sizeof(MemPostInfoMap)>::type;
-  PostMapType mem_post_info_map_;
+  using MemPostInfoMap = terark::SmartMap<MemTable*, MemTablePostProcessInfo, 1>;
+  MemPostInfoMap mem_post_info_map_;
   // current recovered transaction we are rebuilding (recovery)
   WriteBatch* rebuilding_trx_;
   SequenceNumber rebuilding_trx_seq_;
+  const bool ignore_missing_column_families_;
+  const bool concurrent_memtable_writes_;
   // Increase seq number once per each write batch. Otherwise increase it once
   // per key.
   bool seq_per_batch_;
@@ -1805,32 +1793,24 @@ class MemTableInserter : public WriteBatch::Handler {
   bool write_before_prepare_;
   // Whether this batch was unprepared or not
   bool unprepared_batch_;
-  using DupDetector = std::aligned_storage<sizeof(DuplicateDetector)>::type;
-  DupDetector duplicate_detector_;
   bool dup_dectector_on_;
 
   bool hint_per_batch_;
-  bool hint_created_;
+
   // Hints for this batch
-  using HintMap = std::unordered_map<MemTable*, void*>;
-  using HintMapType = std::aligned_storage<sizeof(HintMap)>::type;
-  HintMapType hint_;
+  using HintMap = terark::SmartMap<MemTable*, void*, 1>;
+  HintMap hint_;
+  uint32_t curr_cf_id_ = UINT32_MAX;
+
+  union { DuplicateDetector duplicate_detector_; };
 
   HintMap& GetHintMap() {
-    assert(hint_per_batch_);
-    if (!hint_created_) {
-      new (&hint_) HintMap();
-      hint_created_ = true;
-    }
+    assert(hint_per_batch_ || hint_.empty());
     return *reinterpret_cast<HintMap*>(&hint_);
   }
 
   MemPostInfoMap& GetPostMap() {
-    assert(concurrent_memtable_writes_);
-    if (!post_info_created_) {
-      new (&mem_post_info_map_) MemPostInfoMap();
-      post_info_created_ = true;
-    }
+    assert(concurrent_memtable_writes_ || mem_post_info_map_.empty());
     return *reinterpret_cast<MemPostInfoMap*>(&mem_post_info_map_);
   }
 
@@ -1891,17 +1871,16 @@ class MemTableInserter : public WriteBatch::Handler {
         cf_mems_(cf_mems),
         flush_scheduler_(flush_scheduler),
         trim_history_scheduler_(trim_history_scheduler),
-        ignore_missing_column_families_(ignore_missing_column_families),
         recovering_log_number_(recovering_log_number),
         log_number_ref_(0),
         db_(static_cast_with_check<DBImpl>(db)),
-        concurrent_memtable_writes_(concurrent_memtable_writes),
-        post_info_created_(false),
         prot_info_(prot_info),
         prot_info_idx_(0),
         has_valid_writes_(has_valid_writes),
         rebuilding_trx_(nullptr),
         rebuilding_trx_seq_(0),
+        ignore_missing_column_families_(ignore_missing_column_families),
+        concurrent_memtable_writes_(concurrent_memtable_writes),
         seq_per_batch_(seq_per_batch),
         // Write after commit currently uses one seq per key (instead of per
         // batch). So seq_per_batch being false indicates write_after_commit
@@ -1911,10 +1890,8 @@ class MemTableInserter : public WriteBatch::Handler {
         // batch_per_txn being false indicates write_before_prepare.
         write_before_prepare_(!batch_per_txn),
         unprepared_batch_(false),
-        duplicate_detector_(),
         dup_dectector_on_(false),
-        hint_per_batch_(hint_per_batch),
-        hint_created_(false) {
+        hint_per_batch_(hint_per_batch) {
     assert(cf_mems_);
   }
 
@@ -1923,15 +1900,11 @@ class MemTableInserter : public WriteBatch::Handler {
       reinterpret_cast<DuplicateDetector*>(&duplicate_detector_)
           ->~DuplicateDetector();
     }
-    if (post_info_created_) {
-      reinterpret_cast<MemPostInfoMap*>(&mem_post_info_map_)->~MemPostInfoMap();
-    }
-    if (hint_created_) {
-      for (auto iter : GetHintMap()) {
-        delete[] reinterpret_cast<char*>(iter.second);
-      }
-      reinterpret_cast<HintMap*>(&hint_)->~HintMap();
-    }
+    GetHintMap().for_each([](auto& iter) {
+      // In base MemTableRep, FinishHint do delete [] (char*)(hint).
+      // In ToplingDB CSPP PatriciaTrie, FinishHint idle/release token.
+      iter.first->FinishHint(iter.second);
+    });
     delete rebuilding_trx_;
   }
 
@@ -1966,14 +1939,13 @@ class MemTableInserter : public WriteBatch::Handler {
     assert(concurrent_memtable_writes_);
     // If post info was not created there is nothing
     // to process and no need to create on demand
-    if (post_info_created_) {
-      for (auto& pair : GetPostMap()) {
-        pair.first->BatchPostProcess(pair.second);
-      }
-    }
+    GetPostMap().for_each([](auto& pair) {
+      pair.first->BatchPostProcess(pair.second);
+    });
   }
 
   bool SeekToColumnFamily(uint32_t column_family_id, Status* s) {
+   if (UNLIKELY(curr_cf_id_ != column_family_id)) {
     // If we are in a concurrent mode, it is the caller's responsibility
     // to clone the original ColumnFamilyMemTables so that each thread
     // has its own instance.  Otherwise, it must be guaranteed that there
@@ -1986,8 +1958,11 @@ class MemTableInserter : public WriteBatch::Handler {
         *s = Status::InvalidArgument(
             "Invalid column family specified in write batch");
       }
+      curr_cf_id_ = UINT32_MAX; // invalidate is required
       return false;
     }
+    curr_cf_id_ = column_family_id;
+   }
     if (recovering_log_number_ != 0 &&
         recovering_log_number_ < cf_mems_->GetLogNumber()) {
       // This is true only in recovery environment (recovering_log_number_ is
@@ -2047,11 +2022,14 @@ class MemTableInserter : public WriteBatch::Handler {
     // inplace_update_support is inconsistent with snapshots, and therefore with
     // any kind of transactions including the ones that use seq_per_batch
     assert(!seq_per_batch_ || !moptions->inplace_update_support);
-    if (!moptions->inplace_update_support) {
-      ret_status =
+    if (LIKELY(!moptions->inplace_update_support)) {
+      Status add_status =
           mem->Add(sequence_, value_type, key, value, kv_prot_info,
                    concurrent_memtable_writes_, get_post_process_info(mem),
                    hint_per_batch_ ? &GetHintMap()[mem] : nullptr);
+      if (UNLIKELY(!add_status.ok())) {
+        ret_status = add_status;
+      }
     } else if (moptions->inplace_callback == nullptr ||
                value_type != kTypeValue) {
       assert(!concurrent_memtable_writes_);
@@ -2931,11 +2909,12 @@ Status WriteBatchInternal::InsertInto(
     TrimHistoryScheduler* trim_history_scheduler,
     bool ignore_missing_column_families, uint64_t recovery_log_number, DB* db,
     bool concurrent_memtable_writes, bool seq_per_batch, bool batch_per_txn) {
+  bool hint = true;
   MemTableInserter inserter(
       sequence, memtables, flush_scheduler, trim_history_scheduler,
       ignore_missing_column_families, recovery_log_number, db,
       concurrent_memtable_writes, nullptr /* prot_info */,
-      nullptr /*has_valid_writes*/, seq_per_batch, batch_per_txn);
+      nullptr /*has_valid_writes*/, seq_per_batch, batch_per_txn, hint);
   for (auto w : write_group) {
     if (w->CallbackFailed()) {
       continue;
@@ -3144,9 +3123,7 @@ Status WriteBatchInternal::Append(WriteBatch* dst, const WriteBatch* src,
   SetCount(dst, Count(dst) + src_count);
   assert(src->rep_.size() >= WriteBatchInternal::kHeader);
   dst->rep_.append(src->rep_.data() + WriteBatchInternal::kHeader, src_len);
-  dst->content_flags_.store(
-      dst->content_flags_.load(std::memory_order_relaxed) | src_flags,
-      std::memory_order_relaxed);
+  dst->content_flags_.fetch_or(src_flags, std::memory_order_relaxed);
   return Status::OK();
 }
 

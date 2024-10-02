@@ -20,33 +20,28 @@
 #include "utilities/transactions/pessimistic_transaction_db.h"
 #include "utilities/transactions/transaction_db_mutex_impl.h"
 
+#include "point_lock_tracker.h"
+
 namespace ROCKSDB_NAMESPACE {
 
 struct LockInfo {
-  bool exclusive;
+  static_assert(sizeof(bool) == 1);
+  bool& exclusive() { return reinterpret_cast<bool&>(txn_ids.pad_u08()); }
+  bool exclusive() const { return txn_ids.pad_u08() != 0; }
   autovector<TransactionID> txn_ids;
 
   // Transaction locks are not valid after this time in us
   uint64_t expiration_time;
 
   LockInfo(TransactionID id, uint64_t time, bool ex)
-      : exclusive(ex), expiration_time(time) {
+      : expiration_time(time) {
+    exclusive() = ex;
     txn_ids.push_back(id);
   }
-  LockInfo(const LockInfo& lock_info)
-      : exclusive(lock_info.exclusive),
-        txn_ids(lock_info.txn_ids),
-        expiration_time(lock_info.expiration_time) {}
-  void operator=(const LockInfo& lock_info) {
-    exclusive = lock_info.exclusive;
-    txn_ids = lock_info.txn_ids;
-    expiration_time = lock_info.expiration_time;
-  }
-  DECLARE_DEFAULT_MOVES(LockInfo);
 };
 
-struct LockMapStripe {
-  explicit LockMapStripe(std::shared_ptr<TransactionDBMutexFactory> factory) {
+struct LockMapStripe : private boost::noncopyable {
+  explicit LockMapStripe(TransactionDBMutexFactory* factory) {
     stripe_mutex = factory->AllocateMutex();
     stripe_cv = factory->AllocateCondVar();
     assert(stripe_mutex);
@@ -59,72 +54,106 @@ struct LockMapStripe {
   // Condition Variable per stripe for waiting on a lock
   std::shared_ptr<TransactionDBCondVar> stripe_cv;
 
+  size_t padding[2] = {0};
+
   // Locked keys mapped to the info about the transactions that locked them.
   // TODO(agiardullo): Explore performance of other data structures.
+#if 0
   UnorderedMap<std::string, LockInfo> keys;
+#else
+  struct KeyStrMap : terark::hash_strmap<LockInfo> {
+    KeyStrMap() {
+      size_t cap = 8;
+      size_t strpool_cap = 1024;
+      this->reserve(cap, strpool_cap);
+      this->enable_freelist();
+    }
+  };
+  KeyStrMap keys;
+#endif
 };
+static_assert(sizeof(LockMapStripe) == 128);
 
 // Map of #num_stripes LockMapStripes
-struct LockMap {
-  explicit LockMap(size_t num_stripes,
-                   std::shared_ptr<TransactionDBMutexFactory> factory)
-      : num_stripes_(num_stripes) {
-    lock_map_stripes_.reserve(num_stripes);
-    for (size_t i = 0; i < num_stripes; i++) {
-      LockMapStripe* stripe = new LockMapStripe(factory);
-      lock_map_stripes_.push_back(stripe);
-    }
-  }
-
-  ~LockMap() {
-    for (auto stripe : lock_map_stripes_) {
-      delete stripe;
+struct LockMap : private boost::noncopyable {
+  explicit LockMap(uint16_t key_prefix_len, uint16_t super_stripes,
+                   size_t num_stripes, TransactionDBMutexFactory* factory) {
+    key_prefix_len_ = std::min<uint16_t>(8, key_prefix_len);
+    if (0 == key_prefix_len)
+      super_stripes_ = 1;
+    else
+      super_stripes_ = std::max<uint16_t>(1, super_stripes);
+    num_stripes_ = uint32_t(std::max<size_t>(1, num_stripes));
+    lock_map_stripes_.reserve_aligned(128, num_stripes * super_stripes);
+    for (size_t i = 0; i < num_stripes * super_stripes; i++) {
+      lock_map_stripes_.unchecked_emplace_back(factory);
     }
   }
 
   // Number of sepearate LockMapStripes to create, each with their own Mutex
-  const size_t num_stripes_;
+  uint16_t key_prefix_len_;
+  uint16_t super_stripes_;
+  uint32_t num_stripes_;
+
+  terark::valvec<LockMapStripe> lock_map_stripes_;
+
+  char padding[48] = {0}; // to avoid false sharing on lock_cnt
 
   // Count of keys that are currently locked in this column family.
   // (Only maintained if PointLockManager::max_num_locks_ is positive.)
   std::atomic<int64_t> lock_cnt{0};
 
-  std::vector<LockMapStripe*> lock_map_stripes_;
-
-  size_t GetStripe(const std::string& key) const;
+  size_t GetStripe(const LockString& key) const;
 };
 
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
 namespace {
 void UnrefLockMapsCache(void* ptr) {
   // Called when a thread exits or a ThreadLocalPtr gets destroyed.
-  auto lock_maps_cache =
-      static_cast<UnorderedMap<uint32_t, std::shared_ptr<LockMap>>*>(ptr);
+  auto lock_maps_cache = static_cast<PointLockManager::LockMaps*>(ptr);
   delete lock_maps_cache;
 }
 }  // anonymous namespace
+#endif
 
 PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
                                    const TransactionDBOptions& opt)
     : txn_db_impl_(txn_db),
+      key_prefix_len_(opt.key_prefix_len),
+      super_stripes_(opt.super_stripes),
       default_num_stripes_(opt.num_stripes),
       max_num_locks_(opt.max_num_locks),
-      lock_maps_cache_(new ThreadLocalPtr(&UnrefLockMapsCache)),
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
+      lock_maps_cache_(&UnrefLockMapsCache),
+#endif
       dlock_buffer_(opt.max_num_deadlocks),
       mutex_factory_(opt.custom_mutex_factory
                          ? opt.custom_mutex_factory
                          : std::make_shared<TransactionDBMutexFactoryImpl>()) {}
 
-size_t LockMap::GetStripe(const std::string& key) const {
+terark_forceinline
+size_t LockMap::GetStripe(const LockString& key) const {
   assert(num_stripes_ > 0);
-  return FastRange64(GetSliceNPHash64(key), num_stripes_);
+  auto col = GetSliceNPHash64(key) % num_stripes_;
+  if (1 == super_stripes_) {
+    return col;
+  } else {
+    uint64_t pref = 0;
+    size_t   plen = std::min(size_t(key_prefix_len_), key.size());
+    ROCKSDB_ASSUME(plen <= sizeof(pref));
+    memcpy(&pref, key.data(), plen);
+    size_t row = pref % super_stripes_;
+    return row * num_stripes_ + col;
+  }
 }
 
 void PointLockManager::AddColumnFamily(const ColumnFamilyHandle* cf) {
   InstrumentedMutexLock l(&lock_map_mutex_);
 
-  if (lock_maps_.find(cf->GetID()) == lock_maps_.end()) {
-    lock_maps_.emplace(cf->GetID(), std::make_shared<LockMap>(
-                                        default_num_stripes_, mutex_factory_));
+  auto& lock_map = lock_maps_[cf->GetID()];
+  if (!lock_map) {
+    lock_map = std::make_shared<LockMap>(key_prefix_len_,
+        super_stripes_, default_num_stripes_, mutex_factory_.get());
   } else {
     // column_family already exists in lock map
     assert(false);
@@ -137,39 +166,43 @@ void PointLockManager::RemoveColumnFamily(const ColumnFamilyHandle* cf) {
   // until they release their references to it.
   {
     InstrumentedMutexLock l(&lock_map_mutex_);
-
-    auto lock_maps_iter = lock_maps_.find(cf->GetID());
-    if (lock_maps_iter == lock_maps_.end()) {
-      return;
+    if (!lock_maps_.erase(cf->GetID())) {
+      return; // not existed and erase did nothing, return immediately
     }
-
-    lock_maps_.erase(lock_maps_iter);
   }  // lock_map_mutex_
 
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
   // Clear all thread-local caches
   autovector<void*> local_caches;
-  lock_maps_cache_->Scrape(&local_caches, nullptr);
+  lock_maps_cache_.Scrape(&local_caches, nullptr);
   for (auto cache : local_caches) {
     delete static_cast<LockMaps*>(cache);
   }
+#endif
 }
+
+template<class T>
+static terark_returns_nonnull
+inline T* get_ptr_nonnull(const std::shared_ptr<T>& p) { return p.get(); }
 
 // Look up the LockMap std::shared_ptr for a given column_family_id.
 // Note:  The LockMap is only valid as long as the caller is still holding on
 //   to the returned std::shared_ptr.
-std::shared_ptr<LockMap> PointLockManager::GetLockMap(
+inline
+LockMap* PointLockManager::GetLockMap(
     ColumnFamilyId column_family_id) {
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
   // First check thread-local cache
-  if (lock_maps_cache_->Get() == nullptr) {
-    lock_maps_cache_->Reset(new LockMaps());
+  auto lock_maps_cache = static_cast<LockMaps*>(lock_maps_cache_.Get());
+  if (UNLIKELY(lock_maps_cache == nullptr)) {
+    lock_maps_cache = new LockMaps();
+    lock_maps_cache_.Reset(lock_maps_cache);
   }
 
-  auto lock_maps_cache = static_cast<LockMaps*>(lock_maps_cache_->Get());
-
   auto lock_map_iter = lock_maps_cache->find(column_family_id);
-  if (lock_map_iter != lock_maps_cache->end()) {
+  if (LIKELY(lock_map_iter != lock_maps_cache->end())) {
     // Found lock map for this column family.
-    return lock_map_iter->second;
+    return lock_map_iter->second.get();
   }
 
   // Not found in local cache, grab mutex and check shared LockMaps
@@ -177,14 +210,20 @@ std::shared_ptr<LockMap> PointLockManager::GetLockMap(
 
   lock_map_iter = lock_maps_.find(column_family_id);
   if (lock_map_iter == lock_maps_.end()) {
-    return std::shared_ptr<LockMap>(nullptr);
+    return nullptr;
   } else {
     // Found lock map.  Store in thread-local cache and return.
     std::shared_ptr<LockMap>& lock_map = lock_map_iter->second;
     lock_maps_cache->insert({column_family_id, lock_map});
 
-    return lock_map;
+    return lock_map.get();
   }
+#else
+  if (auto result = lock_maps_.get_value_ptr(column_family_id))
+    return get_ptr_nonnull(*result);
+  else
+    return nullptr;
+#endif
 }
 
 // Returns true if this lock has expired and can be acquired by another
@@ -224,12 +263,11 @@ bool PointLockManager::IsLockExpired(TransactionID txn_id,
 
 Status PointLockManager::TryLock(PessimisticTransaction* txn,
                                  ColumnFamilyId column_family_id,
-                                 const std::string& key, Env* env,
+                                 const Slice& key, Env* env,
                                  bool exclusive) {
   // Lookup lock map for this column family id
-  std::shared_ptr<LockMap> lock_map_ptr = GetLockMap(column_family_id);
-  LockMap* lock_map = lock_map_ptr.get();
-  if (lock_map == nullptr) {
+  LockMap* lock_map = GetLockMap(column_family_id);
+  if (UNLIKELY(lock_map == nullptr)) {
     char msg[255];
     snprintf(msg, sizeof(msg), "Column family id not found: %" PRIu32,
              column_family_id);
@@ -240,20 +278,20 @@ Status PointLockManager::TryLock(PessimisticTransaction* txn,
   // Need to lock the mutex for the stripe that this key hashes to
   size_t stripe_num = lock_map->GetStripe(key);
   assert(lock_map->lock_map_stripes_.size() > stripe_num);
-  LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
+  LockMapStripe* stripe = &lock_map->lock_map_stripes_[stripe_num];
 
   LockInfo lock_info(txn->GetID(), txn->GetExpirationTime(), exclusive);
   int64_t timeout = txn->GetLockTimeout();
 
   return AcquireWithTimeout(txn, lock_map, stripe, column_family_id, key, env,
-                            timeout, lock_info);
+                            timeout, std::move(lock_info));
 }
 
 // Helper function for TryLock().
 Status PointLockManager::AcquireWithTimeout(
     PessimisticTransaction* txn, LockMap* lock_map, LockMapStripe* stripe,
-    ColumnFamilyId column_family_id, const std::string& key, Env* env,
-    int64_t timeout, const LockInfo& lock_info) {
+    ColumnFamilyId column_family_id, const Slice& key, Env* env,
+    int64_t timeout, LockInfo&& lock_info) {
   Status result;
   uint64_t end_time = 0;
 
@@ -276,8 +314,8 @@ Status PointLockManager::AcquireWithTimeout(
 
   // Acquire lock if we are able to
   uint64_t expire_time_hint = 0;
-  autovector<TransactionID> wait_ids;
-  result = AcquireLocked(lock_map, stripe, key, env, lock_info,
+  autovector<TransactionID> wait_ids(0); // init to size and cap = 0
+  result = AcquireLocked(lock_map, stripe, key, env, std::move(lock_info),
                          &expire_time_hint, &wait_ids);
 
   if (!result.ok() && timeout != 0) {
@@ -301,10 +339,10 @@ Status PointLockManager::AcquireWithTimeout(
 
       // We are dependent on a transaction to finish, so perform deadlock
       // detection.
-      if (wait_ids.size() != 0) {
+      if (!wait_ids.empty()) {
         if (txn->IsDeadlockDetect()) {
           if (IncrementWaiters(txn, wait_ids, key, column_family_id,
-                               lock_info.exclusive, env)) {
+                               lock_info.exclusive(), env)) {
             result = Status::Busy(Status::SubCode::kDeadlock);
             stripe->stripe_mutex->UnLock();
             return result;
@@ -325,7 +363,7 @@ Status PointLockManager::AcquireWithTimeout(
         }
       }
 
-      if (wait_ids.size() != 0) {
+      if (!wait_ids.empty()) {
         txn->ClearWaitingTxn();
         if (txn->IsDeadlockDetect()) {
           DecrementWaiters(txn, wait_ids);
@@ -340,7 +378,7 @@ Status PointLockManager::AcquireWithTimeout(
       }
 
       if (result.ok() || result.IsTimedOut()) {
-        result = AcquireLocked(lock_map, stripe, key, env, lock_info,
+        result = AcquireLocked(lock_map, stripe, key, env, std::move(lock_info),
                                &expire_time_hint, &wait_ids);
       }
     } while (!result.ok() && !timed_out);
@@ -362,41 +400,47 @@ void PointLockManager::DecrementWaitersImpl(
     const PessimisticTransaction* txn,
     const autovector<TransactionID>& wait_ids) {
   auto id = txn->GetID();
-  assert(wait_txn_map_.Contains(id));
-  wait_txn_map_.Delete(id);
+  assert(wait_txn_map_.contains(id));
+  wait_txn_map_.erase(id);
 
   for (auto wait_id : wait_ids) {
-    rev_wait_txn_map_.Get(wait_id)--;
-    if (rev_wait_txn_map_.Get(wait_id) == 0) {
-      rev_wait_txn_map_.Delete(wait_id);
+    auto idx = rev_wait_txn_map_.find_i(wait_id);
+    ROCKSDB_ASSERT_LT(idx, rev_wait_txn_map_.end_i());
+    if (--rev_wait_txn_map_.val(idx) == 0) {
+      rev_wait_txn_map_.erase_i(idx);
     }
   }
 }
 
 bool PointLockManager::IncrementWaiters(
     const PessimisticTransaction* txn,
-    const autovector<TransactionID>& wait_ids, const std::string& key,
+    const autovector<TransactionID>& wait_ids, const Slice& key,
     const uint32_t& cf_id, const bool& exclusive, Env* const env) {
   auto id = txn->GetID();
+#if 0
   std::vector<int> queue_parents(
       static_cast<size_t>(txn->GetDeadlockDetectDepth()));
   std::vector<TransactionID> queue_values(
       static_cast<size_t>(txn->GetDeadlockDetectDepth()));
+#else
+ #define T_alloca_z(T, n) (T*)memset(alloca(sizeof(T)*n), 0, sizeof(T)*n)
+  auto depth = txn->GetDeadlockDetectDepth();
+  auto queue_parents = T_alloca_z(int, depth);
+  auto queue_values = T_alloca_z(TransactionID, depth);
+  // if TransactionID is not trivially_destructible, destruct is required
+  static_assert(std::is_trivially_destructible<TransactionID>::value);
+#endif
   std::lock_guard<std::mutex> lock(wait_txn_map_mutex_);
-  assert(!wait_txn_map_.Contains(id));
+  assert(!wait_txn_map_.contains(id));
 
-  wait_txn_map_.Insert(id, {wait_ids, cf_id, exclusive, key});
+  wait_txn_map_.insert_i(id, {wait_ids, cf_id, exclusive, key});
 
   for (auto wait_id : wait_ids) {
-    if (rev_wait_txn_map_.Contains(wait_id)) {
-      rev_wait_txn_map_.Get(wait_id)++;
-    } else {
-      rev_wait_txn_map_.Insert(wait_id, 1);
-    }
+    rev_wait_txn_map_[wait_id]++;
   }
 
   // No deadlock if nobody is waiting on self.
-  if (!rev_wait_txn_map_.Contains(id)) {
+  if (!rev_wait_txn_map_.contains(id)) {
     return false;
   }
 
@@ -424,12 +468,12 @@ bool PointLockManager::IncrementWaiters(
     if (next == id) {
       std::vector<DeadlockInfo> path;
       while (head != -1) {
-        assert(wait_txn_map_.Contains(queue_values[head]));
+        assert(wait_txn_map_.contains(queue_values[head]));
 
-        auto extracted_info = wait_txn_map_.Get(queue_values[head]);
+        auto extracted_info = wait_txn_map_.at(queue_values[head]);
         path.push_back({queue_values[head], extracted_info.m_cf_id,
                         extracted_info.m_exclusive,
-                        extracted_info.m_waiting_key});
+                        extracted_info.m_waiting_key.ToString()});
         head = queue_parents[head];
       }
       if (!env->GetCurrentTime(&deadlock_time).ok()) {
@@ -441,16 +485,17 @@ bool PointLockManager::IncrementWaiters(
         deadlock_time = 0;
       }
       std::reverse(path.begin(), path.end());
-      dlock_buffer_.AddNewPath(DeadlockPath(path, deadlock_time));
+      dlock_buffer_.AddNewPath(DeadlockPath(std::move(path), deadlock_time));
       deadlock_time = 0;
       DecrementWaitersImpl(txn, wait_ids);
       return true;
-    } else if (!wait_txn_map_.Contains(next)) {
+    } else if (auto idx  = wait_txn_map_.find_i(next);
+                    idx == wait_txn_map_.end_i()) {
       next_ids = nullptr;
       continue;
     } else {
       parent = head;
-      next_ids = &(wait_txn_map_.Get(next).m_neighbors);
+      next_ids = &(wait_txn_map_.val(idx).m_neighbors);
     }
   }
 
@@ -473,25 +518,38 @@ bool PointLockManager::IncrementWaiters(
 //  or 0 if no expiration.
 // REQUIRED:  Stripe mutex must be held.
 Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
-                                       const std::string& key, Env* env,
-                                       const LockInfo& txn_lock_info,
+                                       const Slice& key, Env* env,
+                                       LockInfo&& txn_lock_info,
                                        uint64_t* expire_time,
                                        autovector<TransactionID>* txn_ids) {
   assert(txn_lock_info.txn_ids.size() == 1);
 
   Status result;
   // Check if this key is already locked
-  auto stripe_iter = stripe->keys.find(key);
-  if (stripe_iter != stripe->keys.end()) {
-    // Lock already held
-    LockInfo& lock_info = stripe_iter->second;
-    assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
+  // topling: use lazy_insert_i(key, cons, check) reduce a find
+  auto cons = terark::MoveConsFunc<LockInfo>(std::move(txn_lock_info));
+  auto check = [this,&result,lock_map](auto/*keys*/) {
+    // max_num_locks_ is signed int64_t
+    if (0 != max_num_locks_) {
+      if (max_num_locks_ > 0 &&
+          lock_map->lock_cnt.load(std::memory_order_acquire) >= max_num_locks_) {
+        result = Status::Busy(Status::SubCode::kLockLimit);
+        return false; // can not insert the key
+      }
+      lock_map->lock_cnt.fetch_add(1, std::memory_order_relaxed);
+    }
+    return true; // ok, insert the key
+  };
+  auto [idx, miss] = stripe->keys.lazy_insert_i(key, cons, check);
+  if (!miss) {
+    LockInfo& lock_info = stripe->keys.val(idx);
+    assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive());
 
-    if (lock_info.exclusive || txn_lock_info.exclusive) {
-      if (lock_info.txn_ids.size() == 1 &&
+    if (lock_info.exclusive() || txn_lock_info.exclusive()) {
+      if (lock_info.txn_ids.num_stack_items() == 1 &&
           lock_info.txn_ids[0] == txn_lock_info.txn_ids[0]) {
         // The list contains one txn and we're it, so just take it.
-        lock_info.exclusive = txn_lock_info.exclusive;
+        lock_info.exclusive() = txn_lock_info.exclusive();
         lock_info.expiration_time = txn_lock_info.expiration_time;
       } else {
         // Check if it's expired. Skips over txn_lock_info.txn_ids[0] in case
@@ -500,8 +558,8 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
         if (IsLockExpired(txn_lock_info.txn_ids[0], lock_info, env,
                           expire_time)) {
           // lock is expired, can steal it
-          lock_info.txn_ids = txn_lock_info.txn_ids;
-          lock_info.exclusive = txn_lock_info.exclusive;
+          lock_info.txn_ids = std::move(txn_lock_info.txn_ids);
+          lock_info.exclusive() = txn_lock_info.exclusive();
           lock_info.expiration_time = txn_lock_info.expiration_time;
           // lock_cnt does not change
         } else {
@@ -520,26 +578,14 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
           std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
     }
   } else {  // Lock not held.
-    // Check lock limit
-    if (max_num_locks_ > 0 &&
-        lock_map->lock_cnt.load(std::memory_order_acquire) >= max_num_locks_) {
-      result = Status::Busy(Status::SubCode::kLockLimit);
-    } else {
-      // acquire lock
-      stripe->keys.emplace(key, txn_lock_info);
-
-      // Maintain lock count if there is a limit on the number of locks
-      if (max_num_locks_) {
-        lock_map->lock_cnt++;
-      }
-    }
+  // do nothing
   }
 
   return result;
 }
 
 void PointLockManager::UnLockKey(PessimisticTransaction* txn,
-                                 const std::string& key, LockMapStripe* stripe,
+                                 const LockString& key, LockMapStripe* stripe,
                                  LockMap* lock_map, Env* env) {
 #ifdef NDEBUG
   (void)env;
@@ -552,13 +598,10 @@ void PointLockManager::UnLockKey(PessimisticTransaction* txn,
     auto txn_it = std::find(txns.begin(), txns.end(), txn_id);
     // Found the key we locked.  unlock it.
     if (txn_it != txns.end()) {
-      if (txns.size() == 1) {
+      if (txns.num_stack_items() == 1) {
         stripe->keys.erase(stripe_iter);
       } else {
-        auto last_it = txns.end() - 1;
-        if (txn_it != last_it) {
-          *txn_it = *last_it;
-        }
+        *txn_it = std::move(txns.back());
         txns.pop_back();
       }
 
@@ -578,10 +621,9 @@ void PointLockManager::UnLockKey(PessimisticTransaction* txn,
 
 void PointLockManager::UnLock(PessimisticTransaction* txn,
                               ColumnFamilyId column_family_id,
-                              const std::string& key, Env* env) {
-  std::shared_ptr<LockMap> lock_map_ptr = GetLockMap(column_family_id);
-  LockMap* lock_map = lock_map_ptr.get();
-  if (lock_map == nullptr) {
+                              const Slice& key, Env* env) {
+  LockMap* lock_map = GetLockMap(column_family_id);
+  if (UNLIKELY(lock_map == nullptr)) {
     // Column Family must have been dropped.
     return;
   }
@@ -589,7 +631,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
   // Lock the mutex for the stripe that this key hashes to
   size_t stripe_num = lock_map->GetStripe(key);
   assert(lock_map->lock_map_stripes_.size() > stripe_num);
-  LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
+  LockMapStripe* stripe = &lock_map->lock_map_stripes_[stripe_num];
 
   stripe->stripe_mutex->Lock().PermitUncheckedError();
   UnLockKey(txn, key, stripe, lock_map, env);
@@ -601,47 +643,37 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
 
 void PointLockManager::UnLock(PessimisticTransaction* txn,
                               const LockTracker& tracker, Env* env) {
-  std::unique_ptr<LockTracker::ColumnFamilyIterator> cf_it(
-      tracker.GetColumnFamilyIterator());
-  assert(cf_it != nullptr);
-  while (cf_it->HasNext()) {
-    ColumnFamilyId cf = cf_it->Next();
-    std::shared_ptr<LockMap> lock_map_ptr = GetLockMap(cf);
-    LockMap* lock_map = lock_map_ptr.get();
-    if (!lock_map) {
-      // Column Family must have been dropped.
-      return;
-    }
-
-    // Bucket keys by lock_map_ stripe
-    UnorderedMap<size_t, std::vector<const std::string*>> keys_by_stripe(
-        lock_map->num_stripes_);
-    std::unique_ptr<LockTracker::KeyIterator> key_it(
-        tracker.GetKeyIterator(cf));
-    assert(key_it != nullptr);
-    while (key_it->HasNext()) {
-      const std::string& key = key_it->Next();
-      size_t stripe_num = lock_map->GetStripe(key);
-      keys_by_stripe[stripe_num].push_back(&key);
-    }
-
-    // For each stripe, grab the stripe mutex and unlock all keys in this stripe
-    for (auto& stripe_iter : keys_by_stripe) {
-      size_t stripe_num = stripe_iter.first;
-      auto& stripe_keys = stripe_iter.second;
-
-      assert(lock_map->lock_map_stripes_.size() > stripe_num);
-      LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
-
-      stripe->stripe_mutex->Lock().PermitUncheckedError();
-
-      for (const std::string* key : stripe_keys) {
-        UnLockKey(txn, *key, stripe, lock_map, env);
+  // use single linked list instead of vector to store stripe(partition)
+  // this just needs 2 fixed size uint32 vector(valvec)
+  auto& ptracker = static_cast<const PointLockTracker&>(tracker);
+  for (auto& [cf_id, keyinfos] : ptracker.tracked_keys_) {
+    LockMap* lock_map = GetLockMap(cf_id);
+    if (!lock_map) continue;
+    const uint32_t nil = UINT32_MAX;
+    using namespace terark;
+    const size_t max_key_idx = keyinfos.end_i();
+    const size_t num_stripes = lock_map->lock_map_stripes_.size();
+    auto stripe_heads = (uint32_t*)alloca(sizeof(uint32_t) * num_stripes);
+    std::fill_n(stripe_heads, num_stripes, nil);
+    valvec<uint32_t> keys_link(max_key_idx, valvec_no_init());
+    for (size_t idx = 0; idx < max_key_idx; idx++) {
+      if (!keyinfos.is_deleted(idx)) {
+        const fstring key = keyinfos.key(idx);
+        size_t strip_idx = lock_map->GetStripe(key);
+        keys_link[idx] = stripe_heads[strip_idx]; // insert to single
+        stripe_heads[strip_idx] = uint32_t(idx);  // list front
       }
-
+    }
+    for (size_t strip_idx = 0; strip_idx < num_stripes; strip_idx++) {
+      uint32_t head = stripe_heads[strip_idx];
+      if (nil == head) continue;
+      LockMapStripe* stripe = &lock_map->lock_map_stripes_[strip_idx];
+      stripe->stripe_mutex->Lock().PermitUncheckedError();
+      for (uint32_t idx = head; nil != idx; idx = keys_link[idx]) {
+        const fstring key = keyinfos.key(idx);
+        UnLockKey(txn, key, stripe, lock_map, env);
+      }
       stripe->stripe_mutex->UnLock();
-
-      // Signal waiting threads to retry locking
       stripe->stripe_cv->NotifyAll();
     }
   }
@@ -654,21 +686,25 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
   // ascending order.
   InstrumentedMutexLock l(&lock_map_mutex_);
 
-  std::vector<uint32_t> cf_ids;
+  // cf num is generally small, very large cf num is ill
+  auto cf_ids = (uint32_t*)alloca(sizeof(uint32_t) * lock_maps_.size());
+  size_t cf_num = 0;
   for (const auto& map : lock_maps_) {
-    cf_ids.push_back(map.first);
+    cf_ids[cf_num++] = map.first;
   }
-  std::sort(cf_ids.begin(), cf_ids.end());
+  ROCKSDB_ASSERT_EQ(cf_num, lock_maps_.size());
+  std::sort(cf_ids, cf_ids + cf_num);
 
-  for (auto i : cf_ids) {
+  for (size_t k = 0; k < cf_num; ++k) {
+    auto i = cf_ids[k];
     const auto& stripes = lock_maps_[i]->lock_map_stripes_;
     // Iterate and lock all stripes in ascending order.
     for (const auto& j : stripes) {
-      j->stripe_mutex->Lock().PermitUncheckedError();
-      for (const auto& it : j->keys) {
+      j.stripe_mutex->Lock().PermitUncheckedError();
+      for (const auto& it : j.keys) {
         struct KeyLockInfo info;
-        info.exclusive = it.second.exclusive;
-        info.key = it.first;
+        info.exclusive = it.second.exclusive();
+        info.key.assign(it.first.data(), it.first.size());
         for (const auto& id : it.second.txn_ids) {
           info.ids.push_back(id);
         }
@@ -678,10 +714,11 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
   }
 
   // Unlock everything. Unlocking order is not important.
-  for (auto i : cf_ids) {
+  for (size_t k = 0; k < cf_num; ++k) {
+    auto i = cf_ids[k];
     const auto& stripes = lock_maps_[i]->lock_map_stripes_;
     for (const auto& j : stripes) {
-      j->stripe_mutex->UnLock();
+      j.stripe_mutex->UnLock();
     }
   }
 

@@ -46,7 +46,9 @@
 #include "rocksdb/utilities/write_batch_with_index.h"
 #include "rocksdb/write_batch.h"
 #include "rocksdb/write_buffer_manager.h"
+#include "util/stderr_logger.h"
 #include "utilities/merge_operators.h"
+#include "topling/side_plugin_repo.h"
 
 using ROCKSDB_NAMESPACE::BackupEngine;
 using ROCKSDB_NAMESPACE::BackupEngineOptions;
@@ -115,6 +117,7 @@ using ROCKSDB_NAMESPACE::Snapshot;
 using ROCKSDB_NAMESPACE::SstFileMetaData;
 using ROCKSDB_NAMESPACE::SstFileWriter;
 using ROCKSDB_NAMESPACE::Status;
+using ROCKSDB_NAMESPACE::StderrLogger;
 using ROCKSDB_NAMESPACE::TablePropertiesCollectorFactory;
 using ROCKSDB_NAMESPACE::Transaction;
 using ROCKSDB_NAMESPACE::TransactionDB;
@@ -1685,6 +1688,11 @@ void rocksdb_release_snapshot(rocksdb_t* db,
   delete snapshot;
 }
 
+uint64_t rocksdb_snapshot_get_sequence_number(
+    const rocksdb_snapshot_t* snapshot) {
+  return snapshot->rep->GetSequenceNumber();
+}
+
 char* rocksdb_property_value(rocksdb_t* db, const char* propname) {
   std::string tmp;
   if (db->rep->GetProperty(Slice(propname), &tmp)) {
@@ -2919,6 +2927,23 @@ void rocksdb_options_set_cf_paths(rocksdb_options_t* opt,
   opt->rep.cf_paths = cf_paths;
 }
 
+rocksdb_logger_t* rocksdb_logger_create_stderr_logger(int log_level,
+                                                      const char* prefix) {
+  rocksdb_logger_t* logger = new rocksdb_logger_t;
+
+  if (prefix) {
+    logger->rep = std::make_shared<StderrLogger>(
+        static_cast<InfoLogLevel>(log_level), prefix);
+  } else {
+    logger->rep =
+        std::make_shared<StderrLogger>(static_cast<InfoLogLevel>(log_level));
+  }
+
+  return logger;
+}
+
+void rocksdb_logger_destroy(rocksdb_logger_t* logger) { delete logger; }
+
 void rocksdb_options_set_env(rocksdb_options_t* opt, rocksdb_env_t* env) {
   opt->rep.env = (env ? env->rep : nullptr);
 }
@@ -2927,6 +2952,12 @@ void rocksdb_options_set_info_log(rocksdb_options_t* opt, rocksdb_logger_t* l) {
   if (l) {
     opt->rep.info_log = l->rep;
   }
+}
+
+rocksdb_logger_t* rocksdb_options_get_info_log(rocksdb_options_t* opt) {
+  rocksdb_logger_t* info_log = new rocksdb_logger_t;
+  info_log->rep = opt->rep.info_log;
+  return info_log;
 }
 
 void rocksdb_options_set_info_log_level(rocksdb_options_t* opt, int v) {
@@ -3047,6 +3078,14 @@ void rocksdb_options_set_max_bytes_for_level_multiplier_additional(
   for (size_t i = 0; i < num_levels; ++i) {
     opt->rep.max_bytes_for_level_multiplier_additional[i] = level_values[i];
   }
+}
+
+void rocksdb_options_set_ttl(rocksdb_options_t* opt, uint64_t seconds) {
+  opt->rep.ttl = seconds;
+}
+
+uint64_t rocksdb_options_get_ttl(rocksdb_options_t* opt) {
+  return opt->rep.ttl;
 }
 
 void rocksdb_options_set_periodic_compaction_seconds(rocksdb_options_t* opt,
@@ -3994,6 +4033,16 @@ rocksdb_ratelimiter_t* rocksdb_ratelimiter_create_auto_tuned(
                                                 refill_period_us, fairness,
                                                 RateLimiter::Mode::kWritesOnly,
                                                 true));  // auto_tuned
+  return rate_limiter;
+}
+
+rocksdb_ratelimiter_t* rocksdb_ratelimiter_create_with_mode(
+    int64_t rate_bytes_per_sec, int64_t refill_period_us, int32_t fairness,
+    int mode, bool auto_tuned) {
+  rocksdb_ratelimiter_t* rate_limiter = new rocksdb_ratelimiter_t;
+  rate_limiter->rep.reset(
+      NewGenericRateLimiter(rate_bytes_per_sec, refill_period_us, fairness,
+                            static_cast<RateLimiter::Mode>(mode), auto_tuned));
   return rate_limiter;
 }
 
@@ -6880,6 +6929,97 @@ void rocksdb_wait_for_compact_options_set_timeout(
 uint64_t rocksdb_wait_for_compact_options_get_timeout(
     rocksdb_wait_for_compact_options_t* opt) {
   return opt->rep.timeout.count();
+}
+
+////////////////////////////////////////////////////////////////
+/// ToplingDB SidePlugin Minimal Interface
+//
+struct side_plugin_repo_t {
+  ROCKSDB_NAMESPACE::SidePluginRepo repo;
+};
+
+side_plugin_repo_t* side_plugin_repo_create(void) {
+  return new side_plugin_repo_t;
+}
+
+void side_plugin_repo_import_auto_file(side_plugin_repo_t* r,
+                                       const char* fname, char** errptr) {
+  auto s = r->repo.ImportAutoFile(fname);
+  SaveError(errptr, s);
+}
+
+rocksdb_t* side_plugin_repo_open(side_plugin_repo_t* r,
+    rocksdb_column_family_handle_t*** p_cfhs, size_t* num_cf, char** errptr) {
+  if (p_cfhs) { // Open with column families
+    ROCKSDB_VERIFY(num_cf != nullptr);
+    ROCKSDB_NAMESPACE::DB_MultiCF* dbm = nullptr;
+    auto s = r->repo.OpenDB(&dbm);
+    SaveError(errptr, s);
+    *p_cfhs = nullptr;
+    if (s.ok()) {
+      size_t num = *num_cf = dbm->cf_handles.size();
+      auto cfhs = *p_cfhs = new rocksdb_column_family_handle_t*[num];
+      for (size_t i = 0; i < num; i++) {
+        cfhs[i] = new rocksdb_column_family_handle_t{dbm->cf_handles[i]};
+      }
+      return new rocksdb_t{dbm->db};
+    }
+  }
+  else {
+    ROCKSDB_NAMESPACE::DB* db = nullptr;
+    auto s = r->repo.OpenDB(&db);
+    SaveError(errptr, s);
+    if (s.ok())
+      return new rocksdb_t{db};
+  }
+  return nullptr;
+}
+
+void side_plugin_repo_start_http(side_plugin_repo_t* r, char** errptr) {
+  auto s = r->repo.StartHttpServer();
+  SaveError(errptr, s);
+}
+void side_plugin_repo_close_http(side_plugin_repo_t* r) {
+  r->repo.CloseHttpServer();
+}
+
+rocksdb_options_t*
+side_plugin_repo_get_db_options(side_plugin_repo_t* r,
+                                const char* name, char** errptr) {
+  if (std::shared_ptr<DBOptions> opt = r->repo[name]) {
+    return new rocksdb_options_t{{*opt, {}}};
+  }
+  SaveError(errptr, Status::NotFound("DBOptions", name));
+  return nullptr;
+}
+
+void side_plugin_repo_put_db_options(side_plugin_repo_t* r, const char* name,
+                                     rocksdb_options_t* opt) {
+  r->repo.Put(name, std::make_shared<DBOptions>(opt->rep));
+}
+
+rocksdb_options_t*
+side_plugin_repo_get_cf_options(side_plugin_repo_t* r,
+                                const char* name, char** errptr) {
+  if (std::shared_ptr<ColumnFamilyOptions> opt = r->repo[name]) {
+    return new rocksdb_options_t{{{}, *opt}};
+  }
+  SaveError(errptr, Status::NotFound("CFOptions", name));
+  return nullptr;
+}
+
+void side_plugin_repo_put_cf_options(side_plugin_repo_t* r, const char* name,
+                                     rocksdb_options_t* opt) {
+  r->repo.Put(name, std::make_shared<ColumnFamilyOptions>(opt->rep));
+}
+
+void side_plugin_repo_close_all(side_plugin_repo_t* r) {
+  r->repo.CloseAllDB(false); // also close http
+  delete r;
+}
+
+const char* rocksdb_get_name(rocksdb_t* p) {
+  return p->rep->GetName().c_str();
 }
 
 }  // end extern "C"

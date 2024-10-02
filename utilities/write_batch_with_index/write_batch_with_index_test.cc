@@ -22,9 +22,21 @@
 #include "utilities/merge_operators/string_append/stringappend.h"
 #include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 
+#if defined(HAS_TOPLING_CSPP_WBWI)
+#include <terark/fstring.hpp>
+namespace ROCKSDB_NAMESPACE {
+WBWIFactory* NewCSPP_WBWIForPlain(const std::string& jstr);
+}
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 namespace {
+static auto g_fac = SingleSkipListWBWIFactory();
+static auto ReverseBytewiseComparator_p = ReverseBytewiseComparator();
+static bool g_test_rev_cmp_iter = true;
+static bool g_test_with_ts = true;
+
 class ColumnFamilyHandleImplDummy : public ColumnFamilyHandleImpl {
  public:
   explicit ColumnFamilyHandleImplDummy(int id, const Comparator* comparator)
@@ -264,7 +276,7 @@ void AssertItersEqual(Iterator* iter1, Iterator* iter2) {
   ASSERT_EQ(iter1->Valid(), iter2->Valid());
 }
 
-void AssertIterEqual(WBWIIteratorImpl* wbwii,
+void AssertIterEqual(WBWIIterator* wbwii,
                      const std::vector<std::string>& keys) {
   wbwii->SeekToFirst();
   for (auto k : keys) {
@@ -291,7 +303,7 @@ class WBWIBaseTest : public testing::Test {
     options_.create_if_missing = true;
     dbname_ = test::PerThreadDBPath("write_batch_with_index_test");
     EXPECT_OK(DestroyDB(dbname_, options_));
-    batch_.reset(new WriteBatchWithIndex(BytewiseComparator(), 20, overwrite));
+    batch_.reset(g_fac->NewWriteBatchWithIndex(BytewiseComparator(), overwrite));
   }
 
   virtual ~WBWIBaseTest() {
@@ -569,7 +581,7 @@ TEST_F(WBWIKeepTest, TestValueAsSecondaryIndex) {
   };
   std::vector<Entry> entries_list(entries, entries + 8);
 
-  batch_.reset(new WriteBatchWithIndex(nullptr, 20, false));
+  batch_.reset(g_fac->NewWriteBatchWithIndex(nullptr, false));
 
   TestValueAsSecondaryIndexHelper(entries_list, batch_.get());
 
@@ -590,7 +602,7 @@ TEST_F(WBWIKeepTest, TestValueAsSecondaryIndex) {
 
 TEST_P(WriteBatchWithIndexTest, TestComparatorForCF) {
   ColumnFamilyHandleImplDummy cf1(6, nullptr);
-  ColumnFamilyHandleImplDummy reverse_cf(66, ReverseBytewiseComparator());
+  ColumnFamilyHandleImplDummy reverse_cf(66, ReverseBytewiseComparator_p);
   ColumnFamilyHandleImplDummy cf2(88, BytewiseComparator());
 
   ASSERT_OK(batch_->Put(&cf1, "ddd", ""));
@@ -640,6 +652,7 @@ TEST_P(WriteBatchWithIndexTest, TestComparatorForCF) {
     ASSERT_TRUE(!iter->Valid());
   }
 
+  if (g_test_rev_cmp_iter)
   {
     std::unique_ptr<WBWIIterator> iter(batch_->NewIterator(&reverse_cf));
     iter->Seek("");
@@ -676,7 +689,7 @@ TEST_P(WriteBatchWithIndexTest, TestComparatorForCF) {
 
 TEST_F(WBWIOverwriteTest, TestOverwriteKey) {
   ColumnFamilyHandleImplDummy cf1(6, nullptr);
-  ColumnFamilyHandleImplDummy reverse_cf(66, ReverseBytewiseComparator());
+  ColumnFamilyHandleImplDummy reverse_cf(66, ReverseBytewiseComparator_p);
   ColumnFamilyHandleImplDummy cf2(88, BytewiseComparator());
 
   ASSERT_OK(batch_->Merge(&cf1, "ddd", ""));
@@ -742,6 +755,7 @@ TEST_F(WBWIOverwriteTest, TestOverwriteKey) {
     ASSERT_TRUE(!iter->Valid());
   }
 
+  if (g_test_rev_cmp_iter)
   {
     std::unique_ptr<WBWIIterator> iter(batch_->NewIterator(&reverse_cf));
     iter->Seek("");
@@ -786,10 +800,8 @@ TEST_P(WriteBatchWithIndexTest, TestWBWIIterator) {
   ASSERT_OK(batch_->Put(&cf1, "e", "e1"));
   ASSERT_OK(batch_->Put(&cf1, "e", "e2"));
   ASSERT_OK(batch_->Put(&cf1, "e", "e3"));
-  std::unique_ptr<WBWIIteratorImpl> iter1(
-      static_cast<WBWIIteratorImpl*>(batch_->NewIterator(&cf1)));
-  std::unique_ptr<WBWIIteratorImpl> iter2(
-      static_cast<WBWIIteratorImpl*>(batch_->NewIterator(&cf2)));
+  std::unique_ptr<WBWIIterator> iter1(batch_->NewIterator(&cf1));
+  std::unique_ptr<WBWIIterator> iter2(batch_->NewIterator(&cf2));
   AssertIterEqual(iter1.get(), {"a", "c", "e"});
   AssertIterEqual(iter2.get(), {});
   ASSERT_OK(batch_->Put(&cf2, "a", "a2"));
@@ -1087,8 +1099,11 @@ TEST_P(WriteBatchWithIndexTest, TestIteraratorWithBase) {
 }
 
 TEST_P(WriteBatchWithIndexTest, TestIteraratorWithBaseReverseCmp) {
-  ColumnFamilyHandleImplDummy cf1(6, ReverseBytewiseComparator());
-  ColumnFamilyHandleImplDummy cf2(2, ReverseBytewiseComparator());
+  if (!g_test_rev_cmp_iter) {
+    return;
+  }
+  ColumnFamilyHandleImplDummy cf1(6, ReverseBytewiseComparator_p);
+  ColumnFamilyHandleImplDummy cf2(2, ReverseBytewiseComparator_p);
 
   // Test the case that there is one element in the write batch
   ASSERT_OK(batch_->Put(&cf2, "zoo", "bar"));
@@ -1558,7 +1573,6 @@ void AssertIterValue(std::string value, Iterator* iter) {
 
 // same thing as above, but testing IteratorWithBase
 TEST_F(WBWIOverwriteTest, MutateWhileIteratingBaseCorrectnessTest) {
-  WriteBatchWithIndex batch(BytewiseComparator(), 0, true);
   for (char c = 'a'; c <= 'z'; ++c) {
     ASSERT_OK(batch_->Put(std::string(1, c), std::string(1, c)));
   }
@@ -2397,8 +2411,11 @@ TEST_F(WBWIOverwriteTest, TestBadMergeOperator) {
 }
 
 TEST_P(WriteBatchWithIndexTest, ColumnFamilyWithTimestamp) {
-  ASSERT_OK(OpenDB());
+  if (!g_test_with_ts) {
+    return;
+  }
 
+  ASSERT_OK(OpenDB());
   ColumnFamilyHandleImplDummy cf2(2,
                                   test::BytewiseComparatorWithU64TsWrapper());
 
@@ -2772,5 +2789,17 @@ INSTANTIATE_TEST_CASE_P(WBWI, WriteBatchWithIndexTest, testing::Bool());
 int main(int argc, char** argv) {
   ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
+ #if defined(HAS_TOPLING_CSPP_WBWI)
+  using namespace ROCKSDB_NAMESPACE;
+  int ret = RUN_ALL_TESTS();
+  if (terark::getEnvBool("SKIP_CSPP_WBWI")) {
+    return ret;
+  }
+  g_fac.reset(NewCSPP_WBWIForPlain("{}"));
+  ReverseBytewiseComparator_p = BytewiseComparator();
+  g_test_rev_cmp_iter = false;
+  g_test_with_ts = false;
+  fprintf(stderr, "Testing CSPP_WBWI...\n");
+ #endif
   return RUN_ALL_TESTS();
 }

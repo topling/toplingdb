@@ -16,15 +16,13 @@
 #include "rocksdb/compaction_job_stats.h"
 #include "rocksdb/compression_type.h"
 #include "rocksdb/customizable.h"
+#include "rocksdb/enum_reflection.h"
 #include "rocksdb/io_status.h"
 #include "rocksdb/status.h"
 #include "rocksdb/table_properties.h"
 #include "rocksdb/types.h"
 
 namespace ROCKSDB_NAMESPACE {
-
-using TablePropertiesCollection =
-    std::unordered_map<std::string, std::shared_ptr<const TableProperties>>;
 
 class DB;
 class ColumnFamilyHandle;
@@ -110,7 +108,7 @@ struct BlobFileCreationInfo : public BlobFileCreationBriefInfo {
   std::string file_checksum_func_name;
 };
 
-enum class CompactionReason : int {
+ROCKSDB_ENUM_CLASS(CompactionReason, uint8_t,
   kUnknown = 0,
   // [Level] number of L0 files > level0_file_num_compaction_trigger
   kLevelL0FilesNum,
@@ -158,13 +156,13 @@ enum class CompactionReason : int {
   // Used only for internal conflict checking with other compactions
   kRefitLevel,
   // total number of compaction reasons, new reasons must be added above this.
-  kNumOfReasons,
-};
+  kNumOfReasons
+);
 
 const char* GetCompactionReasonString(CompactionReason compaction_reason);
 
 // When adding flush reason, make sure to also update `GetFlushReasonString()`.
-enum class FlushReason : int {
+ROCKSDB_ENUM_CLASS(FlushReason, int,
   kOthers = 0x00,
   kGetLiveFiles = 0x01,
   kShutDown = 0x02,
@@ -182,8 +180,8 @@ enum class FlushReason : int {
   kErrorRecoveryRetryFlush = 0xc,
   kWalFull = 0xd,
   // SwitchMemtable will not be called for this flush reason.
-  kCatchUpAfterErrorRecovery = 0xe,
-};
+  kCatchUpAfterErrorRecovery = 0xe
+);
 
 const char* GetFlushReasonString(FlushReason flush_reason);
 
@@ -191,15 +189,15 @@ const char* GetFlushReasonString(FlushReason flush_reason);
 // why the BG Error is happening (e.g., flush, compaction). We may introduce
 // other data structure to indicate other essential information such as
 // the file type (e.g., Manifest, SST) and special context.
-enum class BackgroundErrorReason {
+ROCKSDB_ENUM_CLASS(BackgroundErrorReason, int,
   kFlush,
   kCompaction,
   kWriteCallback,
   kMemTable,
   kManifestWrite,
   kFlushNoWAL,
-  kManifestWriteNoWAL,
-};
+  kManifestWriteNoWAL
+);
 
 struct WriteStallInfo {
   // the name of the column family
@@ -240,7 +238,7 @@ struct BlobFileDeletionInfo : public FileDeletionInfo {
       : FileDeletionInfo(_db_name, _file_path, _job_id, _status) {}
 };
 
-enum class FileOperationType {
+ROCKSDB_ENUM_CLASS(FileOperationType, int,
   kRead,
   kWrite,
   kTruncate,
@@ -252,7 +250,7 @@ enum class FileOperationType {
   kAppend,
   kPositionedAppend,
   kOpen
-};
+);
 
 struct FileOperationInfo {
   using Duration = std::chrono::nanoseconds;

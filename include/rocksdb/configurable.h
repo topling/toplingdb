@@ -41,7 +41,7 @@ struct DBOptions;
 // handled by this class without additional overrides. Otherwise, the derived
 // class will need to implement the methods for handling the corresponding
 // functionality.
-class Configurable {
+class Configurable : public CacheAlignedNewDelete {
  protected:
   friend class ConfigurableHelper;
   struct RegisteredOptions {

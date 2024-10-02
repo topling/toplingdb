@@ -92,6 +92,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.wal_bytes_per_sync = mutable_db_options.wal_bytes_per_sync;
   options.strict_bytes_per_sync = mutable_db_options.strict_bytes_per_sync;
   options.max_subcompactions = mutable_db_options.max_subcompactions;
+  options.max_level1_subcompactions = mutable_db_options.max_level1_subcompactions;
   options.max_background_flushes = mutable_db_options.max_background_flushes;
   options.max_log_file_size = immutable_db_options.max_log_file_size;
   options.log_file_time_to_roll = immutable_db_options.log_file_time_to_roll;
@@ -110,6 +111,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.use_direct_io_for_flush_and_compaction =
       immutable_db_options.use_direct_io_for_flush_and_compaction;
   options.allow_fallocate = immutable_db_options.allow_fallocate;
+  options.allow_fdatasync = immutable_db_options.allow_fdatasync;
   options.is_fd_close_on_exec = immutable_db_options.is_fd_close_on_exec;
   options.stats_dump_period_sec = mutable_db_options.stats_dump_period_sec;
   options.stats_persist_period_sec =
@@ -182,6 +184,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.enforce_single_del_contracts =
       immutable_db_options.enforce_single_del_contracts;
   options.daily_offpeak_time_utc = mutable_db_options.daily_offpeak_time_utc;
+  options.wbwi_factory = mutable_db_options.wbwi_factory;
   return options;
 }
 
@@ -203,6 +206,7 @@ void UpdateColumnFamilyOptions(const MutableCFOptions& moptions,
   cf_opts->arena_block_size = moptions.arena_block_size;
   cf_opts->memtable_prefix_bloom_size_ratio =
       moptions.memtable_prefix_bloom_size_ratio;
+  cf_opts->allow_merge_memtables = moptions.allow_merge_memtables;
   cf_opts->memtable_whole_key_filtering = moptions.memtable_whole_key_filtering;
   cf_opts->memtable_huge_page_size = moptions.memtable_huge_page_size;
   cf_opts->max_successive_merges = moptions.max_successive_merges;
@@ -229,8 +233,6 @@ void UpdateColumnFamilyOptions(const MutableCFOptions& moptions,
       moptions.level0_slowdown_writes_trigger;
   cf_opts->level0_stop_writes_trigger = moptions.level0_stop_writes_trigger;
   cf_opts->max_compaction_bytes = moptions.max_compaction_bytes;
-  cf_opts->ignore_max_compaction_bytes_for_input =
-      moptions.ignore_max_compaction_bytes_for_input;
   cf_opts->target_file_size_base = moptions.target_file_size_base;
   cf_opts->target_file_size_multiplier = moptions.target_file_size_multiplier;
   cf_opts->max_bytes_for_level_base = moptions.max_bytes_for_level_base;
@@ -261,6 +263,7 @@ void UpdateColumnFamilyOptions(const MutableCFOptions& moptions,
   cf_opts->blob_compaction_readahead_size =
       moptions.blob_compaction_readahead_size;
   cf_opts->blob_file_starting_level = moptions.blob_file_starting_level;
+  cf_opts->min_filter_level = moptions.min_filter_level;
   cf_opts->prepopulate_blob_cache = moptions.prepopulate_blob_cache;
 
   // Misc options

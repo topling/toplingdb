@@ -118,6 +118,7 @@ class WriteThread {
     bool sync;
     bool no_slowdown;
     bool disable_wal;
+    bool reduce_cpu_usage;
     Env::IOPriority rate_limiter_priority;
     bool disable_memtable;
     size_t batch_cnt;  // if non-zero, number of sub-batches in the write batch
@@ -128,7 +129,7 @@ class WriteThread {
     uint64_t log_ref;   // log number that memtable insert should reference
     WriteCallback* callback;
     bool made_waitable;          // records lazy construction of mutex and cv
-    std::atomic<uint8_t> state;  // write under StateMutex() or pre-link
+    std::atomic<uint32_t> state; // write under StateMutex() or pre-link
     WriteGroup* write_group;
     SequenceNumber sequence;  // the sequence number to use for the first key
     Status status;
@@ -144,6 +145,7 @@ class WriteThread {
           sync(false),
           no_slowdown(false),
           disable_wal(false),
+          reduce_cpu_usage(true),
           rate_limiter_priority(Env::IOPriority::IO_TOTAL),
           disable_memtable(false),
           batch_cnt(0),
@@ -169,6 +171,7 @@ class WriteThread {
           sync(write_options.sync),
           no_slowdown(write_options.no_slowdown),
           disable_wal(write_options.disableWAL),
+          reduce_cpu_usage(write_options.reduce_cpu_usage),
           rate_limiter_priority(write_options.rate_limiter_priority),
           disable_memtable(_disable_memtable),
           batch_cnt(_batch_cnt),

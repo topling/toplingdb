@@ -302,7 +302,8 @@ class PosixFileSystem : public FileSystem {
       // non-direct I/O
       flags |= O_RDWR;
     } else {
-      flags |= O_WRONLY;
+      //flags |= O_WRONLY;
+      flags |= O_RDWR; // ToplingDB: we may use mmap write ourself
     }
 
     flags = cloexec_flags(flags, &options);

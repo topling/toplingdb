@@ -28,6 +28,8 @@
 #include <fstream>
 #include <string>
 
+#include <terark/util/fast_getcpu.hpp>
+
 #include "util/string_util.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -98,12 +100,6 @@ bool Mutex::TryLock() {
   }
 #endif
   return ret;
-}
-
-void Mutex::AssertHeld() const {
-#ifndef NDEBUG
-  assert(locked_);
-#endif
 }
 
 CondVar::CondVar(Mutex* mu) : mu_(mu) {
@@ -179,11 +175,15 @@ int PhysicalCoreID() {
   // sched_getcpu uses VDSO getcpu() syscall since 2.22. I believe Linux offers
   // VDSO support only on x86_64. This is the fastest/preferred method if
   // available.
+ #if 0
   int cpuno = sched_getcpu();
   if (cpuno < 0) {
     return -1;
   }
   return cpuno;
+ #else
+  return terark::fast_getcpu();
+ #endif
 #elif defined(__x86_64__) || defined(__i386__)
   // clang/gcc both provide cpuid.h, which defines __get_cpuid(), for x86_64 and
   // i386.

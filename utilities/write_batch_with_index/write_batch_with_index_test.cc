@@ -2423,9 +2423,9 @@ int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
  #if defined(HAS_TOPLING_CSPP_WBWI)
   using namespace ROCKSDB_NAMESPACE;
-  if (!terark::getEnvBool("CSPP_WBWI_ONLY")) {
-    int ret = RUN_ALL_TESTS();
-    if (ret) return ret;
+  int ret = RUN_ALL_TESTS();
+  if (terark::getEnvBool("SKIP_CSPP_WBWI")) {
+    return ret;
   }
   g_fac.reset(NewCSPP_WBWIForPlain("{}"));
   ReverseBytewiseComparator_p = BytewiseComparator();

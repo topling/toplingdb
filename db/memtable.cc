@@ -688,8 +688,8 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
   if (!allow_concurrent) {
     // Extract prefix for insert with hint.
     if (insert_with_hint_prefix_extractor_ != nullptr &&
-        insert_with_hint_prefix_extractor_->InDomain(key_slice)) {
-      Slice prefix = insert_with_hint_prefix_extractor_->Transform(key_slice);
+        insert_with_hint_prefix_extractor_->InDomain(key)) {
+      Slice prefix = insert_with_hint_prefix_extractor_->Transform(key);
       hint = &insert_hints_[prefix];  // overwrite hint?
       bool res = table->InsertKeyValueWithHint(key_slice, value, hint);
       if (UNLIKELY(!res)) {

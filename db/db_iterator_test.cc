@@ -62,14 +62,14 @@ TEST_F(DBIteratorBaseTest, APICallsWithPerfContext) {
   iter->SeekToFirst();
   iter->SeekToLast();
   iter->SeekForPrev(key);
-  iter->Refresh();
+  iter->RefreshKeepSnapshot();
   ASSERT_EQ(4, get_perf_context()->iter_seek_count);
   ASSERT_EQ(0, get_perf_context()->iter_next_count);
   ASSERT_EQ(0, get_perf_context()->iter_prev_count);
 
   // Test Next() calls PerfContext counter
   iter->Next();
-  iter->Refresh();
+  iter->RefreshKeepSnapshot();
   ASSERT_EQ(4, get_perf_context()->iter_seek_count);
   ASSERT_EQ(1, get_perf_context()->iter_next_count);
   ASSERT_EQ(0, get_perf_context()->iter_prev_count);

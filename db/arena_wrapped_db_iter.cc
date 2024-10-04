@@ -19,18 +19,15 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-static constexpr size_t KEEP_SNAPSHOT = 16;
-
-inline static
-SequenceNumber GetSeqNum(const DBImpl* db, const Snapshot* s, const DBIter* i) {
-  if (size_t(s) == KEEP_SNAPSHOT)
-    return i->get_sequence();
-  else if (s)
-    //return static_cast_with_check<const SnapshotImpl>(s)->number_;
+inline static SequenceNumber GetSeqNum(const DBImpl* db, const Snapshot* s) {
+  if (s) {
     return s->GetSequenceNumber();
-  else
+  } else {
     return db->GetLatestSequenceNumber();
+  }
 }
+
+static constexpr size_t KEEP_SNAPSHOT = 16;
 
 Status Iterator::RefreshKeepSnapshot(bool keep_iter_pos) {
   return Refresh(reinterpret_cast<Snapshot*>(KEEP_SNAPSHOT), keep_iter_pos);
@@ -58,6 +55,7 @@ void ArenaWrappedDBIter::Init(
     const SequenceNumber& sequence, uint64_t max_sequential_skip_in_iteration,
     uint64_t version_number, ReadCallback* read_callback, DBImpl* db_impl,
     ColumnFamilyData* cfd, bool expose_blob_index, bool allow_refresh) {
+  assert(!db_iter_inited_);
   auto mem = db_iter_;
       new (mem) DBIter(env, read_options, ioptions, mutable_cf_options,
                        ioptions.user_comparator, /* iter */ nullptr, version,
@@ -69,6 +67,7 @@ void ArenaWrappedDBIter::Init(
   read_options_.pinning_tls = nullptr; // must set null
   allow_refresh_ = allow_refresh;
   memtable_range_tombstone_iter_ = nullptr;
+
   if (!env->GetFileSystem()->use_async_io()) {
     read_options_.async_io = false;
   }
@@ -91,25 +90,35 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
   // correct behavior. Will be corrected automatically when we take a snapshot
   // here for the case of WritePreparedTxnDB.
   uint64_t cur_sv_number = cfd_->GetSuperVersionNumber();
+  // If we recreate a new internal iterator below (NewInternalIterator()),
+  // we will pass in read_options_. We need to make sure it
+  // has the right snapshot.
+  if (size_t(snap) != KEEP_SNAPSHOT) {
+    read_options_.snapshot = snap;
+  }
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:1");
   TEST_SYNC_POINT("ArenaWrappedDBIter::Refresh:2");
   auto reinit_internal_iter = [&]() {
     std::string curr_key, curr_val;
     bool is_valid = this->Valid();
     SequenceNumber old_iter_seq = db_iter_->get_sequence();
-    SequenceNumber latest_seq = GetSeqNum(db_impl_, snap, db_iter_);
+    SequenceNumber read_seq;
     if (is_valid && keep_iter_pos) {
       curr_key = this->key().ToString();
       curr_val = this->value().ToString();
     }
     Snapshot* pin_snap = nullptr;
     if (size_t(snap) == KEEP_SNAPSHOT) {
-      // pin the snapshot latest_seq to avoid race condition caused by
-      // the the snapshot latest_seq being garbage collected by a
+      // pin the snapshot read_seq to avoid race condition caused by
+      // the the snapshot read_seq being garbage collected by a
       // compaction, which may cause many errors, for example an external
       // behavior is Seek on belowing new iterator failed(with same
       // read_opt.lower_bound/upper_bound...)
-      pin_snap = db_impl_->GetSnapshotImpl(latest_seq, false);
+      pin_snap = db_impl_->GetSnapshotImpl(old_iter_seq, false);
+      read_seq = old_iter_seq;
+    }
+    else {
+      read_seq = GetSeqNum(db_impl_, snap);
     }
     Env* env = db_iter_->env();
     db_iter_inited_ = false;
@@ -118,26 +127,27 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
     new (&arena_) Arena();
 
     SuperVersion* sv = cfd_->GetReferencedSuperVersion(db_impl_);
+    assert(sv->version_number >= cur_sv_number);
     if (read_callback_) {
-      read_callback_->Refresh(latest_seq);
+      read_callback_->Refresh(read_seq);
     }
     Init(env, read_options_, *(cfd_->ioptions()), sv->mutable_cf_options,
-         sv->current, latest_seq,
+         sv->current, read_seq,
          sv->mutable_cf_options.max_sequential_skip_in_iterations,
-         cur_sv_number, read_callback_, db_impl_, cfd_, expose_blob_index_,
+         sv->version_number, read_callback_, db_impl_, cfd_, expose_blob_index_,
          allow_refresh_);
 
     InternalIterator* internal_iter = db_impl_->NewInternalIterator(
-        read_options_, cfd_, sv, &arena_, latest_seq,
+        read_options_, cfd_, sv, &arena_, read_seq,
         /* allow_unprepared_value */ true, /* db_iter */ this);
     SetIterUnderDBIter(internal_iter);
     if (is_valid && keep_iter_pos) {
       this->Seek(curr_key);
-      if (old_iter_seq == latest_seq) {
+      if (old_iter_seq == read_seq) {
         ROCKSDB_VERIFY_F(this->Valid(),
           "curr_key = %s, seq = %lld, snap = %p, pin_snap = %p",
           Slice(curr_key).hex().c_str(),
-          (long long)latest_seq, snap, pin_snap);
+          (long long)read_seq, snap, pin_snap);
         ROCKSDB_VERIFY_F(key() == curr_key, "%s %s",
           key().hex().c_str(), Slice(curr_key).hex().c_str());
         ROCKSDB_VERIFY_F(value() == curr_val, "%s %s",
@@ -155,17 +165,14 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
     } else if (size_t(snap) == KEEP_SNAPSHOT) {
       break;
     } else {
-      SequenceNumber latest_seq = snap ? snap->GetSequenceNumber()
-                                       : db_impl_->GetLatestSequenceNumber();
-      if (latest_seq == db_iter_->get_sequence()) {
-        break;
-      }
+      SequenceNumber read_seq = GetSeqNum(db_impl_, snap);
+      SequenceNumber iter_seq = db_iter_->get_sequence();
       // Refresh range-tombstones in MemTable
-      if (!read_options_.ignore_range_deletions) {
+      if (!read_options_.ignore_range_deletions && read_seq != iter_seq) {
         SuperVersion* sv = cfd_->GetThreadLocalSuperVersion(db_impl_);
         TEST_SYNC_POINT_CALLBACK("ArenaWrappedDBIter::Refresh:SV", nullptr);
         auto t = sv->mem->NewRangeTombstoneIterator(
-            read_options_, latest_seq, false /* immutable_memtable */);
+            read_options_, read_seq, false /* immutable_memtable */);
         if (!t || t->empty()) {
           // If memtable_range_tombstone_iter_ points to a non-empty tombstone
           // iterator, then it means sv->mem is not the memtable that
@@ -195,9 +202,6 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
         }
         db_impl_->ReturnAndCleanupSuperVersion(cfd_, sv);
       }
-      // Refresh latest sequence number
-      db_iter_->set_sequence(latest_seq);
-      // db_iter_->set_valid(false); // comment out for ToplingDB
       // Check again if the latest super version number is changed
       uint64_t latest_sv_number = cfd_->GetSuperVersionNumber();
       if (latest_sv_number != cur_sv_number) {
@@ -206,11 +210,12 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
         cur_sv_number = latest_sv_number;
         continue;
       }
+      db_iter_->set_sequence(read_seq);
+      if (!keep_iter_pos) {
+        db_iter_->set_valid(false);
+      }
       break;
     }
-  }
-  if (size_t(snap) > KEEP_SNAPSHOT) {
-    this->read_options_.snapshot = snap;
   }
   return Status::OK();
 }

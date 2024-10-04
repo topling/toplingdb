@@ -96,6 +96,9 @@ class TestFSWritableFile : public FSWritableFile {
     return target_->use_direct_io();
   };
   intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  uint64_t GetFileSize(const IOOptions& ioo, IODebugContext* ctx) final {
+    return target_->GetFileSize(ioo, ctx);
+  }
   void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
 
  private:

@@ -704,6 +704,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     new(merges + num_get_db)Elem{result, i, std::move(merge_context)};
     num_get_db++;
   }
+if (num_get_db) {
   TERARK_FAST_ARRAY(PinnableSlice, db_values, num_get_db);
   TERARK_FAST_ARRAY(Status, db_statuses, num_get_db);
 
@@ -745,6 +746,7 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
   }
   TERARK_FAST_CLEAN(db_statuses, num_get_db, num_get_db);
   TERARK_FAST_CLEAN(db_values, num_get_db, num_get_db);
+} // num_get_db
   TERARK_FAST_CLEAN(db_keys, num_get_db, num_keys);
   TERARK_FAST_CLEAN(merges, num_get_db, num_keys);
 }

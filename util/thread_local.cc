@@ -538,26 +538,38 @@ void ThreadLocalPtr::Destroy() {
 }
 
 ROCKSDB_FLATTEN
-void* ThreadLocalPtr::Get() const { return Instance()->Get(id_); }
+void* ThreadLocalPtr::Get() const {
+  ROCKSDB_ASSERT_NE(id_, UINT32_MAX);
+  return Instance()->Get(id_);
+}
 
 ROCKSDB_FLATTEN
-void ThreadLocalPtr::Reset(void* ptr) { Instance()->Reset(id_, ptr); }
+void ThreadLocalPtr::Reset(void* ptr) {
+  ROCKSDB_ASSERT_NE(id_, UINT32_MAX);
+  Instance()->Reset(id_, ptr);
+}
 
 ROCKSDB_FLATTEN
-void* ThreadLocalPtr::Swap(void* ptr) { return Instance()->Swap(id_, ptr); }
+void* ThreadLocalPtr::Swap(void* ptr) {
+  ROCKSDB_ASSERT_NE(id_, UINT32_MAX);
+  return Instance()->Swap(id_, ptr);
+}
 
 ROCKSDB_FLATTEN
 bool ThreadLocalPtr::CompareAndSwap(void* ptr, void*& expected) {
+  ROCKSDB_ASSERT_NE(id_, UINT32_MAX);
   return Instance()->CompareAndSwap(id_, ptr, expected);
 }
 
 ROCKSDB_FLATTEN
 void ThreadLocalPtr::Scrape(autovector<void*>* ptrs, void* const replacement) {
+  ROCKSDB_ASSERT_NE(id_, UINT32_MAX);
   Instance()->Scrape(id_, ptrs, replacement);
 }
 
 ROCKSDB_FLATTEN
 void ThreadLocalPtr::Fold(FoldFunc func, void* res) {
+  ROCKSDB_ASSERT_NE(id_, UINT32_MAX);
   Instance()->Fold(id_, func, res);
 }
 

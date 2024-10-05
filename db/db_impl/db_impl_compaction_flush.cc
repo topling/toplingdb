@@ -1907,9 +1907,6 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
     cfd->compaction_picker()->UnregisterCompaction(c.get());
     c.reset();
 
-    cfd->compaction_picker()->UnregisterCompaction(c.get());
-    c.reset();
-
     InstallSuperVersionAndScheduleWork(cfd, &sv_context, mutable_cf_options);
 
     ROCKS_LOG_DEBUG(immutable_db_options_.info_log, "[%s] LogAndApply: %s\n",

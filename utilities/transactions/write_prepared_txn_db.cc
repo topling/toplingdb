@@ -250,6 +250,7 @@ Status WritePreparedTxnDB::WriteInternal(const WriteOptions& write_options_orig,
 Status WritePreparedTxnDB::Get(const ReadOptions& _read_options,
                                ColumnFamilyHandle* column_family,
                                const Slice& key, PinnableSlice* value) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGet) {
     return Status::InvalidArgument(
@@ -260,6 +261,10 @@ Status WritePreparedTxnDB::Get(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   return GetImpl(read_options, column_family, key, value);
 }
@@ -333,6 +338,7 @@ std::vector<Status> WritePreparedTxnDB::MultiGet(
   size_t num_keys = keys.size();
   std::vector<Status> stat_list(num_keys);
 
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -349,6 +355,10 @@ std::vector<Status> WritePreparedTxnDB::MultiGet(
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   values->resize(num_keys);
 
@@ -379,6 +389,7 @@ static void CleanupWritePreparedTxnDBIterator(void* arg1, void* /*arg2*/) {
 
 Iterator* WritePreparedTxnDB::NewIterator(const ReadOptions& _read_options,
                                           ColumnFamilyHandle* column_family) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kDBIterator) {
     return NewErrorIterator(Status::InvalidArgument(
@@ -389,6 +400,10 @@ Iterator* WritePreparedTxnDB::NewIterator(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kDBIterator;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kDBIterator;
+  const ReadOptions& read_options(_read_options);
+#endif
   constexpr bool expose_blob_index = false;
   constexpr bool allow_refresh = true;
   std::shared_ptr<ManagedSnapshot> own_snapshot = nullptr;
@@ -425,6 +440,7 @@ Status WritePreparedTxnDB::NewIterators(
     const ReadOptions& _read_options,
     const std::vector<ColumnFamilyHandle*>& column_families,
     std::vector<Iterator*>* iterators) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kDBIterator) {
     return Status::InvalidArgument(
@@ -436,6 +452,10 @@ Status WritePreparedTxnDB::NewIterators(
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kDBIterator;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kDBIterator;
+  const ReadOptions& read_options(_read_options);
+#endif
   constexpr bool expose_blob_index = false;
   constexpr bool allow_refresh = false;
   std::shared_ptr<ManagedSnapshot> own_snapshot = nullptr;

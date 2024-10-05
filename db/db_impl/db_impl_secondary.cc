@@ -456,6 +456,7 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
 
 Iterator* DBImplSecondary::NewIterator(const ReadOptions& _read_options,
                                        ColumnFamilyHandle* column_family) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kDBIterator) {
     return NewErrorIterator(Status::InvalidArgument(
@@ -466,6 +467,10 @@ Iterator* DBImplSecondary::NewIterator(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kDBIterator;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kDBIterator;
+  const ReadOptions& read_options(_read_options);
+#endif
   if (read_options.managed) {
     return NewErrorIterator(
         Status::NotSupported("Managed iterator is not supported anymore."));
@@ -545,6 +550,7 @@ Status DBImplSecondary::NewIterators(
     const ReadOptions& _read_options,
     const std::vector<ColumnFamilyHandle*>& column_families,
     std::vector<Iterator*>* iterators) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kDBIterator) {
     return Status::InvalidArgument(
@@ -555,6 +561,10 @@ Status DBImplSecondary::NewIterators(
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kDBIterator;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kDBIterator;
+  const ReadOptions& read_options(_read_options);
+#endif
   if (read_options.managed) {
     return Status::NotSupported("Managed iterator is not supported anymore.");
   }

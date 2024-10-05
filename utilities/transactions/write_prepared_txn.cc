@@ -44,6 +44,7 @@ void WritePreparedTxn::MultiGet(const ReadOptions& _read_options,
                                 const size_t num_keys, const Slice* keys,
                                 PinnableSlice* values, Status* statuses,
                                 const bool sorted_input) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -61,6 +62,10 @@ void WritePreparedTxn::MultiGet(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   SequenceNumber min_uncommitted, snap_seq;
   const SnapshotBackup backed_by_snapshot = wpt_db_->AssignMinMaxSeqs(
@@ -82,6 +87,7 @@ void WritePreparedTxn::MultiGet(const ReadOptions& _read_options,
 Status WritePreparedTxn::Get(const ReadOptions& _read_options,
                              ColumnFamilyHandle* column_family,
                              const Slice& key, PinnableSlice* pinnable_val) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGet) {
     return Status::InvalidArgument(
@@ -92,6 +98,10 @@ Status WritePreparedTxn::Get(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   return GetImpl(read_options, column_family, key, pinnable_val);
 }

@@ -388,6 +388,7 @@ static void CleanupWriteUnpreparedTxnDBIterator(void* arg1, void* /*arg2*/) {
 Iterator* WriteUnpreparedTxnDB::NewIterator(const ReadOptions& _read_options,
                                             ColumnFamilyHandle* column_family,
                                             WriteUnpreparedTxn* txn) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kDBIterator) {
     return NewErrorIterator(Status::InvalidArgument(
@@ -399,6 +400,10 @@ Iterator* WriteUnpreparedTxnDB::NewIterator(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kDBIterator;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kDBIterator;
+  const ReadOptions& read_options(_read_options);
+#endif
   // TODO(lth): Refactor so that this logic is shared with WritePrepared.
   constexpr bool expose_blob_index = false;
   constexpr bool allow_refresh = true;

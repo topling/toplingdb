@@ -2103,6 +2103,7 @@ Status DBImpl::Get(const ReadOptions& _read_options,
   assert(value != nullptr);
   value->Reset();
 
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGet) {
     return Status::InvalidArgument(
@@ -2114,6 +2115,10 @@ Status DBImpl::Get(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   Status s = GetImpl(read_options, column_family, key, value, timestamp);
   return s;
@@ -2142,6 +2147,7 @@ Status DBImpl::GetEntity(const ReadOptions& _read_options,
     return Status::InvalidArgument(
         "Cannot call GetEntity without a PinnableWideColumns object");
   }
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGetEntity) {
     return Status::InvalidArgument(
@@ -2152,6 +2158,10 @@ Status DBImpl::GetEntity(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGetEntity;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kGetEntity;
+  const ReadOptions& read_options(_read_options);
+#endif
   columns->Reset();
 
   GetImplOptions get_impl_options;
@@ -2169,6 +2179,7 @@ Status DBImpl::GetEntity(const ReadOptions& _read_options, const Slice& key,
   }
   Status s;
   const size_t num_column_families = result->size();
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGetEntity) {
     s = Status::InvalidArgument(
@@ -2187,6 +2198,14 @@ Status DBImpl::GetEntity(const ReadOptions& _read_options, const Slice& key,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGetEntity;
   }
+#else
+  // return early if no CF was passed in
+  if (num_column_families == 0) {
+    return s;
+  }
+  _read_options.io_activity = Env::IOActivity::kGetEntity;
+  const ReadOptions& read_options(_read_options);
+#endif
   std::vector<Slice> keys;
   std::vector<ColumnFamilyHandle*> column_families;
   for (size_t i = 0; i < num_column_families; ++i) {
@@ -2602,6 +2621,7 @@ std::vector<Status> DBImpl::MultiGet(
   assert(column_family.size() == num_keys);
   std::vector<Status> stat_list(num_keys);
 
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -2618,6 +2638,10 @@ std::vector<Status> DBImpl::MultiGet(
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   bool should_fail = false;
@@ -3010,6 +3034,7 @@ void DBImpl::MultiGet(const ReadOptions& _read_options, const size_t num_keys,
                       ColumnFamilyHandle** column_families, const Slice* keys,
                       PinnableSlice* values, std::string* timestamps,
                       Status* statuses, const bool sorted_input) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -3026,6 +3051,10 @@ void DBImpl::MultiGet(const ReadOptions& _read_options, const size_t num_keys,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
   MultiGetCommon(read_options, num_keys, column_families, keys, values,
                  /* columns */ nullptr, timestamps, statuses, sorted_input);
 }
@@ -3256,6 +3285,7 @@ void DBImpl::MultiGet(const ReadOptions& _read_options,
                       const Slice* keys, PinnableSlice* values,
                       std::string* timestamps, Status* statuses,
                       const bool sorted_input) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -3273,6 +3303,10 @@ void DBImpl::MultiGet(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
   MultiGetCommon(read_options, column_family, num_keys, keys, values,
                  /* columns */ nullptr, timestamps, statuses, sorted_input);
 }
@@ -3529,6 +3563,7 @@ void DBImpl::MultiGetWithCallback(
     const ReadOptions& _read_options, ColumnFamilyHandle* column_family,
     ReadCallback* callback,
     autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE>* sorted_keys) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     assert(false);
@@ -3539,6 +3574,10 @@ void DBImpl::MultiGetWithCallback(
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
   MultiGetWithCallbackImpl(read_options, column_family, callback, sorted_keys);
 }
 
@@ -3742,6 +3781,7 @@ void DBImpl::MultiGetEntity(const ReadOptions& _read_options, size_t num_keys,
                             ColumnFamilyHandle** column_families,
                             const Slice* keys, PinnableWideColumns* results,
                             Status* statuses, bool sorted_input) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGetEntity) {
     Status s = Status::InvalidArgument(
@@ -3758,6 +3798,10 @@ void DBImpl::MultiGetEntity(const ReadOptions& _read_options, size_t num_keys,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGetEntity;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGetEntity;
+  const ReadOptions& read_options(_read_options);
+#endif
   MultiGetCommon(read_options, num_keys, column_families, keys,
                  /* values */ nullptr, results, /* timestamps */ nullptr,
                  statuses, sorted_input);
@@ -3767,6 +3811,7 @@ void DBImpl::MultiGetEntity(const ReadOptions& _read_options,
                             ColumnFamilyHandle* column_family, size_t num_keys,
                             const Slice* keys, PinnableWideColumns* results,
                             Status* statuses, bool sorted_input) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGetEntity) {
     Status s = Status::InvalidArgument(
@@ -3783,6 +3828,10 @@ void DBImpl::MultiGetEntity(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGetEntity;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGetEntity;
+  const ReadOptions& read_options(_read_options);
+#endif
   MultiGetCommon(read_options, column_family, num_keys, keys,
                  /* values */ nullptr, results, /* timestamps */ nullptr,
                  statuses, sorted_input);
@@ -3791,6 +3840,7 @@ void DBImpl::MultiGetEntity(const ReadOptions& _read_options,
 void DBImpl::MultiGetEntity(const ReadOptions& _read_options, size_t num_keys,
                             const Slice* keys,
                             PinnableAttributeGroups* results) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGetEntity) {
     Status s = Status::InvalidArgument(
@@ -3807,6 +3857,10 @@ void DBImpl::MultiGetEntity(const ReadOptions& _read_options, size_t num_keys,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGetEntity;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGetEntity;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   std::vector<ColumnFamilyHandle*> column_families;
   std::vector<Slice> all_keys;
@@ -4128,7 +4182,11 @@ bool DBImpl::KeyMayExist(const ReadOptions& read_options,
                          std::string* value, std::string* timestamp,
                          bool* value_found) {
   assert(value != nullptr);
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   assert(read_options.io_activity == Env::IOActivity::kUnknown);
+#else
+  read_options.io_activity = Env::IOActivity::kGet;
+#endif
 
   if (value_found != nullptr) {
     // falsify later if key-may-exist but can't fetch value
@@ -4155,6 +4213,7 @@ bool DBImpl::KeyMayExist(const ReadOptions& read_options,
 
 Iterator* DBImpl::NewIterator(const ReadOptions& _read_options,
                               ColumnFamilyHandle* column_family) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kDBIterator) {
     return NewErrorIterator(Status::InvalidArgument(
@@ -4165,6 +4224,10 @@ Iterator* DBImpl::NewIterator(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kDBIterator;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kDBIterator;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   if (read_options.managed) {
     return NewErrorIterator(
@@ -4304,6 +4367,7 @@ Status DBImpl::NewIterators(
     const ReadOptions& _read_options,
     const std::vector<ColumnFamilyHandle*>& column_families,
     std::vector<Iterator*>* iterators) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kDBIterator) {
     return Status::InvalidArgument(
@@ -4314,6 +4378,10 @@ Status DBImpl::NewIterators(
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kDBIterator;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kDBIterator;
+  const ReadOptions& read_options(_read_options);
+#endif
   if (read_options.managed) {
     return Status::NotSupported("Managed iterator is not supported anymore.");
   }
@@ -6775,6 +6843,7 @@ Status DBImpl::ClipColumnFamily(ColumnFamilyHandle* column_family,
 }
 
 Status DBImpl::VerifyFileChecksums(const ReadOptions& _read_options) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kVerifyFileChecksums) {
     return Status::InvalidArgument(
@@ -6786,11 +6855,16 @@ Status DBImpl::VerifyFileChecksums(const ReadOptions& _read_options) {
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kVerifyFileChecksums;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kVerifyFileChecksums;
+  const ReadOptions& read_options(_read_options);
+#endif
   return VerifyChecksumInternal(read_options,
                                 /*use_file_checksum=*/true);
 }
 
 Status DBImpl::VerifyChecksum(const ReadOptions& _read_options) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kVerifyDBChecksum) {
     return Status::InvalidArgument(
@@ -6801,6 +6875,10 @@ Status DBImpl::VerifyChecksum(const ReadOptions& _read_options) {
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kVerifyDBChecksum;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kVerifyDBChecksum;
+  const ReadOptions& read_options(_read_options);
+#endif
   return VerifyChecksumInternal(read_options,
                                 /*use_file_checksum=*/false);
 }

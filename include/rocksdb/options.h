@@ -1779,6 +1779,9 @@ struct ReadOptions {
   // *** BEGIN options for RocksDB internal use only ***
 
   // EXPERIMENTAL
+#if !defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
+  mutable
+#endif
   Env::IOActivity io_activity = Env::IOActivity::kUnknown;
 
   uint8_t fixed_user_key_len = 0; // 0 indicate var len

@@ -240,6 +240,7 @@ Status TransactionBaseImpl::PopSavePoint() {
 Status TransactionBaseImpl::Get(const ReadOptions& _read_options,
                                 ColumnFamilyHandle* column_family,
                                 const Slice& key, std::string* value) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGet) {
     return Status::InvalidArgument(
@@ -250,6 +251,10 @@ Status TransactionBaseImpl::Get(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kGet;
+  const ReadOptions& read_options(_read_options);
+#endif
   auto s = GetImpl(read_options, column_family, key, value);
   return s;
 }
@@ -270,6 +275,7 @@ Status TransactionBaseImpl::GetImpl(const ReadOptions& read_options,
 Status TransactionBaseImpl::Get(const ReadOptions& _read_options,
                                 ColumnFamilyHandle* column_family,
                                 const Slice& key, PinnableSlice* pinnable_val) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGet) {
     return Status::InvalidArgument(
@@ -280,6 +286,10 @@ Status TransactionBaseImpl::Get(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kGet;
+  const ReadOptions& read_options(_read_options);
+#endif
   return GetImpl(read_options, column_family, key, pinnable_val);
 }
 
@@ -301,11 +311,15 @@ Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
         "If do_validate is false then GetForUpdate with snapshot is not "
         "defined.");
   }
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (read_options.io_activity != Env::IOActivity::kUnknown) {
     return Status::InvalidArgument(
         "Cannot call GetForUpdate with `ReadOptions::io_activity` != "
         "`Env::IOActivity::kUnknown`");
   }
+#else
+  read_options.io_activity = Env::IOActivity::kUnknown;
+#endif
   Status s =
       TryLock(column_family, key, true /* read_only */, exclusive, do_validate);
 
@@ -332,11 +346,15 @@ Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
         "If do_validate is false then GetForUpdate with snapshot is not "
         "defined.");
   }
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (read_options.io_activity != Env::IOActivity::kUnknown) {
     return Status::InvalidArgument(
         "Cannot call GetForUpdate with `ReadOptions::io_activity` != "
         "`Env::IOActivity::kUnknown`");
   }
+#else
+  read_options.io_activity = Env::IOActivity::kUnknown;
+#endif
   Status s =
       TryLock(column_family, key, true /* read_only */, exclusive, do_validate);
 
@@ -352,6 +370,7 @@ std::vector<Status> TransactionBaseImpl::MultiGet(
     const std::vector<Slice>& keys, std::vector<std::string>* values) {
   size_t num_keys = keys.size();
   std::vector<Status> stat_list(num_keys);
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -367,6 +386,10 @@ std::vector<Status> TransactionBaseImpl::MultiGet(
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   values->resize(num_keys);
   for (size_t i = 0; i < num_keys; ++i) {
@@ -382,6 +405,7 @@ void TransactionBaseImpl::MultiGet(const ReadOptions& _read_options,
                                    const size_t num_keys, const Slice* keys,
                                    PinnableSlice* values, Status* statuses,
                                    const bool sorted_input) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -398,6 +422,10 @@ void TransactionBaseImpl::MultiGet(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
   write_batch_.MultiGetFromBatchAndDB(db_, read_options, column_family,
                                       num_keys, keys, values, statuses,
                                       sorted_input);
@@ -408,12 +436,16 @@ std::vector<Status> TransactionBaseImpl::MultiGetForUpdate(
     const std::vector<ColumnFamilyHandle*>& column_family,
     const std::vector<Slice>& keys, std::vector<std::string>* values) {
   size_t num_keys = keys.size();
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (read_options.io_activity != Env::IOActivity::kUnknown) {
     Status s = Status::InvalidArgument(
         "Cannot call MultiGetForUpdate with `ReadOptions::io_activity` != "
         "`Env::IOActivity::kUnknown`");
     return std::vector<Status>(num_keys, s);
   }
+#else
+  read_options.io_activity = Env::IOActivity::kUnknown;
+#endif
   // Regardless of whether the MultiGet succeeded, track these keys.
   values->resize(num_keys);
 

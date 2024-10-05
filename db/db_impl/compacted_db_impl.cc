@@ -46,6 +46,7 @@ Status CompactedDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle*,
 Status CompactedDBImpl::Get(const ReadOptions& _read_options,
                             ColumnFamilyHandle*, const Slice& key,
                             PinnableSlice* value, std::string* timestamp) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGet) {
     return Status::InvalidArgument(
@@ -56,6 +57,10 @@ Status CompactedDBImpl::Get(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   assert(user_comparator_);
   if (read_options.timestamp) {
@@ -125,6 +130,7 @@ std::vector<Status> CompactedDBImpl::MultiGet(
   assert(user_comparator_);
   size_t num_keys = keys.size();
 
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -137,6 +143,10 @@ std::vector<Status> CompactedDBImpl::MultiGet(
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   if (read_options.timestamp) {
     Status s =

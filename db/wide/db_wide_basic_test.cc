@@ -467,6 +467,7 @@ TEST_F(DBWideBasicTest, MultiCFMultiGetEntityAsPinnableAttributeGroups) {
     ReadOptions read_options;
     read_options.io_activity = Env::IOActivity::kGetEntity;
     std::vector<PinnableAttributeGroups> results;
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
     for (size_t i = 0; i < num_keys; ++i) {
       results.emplace_back(create_result(all_cfs));
     }
@@ -477,6 +478,7 @@ TEST_F(DBWideBasicTest, MultiCFMultiGetEntityAsPinnableAttributeGroups) {
         ASSERT_TRUE(results[i][j].status().IsInvalidArgument());
       }
     }
+#endif
     // Check for invalid column family in Attribute Group result
     results.clear();
     results.emplace_back(create_result(null_and_hot_cfs));

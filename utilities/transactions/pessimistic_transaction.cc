@@ -166,11 +166,15 @@ template <typename TValue>
 inline Status WriteCommittedTxn::GetForUpdateImpl(
     const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const Slice& key, TValue* value, bool exclusive, const bool do_validate) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (read_options.io_activity != Env::IOActivity::kUnknown) {
     return Status::InvalidArgument(
         "Cannot call GetForUpdate with `ReadOptions::io_activity` != "
         "`Env::IOActivity::kUnknown`");
   }
+#else
+  read_options.io_activity = Env::IOActivity::kUnknown;
+#endif
   column_family =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
   assert(column_family);

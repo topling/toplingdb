@@ -6,8 +6,6 @@
 
 #include "utilities/compaction_filters/remove_emptyvalue_compactionfilter.h"
 
-#include "utilities/compaction_filters/remove_emptyvalue_compactionfilter.h"
-
 #include <string>
 
 #include "rocksdb/slice.h"

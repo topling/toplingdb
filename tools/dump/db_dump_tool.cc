@@ -6,8 +6,6 @@
 
 #include "rocksdb/db_dump_tool.h"
 
-#include "rocksdb/db_dump_tool.h"
-
 #include <cinttypes>
 #include <iostream>
 

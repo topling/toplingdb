@@ -350,6 +350,9 @@ class DBImpl : public DB {
                       const std::vector<ColumnFamilyHandle*>& column_families,
                       std::vector<Iterator*>* iterators) override;
 
+  const Snapshot* GetSnapshot() override;
+  void ReleaseSnapshot(const Snapshot* snapshot) override;
+
   // UNDER CONSTRUCTION - DO NOT USE
   // Return a cross-column-family iterator from a consistent database state.
   std::unique_ptr<Iterator> NewMultiCfIterator(
@@ -363,9 +366,6 @@ class DBImpl : public DB {
       const std::vector<ColumnFamilyHandle*>& column_families,
       std::vector<const Snapshot*>* snapshots) override;
   // RocksDB-Cloud contribution end
-
-  virtual const Snapshot* GetSnapshot() override;
-  virtual void ReleaseSnapshot(const Snapshot* snapshot) override;
 
   // Create a timestamped snapshot. This snapshot can be shared by multiple
   // readers. If any of them uses it for write conflict checking, then

@@ -1347,6 +1347,7 @@ TEST_F(DBBlockCacheTest, HyperClockCacheReportProblems) {
   EXPECT_EQ(logger->PopCounts(), (std::array<int, 3>{{0, 1, 0}}));
 }
 
+
 class DBBlockCacheKeyTest
     : public DBTestBase,
       public testing::WithParamInterface<std::tuple<bool, bool>> {

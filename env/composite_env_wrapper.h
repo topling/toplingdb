@@ -375,5 +375,4 @@ class CompositeEnvWrapper : public CompositeEnv {
  private:
   EnvWrapper::Target target_;
 };
-
 }  // namespace ROCKSDB_NAMESPACE

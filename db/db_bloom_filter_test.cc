@@ -2696,8 +2696,7 @@ TEST_F(DBBloomFilterTest, OptimizeFiltersForHits) {
   ReopenWithColumnFamilies({"default", "mypikachu"}, options);
 
   {
-    std::unique_ptr<Iterator> iter(
-        db_->NewIterator(ReadOptions(), handles_[1]));
+    std::unique_ptr<Iterator> iter(db_->NewIterator(ReadOptions(), handles_[1]));
     int i = 0;
     for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
       ++i;

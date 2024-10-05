@@ -1162,7 +1162,6 @@ const std::shared_ptr<FileSystem>& Env::GetFileSystem() const {
 const std::shared_ptr<SystemClock>& Env::GetSystemClock() const {
   return system_clock_;
 }
-
 namespace {
 static std::unordered_map<std::string, OptionTypeInfo> sc_wrapper_type_info = {
     {"target",

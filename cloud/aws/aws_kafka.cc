@@ -51,6 +51,10 @@ class KafkaWritableFile : public CloudLogWritableFile {
   IOStatus Flush(const IOOptions& io_opts, IODebugContext* dbg) override;
   IOStatus LogDelete() override;
 
+  uint64_t GetFileSize(const IOOptions&, IODebugContext*) override {
+    return current_offset_;
+  }
+
  private:
   IOStatus ProduceRaw(const std::string& operation_name, const Slice& message);
 

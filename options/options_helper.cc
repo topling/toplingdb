@@ -1313,7 +1313,7 @@ bool MatchesOptionsTypeFromMap(
     const std::unordered_map<std::string, OptionTypeInfo>& type_map,
     const void* const this_ptr, const void* const that_ptr,
     std::string* mismatch) {
-  for (auto& pair : type_map) {
+  for (const auto& pair : type_map) {
     // We skip checking deprecated variables as they might
     // contain random values since they might not be initialized
     if (config_options.IsCheckEnabled(pair.second.GetSanityLevel())) {

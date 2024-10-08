@@ -176,7 +176,7 @@ CompressionType GetCompressionFlush(
 namespace {
 void DumpSupportInfo(Logger* logger) {
   ROCKS_LOG_HEADER(logger, "Compression algorithms supported:");
-  for (auto& compression : OptionsHelper::compression_type_string_map) {
+  for (const auto& compression : OptionsHelper::compression_type_string_map) {
     if (compression.second != kNoCompression &&
         compression.second != kDisableCompressionOption) {
       ROCKS_LOG_HEADER(logger, "\t%s supported: %d", compression.first.c_str(),
@@ -749,7 +749,7 @@ Status DBImpl::CloseHelper() {
   // so the cache can be safely destroyed.
   table_cache_->EraseUnRefEntries();
 
-  for (auto& txn_entry : recovered_transactions_) {
+  for (const auto& txn_entry : recovered_transactions_) {
     delete txn_entry.second;
   }
 

@@ -262,7 +262,7 @@ class Timer {
 
     // With mutex_ held, set all tasks to invalid so that they will not be
     // re-queued.
-    for (auto& elem : map_) {
+    for (const auto& elem : map_) {
       auto& func_info = elem.second;
       assert(func_info);
       func_info->Cancel();

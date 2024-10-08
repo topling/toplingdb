@@ -2211,11 +2211,12 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
         if (ParseFileName(file_name, &file_number, &file_type) &&
             (file_type == kTableFile || file_type == kBlobFile)) {
           // TODO: Check for errors from OnAddFile?
-          if (known_file_sizes.count(file_name)) {
+          auto idx = known_file_sizes.find_i(file_name);
+          if (idx != known_file_sizes.end_i()) {
             // We're assuming that each sst file name exists in at most one of
             // the paths.
-            sfm->OnAddFile(file_path, known_file_sizes.at(file_name))
-                .PermitUncheckedError();
+            uint64_t file_size = known_file_sizes.val(idx);
+            sfm->OnAddFile(file_path, file_size).PermitUncheckedError();
           } else {
             sfm->OnAddFile(file_path).PermitUncheckedError();
           }

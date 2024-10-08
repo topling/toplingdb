@@ -2169,7 +2169,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     std::vector<ColumnFamilyMetaData> metadata;
     impl->GetAllColumnFamilyMetaData(&metadata);
 
-    std::unordered_map<std::string, uint64_t> known_file_sizes;
+    terark::hash_strmap<uint64_t> known_file_sizes;
     for (const auto& md : metadata) {
       for (const auto& lmd : md.levels) {
         for (const auto& fmd : lmd.files) {

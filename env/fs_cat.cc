@@ -454,7 +454,7 @@ IOStatus CatFileSystem::GetFileModificationTime(const std::string& fname,
                                                   const IOOptions& options,
                                                   uint64_t* file_mtime,
                                                   IODebugContext* dbg) {
-  return m_local->GetFileSize(fname, options, file_mtime, dbg);
+  return m_local->GetFileModificationTime(fname, options, file_mtime, dbg);
 }
 
 IOStatus CatFileSystem::IsDirectory(const std::string& path,

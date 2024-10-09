@@ -477,6 +477,29 @@ else
   $(warning NotFound sideplugin/topling-zip_table_reader, this is ok, only Topling Open SST(s) are disabled)
 endif
 
+ifeq (,$(wildcard sideplugin/toplingdb-fs/src))
+  dummy := $(shell set -e -x; \
+    cd sideplugin; \
+    git clone https://github.com/topling/toplingdb-fs; \
+    cd toplingdb-fs; \
+  )
+else
+  ifneq (${UPDATE_REPO},0)
+   ifeq (${MAKE_RESTARTS},)
+    dummy := $(shell cd sideplugin/toplingdb-fs && git pull)
+   endif
+  endif
+endif
+ifneq (,$(wildcard sideplugin/toplingdb-fs/src))
+  # now we have toplingdb-fs
+  CXXFLAGS += -DHAS_TOPLINGDB_FS -Isideplugin/toplingdb-fs/src
+  LDFLAGS += -lnfs
+  TOPLINGDB_FS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-toplingdb_fs.cc
+  EXTRA_LIB_SOURCES += $(wildcard sideplugin/toplingdb-fs/src/*.cc) \
+                       sideplugin/toplingdb-fs/${TOPLINGDB_FS_GIT_VER_SRC}
+else
+  $(warning NotFound sideplugin/toplingdb-fs, this is ok, only toplingdb-fs is disabled)
+endif
 
 ifeq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
   dummy := $(shell set -e -x; \
@@ -3129,6 +3152,13 @@ sideplugin/topling-zip_table_reader/${TOPLING_ZIP_TABLE_READER_GIT_VER_SRC}: \
   $(wildcard sideplugin/topling-zip_table_reader/src/table/*.cc) \
   sideplugin/topling-zip_table_reader/Makefile
 	+make -C sideplugin/topling-zip_table_reader ${TOPLING_ZIP_TABLE_READER_GIT_VER_SRC}
+endif
+ifneq (,$(wildcard sideplugin/toplingdb-fs/src))
+sideplugin/toplingdb-fs/${TOPLINGDB_FS_GIT_VER_SRC}: \
+  $(wildcard sideplugin/toplingdb-fs/src/*.h) \
+  $(wildcard sideplugin/toplingdb-fs/src/*.cc) \
+  sideplugin/toplingdb-fs/Makefile
+	+make -C sideplugin/toplingdb-fs ${TOPLINGDB_FS_GIT_VER_SRC}
 endif
 ifneq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
 sideplugin/topling-dcompact/${TOPLING_DCOMPACT_GIT_VER_SRC}: \

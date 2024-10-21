@@ -1758,6 +1758,8 @@ class ReactiveVersionSet : public VersionSet {
 
   std::vector<VersionEdit>& replay_buffer();
 
+  bool m_short_lock_mutex = false;
+
  protected:
   // REQUIRES db mutex
   Status ApplyOneVersionEditToBuilder(

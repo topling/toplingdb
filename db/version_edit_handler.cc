@@ -32,6 +32,7 @@ void VersionEditHandlerBase::Iterate(log::Reader& reader,
   Status s = Initialize();
   while (reader.LastRecordEnd() < max_manifest_read_size_ && s.ok() &&
          reader.ReadRecord(&record, &scratch) && log_read_status->ok()) {
+    InstrumentedMutexMaybeLock lock(mtx_); // mtx_ may be null
     VersionEdit edit;
     s = edit.DecodeFrom(record);
     if (!s.ok()) {
@@ -56,12 +57,16 @@ void VersionEditHandlerBase::Iterate(log::Reader& reader,
           break;
         }
         read_buffer_.Clear();
+        if (mtx_)
+          break;
       }
     } else {
       s = ApplyVersionEdit(edit, &cfd);
       if (s.ok()) {
         ++recovered_edits;
       }
+      if (mtx_)
+        break;
     }
   }
   if (!log_read_status->ok()) {

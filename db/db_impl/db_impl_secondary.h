@@ -246,6 +246,9 @@ class DBImplSecondary : public DBImpl {
   // method can take long time due to all the I/O and CPU costs.
   Status TryCatchUpWithPrimary() override;
 
+  void StartCatchUpThread(int sleepms);
+  void StopCatchUpThread();
+
   // Try to find log reader using log_number from log_readers_ map, initialize
   // if it doesn't exist
   Status MaybeInitLogReader(uint64_t log_number,
@@ -320,6 +323,9 @@ class DBImplSecondary : public DBImpl {
   std::unordered_map<ColumnFamilyData*, uint64_t> cfd_to_current_log_;
 
   const std::string secondary_path_;
+
+  std::unique_ptr<std::thread> manifest_thread_, wal_thread_;
+  bool stop_catch_up_ = false;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

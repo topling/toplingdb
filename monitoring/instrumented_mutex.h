@@ -80,6 +80,36 @@ class InstrumentedMutexLock {
   void operator=(const InstrumentedMutexLock&) = delete;
 };
 
+// For auto unlock on exit scope when mutex_ is not null
+class InstrumentedMutexMaybeLock {
+ public:
+  explicit InstrumentedMutexMaybeLock(InstrumentedMutex* mutex = nullptr) {
+    mutex_ = mutex;
+    if (mutex)
+      mutex->Lock();
+  }
+  void Lock(InstrumentedMutex* mutex) {
+    assert(nullptr != mutex);
+    assert(nullptr == mutex_);
+    mutex_ = mutex;
+    mutex->Lock();
+  }
+  void Unlock() {
+    assert(nullptr != mutex_);
+    mutex_->AssertHeld();
+    mutex_->Unlock();
+    mutex_ = nullptr;
+  }
+  InstrumentedMutex* GetMutex() const { return mutex_; }
+
+  ~InstrumentedMutexMaybeLock() { if (mutex_) mutex_->Unlock(); }
+
+ private:
+  InstrumentedMutex* mutex_;
+  InstrumentedMutexMaybeLock(const InstrumentedMutexMaybeLock&) = delete;
+  void operator=(const InstrumentedMutexMaybeLock&) = delete;
+};
+
 // RAII wrapper for temporary releasing InstrumentedMutex inside
 // InstrumentedMutexLock
 class InstrumentedMutexUnlock {

@@ -31,6 +31,8 @@ class VersionEditHandlerBase {
 
   AtomicGroupReadBuffer& GetReadBuffer() { return read_buffer_; }
 
+  void SetMutex(InstrumentedMutex* mtx) { mtx_ = mtx; }
+
  protected:
   explicit VersionEditHandlerBase(const ReadOptions& read_options,
                                   uint64_t max_read_size)
@@ -48,6 +50,7 @@ class VersionEditHandlerBase {
   Status status_;
 
   const ReadOptions& read_options_;
+  InstrumentedMutex* mtx_ = nullptr;
 
  private:
   AtomicGroupReadBuffer read_buffer_;

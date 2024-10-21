@@ -28,7 +28,12 @@ DBImplSecondary::DBImplSecondary(const DBOptions& db_options,
   LogFlush(immutable_db_options_.info_log);
 }
 
-DBImplSecondary::~DBImplSecondary() {}
+DBImplSecondary::~DBImplSecondary() {
+  if (manifest_thread_) {
+    ROCKSDB_VERIFY(nullptr != wal_thread_.get());
+    StopCatchUpThread();
+  }
+}
 
 Status DBImplSecondary::Recover(
     const std::vector<ColumnFamilyDescriptor>& column_families,
@@ -277,6 +282,15 @@ Status DBImplSecondary::RecoverLogFiles(
             cfd->imm()->Add(cfd->mem(), &job_context->memtables_to_free);
             new_mem->Ref();
             cfd->SetMemtable(new_mem);
+            uint64_t log_num = cfd->GetLogNumber();
+            if (cfd->imm()->HasObsoletedMemTables(log_num)) {
+              autovector<MemTable*>
+              cfd->imm()->RemoveOldMemTables(log_num,
+                                            &job_context.memtables_to_free);
+              auto& sv_context = job_context.superversion_contexts.back();
+              cfd->InstallSuperVersion(&sv_context, &mutex_);
+              sv_context.NewSuperVersion();
+            }
           }
         }
         bool has_valid_writes = false;
@@ -743,6 +757,71 @@ Status DBImplSecondary::TryCatchUpWithPrimary() {
   }
   purge_files_job_context.Clean();
   return s;
+}
+
+void DBImplSecondary::StartCatchUpThread(int sleepms) {
+  assert(versions_.get() != nullptr);
+  assert(manifest_reader_.get() != nullptr);
+  ROCKSDB_VERIFY(nullptr == manifest_thread_.get());
+  ROCKSDB_VERIFY(nullptr == wal_thread_.get());
+  auto catch_up_manifest = [this] {
+    // read the manifest and apply new changes to the secondary instance
+    std::unordered_set<ColumnFamilyData*> cfds_changed;
+    auto ver = static_cast_with_check<ReactiveVersionSet>(versions_.get());
+    // InstrumentedMutexLock lock_guard(&mutex_);
+    Status s = ver->ReadAndApply(&mutex_, &manifest_reader_,
+                           manifest_reader_status_.get(), &cfds_changed);
+  };
+  auto catch_up_wal = [this] {
+    // list wal_dir to discover new WALs and apply new changes to the secondary
+    // instance.
+    std::unordered_set<ColumnFamilyData*> cfds_changed;
+    JobContext job_context(0, true /*create_superversion*/);
+    // write job_context->memtables_to_free
+    Status s = FindAndRecoverLogFiles(&cfds_changed, &job_context);
+    if (s.IsPathNotFound()) {
+      ROCKS_LOG_INFO(
+          immutable_db_options_.info_log,
+          "Secondary tries to read WAL, but WAL file(s) have already "
+          "been purged by primary.");
+      s = Status::OK();
+    }
+    if (s.ok()) {
+      for (auto cfd : cfds_changed) {
+        cfd->imm()->RemoveOldMemTables(cfd->GetLogNumber(),
+                                       &job_context.memtables_to_free);
+        auto& sv_context = job_context.superversion_contexts.back();
+        cfd->InstallSuperVersion(&sv_context, &mutex_);
+        sv_context.NewSuperVersion();
+      }
+    }
+    job_context.Clean();
+  };
+  auto manifest_thread_proc = [this, sleepms, catch_up_manifest] {
+    while (this->stop_catch_up_) {
+      this->env_->SleepForMicroseconds(sleepms*1000);
+      catch_up_manifest();
+    }
+  };
+  auto wal_thread_proc = [this, sleepms, catch_up_wal] {
+    while (this->stop_catch_up_) {
+      this->env_->SleepForMicroseconds(sleepms*1000);
+      catch_up_wal();
+    }
+  };
+  stop_catch_up_ = false;
+  manifest_thread_.reset(new std::thread(manifest_thread_proc));
+  wal_thread_.reset(new std::thread(wal_thread_proc));
+}
+
+void DBImplSecondary::StopCatchUpThread() {
+  ROCKSDB_VERIFY(nullptr != manifest_thread_.get());
+  ROCKSDB_VERIFY(nullptr != wal_thread_.get());
+  stop_catch_up_ = true;
+  manifest_thread_->join();
+  wal_thread_->join();
+  manifest_thread_.reset();
+  wal_thread_.reset();
 }
 
 Status DB::OpenAsSecondary(const Options& options, const std::string& dbname,

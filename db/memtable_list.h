@@ -447,6 +447,11 @@ class MemTableList {
   void RemoveOldMemTables(uint64_t log_number,
                           autovector<MemTable*>* to_delete);
 
+  bool HasObsoletedMemTables(uint64_t log_number) const {
+    auto& list = current_->memlist_;
+    return !list.empty() && list.back()->GetNextLogNumber() <= log_number;
+  }
+
  private:
   friend Status InstallMemtableAtomicFlushResults(
       const autovector<MemTableList*>* imm_lists,

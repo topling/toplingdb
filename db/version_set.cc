@@ -7755,7 +7755,11 @@ Status ReactiveVersionSet::ReadAndApply(
     std::unordered_set<ColumnFamilyData*>* cfds_changed) {
   assert(manifest_reader != nullptr);
   assert(cfds_changed != nullptr);
-  mu->AssertHeld();
+  if (m_short_lock_mutex) {
+    manifest_tailer_->SetMutex(mu);
+  } else {
+    mu->AssertHeld();
+  }
 
   Status s;
   log::Reader* reader = manifest_reader->get();

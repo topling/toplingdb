@@ -9,7 +9,7 @@ on:
         default: 'topling/toplingdb'
       repository_branch:
         required: false
-        default: 'sideplugin-7.10.0-2022-12-21-bec42648'
+        default: 'memtable_as_log_index'
       test:
         required: false
         type: boolean
@@ -76,22 +76,22 @@ jobs:
       - name: Compile RocksDBJava
         run: |
           echo $JAVA_HOME
-          make rocksdbjava -j`nproc` DEBUG_LEVEL=0
+          make rocksdbjava -j`nproc` DEBUG_LEVEL=0 STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1
 
       - name: Move to Local Maven Repo
         run: |
           cd java/target || exit
-          cp -v rocksdbjni-7.10.0-linux64.jar rocksdbjni-7.10.0-SNAPSHOT-linux64.jar
-          mvn install:install-file -ntp -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar \
-          -DgroupId=org.rocksdb -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
+          cp -v rocksdbjni-8.10.2-linux64.jar rocksdbjni-8.10.2-SNAPSHOT-linux64.jar
+          mvn install:install-file -ntp -Dfile=rocksdbjni-8.10.2-SNAPSHOT-linux64.jar \
+          -DgroupId=org.rocksdb -DartifactId=rocksdbjni -Dversion=8.10.2-SNAPSHOT -Dpackaging=jar
           # TODO: why 'deploy' doesn't include install step here? if we only use deploy, will lack local jar
           if ${{ inputs.deploy_maven }}; then
             # TODO: what's the pom file for it? add with '-DpomFile=/xx/pom.xml'
             mvn deploy:deploy-file -e -s $GITHUB_WORKSPACE/settings.xml \
                 -DpomFile=$GITHUB_WORKSPACE/java/pom.xml.template \
                 -Durl=https://maven.pkg.github.com/$REP_URL -DrepositoryId=github \
-                -Dfile=rocksdbjni-7.10.0-SNAPSHOT-linux64.jar -DgroupId=org.rocksdb \
-                -DartifactId=rocksdbjni -Dversion=7.10.0-SNAPSHOT -Dpackaging=jar
+                -Dfile=rocksdbjni-8.10.2-SNAPSHOT-linux64.jar -DgroupId=org.rocksdb \
+                -DartifactId=rocksdbjni -Dversion=8.10.2-SNAPSHOT -Dpackaging=jar
           fi
 
       # for compile jmh.jar to test the performance

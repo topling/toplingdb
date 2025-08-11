@@ -2371,7 +2371,7 @@ frocksdbjavastaticreleasedocker: rocksdbjavastaticreleasedocker
 	# prepare frocksdb release
 	cd java/target;mkdir -p frocksdb-release
 
-	$(eval FROCKSDB_JAVA_VERSION=$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-ververica-$(FROCKSDB_VERSION))
+	$(eval FROCKSDB_JAVA_VERSION=$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-topling-$(FROCKSDB_VERSION))
 	$(eval FJAR_PREF=frocksdbjni-$(FROCKSDB_JAVA_VERSION))
 	$(eval FJAR=$(FJAR_PREF).jar)
 	$(eval FJAR_DOCS=$(FJAR_PREF)-javadoc.jar)
@@ -2439,7 +2439,8 @@ rocksdbjavastaticpublishcentral: rocksdbjavageneratepom
 	$(foreach classifier, $(ROCKSDB_JAVA_RELEASE_CLASSIFIERS), mvn gpg:sign-and-deploy-file -Durl=https://oss.sonatype.org/service/local/staging/deploy/maven2/ -DrepositoryId=sonatype-nexus-staging -DpomFile=java/pom.xml -Dfile=java/target/rocksdbjni-$(ROCKSDB_JAVA_VERSION)-$(classifier).jar -Dclassifier=$(classifier);)
 
 rocksdbjavageneratepom:
-	cd java;cat pom.xml.template | sed 's/\$${ROCKSDB_JAVA_VERSION}/$(ROCKSDB_JAVA_VERSION)/' > pom.xml
+	$(eval FROCKSDB_JAVA_VERSION=$(ROCKSDB_MAJOR).$(ROCKSDB_MINOR).$(ROCKSDB_PATCH)-topling-$(FROCKSDB_VERSION))
+	cd java;cat pom.xml.template | sed 's/\$${FROCKSDB_JAVA_VERSION}/$(FROCKSDB_JAVA_VERSION)/' > pom.xml
 
 rocksdbjavastaticnexusbundlejar: rocksdbjavageneratepom
 	openssl sha1 -r java/pom.xml | awk '{  print $$1 }' > java/target/pom.xml.sha1
@@ -2451,6 +2452,8 @@ rocksdbjavastaticnexusbundlejar: rocksdbjavageneratepom
 	$(JAR_CMD) cvf java/target/nexus-bundle-rocksdbjni-$(ROCKSDB_JAVA_VERSION).jar -C java pom.xml -C java/target pom.xml.sha1 -C java/target pom.xml.asc -C java/target rocksdbjni-$(ROCKSDB_JAVA_VERSION).jar -C java/target rocksdbjni-$(ROCKSDB_JAVA_VERSION).jar.sha1 -C java/target rocksdbjni-$(ROCKSDB_JAVA_VERSION).jar.asc
 	$(foreach classifier, $(ROCKSDB_JAVA_RELEASE_CLASSIFIERS), $(JAR_CMD) uf java/target/nexus-bundle-rocksdbjni-$(ROCKSDB_JAVA_VERSION).jar -C java/target rocksdbjni-$(ROCKSDB_JAVA_VERSION)-$(classifier).jar -C java/target rocksdbjni-$(ROCKSDB_JAVA_VERSION)-$(classifier).jar.sha1 -C java/target rocksdbjni-$(ROCKSDB_JAVA_VERSION)-$(classifier).jar.asc;)
 
+rocksdbjava-install-for-flink: rocksdbjavageneratepom rocksdbjava
+	mvn install:install-file -Dfile=java/target/${ROCKSDB_JAR} -DpomFile=java/pom.xml
 
 # A version of each $(LIBOBJECTS) compiled with -fPIC
 

@@ -22,9 +22,9 @@
     </licenses>
 
     <scm>
-        <connection>scm:git:https://github.com/ververica/frocksdb.git</connection>
-        <developerConnection>scm:git:https://github.com/ververica/frocksdb.git</developerConnection>
-        <url>scm:git:https://github.com/ververica/frocksdb.git</url>
+        <connection>scm:git:https://github.com/topling/toplingdb.git</connection>
+        <developerConnection>scm:git:https://github.com/topling/toplingdb.git</developerConnection>
+        <url>scm:git:https://github.com/topling/toplingdb.git</url>
     </scm>
 
     <organization>
@@ -77,7 +77,7 @@
                 <version>2.18.1</version>
                 <configuration>
                     <argLine>${argLine} -ea -Xcheck:jni -Djava.library.path=${project.build.directory}</argLine>
-                    <useManifestOnlyJar>false</useManifestOnlyJar>  
+                    <useManifestOnlyJar>false</useManifestOnlyJar>
                     <useSystemClassLoader>false</useSystemClassLoader>
                     <additionalClasspathElements>
                         <additionalClasspathElement>${project.build.directory}/*</additionalClasspathElement>
@@ -141,7 +141,7 @@
                 <version>4.7.2.1</version>
                 <configuration>
                     <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
-                </configuration>          
+                </configuration>
                 <dependencies>
                   <!-- overwrite dependency on spotbugs if you want to specify the version of spotbugs -->
                   <dependency>
@@ -170,7 +170,7 @@
                       <!-- A rule set, that comes bundled with PMD -->
                       <!-- <ruleset>/category/java/errorprone.xml</ruleset> -->
                     </rulesets>
-                  </configuration>          
+                  </configuration>
               </plugin>
       </plugins>
     </build>

@@ -27,8 +27,13 @@ extern thread_local PerfContext perf_context;
 #define PERF_TIMER_GUARD(metric)
 #define PERF_TIMER_GUARD_WITH_CLOCK(metric, clock)
 #define PERF_CPU_TIMER_GUARD(metric, clock)
+#define PERF_TIMER_MUTEX_WAIT_GUARD(metric, stats)
+#define PERF_TIMER_COND_WAIT_GUARD(metric, stats)
 #define PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(metric, condition, stats, \
                                                ticker_type)
+#define PERF_TIMER_FULL_STATS(metric, ticker, histogram, stats)
+#define PERF_TIMER_WITH_HISTOGRAM(metric, histogram, stats)
+#define PERF_TIMER_WITH_TICKER(metric, ticker, stats, clock)
 #define PERF_TIMER_MEASURE(metric)
 #define PERF_COUNTER_ADD(metric, value)
 #define PERF_COUNTER_BY_LEVEL_ADD(metric, value, level)

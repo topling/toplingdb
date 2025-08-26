@@ -241,6 +241,8 @@ class EncryptedRandomAccessFile : public FSRandomAccessFile {
   size_t GetRequiredBufferAlignment() const override;
 
   IOStatus InvalidateCache(size_t offset, size_t length) override;
+
+  intptr_t FileDescriptor() const override;
 };
 
 class EncryptedWritableFile : public FSWritableFile {

@@ -103,10 +103,10 @@ Status ListColumnFamiliesHandler::ApplyVersionEdit(
   Status s;
   uint32_t cf_id = edit.GetColumnFamily();
   if (edit.IsColumnFamilyAdd()) {
-    if (column_family_names_.find(cf_id) != column_family_names_.end()) {
+    auto [iter, success] = column_family_names_.insert(
+          {edit.GetColumnFamily(), edit.GetColumnFamilyName()});
+    if (!success) {
       s = Status::Corruption("Manifest adding the same column family twice");
-    } else {
-      column_family_names_.insert({cf_id, edit.GetColumnFamilyName()});
     }
   } else if (edit.IsColumnFamilyDrop()) {
     if (column_family_names_.find(cf_id) == column_family_names_.end()) {
@@ -905,12 +905,10 @@ Status VersionEditHandlerPointInTime::MaybeCreateVersion(
       version->PrepareAppend(
           *cfd->GetLatestMutableCFOptions(), read_options_,
           !version_set_->db_options_->skip_stats_update_on_db_open);
-      auto v_iter = versions_.find(cfd->GetID());
-      if (v_iter != versions_.end()) {
+      auto [v_iter, success ] = versions_.emplace(cfd->GetID(), version);
+      if (!success) {
         delete v_iter->second;
         v_iter->second = version;
-      } else {
-        versions_.emplace(cfd->GetID(), version);
       }
     } else {
       delete version;
@@ -930,6 +928,22 @@ Status VersionEditHandlerPointInTime::VerifyFile(ColumnFamilyData* cfd,
 Status VersionEditHandlerPointInTime::VerifyBlobFile(
     ColumnFamilyData* cfd, uint64_t blob_file_num,
     const BlobFileAddition& blob_addition) {
+  // does not need to check memtable_as_log_index, because the blob file may
+  // be created(hard link) by previous run with memtable_as_log_index = true
+  const auto& dbo = *version_set_->db_options();
+  auto& fs = *dbo.fs;
+  auto& blob_dir = cfd->ioptions()->cf_paths.front().path;
+  auto fname = BlobFileName(blob_dir, blob_file_num);
+  bool result = false;
+  IOStatus ios = log::Reader::IsMemTableAsLogIndexFile(fs, fname, &result);
+  if (!ios.ok()) {
+    return Status(ios);
+  }
+  if (result) { // this is a MemTableAsLogIndexFile
+    // TODO: verify checksum
+    return Status::OK();
+  }
+
   BlobSource* blob_source = cfd->blob_source();
   assert(blob_source);
   CacheHandleGuard<BlobFileReader> blob_file_reader;

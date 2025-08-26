@@ -78,6 +78,10 @@ TEST_P(WriteCommittedTxnWithTsTest, SanityChecks) {
   ASSERT_TRUE(txn->Commit().IsInvalidArgument());
   txn.reset();
 
+  if (db->GetDBOptions().memtable_as_log_index) {
+    return;
+  }
+
   std::unique_ptr<Transaction> txn1(
       NewTxn(WriteOptions(), TransactionOptions()));
   assert(txn1);
@@ -153,7 +157,9 @@ TEST_P(WriteCommittedTxnWithTsTest, ReOpenWithTimestamp) {
   assert(txn0);
   ASSERT_OK(txn0->Put(handles_[1], "foo", "value"));
   ASSERT_OK(txn0->SetName("txn0"));
-  ASSERT_OK(txn0->Prepare());
+  if (!db->GetDBOptions().memtable_as_log_index) {
+    ASSERT_OK(txn0->Prepare());
+  }
   ASSERT_TRUE(txn0->Commit().IsInvalidArgument());
   txn0.reset();
 
@@ -192,7 +198,9 @@ TEST_P(WriteCommittedTxnWithTsTest, ReOpenWithTimestamp) {
   }
 
   ASSERT_OK(txn1->SetName("txn1"));
-  ASSERT_OK(txn1->Prepare());
+  if (!db->GetDBOptions().memtable_as_log_index) {
+    ASSERT_OK(txn1->Prepare());
+  }
   ASSERT_OK(txn1->SetCommitTimestamp(write_ts_int));
 
   // Check (key, value, ts) with overwrites in txn after `SetCommitTimestamp`.
@@ -273,7 +281,9 @@ TEST_P(WriteCommittedTxnWithTsTest, RecoverFromWal) {
   ASSERT_OK(txn1->Put("bar", "bar_value_1"));
   ASSERT_OK(txn1->Put(handles_[1], "bar", "bar_value_1"));
   ASSERT_OK(txn1->SetName("txn1"));
-  ASSERT_OK(txn1->Prepare());
+  if (!db->GetDBOptions().memtable_as_log_index) {
+    ASSERT_OK(txn1->Prepare());
+  }
   ASSERT_OK(txn1->SetCommitTimestamp(/*ts=*/23));
   ASSERT_OK(txn1->Commit());
   txn1.reset();
@@ -562,7 +572,9 @@ TEST_P(WriteCommittedTxnWithTsTest, RefineReadTimestamp) {
   }
   ASSERT_OK(txn1->Put(handles_[1], "key5", "value5_0"));
   ASSERT_OK(txn1->SetName("txn1"));
-  ASSERT_OK(txn1->Prepare());
+  if (!db->GetDBOptions().memtable_as_log_index) {
+    ASSERT_OK(txn1->Prepare());
+  }
   ASSERT_OK(txn1->SetCommitTimestamp(101));
   ASSERT_OK(txn1->Commit());
   txn1.reset();
@@ -581,7 +593,9 @@ TEST_P(WriteCommittedTxnWithTsTest, RefineReadTimestamp) {
                         "value" + std::to_string(i)));
   }
   ASSERT_OK(txn0->SetName("txn0"));
-  ASSERT_OK(txn0->Prepare());
+  if (!db->GetDBOptions().memtable_as_log_index) {
+    ASSERT_OK(txn0->Prepare());
+  }
   ASSERT_OK(txn0->SetCommitTimestamp(103));
   ASSERT_OK(txn0->Commit());
   txn0.reset();
@@ -616,7 +630,9 @@ TEST_P(WriteCommittedTxnWithTsTest, CheckKeysForConflicts) {
   ASSERT_OK(txn3->GetForUpdate(ReadOptions(), "foo", &dontcare));
   ASSERT_OK(txn3->SingleDelete("foo"));
   ASSERT_OK(txn3->SetName("txn3"));
-  ASSERT_OK(txn3->Prepare());
+  if (!db->GetDBOptions().memtable_as_log_index) {
+    ASSERT_OK(txn3->Prepare());
+  }
   ASSERT_OK(txn3->SetCommitTimestamp(30));
   // txn3 reads at ts=20 > txn2's commit timestamp, and commits at ts=30.
   // txn3 can commit successfully, leaving a tombstone with ts=30.

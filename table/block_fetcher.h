@@ -53,7 +53,7 @@ class BlockFetcher {
       : file_(file),
         prefetch_buffer_(prefetch_buffer),
         footer_(footer),
-        read_options_(read_options),
+        read_options_(read_options, ReadOptions::BooleanDontCopyTrue()),
         handle_(handle),
         contents_(contents),
         ioptions_(ioptions),

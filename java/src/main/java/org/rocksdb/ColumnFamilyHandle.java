@@ -28,6 +28,7 @@ public class ColumnFamilyHandle extends RocksObject {
     // to guarantee that while a GC cycle starts ColumnFamilyHandle instances
     // are freed prior to RocksDB instances.
     this.rocksDB_ = rocksDB;
+    cached_cf_id_ = getID(nativeHandle);
   }
 
   /**
@@ -49,6 +50,7 @@ public class ColumnFamilyHandle extends RocksObject {
   ColumnFamilyHandle(final long nativeHandle) {
     super(nativeHandle);
     rocksDB_ = null;
+    cached_cf_id_ = -1; // getID(nativeHandle);
     disOwnNativeHandle();
   }
 
@@ -71,7 +73,8 @@ public class ColumnFamilyHandle extends RocksObject {
    */
   public int getID() {
     assert(isOwningHandle() || isDefaultColumnFamily());
-    return getID(nativeHandle_);
+    assert getID(nativeHandle_) == cached_cf_id_;
+    return cached_cf_id_;
   }
 
   /**
@@ -148,4 +151,5 @@ public class ColumnFamilyHandle extends RocksObject {
   @Override protected final native void disposeInternal(final long handle);
 
   private final RocksDB rocksDB_;
+  private final int cached_cf_id_;
 }

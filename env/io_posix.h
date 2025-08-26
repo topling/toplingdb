@@ -30,6 +30,7 @@
 // For non linux platform, the following macros are used only as place
 // holder.
 #if !(defined OS_LINUX) && !(defined OS_FREEBSD) && !(defined CYGWIN) && \
+    !(defined OS_ANDROID) && \
     !(defined OS_AIX)
 #define POSIX_FADV_NORMAL 0     /* [MC1] no further special treatment */
 #define POSIX_FADV_RANDOM 1     /* [MC1] expect random page refs */
@@ -324,12 +325,14 @@ class PosixRandomAccessFile : public FSRandomAccessFile {
       FSReadRequest& req, const IOOptions& opts,
       std::function<void(const FSReadRequest&, void*)> cb, void* cb_arg,
       void** io_handle, IOHandleDeleter* del_fn, IODebugContext* dbg) override;
+  virtual intptr_t FileDescriptor() const override;
 };
 
 class PosixWritableFile : public FSWritableFile {
  protected:
   const std::string filename_;
   const bool use_direct_io_;
+  const bool allow_fdatasync_;
   int fd_;
   uint64_t filesize_;
   size_t logical_sector_size_;
@@ -356,6 +359,8 @@ class PosixWritableFile : public FSWritableFile {
   virtual IOStatus Close(const IOOptions& opts, IODebugContext* dbg) override;
   virtual IOStatus Append(const Slice& data, const IOOptions& opts,
                           IODebugContext* dbg) override;
+  virtual IOStatus Appendv(const Slice* parts, size_t num, size_t size,
+                           const IOOptions&, IODebugContext*) override;
   virtual IOStatus Append(const Slice& data, const IOOptions& opts,
                           const DataVerificationInfo& /* verification_info */,
                           IODebugContext* dbg) override {
@@ -393,6 +398,8 @@ class PosixWritableFile : public FSWritableFile {
 #ifdef OS_LINUX
   virtual size_t GetUniqueId(char* id, size_t max_size) const override;
 #endif
+  virtual intptr_t FileDescriptor() const override { return fd_; }
+  virtual void SetFileSize(uint64_t fsize) override { filesize_ = fsize; }
 };
 
 // mmap() based random-access
@@ -411,6 +418,7 @@ class PosixMmapReadableFile : public FSRandomAccessFile {
                 char* scratch, IODebugContext* dbg) const override;
   void Hint(AccessPattern pattern) override;
   IOStatus InvalidateCache(size_t offset, size_t length) override;
+  virtual intptr_t FileDescriptor() const override;
 };
 
 class PosixMmapFile : public FSWritableFile {

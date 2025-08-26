@@ -182,4 +182,8 @@ extern const std::string kNullptrString;
 // the argument err
 extern std::string errnoStr(int err);
 
+// Our hacker function, resize a std::string without initializing memory
+// (but still has '\0' in the end of string)
+void stdstr_resize_no_init(std::string& str, std::size_t sz);
+
 }  // namespace ROCKSDB_NAMESPACE

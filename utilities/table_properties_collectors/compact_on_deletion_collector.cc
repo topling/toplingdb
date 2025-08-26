@@ -218,4 +218,26 @@ Status TablePropertiesCollectorFactory::CreateFromString(
                                                            result);
 }
 
+std::string TablePropertiesCollectorFactory::UserPropToString
+(const UserCollectedProperties& uprops) const {
+  std::string str;
+  if (uprops.empty()) {
+    str = "{}";
+  } else {
+    str.append("{");
+    for (auto& [name, value] : uprops) {
+      if (Slice(name).starts_with("rocksdb.")) {
+        continue; // skip rocksdb native properties
+      }
+      str.append("\"");
+      str.append(name);
+      str.append("\": \"");
+      str.append(Slice(value).ToString(true)); // hex
+      str.append("\",");
+    }
+    str.back() = '}';
+  }
+  return str;
+}
+
 }  // namespace ROCKSDB_NAMESPACE

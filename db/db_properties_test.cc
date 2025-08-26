@@ -31,6 +31,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+extern bool g_memtable_as_log_index;
 class DBPropertiesTest : public DBTestBase {
  public:
   DBPropertiesTest()
@@ -42,16 +43,20 @@ class DBPropertiesTest : public DBTestBase {
                      int expected_user_writes_by_self,
                      int expected_user_writes_with_wal) {
     ASSERT_EQ(std::to_string(expected_uptime), db_stats.at("db.uptime"));
+  if (!g_memtable_as_log_index) {
     ASSERT_EQ(std::to_string(expected_wal_bytes_written),
               db_stats.at("db.wal_bytes_written"));
+  }
     ASSERT_EQ("0", db_stats.at("db.wal_syncs"));
     ASSERT_EQ(std::to_string(expected_user_bytes_written),
               db_stats.at("db.user_bytes_written"));
     ASSERT_EQ("0", db_stats.at("db.user_writes_by_other"));
     ASSERT_EQ(std::to_string(expected_user_writes_by_self),
               db_stats.at("db.user_writes_by_self"));
+  if (!g_memtable_as_log_index) {
     ASSERT_EQ(std::to_string(expected_user_writes_with_wal),
               db_stats.at("db.user_writes_with_wal"));
+  }
     ASSERT_EQ("0", db_stats.at("db.user_write_stall_micros"));
   }
 };

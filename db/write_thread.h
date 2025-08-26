@@ -118,8 +118,10 @@ class WriteThread {
     bool sync;
     bool no_slowdown;
     bool disable_wal;
+    bool reduce_cpu_usage;
     Env::IOPriority rate_limiter_priority;
     bool disable_memtable;
+    bool made_waitable;          // records lazy construction of mutex and cv
     size_t batch_cnt;  // if non-zero, number of sub-batches in the write batch
     size_t protection_bytes_per_key;
     PreReleaseCallback* pre_release_callback;
@@ -127,8 +129,8 @@ class WriteThread {
     uint64_t log_used;  // log number that this batch was inserted into
     uint64_t log_ref;   // log number that memtable insert should reference
     WriteCallback* callback;
-    bool made_waitable;          // records lazy construction of mutex and cv
-    std::atomic<uint8_t> state;  // write under StateMutex() or pre-link
+    uint32_t crc32c_checksum;    // crc32c checksum of the batch
+    std::atomic<uint32_t> state; // write under StateMutex() or pre-link
     WriteGroup* write_group;
     SequenceNumber sequence;  // the sequence number to use for the first key
     Status status;
@@ -144,8 +146,10 @@ class WriteThread {
           sync(false),
           no_slowdown(false),
           disable_wal(false),
+          reduce_cpu_usage(true),
           rate_limiter_priority(Env::IOPriority::IO_TOTAL),
           disable_memtable(false),
+          made_waitable(false),
           batch_cnt(0),
           protection_bytes_per_key(0),
           pre_release_callback(nullptr),
@@ -153,7 +157,6 @@ class WriteThread {
           log_used(0),
           log_ref(0),
           callback(nullptr),
-          made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),
           sequence(kMaxSequenceNumber),
@@ -169,8 +172,10 @@ class WriteThread {
           sync(write_options.sync),
           no_slowdown(write_options.no_slowdown),
           disable_wal(write_options.disableWAL),
+          reduce_cpu_usage(write_options.reduce_cpu_usage),
           rate_limiter_priority(write_options.rate_limiter_priority),
           disable_memtable(_disable_memtable),
+          made_waitable(false),
           batch_cnt(_batch_cnt),
           protection_bytes_per_key(_batch->GetProtectionBytesPerKey()),
           pre_release_callback(_pre_release_callback),
@@ -178,7 +183,6 @@ class WriteThread {
           log_used(0),
           log_ref(_log_ref),
           callback(_callback),
-          made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),
           sequence(kMaxSequenceNumber),

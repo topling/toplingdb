@@ -258,6 +258,8 @@ public class BytewiseComparatorTest {
     try (final ReadOptions readOptions = new ReadOptions();
          final RocksIterator iter = db.newIterator(readOptions)) {
       final KVIter<String, String> result_iter = new KVIter<>(map);
+      assertEquals(false, iter.isValid());
+      assertEquals(false, result_iter.isValid());
 
       boolean is_valid = false;
       for (int i = 0; i < num_iter_ops; i++) {
@@ -270,11 +272,13 @@ public class BytewiseComparatorTest {
             // Seek to First
             iter.seekToFirst();
             result_iter.seekToFirst();
+            assertEquals(result_iter.isValid(), iter.isValid());
             break;
           case 1:
             // Seek to last
             iter.seekToLast();
             result_iter.seekToLast();
+            assertEquals(result_iter.isValid(), iter.isValid());
             break;
           case 2: {
             // Seek to random (existing or non-existing) key
@@ -282,6 +286,7 @@ public class BytewiseComparatorTest {
             final String key = interleaving_strings.get(key_idx);
             iter.seek(bytes(key));
             result_iter.seek(bytes(key));
+            assertEquals(result_iter.isValid(), iter.isValid());
             break;
           }
           case 3: {
@@ -290,6 +295,7 @@ public class BytewiseComparatorTest {
             final String key = interleaving_strings.get(key_idx);
             iter.seekForPrev(bytes(key));
             result_iter.seekForPrev(bytes(key));
+            assertEquals(result_iter.isValid(), iter.isValid());
             break;
           }
           case 4:
@@ -297,6 +303,7 @@ public class BytewiseComparatorTest {
             if (is_valid) {
               iter.next();
               result_iter.next();
+              assertEquals(result_iter.isValid(), iter.isValid());
             } else {
               continue;
             }
@@ -306,6 +313,7 @@ public class BytewiseComparatorTest {
             if (is_valid) {
               iter.prev();
               result_iter.prev();
+              assertEquals(result_iter.isValid(), iter.isValid());
             } else {
               continue;
             }
@@ -316,9 +324,11 @@ public class BytewiseComparatorTest {
             result_iter.refresh();
             iter.seekToFirst();
             result_iter.seekToFirst();
+            assertEquals(result_iter.isValid(), iter.isValid());
             break;
           default: {
             assert (type == 7);
+            assertEquals(result_iter.isValid(), iter.isValid());
             final int key_idx = rnd.nextInt(source_strings.size());
             final String key = source_strings.get(key_idx);
             final byte[] result = db.get(readOptions, bytes(key));

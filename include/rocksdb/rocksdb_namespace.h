@@ -14,3 +14,5 @@
 #ifndef ROCKSDB_NAMESPACE
 #define ROCKSDB_NAMESPACE rocksdb
 #endif
+
+#define __TOPLINGDB__ 1

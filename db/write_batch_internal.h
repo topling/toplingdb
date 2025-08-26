@@ -15,6 +15,7 @@
 #include "db/kv_checksum.h"
 #include "db/trim_history_scheduler.h"
 #include "db/write_thread.h"
+#include "options/db_options.h"
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
 #include "rocksdb/types.h"
@@ -39,6 +40,7 @@ class ColumnFamilyMemTables {
   virtual MemTable* GetMemTable() const = 0;
   virtual ColumnFamilyHandle* GetColumnFamilyHandle() = 0;
   virtual ColumnFamilyData* current() { return nullptr; }
+  virtual const ImmutableDBOptions* GetImmutableDBOptions() = 0;
 };
 
 class ColumnFamilyMemTablesDefault : public ColumnFamilyMemTables {
@@ -59,10 +61,12 @@ class ColumnFamilyMemTablesDefault : public ColumnFamilyMemTables {
   }
 
   ColumnFamilyHandle* GetColumnFamilyHandle() override { return nullptr; }
+  const ImmutableDBOptions* GetImmutableDBOptions() override { return &imm_dbo_; }
 
  private:
   bool ok_;
   MemTable* mem_;
+  ImmutableDBOptions imm_dbo_;
 };
 
 struct WriteBatch::ProtectionInfo {
@@ -243,6 +247,14 @@ class WriteBatchInternal {
   static Status UpdateProtectionInfo(WriteBatch* wb, size_t bytes_per_key,
                                      uint64_t* checksum = nullptr);
 };
+
+inline uint32_t WriteBatchMemTable__Count(const WriteBatch* wb) {
+  return wb->GetWriteMemCount();
+}
+
+inline size_t WriteBatchMemTable__ByteSize(const WriteBatch* wb) {
+  return wb->GetWriteMemByteSize();
+}
 
 // LocalSavePoint is similar to a scope guard
 class LocalSavePoint {

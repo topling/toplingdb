@@ -7,6 +7,7 @@
 #include "utilities/transactions/lock/lock_manager.h"
 
 #include "utilities/transactions/lock/point/point_lock_manager.h"
+#include "util/hash.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -22,6 +23,14 @@ std::shared_ptr<LockManager> NewLockManager(PessimisticTransactionDB* db,
     return std::shared_ptr<LockManager>(new PointLockManager(db, opt));
   }
 }
+
+#if defined(ROCKSDB_UNIT_TEST)
+Status LockManager::TryLock(PessimisticTransaction* txn, ColumnFamilyId cf_id,
+                            const Slice& key, Env* env, bool exclusive) {
+  size_t key_hash = NPHash64(key.data(), key.size());
+  return TryLock(txn, cf_id, key, key_hash, env, exclusive);
+}
+#endif
 
 }  // namespace ROCKSDB_NAMESPACE
 

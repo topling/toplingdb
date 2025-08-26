@@ -22,11 +22,12 @@ namespace ROCKSDB_NAMESPACE {
 
 class TransactionDBMutexFactory;
 
-enum TxnDBWritePolicy {
+ROCKSDB_ENUM_PLAIN(TxnDBWritePolicy, int,
   WRITE_COMMITTED = 0,  // write only the committed data
   WRITE_PREPARED,       // write data after the prepare phase of 2pc
-  WRITE_UNPREPARED      // write data before the prepare phase of 2pc
-};
+  WRITE_UNPREPARED,     // write data before the prepare phase of 2pc
+  WRITE_READ_ONLY       // for secondary instance of TransactionDB
+);
 
 constexpr uint32_t kInitialMaxDeadlocks = 5;
 
@@ -72,7 +73,7 @@ struct RangeDeadlockPath {
 
   explicit RangeDeadlockPath(std::vector<RangeDeadlockInfo> path_entry,
                              const int64_t& dl_time)
-      : path(path_entry), limit_exceeded(false), deadlock_time(dl_time) {}
+      : path(std::move(path_entry)), limit_exceeded(false), deadlock_time(dl_time) {}
 
   // empty path, limit exceeded constructor and default constructor
   explicit RangeDeadlockPath(const int64_t& dl_time = 0, bool limit = false)
@@ -147,6 +148,9 @@ RangeLockManagerHandle* NewRangeLockManager(
     std::shared_ptr<TransactionDBMutexFactory> mutex_factory);
 
 struct TransactionDBOptions {
+  TransactionDBOptions();
+  ~TransactionDBOptions();
+
   // Specifies the maximum number of keys that can be locked at the same time
   // per column family.
   // If the number of locked keys is greater than max_num_locks, transaction
@@ -156,6 +160,13 @@ struct TransactionDBOptions {
 
   // Stores the number of latest deadlocks to track
   uint32_t max_num_deadlocks = kInitialMaxDeadlocks;
+
+  // used for compute stripe index(= hash(key) % num_stripes)
+  uint16_t key_prefix_len = 0;
+
+  // for multiple tables, hash key of same table to same super stripe
+  // super_stripe_index = hash(prefix) % super_stripes
+  uint16_t super_stripes = 1;
 
   // Increasing this value will increase the concurrency by dividing the lock
   // table (per column family) into more sub-tables, each with their own
@@ -361,7 +372,7 @@ struct DeadlockPath {
 
   explicit DeadlockPath(std::vector<DeadlockInfo> path_entry,
                         const int64_t& dl_time)
-      : path(path_entry), limit_exceeded(false), deadlock_time(dl_time) {}
+      : path(std::move(path_entry)), limit_exceeded(false), deadlock_time(dl_time) {}
 
   // empty path, limit exceeded constructor and default constructor
   explicit DeadlockPath(const int64_t& dl_time = 0, bool limit = false)
@@ -404,6 +415,21 @@ class TransactionDB : public StackableDB {
   static Status Open(const DBOptions& db_options,
                      const TransactionDBOptions& txn_db_options,
                      const std::string& dbname,
+                     const std::vector<ColumnFamilyDescriptor>& column_families,
+                     std::vector<ColumnFamilyHandle*>* handles,
+                     TransactionDB** dbptr);
+  // Open a secondary instance of TransactionDB similar to DB::OpenAsSecondary
+  // Internally call PrepareWrap() and WrapDB()
+  // Ignore txn_db_options.write_policy
+  // If the return status is not ok, then dbptr is set to nullptr.
+  static Status OpenAsSecondary(const Options& options,
+                     const TransactionDBOptions& txn_db_options,
+                     const std::string& dbname, const std::string& secondary_path,
+                     TransactionDB** dbptr);
+
+  static Status OpenAsSecondary(const DBOptions& db_options,
+                     const TransactionDBOptions& txn_db_options,
+                     const std::string& dbname, const std::string& secondary_path,
                      const std::vector<ColumnFamilyDescriptor>& column_families,
                      std::vector<ColumnFamilyHandle*>* handles,
                      TransactionDB** dbptr);
@@ -492,6 +518,7 @@ class TransactionDB : public StackableDB {
       TxnTimestamp ts_lb, TxnTimestamp ts_ub,
       std::vector<std::shared_ptr<const Snapshot>>& timestamped_snapshots)
       const = 0;
+  virtual const TransactionDBOptions& GetTxnDBOptions() const = 0;
 
  protected:
   // To Create an TransactionDB, call Open()

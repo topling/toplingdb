@@ -274,4 +274,50 @@ DirFsyncOptions::DirFsyncOptions(FsyncReason fsync_reason) {
   assert(fsync_reason != kFileRenamed);
   reason = fsync_reason;
 }
+
+IOStatus FSWritableFile::Appendv(const Slice* parts, size_t num, size_t,
+                                 const IOOptions& options,
+                                 IODebugContext* dbg) {
+  for (size_t i = 0; i < num; i++) {
+    IOStatus ios = Append(parts[i], options, dbg);
+    if (!ios.ok())
+      return ios;
+  }
+  return IOStatus::OK();
+}
+
+ReadonlyFileMmap::ReadonlyFileMmap(PrivateCons) {}
+ReadonlyFileMmap::~ReadonlyFileMmap() = default;
+
+boost::intrusive_ptr<ReadonlyFileMmap> ReadonlyFileMmap::New
+(IOStatus* ios, FileSystem& fs, size_t fileno, const std::string& fname, size_t mmap_size)
+{
+  IODebugContext dbg;
+  FileOptions fopt;
+  fopt.use_mmap_reads = true;
+  if (0 == mmap_size) {
+    uint64_t fsize = 0;
+    *ios = fs.GetFileSize(fname, fopt.io_options, &fsize, &dbg);
+    if (!ios->ok() || 0 == fsize) {
+      if (ios->ok()) {
+        *ios = IOStatus::InvalidArgument("Empty File");
+      }
+      return nullptr;
+    }
+    mmap_size = fsize;
+  }
+  fopt.mmap_size = mmap_size;
+  boost::intrusive_ptr<ReadonlyFileMmap> fmap(new ReadonlyFileMmap(PrivateCons()));
+  *ios = fs.NewRandomAccessFile(fname, fopt, &fmap->file_, &dbg);
+  if (ios->ok()) {
+    auto fp = fmap->file_.get();
+    *ios = fp->Read(0, mmap_size, fopt.io_options, fmap.get(), nullptr, &dbg);
+  }
+  else {
+    return nullptr;
+  }
+  fmap->fileno = fileno;
+  return fmap;
+}
+
 }  // namespace ROCKSDB_NAMESPACE

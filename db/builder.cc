@@ -413,13 +413,20 @@ Status BuildTable(
         OutputValidator file_validator(tboptions.internal_comparator,
                                        /*enable_order_check=*/true,
                                        /*enable_hash=*/true);
+        file_validator.m_file_number = meta->fd.GetNumber();
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
           // Generate a rolling 64-bit hash of the key and values
           file_validator.Add(it->key(), it->value()).PermitUncheckedError();
         }
         s = it->status();
         if (s.ok() && !output_validator.CompareValidator(file_validator)) {
-          s = Status::Corruption("Paranoid checksums do not match");
+         #if !defined(ROCKSDB_UNIT_TEST)
+          auto& fd = meta->fd;
+          ROCKSDB_DIE("BuildTable: Paranoid checksums do not match(%d:%lld.sst)",
+                      fd.GetPathId(), (long long)fd.GetNumber());
+         #else
+          s = Status::Corruption("BuildTable: Paranoid checksums do not match");
+         #endif
         }
       }
     }

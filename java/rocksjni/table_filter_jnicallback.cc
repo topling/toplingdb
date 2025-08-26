@@ -27,7 +27,8 @@ TableFilterJniCallback::TableFilterJniCallback(JNIEnv* env,
   it may be called from multiple threads
   */
   m_table_filter_function =
-      [this](const ROCKSDB_NAMESPACE::TableProperties& table_properties) {
+      [this](const ROCKSDB_NAMESPACE::TableProperties& table_properties,
+             const ROCKSDB_NAMESPACE::FileMetaData&) {
         jboolean attached_thread = JNI_FALSE;
         JNIEnv* thread_env = getJniEnv(&attached_thread);
         assert(thread_env != nullptr);
@@ -58,7 +59,8 @@ TableFilterJniCallback::TableFilterJniCallback(JNIEnv* env,
       };
 }
 
-std::function<bool(const ROCKSDB_NAMESPACE::TableProperties&)>
+std::function<bool(const ROCKSDB_NAMESPACE::TableProperties&,
+                   const ROCKSDB_NAMESPACE::FileMetaData&)>
 TableFilterJniCallback::GetTableFilterFunction() {
   return m_table_filter_function;
 }

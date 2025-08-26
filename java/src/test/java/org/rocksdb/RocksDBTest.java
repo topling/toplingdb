@@ -181,12 +181,30 @@ public class RocksDBTest {
   @Test
   public void put() throws RocksDBException {
     try (final RocksDB db = RocksDB.open(dbFolder.getRoot().getAbsolutePath());
-         final WriteOptions opt = new WriteOptions(); final ReadOptions optr = new ReadOptions()) {
+         final ReadOptions optr = new ReadOptions()) {
+      putImpl(db, optr);
+    }
+  }
+  @Test
+  public void getWithZeroCopy() throws Exception {
+    try (final RocksDB db = RocksDB.open(dbFolder.getRoot().getAbsolutePath());
+         final ReadOptions optr = new ReadOptions();
+         final AutoCloseable zc = optr.autoZeroCopy()) {
+        putImpl(db, optr);
+    }
+  }
+  public void putImpl(final RocksDB db, final ReadOptions optr) throws RocksDBException {
+    try (final WriteOptions opt = new WriteOptions()) {
       db.put("key1".getBytes(), "value".getBytes());
       db.put(opt, "key2".getBytes(), "12345678".getBytes());
-      assertThat(db.get("key1".getBytes())).isEqualTo("value".getBytes());
-      assertThat(db.get("key2".getBytes())).isEqualTo("12345678".getBytes());
-
+      if (!optr.isGoingToZeroCopy()) {
+        // zero copy does not allow get without param ReadOptions
+        assertThat(db.get("key1".getBytes())).isEqualTo("value".getBytes());
+        assertThat(db.get("key2".getBytes())).isEqualTo("12345678".getBytes());
+      } else { // must with param ReadOptions optr
+        assertThat(db.get(optr, "key1".getBytes())).isEqualTo("value".getBytes());
+        assertThat(db.get(optr, "key2".getBytes())).isEqualTo("12345678".getBytes());
+      }
       final ByteBuffer key = ByteBuffer.allocateDirect(12);
       final ByteBuffer value = ByteBuffer.allocateDirect(12);
       key.position(4);
@@ -219,15 +237,39 @@ public class RocksDBTest {
 
       key.position(4);
 
-      result.clear().position(9);
+      if (!(optr.isGoingToZeroCopy() && DirectSlice.supportDirectBorrowMemory(result))) {
+        result.clear().position(9);
+      }
       assertThat(db.get(optr, key, result)).isEqualTo(4);
-      assertThat(result.position()).isEqualTo(9);
-      assertThat(result.limit()).isEqualTo(12);
+      if (!(optr.isGoingToZeroCopy() && DirectSlice.supportDirectBorrowMemory(result))) {
+        assertThat(result.position()).isEqualTo(9);
+        assertThat(result.limit()).isEqualTo(12);
+      } else {
+        assertThat(result.position()).isEqualTo(0);
+        assertThat(result.limit()).isEqualTo(4);
+      }
       assertThat(key.position()).isEqualTo(8);
       assertThat(key.limit()).isEqualTo(8);
       final byte[] tmp2 = new byte[3];
       result.get(tmp2);
       assertThat(tmp2).isEqualTo("val".getBytes());
+
+      if (optr.isGoingToZeroCopy() && DirectSlice.supportDirectBorrowMemory(result)) {
+        // ToplingDB only: key is byte[], value is direct buffer
+        int vlen = db.get(optr, "key3".getBytes(), result);
+        assertThat(vlen).isEqualTo(4);
+        assertThat(result.position()).isEqualTo(0);
+        assertThat(result.limit()).isEqualTo(4);
+        assertThat(result.compareTo(ByteBuffer.wrap("val3".getBytes()))).isEqualTo(0);
+
+        int fail = db.get(optr, "key1000--".getBytes(), result);
+        assertThat(fail).isEqualTo(RocksDB.NOT_FOUND);
+
+        // assert result is unchanged after a failing get
+        assertThat(result.position()).isEqualTo(0);
+        assertThat(result.limit()).isEqualTo(4);
+        assertThat(result.compareTo(ByteBuffer.wrap("val3".getBytes()))).isEqualTo(0);
+      }
 
       // put
       final Segment key3 = sliceSegment("key3");
@@ -238,8 +280,14 @@ public class RocksDBTest {
       db.put(opt, key4.data, key4.offset, key4.len, value1.data, value1.offset, value1.len);
 
       // compare
-      Assert.assertTrue(value0.isSamePayload(db.get(key3.data, key3.offset, key3.len)));
-      Assert.assertTrue(value1.isSamePayload(db.get(key4.data, key4.offset, key4.len)));
+      if (!optr.isGoingToZeroCopy()) {
+        // zero copy does not allow get without param ReadOptions
+        Assert.assertTrue(value0.isSamePayload(db.get(key3.data, key3.offset, key3.len)));
+        Assert.assertTrue(value1.isSamePayload(db.get(key4.data, key4.offset, key4.len)));
+      } else {
+        Assert.assertTrue(value0.isSamePayload(db.get(optr, key3.data, key3.offset, key3.len)));
+        Assert.assertTrue(value1.isSamePayload(db.get(optr, key4.data, key4.offset, key4.len)));
+      }
     }
   }
 

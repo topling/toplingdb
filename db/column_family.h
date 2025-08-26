@@ -29,6 +29,10 @@
 #include "util/hash_containers.h"
 #include "util/thread_local.h"
 
+#include <terark/fixed_circular_queue.hpp>
+#include <terark/util/vec_idx_map.hpp>
+
+
 namespace ROCKSDB_NAMESPACE {
 
 class Version;
@@ -167,14 +171,15 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
                          InstrumentedMutex* mutex);
   // destroy without mutex
   virtual ~ColumnFamilyHandleImpl();
-  virtual ColumnFamilyData* cfd() const { return cfd_; }
+  virtual ColumnFamilyData* cfd() const final { return cfd_; }
 
   virtual uint32_t GetID() const override;
   virtual const std::string& GetName() const override;
   virtual Status GetDescriptor(ColumnFamilyDescriptor* desc) override;
   virtual const Comparator* GetComparator() const override;
+  virtual ColumnFamilyHandle* CloneHandle() const override;
 
- private:
+ protected:
   ColumnFamilyData* cfd_;
   DBImpl* db_;
   InstrumentedMutex* mutex_;
@@ -186,17 +191,13 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
 // ColumnFamilyHandle (same as the client would need). In that case, we feed
 // MemTableInserter dummy ColumnFamilyHandle and enable it to call DBImpl
 // methods
-class ColumnFamilyHandleInternal : public ColumnFamilyHandleImpl {
+class ColumnFamilyHandleInternal final : public ColumnFamilyHandleImpl {
  public:
   ColumnFamilyHandleInternal()
-      : ColumnFamilyHandleImpl(nullptr, nullptr, nullptr),
-        internal_cfd_(nullptr) {}
-
-  void SetCFD(ColumnFamilyData* _cfd) { internal_cfd_ = _cfd; }
-  virtual ColumnFamilyData* cfd() const override { return internal_cfd_; }
-
- private:
-  ColumnFamilyData* internal_cfd_;
+      : ColumnFamilyHandleImpl(nullptr, nullptr, nullptr) {}
+  ~ColumnFamilyHandleInternal();
+  void SetCFD(ColumnFamilyData* _cfd) { cfd_ = _cfd; }
+  ColumnFamilyHandle* CloneHandle() const override;
 };
 
 // holds references to memtable, all immutable memtables and version
@@ -371,6 +372,8 @@ class ColumnFamilyData {
   // calculate the oldest log needed for the durability of this column family
   uint64_t OldestLogToKeep();
 
+  void PrepareNewMemtableInBackground(const MutableCFOptions&);
+
   // See Memtable constructor for explanation of earliest_seq param.
   MemTable* ConstructNewMemtable(const MutableCFOptions& mutable_cf_options,
                                  SequenceNumber earliest_seq);
@@ -450,6 +453,9 @@ class ColumnFamilyData {
   uint64_t GetSuperVersionNumber() const {
     return super_version_number_.load();
   }
+  uint64_t GetSuperVersionNumberNoAtomic() const {
+    return reinterpret_cast<const uint64_t&>(super_version_number_);
+  }
   // will return a pointer to SuperVersion* if previous SuperVersion
   // if its reference count is zero and needs deletion or nullptr if not
   // As argument takes a pointer to allocated SuperVersion to enable
@@ -518,8 +524,9 @@ class ColumnFamilyData {
   // user's setting. Called by background flush job.
   bool ShouldPostponeFlushToRetainUDT(uint64_t max_memtable_id);
 
-  ThreadLocalPtr* TEST_GetLocalSV() { return local_sv_.get(); }
+  ThreadLocalPtr* TEST_GetLocalSV() { return &local_sv_; }
   WriteBufferManager* write_buffer_mgr() { return write_buffer_manager_; }
+
   std::shared_ptr<CacheReservationManager>
   GetFileMetadataCacheReservationManager() {
     return file_metadata_cache_res_mgr_;
@@ -549,6 +556,8 @@ class ColumnFamilyData {
   // of its files (if missing)
   void RecoverEpochNumbers();
 
+  const std::string& GetDBName() const;
+
  private:
   friend class ColumnFamilySet;
   ColumnFamilyData(uint32_t id, const std::string& name,
@@ -565,6 +574,19 @@ class ColumnFamilyData {
   std::vector<std::string> GetDbPaths() const;
 
   uint32_t id_;
+
+  // If true --> this ColumnFamily is currently present in DBImpl::flush_queue_
+  bool queued_for_flush_ = false;
+
+  // If true --> this ColumnFamily is currently present in
+  // DBImpl::compaction_queue_
+  bool queued_for_compaction_ = false;
+
+  // if the database was opened with 2pc enabled
+  bool allow_2pc_ = false;
+
+  bool db_paths_registered_ = false;
+
   const std::string name_;
   Version* dummy_versions_;  // Head of circular doubly-linked list of versions.
   Version* current_;         // == dummy_versions->prev_
@@ -572,6 +594,8 @@ class ColumnFamilyData {
   std::atomic<int> refs_;  // outstanding references to ColumnFamilyData
   std::atomic<bool> initialized_;
   std::atomic<bool> dropped_;  // true if client dropped it
+  const bool is_delete_range_supported_;
+  bool mempurge_used_ = false;
 
   const InternalKeyComparator internal_comparator_;
   IntTblPropCollectorFactories int_tbl_prop_collector_factories_;
@@ -580,8 +604,6 @@ class ColumnFamilyData {
   const ImmutableOptions ioptions_;
   MutableCFOptions mutable_cf_options_;
 
-  const bool is_delete_range_supported_;
-
   std::unique_ptr<TableCache> table_cache_;
   std::unique_ptr<BlobFileCache> blob_file_cache_;
   std::unique_ptr<BlobSource> blob_source_;
@@ -589,6 +611,12 @@ class ColumnFamilyData {
   std::unique_ptr<InternalStats> internal_stats_;
 
   WriteBufferManager* write_buffer_manager_;
+
+ #if !defined(ROCKSDB_UNIT_TEST)
+  // precreated_memtable_list_.size() is normally 1
+  terark::fixed_circular_queue<std::unique_ptr<MemTable>, 4> precreated_memtable_list_;
+  std::mutex precreated_memtable_mutex_;
+ #endif
 
   MemTable* mem_;
   MemTableList imm_;
@@ -601,7 +629,7 @@ class ColumnFamilyData {
 
   // Thread's local copy of SuperVersion pointer
   // This needs to be destructed before mutex_
-  std::unique_ptr<ThreadLocalPtr> local_sv_;
+  ThreadLocalPtr local_sv_;
 
   // pointers for a circular linked list. we use it to support iterations over
   // all column families that are alive (note: dropped column families can also
@@ -622,17 +650,7 @@ class ColumnFamilyData {
 
   std::unique_ptr<WriteControllerToken> write_controller_token_;
 
-  // If true --> this ColumnFamily is currently present in DBImpl::flush_queue_
-  bool queued_for_flush_;
-
-  // If true --> this ColumnFamily is currently present in
-  // DBImpl::compaction_queue_
-  bool queued_for_compaction_;
-
   uint64_t prev_compaction_needed_bytes_;
-
-  // if the database was opened with 2pc enabled
-  bool allow_2pc_;
 
   // Memtable id to track flush.
   std::atomic<uint64_t> last_memtable_id_;
@@ -640,14 +658,11 @@ class ColumnFamilyData {
   // Directories corresponding to cf_paths.
   std::vector<std::shared_ptr<FSDirectory>> data_dirs_;
 
-  bool db_paths_registered_;
-
   std::string full_history_ts_low_;
 
   // For charging memory usage of file metadata created for newly added files to
   // a Version associated with this CFD
   std::shared_ptr<CacheReservationManager> file_metadata_cache_res_mgr_;
-  bool mempurge_used_;
 
   std::atomic<uint64_t> next_epoch_number_;
 };
@@ -734,6 +749,8 @@ class ColumnFamilySet {
 
   WriteController* write_controller() { return write_controller_; }
 
+  const ImmutableDBOptions* db_options() const { return db_options_; }
+
  private:
   friend class ColumnFamilyData;
   // helper function that gets called from cfd destructor
@@ -748,7 +765,7 @@ class ColumnFamilySet {
   // 1. DB mutex locked
   // 2. accessed from a single-threaded write thread
   UnorderedMap<std::string, uint32_t> column_families_;
-  UnorderedMap<uint32_t, ColumnFamilyData*> column_family_data_;
+  terark::VectorIndexMap<uint32_t, ColumnFamilyData*> column_family_data_;
 
   // Mutating / reading `running_ts_sz_` and `ts_sz_for_record_` follow
   // the same requirements as `column_families_` and `column_family_data_`.
@@ -865,6 +882,10 @@ class ColumnFamilyMemTablesImpl : public ColumnFamilyMemTables {
   // REQUIRES: use this function of DBImpl::column_family_memtables_ should be
   //           under a DB mutex OR from a write thread
   virtual ColumnFamilyData* current() override { return current_; }
+
+  const ImmutableDBOptions* GetImmutableDBOptions() override {
+    return column_family_set_->db_options();
+  }
 
  private:
   ColumnFamilySet* column_family_set_;

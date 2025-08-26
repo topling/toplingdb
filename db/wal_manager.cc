@@ -487,6 +487,9 @@ Status WalManager::ReadFirstLine(const std::string& fname,
   reporter.ignore_error = !db_options_.paranoid_checks;
   log::Reader reader(db_options_.info_log, std::move(file_reader), &reporter,
                      true /*checksum*/, number);
+  if (db_options_.memtable_as_log_index) {
+    reader.InitSetMemTableAsLogIndex(*db_options_.fs);
+  }
   std::string scratch;
   Slice record;
 

@@ -1183,7 +1183,7 @@ size_t WinFileSystem::GetSectorSize(const std::string& fname) {
   size_t sector_size = kSectorSize;
 
   // obtain device handle
-  char devicename[7] = "\\\\.\\";
+  char devicename[] = "\\\\.\\";
   int erresult = 0;
   if (RX_PathIsRelative(RX_FN(fname).c_str())) {
     RX_FILESTRING rx_current_dir;

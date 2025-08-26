@@ -307,7 +307,7 @@ class BackupEngineImpl {
       IOStatus s = RemapFileSystem::GetChildren(dir, options, result, dbg);
       if (s.ok() && (dir == dst_dir_ || dir == dst_dir_slash_)) {
         // Assume remapped files exist
-        for (auto& r : remaps_) {
+        for (const auto& r : remaps_) {
           result->push_back(r.first);
         }
       }
@@ -323,7 +323,7 @@ class BackupEngineImpl {
           RemapFileSystem::GetChildrenFileAttributes(dir, options, result, dbg);
       if (s.ok() && (dir == dst_dir_ || dir == dst_dir_slash_)) {
         // Assume remapped files exist with recorded size
-        for (auto& r : remaps_) {
+        for (const auto& r : remaps_) {
           result->emplace_back();  // clean up with C++20
           FileAttributes& attr = result->back();
           attr.name = r.first;
@@ -1748,7 +1748,7 @@ IOStatus BackupEngineImpl::DeleteBackupNoGC(BackupID backup_id) {
   // (Don't delete other files if we can't delete the meta file right
   // now.)
   std::vector<std::string> to_delete;
-  for (auto& itr : backuped_file_infos_) {
+  for (const auto& itr : backuped_file_infos_) {
     if (itr.second->refs == 0) {
       IOStatus io_s = backup_fs_->DeleteFile(GetAbsolutePath(itr.first),
                                              io_options_, nullptr);
@@ -2816,16 +2816,9 @@ IOStatus BackupEngineImpl::GarbageCollect() {
 
 IOStatus BackupEngineImpl::BackupMeta::AddFile(
     std::shared_ptr<FileInfo> file_info) {
-  auto itr = file_infos_->find(file_info->filename);
-  if (itr == file_infos_->end()) {
-    auto ret = file_infos_->insert({file_info->filename, file_info});
-    if (ret.second) {
-      itr = ret.first;
-      itr->second->refs = 1;
-    } else {
-      // if this happens, something is seriously wrong
-      return IOStatus::Corruption("In memory metadata insertion error");
-    }
+  auto [itr, success] = file_infos_->insert({file_info->filename, file_info});
+  if (success) {
+    itr->second->refs = 1;
   } else {
     // Compare sizes, because we scanned that off the filesystem on both
     // ends. This is like a check in VerifyBackup.

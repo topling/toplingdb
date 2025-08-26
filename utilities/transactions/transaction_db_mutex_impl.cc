@@ -37,10 +37,9 @@ class TransactionDBCondVarImpl : public TransactionDBCondVar {
   TransactionDBCondVarImpl() {}
   ~TransactionDBCondVarImpl() override {}
 
-  Status Wait(std::shared_ptr<TransactionDBMutex> mutex) override;
+  Status Wait(TransactionDBMutex* mutex) override;
 
-  Status WaitFor(std::shared_ptr<TransactionDBMutex> mutex,
-                 int64_t timeout_time) override;
+  Status WaitFor(TransactionDBMutex*, int64_t timeout_time) override;
 
   void Notify() override { cv_.notify_one(); }
 
@@ -50,14 +49,14 @@ class TransactionDBCondVarImpl : public TransactionDBCondVar {
   std::condition_variable cv_;
 };
 
-std::shared_ptr<TransactionDBMutex>
+TransactionDBMutex*
 TransactionDBMutexFactoryImpl::AllocateMutex() {
-  return std::shared_ptr<TransactionDBMutex>(new TransactionDBMutexImpl());
+  return new TransactionDBMutexImpl();
 }
 
-std::shared_ptr<TransactionDBCondVar>
+TransactionDBCondVar*
 TransactionDBMutexFactoryImpl::AllocateCondVar() {
-  return std::shared_ptr<TransactionDBCondVar>(new TransactionDBCondVarImpl());
+  return new TransactionDBCondVarImpl();
 }
 
 Status TransactionDBMutexImpl::Lock() {
@@ -89,9 +88,8 @@ Status TransactionDBMutexImpl::TryLockFor(int64_t timeout_time) {
   return Status::OK();
 }
 
-Status TransactionDBCondVarImpl::Wait(
-    std::shared_ptr<TransactionDBMutex> mutex) {
-  auto mutex_impl = reinterpret_cast<TransactionDBMutexImpl*>(mutex.get());
+Status TransactionDBCondVarImpl::Wait(TransactionDBMutex* mutex) {
+  auto mutex_impl = reinterpret_cast<TransactionDBMutexImpl*>(mutex);
 
   std::unique_lock<std::mutex> lock(mutex_impl->mutex_, std::adopt_lock);
   cv_.wait(lock);
@@ -103,10 +101,10 @@ Status TransactionDBCondVarImpl::Wait(
 }
 
 Status TransactionDBCondVarImpl::WaitFor(
-    std::shared_ptr<TransactionDBMutex> mutex, int64_t timeout_time) {
+    TransactionDBMutex* mutex, int64_t timeout_time) {
   Status s;
 
-  auto mutex_impl = reinterpret_cast<TransactionDBMutexImpl*>(mutex.get());
+  auto mutex_impl = reinterpret_cast<TransactionDBMutexImpl*>(mutex);
   std::unique_lock<std::mutex> lock(mutex_impl->mutex_, std::adopt_lock);
 
   if (timeout_time < 0) {

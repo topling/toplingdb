@@ -424,7 +424,7 @@ class StackableDB : public DB {
     return db_->DisableFileDeletions();
   }
 
-  virtual Status EnableFileDeletions(bool force) override {
+  virtual Status EnableFileDeletions(bool force = true) override {
     return db_->EnableFileDeletions(force);
   }
 
@@ -570,6 +570,10 @@ class StackableDB : public DB {
       ColumnFamilyHandle* column_family, const Range* range, std::size_t n,
       TablePropertiesCollection* props) override {
     return db_->GetPropertiesOfTablesInRange(column_family, range, n, props);
+  }
+  Status ApproximateKeyAnchors(ColumnFamilyHandle* cf, const Range* rng,
+                               std::vector<Anchor>* a) override {
+    return db_->ApproximateKeyAnchors(cf, rng, a);
   }
 
   virtual Status GetUpdatesSince(

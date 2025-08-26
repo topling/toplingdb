@@ -240,6 +240,14 @@ class TableCache {
     }
   }
 
+  // Get TableReader from a cache handle.
+  TableReader* GetTableReaderFromHandle(TypedHandle* handle) {
+    return cache_.Value(handle);
+  }
+
+  // Release the handle from a cache
+  void ReleaseHandle(TypedHandle* handle) { cache_.Release(handle); }
+
  private:
   // Build a table reader
   Status GetTableReader(

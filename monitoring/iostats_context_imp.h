@@ -6,10 +6,11 @@
 #pragma once
 #include "monitoring/perf_step_timer.h"
 #include "rocksdb/iostats_context.h"
+#include "port/lang.h"
 
 #if !defined(NIOSTATS_CONTEXT)
 namespace ROCKSDB_NAMESPACE {
-extern thread_local IOStatsContext iostats_context;
+extern thread_local IOStatsContext iostats_context ROCKSDB_STATIC_TLS;
 }  // namespace ROCKSDB_NAMESPACE
 
 // increment a specific counter by the specified value

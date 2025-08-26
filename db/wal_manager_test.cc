@@ -90,6 +90,9 @@ class WalManagerTest : public testing::Test {
                                          nullptr));
     current_log_writer_.reset(
         new log::Writer(std::move(file_writer), 0, false));
+    if (db_options_.memtable_as_log_index) {
+      current_log_writer_->InitReaderMmap(*fs, 16*1024*1024);
+    }
   }
 
   void CreateArchiveLogs(int num_logs, int entries_per_log) {
@@ -143,6 +146,9 @@ TEST_F(WalManagerTest, ReadFirstRecordCache) {
       new WritableFileWriter(std::move(file), path, FileOptions()));
   log::Writer writer(std::move(file_writer), 1,
                      db_options_.recycle_log_file_num > 0);
+  if (db_options_.memtable_as_log_index) {
+    writer.InitReaderMmap(*env_->GetFileSystem(), 1*1024*1024);
+  }
   WriteBatch batch;
   ASSERT_OK(batch.Put("foo", "bar"));
   WriteBatchInternal::SetSequence(&batch, 10);
@@ -245,7 +251,7 @@ TEST_F(WalManagerTest, WALArchivalSizeLimit) {
   wal_manager_->PurgeObsoleteWALFiles();
 
   uint64_t archive_size = GetLogDirSize(archive_dir, env_.get());
-  ASSERT_TRUE(archive_size <= db_options_.WAL_size_limit_MB * 1024 * 1024);
+  ASSERT_LE(archive_size, db_options_.WAL_size_limit_MB * 1024 * 1024);
 
   db_options_.WAL_ttl_seconds = 1;
   env_->SleepForMicroseconds(2 * 1000 * 1000);

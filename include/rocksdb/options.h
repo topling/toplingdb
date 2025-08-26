@@ -13,7 +13,6 @@
 
 #include <limits>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -46,6 +45,7 @@ class ConcurrentTaskLimiter;
 class Env;
 enum InfoLogLevel : unsigned char;
 class SstFileManager;
+struct FileMetaData;
 class FilterPolicy;
 class Logger;
 class MergeOperator;
@@ -333,6 +333,9 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   // Default: nullptr
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory = nullptr;
 
+  std::shared_ptr<class CompactionExecutorFactory> compaction_executor_factory;
+  std::shared_ptr<class AnyPlugin> html_user_key_coder;
+
   // RocksDB will try to flush the current memtable after the number of range
   // deletions is >= this limit. For workloads with many range
   // deletions, limiting the number of range deletions in memtable can help
@@ -352,7 +355,7 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   void Dump(Logger* log) const;
 };
 
-enum class WALRecoveryMode : char {
+ROCKSDB_ENUM_CLASS(WALRecoveryMode, char,
   // Original levelDB recovery
   //
   // We tolerate the last record in any log to be incomplete due to a crash
@@ -388,8 +391,8 @@ enum class WALRecoveryMode : char {
   // possible
   // Use case : Ideal for last ditch effort to recover data or systems that
   // operate with low grade unrelated data
-  kSkipAnyCorruptedRecords = 0x03,
-};
+  kSkipAnyCorruptedRecords = 0x03
+);
 
 struct DbPath {
   std::string path;
@@ -401,7 +404,7 @@ struct DbPath {
 
 extern const char* kHostnameForDbHostId;
 
-enum class CompactionServiceJobStatus : char {
+enum class CompactionServiceJobStatus : unsigned char {
   kSuccess,
   kFailure,
   kUseLocal,
@@ -756,6 +759,12 @@ struct DBOptions {
   // Dynamically changeable through SetDBOptions() API.
   uint32_t max_subcompactions = 1;
 
+  // L0 -> L1 compactions involves all L0 and L1 files, more subcompactions
+  // makes such compactions faster. Default 0 means ignore
+  // max_level1_subcompactions and fall back to use max_subcompactions
+  uint32_t max_level1_subcompactions = 0;
+
+  // NOT SUPPORTED ANYMORE: RocksDB automatically decides this based on the
   // DEPRECATED: RocksDB automatically decides this based on the
   // value of max_background_jobs. For backwards compatibility we will set
   // `max_background_jobs = max_background_compactions + max_background_flushes`
@@ -888,6 +897,9 @@ struct DBOptions {
   // Disable child process inherit open files. Default: true
   bool is_fd_close_on_exec = true;
 
+  // If false, fdatasync() calls are bypassed
+  bool allow_fdatasync = true;
+
   // if not zero, dump rocksdb.stats to LOG every stats_dump_period_sec
   //
   // Default: 600 (10 min)
@@ -910,6 +922,8 @@ struct DBOptions {
   // When peristing stats to disk, the stat name will be limited at 100 bytes.
   // Default: false
   bool persist_stats_to_disk = false;
+
+  bool memtable_as_log_index = false;
 
   // if not zero, periodically take stats snapshots and store in memory, the
   // memory size for stats snapshots is capped at stats_history_buffer_size
@@ -956,7 +970,8 @@ struct DBOptions {
   // Specify the file access pattern once a compaction is started.
   // It will be applied to all input files of a compaction.
   // Default: NORMAL
-  enum AccessHint { NONE, NORMAL, SEQUENTIAL, WILLNEED };
+  ROCKSDB_ENUM_PLAIN_INCLASS(AccessHint, int,
+      NONE, NORMAL, SEQUENTIAL, WILLNEED);
   AccessHint access_hint_on_compaction_start = NORMAL;
 
   // If non-zero, we perform bigger reads when doing compaction. If you're
@@ -1451,6 +1466,11 @@ struct DBOptions {
   // use "0:00-23:59". To make an entire day have no offpeak period, leave
   // this field blank. Default: Empty string (no offpeak).
   std::string daily_offpeak_time_utc = "";
+
+  // topling specific:
+  // just for TransactionDB, it should be in TransactionDBOptions, but that
+  // needs many code changes, so we put it here, to minimize code changes
+  std::shared_ptr<class WBWIFactory> wbwi_factory;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)
@@ -1503,7 +1523,7 @@ struct Options : public DBOptions, public ColumnFamilyOptions {
 // Get call will process data that is already processed in the memtable or
 // the block cache. It will not page in data from the OS cache or data that
 // resides in storage.
-enum ReadTier {
+enum ReadTier : unsigned char {
   kReadAllTier = 0x0,     // data in memtable, block cache, OS cache or storage
   kBlockCacheTier = 0x1,  // data in memtable or block cache
   kPersistedTier = 0x2,   // persisted data.  When WAL is disabled, this option
@@ -1523,6 +1543,7 @@ struct ReadOptions {
   // snapshot of the state at the beginning of this read operation.
   const Snapshot* snapshot = nullptr;
 
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   // Timestamp of operation. Read should return the latest data visible to the
   // specified timestamp. All timestamps of the same database must be of the
   // same length and format. The user is responsible for providing a customized
@@ -1535,7 +1556,12 @@ struct ReadOptions {
   // and the API is subject to change.
   const Slice* timestamp = nullptr;
   const Slice* iter_start_ts = nullptr;
+ #else
+  static constexpr Slice const* timestamp = nullptr;
+  static constexpr Slice const* iter_start_ts = nullptr;
+ #endif
 
+ #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   // Deadline for completing an API call (Get/MultiGet/Seek/Next for now)
   // in microseconds.
   // It should be set to microseconds since epoch, i.e, gettimeofday or
@@ -1552,6 +1578,23 @@ struct ReadOptions {
   // individual file read request. If a MultiGet/Get/Seek/Next etc call
   // results in multiple reads, each read can last up to io_timeout us.
   std::chrono::microseconds io_timeout = std::chrono::microseconds::zero();
+
+  // It limits the maximum cumulative value size of the keys in batch while
+  // reading through MultiGet. Once the cumulative value size exceeds this
+  // soft limit then all the remaining keys are returned with status Aborted.
+  uint64_t value_size_soft_limit = std::numeric_limits<uint64_t>::max();
+
+  // When the number of merge operands applied exceeds this threshold
+  // during a successful query, the operation will return a special OK
+  // Status with subcode kMergeOperandThresholdExceeded. Currently only applies
+  // to point lookups and is disabled by default.
+  size_t merge_operand_count_threshold = std::numeric_limits<size_t>::max();
+ #else
+  static constexpr std::chrono::microseconds deadline = std::chrono::microseconds::zero();
+  static constexpr std::chrono::microseconds io_timeout = std::chrono::microseconds::zero();
+  static constexpr uint64_t value_size_soft_limit = std::numeric_limits<uint64_t>::max();
+  static constexpr size_t merge_operand_count_threshold = std::numeric_limits<size_t>::max();
+ #endif
 
   // Specify if this read request should process data that ALREADY
   // resides on a particular cache. If the required data is not
@@ -1571,17 +1614,6 @@ struct ReadOptions {
   // since there are some seemingly insignificant reads, like for file
   // headers/footers, that we currently do not charge to rate limiter.
   Env::IOPriority rate_limiter_priority = Env::IO_TOTAL;
-
-  // It limits the maximum cumulative value size of the keys in batch while
-  // reading through MultiGet. Once the cumulative value size exceeds this
-  // soft limit then all the remaining keys are returned with status Aborted.
-  uint64_t value_size_soft_limit = std::numeric_limits<uint64_t>::max();
-
-  // When the number of merge operands applied exceeds this threshold
-  // during a successful query, the operation will return a special OK
-  // Status with subcode kMergeOperandThresholdExceeded. Currently only applies
-  // to point lookups and is disabled by default.
-  std::optional<size_t> merge_operand_count_threshold;
 
   // If true, all data read from underlying storage will be
   // verified against corresponding checksums.
@@ -1615,9 +1647,12 @@ struct ReadOptions {
   // comes at the expense of slightly higher CPU overhead.
   bool optimize_multiget_for_io = true;
 
+  uint8_t fixed_user_key_len = 0; // 0 indicate var len
+
   // *** END options relevant to point lookups (as well as scans) ***
   // *** BEGIN options only relevant to iterators or scans ***
 
+ #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   // RocksDB does auto-readahead for iterators on noticing more than two reads
   // for a table file. The readahead starts at 8KB and doubles on every
   // additional read up to 256KB.
@@ -1631,7 +1666,11 @@ struct ReadOptions {
   // A threshold for the number of keys that can be skipped before failing an
   // iterator seek as incomplete. The default value of 0 should be used to
   // never fail a request as incomplete, even on skipping too many keys.
-  uint64_t max_skippable_internal_keys = 0;
+  uint64_t max_skippable_internal_keys = UINT64_MAX;
+ #else
+  static constexpr size_t readahead_size = 0;
+  static constexpr uint64_t max_skippable_internal_keys = UINT64_MAX;
+ #endif
 
   // `iterate_lower_bound` defines the smallest key at which the backward
   // iterator can return an entry. Once the bound is passed, Valid() will be
@@ -1665,6 +1704,10 @@ struct ReadOptions {
   // In case of user_defined timestamp, if enabled, iterate_upper_bound should
   // point to key without timestamp part.
   const Slice* iterate_upper_bound = nullptr;
+
+  bool just_check_key_exists = false; // just for check existing
+
+  bool cache_sst_file_iter = false;
 
   // Specify to create a tailing iterator -- a special iterator that has a
   // view of the complete database (i.e. it can also be used to read newly
@@ -1729,13 +1772,7 @@ struct ReadOptions {
   // in background.
   bool background_purge_on_iterator_cleanup = false;
 
-  // A callback to determine whether relevant keys for this scan exist in a
-  // given table based on the table's properties. The callback is passed the
-  // properties of each table during iteration. If the callback returns false,
-  // the table will not be scanned. This option only affects Iterators and has
-  // no impact on point lookups.
-  // Default: empty (every table will be scanned)
-  std::function<bool(const TableProperties&)> table_filter;
+  uint16_t min_prefault_pages = UINT16_MAX; // mainly for zero copy
 
   // If auto_readahead_size is set to true, it will auto tune the readahead_size
   // during scans internally.
@@ -1754,13 +1791,99 @@ struct ReadOptions {
   // *** BEGIN options for RocksDB internal use only ***
 
   // EXPERIMENTAL
+#if !defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
+  mutable
+#endif
   Env::IOActivity io_activity = Env::IOActivity::kUnknown;
 
+  uint16_t async_queue_depth = 16;
+
+  struct BooleanDontCopyTrue {
+    explicit BooleanDontCopyTrue(bool x = false) : value(x) {}
+    BooleanDontCopyTrue(const BooleanDontCopyTrue& y) {
+      assert(y.value == false); // relax just for debug
+      this->value = false;
+    }
+    BooleanDontCopyTrue& operator=(const BooleanDontCopyTrue& y) {
+      assert(y.value == false); // relax just for debug
+      ROCKSDB_VERIFY(this->value == false); // strict for release
+      return *this;
+    }
+    BooleanDontCopyTrue(BooleanDontCopyTrue&& y) {
+      ROCKSDB_VERIFY(y.value == false); // strict for release
+      this->value = false;
+    }
+    BooleanDontCopyTrue& operator=(BooleanDontCopyTrue&& y) {
+      ROCKSDB_VERIFY(y.value == false); // strict for release
+      ROCKSDB_VERIFY(this->value == false); // strict for release
+      return *this;
+    }
+    BooleanDontCopyTrue& operator=(const bool) = delete;
+    operator bool() const { return value; }
+    bool value;
+  };
+  BooleanDontCopyTrue internal_is_in_pinning_section{false};
+
+  // A callback to determine whether relevant keys for this scan exist in a
+  // given table based on the table's properties. The callback is passed the
+  // properties of each table during iteration. If the callback returns false,
+  // the table will not be scanned. This option only affects Iterators and has
+  // no impact on point lookups.
+  // Default: empty (every table will be scanned)
+  terark::shared_function<bool(const TableProperties&, const FileMetaData&)> table_filter;
+
+  class SkipCopyPtrReadOptionsTLS {
+    struct ReadOptionsTLS* ptr = nullptr;
+  public:
+    ~SkipCopyPtrReadOptionsTLS() { reset(nullptr); }
+    SkipCopyPtrReadOptionsTLS() = default;
+    SkipCopyPtrReadOptionsTLS(const SkipCopyPtrReadOptionsTLS&) : ptr(nullptr) {}
+    SkipCopyPtrReadOptionsTLS(SkipCopyPtrReadOptionsTLS&& y) : ptr(y.ptr) { y.ptr = nullptr; }
+    auto& operator=(const SkipCopyPtrReadOptionsTLS&) { return *this; }
+    auto& operator=(SkipCopyPtrReadOptionsTLS&& y) { reset(y.ptr); y.ptr = nullptr; return *this; }
+    auto& operator=(struct ReadOptionsTLS* p) { reset(p); return *this; }
+    auto get() const { return ptr; }
+    void reset(struct ReadOptionsTLS*); // defined in dbimpl.cc
+    struct ReadOptionsTLS* operator->() const { return ptr; }
+    operator bool() const { return ptr != nullptr; }
+  };
+  SkipCopyPtrReadOptionsTLS pinning_tls;
+
   // *** END options for RocksDB internal use only ***
+
+  // pin SuperVersion to enable zero copy on mmap SST
+  void StartPin();
+  void FinishPin();
+  class ScopePin {
+    ReadOptions* ro_;
+   public:
+    explicit ScopePin(ReadOptions* ro) : ro_(ro) { ro->StartPin(); }
+    explicit ScopePin(const ReadOptions* ro) : ScopePin((ReadOptions*)ro) {}
+    ~ScopePin() { ro_->FinishPin(); }
+  };
+  class ScopePinIfNotPinned {
+    ReadOptions* ro_;
+   public:
+    explicit ScopePinIfNotPinned(ReadOptions* ro) {
+      if (ro->internal_is_in_pinning_section)
+        ro_ = nullptr;
+      else
+        ro_ = ro, ro->StartPin();
+    }
+    explicit ScopePinIfNotPinned(const ReadOptions* ro)
+           : ScopePinIfNotPinned((ReadOptions*)ro) {}
+    ~ScopePinIfNotPinned() { if (ro_) ro_->FinishPin(); }
+  };
 
   ReadOptions() {}
   ReadOptions(bool _verify_checksums, bool _fill_cache);
   explicit ReadOptions(Env::IOActivity _io_activity);
+  ReadOptions(const ReadOptions&, BooleanDontCopyTrue/*dispatch_tag*/);
+  ReadOptions(const ReadOptions&);
+  ReadOptions(ReadOptions&&);
+  ReadOptions& operator=(const ReadOptions&);
+  ReadOptions& operator=(ReadOptions&&);
+  ~ReadOptions();
 };
 
 // Options that control write operations
@@ -1819,6 +1942,12 @@ struct WriteOptions {
   //
   // Default: false
   bool memtable_insert_hint_per_batch;
+
+  // ToplingDB specific: all concurrent writes must use same conf value.
+  // If true, use futex wait/notify, this reduces CPU usage but increase
+  //          write latency on multi threads write, esp. small WriteBatch.
+  // If false, use rocksdb's solution: adaptive spin lock.
+  bool reduce_cpu_usage = true;
 
   // For writes associated with this option, charge the internal rate
   // limiter (see `DBOptions::rate_limiter`) at the specified priority. The
@@ -1894,7 +2023,7 @@ struct CompactionOptions {
 
 // For level based compaction, we can configure if we want to skip/force
 // bottommost level compaction.
-enum class BottommostLevelCompaction {
+ROCKSDB_ENUM_CLASS(BottommostLevelCompaction, int,
   // Skip bottommost level compaction.
   kSkip,
   // Only compact bottommost level if there is a compaction filter.
@@ -1907,8 +2036,8 @@ enum class BottommostLevelCompaction {
   kForce,
   // Always compact bottommost level but in bottommost level avoid
   // double-compacting files created in the same compaction.
-  kForceOptimized,
-};
+  kForceOptimized
+);
 
 // For manual compaction, we can configure if we want to skip/force garbage
 // collection of blob files.
@@ -2051,9 +2180,12 @@ struct IngestExternalFileOptions {
   //
   // ingest_behind takes precedence over fail_if_not_bottommost_level.
   bool fail_if_not_bottommost_level = false;
+
+  // ToplingDB: sync file can be optional
+  bool sync_file = true;
 };
 
-enum TraceFilterType : uint64_t {
+ROCKSDB_ENUM_PLAIN(TraceFilterType, uint64_t,
   // Trace all the operations
   kTraceFilterNone = 0x0,
   // Do not trace the get operations
@@ -2066,7 +2198,9 @@ enum TraceFilterType : uint64_t {
   kTraceFilterIteratorSeekForPrev = 0x1 << 3,
   // Do not trace the `MultiGet()` operations
   kTraceFilterMultiGet = 0x1 << 4,
-};
+
+  kTraceFilterTypeMax
+);
 
 // TraceOptions is used for StartTrace
 struct TraceOptions {
@@ -2111,6 +2245,10 @@ struct SizeApproximationOptions {
   // If the value is non-positive - a more precise yet more CPU intensive
   // estimation is performed.
   double files_size_error_margin = -1.0;
+
+  // If using zero copy, and calling GetApproximateSizes() is interleaved with
+  // DB::Get/MultiGet, must set read_options to which used in Get
+  struct ReadOptions* read_options = nullptr;
 };
 
 struct CompactionServiceOptionsOverride {

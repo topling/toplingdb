@@ -9,10 +9,15 @@
 #pragma once
 
 #include "rocksdb/rocksdb_namespace.h"
+#include <stddef.h>
+#include <stdlib.h>
+#include <terark/util/function.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
-class Cleanable {
+using terark::CacheAlignedNewDelete;
+
+class Cleanable : public CacheAlignedNewDelete {
  public:
   Cleanable();
   // No copy constructor and copy assignment allowed.
@@ -124,5 +129,7 @@ class SharedCleanablePtr {
   struct Impl;
   Impl* ptr_ = nullptr;
 };
+
+bool IsCompactionWorker();
 
 }  // namespace ROCKSDB_NAMESPACE

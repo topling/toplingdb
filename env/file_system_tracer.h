@@ -113,6 +113,8 @@ class FileSystemPtr {
     }
   }
 
+  FileSystem& operator*() const { return *get(); }
+
   /* Returns the underlying File System pointer */
   FileSystem* get() const {
     if (io_tracer_ && io_tracer_->is_tracing_enabled()) {
@@ -279,6 +281,11 @@ class FSRandomAccessFilePtr {
       return fs_tracer_.target();
     }
   }
+
+  FSRandomAccessFile* exchange(FSRandomAccessFile* p) {
+     return fs_tracer_.exchange(p);
+  }
+  FSRandomAccessFile* target() const { return fs_tracer_.target(); }
 
  private:
   std::shared_ptr<IOTracer> io_tracer_;

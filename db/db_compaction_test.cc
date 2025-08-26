@@ -3572,7 +3572,9 @@ TEST_P(DBCompactionWaitForCompactTest,
   ASSERT_OK(dbfull()->WaitForCompact(wait_for_compact_options_));
 
   int expected_flush_count = flush_ || close_db_;
-  ASSERT_EQ(expected_flush_count, flush_finished);
+  if (!options_.memtable_as_log_index) {
+    ASSERT_EQ(expected_flush_count, flush_finished);
+  }
 
   if (!close_db_) {
     // During CancelAllBackgroundWork(), a flush can be initiated due to

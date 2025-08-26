@@ -23,6 +23,8 @@
 #include "util/random.h"
 #include "util/rate_limiter_impl.h"
 
+#include <terark/util/nolocks_localtime.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 IOStatus WritableFileWriter::Create(const std::shared_ptr<FileSystem>& fs,
                                     const std::string& fname,
@@ -177,6 +179,82 @@ IOStatus WritableFileWriter::Append(const Slice& data, uint32_t crc32c_checksum,
   return s;
 }
 
+IOStatus WritableFileWriter::Appendv(const Slice* parts, size_t num,
+                                     size_t sum_size,
+                                     Env::IOPriority op_rate_limiter_priority) {
+  if (UNLIKELY(seen_error())) {
+    return AssertFalseAndGetStatusForPrevError();
+  }
+  if (UNLIKELY(checksum_generator_ != nullptr)) {
+    for (size_t i = 0; i < num; i++)
+      checksum_generator_->Update(parts[i].data_, parts[i].size_);
+  }
+  IOStatus ios;
+  IOOptions io_options;
+  pending_sync_ = true;
+  if (UNLIKELY(allow_fallocate_)) {
+    io_options.rate_limiter_priority =
+        WritableFileWriter::DecideRateLimiterPriority(
+            writable_file_->GetIOPriority(), op_rate_limiter_priority);
+    IOSTATS_TIMER_GUARD(prepare_write_nanos);
+    TEST_SYNC_POINT("WritableFileWriter::Append:BeforePrepareWrite");
+    writable_file_->PrepareWrite(static_cast<size_t>(GetFileSize()), sum_size,
+                                 io_options, nullptr);
+  }
+  if (UNLIKELY(rate_limiter_ != nullptr)) {
+    io_options.rate_limiter_priority =
+        WritableFileWriter::DecideRateLimiterPriority(
+            writable_file_->GetIOPriority(), op_rate_limiter_priority);
+    if (io_options.rate_limiter_priority != Env::IO_TOTAL) {
+      for (ssize_t remain = sum_size; remain > 0; )
+        remain -= rate_limiter_->RequestToken(remain, 4096,
+          io_options.rate_limiter_priority, stats_, RateLimiter::OpType::kWrite);
+    }
+  }
+  IOSTATS_TIMER_GUARD(write_nanos);
+  if (ShouldNotifyListeners()) {
+    auto start_ts = FileOperationInfo::StartNow();
+    uint64_t old_size = next_write_offset_;
+    {
+      IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, clock_);
+      ios = writable_file_->Appendv(parts, num, sum_size, io_options, nullptr);
+    }
+    auto finish_ts = std::chrono::steady_clock::now();
+    NotifyOnFileWriteFinish(old_size, sum_size, start_ts, finish_ts, ios);
+    if (!ios.ok())
+      NotifyOnIOError(ios, FileOperationType::kAppend, file_name_, sum_size, old_size);
+  }
+  else {
+    IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, clock_);
+    ios = writable_file_->Appendv(parts, num, sum_size, io_options, nullptr);
+  }
+  if (LIKELY(ios.ok())) {
+    next_write_offset_ += sum_size;
+    flushed_size_.fetch_add(sum_size, std::memory_order_relaxed);
+    filesize_.fetch_add(sum_size, std::memory_order_relaxed);
+  } else {
+    set_seen_error();
+  }
+  if (UNLIKELY(bytes_per_sync_ > 0)) {
+    uint64_t kBytesNotSyncRange = 1024 * 1024; // recent 1MB is not synced.
+    uint64_t kBytesAlignWhenSync = 4 * 1024;  // Align 4KB.
+    uint64_t cur_size = filesize_.load(std::memory_order_acquire);
+    if (ios.ok() && cur_size > kBytesNotSyncRange) {
+      uint64_t offset_sync_to = cur_size - kBytesNotSyncRange;
+      offset_sync_to -= offset_sync_to % kBytesAlignWhenSync;
+      assert(offset_sync_to >= last_sync_size_);
+      if (offset_sync_to - last_sync_size_ >= bytes_per_sync_) {
+        ios = RangeSync(last_sync_size_, offset_sync_to - last_sync_size_);
+        if (!ios.ok()) {
+          set_seen_error();
+        }
+        last_sync_size_ = offset_sync_to;
+      }
+    }
+  }
+  return ios;
+}
+
 IOStatus WritableFileWriter::Pad(const size_t pad_bytes,
                                  Env::IOPriority op_rate_limiter_priority) {
   if (seen_error()) {
@@ -287,19 +365,29 @@ IOStatus WritableFileWriter::Close() {
   }
 
   TEST_KILL_RANDOM("WritableFileWriter::Close:0");
-  {
-    FileOperationInfo::StartTimePoint start_ts;
-    if (ShouldNotifyListeners()) {
-      start_ts = FileOperationInfo::StartNow();
+  auto start_ts = FileOperationInfo::StartNow();
+  interim = writable_file_->Close(io_options, nullptr);
+  auto finish_ts = FileOperationInfo::FinishNow();
+  if (ShouldNotifyListeners()) {
+    NotifyOnFileCloseFinish(start_ts, finish_ts, s);
+    if (!interim.ok()) {
+      NotifyOnIOError(interim, FileOperationType::kClose, file_name());
     }
-    interim = writable_file_->Close(io_options, nullptr);
-    if (ShouldNotifyListeners()) {
-      auto finish_ts = FileOperationInfo::FinishNow();
-      NotifyOnFileCloseFinish(start_ts, finish_ts, s);
-      if (!interim.ok()) {
-        NotifyOnIOError(interim, FileOperationType::kClose, file_name());
-      }
-    }
+  }
+  if (filesize_ != writable_file_->GetFileSize(io_options, nullptr)) {
+    fprintf(stderr, "WARN: %s: WritableFileWriter::Close(%s): "
+      "(fsize = %lld) != (file->fsize = %lld)\n",
+      terark::StrDateTimeNow(), file_name_.c_str(), (long long)filesize_,
+      (long long)writable_file_->GetFileSize(io_options, nullptr));
+  }
+  using namespace std::chrono;
+  auto slow_ms = terark::getEnvLong("WritableFileWriterSlowCloseMS", 5000);
+  auto close_tm = finish_ts - start_ts.second;
+  if (close_tm > milliseconds(slow_ms)) {
+    fprintf(stderr, "WARN: %s: WritableFileWriter::Close(%s): "
+      "fsize = %.6f M, file close = %.6f seconds\n",
+      terark::StrDateTimeNow(), file_name_.c_str(), filesize_/1e6,
+      duration_cast<microseconds>(close_tm).count()/1e6);
   }
   if (!interim.ok() && s.ok()) {
     s = interim;
@@ -349,6 +437,7 @@ IOStatus WritableFileWriter::Flush(Env::IOPriority op_rate_limiter_priority) {
       }
     }
     if (!s.ok()) {
+      fprintf(stderr, "WritableFileWriter::Flush: Write %zd = %s\n", buf_.CurrentSize(), s.ToString().c_str());
       set_seen_error();
       return s;
     }
@@ -364,6 +453,9 @@ IOStatus WritableFileWriter::Flush(Env::IOPriority op_rate_limiter_priority) {
         WritableFileWriter::DecideRateLimiterPriority(
             writable_file_->GetIOPriority(), op_rate_limiter_priority);
     s = writable_file_->Flush(io_options, nullptr);
+    if (!s.ok())
+      fprintf(stderr, "WritableFileWriter::Flush: Flush %zd = %s\n", buf_.CurrentSize(), s.ToString().c_str());
+
     if (ShouldNotifyListeners()) {
       auto finish_ts = std::chrono::steady_clock::now();
       NotifyOnFileFlushFinish(start_ts, finish_ts, s);
@@ -600,6 +692,7 @@ IOStatus WritableFileWriter::WriteBuffered(
           // returning error, the file may end up with two duplicate pieces of
           // data. Therefore, clear the buf_ at the WritableFileWriter layer
           // and let caller determine error handling.
+          fprintf(stderr, "%d: Append %zd = %s\n", __LINE__, allowed, s.ToString().c_str());
           buf_.Size(0);
           buffered_data_crc32c_checksum_ = 0;
         }

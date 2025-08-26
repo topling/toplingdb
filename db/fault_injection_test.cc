@@ -531,9 +531,13 @@ TEST_P(FaultInjectionTest, WriteBatchWalTerminationTest) {
   wo.disableWAL = false;
   WriteBatch batch;
   ASSERT_OK(batch.Put("cats", "dogs"));
-  batch.MarkWalTerminationPoint();
-  ASSERT_OK(batch.Put("boys", "girls"));
-  ASSERT_OK(db_->Write(wo, &batch));
+  WriteBatch batch2;
+  ASSERT_OK(batch2.Put("boys", "girls"));
+  batch.SetWriteMemNext(&batch2);
+  if (options.memtable_as_log_index)
+    ASSERT_TRUE(db_->Write(wo, &batch).IsNotSupported());
+  else
+    ASSERT_OK(db_->Write(wo, &batch));
 
   env_->SetFilesystemActive(false);
   NoWriteTestReopenWithFault(kResetDropAndDeleteUnsynced);

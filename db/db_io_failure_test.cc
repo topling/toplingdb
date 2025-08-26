@@ -14,6 +14,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+extern bool g_MemTableVerifyKeyValueWithWAL;
+
 class DBIOFailureTest : public DBTestBase {
  public:
   DBIOFailureTest() : DBTestBase("db_io_failure_test", /*env_do_fsync=*/true) {}
@@ -224,6 +226,11 @@ TEST_F(DBIOFailureTest, PutFailsParanoid) {
   // (c) All of that should happen ONLY if paranoid_checks = true
 
   Options options = CurrentOptions();
+  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_SKIP(
+      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+    return;
+  }
   options.env = env_;
   options.create_if_missing = true;
   options.error_if_exists = false;

@@ -80,8 +80,10 @@ InternalIteratorBase<IndexValue>* PartitionIndexReader::NewIterator(
   } else {
     ReadOptions ro;
     ro.fill_cache = read_options.fill_cache;
+   #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
     ro.deadline = read_options.deadline;
     ro.io_timeout = read_options.io_timeout;
+   #endif
     ro.adaptive_readahead = read_options.adaptive_readahead;
     ro.async_io = read_options.async_io;
     ro.rate_limiter_priority = read_options.rate_limiter_priority;

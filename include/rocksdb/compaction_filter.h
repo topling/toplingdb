@@ -174,6 +174,8 @@ class CompactionFilter : public Customizable {
     // map.
     TablePropertiesCollection input_table_properties;
 
+    uint64_t smallest_seqno;
+
     static const int kUnknownStartLevel = -1;
   };
 
@@ -337,6 +339,8 @@ class CompactionFilter : public Customizable {
     return Decision::kUndetermined;
   }
 };
+
+typedef CompactionFilter::Context CompactionFilterContext;
 
 // Each thread of work involving creating table files will create a new
 // `CompactionFilter` according to `ShouldFilterTableFileCreation()`. This

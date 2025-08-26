@@ -331,14 +331,22 @@ TEST_F(CorruptionTest, Recovery) {
   // is not available for WAL though.
   CloseDb();
 #endif
-  Corrupt(kWalFile, 19, 1);  // WriteBatch tag for first record
+  if (options_.memtable_as_log_index) {
+    Corrupt(kWalFile, 28, 1);  // WriteBatch tag for first record
+  } else {
+    Corrupt(kWalFile, 19, 1);  // WriteBatch tag for first record
+  }
   Corrupt(kWalFile, log::kBlockSize + 1000, 1);  // Somewhere in second block
   ASSERT_TRUE(!TryReopen().ok());
   options_.paranoid_checks = false;
   Reopen(&options_);
 
-  // The 64 records in the first two log blocks are completely lost.
-  Check(36, 36);
+  if (options_.memtable_as_log_index) {
+    Check(98, 98);
+  } else {
+    // The 64 records in the first two log blocks are completely lost.
+    Check(36, 36);
+  }
 }
 
 TEST_F(CorruptionTest, PostPITRCorruptionWALsRetained) {

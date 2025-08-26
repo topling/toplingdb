@@ -17,7 +17,7 @@ namespace ROCKSDB_NAMESPACE {
 
 class Slice;
 
-enum PartitionerResult : char {
+enum PartitionerResult : unsigned char {
   // Partitioner does not require to create new file
   kNotRequired = 0x0,
   // Partitioner is requesting forcefully to create new file
@@ -29,11 +29,11 @@ struct PartitionerRequest {
   PartitionerRequest(const Slice& prev_user_key_,
                      const Slice& current_user_key_,
                      uint64_t current_output_file_size_)
-      : prev_user_key(&prev_user_key_),
-        current_user_key(&current_user_key_),
+      : prev_user_key(prev_user_key_),
+        current_user_key(current_user_key_),
         current_output_file_size(current_output_file_size_) {}
-  const Slice* prev_user_key;
-  const Slice* current_user_key;
+  const Slice prev_user_key;
+  const Slice current_user_key;
   uint64_t current_output_file_size;
 };
 
@@ -75,6 +75,7 @@ class SstPartitioner {
     Slice smallest_user_key;
     // Largest key for compaction
     Slice largest_user_key;
+    size_t target_output_file_size;
   };
 };
 

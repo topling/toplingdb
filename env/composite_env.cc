@@ -100,6 +100,8 @@ class CompositeRandomAccessFileWrapper : public RandomAccessFile {
     return target_->InvalidateCache(offset, length);
   }
 
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+
  private:
   std::unique_ptr<FSRandomAccessFile> target_;
 };
@@ -214,6 +216,9 @@ class CompositeWritableFileWrapper : public WritableFile {
     IODebugContext dbg;
     return target_->Allocate(offset, len, io_opts, &dbg);
   }
+
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
 
   std::unique_ptr<FSWritableFile>* target() { return &target_; }
 

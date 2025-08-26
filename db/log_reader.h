@@ -120,18 +120,23 @@ class Reader {
   bool IsCompressedAndEmptyFile() {
     return !first_record_read_ && compression_type_record_read_;
   }
+  void InitSetMemTableAsLogIndex(FileSystem&);
+  static IOStatus IsMemTableAsLogIndexFile(FileSystem&, const std::string& fname, bool*);
 
  protected:
   std::shared_ptr<Logger> info_log_;
   const std::unique_ptr<SequentialFileReader> file_;
   Reporter* const reporter_;
-  bool const checksum_;
-  char* const backing_store_;
+  char* backing_store_;
 
   // Internal state variables used for reading records
   Slice buffer_;
+  bool const checksum_;
   bool eof_;         // Last Read() indicated EOF by returning < kBlockSize
   bool read_error_;  // Error occurred while reading from file
+  bool memtable_as_log_index_ = false;
+  std::shared_ptr<uint64_t> wal_writer_offset_;
+  RecordType ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode);
 
   // Offset of the file position indicator within the last block when an
   // EOF was detected.

@@ -45,7 +45,7 @@ public abstract class AbstractImmutableNativeReference
    * may cause a memory leak.
    * </p>
    */
-  protected final void disOwnNativeHandle() {
+  final void disOwnNativeHandle() {
     owningHandle_.set(false);
   }
 

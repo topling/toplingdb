@@ -27,6 +27,7 @@
 #include "rocksdb/types.h"
 #include "rocksdb/utilities/object_registry.h"
 #include "rocksdb/utilities/write_batch_with_index.h"
+#include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 #include "test_util/testutil.h"
 #include "util/cast_util.h"
 #include "utilities/backup/backup_engine_impl.h"
@@ -420,11 +421,13 @@ Status StressTest::AssertSame(DB* db, ColumnFamilyHandle* cf,
   // `FLAGS_rate_limit_user_ops` to avoid slowing any validation.
   ReadOptions ropt;
   ropt.snapshot = snap_state.snapshot;
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   Slice ts;
   if (!snap_state.timestamp.empty()) {
     ts = snap_state.timestamp;
     ropt.timestamp = &ts;
   }
+ #endif
   PinnableSlice exp_v(&snap_state.value);
   exp_v.PinSelf();
   PinnableSlice v;
@@ -826,7 +829,9 @@ void StressTest::OperateDb(ThreadState* thread) {
       FLAGS_rate_limit_user_ops ? Env::IO_USER : Env::IO_TOTAL;
   read_opts.async_io = FLAGS_async_io;
   read_opts.adaptive_readahead = FLAGS_adaptive_readahead;
+ #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   read_opts.readahead_size = FLAGS_readahead_size;
+ #endif
   read_opts.auto_readahead_size = FLAGS_auto_readahead_size;
   WriteOptions write_opts;
   if (FLAGS_rate_limit_auto_wal_flush) {
@@ -1069,11 +1074,13 @@ void StressTest::OperateDb(ThreadState* thread) {
       // Assign timestamps if necessary.
       std::string read_ts_str;
       Slice read_ts;
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       if (FLAGS_user_timestamp_size > 0) {
         read_ts_str = GetNowNanos();
         read_ts = read_ts_str;
         read_opts.timestamp = &read_ts;
       }
+     #endif
 
       int prob_op = thread->rand.Uniform(100);
       // Reset this in case we pick something other than a read op. We don't
@@ -1362,8 +1369,10 @@ Status StressTest::TestIterate(ThreadState* thread,
     // This `ReadOptions` is for validation purposes. Ignore
     // `FLAGS_rate_limit_user_ops` to avoid slowing any validation.
     ReadOptions cmp_ro;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     cmp_ro.timestamp = ro.timestamp;
     cmp_ro.iter_start_ts = ro.iter_start_ts;
+   #endif
     cmp_ro.snapshot = snapshot_guard.snapshot();
     cmp_ro.total_order_seek = true;
 
@@ -1827,11 +1836,13 @@ Status StressTest::TestBackupRestore(
     ReadOptions read_opts;
     std::string ts_str;
     Slice ts;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (FLAGS_user_timestamp_size > 0) {
       ts_str = GetNowNanos();
       ts = ts_str;
       read_opts.timestamp = &ts;
     }
+   #endif
     Status get_status = restored_db->Get(
         read_opts, restored_cf_handles[rand_column_families[i]], key,
         &restored_value);
@@ -2083,11 +2094,13 @@ Status StressTest::TestCheckpoint(ThreadState* thread,
       std::string ts_str;
       Slice ts;
       ReadOptions read_opts;
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       if (FLAGS_user_timestamp_size > 0) {
         ts_str = GetNowNanos();
         ts = ts_str;
         read_opts.timestamp = &ts;
       }
+     #endif
       std::string value;
       Status get_status = checkpoint_db->Get(
           read_opts, cf_handles[rand_column_families[i]], key, &value);
@@ -2307,11 +2320,13 @@ void StressTest::TestAcquireSnapshot(ThreadState* thread,
   // not possible with current GetSnapshot() API.
   std::string ts_str;
   Slice ts;
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (FLAGS_user_timestamp_size > 0) {
     ts_str = GetNowNanos();
     ts = ts_str;
     ropt.timestamp = &ts;
   }
+ #endif
 
   std::string value_at;
   // When taking a snapshot, we also read a key from that snapshot. We
@@ -2458,11 +2473,13 @@ uint32_t StressTest::GetRangeHash(ThreadState* thread, const Snapshot* snapshot,
   ro.total_order_seek = true;
   std::string ts_str;
   Slice ts;
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (FLAGS_user_timestamp_size > 0) {
     ts_str = GetNowNanos();
     ts = ts_str;
     ro.timestamp = &ts;
   }
+ #endif
 
   std::unique_ptr<Iterator> it(db_->NewIterator(ro, column_family));
 
@@ -3118,7 +3135,9 @@ bool StressTest::MaybeUseOlderTimestampForPointLookup(ThreadState* thread,
   ts_str.clear();
   PutFixed64(&ts_str, ts);
   ts_slice = ts_str;
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   read_opts.timestamp = &ts_slice;
+ #endif
   return true;
 }
 
@@ -3126,6 +3145,7 @@ void StressTest::MaybeUseOlderTimestampForRangeScan(ThreadState* thread,
                                                     std::string& ts_str,
                                                     Slice& ts_slice,
                                                     ReadOptions& read_opts) {
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (FLAGS_user_timestamp_size == 0) {
     return;
   }
@@ -3167,6 +3187,7 @@ void StressTest::MaybeUseOlderTimestampForRangeScan(ThreadState* thread,
   ts_slice = ts_str;
   read_opts.iter_start_ts = &ts_slice;
   read_opts.timestamp = saved_ts;
+ #endif
 }
 
 void CheckAndSetOptionsForUserTimestamp(Options& options) {

@@ -11,21 +11,52 @@
 #include "rocksdb/status.h"
 #include "rocksdb/types.h"
 #include "rocksdb/utilities/transaction_db.h"
+#include "util/hash.h"
+
+#include <terark/fstring.hpp>
 
 namespace ROCKSDB_NAMESPACE {
+#if 0
+using LockString = std::string;
+#else
+using LockString = terark::fstring;
+#endif
+#define POINT_LOCK_HASH_MAP_TYPE 2
+
+struct StrNPHash64 {
+  size_t operator()(LockString key) const {
+    return NPHash64(key.p, key.n);
+  }
+};
 
 // Request for locking a single key.
 struct PointLockRequest {
-  // The id of the key's column family.
-  ColumnFamilyId column_family_id = 0;
   // The key to lock.
-  std::string key;
+  Slice key;
   // The sequence number from which there is no concurrent update to key.
   SequenceNumber seq = 0;
+  // The id of the key's column family.
+  ColumnFamilyId column_family_id = 0;
   // Whether the lock is acquired only for read.
   bool read_only = false;
   // Whether the lock is in exclusive mode.
   bool exclusive = true;
+  size_t key_hash;
+  size_t iter = SIZE_MAX;
+  size_t hint = SIZE_MAX;
+
+  PointLockRequest() = default;
+  PointLockRequest(ColumnFamilyId cfh_id, Slice k, SequenceNumber s,
+                   bool rdonly, bool exclusive1)
+    : key(k), seq(s), column_family_id(cfh_id),
+      read_only(rdonly), exclusive(exclusive1),
+      key_hash(NPHash64(k.data_, key.size_)) {}
+  PointLockRequest(ColumnFamilyId cfh_id, Slice k, SequenceNumber s,
+                   bool rdonly, bool exclusive1, size_t h,
+                   size_t _iter = SIZE_MAX, size_t _hint = SIZE_MAX)
+    : key(k), seq(s), column_family_id(cfh_id),
+      read_only(rdonly), exclusive(exclusive1), key_hash(h),
+      iter(_iter), hint(_hint) {}
 };
 
 // Request for locking a range of keys.
@@ -43,6 +74,8 @@ struct PointLockStatus {
   bool locked = false;
   // Whether the key is locked in exclusive mode.
   bool exclusive = true;
+  uint32_t iter = UINT32_MAX;
+  size_t hint = SIZE_MAX;
   // The sequence number in the tracked PointLockRequest.
   SequenceNumber seq = 0;
 };
@@ -62,14 +95,18 @@ enum class UntrackStatus {
 // In OptimisticTransaction, since there is no LockMgr, it tracks the lock
 // intention. Not thread-safe.
 class LockTracker {
+ protected:
+  bool m_is_point_lock_supported = false;
+  bool m_is_range_lock_supported = false;
+
  public:
   virtual ~LockTracker() {}
 
   // Whether supports locking a specific key.
-  virtual bool IsPointLockSupported() const = 0;
+  bool IsPointLockSupported() const { return m_is_point_lock_supported; }
 
   // Whether supports locking a range of keys.
-  virtual bool IsRangeLockSupported() const = 0;
+  bool IsRangeLockSupported() const { return m_is_range_lock_supported; }
 
   // Tracks the acquirement of a lock on key.
   //
@@ -145,7 +182,7 @@ class LockTracker {
   // locked=false.
   virtual PointLockStatus GetPointLockStatus(
       ColumnFamilyId /*column_family_id*/,
-      const std::string& /*key*/) const = 0;
+      const LockString& /*key*/, size_t key_hash) const = 0;
 
   // Gets number of tracked point locks.
   //
@@ -183,7 +220,11 @@ class LockTracker {
     // Gets the next key.
     //
     // If HasNext is false, calling this method has undefined behavior.
+  #if 0
     virtual const std::string& Next() = 0;
+  #else
+    virtual const terark::fstring Next() = 0;
+  #endif
   };
 
   // Gets an iterator for keys with tracked point locks in the column family.
@@ -201,6 +242,9 @@ class LockTrackerFactory {
  public:
   // Caller owns the returned pointer.
   virtual LockTracker* Create() const = 0;
+  virtual LockTracker* CreateDelta(const LockTracker* /*base*/) const {
+    return Create();
+  }
   virtual ~LockTrackerFactory() {}
 };
 

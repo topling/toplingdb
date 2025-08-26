@@ -8043,7 +8043,7 @@ void Java_org_rocksdb_WriteOptions_setMemtableInsertHintPerBatch(
  * Signature: ()J
  */
 jlong Java_org_rocksdb_ReadOptions_newReadOptions__(JNIEnv*, jclass) {
-  auto* read_options = new ROCKSDB_NAMESPACE::ReadOptions();
+  auto* read_options = new ROCKSDB_NAMESPACE::ReadOptionsWithValue();
   return GET_CPLUSPLUS_POINTER(read_options);
 }
 
@@ -8054,7 +8054,7 @@ jlong Java_org_rocksdb_ReadOptions_newReadOptions__(JNIEnv*, jclass) {
  */
 jlong Java_org_rocksdb_ReadOptions_newReadOptions__ZZ(
     JNIEnv*, jclass, jboolean jverify_checksums, jboolean jfill_cache) {
-  auto* read_options = new ROCKSDB_NAMESPACE::ReadOptions(
+  auto* read_options = new ROCKSDB_NAMESPACE::ReadOptionsWithValue(
       static_cast<bool>(jverify_checksums), static_cast<bool>(jfill_cache));
   return GET_CPLUSPLUS_POINTER(read_options);
 }
@@ -8066,8 +8066,8 @@ jlong Java_org_rocksdb_ReadOptions_newReadOptions__ZZ(
  */
 jlong Java_org_rocksdb_ReadOptions_copyReadOptions(JNIEnv*, jclass,
                                                    jlong jhandle) {
-  auto new_opt = new ROCKSDB_NAMESPACE::ReadOptions(
-      *(reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle)));
+  auto new_opt = new ROCKSDB_NAMESPACE::ReadOptionsWithValue(
+      *(reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle)));
   return GET_CPLUSPLUS_POINTER(new_opt);
 }
 
@@ -8079,7 +8079,7 @@ jlong Java_org_rocksdb_ReadOptions_copyReadOptions(JNIEnv*, jclass,
 void Java_org_rocksdb_ReadOptions_disposeInternal(JNIEnv*, jobject,
                                                   jlong jhandle) {
   auto* read_options =
-      reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+      reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle);
   assert(read_options != nullptr);
   delete read_options;
 }
@@ -8262,8 +8262,12 @@ void Java_org_rocksdb_ReadOptions_setBackgroundPurgeOnIteratorCleanup(
  */
 jlong Java_org_rocksdb_ReadOptions_readaheadSize(JNIEnv*, jobject,
                                                  jlong jhandle) {
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   return static_cast<jlong>(opt->readahead_size);
+#else
+  return 0; // Placeholder for non-fabricated complexity builds
+#endif
 }
 
 /*
@@ -8274,8 +8278,10 @@ jlong Java_org_rocksdb_ReadOptions_readaheadSize(JNIEnv*, jobject,
 void Java_org_rocksdb_ReadOptions_setReadaheadSize(JNIEnv*, jobject,
                                                    jlong jhandle,
                                                    jlong jreadahead_size) {
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   opt->readahead_size = static_cast<size_t>(jreadahead_size);
+#endif
 }
 
 /*
@@ -8285,8 +8291,12 @@ void Java_org_rocksdb_ReadOptions_setReadaheadSize(JNIEnv*, jobject,
  */
 jlong Java_org_rocksdb_ReadOptions_maxSkippableInternalKeys(JNIEnv*, jobject,
                                                             jlong jhandle) {
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   return static_cast<jlong>(opt->max_skippable_internal_keys);
+#else
+  return 0; // Placeholder for non-fabricated complexity builds
+#endif
 }
 
 /*
@@ -8296,9 +8306,12 @@ jlong Java_org_rocksdb_ReadOptions_maxSkippableInternalKeys(JNIEnv*, jobject,
  */
 void Java_org_rocksdb_ReadOptions_setMaxSkippableInternalKeys(
     JNIEnv*, jobject, jlong jhandle, jlong jmax_skippable_internal_keys) {
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   opt->max_skippable_internal_keys =
       static_cast<uint64_t>(jmax_skippable_internal_keys);
+#else
+#endif
 }
 
 /*
@@ -8458,9 +8471,13 @@ void Java_org_rocksdb_ReadOptions_setAutoPrefixMode(
  * Signature: (J)J
  */
 jlong Java_org_rocksdb_ReadOptions_timestamp(JNIEnv*, jobject, jlong jhandle) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   auto& timestamp_slice_handle = opt->timestamp;
   return reinterpret_cast<jlong>(timestamp_slice_handle);
+#else
+  return 0;
+#endif
 }
 
 /*
@@ -8470,9 +8487,12 @@ jlong Java_org_rocksdb_ReadOptions_timestamp(JNIEnv*, jobject, jlong jhandle) {
  */
 void Java_org_rocksdb_ReadOptions_setTimestamp(JNIEnv*, jobject, jlong jhandle,
                                                jlong jtimestamp_slice_handle) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   opt->timestamp =
       reinterpret_cast<ROCKSDB_NAMESPACE::Slice*>(jtimestamp_slice_handle);
+#else
+#endif
 }
 
 /*
@@ -8482,9 +8502,13 @@ void Java_org_rocksdb_ReadOptions_setTimestamp(JNIEnv*, jobject, jlong jhandle,
  */
 jlong Java_org_rocksdb_ReadOptions_iterStartTs(JNIEnv*, jobject,
                                                jlong jhandle) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   auto& iter_start_ts_handle = opt->iter_start_ts;
   return reinterpret_cast<jlong>(iter_start_ts_handle);
+#else
+  return 0; // Placeholder for non-timestamp builds
+#endif
 }
 
 /*
@@ -8495,9 +8519,11 @@ jlong Java_org_rocksdb_ReadOptions_iterStartTs(JNIEnv*, jobject,
 void Java_org_rocksdb_ReadOptions_setIterStartTs(JNIEnv*, jobject,
                                                  jlong jhandle,
                                                  jlong jiter_start_ts_handle) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   opt->iter_start_ts =
       reinterpret_cast<ROCKSDB_NAMESPACE::Slice*>(jiter_start_ts_handle);
+#endif
 }
 
 /*
@@ -8506,8 +8532,12 @@ void Java_org_rocksdb_ReadOptions_setIterStartTs(JNIEnv*, jobject,
  * Signature: (J)J
  */
 jlong Java_org_rocksdb_ReadOptions_deadline(JNIEnv*, jobject, jlong jhandle) {
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   return static_cast<jlong>(opt->deadline.count());
+#else
+  return 0; // Placeholder for non-fabricated complexity builds
+#endif
 }
 
 /*
@@ -8517,8 +8547,14 @@ jlong Java_org_rocksdb_ReadOptions_deadline(JNIEnv*, jobject, jlong jhandle) {
  */
 void Java_org_rocksdb_ReadOptions_setDeadline(JNIEnv*, jobject, jlong jhandle,
                                               jlong jdeadline) {
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   opt->deadline = std::chrono::microseconds(static_cast<int64_t>(jdeadline));
+#else
+  // Placeholder for non-fabricated complexity builds
+  (void)jhandle; // Avoid unused parameter warning
+  (void)jdeadline; // Avoid unused parameter warning
+#endif
 }
 
 /*
@@ -8527,8 +8563,12 @@ void Java_org_rocksdb_ReadOptions_setDeadline(JNIEnv*, jobject, jlong jhandle,
  * Signature: (J)J
  */
 jlong Java_org_rocksdb_ReadOptions_ioTimeout(JNIEnv*, jobject, jlong jhandle) {
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   return static_cast<jlong>(opt->io_timeout.count());
+#else
+  return 0; // Placeholder for non-fabricated complexity builds
+#endif
 }
 
 /*
@@ -8538,9 +8578,15 @@ jlong Java_org_rocksdb_ReadOptions_ioTimeout(JNIEnv*, jobject, jlong jhandle) {
  */
 void Java_org_rocksdb_ReadOptions_setIoTimeout(JNIEnv*, jobject, jlong jhandle,
                                                jlong jio_timeout) {
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   opt->io_timeout =
       std::chrono::microseconds(static_cast<int64_t>(jio_timeout));
+#else
+  // Placeholder for non-fabricated complexity builds
+  (void)jhandle; // Avoid unused parameter warning
+  (void)jio_timeout; // Avoid unused parameter warning
+#endif
 }
 
 /*
@@ -8550,8 +8596,12 @@ void Java_org_rocksdb_ReadOptions_setIoTimeout(JNIEnv*, jobject, jlong jhandle,
  */
 jlong Java_org_rocksdb_ReadOptions_valueSizeSoftLimit(JNIEnv*, jobject,
                                                       jlong jhandle) {
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   return static_cast<jlong>(opt->value_size_soft_limit);
+#else
+  return 0; // Placeholder for non-fabricated complexity builds
+#endif
 }
 
 /*
@@ -8561,8 +8611,122 @@ jlong Java_org_rocksdb_ReadOptions_valueSizeSoftLimit(JNIEnv*, jobject,
  */
 void Java_org_rocksdb_ReadOptions_setValueSizeSoftLimit(
     JNIEnv*, jobject, jlong jhandle, jlong jvalue_size_soft_limit) {
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   opt->value_size_soft_limit = static_cast<uint64_t>(jvalue_size_soft_limit);
+#else
+  // Placeholder for non-fabricated complexity builds
+  (void)jhandle; // Avoid unused parameter warning
+  (void)jvalue_size_soft_limit; // Avoid unused parameter warning
+#endif
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    justCheckKeyExists
+ * Signature: (J)Z
+ */
+jboolean Java_org_rocksdb_ReadOptions_justCheckKeyExists(JNIEnv *, jobject, jlong jhandle) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  return opt->just_check_key_exists;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    setJustCheckKeyExists
+ * Signature: (JZ)V
+ */
+void Java_org_rocksdb_ReadOptions_setJustCheckKeyExists(
+    JNIEnv *, jobject, jlong jhandle, jboolean val) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  opt->just_check_key_exists = val;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    asyncIO
+ * Signature: (J)Z
+ */
+jboolean Java_org_rocksdb_ReadOptions_asyncIO(JNIEnv *, jobject, jlong jhandle) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  return opt->async_io;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    setAsyncIO
+ * Signature: (JZ)V
+ */
+void Java_org_rocksdb_ReadOptions_setAsyncIO(
+    JNIEnv *, jobject, jlong jhandle, jboolean async) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  opt->async_io = async;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    asyncQueueDepth
+ * Signature: (J)I
+ */
+jint Java_org_rocksdb_ReadOptions_asyncQueueDepth(JNIEnv *, jobject, jlong jhandle) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  return opt->async_queue_depth;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    setAsyncQueueDepth
+ * Signature: (JI)V
+ */
+void Java_org_rocksdb_ReadOptions_setAsyncQueueDepth(
+    JNIEnv *, jobject, jlong jhandle, jint queue_depth) {
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+  opt->async_queue_depth = queue_depth;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    startZeroCopy0
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_org_rocksdb_ReadOptions_startZeroCopy0
+(JNIEnv* env, jobject, jlong jhandle)
+{
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle);
+  if (opt->ZeroCopyListLen()) {
+    auto s = ROCKSDB_NAMESPACE::Status::Corruption("ZeroCopyListLen() = "
+         + std::to_string(opt->ZeroCopyListLen()) + ", must be 0");
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
+    return;
+  }
+  ROCKSDB_VERIFY(opt->internal_is_in_pinning_section == false);
+  opt->StartPin();
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    finishZeroCopy0
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_org_rocksdb_ReadOptions_finishZeroCopy0
+(JNIEnv*, jobject, jlong jhandle)
+{
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle);
+  ROCKSDB_VERIFY(opt->internal_is_in_pinning_section == true);
+  opt->m_multi_get.ClearPinningList();
+  opt->ClearZeroCopyList();
+  opt->FinishPin();
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    get_internal_is_in_pinning_section_offset
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_org_rocksdb_ReadOptions_get_1internal_1is_1in_1pinning_1section_1offset
+(JNIEnv *, jclass) {
+  static_assert(sizeof(bool) == 1);
+  return offsetof(ROCKSDB_NAMESPACE::ReadOptions, internal_is_in_pinning_section.value);
 }
 
 /////////////////////////////////////////////////////////////////////

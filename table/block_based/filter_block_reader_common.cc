@@ -78,7 +78,9 @@ Status FilterBlockReaderCommon<TBlocklike>::GetOrReadFilterBlock(
     return Status::OK();
   }
 
-  ReadOptions ro = read_options;
+  ReadOptions& ro = const_cast<ReadOptions&>(read_options);
+  auto old_read_tier = read_options.read_tier;
+  ROCKSDB_SCOPE_EXIT(ro.read_tier = old_read_tier);
   if (no_io) {
     ro.read_tier = kBlockCacheTier;
   }

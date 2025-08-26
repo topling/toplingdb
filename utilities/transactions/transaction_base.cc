@@ -15,6 +15,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/status.h"
 #include "util/cast_util.h"
+#include "util/hash.h"
 #include "util/string_util.h"
 #include "utilities/transactions/lock/lock_tracker.h"
 
@@ -42,17 +43,17 @@ Status Transaction::CommitAndTryCreateSnapshot(
       return Status::InvalidArgument("Different commit ts specified");
     }
   }
-  SetSnapshotOnNextOperation(notifier);
+  SetSnapshotOnNextOperation(std::move(notifier));
   Status s = Commit();
   if (!s.ok()) {
     return s;
   }
   assert(s.ok());
   // If we reach here, we must return ok status for this function.
-  std::shared_ptr<const Snapshot> new_snapshot = GetTimestampedSnapshot();
+  // std::shared_ptr<const Snapshot> new_snapshot = GetTimestampedSnapshot();
 
   if (snapshot) {
-    *snapshot = new_snapshot;
+    *snapshot = GetTimestampedSnapshot();
   }
   return Status::OK();
 }
@@ -66,7 +67,9 @@ TransactionBaseImpl::TransactionBaseImpl(
       cmp_(GetColumnFamilyUserComparator(db->DefaultColumnFamily())),
       lock_tracker_factory_(lock_tracker_factory),
       start_time_(dbimpl_->GetSystemClock()->NowMicros()),
-      write_batch_(cmp_, 0, true, 0, write_options.protection_bytes_per_key),
+      write_batch_(*dbimpl_->mutable_db_options_.wbwi_factory->
+            NewWriteBatchWithIndex(cmp_, true,
+                    write_options.protection_bytes_per_key)),
       tracked_locks_(lock_tracker_factory_.Create()),
       commit_time_batch_(0 /* reserved_bytes */, 0 /* max_bytes */,
                          write_options.protection_bytes_per_key,
@@ -82,10 +85,13 @@ TransactionBaseImpl::TransactionBaseImpl(
 TransactionBaseImpl::~TransactionBaseImpl() {
   // Release snapshot if snapshot is set
   SetSnapshotInternal(nullptr);
+  delete &write_batch_; // weired for minimize code change
 }
 
 void TransactionBaseImpl::Clear() {
-  save_points_.reset(nullptr);
+  if (save_points_) {
+    save_points_->clear();
+  }
   write_batch_.Clear();
   commit_time_batch_.Clear();
   tracked_locks_->Clear();
@@ -137,7 +143,7 @@ void TransactionBaseImpl::SetSnapshotInternal(const Snapshot* snapshot) {
 void TransactionBaseImpl::SetSnapshotOnNextOperation(
     std::shared_ptr<TransactionNotifier> notifier) {
   snapshot_needed_ = true;
-  snapshot_notifier_ = notifier;
+  snapshot_notifier_ = std::move(notifier);
 }
 
 void TransactionBaseImpl::SetSnapshotIfNeeded() {
@@ -148,6 +154,13 @@ void TransactionBaseImpl::SetSnapshotIfNeeded() {
       notifier->SnapshotCreated(GetSnapshot());
     }
   }
+}
+
+Status Transaction::TryLock(ColumnFamilyHandle* cf, const Slice& key,
+                            bool read_only, bool exclusive,
+                            bool do_validate, bool assume_tracked) {
+  size_t h = NPHash64(key.data(), key.size());
+  return TryLock(cf, key, h, read_only, exclusive, do_validate, assume_tracked);
 }
 
 Status TransactionBaseImpl::TryLock(ColumnFamilyHandle* column_family,
@@ -171,13 +184,9 @@ Status TransactionBaseImpl::TryLock(ColumnFamilyHandle* column_family,
 }
 
 void TransactionBaseImpl::SetSavePoint() {
-  if (save_points_ == nullptr) {
-    save_points_.reset(
-        new std::stack<TransactionBaseImpl::SavePoint,
-                       autovector<TransactionBaseImpl::SavePoint>>());
-  }
-  save_points_->emplace(snapshot_, snapshot_needed_, snapshot_notifier_,
+  save_points_->emplace_back(snapshot_, snapshot_needed_, snapshot_notifier_,
                         num_puts_, num_deletes_, num_merges_,
+                        tracked_locks_.get(),
                         lock_tracker_factory_);
   write_batch_.SetSavePoint();
 }
@@ -224,11 +233,10 @@ Status TransactionBaseImpl::PopSavePoint() {
   if (save_points_->size() == 1) {
     save_points_->pop();
   } else {
-    TransactionBaseImpl::SavePoint top(lock_tracker_factory_);
-    std::swap(top, save_points_->top());
+    auto top_new_locks = save_points_->top().new_locks_;
     save_points_->pop();
 
-    save_points_->top().new_locks_->Merge(*top.new_locks_);
+    save_points_->top().new_locks_->Merge(*top_new_locks);
   }
 
   return write_batch_.PopSavePoint();
@@ -237,6 +245,7 @@ Status TransactionBaseImpl::PopSavePoint() {
 Status TransactionBaseImpl::Get(const ReadOptions& _read_options,
                                 ColumnFamilyHandle* column_family,
                                 const Slice& key, std::string* value) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGet) {
     return Status::InvalidArgument(
@@ -247,6 +256,10 @@ Status TransactionBaseImpl::Get(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kGet;
+  const ReadOptions& read_options(_read_options);
+#endif
   auto s = GetImpl(read_options, column_family, key, value);
   return s;
 }
@@ -267,6 +280,7 @@ Status TransactionBaseImpl::GetImpl(const ReadOptions& read_options,
 Status TransactionBaseImpl::Get(const ReadOptions& _read_options,
                                 ColumnFamilyHandle* column_family,
                                 const Slice& key, PinnableSlice* pinnable_val) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGet) {
     return Status::InvalidArgument(
@@ -277,6 +291,10 @@ Status TransactionBaseImpl::Get(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kGet;
+  const ReadOptions& read_options(_read_options);
+#endif
   return GetImpl(read_options, column_family, key, pinnable_val);
 }
 
@@ -293,16 +311,20 @@ Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
                                          const Slice& key, std::string* value,
                                          bool exclusive,
                                          const bool do_validate) {
-  if (!do_validate && read_options.snapshot != nullptr) {
+  if (UNLIKELY(!do_validate && read_options.snapshot != nullptr)) {
     return Status::InvalidArgument(
         "If do_validate is false then GetForUpdate with snapshot is not "
         "defined.");
   }
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (read_options.io_activity != Env::IOActivity::kUnknown) {
     return Status::InvalidArgument(
         "Cannot call GetForUpdate with `ReadOptions::io_activity` != "
         "`Env::IOActivity::kUnknown`");
   }
+#else
+  read_options.io_activity = Env::IOActivity::kUnknown;
+#endif
   Status s =
       TryLock(column_family, key, true /* read_only */, exclusive, do_validate);
 
@@ -329,11 +351,15 @@ Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
         "If do_validate is false then GetForUpdate with snapshot is not "
         "defined.");
   }
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (read_options.io_activity != Env::IOActivity::kUnknown) {
     return Status::InvalidArgument(
         "Cannot call GetForUpdate with `ReadOptions::io_activity` != "
         "`Env::IOActivity::kUnknown`");
   }
+#else
+  read_options.io_activity = Env::IOActivity::kUnknown;
+#endif
   Status s =
       TryLock(column_family, key, true /* read_only */, exclusive, do_validate);
 
@@ -349,6 +375,7 @@ std::vector<Status> TransactionBaseImpl::MultiGet(
     const std::vector<Slice>& keys, std::vector<std::string>* values) {
   size_t num_keys = keys.size();
   std::vector<Status> stat_list(num_keys);
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -364,6 +391,10 @@ std::vector<Status> TransactionBaseImpl::MultiGet(
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   values->resize(num_keys);
   for (size_t i = 0; i < num_keys; ++i) {
@@ -379,6 +410,7 @@ void TransactionBaseImpl::MultiGet(const ReadOptions& _read_options,
                                    const size_t num_keys, const Slice* keys,
                                    PinnableSlice* values, Status* statuses,
                                    const bool sorted_input) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -395,6 +427,10 @@ void TransactionBaseImpl::MultiGet(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
   write_batch_.MultiGetFromBatchAndDB(db_, read_options, column_family,
                                       num_keys, keys, values, statuses,
                                       sorted_input);
@@ -405,12 +441,16 @@ std::vector<Status> TransactionBaseImpl::MultiGetForUpdate(
     const std::vector<ColumnFamilyHandle*>& column_family,
     const std::vector<Slice>& keys, std::vector<std::string>* values) {
   size_t num_keys = keys.size();
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (read_options.io_activity != Env::IOActivity::kUnknown) {
     Status s = Status::InvalidArgument(
         "Cannot call MultiGetForUpdate with `ReadOptions::io_activity` != "
         "`Env::IOActivity::kUnknown`");
     return std::vector<Status>(num_keys, s);
   }
+#else
+  read_options.io_activity = Env::IOActivity::kUnknown;
+#endif
   // Regardless of whether the MultiGet succeeded, track these keys.
   values->resize(num_keys);
 
@@ -686,19 +726,13 @@ uint64_t TransactionBaseImpl::GetNumKeys() const {
   return tracked_locks_->GetNumPointLocks();
 }
 
-void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,
-                                   SequenceNumber seq, bool read_only,
-                                   bool exclusive) {
-  PointLockRequest r;
-  r.column_family_id = cfh_id;
-  r.key = key;
-  r.seq = seq;
-  r.read_only = read_only;
-  r.exclusive = exclusive;
-
+void TransactionBaseImpl::TrackKey(const PointLockRequest& r) {
   // Update map of all tracked keys for this transaction
   tracked_locks_->Track(r);
+  SavePointTrackKey(r);
+}
 
+inline void TransactionBaseImpl::SavePointTrackKey(const PointLockRequest& r) {
   if (save_points_ != nullptr && !save_points_->empty()) {
     // Update map of tracked keys in this SavePoint
     save_points_->top().new_locks_->Track(r);
@@ -732,7 +766,8 @@ void TransactionBaseImpl::UndoGetForUpdate(ColumnFamilyHandle* column_family,
                                            const Slice& key) {
   PointLockRequest r;
   r.column_family_id = GetColumnFamilyID(column_family);
-  r.key = key.ToString();
+  r.key = key;
+  r.key_hash = NPHash64(key.data_, key.size_);
   r.read_only = true;
 
   bool can_untrack = false;

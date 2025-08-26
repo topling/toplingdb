@@ -34,6 +34,9 @@ struct FileStorageInfo {
   // The type of the file as part of a DB.
   FileType file_type = kTempFile;
 
+  bool is_bottom_most_compaction = false; // for webview
+  bool marked_for_compaction = false; // for webview
+
   // File size in bytes. See also `trim_to_size`.
   uint64_t size = 0;
 
@@ -122,7 +125,12 @@ struct SstFileMetaData : public FileStorageInfo {
   SequenceNumber largest_seqno = 0;   // Largest sequence number in file.
   std::string smallestkey;            // Smallest user defined key in the file.
   std::string largestkey;             // Largest user defined key in the file.
+  std::string smallest_ikey;      // Smallest internal key in the file.
+  std::string largest_ikey;       // Largest internal key in the file.
   uint64_t num_reads_sampled = 0;     // How many times the file is read.
+  int job_id = -1;
+  short job_attempt = -1;
+  CompactionReason compaction_reason = CompactionReason::kUnknown;
   bool being_compacted =
       false;  // true if the file is currently being compacted.
 

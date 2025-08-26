@@ -24,6 +24,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/uio.h> // for writev
 
 #include <cstdio>
 #include <cstdlib>
@@ -71,6 +72,8 @@ IOStatus IOError(const std::string& context, const std::string& file_name,
     case ENOENT:
       return IOStatus::PathNotFound(IOErrorMsg(context, file_name),
                                     errnoStr(err_number).c_str());
+    case EXDEV:
+      return IOStatus::IOError(IOStatus::kCrossDevice);
     default:
       return IOStatus::IOError(IOErrorMsg(context, file_name),
                                errnoStr(err_number).c_str());
@@ -166,6 +169,7 @@ bool PosixPositionedWrite(int fd, const char* buf, size_t nbyte, off_t offset) {
 #endif
 
 bool IsSyncFileRangeSupported(int fd) {
+ #if 0 // do not superfluous
   // This function tracks and checks for cases where we know `sync_file_range`
   // definitely will not work properly despite passing the compile-time check
   // (`ROCKSDB_RANGESYNC_PRESENT`). If we are unsure, or if any of the checks
@@ -192,6 +196,7 @@ bool IsSyncFileRangeSupported(int fd) {
     // ("Function not implemented").
     return false;
   }
+ #endif
   // None of the known cases matched, so allow `sync_file_range` use.
   return true;
 }
@@ -927,6 +932,10 @@ IOStatus PosixRandomAccessFile::ReadAsync(
 #endif
 }
 
+intptr_t PosixRandomAccessFile::FileDescriptor() const {
+  return this->fd_;
+}
+
 /*
  * PosixMmapReadableFile
  *
@@ -962,9 +971,13 @@ IOStatus PosixMmapReadableFile::Read(uint64_t offset, size_t n,
   IOStatus s;
   if (offset > length_) {
     *result = Slice();
+   #if 1
+    return s;
+   #else
     return IOError("While mmap read offset " + std::to_string(offset) +
                        " larger than file length " + std::to_string(length_),
                    filename_, EINVAL);
+   #endif
   } else if (offset + n > length_) {
     n = static_cast<size_t>(length_ - offset);
   }
@@ -1010,6 +1023,10 @@ IOStatus PosixMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
                      " len" + std::to_string(length),
                  filename_, errno);
 #endif
+}
+
+intptr_t PosixMmapReadableFile::FileDescriptor() const {
+  return this->fd_;
 }
 
 /*
@@ -1277,6 +1294,7 @@ PosixWritableFile::PosixWritableFile(const std::string& fname, int fd,
     : FSWritableFile(options),
       filename_(fname),
       use_direct_io_(options.use_direct_writes),
+      allow_fdatasync_(options.allow_fdatasync),
       fd_(fd),
       filesize_(0),
       logical_sector_size_(logical_block_size) {
@@ -1314,6 +1332,50 @@ IOStatus PosixWritableFile::Append(const Slice& data, const IOOptions& /*opts*/,
   return IOStatus::OK();
 }
 
+IOStatus PosixWritableFile::Appendv(const Slice* parts, size_t num,
+                                    size_t nbytes, const IOOptions& options,
+                                    IODebugContext* dbg) {
+  if (UNLIKELY(use_direct_io())) {
+    return FSWritableFile::Appendv(parts, num, nbytes, options, dbg);
+  }
+  auto pvec = (struct iovec*)parts;
+  static_assert(sizeof(struct iovec) == sizeof(Slice));
+  static_assert(sizeof(pvec->iov_len) == sizeof(size_t));
+  static_assert(offsetof(struct iovec, iov_len) == offsetof(Slice, size_));
+  ssize_t done;
+  while (true) {
+    done = writev(fd_, pvec, num);
+    if (done < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return IOError("While appending to file by writev", filename_, errno);
+    }
+    break;
+  }
+  if (UNLIKELY(done < ssize_t(nbytes))) {
+    // not written all data, for simple, write remaining parts one by one
+    ssize_t sum = 0;
+    for (size_t i = 0; i < num; i++) {
+      TOPLING_GCC_NOLINT(-Wignored-qualifiers);
+      auto cur_len = (const ssize_t)pvec[i].iov_len;
+      auto cur_ptr = (const char * )pvec[i].iov_base;
+      if (sum + cur_len > done) {
+        auto pos = done - sum;
+        auto len = cur_len - pos;
+        auto ptr = cur_ptr + pos;
+        if (!PosixWrite(fd_, ptr, len)) {
+          return IOError("While appending to file", filename_, errno);
+        }
+        done = sum + cur_len;
+      }
+      sum += cur_len;
+    }
+  }
+  filesize_ += nbytes;
+  return IOStatus::OK();
+}
+
 IOStatus PosixWritableFile::PositionedAppend(const Slice& data, uint64_t offset,
                                              const IOOptions& /*opts*/,
                                              IODebugContext* /*dbg*/) {
@@ -1329,7 +1391,7 @@ IOStatus PosixWritableFile::PositionedAppend(const Slice& data, uint64_t offset,
     return IOError("While pwrite to file at offset " + std::to_string(offset),
                    filename_, errno);
   }
-  filesize_ = offset + nbytes;
+  filesize_ = std::max(filesize_, offset + nbytes);
   return IOStatus::OK();
 }
 
@@ -1409,6 +1471,9 @@ IOStatus PosixWritableFile::Sync(const IOOptions& /*opts*/,
     return IOError("while fcntl(F_FULLFSYNC)", filename_, errno);
   }
 #else   // HAVE_FULLFSYNC
+  if (!allow_fdatasync_) {
+    return IOStatus::OK();
+  }
   if (fdatasync(fd_) < 0) {
     return IOError("While fdatasync", filename_, errno);
   }

@@ -22,9 +22,19 @@
 #include "utilities/merge_operators/string_append/stringappend.h"
 #include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 
+#if defined(HAS_TOPLING_CSPP_WBWI)
+#include <terark/fstring.hpp>
+namespace ROCKSDB_NAMESPACE {
+WBWIFactory* NewCSPP_WBWIForPlain(const std::string& jstr);
+}
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 namespace {
+static auto g_fac = SingleSkipListWBWIFactory();
+static bool g_test_with_ts = true;
+
 class ColumnFamilyHandleImplDummy : public ColumnFamilyHandleImpl {
  public:
   explicit ColumnFamilyHandleImplDummy(int id, const Comparator* comparator)
@@ -77,10 +87,12 @@ struct TestHandler : public WriteBatch::Handler {
 };
 
 using KVMap = std::map<std::string, std::string>;
+using KVMapRev = std::map<std::string, std::string, std::greater<std::string> >;
 
-class KVIter : public Iterator {
+template<class KVMapT>
+class KVIterT : public Iterator {
  public:
-  explicit KVIter(const KVMap* map) : map_(map), iter_(map_->end()) {}
+  explicit KVIterT(const KVMapT* map) : map_(map), iter_(map_->end()) {}
 
   bool Valid() const override { return iter_ != map_->end(); }
 
@@ -154,11 +166,12 @@ class KVIter : public Iterator {
     columns_ = WideColumns{{kDefaultWideColumnName, value_}};
   }
 
-  const KVMap* const map_;
-  KVMap::const_iterator iter_;
+  const KVMapT* const map_;
+  typename KVMapT::const_iterator iter_;
   Slice value_;
   WideColumns columns_;
 };
+using KVIter = KVIterT<KVMap>;
 
 static std::string PrintContents(WriteBatchWithIndex* batch,
                                  ColumnFamilyHandle* column_family,
@@ -264,7 +277,7 @@ void AssertItersEqual(Iterator* iter1, Iterator* iter2) {
   ASSERT_EQ(iter1->Valid(), iter2->Valid());
 }
 
-void AssertIterEqual(WBWIIteratorImpl* wbwii,
+void AssertIterEqual(WBWIIterator* wbwii,
                      const std::vector<std::string>& keys) {
   wbwii->SeekToFirst();
   for (auto k : keys) {
@@ -291,7 +304,7 @@ class WBWIBaseTest : public testing::Test {
     options_.create_if_missing = true;
     dbname_ = test::PerThreadDBPath("write_batch_with_index_test");
     EXPECT_OK(DestroyDB(dbname_, options_));
-    batch_.reset(new WriteBatchWithIndex(BytewiseComparator(), 20, overwrite));
+    batch_.reset(g_fac->NewWriteBatchWithIndex(BytewiseComparator(), overwrite));
   }
 
   virtual ~WBWIBaseTest() {
@@ -362,6 +375,8 @@ class WriteBatchWithIndexTest : public WBWIBaseTest,
                                 public testing::WithParamInterface<bool> {
  public:
   WriteBatchWithIndexTest() : WBWIBaseTest(GetParam()) {}
+  template<class KVMapT>
+  void TestRandomIteraratorWithBaseBy(const Comparator*);
 };
 
 void TestValueAsSecondaryIndexHelper(std::vector<Entry> entries,
@@ -569,7 +584,7 @@ TEST_F(WBWIKeepTest, TestValueAsSecondaryIndex) {
   };
   std::vector<Entry> entries_list(entries, entries + 8);
 
-  batch_.reset(new WriteBatchWithIndex(nullptr, 20, false));
+  batch_.reset(g_fac->NewWriteBatchWithIndex(nullptr, false));
 
   TestValueAsSecondaryIndexHelper(entries_list, batch_.get());
 
@@ -786,10 +801,8 @@ TEST_P(WriteBatchWithIndexTest, TestWBWIIterator) {
   ASSERT_OK(batch_->Put(&cf1, "e", "e1"));
   ASSERT_OK(batch_->Put(&cf1, "e", "e2"));
   ASSERT_OK(batch_->Put(&cf1, "e", "e3"));
-  std::unique_ptr<WBWIIteratorImpl> iter1(
-      static_cast<WBWIIteratorImpl*>(batch_->NewIterator(&cf1)));
-  std::unique_ptr<WBWIIteratorImpl> iter2(
-      static_cast<WBWIIteratorImpl*>(batch_->NewIterator(&cf2)));
+  std::unique_ptr<WBWIIterator> iter1(batch_->NewIterator(&cf1));
+  std::unique_ptr<WBWIIterator> iter2(batch_->NewIterator(&cf2));
   AssertIterEqual(iter1.get(), {"a", "c", "e"});
   AssertIterEqual(iter2.get(), {});
   ASSERT_OK(batch_->Put(&cf2, "a", "a2"));
@@ -804,14 +817,21 @@ TEST_P(WriteBatchWithIndexTest, TestWBWIIterator) {
 }
 
 TEST_P(WriteBatchWithIndexTest, TestRandomIteraratorWithBase) {
+  TestRandomIteraratorWithBaseBy<KVMap>(BytewiseComparator());
+}
+TEST_P(WriteBatchWithIndexTest, TestRandomIteraratorWithBaseRev) {
+  TestRandomIteraratorWithBaseBy<KVMapRev>(ReverseBytewiseComparator());
+}
+template<class KVMapT>
+void WriteBatchWithIndexTest::TestRandomIteraratorWithBaseBy(const Comparator* cmp) {
   std::vector<std::string> source_strings = {"a", "b", "c", "d", "e",
                                              "f", "g", "h", "i", "j"};
   for (int rand_seed = 301; rand_seed < 366; rand_seed++) {
     Random rnd(rand_seed);
 
-    ColumnFamilyHandleImplDummy cf1(6, BytewiseComparator());
-    ColumnFamilyHandleImplDummy cf2(2, BytewiseComparator());
-    ColumnFamilyHandleImplDummy cf3(8, BytewiseComparator());
+    ColumnFamilyHandleImplDummy cf1(6, cmp);
+    ColumnFamilyHandleImplDummy cf2(2, cmp);
+    ColumnFamilyHandleImplDummy cf3(8, cmp);
     batch_->Clear();
 
     if (rand_seed % 2 == 0) {
@@ -821,8 +841,8 @@ TEST_P(WriteBatchWithIndexTest, TestRandomIteraratorWithBase) {
       ASSERT_OK(batch_->Put(&cf3, "zoo", "bar"));
     }
 
-    KVMap map;
-    KVMap merged_map;
+    KVMapT map;
+    KVMapT merged_map;
     for (auto key : source_strings) {
       std::string value = key + key;
       int type = rnd.Uniform(6);
@@ -861,8 +881,8 @@ TEST_P(WriteBatchWithIndexTest, TestRandomIteraratorWithBase) {
     }
 
     std::unique_ptr<Iterator> iter(
-        batch_->NewIteratorWithBase(&cf1, new KVIter(&map)));
-    std::unique_ptr<Iterator> result_iter(new KVIter(&merged_map));
+        batch_->NewIteratorWithBase(&cf1, new KVIterT<KVMapT>(&map)));
+    std::unique_ptr<Iterator> result_iter(new KVIterT<KVMapT>(&merged_map));
 
     bool is_valid = false;
     for (int i = 0; i < 128; i++) {
@@ -1558,7 +1578,6 @@ void AssertIterValue(std::string value, Iterator* iter) {
 
 // same thing as above, but testing IteratorWithBase
 TEST_F(WBWIOverwriteTest, MutateWhileIteratingBaseCorrectnessTest) {
-  WriteBatchWithIndex batch(BytewiseComparator(), 0, true);
   for (char c = 'a'; c <= 'z'; ++c) {
     ASSERT_OK(batch_->Put(std::string(1, c), std::string(1, c)));
   }
@@ -1676,6 +1695,18 @@ TEST_F(WBWIOverwriteTest, MutateWhileIteratingBaseStressTest) {
     }
   }
   ASSERT_OK(iter->status());
+}
+
+TEST_P(WriteBatchWithIndexTest, TestNewIteratorWithBaseWithEmtpyCF) {
+  ColumnFamilyHandleImplDummy cf1(1, BytewiseComparator());
+  ColumnFamilyHandleImplDummy cf6(6, BytewiseComparator());
+  batch_->Put(&cf6, "aa", "AA");
+  KVMap map;
+  std::unique_ptr<Iterator> iter(
+      batch_->NewIteratorWithBase(&cf1, new KVIter(&map)));
+  ASSERT_NE(nullptr, iter);
+  iter->SeekToFirst();
+  ASSERT_FALSE(iter->Valid());
 }
 
 TEST_P(WriteBatchWithIndexTest, TestNewIteratorWithBaseFromWbwi) {
@@ -1797,6 +1828,11 @@ TEST_P(WriteBatchWithIndexTest, SavePointTest) {
       batch_->NewIteratorWithBase(new KVIter(&empty_map)));
   std::unique_ptr<Iterator> cf1_iter(
       batch_->NewIteratorWithBase(&cf1, new KVIter(&empty_map)));
+
+  // test for cspp_wbwi ClearIndex check null
+  std::unique_ptr<Iterator> cf2_iter_unused(
+    batch_->NewIteratorWithBase(new KVIter(&empty_map)));
+
   Status s;
   KVMap kvm_cf0_0 = {{"A", "aa"}, {"B", "b"}};
   KVMap kvm_cf1_0 = {{"A", "a1"}, {"C", "c1"}, {"E", "e1"}};
@@ -2397,6 +2433,10 @@ TEST_F(WBWIOverwriteTest, TestBadMergeOperator) {
 }
 
 TEST_P(WriteBatchWithIndexTest, ColumnFamilyWithTimestamp) {
+  if (!g_test_with_ts) {
+    return;
+  }
+
   ASSERT_OK(OpenDB());
 
   ColumnFamilyHandleImplDummy cf2(2,
@@ -2772,5 +2812,15 @@ INSTANTIATE_TEST_CASE_P(WBWI, WriteBatchWithIndexTest, testing::Bool());
 int main(int argc, char** argv) {
   ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
+ #if defined(HAS_TOPLING_CSPP_WBWI)
+  using namespace ROCKSDB_NAMESPACE;
+  int ret = RUN_ALL_TESTS();
+  if (terark::getEnvBool("SKIP_CSPP_WBWI")) {
+    return ret;
+  }
+  g_fac.reset(NewCSPP_WBWIForPlain("{}"));
+  g_test_with_ts = false;
+  fprintf(stderr, "Testing CSPP_WBWI...\n");
+ #endif
   return RUN_ALL_TESTS();
 }

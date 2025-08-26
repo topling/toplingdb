@@ -34,6 +34,7 @@
 #include "rocksdb/options.h"
 #include "rocksdb/table.h"
 #include "rocksdb/thread_status.h"
+#include <boost/intrusive_ptr.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -103,14 +104,6 @@ struct IOOptions {
 
   // Type of data being read/written
   IOType type;
-
-  // EXPERIMENTAL
-  // An option map that's opaque to RocksDB. It can be used to implement a
-  // custom contract between a FileSystem user and the provider. This is only
-  // useful in cases where a RocksDB user directly uses the FileSystem or file
-  // object for their own purposes, and wants to pass extra options to APIs
-  // such as NewRandomAccessFile and NewWritableFile.
-  std::unordered_map<std::string, std::string> property_bag;
 
   // Force directory fsync, some file systems like btrfs may skip directory
   // fsync, set this to force the fsync
@@ -210,7 +203,7 @@ struct IODebugContext {
   // means bit at position 0 is set so TraceData::kRequestID (request_id) will
   // be logged in the trace record.
   //
-  enum TraceData : char {
+  enum TraceData : unsigned char {
     // The value of each enum represents the bitwise position for
     // that information in trace_data which will be used by IOTracer for
     // tracing. Make sure to add them sequentially.
@@ -496,10 +489,7 @@ class FileSystem : public Customizable {
   // Truncate the named file to the specified size.
   virtual IOStatus Truncate(const std::string& /*fname*/, size_t /*size*/,
                             const IOOptions& /*options*/,
-                            IODebugContext* /*dbg*/) {
-    return IOStatus::NotSupported(
-        "Truncate is not supported for this FileSystem");
-  }
+                            IODebugContext* /*dbg*/) = 0;
 
   // Create the specified directory. Returns error if directory exists.
   virtual IOStatus CreateDir(const std::string& dirname,
@@ -981,6 +971,8 @@ class FSRandomAccessFile {
 
   // If you're adding methods here, remember to add them to
   // RandomAccessFileWrapper too.
+
+  virtual intptr_t FileDescriptor() const = 0;
 };
 
 // A data structure brings the data verification information, which is
@@ -1019,6 +1011,11 @@ class FSWritableFile {
   // PositionedAppend, so the users cannot mix the two.
   virtual IOStatus Append(const Slice& data, const IOOptions& options,
                           IODebugContext* dbg) = 0;
+
+  // sum_size is the sum of all parts size, it is redundant, pass it as param
+  // is just to avoid calculating it in Appendv.
+  virtual IOStatus Appendv(const Slice* parts, size_t num, size_t sum_size,
+                           const IOOptions&, IODebugContext*);
 
   // Append data with verification information.
   // Note that this API change is experimental and it might be changed in
@@ -1082,9 +1079,7 @@ class FSWritableFile {
   // size due to whole pages writes. The behavior is undefined if called
   // with other writes to follow.
   virtual IOStatus Truncate(uint64_t /*size*/, const IOOptions& /*options*/,
-                            IODebugContext* /*dbg*/) {
-    return IOStatus::OK();
-  }
+                            IODebugContext* /*dbg*/) = 0;
 
   // The caller should call Close() before destroying the FSWritableFile to
   // surface any errors associated with finishing writes to the file.
@@ -1144,9 +1139,7 @@ class FSWritableFile {
    * Get the size of valid data in the file.
    */
   virtual uint64_t GetFileSize(const IOOptions& /*options*/,
-                               IODebugContext* /*dbg*/) {
-    return 0;
-  }
+                               IODebugContext* /*dbg*/) = 0;
 
   /*
    * Get and set the default pre-allocation block size for writes to
@@ -1226,6 +1219,11 @@ class FSWritableFile {
 
   // If you're adding methods here, remember to add them to
   // WritableFileWrapper too.
+  virtual intptr_t FileDescriptor() const {
+    assert(false);
+    return -1;
+  }
+  virtual void SetFileSize(uint64_t) { assert(false); }
 
  protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
@@ -1698,8 +1696,11 @@ class FSRandomAccessFileWrapper : public FSRandomAccessFile {
     return target_->GetTemperature();
   }
 
- private:
-  std::unique_ptr<FSRandomAccessFile> guard_;
+  intptr_t FileDescriptor() const final {
+    return target_->FileDescriptor();
+  }
+
+ protected:
   FSRandomAccessFile* target_;
 };
 
@@ -1709,10 +1710,14 @@ class FSRandomAccessFileOwnerWrapper : public FSRandomAccessFileWrapper {
   // ownership of the object
   explicit FSRandomAccessFileOwnerWrapper(
       std::unique_ptr<FSRandomAccessFile>&& t)
-      : FSRandomAccessFileWrapper(t.get()), guard_(std::move(t)) {}
+      : FSRandomAccessFileWrapper(t.release()) {}
 
- private:
-  std::unique_ptr<FSRandomAccessFile> guard_;
+  ~FSRandomAccessFileOwnerWrapper() { delete target(); }
+  FSRandomAccessFile* exchange(FSRandomAccessFile* p) {
+    auto old = target_;
+    target_ = p;
+    return old;
+  }
 };
 
 class FSWritableFileWrapper : public FSWritableFile {
@@ -1812,6 +1817,9 @@ class FSWritableFileWrapper : public FSWritableFile {
     return target_->Allocate(offset, len, options, dbg);
   }
 
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
+
  private:
   FSWritableFile* target_;
 };
@@ -1821,10 +1829,8 @@ class FSWritableFileOwnerWrapper : public FSWritableFileWrapper {
   // Creates a FileWrapper around the input File object and takes
   // ownership of the object
   explicit FSWritableFileOwnerWrapper(std::unique_ptr<FSWritableFile>&& t)
-      : FSWritableFileWrapper(t.get()), guard_(std::move(t)) {}
-
- private:
-  std::unique_ptr<FSWritableFile> guard_;
+      : FSWritableFileWrapper(t.release()) {}
+  ~FSWritableFileOwnerWrapper() { delete target(); }
 };
 
 class FSRandomRWFileWrapper : public FSRandomRWFile {
@@ -1913,6 +1919,40 @@ class FSDirectoryWrapper : public FSDirectory {
  private:
   std::unique_ptr<FSDirectory> guard_;
   FSDirectory* target_;
+};
+
+class ReadonlyFileMmap : public Slice {
+  std::unique_ptr<FSRandomAccessFile> file_;
+  std::atomic_int32_t ref_count_;
+  friend void intrusive_ptr_add_ref(ReadonlyFileMmap* p) {
+    p->ref_count_.fetch_add(1, std::memory_order_relaxed);
+  }
+  friend void intrusive_ptr_release(ReadonlyFileMmap* p) {
+    if (p->ref_count_.fetch_sub(1, std::memory_order_release) == 1) {
+      delete p;
+    }
+  }
+  struct PrivateCons{};
+public:
+  ReadonlyFileMmap& operator=(const ReadonlyFileMmap&) = delete;
+  ReadonlyFileMmap(const ReadonlyFileMmap&) = delete;
+  ReadonlyFileMmap(PrivateCons);
+  ~ReadonlyFileMmap();
+  static boost::intrusive_ptr<ReadonlyFileMmap>
+  New(IOStatus* s, FileSystem& fs, size_t fileno, const std::string& fname, size_t mmap_size = 0);
+  static IOStatus New(boost::intrusive_ptr<ReadonlyFileMmap>* fp, FileSystem& fs,
+                      size_t fileno, const std::string& fname, size_t mmap_size = 0) {
+    IOStatus s;
+    *fp = New(&s, fs, fileno, fname, mmap_size);
+    return s;
+  }
+  static std::pair<boost::intrusive_ptr<ReadonlyFileMmap>, IOStatus>
+  New(FileSystem& fs, size_t fileno, const std::string& fname, size_t mmap_size = 0) {
+    IOStatus ios;
+    return {New(&ios, fs, fileno, fname, mmap_size), ios};
+  }
+  uint32_t fileno;
+  std::shared_ptr<uint64_t> tail_pos;
 };
 
 // A utility routine: write "data" to the named file.

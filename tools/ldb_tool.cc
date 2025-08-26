@@ -144,6 +144,8 @@ int LDBCommandRunner::RunCommand(
     } else if (std::string(argv[1]) == "--help") {
       PrintHelp(ldb_options, argv[0], /*to_stderr*/ false);
       return 0;
+    } else if (getenv("TOPLING_SIDEPLUGIN_CONF")) {
+      // fallthrough
     } else {
       PrintHelp(ldb_options, argv[0], /*to_stderr*/ true);
       return 1;

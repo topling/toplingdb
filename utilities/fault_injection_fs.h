@@ -26,6 +26,7 @@
 #include "util/mutexlock.h"
 #include "util/random.h"
 #include "util/thread_local.h"
+#include <terark/valvec.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -37,7 +38,7 @@ struct FSFileState {
   ssize_t pos_;
   ssize_t pos_at_last_sync_;
   ssize_t pos_at_last_flush_;
-  std::string buffer_;
+  terark::valvec<char> buffer_;
 
   explicit FSFileState(const std::string& filename)
       : filename_(filename),
@@ -95,9 +96,16 @@ class TestFSWritableFile : public FSWritableFile {
   virtual bool use_direct_io() const override {
     return target_->use_direct_io();
   };
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
+  uint64_t GetFileSize(const IOOptions& ioo, IODebugContext* ctx) final {
+    return target_->GetFileSize(ioo, ctx);
+  }
+  void SetFileSize(uint64_t fsize) final { target_->SetFileSize(fsize); }
 
  private:
-  FSFileState state_;  // Need protection by mutex_
+  IOStatus SyncNoLock(const IOOptions& options, IODebugContext* dbg);
+  std::shared_ptr<FSFileState> shared_state_;  // Need protection by mutex_
+  FSFileState& state_;
   FileOptions file_opts_;
   std::unique_ptr<FSWritableFile> target_;
   bool writable_file_opened_;
@@ -154,7 +162,12 @@ class TestFSRandomAccessFile : public FSRandomAccessFile {
 
   size_t GetUniqueId(char* id, size_t max_size) const override;
 
+  intptr_t FileDescriptor() const final;
+  void ReserveMmap(size_t mmap_size);
+
  private:
+  size_t mmap_size_ = 0;
+  std::shared_ptr<FSFileState> shared_state_;
   std::unique_ptr<FSRandomAccessFile> target_;
   FaultInjectionTestFS* fs_;
 };
@@ -277,10 +290,6 @@ class FaultInjectionTestFS : public FileSystemWrapper {
 
   void WritableFileClosed(const FSFileState& state);
 
-  void WritableFileSynced(const FSFileState& state);
-
-  void WritableFileAppended(const FSFileState& state);
-
   IOStatus DropUnsyncedFileData();
 
   IOStatus DropRandomUnsyncedFileData(Random* rnd);
@@ -391,7 +400,7 @@ class FaultInjectionTestFS : public FileSystemWrapper {
   }
 
   // Specify what the operation, so we can inject the right type of error
-  enum ErrorOperation : char {
+  enum ErrorOperation : unsigned char {
     kRead = 0,
     kMultiReadSingleReq = 1,
     kMultiRead = 2,
@@ -527,9 +536,12 @@ class FaultInjectionTestFS : public FileSystemWrapper {
   // saved callstack
   void PrintFaultBacktrace();
 
+  void AddFSFileState(const std::string& fname, std::shared_ptr<FSFileState>);
+  std::shared_ptr<FSFileState> GetFSFileState(const std::string& fname);
+
  private:
   port::Mutex mutex_;
-  std::map<std::string, FSFileState> db_file_state_;
+  std::map<std::string, std::shared_ptr<FSFileState> > db_file_state_;
   std::set<std::string> open_managed_files_;
   // directory -> (file name -> file contents to recover)
   // When data is recovered from unsyned parent directory, the files with

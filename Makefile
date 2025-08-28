@@ -644,6 +644,13 @@ endif # WITH_TOPLING_DCOMPACT
 # EXTRA_LIB_SOURCES single file compiling is slow
 LIB_SOURCES := ${EXTRA_LIB_SOURCES} ${LIB_SOURCES}
 
+ifeq ($(PLATFORM),OS_MACOSX)
+  # this needs homebrew
+  TIME_CMD := gtime
+else
+  TIME_CMD := /usr/bin/time
+endif
+
 AM_DEFAULT_VERBOSITY ?= 0
 
 AM_V_GEN = $(am__v_GEN_$(V))
@@ -655,26 +662,19 @@ am__v_at_ = $(am__v_at_$(AM_DEFAULT_VERBOSITY))
 am__v_at_0 = @
 am__v_at_1 =
 
-AM_V_CC = $(am__v_CC_$(V))
-am__v_CC_ = $(am__v_CC_$(AM_DEFAULT_VERBOSITY))
-am__v_CC_0 = @echo "  CC      " $@;
-am__v_CC_1 =
+AM_V_CC = ${AM_V_at}mkdir -p $(dir $@) && ${TIME_CMD} -f "%e %S" -o >(printf '${OBJ_DIR} CC ${suffix $@} %6.2f %5.2f  %s\n' `cat` $<)
 
 AM_V_CCLD = $(am__v_CCLD_$(V))
 am__v_CCLD_ = $(am__v_CCLD_$(AM_DEFAULT_VERBOSITY))
 ifneq ($(SKIP_LINK), 1)
-am__v_CCLD_0 = @echo "  CCLD    " $@;
-am__v_CCLD_1 =
+AM_V_CCLD = ${AM_V_at}${TIME_CMD} -f "%e %S" -o >(printf '${OBJ_DIR} LD so %6.2f %5.2f  %s\n' `cat` $@)
 else
 am__v_CCLD_0 = @echo "  !CCLD   " $@; true skip
 am__v_CCLD_1 = true skip
 endif
-AM_V_AR = $(am__v_AR_$(V))
-am__v_AR_ = $(am__v_AR_$(AM_DEFAULT_VERBOSITY))
-am__v_AR_0 = @echo "  AR      " $@;
-am__v_AR_1 =
+AM_V_AR = ${AM_V_at}${TIME_CMD} -f "%e %S" -o >(printf '${OBJ_DIR} AR .a %6.2f %5.2f  %s\n' `cat` $@)
 
-AM_LINK = $(AM_V_CCLD)$(CXX) -L. $(patsubst lib%.a, -l%, $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^)) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
+AM_LINK = $(AM_V_CCLD) $(CXX) -L. $(patsubst lib%.a, -l%, $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^)) $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 AM_SHARE = $(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$@ -L. $(patsubst lib%.$(PLATFORM_SHARED_EXT), -l%, $^) $(EXTRA_SHARED_LIB_LIB) $(EXEC_LDFLAGS) $(LDFLAGS) -o $@
 
 ROCKSDB_PLUGIN_MKS = $(foreach plugin, $(ROCKSDB_PLUGINS), plugin/$(plugin)/*.mk)
@@ -2403,7 +2403,7 @@ ldb: $(OBJ_DIR)/tools/ldb.o $(TOOLS_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 iostats_context_test: $(OBJ_DIR)/monitoring/iostats_context_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
+	$(AM_V_CCLD) $(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
 
 persistent_cache_test: $(OBJ_DIR)/utilities/persistent_cache/persistent_cache_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
@@ -3081,17 +3081,17 @@ rocksdbjava-install-for-flink: rocksdbjavageneratepom rocksdbjava
 # A version of each $(LIBOBJECTS) compiled with -fPIC
 
 jl/%.o: %.cc
-	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -fPIC -c $< -o $@ $(COVERAGEFLAGS)
+	$(AM_V_CC) $(CXX) $(CXXFLAGS) -fPIC -c $< -o $@ $(COVERAGEFLAGS)
 
 JNI_USE_KEY_VALUE_POPULATOR ?= 1
 ${ALL_JNI_NATIVE_OBJECTS}: CXXFLAGS += -DJNI_USE_KEY_VALUE_POPULATOR=${JNI_USE_KEY_VALUE_POPULATOR}
 ${ALL_JNI_NATIVE_OBJECTS}: CXXFLAGS += -I./java/. -I./java/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)
-rocksdbjava: $(LIB_OBJECTS) $(ALL_JNI_NATIVE_OBJECTS) ${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}
+java/target/$(ROCKSDBJNILIB): $(LIB_OBJECTS) $(ALL_JNI_NATIVE_OBJECTS) ${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}
 ifeq ($(JAVA_HOME),)
 	$(error JAVA_HOME is not set)
 endif
 	$(AM_V_at)rm -f ./java/target/$(ROCKSDBJNILIB)
-	$(AM_V_at)$(CXX) $(CXXFLAGS) -shared -fPIC -o ./java/target/$(ROCKSDBJNILIB) \
+	$(AM_V_CCLD) $(CXX) $(CXXFLAGS) -shared -fPIC -o java/target/$(ROCKSDBJNILIB) \
 			  $(ALL_JNI_NATIVE_OBJECTS) $(LIB_OBJECTS) \
 			  $(addprefix ${TOPLING_CORE_DIR}/, $(TOPLING_LIB_OBJ_LIST_VAR)) \
 			  -Wl,--whole-archive \
@@ -3103,6 +3103,8 @@ endif
 ifeq ($(STRIP_DEBUG_INFO),1)
 	$(AM_V_at)${STRIP_CMD} java/target/*.so
 endif
+
+rocksdbjava: java/target/$(ROCKSDBJNILIB)
 	$(AM_V_at)cd java; $(JAR_CMD) -cf target/$(ROCKSDB_JAR) HISTORY*.md
 ifeq (${ROCKSDB_JAR_WITH_DYNAMIC_LIBS},1)
 	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) *.so
@@ -3225,28 +3227,28 @@ IOSVERSION=$(shell defaults read $(PLATFORMSROOT)/iPhoneOS.platform/version CFBu
 else
 ifeq ($(HAVE_POWER8),1)
 $(OBJ_DIR)/util/crc32c_ppc.o: util/crc32c_ppc.c
-	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+	$(AM_V_CC) $(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/util/crc32c_ppc_asm.o: util/crc32c_ppc_asm.S
-	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+	$(AM_V_CC) $(CC) $(CFLAGS) -c $< -o $@
 endif
 $(OBJ_DIR)/%.o: %.cc
-	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
+	$(AM_V_CC) $(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.o: %.cpp
-	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
+	$(AM_V_CC) $(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.o: %.c
-	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -c $< -o $@
+	$(AM_V_CC) $(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.s: %.cc
-	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -Wa,-adhln -fverbose-asm -masm=intel -S $< -o $@ $(COVERAGEFLAGS)
+	$(AM_V_CC) $(CXX) $(CXXFLAGS) -Wa,-adhln -fverbose-asm -masm=intel -S $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.s: %.cpp
-	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -fverbose-asm -masm=intel -S $< -o $@ $(COVERAGEFLAGS)
+	$(AM_V_CC) $(CXX) $(CXXFLAGS) -fverbose-asm -masm=intel -S $< -o $@ $(COVERAGEFLAGS)
 
 $(OBJ_DIR)/%.s: %.c
-	$(AM_V_CC)mkdir -p $(@D) && $(CC) $(CFLAGS) -fverbose-asm -masm=intel -S $< -o $@
+	$(AM_V_CC) $(CC) $(CFLAGS) -fverbose-asm -masm=intel -S $< -o $@
 endif
 
 # ---------------------------------------------------------------------------
@@ -3271,18 +3273,17 @@ endif
 # The .d file indicates .cc file's dependencies on .h files. We generate such
 # dependency by g++'s -MM option, whose output is a make dependency rule.
 $(OBJ_DIR)/java/%.cc.d: java/%.cc java/include/java_header_list.mk
-	$(AM_V_at)mkdir -p $(@D)
-	$(AM_V_at)$(CXX) $(CXXFLAGS) \
+	$(AM_V_CC) $(CXX) $(CXXFLAGS) \
 	  -Ijava -Ijava/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)\
 	  -MM -MT'$@' -MT'$(<:%.cc=$(OBJ_DIR)/%.o)' "$<" -o '$@'
 
 $(OBJ_DIR)/%.cc.d: %.cc
-	@mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
+	$(AM_V_CC) $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cc=.o)' -MT'$(<:%.cc=$(OBJ_DIR)/%.o)' \
 	      "$<" -o '$@'
 
 $(OBJ_DIR)/%.cpp.d: %.cpp
-	@mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
+	$(AM_V_CC) $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cpp=.o)' -MT'$(<:%.cpp=$(OBJ_DIR)/%.o)' \
 	      "$<" -o '$@'
 

@@ -66,7 +66,8 @@ java/out
 java/target
 java/test-libs
 java/*.log
-java/include/org_rocksdb_*.h
+java/include
+java/pom.xml
 
 .idea/
 *.iml

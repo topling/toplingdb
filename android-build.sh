@@ -3,8 +3,10 @@
 set -e
 
 # you should just change the 2 lines
-ANDROID_HOME=${HOME}/osc/android
-export ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/26.1.10909125
+if [ -z "$ANDROID_NDK_HOME" ]; then
+  ANDROID_HOME=${HOME}/osc/android
+  export ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/26.1.10909125
+fi
 
 # these lines need not change
 CXX_HOME=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64

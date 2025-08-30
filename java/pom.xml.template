@@ -2,16 +2,16 @@
 <project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.ververica</groupId>
-    <artifactId>frocksdbjni</artifactId>
-    <version>${FROCKSDB_JAVA_VERSION}</version>  <!-- this will be replaced by the Makefile's rocksdbjavageneratepom target -->
+    <groupId>cn.topling</groupId> <!-- keep for toplingdb -->
+    <artifactId>frocksdbjni</artifactId>  <!-- keep for toplingdb -->
+    <version>${FROCKSDB_JAVA_VERSION}</version>  <!-- this will be replaced by the Makefile's rocksdbjavageneratepom target. keep for toplingdb -->
 
     <name>RocksDB JNI</name>
     <description>RocksDB fat jar with modifications specific for Apache Flink that contains .so files for linux32 and linux64 (glibc and musl-libc), jnilib files
         for Mac OSX, and a .dll for Windows x64.
     </description>
-    <url>https://rocksdb.org</url>
-    <inceptionYear>2012</inceptionYear>
+    <url>https://github.com/topling/toplingdb</url>
+    <inceptionYear>2025</inceptionYear>
 
     <licenses>
         <license>

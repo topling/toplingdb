@@ -8,16 +8,23 @@
 #include <algorithm>
 #include <cinttypes>
 
+#include <port/port.h>
+
 namespace ROCKSDB_NAMESPACE {
 namespace flink {
 
+static inline
 int64_t DeserializeTimestamp(const char* src, std::size_t offset) {
+#if 0
   uint64_t result = 0;
   for (unsigned long i = 0; i < sizeof(uint64_t); i++) {
     result |= static_cast<uint64_t>(static_cast<unsigned char>(src[offset + i]))
               << ((sizeof(int64_t) - 1 - i) * BITS_PER_BYTE);
   }
   return static_cast<int64_t>(result);
+#else
+  return NativeOfBigEndian64(unaligned_load<uint64_t>(src + offset));
+#endif
 }
 
 CompactionFilter::Decision Decide(const char* ts_bytes, const int64_t ttl,
@@ -207,3 +214,70 @@ void FlinkCompactionFilter::SetUnexpiredListValue(
 }
 }  // namespace flink
 }  // namespace ROCKSDB_NAMESPACE
+
+//###########################################################################
+//###########################################################################
+
+#include <topling/side_plugin_repo.h>
+#include <topling/side_plugin_factory.h>
+namespace ROCKSDB_NAMESPACE { namespace flink {
+struct SideFlinkCompactFilterParams {
+  size_t  timestamp_offset;
+  int     list_elem_fixed_len; // 0 indicate non-list state
+  int64_t ttl;
+  int64_t query_time_after_num_entries;
+};
+struct SideFlinkCompactionFilter : CompactionFilter, SideFlinkCompactFilterParams {
+  mutable int64_t m_cur_milli = -1;
+  mutable int64_t m_rec_counter = INT64_MAX;
+  SideFlinkCompactionFilter(const SideFlinkCompactFilterParams* p) : SideFlinkCompactFilterParams(*p) {}
+  const char* Name() const override { return "FlinkCompactionFilter"; }
+  bool IsExpired(const char* ts_bytes) const {
+    int64_t timestamp = DeserializeTimestamp(ts_bytes, timestamp_offset);
+    int64_t ttlWithoutOverflow = timestamp > 0
+                               ? std::min(INT64_MAX - timestamp, ttl) : ttl;
+    return timestamp + ttlWithoutOverflow <= m_cur_milli;
+  }
+  Decision FilterV2(int level, const Slice& key, ValueType value_type,
+                    const Slice& existing_value, std::string* new_value,
+                    std::string* skip_until) const override {
+    if (m_rec_counter >= query_time_after_num_entries) {
+      m_rec_counter = 0;
+      m_cur_milli = Env::Default()->NowMicros() / 1000;
+    }
+    m_rec_counter++;
+    if (existing_value.size() < timestamp_offset + TIMESTAMP_BYTE_SIZE) {
+      return Decision::kKeep; // too short value
+    }
+    bool expired = IsExpired(existing_value.data());
+    if (expired && list_elem_fixed_len > 0) { // list with fixed len elem
+      const char *ptr = existing_value.data(), *end = existing_value.end();
+      while ((ptr += list_elem_fixed_len) < end) { // begin with 2nd elem
+        if (!IsExpired(ptr)) { // find the first unexpired elem
+          new_value->assign(ptr, end); // all elem after here are unexpired
+          return Decision::kChangeValue;
+        }
+      }
+      return Decision::kRemove;
+    }
+    return expired ? Decision::kRemove : Decision::kKeep;
+  }
+  bool IgnoreSnapshots() const override { return true; }
+};
+struct SideFlinkCompactionFilterFactory : CompactionFilterFactory, SideFlinkCompactFilterParams {
+  SideFlinkCompactionFilterFactory(const json& js, const SidePluginRepo& repo) {
+    ROCKSDB_JSON_REQ_PROP(js, timestamp_offset);
+    ROCKSDB_JSON_REQ_PROP(js, list_elem_fixed_len);
+    ROCKSDB_JSON_REQ_PROP(js, ttl);
+    ROCKSDB_JSON_REQ_PROP(js, query_time_after_num_entries);
+  }
+  std::unique_ptr<CompactionFilter>
+  CreateCompactionFilter(const CompactionFilter::Context&) override {
+    return std::make_unique<SideFlinkCompactionFilter>(this);
+  }
+  const char* Name() const override { return "FlinkCompactionFilterFactory"; }
+};
+using FlinkCompactionFilterFactory = SideFlinkCompactionFilterFactory;
+ROCKSDB_REG_Plugin(FlinkCompactionFilterFactory, CompactionFilterFactory);
+
+}}  // namespace ROCKSDB_NAMESPACE::flink

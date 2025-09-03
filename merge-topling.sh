@@ -9,3 +9,6 @@ rm -rf *
 rm -f .github/workflows/topling-jni.yml .gitmodules
 git checkout .
 git merge memtable_as_log_index
+git checkout --ours java/pom.xml.template
+git add java/pom.xml.template
+git -c core.editor=true merge --continue

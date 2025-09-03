@@ -888,6 +888,7 @@ TEST_F(DBFlushTest, FixFlushReasonRaceFromConcurrentFlushes) {
 
 TEST_F(DBFlushTest, MemPurgeBasic) {
   Options options = CurrentOptions();
+  options.memtable_as_log_index = false;
 
   // The following options are used to enforce several values that
   // may already exist as default values to make this test resilient
@@ -1061,6 +1062,7 @@ TEST_F(DBFlushTest, MemPurgeBasic) {
 // RocksDB lite does not support dynamic options
 TEST_F(DBFlushTest, MemPurgeBasicToggle) {
   Options options = CurrentOptions();
+  options.memtable_as_log_index = false;
 
   // The following options are used to enforce several values that
   // may already exist as default values to make this test resilient
@@ -1184,6 +1186,7 @@ TEST_F(DBFlushTest, MemPurgeBasicToggle) {
 // a regular Flush.
 TEST_F(DBFlushTest, MemPurgeWithAtomicFlush) {
   Options options = CurrentOptions();
+  options.memtable_as_log_index = false;
 
   // The following options are used to enforce several values that
   // may already exist as default values to make this test resilient
@@ -1285,6 +1288,7 @@ TEST_F(DBFlushTest, MemPurgeWithAtomicFlush) {
 
 TEST_F(DBFlushTest, MemPurgeDeleteAndDeleteRange) {
   Options options = CurrentOptions();
+  options.memtable_as_log_index = false;
 
   options.statistics = CreateDBStatistics();
   options.statistics->set_stats_level(StatsLevel::kAll);
@@ -1474,6 +1478,7 @@ class ConditionalUpdateFilterFactory : public CompactionFilterFactory {
 
 TEST_F(DBFlushTest, MemPurgeAndCompactionFilter) {
   Options options = CurrentOptions();
+  options.memtable_as_log_index = false;
 
   std::string KEY1 = "ThisIsKey1";
   std::string KEY2 = "ThisIsKey2";
@@ -1750,6 +1755,7 @@ TEST_F(DBFlushTest, MemPurgeCorrectLogNumberAndSSTFileCreation) {
   // was later being purged as an obsolete file).
   // Therefore, we reproduce this scenario to test our fix.
   Options options = CurrentOptions();
+  options.memtable_as_log_index = false;
 
   options.create_if_missing = true;
   options.compression = kNoCompression;

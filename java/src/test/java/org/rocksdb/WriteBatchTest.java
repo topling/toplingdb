@@ -460,6 +460,12 @@ public class WriteBatchTest {
 
   @Test
   public void walTerminationPoint() throws RocksDBException {
+    if (true) {
+      // ToplingDB replaced WalTerminationPoint with linking
+      // WriteBatch, which is more efficient.
+      assertThat(true).isTrue();
+      return;
+    }
     try (final WriteBatch batch = new WriteBatch()) {
       WriteBatch.SavePoint walTerminationPoint = batch.getWalTerminationPoint();
       assertThat(walTerminationPoint.isCleared()).isTrue();
@@ -483,6 +489,7 @@ public class WriteBatchTest {
   }
 
   static byte[] getContents(final WriteBatch wb) {
+    wb.updateNativeDataSizeFromJava();
     return getContents(wb.nativeHandle_);
   }
 
@@ -515,6 +522,7 @@ class WriteBatchTestInternalHelper {
   }
 
   static void append(final WriteBatch wb1, final WriteBatch wb2) {
+    wb1.updateJavaAddrSizeCapFromNative();
     append(wb1.nativeHandle_, wb2.nativeHandle_);
   }
 

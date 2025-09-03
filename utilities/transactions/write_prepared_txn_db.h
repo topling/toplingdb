@@ -430,10 +430,10 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
   // Struct to hold ownership of snapshot and read callback for cleanup.
   struct IteratorState;
 
-  std::shared_ptr<std::map<uint32_t, const Comparator*>> GetCFComparatorMap() {
+  const auto& GetCFComparatorMap() const {
     return cf_map_;
   }
-  std::shared_ptr<std::map<uint32_t, ColumnFamilyHandle*>> GetCFHandleMap() {
+  const auto& GetCFHandleMap() const {
     return handle_map_;
   }
   void UpdateCFComparatorMap(

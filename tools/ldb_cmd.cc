@@ -49,6 +49,7 @@
 #include "utilities/blob_db/blob_dump_tool.h"
 #include "utilities/merge_operators.h"
 #include "utilities/ttl/db_ttl_impl.h"
+#include <topling/side_plugin_repo.h>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -110,6 +111,9 @@ const std::string LDBCommand::ARG_DUMP_UNCOMPRESSED_BLOBS =
     "dump_uncompressed_blobs";
 
 const char* LDBCommand::DELIM = " ==> ";
+
+static SidePluginRepo g_repo;
+static DB_MultiCF*    g_dbm = nullptr;
 
 namespace {
 
@@ -434,6 +438,24 @@ LDBCommand::LDBCommand(const std::map<std::string, std::string>& options,
 }
 
 void LDBCommand::OpenDB() {
+  if (auto conf = getenv("TOPLING_SIDEPLUGIN_CONF")) {
+    auto s = g_repo.ImportAutoFile(conf);
+    if (!s.ok()) {
+      fprintf(stderr, "FATAL: ImportAutoFile(%s) = %s\n", conf, s.ToString().c_str());
+      return;
+    }
+    s = g_repo.OpenDB(&g_dbm);
+    if (!s.ok()) {
+      fprintf(stderr, "FATAL: g_repo.OpenDB() = %s\n", s.ToString().c_str());
+      return;
+    }
+    db_ = g_dbm->db;
+    for (auto cfh : g_dbm->cf_handles) {
+      cf_handles_[cfh->GetName()] = cfh;
+    }
+    return;
+  }
+
   PrepareOptions();
   if (!exec_state_.IsNotStarted()) {
     return;
@@ -516,6 +538,9 @@ void LDBCommand::OpenDB() {
 }
 
 void LDBCommand::CloseDB() {
+  if (g_dbm) {
+    g_repo.CloseAllDB(false);
+  }
   if (db_ != nullptr) {
     for (auto& pair : cf_handles_) {
       delete pair.second;
@@ -1050,6 +1075,11 @@ bool LDBCommand::ValidateCmdLineOptions() {
       fprintf(stderr, "Invalid command-line flag %s\n", itr->c_str());
       return false;
     }
+  }
+
+  if (auto env = getenv("TOPLING_SIDEPLUGIN_CONF")) {
+    fprintf(stderr, "using env TOPLING_SIDEPLUGIN_CONF=%s\n", env);
+    return true; // open by repo later
   }
 
   if (!NoDBOpen() && option_map_.find(ARG_DB) == option_map_.end() &&
@@ -2721,6 +2751,9 @@ void DumpWalFile(Options options, std::string wal_file, bool print_header,
     }
     log::Reader reader(options.info_log, std::move(wal_file_reader), &reporter,
                        true /* checksum */, log_number);
+    if (options.memtable_as_log_index) {
+      reader.InitSetMemTableAsLogIndex(*fs);
+    }
     std::string scratch;
     WriteBatch batch;
     Slice record;

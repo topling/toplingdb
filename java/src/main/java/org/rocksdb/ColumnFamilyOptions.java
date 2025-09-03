@@ -215,6 +215,7 @@ public class ColumnFamilyOptions
           "Merge operator name must not be null.");
     }
     setMergeOperatorName(nativeHandle_, name);
+    mergeOperatorName_ = name;
     return this;
   }
 
@@ -222,8 +223,12 @@ public class ColumnFamilyOptions
   public ColumnFamilyOptions setMergeOperator(
       final MergeOperator mergeOperator) {
     setMergeOperator(nativeHandle_, mergeOperator.nativeHandle_);
+    mergeOperator_ = mergeOperator;
     return this;
   }
+
+  @Override public String mergeOperatorName() { return mergeOperatorName_; }
+  @Override public MergeOperator mergeOperator() { return mergeOperator_; }
 
   @Override
   public ColumnFamilyOptions setCompactionFilter(
@@ -1557,4 +1562,6 @@ public class ColumnFamilyOptions
   private CompressionOptions compressionOptions_;
   private SstPartitionerFactory sstPartitionerFactory_;
   private ConcurrentTaskLimiter compactionThreadLimiter_;
+  private MergeOperator mergeOperator_;
+  private String mergeOperatorName_;
 }

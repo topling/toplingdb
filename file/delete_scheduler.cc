@@ -309,6 +309,17 @@ Status DeleteScheduler::DeleteTrashFile(const std::string& path_in_trash,
   if (s.ok()) {
     bool need_full_delete = true;
     if (bytes_max_delete_chunk_ != 0 && file_size > bytes_max_delete_chunk_) {
+     bool need_truncate = true;
+     uint64_t file_number = 0;
+     FileType file_type;
+     if (ParseFileName(path_in_trash, &file_number, &file_type)) {
+       // WAL maybe refrenced by memtable_as_log_index, so we cannot
+       // truncate it. Since it needs many changes to get option
+       // memtable_as_log_index, we just ignore memtable_as_log_index
+       // and always skip truncate wal.
+       need_truncate = file_type != kWalFile;
+     }
+     if (need_truncate) {
       uint64_t num_hard_links = 2;
       // We don't have to worry aobut data race between linking a new
       // file after the number of file link check and ftruncte because
@@ -352,6 +363,7 @@ Status DeleteScheduler::DeleteTrashFile(const std::string& path_in_trash,
             my_status.ToString().c_str());
         num_link_error_printed_ = true;
       }
+     } // need_truncate
     }
 
     if (need_full_delete) {

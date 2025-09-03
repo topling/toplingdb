@@ -34,6 +34,8 @@
 
 #include "rocksdb/status.h"
 #include "rocksdb/write_batch_base.h"
+#include "fake_atomic.h"
+#include <boost/intrusive_ptr.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -41,6 +43,17 @@ class Slice;
 class ColumnFamilyHandle;
 struct SavePoints;
 struct SliceParts;
+class ReadonlyFileMmap;
+void intrusive_ptr_add_ref(ReadonlyFileMmap*);
+void intrusive_ptr_release(ReadonlyFileMmap*);
+
+struct KeyValuePassMemTable {
+  Slice    value;
+  uint64_t val_pos;
+  uint32_t key_len;
+  uint64_t fileno;
+  const ReadonlyFileMmap* wal_file;
+};
 
 struct SavePoint {
   size_t size;     // size of rep_
@@ -86,6 +99,7 @@ class WriteBatch : public WriteBatchBase {
   }
   Status Put(ColumnFamilyHandle* column_family, const Slice& key,
              const Slice& ts, const Slice& value) override;
+  Status Put(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // Variant of Put() that gathers output like writev(2).  The key and value
   // that will be written to the database are concatenations of arrays of
@@ -132,6 +146,7 @@ class WriteBatch : public WriteBatchBase {
   Status Delete(const Slice& key) override { return Delete(nullptr, key); }
   Status Delete(ColumnFamilyHandle* column_family, const Slice& key,
                 const Slice& ts) override;
+  Status Delete(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // variant that takes SliceParts
   // These two variants of Delete(..., const SliceParts& key) can be used when
@@ -151,6 +166,7 @@ class WriteBatch : public WriteBatchBase {
   }
   Status SingleDelete(ColumnFamilyHandle* column_family, const Slice& key,
                       const Slice& ts) override;
+  Status SingleDelete(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // variant that takes SliceParts
   Status SingleDelete(ColumnFamilyHandle* column_family,
@@ -189,6 +205,7 @@ class WriteBatch : public WriteBatchBase {
   }
   Status Merge(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
                const Slice& /*ts*/, const Slice& /*value*/) override;
+  Status Merge(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // variant that takes SliceParts
   Status Merge(ColumnFamilyHandle* column_family, const SliceParts& key,
@@ -353,6 +370,9 @@ class WriteBatch : public WriteBatchBase {
     // implementation always returns true.
     virtual bool Continue();
 
+    virtual void SetBeginPrepareNextPtr(const char*) {}
+    virtual bool SwitchWorkingWriteBatch(const WriteBatch*) { return false; }
+
    protected:
     friend class WriteBatchInternal;
     enum class OptionState {
@@ -447,18 +467,30 @@ class WriteBatch : public WriteBatchBase {
   WriteBatch(WriteBatch&& src) noexcept;
   WriteBatch& operator=(const WriteBatch& src);
   WriteBatch& operator=(WriteBatch&& src);
-
-  // marks this point in the WriteBatch as the last record to
-  // be inserted into the WAL, provided the WAL is enabled
-  void MarkWalTerminationPoint();
-  const SavePoint& GetWalTerminationPoint() const { return wal_term_point_; }
+  auto GetWriteMemNext() const { return write_mem_next_; }
+  void SetWriteMemNext(WriteBatch* next);
+  void ClearWriteMemNext();
+  uint32_t GetWriteMemCount() const;
+  size_t GetWriteMemByteSize() const;
 
   void SetMaxBytes(size_t max_bytes) override { max_bytes_ = max_bytes; }
 
   struct ProtectionInfo;
   size_t GetProtectionBytesPerKey() const;
 
+  struct WALFileRef {
+    boost::intrusive_ptr<ReadonlyFileMmap> file_mmap;
+    uint64_t file_number = UINT64_MAX;
+    uint64_t file_offset = UINT64_MAX;
+  };
+  void SetOffsetOfWAL(uint64_t offset) { wal_ref_.file_offset = offset; }
+  void SetWAL(WALFileRef wal) const { wal_ref_ = std::move(wal); }
+  void PresetWAL(const WriteBatch& src, ptrdiff_t diff = 0);
+  bool HasMmapWAL() const { return wal_ref_.file_mmap != nullptr; }
+  bool HasProtectionInfo() const { return prot_info_ != nullptr; }
+
  private:
+ protected:
   friend class WriteBatchInternal;
   friend class LocalSavePoint;
   // TODO(myabandeh): this is needed for a hack to collapse the write batch and
@@ -470,7 +502,7 @@ class WriteBatch : public WriteBatchBase {
   // When sending a WriteBatch through WriteImpl we might want to
   // specify that only the first x records of the batch be written to
   // the WAL.
-  SavePoint wal_term_point_;
+  WriteBatch* write_mem_next_ = nullptr;
 
   // Is the content of the batch the application's latest state that meant only
   // to be used for recovery? Refer to
@@ -491,8 +523,16 @@ class WriteBatch : public WriteBatchBase {
   // that enables user-defined timestamp.
   bool has_key_with_ts_ = false;
 
+  uint8_t default_cf_ts_sz_ = 0;
+
   // For HasXYZ.  Mutable to allow lazy computation of results
+#if 0
   mutable std::atomic<uint32_t> content_flags_;
+#else
+  mutable fake_atomic<uint32_t> content_flags_;
+#endif
+
+  mutable WALFileRef wal_ref_;
 
   // Performs deferred computation of content_flags if necessary
   uint32_t ComputeContentFlags() const;
@@ -501,8 +541,6 @@ class WriteBatch : public WriteBatchBase {
   size_t max_bytes_;
 
   std::unique_ptr<ProtectionInfo> prot_info_;
-
-  size_t default_cf_ts_sz_ = 0;
 
  protected:
   std::string rep_;  // See comment in write_batch.cc for the format of rep_

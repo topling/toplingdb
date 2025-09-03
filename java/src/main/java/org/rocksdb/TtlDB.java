@@ -228,6 +228,7 @@ public class TtlDB extends RocksDB {
    */
   protected TtlDB(final long nativeHandle) {
     super(nativeHandle);
+    syncSetDefaultColumnFamilyHandle();
   }
 
   @Override protected native void disposeInternal(final long handle);

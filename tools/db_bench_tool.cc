@@ -100,6 +100,13 @@
 #include <io.h>  // open/close
 #endif
 
+#include "sideplugin/rockside/src/topling/side_plugin_repo.h"
+
+#if defined(__clang__)
+  #pragma clang diagnostic ignored "-Wunused-lambda-capture"
+#endif
+
+
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
 using GFLAGS_NAMESPACE::RegisterFlagValidator;
 using GFLAGS_NAMESPACE::SetUsageMessage;
@@ -130,6 +137,7 @@ DEFINE_string(
     "multireadrandom,"
     "mixgraph,"
     "readseq,"
+    "nextwithkey,"
     "readtorowcache,"
     "readtocache,"
     "readreverse,"
@@ -176,6 +184,7 @@ DEFINE_string(
     " async mode\n"
     "\tdeleteseq     -- delete N keys in sequential order\n"
     "\tdeleterandom  -- delete N keys in random order\n"
+    "\tnextwithkey   -- read N times with iter.NextWithKey\n"
     "\treadseq       -- read N times sequentially\n"
     "\treadtocache   -- 1 thread reading database sequentially\n"
     "\treadreverse   -- read N times in reverse order\n"
@@ -323,6 +332,10 @@ DEFINE_int64(max_scan_distance, 0,
              "if FLAGS_reverse_iterator is set to true) when value is nonzero");
 
 DEFINE_bool(use_uint64_comparator, false, "use Uint64 user comparator");
+
+DEFINE_bool(enable_zero_copy, false, "enable zero copy for SST");
+DEFINE_bool(scan_omit_key, false, "omit calling iter->key() while scan");
+DEFINE_bool(scan_omit_value, false, "omit value while scan");
 
 DEFINE_int64(batch_size, 1, "Batch size");
 
@@ -745,6 +758,8 @@ DEFINE_bool(use_ribbon_filter, false, "Use Ribbon instead of Bloom filter");
 DEFINE_double(memtable_bloom_size_ratio, 0,
               "Ratio of memtable size used for bloom filter. 0 means no bloom "
               "filter.");
+DEFINE_bool(allow_merge_memtables, true,
+            "allow merge memtables on flush.");
 DEFINE_bool(memtable_whole_key_filtering, false,
             "Try to use whole key bloom filter in memtables.");
 DEFINE_bool(memtable_use_huge_page, false,
@@ -826,6 +841,9 @@ DEFINE_bool(sync, false, "Sync all writes to disk");
 DEFINE_bool(use_fsync, false, "If true, issue fsync instead of fdatasync");
 
 DEFINE_bool(disable_wal, false, "If true, do not write WAL for write.");
+
+DEFINE_bool(reduce_cpu_usage, true, "If false, use rocksdb adaptive spin lock.");
+DEFINE_bool(memtable_insert_hint_per_batch, false, "memtable_insert_hint_per_batch");
 
 DEFINE_bool(manual_wal_flush, false,
             "If true, buffer WAL until buffer is full or a manual FlushWAL().");
@@ -1162,6 +1180,7 @@ DEFINE_int32(trace_replay_threads, 1,
 DEFINE_bool(io_uring_enabled, true,
             "If true, enable the use of IO uring if the platform supports it");
 extern "C" bool RocksDbIOUringEnable() { return FLAGS_io_uring_enabled; }
+DEFINE_string(json, "", "json config file.");
 
 DEFINE_bool(adaptive_readahead, false,
             "carry forward internal auto readahead size from one file to next "
@@ -1685,6 +1704,9 @@ DEFINE_uint64(stats_persist_period_sec,
 DEFINE_bool(persist_stats_to_disk,
             ROCKSDB_NAMESPACE::Options().persist_stats_to_disk,
             "whether to persist stats to disk");
+DEFINE_bool(memtable_as_log_index,
+            ROCKSDB_NAMESPACE::Options().memtable_as_log_index,
+            "whether to use memtable_as_log_index");
 DEFINE_uint64(stats_history_buffer_size,
               ROCKSDB_NAMESPACE::Options().stats_history_buffer_size,
               "Max number of stats snapshots to keep in memory");
@@ -1694,6 +1716,9 @@ DEFINE_bool(avoid_flush_during_recovery,
 DEFINE_int64(multiread_stride, 0,
              "Stride length for the keys in a MultiGet batch");
 DEFINE_bool(multiread_batched, false, "Use the new MultiGet API");
+DEFINE_bool(multiread_check, false, "check MultiGet result with Get");
+DEFINE_bool(multiread_async, false, "MultiGet async");
+DEFINE_int32(multiread_async_qd, 32, "MultiGet async queue depth");
 
 DEFINE_string(memtablerep, "skip_list", "");
 DEFINE_int64(hash_bucket_count, 1024 * 1024, "hash bucket count");
@@ -2710,7 +2735,11 @@ class Benchmark {
   std::vector<DBWithColumnFamilies> multi_dbs_;
   int64_t num_;
   int key_size_;
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   int user_timestamp_size_;
+#else
+  static constexpr int user_timestamp_size_ = 0;
+#endif
   int prefix_size_;
   int total_thread_count_;
   int64_t keys_per_prefix_;
@@ -3042,14 +3071,14 @@ class Benchmark {
       JemallocAllocatorOptions jemalloc_options;
       if (!NewJemallocNodumpAllocator(jemalloc_options, &allocator).ok()) {
         fprintf(stderr, "JemallocNodumpAllocator not supported.\n");
-        exit(1);
+        ::exit(1);
       }
     } else if (FLAGS_use_cache_memkind_kmem_allocator) {
 #ifdef MEMKIND
       allocator = std::make_shared<MemkindKmemAllocator>();
 #else
       fprintf(stderr, "Memkind library is not linked with the binary.\n");
-      exit(1);
+      ::exit(1);
 #endif
     }
 
@@ -3068,6 +3097,7 @@ class Benchmark {
     if (capacity <= 0) {
       return nullptr;
     }
+    auto exit = ::exit;
     if (FLAGS_use_compressed_secondary_cache) {
       secondary_cache_opts.capacity = FLAGS_compressed_secondary_cache_size;
       secondary_cache_opts.num_shard_bits =
@@ -3172,7 +3202,7 @@ class Benchmark {
       }
     } else {
       fprintf(stderr, "Cache type not supported.");
-      exit(1);
+      ::exit(1);
     }
 
     if (!block_cache) {
@@ -3191,7 +3221,9 @@ class Benchmark {
                               : nullptr),
         num_(FLAGS_num),
         key_size_(FLAGS_key_size),
+    #if defined(TOPLINGDB_WITH_TIMESTAMP)
         user_timestamp_size_(FLAGS_user_timestamp_size),
+    #endif
         prefix_size_(FLAGS_prefix_size),
         total_thread_count_(0),
         keys_per_prefix_(FLAGS_keys_per_prefix),
@@ -3265,6 +3297,7 @@ class Benchmark {
   }
 
   void DeleteDBs() {
+    repo_.CloseAllDB(false);
     db_.DeleteDBs();
     for (const DBWithColumnFamilies& dbwcf : multi_dbs_) {
       delete dbwcf.db;
@@ -3279,6 +3312,12 @@ class Benchmark {
       // this will leak, but we're shutting down so nobody cares
       cache_->DisownData();
     }
+  }
+
+  __attribute__((noreturn))
+  void exit(int code) {
+    this->~Benchmark();
+    ::exit(code);
   }
 
   Slice AllocateKey(std::unique_ptr<const char[]>* key_guard) {
@@ -3384,6 +3423,7 @@ class Benchmark {
     // Verify that all the key/values in truth_db are retrivable in db with
     // ::Get
     fprintf(stderr, "Verifying db >= truth_db with ::Get...\n");
+    if (FLAGS_enable_zero_copy) ro.StartPin();
     for (truth_iter->SeekToFirst(); truth_iter->Valid(); truth_iter->Next()) {
       std::string value;
       s = db_.db->Get(ro, truth_iter->key(), &value);
@@ -3391,6 +3431,7 @@ class Benchmark {
       // TODO(myabandeh): provide debugging hints
       assert(Slice(value) == truth_iter->value());
     }
+    if (FLAGS_enable_zero_copy) ro.FinishPin();
     // Verify that the db iterator does not give any extra key/value
     fprintf(stderr, "Verifying db == truth_db...\n");
     for (db_iter->SeekToFirst(), truth_iter->SeekToFirst(); db_iter->Valid();
@@ -3413,7 +3454,7 @@ class Benchmark {
       ErrorExit();
     }
     Open(&open_options_);
-    PrintHeader(open_options_);
+    PrintHeader(db_.db->GetOptions());
     std::stringstream benchmark_stream(FLAGS_benchmarks);
     std::string name;
     std::unique_ptr<ExpiredTimeFilter> filter;
@@ -3436,6 +3477,8 @@ class Benchmark {
         write_options_.sync = true;
       }
       write_options_.disableWAL = FLAGS_disable_wal;
+      write_options_.reduce_cpu_usage = FLAGS_reduce_cpu_usage;
+      write_options_.memtable_insert_hint_per_batch = FLAGS_memtable_insert_hint_per_batch;
       write_options_.rate_limiter_priority =
           FLAGS_rate_limit_auto_wal_flush ? Env::IO_USER : Env::IO_TOTAL;
       read_options_ = ReadOptions(FLAGS_verify_checksum, true);
@@ -3444,11 +3487,14 @@ class Benchmark {
       read_options_.rate_limiter_priority =
           FLAGS_rate_limit_user_ops ? Env::IO_USER : Env::IO_TOTAL;
       read_options_.tailing = FLAGS_use_tailing_iterator;
+     #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
       read_options_.readahead_size = FLAGS_readahead_size;
+     #endif
       read_options_.adaptive_readahead = FLAGS_adaptive_readahead;
       read_options_.async_io = FLAGS_async_io;
       read_options_.optimize_multiget_for_io = FLAGS_optimize_multiget_for_io;
       read_options_.auto_readahead_size = FLAGS_auto_readahead_size;
+      read_options_.ignore_range_deletions = 0 == FLAGS_max_num_range_tombstones;
 
       void (Benchmark::*method)(ThreadState*) = nullptr;
       void (Benchmark::*post_process_method)() = nullptr;
@@ -3543,6 +3589,8 @@ class Benchmark {
         method = &Benchmark::WriteRandom;
       } else if (name == "readseq") {
         method = &Benchmark::ReadSequential;
+      } else if (name == "nextwithkey") {
+        method = &Benchmark::ScanNextWithKey;
       } else if (name == "readtorowcache") {
         if (!FLAGS_use_existing_keys || !FLAGS_row_cache_size) {
           fprintf(stderr,
@@ -4192,6 +4240,7 @@ class Benchmark {
     options.stats_persist_period_sec =
         static_cast<unsigned int>(FLAGS_stats_persist_period_sec);
     options.persist_stats_to_disk = FLAGS_persist_stats_to_disk;
+    options.memtable_as_log_index = FLAGS_memtable_as_log_index;
     options.stats_history_buffer_size =
         static_cast<size_t>(FLAGS_stats_history_buffer_size);
     options.avoid_flush_during_recovery = FLAGS_avoid_flush_during_recovery;
@@ -4252,6 +4301,7 @@ class Benchmark {
     }
     options.memtable_huge_page_size = FLAGS_memtable_use_huge_page ? 2048 : 0;
     options.memtable_prefix_bloom_size_ratio = FLAGS_memtable_bloom_size_ratio;
+    options.allow_merge_memtables = FLAGS_allow_merge_memtables;
     options.memtable_whole_key_filtering = FLAGS_memtable_whole_key_filtering;
     if (FLAGS_memtable_insert_with_hint_prefix_size > 0) {
       options.memtable_insert_with_hint_prefix_extractor.reset(
@@ -4841,9 +4891,45 @@ class Benchmark {
     InitializeOptionsGeneral(opts);
   }
 
+  SidePluginRepo repo_;
   void OpenDb(Options options, const std::string& db_name,
               DBWithColumnFamilies* db) {
     uint64_t open_start = FLAGS_report_open_timing ? FLAGS_env->NowNanos() : 0;
+    if (!FLAGS_json.empty()) {
+      repo_.CloseAllDB(false);
+      repo_.CleanResetRepo();
+      DB_MultiCF* dbmcf = nullptr;
+      Status s = repo_.ImportAutoFile(FLAGS_json);
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: ImportAutoFile(%s): %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      s = repo_.OpenDB(&dbmcf);
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: OpenDB(): Config File=%s: %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      s = repo_.StartHttpServer();
+      if (!s.ok()) {
+        fprintf(stderr, "ERROR: StartHttpServer(): JsonFile=%s: %s\n",
+                FLAGS_json.c_str(), s.ToString().c_str());
+        exit(1);
+      }
+      db->cfh = dbmcf->cf_handles;
+      db->db = dbmcf->db;
+      if (auto tdb = dynamic_cast<OptimisticTransactionDB*>(dbmcf->db)) {
+        db->opt_txn_db = tdb;
+        db->db = tdb->GetBaseDB();
+      }
+      db->num_created = FLAGS_num_column_families;
+      db->num_hot = FLAGS_num_column_families;
+      DBOptions dbo = db->db->GetDBOptions();
+      dbstats = dbo.statistics;
+      FLAGS_db = db->db->GetName();
+      return;
+    }
     Status s;
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
@@ -5829,6 +5915,7 @@ class Benchmark {
 
   void ReadSequential(ThreadState* thread, DB* db) {
     ReadOptions options = read_options_;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::unique_ptr<char[]> ts_guard;
     Slice ts;
     if (user_timestamp_size_ > 0) {
@@ -5836,27 +5923,81 @@ class Benchmark {
       ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
       options.timestamp = &ts;
     }
+   #endif
 
     options.adaptive_readahead = FLAGS_adaptive_readahead;
     options.async_io = FLAGS_async_io;
     options.auto_readahead_size = FLAGS_auto_readahead_size;
 
+    const int64_t key_size = FLAGS_key_size;
+    const bool omit_key = FLAGS_scan_omit_key;
+    options.fixed_user_key_len = omit_key ? key_size : 0;
+
     Iterator* iter = db->NewIterator(options);
     int64_t i = 0;
     int64_t bytes = 0;
+    const auto limiter = thread->shared->read_rate_limiter.get();
+    const bool omit_value = FLAGS_scan_omit_value;
     for (iter->SeekToFirst(); i < reads_ && iter->Valid(); iter->Next()) {
-      bytes += iter->key().size() + iter->value().size();
+      if (omit_value) {
+        bytes += omit_key ? key_size : iter->key().size();
+      } else {
+        bytes += iter->key().size() + iter->value().size();
+      }
       thread->stats.FinishedOps(nullptr, db, 1, kRead);
       ++i;
 
-      if (thread->shared->read_rate_limiter.get() != nullptr &&
-          i % 1024 == 1023) {
+      if (limiter != nullptr && i % 1024 == 1023) {
         thread->shared->read_rate_limiter->Request(1024, Env::IO_HIGH,
                                                    nullptr /* stats */,
                                                    RateLimiter::OpType::kRead);
       }
     }
 
+    delete iter;
+    thread->stats.AddBytes(bytes);
+  }
+
+  void ScanNextWithKey(ThreadState* thread) {
+    if (db_.db != nullptr) {
+      ScanNextWithKey(thread, db_.db);
+    } else {
+      for (const auto& db_with_cfh : multi_dbs_) {
+        ScanNextWithKey(thread, db_with_cfh.db);
+      }
+    }
+  }
+  void ScanNextWithKey(ThreadState* thread, DB* db) {
+    ReadOptions options = read_options_;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
+    std::unique_ptr<char[]> ts_guard;
+    Slice ts;
+    if (user_timestamp_size_ > 0) {
+      ts_guard.reset(new char[user_timestamp_size_]);
+      ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
+      options.timestamp = &ts;
+    }
+   #endif
+    options.adaptive_readahead = FLAGS_adaptive_readahead;
+    options.async_io = FLAGS_async_io;
+    options.auto_readahead_size = FLAGS_auto_readahead_size;
+    options.fixed_user_key_len = FLAGS_scan_omit_key ? FLAGS_scan_omit_key : 0;
+    Iterator* iter = db->NewIterator(options);
+    int64_t i = 0, bytes = 0;
+    const auto limiter = thread->shared->read_rate_limiter.get();
+    const bool omit_value = FLAGS_scan_omit_value;
+    for (Slice key = iter->SeekToFirstWithKey(); i < reads_ && key.data(); ) {
+      bytes += key.size();
+      if (!omit_value) {
+        bytes += iter->value().size();
+      }
+      thread->stats.FinishedOps(nullptr, db, 1, kRead);
+      ++i;
+      if (limiter != nullptr && i % 1024 == 1023) {
+        limiter->Request(1024, Env::IO_HIGH, nullptr, RateLimiter::OpType::kRead);
+      }
+      key = iter->NextWithKey();
+    }
     delete iter;
     thread->stats.AddBytes(bytes);
   }
@@ -5870,6 +6011,7 @@ class Benchmark {
     Slice key = AllocateKey(&key_guard);
     PinnableSlice pinnable_val;
 
+    if (FLAGS_enable_zero_copy) read_options_.StartPin();
     while (key_rand < FLAGS_num) {
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(thread);
       // We use same key_rand as seed for key and column family so that we can
@@ -5905,6 +6047,7 @@ class Benchmark {
 
       thread->stats.FinishedOps(db_with_cfh, db_with_cfh->db, 1, kRead);
     }
+    if (FLAGS_enable_zero_copy) read_options_.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg), "(%" PRIu64 " of %" PRIu64 " found)\n", found,
@@ -5928,12 +6071,12 @@ class Benchmark {
     Iterator* iter = db->NewIterator(read_options_);
     int64_t i = 0;
     int64_t bytes = 0;
+    const auto limiter = thread->shared->read_rate_limiter.get();
     for (iter->SeekToLast(); i < reads_ && iter->Valid(); iter->Prev()) {
       bytes += iter->key().size() + iter->value().size();
       thread->stats.FinishedOps(nullptr, db, 1, kRead);
       ++i;
-      if (thread->shared->read_rate_limiter.get() != nullptr &&
-          i % 1024 == 1023) {
+      if (limiter != nullptr && i % 1024 == 1023) {
         thread->shared->read_rate_limiter->Request(1024, Env::IO_HIGH,
                                                    nullptr /* stats */,
                                                    RateLimiter::OpType::kRead);
@@ -5963,6 +6106,7 @@ class Benchmark {
       pot <<= 1;
     }
 
+    if (FLAGS_enable_zero_copy) options.StartPin();
     Duration duration(FLAGS_duration, reads_);
     do {
       for (int i = 0; i < 100; ++i) {
@@ -5971,12 +6115,14 @@ class Benchmark {
         ++read;
         std::string ts_ret;
         std::string* ts_ptr = nullptr;
+       #if defined(TOPLINGDB_WITH_TIMESTAMP)
         if (user_timestamp_size_ > 0) {
           ts = mock_app_clock_->GetTimestampForRead(thread->rand,
                                                     ts_guard.get());
           options.timestamp = &ts;
           ts_ptr = &ts_ret;
         }
+       #endif
         auto status = db->Get(options, key, &value, ts_ptr);
         if (status.ok()) {
           ++found;
@@ -5996,6 +6142,7 @@ class Benchmark {
 
       thread->stats.FinishedOps(nullptr, db, 100, kRead);
     } while (!duration.Done(100));
+    if (FLAGS_enable_zero_copy) options.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg),
@@ -6050,6 +6197,9 @@ class Benchmark {
       ts_guard.reset(new char[user_timestamp_size_]);
     }
 
+    if (FLAGS_enable_zero_copy) options.StartPin();
+    const auto limiter = thread->shared->read_rate_limiter.get();
+    std::string ts_ret;
     Duration duration(FLAGS_duration, reads_);
     while (!duration.Done(1)) {
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(thread);
@@ -6072,18 +6222,16 @@ class Benchmark {
       }
       GenerateKeyFromInt(key_rand, FLAGS_num, &key);
       read++;
-      std::string ts_ret;
       std::string* ts_ptr = nullptr;
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
         options.timestamp = &ts;
         ts_ptr = &ts_ret;
       }
+     #endif
       Status s;
       pinnable_val.Reset();
-      for (size_t i = 0; i < pinnable_vals.size(); ++i) {
-        pinnable_vals[i].Reset();
-      }
       ColumnFamilyHandle* cfh;
       if (FLAGS_num_column_families > 1) {
         cfh = db_with_cfh->GetCfh(key_rand);
@@ -6091,6 +6239,9 @@ class Benchmark {
         cfh = db_with_cfh->db->DefaultColumnFamily();
       }
       if (read_operands_) {
+        for (size_t i = 0; i < pinnable_vals.size(); ++i) {
+          pinnable_vals[i].Reset();
+        }
         GetMergeOperandsOptions get_merge_operands_options;
         get_merge_operands_options.expected_max_number_of_operands =
             static_cast<int>(pinnable_vals.size());
@@ -6126,14 +6277,14 @@ class Benchmark {
         abort();
       }
 
-      if (thread->shared->read_rate_limiter.get() != nullptr &&
-          read % 256 == 255) {
+      if (limiter != nullptr && read % 256 == 255) {
         thread->shared->read_rate_limiter->Request(
             256, Env::IO_HIGH, nullptr /* stats */, RateLimiter::OpType::kRead);
       }
 
       thread->stats.FinishedOps(db_with_cfh, db_with_cfh->db, 1, kRead);
     }
+    if (FLAGS_enable_zero_copy) options.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg), "(%" PRIu64 " of %" PRIu64 " found)\n", found,
@@ -6167,6 +6318,7 @@ class Benchmark {
       ts_guard.reset(new char[user_timestamp_size_]);
     }
 
+    if (FLAGS_enable_zero_copy) options.StartPin();
     Duration duration(FLAGS_duration, reads_);
     while (!duration.Done(entries_per_batch_)) {
       DB* db = SelectDB(thread);
@@ -6185,11 +6337,13 @@ class Benchmark {
           GenerateKeyFromInt(GetRandomKey(&thread->rand), FLAGS_num, &keys[i]);
         }
       }
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       Slice ts;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
         options.timestamp = &ts;
       }
+     #endif
       if (!FLAGS_multiread_batched) {
         std::vector<Status> statuses = db->MultiGet(options, keys, &values);
         assert(static_cast<int64_t>(statuses.size()) == entries_per_batch_);
@@ -6207,8 +6361,29 @@ class Benchmark {
           }
         }
       } else {
+        options.async_io = FLAGS_multiread_async;
+        options.async_queue_depth = FLAGS_multiread_async_qd;
         db->MultiGet(options, db->DefaultColumnFamily(), keys.size(),
                      keys.data(), pin_values, stat_list.data());
+
+        if (FLAGS_multiread_check) {
+          options.async_io = false; // single Get do not use async_io
+          std::string value;
+          for (size_t i = 0; i < keys.size(); i++) {
+            Status s = db->Get(options, keys[i], &value);
+            if (stat_list[i].ok()) {
+              TERARK_VERIFY_S(s.ok(), "%s", s.ToString());
+            } else {
+              TERARK_VERIFY_S(!s.ok(), "mget: %s", stat_list[i].ToString());
+            }
+            if (value != pin_values[i]) {
+              ROCKSDB_DIE("%zd: %s : get = [%zd] %s , mget = [%zd] %s", i,
+                keys[i].data(), value.size(), value.data(),
+                pin_values[i].size(), pin_values[i].data());
+            }
+            TERARK_VERIFY_S_EQ(value, pin_values[i]);
+          }
+        }
 
         read += entries_per_batch_;
         num_multireads++;
@@ -6234,6 +6409,7 @@ class Benchmark {
       }
       thread->stats.FinishedOps(nullptr, db, entries_per_batch_, kRead);
     }
+    if (FLAGS_enable_zero_copy) options.FinishPin();
 
     char msg[100];
     snprintf(msg, sizeof(msg), "(%" PRIu64 " of %" PRIu64 " found)", found,
@@ -6713,11 +6889,13 @@ class Benchmark {
     }
     while (!duration.Done(1)) {
       DB* db = SelectDB(thread);
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       Slice ts;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
         options.timestamp = &ts;
       }
+     #endif
       Iterator* iter = db->NewIterator(options);
       delete iter;
       thread->stats.FinishedOps(nullptr, db, 1, kOthers);
@@ -6737,6 +6915,7 @@ class Benchmark {
     int64_t found = 0;
     int64_t bytes = 0;
     ReadOptions options = read_options_;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::unique_ptr<char[]> ts_guard;
     Slice ts;
     if (user_timestamp_size_ > 0) {
@@ -6744,6 +6923,7 @@ class Benchmark {
       ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
       options.timestamp = &ts;
     }
+   #endif
 
     std::vector<Iterator*> tailing_iters;
     if (FLAGS_use_tailing_iterator) {
@@ -7089,6 +7269,7 @@ class Benchmark {
     }
     assert(db_.db != nullptr);
     ReadOptions read_options = read_options_;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::unique_ptr<char[]> ts_guard;
     Slice ts;
     if (user_timestamp_size_ > 0) {
@@ -7096,6 +7277,7 @@ class Benchmark {
       ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
       read_options.timestamp = &ts;
     }
+   #endif
     Iterator* iter = db_.db->NewIterator(read_options);
 
     fprintf(stderr, "num reads to do %" PRIu64 "\n", reads_);
@@ -7197,6 +7379,7 @@ class Benchmark {
     std::string values[3];
     ReadOptions readoptionscopy = read_options_;
 
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::unique_ptr<char[]> ts_guard;
     Slice ts;
     if (user_timestamp_size_ > 0) {
@@ -7204,6 +7387,7 @@ class Benchmark {
       ts = mock_app_clock_->Allocate(ts_guard.get());
       readoptionscopy.timestamp = &ts;
     }
+   #endif
 
     readoptionscopy.snapshot = db->GetSnapshot();
     Status s;
@@ -7342,12 +7526,14 @@ class Benchmark {
       }
       if (get_weight > 0) {
         // do all the gets first
+       #if defined(TOPLINGDB_WITH_TIMESTAMP)
         Slice ts;
         if (user_timestamp_size_ > 0) {
           ts = mock_app_clock_->GetTimestampForRead(thread->rand,
                                                     ts_guard.get());
           options.timestamp = &ts;
         }
+       #endif
         Status s = db->Get(options, key, &value);
         if (!s.ok() && !s.IsNotFound()) {
           fprintf(stderr, "get error: %s\n", s.ToString().c_str());
@@ -7364,7 +7550,11 @@ class Benchmark {
         // for all the gets we have done earlier
         Status s;
         if (user_timestamp_size_ > 0) {
+         #if defined(TOPLINGDB_WITH_TIMESTAMP)
           Slice ts = mock_app_clock_->Allocate(ts_guard.get());
+         #else
+          Slice ts;
+         #endif
           s = db->Put(write_options_, key, ts, gen.Generate());
         } else {
           s = db->Put(write_options_, key, gen.Generate());
@@ -7407,11 +7597,13 @@ class Benchmark {
       DB* db = SelectDB(thread);
       GenerateKeyFromInt(thread->rand.Next() % FLAGS_num, FLAGS_num, &key);
       Slice ts;
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       if (user_timestamp_size_ > 0) {
         // Read with newest timestamp because we are doing rmw.
         ts = mock_app_clock_->Allocate(ts_guard.get());
         options.timestamp = &ts;
       }
+     #endif
 
       auto status = db->Get(options, key, &value);
       if (status.ok()) {
@@ -7475,10 +7667,12 @@ class Benchmark {
       DB* db = SelectDB(thread);
       GenerateKeyFromInt(thread->rand.Next() % FLAGS_num, FLAGS_num, &key);
       Slice ts;
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->Allocate(ts_guard.get());
         options.timestamp = &ts;
       }
+     #endif
 
       auto status = db->Get(options, key, &existing_value);
       if (status.ok()) {
@@ -7541,10 +7735,12 @@ class Benchmark {
       DB* db = SelectDB(thread);
       GenerateKeyFromInt(thread->rand.Next() % FLAGS_num, FLAGS_num, &key);
       Slice ts;
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->Allocate(ts_guard.get());
         options.timestamp = &ts;
       }
+     #endif
 
       auto status = db->Get(options, key, &value);
       if (status.ok()) {
@@ -7706,11 +7902,13 @@ class Benchmark {
     ReadOptions read_opts = read_options_;
     std::unique_ptr<char[]> ts_guard;
     Slice ts;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (user_timestamp_size_ > 0) {
       ts_guard.reset(new char[user_timestamp_size_]);
       ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
       read_opts.timestamp = &ts;
     }
+   #endif
     std::unique_ptr<Iterator> iter(db->NewIterator(read_opts));
 
     std::unique_ptr<const char[]> key_guard;
@@ -7846,7 +8044,9 @@ class Benchmark {
     ro.async_io = FLAGS_async_io;
     ro.rate_limiter_priority =
         FLAGS_rate_limit_user_ops ? Env::IO_USER : Env::IO_TOTAL;
+   #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
     ro.readahead_size = FLAGS_readahead_size;
+   #endif
     ro.auto_readahead_size = FLAGS_auto_readahead_size;
     Status s = db->VerifyChecksum(ro);
     if (!s.ok()) {
@@ -7862,7 +8062,9 @@ class Benchmark {
     ro.async_io = FLAGS_async_io;
     ro.rate_limiter_priority =
         FLAGS_rate_limit_user_ops ? Env::IO_USER : Env::IO_TOTAL;
+   #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
     ro.readahead_size = FLAGS_readahead_size;
+   #endif
     ro.auto_readahead_size = FLAGS_auto_readahead_size;
     Status s = db->VerifyFileChecksums(ro);
     if (!s.ok()) {

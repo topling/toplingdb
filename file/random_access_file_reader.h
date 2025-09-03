@@ -180,6 +180,10 @@ class RandomAccessFileReader {
   }
 
   FSRandomAccessFile* file() { return file_.get(); }
+  FSRandomAccessFile* exchange(FSRandomAccessFile* p) {
+     return file_.exchange(p);
+  }
+  FSRandomAccessFile* target() { return file_.target(); }
 
   const std::string& file_name() const { return file_name_; }
 

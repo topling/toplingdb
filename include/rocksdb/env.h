@@ -30,6 +30,7 @@
 #include "rocksdb/port_defs.h"
 #include "rocksdb/status.h"
 #include "rocksdb/thread_status.h"
+#include "rocksdb/enum_reflection.h"
 
 #ifdef _WIN32
 // Windows API macro interference
@@ -97,6 +98,9 @@ struct EnvOptions {
   // If true, set the FD_CLOEXEC on open fd.
   bool set_fd_cloexec = true;
 
+  // If false, fdatasync() calls are bypassed
+  bool allow_fdatasync = true;
+
   // Allows OS to incrementally sync files to disk while they are being
   // written, in the background. Issue one request for every bytes_per_sync
   // written. 0 turns it off.
@@ -139,6 +143,22 @@ struct EnvOptions {
 
   // If not nullptr, write rate limiting is enabled for flush and compaction
   RateLimiter* rate_limiter = nullptr;
+
+  // mmap_size allow us create a huge mmap for reserving a virtual address
+  // range, later we read the really written data, this is very useful for
+  // memtable_as_log_index. Previously we truncate the file to a huge size
+  // for such purpose, but the side effect is that external process can not
+  // tailing the file.
+  //
+  // By using this feature, all requirements are satified!
+  //
+  // This field should be in FileOptions, but in FileOptions may be passed
+  // to EnvWrapper::NewRandomAccessFile which will convert FileOptions to
+  // EnvOptions, then re-pass EnvOptions to FileOptions, thus FileOptions
+  // part will be lost, so we move mmap_size from FileOptions here to make
+  // the legacy code happy.
+  //
+  size_t  mmap_size = 0; // can be larger than file size
 };
 
 // Exceptions MUST NOT propagate out of overridden functions into RocksDB,
@@ -423,12 +443,12 @@ class Env : public Customizable {
   }
 
   // Priority for scheduling job in thread pool
-  enum Priority { BOTTOM, LOW, HIGH, USER, TOTAL };
+  enum Priority : unsigned char { BOTTOM, LOW, HIGH, USER, TOTAL };
 
   static std::string PriorityToString(Priority priority);
 
   // Priority for requesting bytes in rate limiter scheduler
-  enum IOPriority {
+  enum IOPriority : unsigned char {
     IO_LOW = 0,
     IO_MID = 1,
     IO_HIGH = 2,
@@ -856,6 +876,8 @@ class RandomAccessFile {
         "RandomAccessFile::InvalidateCache not supported.");
   }
 
+  virtual intptr_t FileDescriptor() const = 0;
+
   // If you're adding methods here, remember to add them to
   // RandomAccessFileWrapper too.
 };
@@ -1001,7 +1023,7 @@ class WritableFile {
   /*
    * Get the size of valid data in the file.
    */
-  virtual uint64_t GetFileSize() { return 0; }
+  virtual uint64_t GetFileSize() = 0;
 
   /*
    * Get and set the default pre-allocation block size for writes to
@@ -1078,6 +1100,8 @@ class WritableFile {
 
   // If you're adding methods here, remember to add them to
   // WritableFileWrapper too.
+  virtual intptr_t FileDescriptor() const = 0;
+  virtual void SetFileSize(uint64_t) { assert(false); }
 
  protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
@@ -1189,15 +1213,15 @@ class Directory {
   // DirectoryWrapper too.
 };
 
-enum InfoLogLevel : unsigned char {
+ROCKSDB_ENUM_PLAIN(InfoLogLevel, unsigned char,
   DEBUG_LEVEL = 0,
   INFO_LEVEL,
   WARN_LEVEL,
   ERROR_LEVEL,
   FATAL_LEVEL,
   HEADER_LEVEL,
-  NUM_INFO_LOG_LEVELS,
-};
+  NUM_INFO_LOG_LEVELS
+);
 
 // An interface for writing log messages.
 //
@@ -1206,7 +1230,7 @@ enum InfoLogLevel : unsigned char {
 // including data loss, unreported corruption, deadlocks, and more.
 class Logger {
  public:
-  size_t kDoNotSupportGetLogFileSize = (std::numeric_limits<size_t>::max)();
+  static constexpr size_t kDoNotSupportGetLogFileSize = SIZE_MAX;
 
   explicit Logger(const InfoLogLevel log_level = InfoLogLevel::INFO_LEVEL)
       : closed_(false), log_level_(log_level) {}
@@ -1738,6 +1762,7 @@ class RandomAccessFileWrapper : public RandomAccessFile {
   Status InvalidateCache(size_t offset, size_t length) override {
     return target_->InvalidateCache(offset, length);
   }
+  intptr_t FileDescriptor() const final { return target_->FileDescriptor(); }
 
  private:
   RandomAccessFile* target_;
@@ -1816,6 +1841,14 @@ class WritableFileWrapper : public WritableFile {
 
   Status Allocate(uint64_t offset, uint64_t len) override {
     return target_->Allocate(offset, len);
+  }
+
+  intptr_t FileDescriptor() const override {
+    return target_->FileDescriptor();
+  }
+
+  void SetFileSize(uint64_t fsize) override {
+    return target_->SetFileSize(fsize);
   }
 
  private:

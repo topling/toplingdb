@@ -49,7 +49,9 @@ class OptimisticTransaction : public TransactionBaseImpl {
   Status SetName(const TransactionName& name) override;
 
  protected:
+  using TransactionBaseImpl::TryLock;
   Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
+                 size_t key_hash,
                  bool read_only, bool exclusive, const bool do_validate = true,
                  const bool assume_tracked = false) override;
 

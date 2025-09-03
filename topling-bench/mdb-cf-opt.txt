@@ -1,0 +1,6 @@
+{
+  "cfo": {
+    "default": "max_write_buffer_number=3;level0_slowdown_writes_trigger=18;level0_stop_writes_trigger=41"
+  },
+  "dbo": "max_background_compactions=17;max_background_flushes=4;max_subcompactions=3;delayed_write_rate=15M"
+}

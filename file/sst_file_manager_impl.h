@@ -136,6 +136,10 @@ class SstFileManagerImpl : public SstFileManager {
     delete_scheduler_.SetStatisticsPtr(stats);
   }
 
+  std::shared_ptr<SystemClock> GetClock() const { return clock_; }
+  std::shared_ptr<FileSystem> GetFileSystem() const { return fs_; }
+  std::shared_ptr<Logger> GetLogger() const { return logger_; }
+
  private:
   // REQUIRES: mutex locked
   void OnAddFileImpl(const std::string& file_path, uint64_t file_size);

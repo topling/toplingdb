@@ -478,7 +478,7 @@ class LDBTestCase(unittest.TestCase):
         self.assertTrue(self.dumpDb("--db=%s" % (origDbPath), dumpFilePath))
         self.assertTrue(
             self.loadDb(
-                "--db=%s %s --create_if_missing --disable_wal"
+                "--db=%s %s --create_if_missing --disable_wal --compact"
                 % (loadedDbPath, blobParams),
                 dumpFilePath,
             )

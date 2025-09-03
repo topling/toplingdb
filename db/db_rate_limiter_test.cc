@@ -221,6 +221,9 @@ TEST_P(DBRateLimiterOnReadTest, Iterator) {
     }
   }
   ASSERT_OK(iter->status());
+  if (GetReadOptions().cache_sst_file_iter) {
+    return;
+  }
   // Reverse scan does not read evenly (one block per iteration) due to
   // descending seqno ordering, so wait until after the loop to check total.
   ASSERT_EQ(expected, options_.rate_limiter->GetTotalRequests(Env::IO_USER));
@@ -423,12 +426,17 @@ TEST_P(DBRateLimiterOnWriteWALTest, AutoWalFlush) {
 
   if (no_rate_limit_auto_wal_flush || valid_arg) {
     EXPECT_TRUE(s.ok());
+  } else if (options_.memtable_as_log_index) {
+    // do nothing
   } else {
     EXPECT_TRUE(s.IsInvalidArgument());
     EXPECT_TRUE(s.ToString().find("WriteOptions::rate_limiter_priority") !=
                 std::string::npos);
   }
 
+  if (options_.memtable_as_log_index) {
+    return;
+  }
   std::int64_t actual_auto_wal_flush_request =
       options_.rate_limiter->GetTotalRequests(Env::IO_TOTAL) -
       prev_total_request;

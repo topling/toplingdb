@@ -602,8 +602,8 @@ jlong Java_org_rocksdb_Transaction_getIterator(JNIEnv* /*env*/,
   auto* column_family_handle =
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(
           jcolumn_family_handle);
-  return GET_CPLUSPLUS_POINTER(
-      txn->GetIterator(*read_options, column_family_handle));
+  auto* iter = txn->GetIterator(*read_options, column_family_handle);
+  return GET_CPLUSPLUS_POINTER(ROCKSDB_NAMESPACE::JZeroCopyIter::Make(iter));
 }
 
 /*

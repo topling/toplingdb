@@ -40,6 +40,7 @@ public class RocksDB extends RocksObject {
       "ByteBuffer parameters must all be direct, or must all be indirect";
   private ColumnFamilyHandle defaultColumnFamilyHandle_;
   private final ReadOptions defaultReadOptions_ = new ReadOptions();
+  private final ThreadLocal<ReadOptions> tlsReadOptions_ = ThreadLocal.withInitial(()->new ReadOptions());
 
   private final List<ColumnFamilyHandle> ownedColumnFamilyHandles = new ArrayList<>();
 
@@ -262,6 +263,10 @@ public class RocksDB extends RocksObject {
     return db;
   }
 
+  void syncSetDefaultColumnFamilyHandle() {
+    storeDefaultColumnFamilyHandle(makeDefaultColumnFamilyHandle());
+  }
+
   /**
    * The factory constructor of RocksDB that opens a RocksDB instance given
    * the path to the database using the specified options and db path and a list
@@ -327,6 +332,20 @@ public class RocksDB extends RocksObject {
     db.storeDefaultColumnFamilyHandle(db.makeDefaultColumnFamilyHandle());
 
     return db;
+  }
+
+  public static RocksDB fromNativeHandles(long dbHandle, long[] cfHandles) {
+    RocksDB db = new RocksDB(dbHandle);
+    if (cfHandles != null) {
+      for (int i = 0; i < cfHandles.length; i++) {
+        ColumnFamilyHandle cfh = new ColumnFamilyHandle(db, cfHandles[i]);
+        db.ownedColumnFamilyHandles.add(cfh);
+      }
+    }
+    return db;
+  }
+  public List<ColumnFamilyHandle> getOwnedColumnFamilyHandles() {
+    return ownedColumnFamilyHandles;
   }
 
   /**
@@ -1273,6 +1292,39 @@ public class RocksDB extends RocksObject {
         columnFamilyHandle.nativeHandle_);
   }
 
+  int getDirect1(final ReadOptions opt, final ByteBuffer key, final ByteBuffer value, final long cfh)
+      throws RocksDBException {
+    final long result;
+    final long keyPtr = DirectSlice.getDirectAddress(key) + key.position();
+    if (opt.isGoingToZeroCopy()) {
+      result = getDirect(nativeHandle_, opt.nativeHandle_,
+        keyPtr, key.remaining(), 0, -1, cfh);
+    } else {
+      long valuePtr = DirectSlice.getDirectAddress(value);
+      if (0 == valuePtr) {
+        throw new NullPointerException("DirectByteBuffer.address is null in non-zero-copy");
+      }
+      valuePtr += value.position();
+      result = getDirect(nativeHandle_, opt.nativeHandle_,
+        keyPtr, key.remaining(), valuePtr, value.remaining(), cfh);
+    }
+    if ((result & 7) == 0) { // zero copy
+      assert opt.isGoingToZeroCopy();
+      long valuePtr = DirectSlice.getUnsafe().getLong(result + 0);
+      long valueLen = DirectSlice.getUnsafe().getLong(result + 8);
+      if (DirectSlice.supportDirectBorrowMemory(value)) {
+        DirectSlice.directBorrowMemory(value, valuePtr, valueLen);
+      } else {
+        DirectSlice.copyToDirectBuffer(valuePtr, valueLen, value);
+      }
+      return (int)(valueLen);
+    } else {
+      // error or not found
+      assert (result & 7) == 1 : "Now just 1 is allowed";
+      return (int)(result >> 3);
+    }
+  }
+
   /**
    * Get the value associated with the specified key within column family.
    *
@@ -1296,8 +1348,7 @@ public class RocksDB extends RocksObject {
       throws RocksDBException {
     final int result;
     if (key.isDirect() && value.isDirect()) {
-      result = getDirect(nativeHandle_, opt.nativeHandle_, key, key.position(), key.remaining(),
-          value, value.position(), value.remaining(), 0);
+      result = getDirect1(opt, key, value, 0);
     } else if (!key.isDirect() && !value.isDirect()) {
       result =
           get(nativeHandle_, opt.nativeHandle_, key.array(), key.arrayOffset() + key.position(),
@@ -1337,14 +1388,54 @@ public class RocksDB extends RocksObject {
   public int get(final ColumnFamilyHandle columnFamilyHandle, final ReadOptions opt,
       final ByteBuffer key, final ByteBuffer value) throws RocksDBException {
     assert key.isDirect() && value.isDirect();
-    final int result =
-        getDirect(nativeHandle_, opt.nativeHandle_, key, key.position(), key.remaining(), value,
-            value.position(), value.remaining(), columnFamilyHandle.nativeHandle_);
+    final int result = getDirect1(opt, key, value, columnFamilyHandle.nativeHandle_);
     if (result != NOT_FOUND) {
       value.limit(Math.min(value.limit(), value.position() + result));
     }
     key.position(key.limit());
     return result;
+  }
+
+  private int byteArrayKeyGetDirect1(final ReadOptions opt, final byte[] key, int kOffset,
+                    int kLen, final ByteBuffer value, long cfh) throws RocksDBException {
+    if (!value.isDirect()) {
+      return get(nativeHandle_, opt.nativeHandle_, key, kOffset, kLen, value.array(),
+                 value.arrayOffset() + value.position(), value.remaining(), cfh);
+    }
+    if (!opt.isGoingToZeroCopy()) {
+      throw new IllegalArgumentException
+      ("Must be in zero copy section when get with ByteArray key & DirectBuffer value");
+    }
+    long result = byteArrayKeyGetDirect(nativeHandle_, opt.nativeHandle_, key, kOffset, kLen, cfh);
+    if ((result & 7) == 0) {
+      long valuePtr = DirectSlice.getUnsafe().getLong(result + 0);
+      long valueLen = DirectSlice.getUnsafe().getLong(result + 8);
+      if (DirectSlice.supportDirectBorrowMemory(value)) {
+        DirectSlice.directBorrowMemory(value, valuePtr, valueLen);
+      } else {
+        DirectSlice.copyToDirectBuffer(valuePtr, valueLen, value);
+      }
+      return (int)valueLen;
+    } else {
+      assert (result & 7) == 1; // currently just 1
+      return (int)(result >> 3);
+    }
+  }
+  public int get(final ReadOptions opt, final byte[] key, int kOffset, int kLen, final ByteBuffer value)
+      throws RocksDBException {
+    return byteArrayKeyGetDirect1(opt, key, kOffset, kLen, value, defaultColumnFamilyHandle_.nativeHandle_);
+  }
+  public int get(final ColumnFamilyHandle columnFamilyHandle, final ReadOptions opt,
+      final byte[] key, int kOffset, int kLen, final ByteBuffer value)
+      throws RocksDBException {
+    return byteArrayKeyGetDirect1(opt, key, kOffset, kLen, value, columnFamilyHandle.nativeHandle_);
+  }
+  public int get(final ReadOptions opt, final byte[] key, final ByteBuffer value) throws RocksDBException {
+    return get(opt, key, 0, key.length, value);
+  }
+  public int get(final ColumnFamilyHandle columnFamilyHandle, final ReadOptions opt,
+                 final byte[] key, final ByteBuffer value) throws RocksDBException {
+    return get(columnFamilyHandle, opt, key, 0, key.length, value);
   }
 
   /**
@@ -1829,6 +1920,7 @@ public class RocksDB extends RocksObject {
    */
   public void write(final WriteOptions writeOpts, final WriteBatch updates)
       throws RocksDBException {
+    updates.updateNativeDataSizeFromJava();
     write0(nativeHandle_, writeOpts.nativeHandle_, updates.nativeHandle_);
   }
 
@@ -2075,6 +2167,15 @@ public class RocksDB extends RocksObject {
         vOffset, vLen, columnFamilyHandle.nativeHandle_);
   }
 
+  private boolean isGetPreferZeroCopy_ = true;
+  {
+    String env = System.getenv("ROCKSDB_GET_PREFER_ZERO_COPY");
+    if (env != null)
+      isGetPreferZeroCopy_ = Boolean.parseBoolean(env);
+  }
+  final boolean isGetPreferZeroCopy() { return isGetPreferZeroCopy_; }
+  final void setGetPreferZeroCopy(boolean b) { isGetPreferZeroCopy_ = b; }
+
   /**
    * The simplified version of get which returns a new byte array storing
    * the value associated with the specified input key if any.  null will be
@@ -2088,6 +2189,15 @@ public class RocksDB extends RocksObject {
    *    native library.
    */
   public byte[] get(final byte[] key) throws RocksDBException {
+    if (isGetPreferZeroCopy_) {
+      final ReadOptions opt = tlsReadOptions_.get();
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(defaultColumnFamilyHandle_, opt, key);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, key, 0, key.length);
   }
 
@@ -2110,6 +2220,15 @@ public class RocksDB extends RocksObject {
   public byte[] get(final byte[] key, final int offset,
       final int len) throws RocksDBException {
     CheckBounds(offset, len, key.length);
+    if (isGetPreferZeroCopy_) {
+      final ReadOptions opt = tlsReadOptions_.get();
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(defaultColumnFamilyHandle_, opt, key, offset, len);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, key, offset, len);
   }
 
@@ -2129,6 +2248,15 @@ public class RocksDB extends RocksObject {
    */
   public byte[] get(final ColumnFamilyHandle columnFamilyHandle,
       final byte[] key) throws RocksDBException {
+    if (isGetPreferZeroCopy_) {
+      final ReadOptions opt = tlsReadOptions_.get();
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(columnFamilyHandle, opt, key);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, key, 0, key.length,
         columnFamilyHandle.nativeHandle_);
   }
@@ -2155,8 +2283,36 @@ public class RocksDB extends RocksObject {
       final byte[] key, final int offset, final int len)
       throws RocksDBException {
     CheckBounds(offset, len, key.length);
+    if (isGetPreferZeroCopy_) {
+      final ReadOptions opt = tlsReadOptions_.get();
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(columnFamilyHandle, opt, key, offset, len);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, key, offset, len,
         columnFamilyHandle.nativeHandle_);
+  }
+
+  // java side copy key to native and copy native value slice to byte[]
+  final byte[] getInZeroCopy(final ColumnFamilyHandle columnFamilyHandle,
+        final ReadOptions opt, final byte[] key) throws RocksDBException {
+    assert opt.isGoingToZeroCopy();
+    return getInZeroCopy(columnFamilyHandle, opt, key, 0, key.length);
+  }
+  final byte[] getInZeroCopy(final ColumnFamilyHandle columnFamilyHandle,
+        final ReadOptions opt, final byte[] key,
+        final int offset, final int len) throws RocksDBException {
+    assert opt.isGoingToZeroCopy();
+    long cfh = columnFamilyHandle.nativeHandle_;
+    long roh = opt.nativeHandle_;
+    long result = nativeGetInZeroCopy(nativeHandle_, roh, key, offset, len, cfh);
+    if ((result & 7) == 0) { // result is value slice
+      return DirectSlice.copyOfNativeByteArray(result);
+    }
+    return null;
   }
 
   /**
@@ -2174,6 +2330,16 @@ public class RocksDB extends RocksObject {
    */
   public byte[] get(final ReadOptions opt, final byte[] key)
       throws RocksDBException {
+    if (opt.isGoingToZeroCopy()) {
+      return getInZeroCopy(defaultColumnFamilyHandle_, opt, key);
+    } else if (isGetPreferZeroCopy_) {
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(defaultColumnFamilyHandle_, opt, key);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, opt.nativeHandle_, key, 0, key.length);
   }
 
@@ -2197,6 +2363,16 @@ public class RocksDB extends RocksObject {
   public byte[] get(final ReadOptions opt, final byte[] key, final int offset,
       final int len) throws RocksDBException {
     CheckBounds(offset, len, key.length);
+    if (opt.isGoingToZeroCopy()) {
+      return getInZeroCopy(defaultColumnFamilyHandle_, opt, key, offset, len);
+    } else if (isGetPreferZeroCopy_) {
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(defaultColumnFamilyHandle_, opt, key, offset, len);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, opt.nativeHandle_, key, offset, len);
   }
 
@@ -2217,6 +2393,16 @@ public class RocksDB extends RocksObject {
    */
   public byte[] get(final ColumnFamilyHandle columnFamilyHandle,
       final ReadOptions opt, final byte[] key) throws RocksDBException {
+    if (opt.isGoingToZeroCopy()) {
+      return getInZeroCopy(columnFamilyHandle, opt, key);
+    } else if (isGetPreferZeroCopy_) {
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(columnFamilyHandle, opt, key);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, opt.nativeHandle_, key, 0, key.length,
         columnFamilyHandle.nativeHandle_);
   }
@@ -2244,6 +2430,16 @@ public class RocksDB extends RocksObject {
       final ReadOptions opt, final byte[] key, final int offset, final int len)
       throws RocksDBException {
     CheckBounds(offset, len, key.length);
+    if (opt.isGoingToZeroCopy()) {
+      return getInZeroCopy(columnFamilyHandle, opt, key, offset, len);
+    } else if (isGetPreferZeroCopy_) {
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(columnFamilyHandle, opt, key, offset, len);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, opt.nativeHandle_, key, offset, len,
         columnFamilyHandle.nativeHandle_);
   }
@@ -2263,15 +2459,18 @@ public class RocksDB extends RocksObject {
       throws RocksDBException {
     assert (!keys.isEmpty());
 
-    final byte[][] keysArray = keys.toArray(new byte[keys.size()][]);
-    final int[] keyOffsets = new int[keysArray.length];
-    final int[] keyLengths = new int[keysArray.length];
-    for(int i = 0; i < keyLengths.length; i++) {
-      keyLengths[i] = keysArray[i].length;
-    }
+    return multiGetAsList(defaultColumnFamilyHandle_, keys);
+  }
 
-    return Arrays.asList(multiGet(nativeHandle_, keysArray, keyOffsets,
-        keyLengths));
+  public List<byte[]> multiGetAsList(final ColumnFamilyHandle cf,
+      final List<byte[]> keys) throws RocksDBException {
+    final ReadOptions opt = tlsReadOptions_.get();
+    try {
+      opt.startZeroCopy();
+      return multiGetInZeroCopy(opt, cf, keys);
+    } finally {
+      opt.finishZeroCopy();
+    }
   }
 
   /**
@@ -2304,6 +2503,12 @@ public class RocksDB extends RocksObject {
         throw new IllegalArgumentException(
             "For each key there must be a ColumnFamilyHandle.");
     }
+
+    final ColumnFamilyHandle uniqueCF = getUniqueCF(columnFamilyHandleList);
+    if (uniqueCF != null) {
+      return multiGetAsList(uniqueCF, keys);
+    }
+
     final long[] cfHandles = new long[columnFamilyHandleList.size()];
     for (int i = 0; i < columnFamilyHandleList.size(); i++) {
       cfHandles[i] = columnFamilyHandleList.get(i).nativeHandle_;
@@ -2334,17 +2539,45 @@ public class RocksDB extends RocksObject {
    */
   public List<byte[]> multiGetAsList(final ReadOptions opt,
       final List<byte[]> keys) throws RocksDBException {
+    return multiGetAsList(opt, defaultColumnFamilyHandle_, keys);
+  }
+  public List<byte[]> multiGetAsList(final ReadOptions opt,
+      final ColumnFamilyHandle columnFamilyHandle,
+      final List<byte[]> keys) throws RocksDBException {
     assert (!keys.isEmpty());
-
-    final byte[][] keysArray = keys.toArray(new byte[keys.size()][]);
-    final int[] keyOffsets = new int[keysArray.length];
-    final int[] keyLengths = new int[keysArray.length];
-    for(int i = 0; i < keyLengths.length; i++) {
-      keyLengths[i] = keysArray[i].length;
+    if (opt.isGoingToZeroCopy()) {
+      return multiGetInZeroCopy(opt, columnFamilyHandle, keys);
     }
+    try {
+      opt.startZeroCopy();
+      return multiGetInZeroCopy(opt, columnFamilyHandle, keys);
+    } finally {
+      opt.finishZeroCopy();
+    }
+  }
 
-    return Arrays.asList(multiGet(nativeHandle_, opt.nativeHandle_,
-        keysArray, keyOffsets, keyLengths));
+  private final List<byte[]> multiGetInZeroCopy(final ReadOptions opt,
+      final ColumnFamilyHandle cf,
+      final List<byte[]> keys) throws RocksDBException {
+    final byte[][] keysArray = keys.toArray(new byte[keys.size()][]);
+    final byte[][] values = multiGetInZeroCopy(opt, cf, keysArray);
+    return Arrays.asList(values);
+  }
+  private final byte[][] multiGetInZeroCopy(final ReadOptions opt,
+      final ColumnFamilyHandle columnFamilyHandle,
+      final byte[][] keysArray) throws RocksDBException {
+    final long sliceVec = DirectSlice.createNativeSliceVec(keysArray);
+    try {
+      final long cfh = columnFamilyHandle.nativeHandle_;
+      final long roh = opt.nativeHandle_;
+      final Status[] statusArray = new Status[keysArray.length];
+      multiGetZeroCopyNative(nativeHandle_, roh, cfh, sliceVec, statusArray);
+      // sliceVec is reused as value slice in multiGetZeroCopyNative
+      return DirectSlice.copyNativeSliceVec(keysArray.length, sliceVec);
+    }
+    finally {
+      DirectSlice.getUnsafe().freeMemory(sliceVec);
+    }
   }
 
   /**
@@ -2377,6 +2610,10 @@ public class RocksDB extends RocksObject {
       throw new IllegalArgumentException(
           "For each key there must be a ColumnFamilyHandle.");
     }
+    ColumnFamilyHandle uniqueCF = getUniqueCF(columnFamilyHandleList);
+    if (uniqueCF != null) {
+      return multiGetAsList(opt, uniqueCF, keys);
+    }
     final long[] cfHandles = new long[columnFamilyHandleList.size()];
     for (int i = 0; i < columnFamilyHandleList.size(); i++) {
       cfHandles[i] = columnFamilyHandleList.get(i).nativeHandle_;
@@ -2393,6 +2630,27 @@ public class RocksDB extends RocksObject {
         keysArray, keyOffsets, keyLengths, cfHandles));
   }
 
+  public static ColumnFamilyHandle getUniqueCF(List<ColumnFamilyHandle> vec) {
+    if (vec.size() == 0)
+      return null;
+    ColumnFamilyHandle first = vec.get(0);
+    for (int i = 1; i < vec.size(); i++) {
+      if (vec.get(i) != first)
+        return null;
+    }
+    return first;
+  }
+  public static ColumnFamilyHandle getUniqueCF(ColumnFamilyHandle[] vec) {
+    if (vec.length == 0)
+      return null;
+    ColumnFamilyHandle first = vec[0];
+    for (int i = 1; i < vec.length; i++) {
+      if (vec[i] != first)
+        return null;
+    }
+    return first;
+  }
+
   /**
    * Fetches a list of values for the given list of keys, all from the default column family.
    *
@@ -2407,11 +2665,10 @@ public class RocksDB extends RocksObject {
    */
   public List<ByteBufferGetStatus> multiGetByteBuffers(
       final List<ByteBuffer> keys, final List<ByteBuffer> values) throws RocksDBException {
-    try (ReadOptions readOptions = new ReadOptions()) {
-      final List<ColumnFamilyHandle> columnFamilyHandleList = new ArrayList<>(1);
-      columnFamilyHandleList.add(getDefaultColumnFamily());
-      return multiGetByteBuffers(readOptions, columnFamilyHandleList, keys, values);
-    }
+    ReadOptions readOptions = tlsReadOptions_.get();
+    final List<ColumnFamilyHandle> columnFamilyHandleList = new ArrayList<>(1);
+    columnFamilyHandleList.add(getDefaultColumnFamily());
+    return multiGetByteBuffers(readOptions, columnFamilyHandleList, keys, values);
   }
 
   /**
@@ -2451,9 +2708,8 @@ public class RocksDB extends RocksObject {
   public List<ByteBufferGetStatus> multiGetByteBuffers(
       final List<ColumnFamilyHandle> columnFamilyHandleList, final List<ByteBuffer> keys,
       final List<ByteBuffer> values) throws RocksDBException {
-    try (ReadOptions readOptions = new ReadOptions()) {
-      return multiGetByteBuffers(readOptions, columnFamilyHandleList, keys, values);
-    }
+    ReadOptions readOptions = tlsReadOptions_.get();
+    return multiGetByteBuffers(readOptions, columnFamilyHandleList, keys, values);
   }
 
   /**
@@ -2524,19 +2780,44 @@ public class RocksDB extends RocksObject {
       keyLengths[i] = keysArray[i].limit();
     }
     final ByteBuffer[] valuesArray = values.toArray(new ByteBuffer[0]);
-    final int[] valuesSizeArray = new int[numValues];
+    final int[] valuesSizeArray = new int[numValues * 3];
     final Status[] statusArray = new Status[numValues];
 
+    final boolean zeroCopy;
+    if (readOptions.isGoingToZeroCopy()) {
+      int numSupportBorrow = 0;
+      for (int i = 0; i < numValues; i++) {
+        if (DirectSlice.supportDirectBorrowMemory(valuesArray[i])) {
+          numSupportBorrow++;
+        }
+      }
+      if (numSupportBorrow == 0)
+        zeroCopy = false;
+      else if (numSupportBorrow == numValues)
+        zeroCopy = true;
+      else
+        throw new IllegalArgumentException("Some value buffer support borrow memory but some do not, must be all or none");
+    } else {
+      zeroCopy = false;
+    }
     multiGet(nativeHandle_, readOptions.nativeHandle_, cfHandles, keysArray, keyOffsets, keyLengths,
-        valuesArray, valuesSizeArray, statusArray);
+        zeroCopy ? null : valuesArray, valuesSizeArray, statusArray);
 
     final List<ByteBufferGetStatus> results = new ArrayList<>();
     for (int i = 0; i < numValues; i++) {
       final Status status = statusArray[i];
       if (status.getCode() == Status.Code.Ok) {
         final ByteBuffer value = valuesArray[i];
-        value.position(Math.min(valuesSizeArray[i], value.capacity()));
-        value.flip(); // prepare for read out
+        if (zeroCopy) {
+          final long addr =
+               (long)(valuesSizeArray[numValues + 2*i + 0]) & 0xFFFFFFFFL |
+               (long)(valuesSizeArray[numValues + 2*i + 1]) << 32;
+          DirectSlice.directBorrowMemoryUnchecked(value, addr, valuesSizeArray[i]);
+          //System.err.printf("java: %d-th valueData = %X%n", i, valueData);
+        } else {
+          value.position(Math.min(valuesSizeArray[i], value.capacity()));
+          value.flip(); // prepare for read out
+        }
         results.add(new ByteBufferGetStatus(status, valuesSizeArray[i], value));
       } else {
         results.add(new ByteBufferGetStatus(status));
@@ -2545,6 +2826,80 @@ public class RocksDB extends RocksObject {
 
     return results;
   }
+
+  /**
+   * Fetches multi values for the given keys.
+   * <p>
+   * Note: Every key is in columnFamilyHandle
+   * </p>
+   *
+   * @param readOptions Read options
+   * @param columnFamilyHandle {@link org.rocksdb.ColumnFamilyHandle} instances.
+   * @param keys array of byte array.
+   * @param values list of buffers to return retrieved values in, users can
+   * pass in an empty list, this function will auto create DirectByteBuffer
+   * and fill into, existing ByteBuffer in the list is reused.
+   * @throws RocksDBException if error happens in underlying native library.
+   * @throws IllegalArgumentException thrown if readOptions is not zero copy,
+   * if a ByteBuffer in values is not direct
+   * @return the array of values for the given list of keys
+   */
+  public ByteBufferGetStatus[] multiGetZeroCopy(final ReadOptions readOptions,
+      final ColumnFamilyHandle columnFamilyHandle, final byte[][] keys,
+      final List<ByteBuffer> values) throws RocksDBException {
+    if (!readOptions.isGoingToZeroCopy()) {
+      throw new IllegalArgumentException("multiGetZeroCopy must be in zero copy section");
+    }
+    for (int i = values.size(); i < keys.length; i++) {
+      values.add(DirectSlice.newZeroCopyDirectBuffer());
+    }
+    final long keysBuffer = DirectSlice.createNativeSliceVec(keys);
+    try {
+      final long cfh = columnFamilyHandle.nativeHandle_;
+      final long roh = readOptions.nativeHandle_;
+      final Status[] statusArray = new Status[keys.length];
+      multiGetZeroCopyNative(nativeHandle_, roh, cfh, keysBuffer, statusArray);
+      final ByteBufferGetStatus[] results = new ByteBufferGetStatus[keys.length];
+      final long valueSliceVec = keysBuffer; // C++ return'ed value slice
+      for (int i = 0; i < keys.length; i++) {
+        long valuePtr = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 0);
+        long valueLen = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 8);
+        final Status status = statusArray[i];
+        if (valuePtr != 0) { // Found the key
+          ByteBuffer value = values.get(i);
+          if (value == null) { // auto create direct buffer
+            value = DirectSlice.newZeroCopyDirectBuffer();
+            values.set(i, value);
+          } else if (!value.isDirect()) {
+            throw new IllegalArgumentException("ByteBuffer for value must be direct");
+          }
+          if (DirectSlice.supportDirectBorrowMemory(value)) {
+            DirectSlice.directBorrowMemoryUnchecked(value, valuePtr, valueLen);
+          } else {
+            int cplen = DirectSlice.copyToDirectBuffer(valuePtr, valueLen, value);
+            value.limit(Math.min(value.position() + cplen, value.limit()));
+          }
+          //System.err.printf("java: %d-th value = 0x%12X %4d%n", i, valuePtr, valueLen);
+          results[i] = new ByteBufferGetStatus(status, (int)valueLen, value);
+        } else if (status == null) { // NotFound
+          // NotFound is a normal case, create status in java side is faster
+          results[i] = new ByteBufferGetStatus
+          (new Status(Status.Code.NotFound, Status.SubCode.None, "NotFound"));
+        } else {
+          results[i] = new ByteBufferGetStatus(status);
+        }
+      }
+      return results;
+    } finally {
+      DirectSlice.getUnsafe().freeMemory(keysBuffer);
+    }
+  }
+  public ByteBufferGetStatus[] multiGetZeroCopy(final ReadOptions readOptions,
+      final byte[][] keys, final List<ByteBuffer> values) throws RocksDBException {
+    return multiGetZeroCopy(readOptions, defaultColumnFamilyHandle_, keys, values);
+  }
+  private native void multiGetZeroCopyNative
+  (long dbh, long roh, long cfh, long keysBuffer, Status[] sta);
 
   /**
    *  Check if a key exists in the database.
@@ -5002,9 +5357,13 @@ public class RocksDB extends RocksObject {
   private native Map<String, String> getMapProperty(final long nativeHandle,
       final long cfHandle, final String property, final int propertyLength)
       throws RocksDBException;
-  private native int getDirect(long handle, long readOptHandle, ByteBuffer key, int keyOffset,
-      int keyLength, ByteBuffer value, int valueOffset, int valueLength, long cfHandle)
+  private native long getDirect(long handle, long readOptHandle, long keyPtr,
+      int keyLength, long valuePtr, int valueLength, long cfHandle)
       throws RocksDBException;
+  private native long nativeGetInZeroCopy(long handle, long readOptHandle, byte[] key,
+      int keyOffset, int keyLength, long cfHandle) throws RocksDBException;
+  private native long byteArrayKeyGetDirect(long handle, long readOptHandle,
+      byte[] key, int keyOffset, int keyLength, long cfHandle) throws RocksDBException;
   private native boolean keyMayExistDirect(final long handle, final long cfHhandle,
       final long readOptHandle, final ByteBuffer key, final int keyOffset, final int keyLength);
   private native int[] keyMayExistDirectFoundValue(final long handle, final long cfHhandle,

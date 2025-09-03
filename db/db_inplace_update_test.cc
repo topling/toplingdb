@@ -127,6 +127,7 @@ TEST_F(DBTestInPlaceUpdate, InPlaceUpdateCallbackSmallerSize) {
 
     options.env = env_;
     options.write_buffer_size = 100000;
+    options.memtable_as_log_index = false;
     options.inplace_callback =
         ROCKSDB_NAMESPACE::DBTestInPlaceUpdate::updateInPlaceSmallerSize;
     options.allow_concurrent_memtable_write = false;
@@ -154,8 +155,12 @@ TEST_F(DBTestInPlaceUpdate, InPlaceUpdateCallbackSmallerVarintSize) {
     options.create_if_missing = true;
     options.inplace_update_support = true;
 
+    // not supported inplace_update callback
+    options.memtable_as_log_index = false;
+
     options.env = env_;
     options.write_buffer_size = 100000;
+    options.memtable_as_log_index = false;
     options.inplace_callback =
         ROCKSDB_NAMESPACE::DBTestInPlaceUpdate::updateInPlaceSmallerVarintSize;
     options.allow_concurrent_memtable_write = false;
@@ -183,8 +188,12 @@ TEST_F(DBTestInPlaceUpdate, InPlaceUpdateCallbackLargeNewValue) {
     options.create_if_missing = true;
     options.inplace_update_support = true;
 
+    // not supported inplace_update callback
+    options.memtable_as_log_index = false;
+
     options.env = env_;
     options.write_buffer_size = 100000;
+    options.memtable_as_log_index = false;
     options.inplace_callback =
         ROCKSDB_NAMESPACE::DBTestInPlaceUpdate::updateInPlaceLargerSize;
     options.allow_concurrent_memtable_write = false;
@@ -210,8 +219,12 @@ TEST_F(DBTestInPlaceUpdate, InPlaceUpdateCallbackNoAction) {
     options.create_if_missing = true;
     options.inplace_update_support = true;
 
+    // not supported inplace_update callback
+    options.memtable_as_log_index = false;
+
     options.env = env_;
     options.write_buffer_size = 100000;
+    options.memtable_as_log_index = false;
     options.inplace_callback =
         ROCKSDB_NAMESPACE::DBTestInPlaceUpdate::updateInPlaceNoAction;
     options.allow_concurrent_memtable_write = false;

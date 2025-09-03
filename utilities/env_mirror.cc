@@ -95,6 +95,8 @@ class RandomAccessFileMirror : public RandomAccessFile {
     // NOTE: not verified
     return a_->GetUniqueId(id, max_size);
   }
+
+  intptr_t FileDescriptor() const final { return a_->FileDescriptor(); }
 };
 
 class WritableFileMirror : public WritableFile {
@@ -188,6 +190,7 @@ class WritableFileMirror : public WritableFile {
     assert(as == bs);
     return as;
   }
+  intptr_t FileDescriptor() const final { return a_->FileDescriptor(); }
 
  protected:
   Status Allocate(uint64_t offset, uint64_t length) override {

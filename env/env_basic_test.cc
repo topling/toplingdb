@@ -15,6 +15,9 @@
 #include "rocksdb/env.h"
 #include "rocksdb/env_encryption.h"
 #include "test_util/testharness.h"
+#include "fs_cat.h"
+#include "env_chroot.h"
+#include "composite_env_wrapper.h"
 
 namespace ROCKSDB_NAMESPACE {
 namespace {
@@ -81,6 +84,22 @@ static Env* GetTestFS() {
   return fs_env;
 }
 
+static std::pair<std::shared_ptr<FileSystem>,
+                 std::shared_ptr<FileSystem> > GetTwoChroot() {
+  Env* env = Env::Default();
+  env->CreateDirIfMissing("/tmp/chroot1");
+  env->CreateDirIfMissing("/tmp/chroot2");
+  auto fs = env->GetFileSystem();
+  return {NewChrootFileSystem(fs, "/tmp/chroot1"),
+          NewChrootFileSystem(fs, "/tmp/chroot2")};
+}
+static Env* GetTestCatFS() {
+  static auto fs = GetTwoChroot();
+  static auto fs_cat = std::make_shared<CatFileSystem>(fs.first, fs.second, true);
+  static Env* fs_env = new CompositeEnvWrapper(Env::Default(), fs_cat);
+  return fs_env;
+}
+
 }  // namespace
 class EnvBasicTestWithParam
     : public testing::Test,
@@ -134,6 +153,9 @@ std::vector<CreateEnvFunc*> GetCustomEnvs() {
   uri = getenv("TEST_FS_URI");
   if (uri != nullptr) {
     res.push_back(&GetTestFS);
+  }
+  if (const char* fs_cat = getenv("FS_CAT"); fs_cat && atoi(fs_cat)) {
+    res.push_back(&GetTestCatFS);
   }
   return res;
 }
@@ -364,7 +386,7 @@ TEST_P(EnvMoreTestWithParam, GetChildren) {
 }
 
 TEST_P(EnvMoreTestWithParam, GetChildrenIgnoresDotAndDotDot) {
-  auto* env = Env::Default();
+  Env* env = env_;
   ASSERT_OK(env->CreateDirIfMissing(test_dir_));
 
   // Create a single file

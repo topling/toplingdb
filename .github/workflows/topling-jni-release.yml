@@ -1,0 +1,88 @@
+name: Publish to Release
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+          server-id: github # Value of the distributionManagement/repository/id field of the pom.xml
+          settings-path: ${{ github.workspace }} # location for the settings.xml file
+
+      - name: Install Prerequisites
+        run: |
+         set -xe
+         cat $GITHUB_WORKSPACE/settings.xml
+         sudo apt-get update -y && sudo apt-get install -y \
+         libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
+         libbz2-dev libcurl4-gnutls-dev liburing-dev \
+         libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
+
+      - name: Init submodule & Setup ssh
+        run: |
+         git submodule update --init --recursive
+         mkdir -p ~/.ssh && mkdir -p /opt/lib
+         ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+         echo nproc = `nproc`
+
+      - name: Git clone SidePlugin(s)
+        run: |
+          # this will be auto triggerred in normal build, we defined
+          # it here is just for seperate steps more clearly.
+          # there is no dedicated target for this purpose, so we use `clean`
+          # as the target, it need not any `clean` at this point.
+          # `clean` is just used for triggers auto git clone
+          make clean
+
+      - name: make depend for Compile RocksDBJava Release
+        run: |
+          echo JAVA_HOME = $JAVA_HOME
+          set -xe
+          env USE_LTO=1 \
+          make depend java/include/java_header_list.mk \
+               -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0 \
+               DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 \
+               STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1
+
+      - name: Compile RocksDBJava Release
+        run: |
+          echo JAVA_HOME = $JAVA_HOME
+          set -xe
+          env USE_LTO=1 \
+          make rocksdbjava -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0 \
+               DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 \
+               STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1
+
+      - name: Prerelease and Generate Checksums
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        run: |
+          set -xe
+          ROCKSDB_VERSION=`build_tools/version.sh full`
+          # ex: topling-8.10.2-frocksdb-1.0, part <frocksdb> will be ignored
+          TOPLING_VERSION=`echo ${GITHUB_REF} | sed 's:^refs/tags/topling-'${ROCKSDB_VERSION}'[-_a-z]*\([.0-9]\):\1:'`
+          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}-topling-${TOPLING_VERSION}
+          cd java/target
+          db_artifactId=`sed -n 's/.*<artifactId>\(f\?rocksdbjni\)<\/artifactId>.*/\1/p' ../pom.xml.template`
+          TARGET_JAR=${db_artifactId}-${ROCKSDB_JAVA_VERSION}.jar
+          mv rocksdbjni-${ROCKSDB_VERSION}-linux64.jar ${TARGET_JAR}
+          shasum -a 1 ${TARGET_JAR} > ${TARGET_JAR}.sha1
+          md5sum      ${TARGET_JAR} > ${TARGET_JAR}.md5
+          gh release upload --clobber ${{github.ref_name}} ${TARGET_JAR}*

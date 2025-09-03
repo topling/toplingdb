@@ -68,7 +68,7 @@ struct Trace {
   }
 };
 
-enum TracePayloadType : char {
+enum TracePayloadType : unsigned char {
   // Each member of all query payload structs should have a corresponding flag
   // here. Make sure to add them sequentially in the order of it is added.
   kEmptyPayload = 0,

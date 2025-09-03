@@ -233,14 +233,19 @@ public class Options extends RocksObject
           "Merge operator name must not be null.");
     }
     setMergeOperatorName(nativeHandle_, name);
+    mergeOperatorName_ = name;
     return this;
   }
 
   @Override
   public Options setMergeOperator(final MergeOperator mergeOperator) {
     setMergeOperator(nativeHandle_, mergeOperator.nativeHandle_);
+    mergeOperator_ = mergeOperator;
     return this;
   }
+
+  @Override public String mergeOperatorName() { return mergeOperatorName_; }
+  @Override public MergeOperator mergeOperator() { return mergeOperator_; }
 
   @Override
   public Options setCompactionFilter(
@@ -2583,4 +2588,6 @@ public class Options extends RocksObject
   private WriteBufferManager writeBufferManager_;
   private SstPartitionerFactory sstPartitionerFactory_;
   private ConcurrentTaskLimiter compactionThreadLimiter_;
+  private MergeOperator mergeOperator_;
+  private String mergeOperatorName_;
 }

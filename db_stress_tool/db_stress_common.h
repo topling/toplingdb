@@ -110,6 +110,7 @@ DECLARE_int32(max_write_buffer_number_to_maintain);
 DECLARE_int64(max_write_buffer_size_to_maintain);
 DECLARE_bool(use_write_buffer_manager);
 DECLARE_double(memtable_prefix_bloom_size_ratio);
+DECLARE_bool(allow_merge_memtables);
 DECLARE_bool(memtable_whole_key_filtering);
 DECLARE_int32(open_files);
 DECLARE_uint64(compressed_secondary_cache_size);

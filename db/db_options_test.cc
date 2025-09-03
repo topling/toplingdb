@@ -412,7 +412,9 @@ TEST_F(DBOptionsTest, SetWalBytesPerSync) {
   }
   ASSERT_GT(counter, 0);
   ASSERT_GT(low_bytes_per_sync, 0);
-  ASSERT_GT(low_bytes_per_sync, counter);
+  if (!options.memtable_as_log_index) {
+    ASSERT_GT(low_bytes_per_sync, counter);
+  }
 }
 
 TEST_F(DBOptionsTest, WritableFileMaxBufferSize) {
@@ -681,8 +683,13 @@ TEST_F(DBOptionsTest, AvoidFlushDuringShutdown) {
   ASSERT_OK(Put("foo", "v2", write_without_wal));
   ASSERT_OK(dbfull()->SetDBOptions({{"avoid_flush_during_shutdown", "true"}}));
   Reopen(options);
-  ASSERT_EQ("NOT_FOUND", Get("foo"));
-  ASSERT_EQ("", FilesPerLevel());
+  if (options.memtable_as_log_index) { // disableWAL does not take effect
+    ASSERT_EQ("v2", Get("foo"));
+    ASSERT_EQ("1", FilesPerLevel());
+  } else {
+    ASSERT_EQ("NOT_FOUND", Get("foo"));
+    ASSERT_EQ("", FilesPerLevel());
+  }
 }
 
 TEST_F(DBOptionsTest, SetDelayedWriteRateOption) {

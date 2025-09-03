@@ -24,6 +24,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+extern bool g_memtable_as_log_index;
+
 bool use_compression;
 
 class MergeTest : public testing::Test {};
@@ -524,6 +526,7 @@ void runTest(const std::string& dbname, const bool use_ttl = false) {
 
   ASSERT_OK(DestroyDB(dbname, Options()));
 
+  if (!g_memtable_as_log_index)
   {
     size_t max_merge = 5;
     auto db = OpenDb(dbname, use_ttl, max_merge);

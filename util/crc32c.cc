@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "port/lang.h"
+#include "port/likely.h"
 #include "util/coding.h"
 #include "util/crc32c_arm64.h"
 #include "util/math.h"
@@ -1140,6 +1141,7 @@ uint32_t Extend(uint32_t crc, const char* buf, size_t size) {
 // b, m, and p are all bit-reflected.
 //
 // https://en.wikipedia.org/wiki/Finite_field_arithmetic
+#if defined(gf_multiply_sw_slow)
 static constexpr uint32_t gf_multiply_sw_1(
     size_t i, uint32_t p, uint32_t a, uint32_t b, uint32_t m) {
   // clang-format off
@@ -1151,8 +1153,20 @@ static constexpr uint32_t gf_multiply_sw_1(
       /* m = */ m);
   // clang-format on
 }
+#endif
 static constexpr uint32_t gf_multiply_sw(uint32_t a, uint32_t b, uint32_t m) {
+#if defined(gf_multiply_sw_slow)
   return gf_multiply_sw_1(/* i = */ 0, /* p = */ 0, a, b, m);
+#else
+  uint32_t p = 0;
+ #pragma GCC unroll 32
+  for (size_t i = 0; i < 32; i++) {
+    p = p ^ ((0u-((b >> 31) & 1)) & a);
+    a = (a >> 1) ^ ((0u-(a & 1)) & m);
+    b = b << 1;
+  }
+  return p;
+#endif
 }
 
 static constexpr uint32_t gf_square_sw(uint32_t a, uint32_t m) {
@@ -1200,11 +1214,27 @@ static constexpr uint32_t crc32c_m = 0x82f63b78;
 static constexpr std::array<uint32_t, 62> const crc32c_powers =
     gf_powers_make<crc32c_m>{}(make_index_sequence<62>{});
 
+static uint32_t gf_multiply_crc32c_hw(uint64_t crc1, uint64_t crc2) {
+#if defined(__SSE4_2__)
+  const auto crc1_xmm = _mm_set_epi64x(0, crc1);
+  const auto crc2_xmm = _mm_set_epi64x(0, crc2);
+  const auto count = _mm_set_epi64x(0, 1);
+  const auto res0 = _mm_clmulepi64_si128(crc2_xmm, crc1_xmm, 0x00);
+  const auto res1 = _mm_sll_epi64(res0, count);
+
+  // Use hardware crc32c to do reduction from 64 -> 32 bytes
+  const auto res2 = _mm_cvtsi128_si64(res1);
+  const auto res3 = _mm_crc32_u32(0, res2);
+  const auto res4 = _mm_extract_epi32(res1, 1);
+  return res3 ^ res4;
+#else
+  return gf_multiply_sw(crc1, crc2, crc32c_m);
+#endif
+}
+
 // Expects a "pure" crc (see Crc32cCombine)
-static uint32_t Crc32AppendZeroes(
-    uint32_t crc, size_t len_over_4, uint32_t polynomial,
-    std::array<uint32_t, 62> const& powers_array) {
-  auto powers = powers_array.data();
+static uint32_t Crc32AppendZeroesSlow(uint32_t crc, size_t len_over_4) {
+  const uint32_t* powers = crc32c_powers.data();
   // Append by multiplying by consecutive powers of two of the zeroes
   // array
   size_t len_bits = len_over_4;
@@ -1215,13 +1245,51 @@ static uint32_t Crc32AppendZeroes(
     len_bits >>= r;
     powers += r;
 
-    crc = gf_multiply_sw(crc, *powers, polynomial);
+    crc = gf_multiply_crc32c_hw(crc, *powers);
 
     len_bits >>= 1;
     powers++;
   }
 
   return crc;
+}
+
+template<size_t CacheSize>
+struct Crc32AppendZeroesCache {
+  static_assert(CacheSize > 0);
+  static_assert((CacheSize & (CacheSize - 1)) == 0,
+                "CacheSize must be a power of 2");
+  Crc32AppendZeroesCache() {
+    // The result of X^31 mod the crc32c polynomial is 1 in galois-field.
+    // So we can use it to pre-compute the multiplier as small len cache.
+    multiplier[0] = 0x80000000;
+    for (size_t i = 1; i < CacheSize; ++i)
+      multiplier[i] = gf_multiply_crc32c_hw(crc32c_m, multiplier[i - 1]);
+  }
+  uint32_t AppendZero(uint32_t crc, size_t len_over_4) const {
+    // O(1) quick path.
+    // For example, if len_over_4 = 1024+8+2 = 1034,
+    // Slow path is like crc *= X^2 *= X^8 *= X^1024,
+    // while quick path is like crc *= X^1034 as we already stored
+    // the multiplier[1034]
+    if (size_t cached_part = len_over_4 & (CacheSize - 1)) {
+      crc = gf_multiply_crc32c_hw(crc, multiplier[cached_part]);
+    }
+    if (UNLIKELY(len_over_4 >= CacheSize)) {
+      // Slow path, O(popcnt(len_over_4))
+      len_over_4 &= ~(CacheSize - 1);
+      crc = Crc32AppendZeroesSlow(crc, len_over_4);
+    }
+    return crc;
+  }
+  uint32_t multiplier[CacheSize];
+};
+static const size_t crc32c_gf_powers_table_cache_size = (1u<<16);
+static const Crc32AppendZeroesCache<crc32c_gf_powers_table_cache_size>
+  g_crc32c_append_zeroes_cache;
+
+static uint32_t Crc32AppendZeroes(uint32_t crc, size_t len_over_4) {
+  return g_crc32c_append_zeroes_cache.AppendZero(crc, len_over_4);
 }
 
 static inline uint32_t InvertedToPure(uint32_t crc) { return ~crc; }
@@ -1289,7 +1357,7 @@ uint32_t Crc32cCombine(uint32_t crc1, uint32_t crc2, size_t crc2len) {
     tmp = PureExtend(tmp, zeros, len);
   }
   return PureToInverted(
-      Crc32AppendZeroes(tmp, crc2len / 4, crc32c_m, crc32c_powers) ^
+      Crc32AppendZeroes(tmp, crc2len / 4) ^
       pure_crc2_with_init);
 }
 

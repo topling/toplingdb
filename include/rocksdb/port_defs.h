@@ -16,7 +16,7 @@ namespace port {
 class CondVar;
 }
 
-enum class CpuPriority {
+enum class CpuPriority : unsigned char {
   kIdle = 0,
   kLow = 1,
   kNormal = 2,

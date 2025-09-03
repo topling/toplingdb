@@ -49,7 +49,7 @@ Status VerifySstFileChecksum(const Options& options,
         "is "
         "`Env::IOActivity::kUnknown`");
   }
-  ReadOptions read_options(_read_options);
+  const ReadOptions& read_options = _read_options;
   return VerifySstFileChecksumInternal(options, env_options, read_options,
                                        file_path, largest_seqno);
 }

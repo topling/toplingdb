@@ -136,7 +136,7 @@ TEST(BlobCountingIteratorTest, CountBlobs) {
   {
     IterateResult result;
     ASSERT_TRUE(blob_counter.NextAndGetResult(&result));
-    ASSERT_EQ(result.key, keys[1]);
+    ASSERT_EQ(result.key(), keys[1]);
     ASSERT_EQ(blob_counter.user_key(), user_key1);
     ASSERT_TRUE(blob_counter.Valid());
     ASSERT_OK(blob_counter.status());
@@ -151,7 +151,7 @@ TEST(BlobCountingIteratorTest, CountBlobs) {
   {
     IterateResult result;
     ASSERT_TRUE(blob_counter.NextAndGetResult(&result));
-    ASSERT_EQ(result.key, keys[2]);
+    ASSERT_EQ(result.key(), keys[2]);
     ASSERT_EQ(blob_counter.user_key(), user_key2);
     ASSERT_TRUE(blob_counter.Valid());
     ASSERT_OK(blob_counter.status());

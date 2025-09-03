@@ -2662,6 +2662,7 @@ public class Transaction extends RocksObject {
   public void rebuildFromWriteBatch(final WriteBatch writeBatch)
       throws RocksDBException {
     assert(isOwningHandle());
+    writeBatch.updateNativeDataSizeFromJava();
     rebuildFromWriteBatch(nativeHandle_, writeBatch.nativeHandle_);
   }
 

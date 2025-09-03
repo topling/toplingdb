@@ -64,6 +64,10 @@ using ssize_t = SSIZE_T;
 
 namespace ROCKSDB_NAMESPACE {
 
+inline uint64_t NativeOfBigEndian64(uint64_t x) { return _byteswap_uint64(x); }
+inline uint32_t NativeOfBigEndian32(uint32_t x) { return _byteswap_ulong(x); }
+inline uint16_t NativeOfBigEndian16(uint16_t x) { return _byteswap_ushort(x); }
+
 #define PREFETCH(addr, rw, locality)
 
 extern const bool kDefaultToAdaptiveMutex;

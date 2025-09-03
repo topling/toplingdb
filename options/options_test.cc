@@ -128,6 +128,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
       {"blob_garbage_collection_force_threshold", "0.75"},
       {"blob_compaction_readahead_size", "256K"},
       {"blob_file_starting_level", "1"},
+      {"min_filter_level", "1"},
       {"prepopulate_blob_cache", "kDisable"},
       {"last_level_temperature", "kWarm"},
       {"default_temperature", "kHot"},
@@ -168,6 +169,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
       {"stats_dump_period_sec", "46"},
       {"stats_persist_period_sec", "57"},
       {"persist_stats_to_disk", "false"},
+      {"memtable_as_log_index", "false"},
       {"stats_history_buffer_size", "69"},
       {"advise_random_on_open", "true"},
       {"use_adaptive_mutex", "false"},
@@ -283,6 +285,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_cf_opt.blob_garbage_collection_force_threshold, 0.75);
   ASSERT_EQ(new_cf_opt.blob_compaction_readahead_size, 262144);
   ASSERT_EQ(new_cf_opt.blob_file_starting_level, 1);
+  ASSERT_EQ(new_cf_opt.min_filter_level, 1);
   ASSERT_EQ(new_cf_opt.prepopulate_blob_cache, PrepopulateBlobCache::kDisable);
   ASSERT_EQ(new_cf_opt.last_level_temperature, Temperature::kWarm);
   ASSERT_EQ(new_cf_opt.bottommost_temperature, Temperature::kWarm);
@@ -350,6 +353,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_db_opt.stats_dump_period_sec, 46U);
   ASSERT_EQ(new_db_opt.stats_persist_period_sec, 57U);
   ASSERT_EQ(new_db_opt.persist_stats_to_disk, false);
+  ASSERT_EQ(new_db_opt.memtable_as_log_index, false);
   ASSERT_EQ(new_db_opt.stats_history_buffer_size, 69U);
   ASSERT_EQ(new_db_opt.advise_random_on_open, true);
   ASSERT_EQ(new_db_opt.use_adaptive_mutex, false);
@@ -2346,6 +2350,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
       {"blob_garbage_collection_force_threshold", "0.75"},
       {"blob_compaction_readahead_size", "256K"},
       {"blob_file_starting_level", "1"},
+      {"min_filter_level", "1"},
       {"prepopulate_blob_cache", "kDisable"},
       {"last_level_temperature", "kWarm"},
       {"default_temperature", "kHot"},
@@ -2386,6 +2391,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
       {"stats_dump_period_sec", "46"},
       {"stats_persist_period_sec", "57"},
       {"persist_stats_to_disk", "false"},
+      {"memtable_as_log_index", "false"},
       {"stats_history_buffer_size", "69"},
       {"advise_random_on_open", "true"},
       {"use_adaptive_mutex", "false"},
@@ -2498,6 +2504,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_cf_opt.blob_garbage_collection_force_threshold, 0.75);
   ASSERT_EQ(new_cf_opt.blob_compaction_readahead_size, 262144);
   ASSERT_EQ(new_cf_opt.blob_file_starting_level, 1);
+  ASSERT_EQ(new_cf_opt.min_filter_level, 1);
   ASSERT_EQ(new_cf_opt.prepopulate_blob_cache, PrepopulateBlobCache::kDisable);
   ASSERT_EQ(new_cf_opt.last_level_temperature, Temperature::kWarm);
   ASSERT_EQ(new_cf_opt.bottommost_temperature, Temperature::kWarm);
@@ -2570,6 +2577,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_db_opt.stats_dump_period_sec, 46U);
   ASSERT_EQ(new_db_opt.stats_persist_period_sec, 57U);
   ASSERT_EQ(new_db_opt.persist_stats_to_disk, false);
+  ASSERT_EQ(new_db_opt.memtable_as_log_index, false);
   ASSERT_EQ(new_db_opt.stats_history_buffer_size, 69U);
   ASSERT_EQ(new_db_opt.advise_random_on_open, true);
   ASSERT_EQ(new_db_opt.use_adaptive_mutex, false);

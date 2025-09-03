@@ -4,18 +4,18 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.rocksdb</groupId>
+    <groupId>cn.topling</groupId>
     <artifactId>rocksdbjni-jmh</artifactId>
     <version>1.0-SNAPSHOT</version>
 
-    <url>http://rocksdb.org/</url>
+    <url>https://github.com/topling/toplingdb</url>
 
     <name>rocksdbjni-jmh</name>
     <description>JMH Benchmarks for RocksDB Java API</description>
 
     <organization>
-        <name>Facebook, Inc.</name>
-        <url>https://www.facebook.com</url>
+        <name>Topling, Inc.</name>
+        <url>https://topling.cn</url>
     </organization>
 
     <licenses>
@@ -32,25 +32,28 @@
     </licenses>
 
     <scm>
-        <connection>scm:git:git://github.com/facebook/rocksdb.git</connection>
-        <developerConnection>scm:git:git@github.com:facebook/rocksdb.git</developerConnection>
-        <url>http://github.com/facebook/rocksdb/</url>
+        <connection>scm:git:https://github.com/topling/toplingdb.git</connection>
+        <developerConnection>scm:git:git@github.com:topling/toplingdb.git</developerConnection>
+        <url>https://github.com/topling/toplingdb/</url>
     </scm>
 
     <properties>
-        <project.build.source>1.7</project.build.source>
-        <project.build.target>1.7</project.build.target>
+        <project.build.source>1.8</project.build.source>
+        <project.build.target>1.8</project.build.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <jmh.version>1.22</jmh.version>
         <uberjar.name>benchmarks</uberjar.name>
+
+        <db.artifactId>rocksdbjni</db.artifactId>
+        <db.version>8.10.2-SNAPSHOT</db.version>
     </properties>
 
     <dependencies>
         <dependency>
-            <groupId>org.rocksdb</groupId>
-            <artifactId>rocksdbjni</artifactId>
-            <version>7.9.0-SNAPSHOT</version>
+            <groupId>cn.topling</groupId>
+            <artifactId>${db.artifactId}</artifactId>
+            <version>${db.version}</version>
         </dependency>
 
         <dependency>
@@ -134,5 +137,14 @@
 
         </plugins>
     </build>
+
+  <!-- add github maven config for deploy(upload) packages -->
+  <!--distributionManagement>
+    <repository>
+      <id>github</id>
+      <name>GitHub Packages</name>
+      <url>https://maven.pkg.github.com/toplingdb/toplingdb</url>
+    </repository>
+  </distributionManagement-->
 
 </project>

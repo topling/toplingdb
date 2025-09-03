@@ -37,12 +37,29 @@ public class RocksIteratorTest {
 
   private void validateKey(
       final RocksIterator iterator, final ByteBuffer byteBuffer, final String key) {
-    validateByteBufferResult(iterator.key(byteBuffer), byteBuffer, key);
+    int oldlimit = byteBuffer.limit();
+    int keylen = iterator.key(byteBuffer);
+    byteBuffer.limit(Math.min(oldlimit, byteBuffer.limit()));
+    validateByteBufferResult(keylen, byteBuffer, key);
   }
 
   private void validateValue(
       final RocksIterator iterator, final ByteBuffer byteBuffer, final String value) {
-    validateByteBufferResult(iterator.value(byteBuffer), byteBuffer, value);
+    int oldlimit = byteBuffer.limit();
+    int valuelen = iterator.value(byteBuffer);
+    byteBuffer.limit(Math.min(oldlimit, byteBuffer.limit()));
+    validateByteBufferResult(valuelen, byteBuffer, value);
+  }
+
+  private ByteBuffer newZeroCopyBuffer(int limit) {
+    final ByteBuffer buffer = DirectSlice.newZeroCopyDirectBuffer();
+    if (buffer == null) {
+      throw new RuntimeException("Failed to create zero copy direct buffer");
+    }
+    // just to save the limit, this is used to pass the test
+    DirectSlice.directBorrowMemory(buffer, 0, limit);
+    buffer.limit(limit);
+    return buffer;
   }
 
   @Test
@@ -73,6 +90,29 @@ public class RocksIteratorTest {
         validateKey(iterator, ByteBuffer.allocate(5), "key1");
         validateValue(iterator, ByteBuffer.allocate(2), "value1");
         validateValue(iterator, ByteBuffer.allocate(8), "value1");
+
+        if (DirectSlice.supportZeroCopy()) {
+          validateKey(iterator, newZeroCopyBuffer(2), "key1");
+          validateKey(iterator, newZeroCopyBuffer(2), "key0");
+          validateKey(iterator, newZeroCopyBuffer(4), "key1");
+          validateKey(iterator, newZeroCopyBuffer(5), "key1");
+          validateValue(iterator, newZeroCopyBuffer(2), "value2");
+          validateValue(iterator, newZeroCopyBuffer(2), "vasicu");
+          validateValue(iterator, newZeroCopyBuffer(8), "value1");
+
+          validateKey(iterator, newZeroCopyBuffer(2), "key1");
+          validateKey(iterator, newZeroCopyBuffer(2), "key0");
+          validateKey(iterator, newZeroCopyBuffer(4), "key1");
+          validateKey(iterator, newZeroCopyBuffer(5), "key1");
+          validateValue(iterator, newZeroCopyBuffer(2), "value1");
+          validateValue(iterator, newZeroCopyBuffer(8), "value1");
+        } else {
+          System.out.println(
+            "Does not support zero-copy, skipping zero copy tests\n" +
+            "   try add java startup option\n" +
+            "        --add-opens java.base/java.nio=ALL-UNNAMED"
+          );
+        }
       }
     }
   }

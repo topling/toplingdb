@@ -85,6 +85,9 @@ struct ImmutableCFOptions {
 
   std::shared_ptr<ConcurrentTaskLimiter> compaction_thread_limiter;
 
+  std::shared_ptr<class CompactionExecutorFactory> compaction_executor_factory;
+  std::shared_ptr<class AnyPlugin> html_user_key_coder;
+
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory;
 
   std::shared_ptr<Cache> blob_cache;
@@ -117,6 +120,7 @@ struct MutableCFOptions {
         arena_block_size(options.arena_block_size),
         memtable_prefix_bloom_size_ratio(
             options.memtable_prefix_bloom_size_ratio),
+        allow_merge_memtables(options.allow_merge_memtables),
         memtable_whole_key_filtering(options.memtable_whole_key_filtering),
         memtable_huge_page_size(options.memtable_huge_page_size),
         max_successive_merges(options.max_successive_merges),
@@ -134,8 +138,6 @@ struct MutableCFOptions {
         level0_slowdown_writes_trigger(options.level0_slowdown_writes_trigger),
         level0_stop_writes_trigger(options.level0_stop_writes_trigger),
         max_compaction_bytes(options.max_compaction_bytes),
-        ignore_max_compaction_bytes_for_input(
-            options.ignore_max_compaction_bytes_for_input),
         target_file_size_base(options.target_file_size_base),
         target_file_size_multiplier(options.target_file_size_multiplier),
         max_bytes_for_level_base(options.max_bytes_for_level_base),
@@ -157,6 +159,7 @@ struct MutableCFOptions {
             options.blob_garbage_collection_force_threshold),
         blob_compaction_readahead_size(options.blob_compaction_readahead_size),
         blob_file_starting_level(options.blob_file_starting_level),
+        min_filter_level(options.min_filter_level),
         prepopulate_blob_cache(options.prepopulate_blob_cache),
         max_sequential_skip_in_iterations(
             options.max_sequential_skip_in_iterations),
@@ -189,6 +192,7 @@ struct MutableCFOptions {
         max_write_buffer_number(0),
         arena_block_size(0),
         memtable_prefix_bloom_size_ratio(0),
+        allow_merge_memtables(true),
         memtable_whole_key_filtering(false),
         memtable_huge_page_size(0),
         max_successive_merges(0),
@@ -202,7 +206,6 @@ struct MutableCFOptions {
         level0_slowdown_writes_trigger(0),
         level0_stop_writes_trigger(0),
         max_compaction_bytes(0),
-        ignore_max_compaction_bytes_for_input(true),
         target_file_size_base(0),
         target_file_size_multiplier(0),
         max_bytes_for_level_base(0),
@@ -219,6 +222,7 @@ struct MutableCFOptions {
         blob_garbage_collection_force_threshold(0.0),
         blob_compaction_readahead_size(0),
         blob_file_starting_level(0),
+        min_filter_level(0),
         prepopulate_blob_cache(PrepopulateBlobCache::kDisable),
         max_sequential_skip_in_iterations(0),
         check_flush_compaction_key_order(true),
@@ -256,6 +260,7 @@ struct MutableCFOptions {
   int max_write_buffer_number;
   size_t arena_block_size;
   double memtable_prefix_bloom_size_ratio;
+  bool allow_merge_memtables;
   bool memtable_whole_key_filtering;
   size_t memtable_huge_page_size;
   size_t max_successive_merges;
@@ -286,7 +291,6 @@ struct MutableCFOptions {
   int level0_slowdown_writes_trigger;
   int level0_stop_writes_trigger;
   uint64_t max_compaction_bytes;
-  bool ignore_max_compaction_bytes_for_input;
   uint64_t target_file_size_base;
   int target_file_size_multiplier;
   uint64_t max_bytes_for_level_base;
@@ -307,6 +311,7 @@ struct MutableCFOptions {
   double blob_garbage_collection_force_threshold;
   uint64_t blob_compaction_readahead_size;
   int blob_file_starting_level;
+  int min_filter_level;
   PrepopulateBlobCache prepopulate_blob_cache;
 
   // Misc options

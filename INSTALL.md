@@ -32,6 +32,15 @@ most processors made since roughly 2013.
 
 ## Dependencies
 
+* ToplingDB dependencies
+  - [libcurl](https://curl.se/libcurl/) - libcurl is a free and easy-to-use client-side URL transfer library
+    * ToplingDB [dcompact](https://github.com/topling/topling-dcompact) use libcurl to submit compaction jobs to compaction service(dcompact_worker)
+  - [liburing](https://github.com/axboe/liburing) - the io_uring library, ToplingDB use it to optimize MultiGet
+    * ToplingDB adds `ReadOptions::async_queue_depth` for queue depth of io_uring
+    * When compiled to shared library, this is not needed - it's used in [topling-zip](https://github.com/topling/topling-zip)
+  - [libaio](https://pagure.io/libaio) - The Linux-native asynchronous I/O facility
+    * libaio is old linux async io, io_uring should be preferred than libaio
+
 * You can link RocksDB with following compression libraries:
   - [zlib](http://www.zlib.net/) - a library for data compression.
   - [bzip2](http://www.bzip.org/) - a library for data compression.

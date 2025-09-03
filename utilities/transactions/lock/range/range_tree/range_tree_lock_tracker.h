@@ -17,6 +17,8 @@
 #include "lib/locktree/lock_request.h"
 #include "lib/locktree/locktree.h"
 
+#include <terark/util/vec_idx_map.hpp>
+
 namespace ROCKSDB_NAMESPACE {
 
 class RangeTreeLockManager;
@@ -53,7 +55,7 @@ class RangeLockList {
     buffers_.clear();
   }
 
-  std::unordered_map<ColumnFamilyId, std::shared_ptr<toku::range_buffer>>
+  terark::VectorIndexMap<ColumnFamilyId, std::shared_ptr<toku::range_buffer>>
       buffers_;
   port::Mutex mutex_;
   std::atomic<bool> releasing_locks_;
@@ -62,19 +64,17 @@ class RangeLockList {
 // A LockTracker-based object that is used together with RangeTreeLockManager.
 class RangeTreeLockTracker : public LockTracker {
  public:
-  RangeTreeLockTracker() : range_list_(nullptr) {}
+  RangeTreeLockTracker() : range_list_(nullptr) {
+    // This indicates that we don't implement GetPointLockStatus()
+    m_is_point_lock_supported = false;
+    m_is_range_lock_supported = true;
+  }
 
   RangeTreeLockTracker(const RangeTreeLockTracker&) = delete;
   RangeTreeLockTracker& operator=(const RangeTreeLockTracker&) = delete;
 
   void Track(const PointLockRequest&) override;
   void Track(const RangeLockRequest&) override;
-
-  bool IsPointLockSupported() const override {
-    // This indicates that we don't implement GetPointLockStatus()
-    return false;
-  }
-  bool IsRangeLockSupported() const override { return true; }
 
   // a Not-supported dummy implementation.
   UntrackStatus Untrack(const RangeLockRequest& /*lock_request*/) override {
@@ -100,7 +100,8 @@ class RangeTreeLockTracker : public LockTracker {
   }
 
   PointLockStatus GetPointLockStatus(ColumnFamilyId column_family_id,
-                                     const std::string& key) const override;
+                                     const LockString& key,
+                                     size_t key_hash) const override;
 
   // The return value is only used for tests
   uint64_t GetNumPointLocks() const override { return 0; }

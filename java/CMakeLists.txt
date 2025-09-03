@@ -73,6 +73,7 @@ set(JNI_NATIVE_SOURCES
         rocksjni/sst_file_readerjni.cc
         rocksjni/sst_file_reader_iterator.cc
         rocksjni/sst_partitioner.cc
+        rocksjni/side_plugin_repo_jni.cc
         rocksjni/statistics.cc
         rocksjni/statisticsjni.cc
         rocksjni/table.cc
@@ -246,6 +247,7 @@ set(JAVA_MAIN_CLASSES
   src/main/java/org/rocksdb/SstPartitionerFactory.java
   src/main/java/org/rocksdb/SstPartitionerFixedPrefixFactory.java
   src/main/java/org/rocksdb/StateType.java
+  src/main/java/org/rocksdb/SidePluginRepo.java
   src/main/java/org/rocksdb/StatisticsCollectorCallback.java
   src/main/java/org/rocksdb/StatisticsCollector.java
   src/main/java/org/rocksdb/Statistics.java
@@ -568,6 +570,9 @@ else ()
   )
 
 endif()
+
+option(JNI_USE_KEY_VALUE_POPULATOR "use key value populator to reduce copy for write" 1)
+add_definitions(-DJNI_USE_KEY_VALUE_POPULATOR=${JNI_USE_KEY_VALUE_POPULATOR})
 
 add_jar(
     rocksdbjni_test_classes

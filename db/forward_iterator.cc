@@ -493,7 +493,7 @@ void ForwardIterator::SeekInternal(const Slice& internal_key,
       }
       uint32_t f_idx = 0;
       if (!seek_to_first && !seek_after_async_io) {
-        f_idx = FindFileInRange(level_files, internal_key, 0,
+        f_idx = vstorage->FindFileInRange(level, internal_key, 0,
                                 static_cast<uint32_t>(level_files.size()));
       }
 
@@ -1036,18 +1036,6 @@ bool ForwardIterator::TEST_CheckDeletedIters(int* pdeleted_iters,
     *pnum_iters = num_iters;
   }
   return retval;
-}
-
-uint32_t ForwardIterator::FindFileInRange(
-    const std::vector<FileMetaData*>& files, const Slice& internal_key,
-    uint32_t left, uint32_t right) {
-  auto cmp = [&](const FileMetaData* f, const Slice& k) -> bool {
-    return cfd_->internal_comparator().InternalKeyComparator::Compare(
-               f->largest.Encode(), k) < 0;
-  };
-  const auto& b = files.begin();
-  return static_cast<uint32_t>(
-      std::lower_bound(b + left, b + right, internal_key, cmp) - b);
 }
 
 void ForwardIterator::DeleteIterator(InternalIterator* iter, bool is_arena) {

@@ -1,0 +1,103 @@
+
+# disable_auto_compactions: true
+# path: /dev/shm/db_bench_enterprise
+# table_factory: dispatch_all_fast
+# unordered_write: true
+# write_buffer_size: 4G
+
+# memtable_factory: skiplist
+
+$ ./db_bench -json=sideplugin/rockside/sample-conf/db_bench_enterprise.yaml \
+  -key_size=8 -value_size=20 -num=100000000 -disable_wal=true -benchmarks=fillrandom \
+  -threads=64 -batch_size=500 -memtable_insert_hint_per_batch=true
+Set seed to 1695808487750034 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+RocksDB:    version 8.4.0
+Date:       Wed Sep 27 17:55:00 2023
+CPU:        64 * Intel(R) Xeon(R) CPU E5-2682 v4 @ 2.50GHz
+CPUCache:   40960 KB
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     20 bytes each (10 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    2670.3 MB (estimated)
+FileSize:   1716.6 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: SkipListFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+DB path: [/dev/shm/db_bench_enterprise]
+fillrandom   :      18.219 micros/op 3488695 ops/sec 1834.497 seconds 6400000000 operations;   93.2 MB/s
+
+===============================================================================
+
+# memtable_factory: cspp, chunk_size: 256K, convert_to_sst: kFileMmap
+
+$ ./db_bench -json=sideplugin/rockside/sample-conf/db_bench_enterprise.yaml \
+  -key_size=8 -value_size=20 -num=100000000 -disable_wal=true -benchmarks=fillrandom \
+  -threads=64 -batch_size=500 -memtable_insert_hint_per_batch=true
+Set seed to 1695807360330292 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+RocksDB:    version 8.4.0
+Date:       Wed Sep 27 17:36:00 2023
+CPU:        64 * Intel(R) Xeon(R) CPU E5-2682 v4 @ 2.50GHz
+CPUCache:   40960 KB
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     20 bytes each (10 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    2670.3 MB (estimated)
+FileSize:   1716.6 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: CSPPMemTabFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+DB path: [/dev/shm/db_bench_enterprise]
+fillrandom   :       1.399 micros/op 45298159 ops/sec 141.286 seconds 6400000000 operations; 1209.6 MB/s
+
+$ ./db_bench -json=sideplugin/rockside/sample-conf/db_bench_enterprise.yaml -key_size=8 -value_size=20 -num=100000000 -disable_wal=true -benchmarks=fillrandom -threads=64 -batch_size=500 -memtable_insert_hint_per_batch=false
+Set seed to 1695807652334598 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+RocksDB:    version 8.4.0
+Date:       Wed Sep 27 17:41:04 2023
+CPU:        64 * Intel(R) Xeon(R) CPU E5-2682 v4 @ 2.50GHz
+CPUCache:   40960 KB
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     20 bytes each (10 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    2670.3 MB (estimated)
+FileSize:   1716.6 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: CSPPMemTabFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+DB path: [/dev/shm/db_bench_enterprise]
+fillrandom   :       1.448 micros/op 43684323 ops/sec 146.506 seconds 6400000000 operations; 1166.5 MB/s

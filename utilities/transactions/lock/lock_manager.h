@@ -16,14 +16,18 @@ namespace ROCKSDB_NAMESPACE {
 class PessimisticTransactionDB;
 
 class LockManager {
+ protected:
+  bool m_is_point_lock_supported = false;
+  bool m_is_range_lock_supported = false;
+
  public:
   virtual ~LockManager() {}
 
   // Whether supports locking a specific key.
-  virtual bool IsPointLockSupported() const = 0;
+  bool IsPointLockSupported() const { return m_is_point_lock_supported; }
 
   // Whether supports locking a range of keys.
-  virtual bool IsRangeLockSupported() const = 0;
+  bool IsRangeLockSupported() const { return m_is_range_lock_supported; }
 
   // Locks acquired through this LockManager should be tracked by
   // the LockTrackers created through the returned factory.
@@ -41,7 +45,13 @@ class LockManager {
   // is responsible for calling UnLock() on this key.
   virtual Status TryLock(PessimisticTransaction* txn,
                          ColumnFamilyId column_family_id,
-                         const std::string& key, Env* env, bool exclusive) = 0;
+                         const Slice& key, size_t key_hash,
+                         Env* env, bool exclusive) = 0;
+#if defined(ROCKSDB_UNIT_TEST)
+  Status TryLock(PessimisticTransaction* txn, ColumnFamilyId,
+                 const Slice& key, Env*, bool exclusive);
+#endif
+
   // The range [start, end] are inclusive at both sides.
   virtual Status TryLock(PessimisticTransaction* txn,
                          ColumnFamilyId column_family_id, const Endpoint& start,
@@ -52,7 +62,7 @@ class LockManager {
   virtual void UnLock(PessimisticTransaction* txn, const LockTracker& tracker,
                       Env* env) = 0;
   virtual void UnLock(PessimisticTransaction* txn,
-                      ColumnFamilyId column_family_id, const std::string& key,
+                      ColumnFamilyId column_family_id, const Slice& key,
                       Env* env) = 0;
   virtual void UnLock(PessimisticTransaction* txn,
                       ColumnFamilyId column_family_id, const Endpoint& start,

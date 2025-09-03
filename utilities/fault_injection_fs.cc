@@ -145,13 +145,15 @@ TestFSWritableFile::TestFSWritableFile(const std::string& fname,
                                        const FileOptions& file_opts,
                                        std::unique_ptr<FSWritableFile>&& f,
                                        FaultInjectionTestFS* fs)
-    : state_(fname),
+    : shared_state_(std::make_shared<FSFileState>(fname)),
+      state_(*shared_state_),
       file_opts_(file_opts),
       target_(std::move(f)),
       writable_file_opened_(true),
       fs_(fs) {
   assert(target_ != nullptr);
   state_.pos_ = 0;
+  fs->AddFSFileState(fname, shared_state_);
 }
 
 TestFSWritableFile::~TestFSWritableFile() {
@@ -171,7 +173,6 @@ IOStatus TestFSWritableFile::Append(const Slice& data, const IOOptions& options,
   } else {
     state_.buffer_.append(data.data(), data.size());
     state_.pos_ += data.size();
-    fs_->WritableFileAppended(state_);
   }
   IOStatus io_s = fs_->InjectWriteError(state_.filename_);
   return io_s;
@@ -206,7 +207,6 @@ IOStatus TestFSWritableFile::Append(
   } else {
     state_.buffer_.append(data.data(), data.size());
     state_.pos_ += data.size();
-    fs_->WritableFileAppended(state_);
   }
   IOStatus io_s = fs_->InjectWriteError(state_.filename_);
   return io_s;
@@ -253,12 +253,8 @@ IOStatus TestFSWritableFile::Close(const IOOptions& options,
     }
   }
   writable_file_opened_ = false;
-  IOStatus io_s;
-  if (!target_->use_direct_io()) {
-    io_s = target_->Append(state_.buffer_, options, dbg);
-  }
+  IOStatus io_s = SyncNoLock(options, dbg);
   if (io_s.ok()) {
-    state_.buffer_.resize(0);
     // Ignore sync errors
     target_->Sync(options, dbg).PermitUncheckedError();
     io_s = target_->Close(options, dbg);
@@ -294,12 +290,21 @@ IOStatus TestFSWritableFile::Sync(const IOOptions& options,
     // So just return
     return IOStatus::OK();
   }
-  IOStatus io_s = target_->Append(state_.buffer_, options, dbg);
-  state_.buffer_.resize(0);
+  return SyncNoLock(options, dbg);
+}
+IOStatus TestFSWritableFile::SyncNoLock(const IOOptions& options,
+                                        IODebugContext* dbg) {
+  if (state_.pos_at_last_sync_ < 0) {
+    state_.pos_at_last_sync_ = 0;
+  }
+  ROCKSDB_ASSERT_EQ(state_.buffer_.size(), size_t(state_.pos_));
+  Slice rng;
+  rng.data_ = state_.buffer_.data() + state_.pos_at_last_sync_;
+  rng.size_ = state_.buffer_.size() - state_.pos_at_last_sync_;
+  IOStatus io_s = target_->Append(rng, options, dbg);
   // Ignore sync errors
   target_->Sync(options, dbg).PermitUncheckedError();
   state_.pos_at_last_sync_ = state_.pos_;
-  fs_->WritableFileSynced(state_);
   return io_s;
 }
 
@@ -321,13 +326,10 @@ IOStatus TestFSWritableFile::RangeSync(uint64_t offset, uint64_t nbytes,
   }
   uint64_t num_to_sync = std::min(static_cast<uint64_t>(state_.buffer_.size()),
                                   sync_limit - buf_begin);
-  Slice buf_to_sync(state_.buffer_.data(), num_to_sync);
-  io_s = target_->Append(buf_to_sync, options, dbg);
-  state_.buffer_ = state_.buffer_.substr(num_to_sync);
+  SyncNoLock(options, dbg);
   // Ignore sync errors
   target_->RangeSync(offset, nbytes, options, dbg).PermitUncheckedError();
   state_.pos_at_last_sync_ = offset + num_to_sync;
-  fs_->WritableFileSynced(state_);
   return io_s;
 }
 
@@ -388,10 +390,18 @@ IOStatus TestFSRandomRWFile::Sync(const IOOptions& options,
 }
 
 TestFSRandomAccessFile::TestFSRandomAccessFile(
-    const std::string& /*fname*/, std::unique_ptr<FSRandomAccessFile>&& f,
+    const std::string& fname, std::unique_ptr<FSRandomAccessFile>&& f,
     FaultInjectionTestFS* fs)
     : target_(std::move(f)), fs_(fs) {
   assert(target_ != nullptr);
+  shared_state_ = fs->GetFSFileState(fname);
+}
+
+void TestFSRandomAccessFile::ReserveMmap(size_t mmap_size) {
+  if (shared_state_) {
+    shared_state_->buffer_.reserve(mmap_size);
+    mmap_size_ = mmap_size;
+  }
 }
 
 IOStatus TestFSRandomAccessFile::Read(uint64_t offset, size_t n,
@@ -401,11 +411,19 @@ IOStatus TestFSRandomAccessFile::Read(uint64_t offset, size_t n,
   if (!fs_->IsFilesystemActive()) {
     return fs_->GetError();
   }
-  IOStatus s = target_->Read(offset, n, options, result, scratch, dbg);
-  if (s.ok()) {
-    s = fs_->InjectThreadSpecificReadError(
-        FaultInjectionTestFS::ErrorOperation::kRead, result, use_direct_io(),
-        scratch, /*need_count_increase=*/true, /*fault_injected=*/nullptr);
+  IOStatus s;
+  if (mmap_size_) {
+    assert(shared_state_ != nullptr);
+    auto data = shared_state_->buffer_.data();
+    result->data_ = data + offset;
+    result->size_ = n;
+  } else {
+    s = target_->Read(offset, n, options, result, scratch, dbg);
+    if (s.ok()) {
+      s = fs_->InjectThreadSpecificReadError(
+          FaultInjectionTestFS::ErrorOperation::kRead, result, use_direct_io(),
+          scratch, /*need_count_increase=*/true, /*fault_injected=*/nullptr);
+    }
   }
   if (s.ok() && fs_->ShouldInjectRandomReadError()) {
     return IOStatus::IOError("injected read error");
@@ -482,6 +500,11 @@ size_t TestFSRandomAccessFile::GetUniqueId(char* id, size_t max_size) const {
     return target_->GetUniqueId(id, max_size);
   }
 }
+
+intptr_t TestFSRandomAccessFile::FileDescriptor() const {
+  return target_->FileDescriptor();
+}
+
 IOStatus TestFSSequentialFile::Read(size_t n, const IOOptions& options,
                                     Slice* result, char* scratch,
                                     IODebugContext* dbg) {
@@ -536,11 +559,11 @@ IOStatus FaultInjectionTestFS::NewWritableFile(
 
   IOStatus io_s = target()->NewWritableFile(fname, file_opts, result, dbg);
   if (io_s.ok()) {
-    result->reset(
-        new TestFSWritableFile(fname, file_opts, std::move(*result), this));
     // WritableFileWriter* file is opened
     // again then it will be truncated - so forget our saved state.
     UntrackFile(fname);
+    result->reset(
+        new TestFSWritableFile(fname, file_opts, std::move(*result), this));
     {
       MutexLock l(&mutex_);
       open_managed_files_.insert(fname);
@@ -689,6 +712,10 @@ IOStatus FaultInjectionTestFS::NewRandomAccessFile(
   }
   if (io_s.ok()) {
     result->reset(new TestFSRandomAccessFile(fname, std::move(*result), this));
+    if (file_opts.mmap_size) {
+      auto f = static_cast<TestFSRandomAccessFile*>(result->get());
+      f->ReserveMmap(file_opts.mmap_size);
+    }
   }
   return io_s;
 }
@@ -844,40 +871,16 @@ IOStatus FaultInjectionTestFS::AbortIO(std::vector<void*>& io_handles) {
 
 void FaultInjectionTestFS::WritableFileClosed(const FSFileState& state) {
   MutexLock l(&mutex_);
-  if (open_managed_files_.find(state.filename_) != open_managed_files_.end()) {
-    db_file_state_[state.filename_] = state;
-    open_managed_files_.erase(state.filename_);
-  }
+  open_managed_files_.erase(state.filename_);
 }
 
-void FaultInjectionTestFS::WritableFileSynced(const FSFileState& state) {
-  MutexLock l(&mutex_);
-  if (open_managed_files_.find(state.filename_) != open_managed_files_.end()) {
-    if (db_file_state_.find(state.filename_) == db_file_state_.end()) {
-      db_file_state_.insert(std::make_pair(state.filename_, state));
-    } else {
-      db_file_state_[state.filename_] = state;
-    }
-  }
-}
-
-void FaultInjectionTestFS::WritableFileAppended(const FSFileState& state) {
-  MutexLock l(&mutex_);
-  if (open_managed_files_.find(state.filename_) != open_managed_files_.end()) {
-    if (db_file_state_.find(state.filename_) == db_file_state_.end()) {
-      db_file_state_.insert(std::make_pair(state.filename_, state));
-    } else {
-      db_file_state_[state.filename_] = state;
-    }
-  }
-}
 
 IOStatus FaultInjectionTestFS::DropUnsyncedFileData() {
   IOStatus io_s;
   MutexLock l(&mutex_);
-  for (std::map<std::string, FSFileState>::iterator it = db_file_state_.begin();
+  for (auto it = db_file_state_.begin();
        io_s.ok() && it != db_file_state_.end(); ++it) {
-    FSFileState& fs_state = it->second;
+    FSFileState& fs_state = *it->second;
     if (!fs_state.IsFullySynced()) {
       io_s = fs_state.DropUnsyncedData();
     }
@@ -888,9 +891,9 @@ IOStatus FaultInjectionTestFS::DropUnsyncedFileData() {
 IOStatus FaultInjectionTestFS::DropRandomUnsyncedFileData(Random* rnd) {
   IOStatus io_s;
   MutexLock l(&mutex_);
-  for (std::map<std::string, FSFileState>::iterator it = db_file_state_.begin();
+  for (auto it = db_file_state_.begin();
        io_s.ok() && it != db_file_state_.end(); ++it) {
-    FSFileState& fs_state = it->second;
+    FSFileState& fs_state = *it->second;
     if (!fs_state.IsFullySynced()) {
       io_s = fs_state.DropRandomUnsyncedData(rnd);
     }
@@ -1070,6 +1073,22 @@ void FaultInjectionTestFS::PrintFaultBacktrace() {
   port::PrintAndFreeStack(ctx->callstack, ctx->frames);
   ctx->callstack = nullptr;
 #endif
+}
+
+void FaultInjectionTestFS::AddFSFileState(const std::string& fname,
+                                          std::shared_ptr<FSFileState> p) {
+  MutexLock l(&mutex_);
+  db_file_state_[fname] = p;
+}
+
+std::shared_ptr<FSFileState>
+FaultInjectionTestFS::GetFSFileState(const std::string& fname) {
+  MutexLock l(&mutex_);
+  auto iter = db_file_state_.find(fname);
+  if (iter != db_file_state_.end())
+    return iter->second;
+  else
+    return nullptr;
 }
 
 }  // namespace ROCKSDB_NAMESPACE

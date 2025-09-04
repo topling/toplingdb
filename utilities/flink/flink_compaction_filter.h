@@ -84,6 +84,7 @@ class FlinkCompactionFilter : public CompactionFilter {
     virtual ~ListElementFilterFactory() = default;
     virtual ListElementFilter* CreateListElementFilter(
         std::shared_ptr<Logger> logger) const = 0;
+    virtual int GetFixedElemLen() const { return -1; }
   };
 
   class FixedListElementFilterFactory : public ListElementFilterFactory {
@@ -95,6 +96,7 @@ class FlinkCompactionFilter : public CompactionFilter {
         std::shared_ptr<Logger> logger) const override {
       return new FixedListElementFilter(fixed_size_, timestamp_offset_, logger);
     };
+    int GetFixedElemLen() const override { return int(fixed_size_); }
 
    private:
     std::size_t fixed_size_;
@@ -137,6 +139,8 @@ class FlinkCompactionFilter : public CompactionFilter {
                     std::string* skip_until) const override;
 
   bool IgnoreSnapshots() const override { return true; }
+
+  const Config* GetConfig() const { return config_holder_->GetConfig(); }
 
  private:
   inline void InitConfigIfNotYet() const;

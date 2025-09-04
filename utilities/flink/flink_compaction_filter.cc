@@ -220,12 +220,38 @@ void FlinkCompactionFilter::SetUnexpiredListValue(
 
 #include <topling/side_plugin_repo.h>
 #include <topling/side_plugin_factory.h>
+#include <terark/io/DataIO.hpp>
+#include <terark/io/FileStream.hpp>
+#include <db/compaction/compaction_executor.h>
+#include <logging/logging.h>
+
+#define DoPrintLog(...) \
+    info_log ? ROCKS_LOG_INFO(info_log, __VA_ARGS__) \
+             : (void)fprintf(stderr, __VA_ARGS__)
+
+#define PrintLog(level, fmt, ...) \
+  do { if (SidePluginRepo::DebugLevel() >= level) \
+    DoPrintLog("%s: " fmt "\n", \
+            TERARK_PP_SmartForPrintf(rocksdb::StrDateTimeNow(), ## __VA_ARGS__)); \
+  } while (0)
+#define TRAC(...) PrintLog(4, "TRAC: " __VA_ARGS__)
+#define DEBG(...) PrintLog(3, "DEBG: " __VA_ARGS__)
+#define INFO(...) PrintLog(2, "INFO: " __VA_ARGS__)
+#define WARN(...) PrintLog(1, "WARN: " __VA_ARGS__)
+
 namespace ROCKSDB_NAMESPACE { namespace flink {
 struct SideFlinkCompactFilterParams {
   size_t  timestamp_offset;
   int     list_elem_fixed_len; // 0 indicate non-list state
   int64_t ttl;
   int64_t query_time_after_num_entries;
+  DATA_IO_LOAD_SAVE_V(SideFlinkCompactFilterParams,
+                      1, // current serialization version
+                      & timestamp_offset
+                      & list_elem_fixed_len
+                      & ttl
+                      & query_time_after_num_entries
+                      );
 };
 struct SideFlinkCompactionFilter : CompactionFilter, SideFlinkCompactFilterParams {
   mutable int64_t m_cur_milli = -1;
@@ -265,12 +291,6 @@ struct SideFlinkCompactionFilter : CompactionFilter, SideFlinkCompactFilterParam
   bool IgnoreSnapshots() const override { return true; }
 };
 struct SideFlinkCompactionFilterFactory : CompactionFilterFactory, SideFlinkCompactFilterParams {
-  SideFlinkCompactionFilterFactory(const json& js, const SidePluginRepo& repo) {
-    ROCKSDB_JSON_REQ_PROP(js, timestamp_offset);
-    ROCKSDB_JSON_REQ_PROP(js, list_elem_fixed_len);
-    ROCKSDB_JSON_REQ_PROP(js, ttl);
-    ROCKSDB_JSON_REQ_PROP(js, query_time_after_num_entries);
-  }
   std::unique_ptr<CompactionFilter>
   CreateCompactionFilter(const CompactionFilter::Context&) override {
     return std::make_unique<SideFlinkCompactionFilter>(this);
@@ -279,5 +299,72 @@ struct SideFlinkCompactionFilterFactory : CompactionFilterFactory, SideFlinkComp
 };
 using FlinkCompactionFilterFactory = SideFlinkCompactionFilterFactory;
 ROCKSDB_REG_Plugin(FlinkCompactionFilterFactory, CompactionFilterFactory);
+
+using namespace terark;
+struct FlinkCompactionFilterFactory_SerDe : SerDeFunc<CompactionFilterFactory> {
+  const CompactionParams* m_cp;
+  rocksdb::Logger* info_log;
+  int job_id;
+  size_t rawzip[2];
+
+  FlinkCompactionFilterFactory_SerDe(const json& js, const SidePluginRepo&) {
+    auto cp = m_cp = JS_CompactionParamsDecodePtr(js);
+    info_log = cp->info_log;
+    const auto& smallest_user_key = cp->smallest_user_key;
+    const auto& largest_user_key = cp->largest_user_key;
+    job_id = cp->job_id;
+    cp->InputBytes(rawzip);
+    TRAC("FlinkCompactionFilterFactory_SerDe: job_id = %d, smallest_user_key = %s, largest_user_key = %s, job raw = %.3f GB, zip = %.3f GB",
+        cp->job_id, Slice(smallest_user_key).hex().c_str(), Slice(largest_user_key).hex().c_str(), rawzip[0]/1e9, rawzip[1]/1e9);
+  }
+  void Serialize(FILE* output, const CompactionFilterFactory& cbase)
+  const override {
+    auto& base = const_cast<CompactionFilterFactory&>(cbase);
+    LittleEndianDataOutput<NonOwnerFileStream> dio(output);
+    if (IsCompactionWorker()) {
+      // nothing is needed to return to DB
+    }
+    else { // DB Side
+      DEBG("job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: job raw = %.3f GB, zip = %.3f GB, smallest_seqno = %lld",
+            job_id, rawzip[0]/1e9, rawzip[1]/1e9, (llong)m_cp->smallest_seqno);
+      auto tmp = base.CreateCompactionFilter({}); // just for get config
+      auto flink_compact_filter = dynamic_cast<FlinkCompactionFilter*>(tmp.get());
+      auto config = flink_compact_filter->GetConfig();
+      SideFlinkCompactFilterParams params;
+      params.timestamp_offset             = config->timestamp_offset_;
+      params.ttl                          = config->ttl_;
+      params.query_time_after_num_entries = config->query_time_after_num_entries_;
+      params.list_elem_fixed_len = 0;
+      if (auto list_elem_filt = config->list_element_filter_factory_.get()) {
+        params.list_elem_fixed_len = list_elem_filt->GetFixedElemLen();
+        if (params.list_elem_fixed_len <= 0) {
+          // now it is too late to known we can not run dcompact,
+          // we throw the exception to notify Dcompact Execution is failed
+          // and fallback to local compaction
+          DEBG("NotSupport job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: timestamp_offset = %zd, fixed_len = %d, ttl = %lld, query_time_after_num_entries = %lld",
+                job_id, params.timestamp_offset, params.list_elem_fixed_len, (llong)params.ttl, (llong)params.query_time_after_num_entries);
+          THROW_NotSupported("Flink List Element is not fixed len, can not run dcompact");
+        }
+      }
+      DEBG("Ok Support job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: timestamp_offset = %zd, fixed_len = %d, ttl = %lld, query_time_after_num_entries = %lld",
+            job_id, params.timestamp_offset, params.list_elem_fixed_len, (llong)params.ttl, (llong)params.query_time_after_num_entries);
+      dio << params;
+    }
+  }
+  void DeSerialize(FILE* reader, CompactionFilterFactory* base)
+  const override {
+    LittleEndianDataInput<NonOwnerFileStream> dio(reader);
+    if (IsCompactionWorker()) {
+      auto fac = dynamic_cast<SideFlinkCompactionFilterFactory*>(base);
+      DEBG("job-%05d: FlinkCompactionFilterFactory_SerDe::DeSerialize: job raw = %.3f GB, zip = %.3f GB, smallest_seqno = %lld",
+            job_id, rawzip[0]/1e9, rawzip[1]/1e9, (llong)m_cp->smallest_seqno);
+      dio >> static_cast<SideFlinkCompactFilterParams&>(*fac);
+    }
+    else { // DB Side
+      // nothing is needed to read from compact worker
+    }
+  }
+};
+ROCKSDB_REG_PluginSerDe(FlinkCompactionFilterFactory);
 
 }}  // namespace ROCKSDB_NAMESPACE::flink

@@ -301,7 +301,7 @@ using FlinkCompactionFilterFactory = SideFlinkCompactionFilterFactory;
 ROCKSDB_REG_Plugin(FlinkCompactionFilterFactory, CompactionFilterFactory);
 
 using namespace terark;
-struct FlinkCompactionFilterFactory_SerDe : SerDeFunc<CompactionFilterFactory> {
+struct FlinkCompactionFilterFactory_SerDe : DcompactSerDeFunc<CompactionFilterFactory> {
   const CompactionParams* m_cp;
   rocksdb::Logger* info_log;
   int job_id;
@@ -317,52 +317,42 @@ struct FlinkCompactionFilterFactory_SerDe : SerDeFunc<CompactionFilterFactory> {
     TRAC("FlinkCompactionFilterFactory_SerDe: job_id = %d, smallest_user_key = %s, largest_user_key = %s, job raw = %.3f GB, zip = %.3f GB",
         cp->job_id, Slice(smallest_user_key).hex().c_str(), Slice(largest_user_key).hex().c_str(), rawzip[0]/1e9, rawzip[1]/1e9);
   }
-  void Serialize(FILE* output, const CompactionFilterFactory& cbase)
+  void SerializeRequest(FILE* output, const CompactionFilterFactory& cbase)
   const override {
     auto& base = const_cast<CompactionFilterFactory&>(cbase);
     LittleEndianDataOutput<NonOwnerFileStream> dio(output);
-    if (IsCompactionWorker()) {
-      // nothing is needed to return to DB
-    }
-    else { // DB Side
-      DEBG("job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: job raw = %.3f GB, zip = %.3f GB, smallest_seqno = %lld",
-            job_id, rawzip[0]/1e9, rawzip[1]/1e9, (llong)m_cp->smallest_seqno);
-      auto tmp = base.CreateCompactionFilter({}); // just for get config
-      auto flink_compact_filter = dynamic_cast<FlinkCompactionFilter*>(tmp.get());
-      auto config = flink_compact_filter->GetConfig();
-      SideFlinkCompactFilterParams params;
-      params.timestamp_offset             = config->timestamp_offset_;
-      params.ttl                          = config->ttl_;
-      params.query_time_after_num_entries = config->query_time_after_num_entries_;
-      params.list_elem_fixed_len = 0;
-      if (auto list_elem_filt = config->list_element_filter_factory_.get()) {
-        params.list_elem_fixed_len = list_elem_filt->GetFixedElemLen();
-        if (params.list_elem_fixed_len <= 0) {
-          // now it is too late to known we can not run dcompact,
-          // we throw the exception to notify Dcompact Execution is failed
-          // and fallback to local compaction
-          DEBG("NotSupport job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: timestamp_offset = %zd, fixed_len = %d, ttl = %lld, query_time_after_num_entries = %lld",
-                job_id, params.timestamp_offset, params.list_elem_fixed_len, (llong)params.ttl, (llong)params.query_time_after_num_entries);
-          THROW_NotSupported("Flink List Element is not fixed len, can not run dcompact");
-        }
+    DEBG("job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: job raw = %.3f GB, zip = %.3f GB, smallest_seqno = %lld",
+          job_id, rawzip[0]/1e9, rawzip[1]/1e9, (llong)m_cp->smallest_seqno);
+    auto tmp = base.CreateCompactionFilter({}); // just for get config
+    auto flink_compact_filter = dynamic_cast<FlinkCompactionFilter*>(tmp.get());
+    auto config = flink_compact_filter->GetConfig();
+    SideFlinkCompactFilterParams params;
+    params.timestamp_offset             = config->timestamp_offset_;
+    params.ttl                          = config->ttl_;
+    params.query_time_after_num_entries = config->query_time_after_num_entries_;
+    params.list_elem_fixed_len = 0;
+    if (auto list_elem_filt = config->list_element_filter_factory_.get()) {
+      params.list_elem_fixed_len = list_elem_filt->GetFixedElemLen();
+      if (params.list_elem_fixed_len <= 0) {
+        // now it is too late to known we can not run dcompact,
+        // we throw the exception to notify Dcompact Execution is failed
+        // and fallback to local compaction
+        DEBG("NotSupport job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: timestamp_offset = %zd, fixed_len = %d, ttl = %lld, query_time_after_num_entries = %lld",
+              job_id, params.timestamp_offset, params.list_elem_fixed_len, (llong)params.ttl, (llong)params.query_time_after_num_entries);
+        THROW_NotSupported("Flink List Element is not fixed len, can not run dcompact");
       }
-      DEBG("Ok Support job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: timestamp_offset = %zd, fixed_len = %d, ttl = %lld, query_time_after_num_entries = %lld",
-            job_id, params.timestamp_offset, params.list_elem_fixed_len, (llong)params.ttl, (llong)params.query_time_after_num_entries);
-      dio << params;
     }
+    DEBG("Ok Support job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: timestamp_offset = %zd, fixed_len = %d, ttl = %lld, query_time_after_num_entries = %lld",
+          job_id, params.timestamp_offset, params.list_elem_fixed_len, (llong)params.ttl, (llong)params.query_time_after_num_entries);
+    dio << params;
   }
-  void DeSerialize(FILE* reader, CompactionFilterFactory* base)
+  void DeSerializeRequest(FILE* reader, CompactionFilterFactory* base)
   const override {
     LittleEndianDataInput<NonOwnerFileStream> dio(reader);
-    if (IsCompactionWorker()) {
-      auto fac = dynamic_cast<SideFlinkCompactionFilterFactory*>(base);
-      DEBG("job-%05d: FlinkCompactionFilterFactory_SerDe::DeSerialize: job raw = %.3f GB, zip = %.3f GB, smallest_seqno = %lld",
-            job_id, rawzip[0]/1e9, rawzip[1]/1e9, (llong)m_cp->smallest_seqno);
-      dio >> static_cast<SideFlinkCompactFilterParams&>(*fac);
-    }
-    else { // DB Side
-      // nothing is needed to read from compact worker
-    }
+    auto fac = dynamic_cast<SideFlinkCompactionFilterFactory*>(base);
+    DEBG("job-%05d: FlinkCompactionFilterFactory_SerDe::DeSerialize: job raw = %.3f GB, zip = %.3f GB, smallest_seqno = %lld",
+          job_id, rawzip[0]/1e9, rawzip[1]/1e9, (llong)m_cp->smallest_seqno);
+    dio >> static_cast<SideFlinkCompactFilterParams&>(*fac);
   }
 };
 ROCKSDB_REG_PluginSerDe(FlinkCompactionFilterFactory);

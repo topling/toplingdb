@@ -317,15 +317,7 @@ struct FlinkCompactionFilterFactory_SerDe : DcompactSerDeFunc<CompactionFilterFa
     TRAC("FlinkCompactionFilterFactory_SerDe: job_id = %d, smallest_user_key = %s, largest_user_key = %s, job raw = %.3f GB, zip = %.3f GB",
         cp->job_id, Slice(smallest_user_key).hex().c_str(), Slice(largest_user_key).hex().c_str(), rawzip[0]/1e9, rawzip[1]/1e9);
   }
-  void SerializeRequest(FILE* output, const CompactionFilterFactory& cbase)
-  const override {
-    auto& base = const_cast<CompactionFilterFactory&>(cbase);
-    LittleEndianDataOutput<NonOwnerFileStream> dio(output);
-    DEBG("job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: job raw = %.3f GB, zip = %.3f GB, smallest_seqno = %lld",
-          job_id, rawzip[0]/1e9, rawzip[1]/1e9, (llong)m_cp->smallest_seqno);
-    auto tmp = base.CreateCompactionFilter({}); // just for get config
-    auto flink_compact_filter = dynamic_cast<FlinkCompactionFilter*>(tmp.get());
-    auto config = flink_compact_filter->GetConfig();
+  SideFlinkCompactFilterParams GetParams(const FlinkCompactionFilter::Config* config) const {
     SideFlinkCompactFilterParams params;
     params.timestamp_offset             = config->timestamp_offset_;
     params.ttl                          = config->ttl_;
@@ -344,6 +336,18 @@ struct FlinkCompactionFilterFactory_SerDe : DcompactSerDeFunc<CompactionFilterFa
     }
     DEBG("Ok Support job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: timestamp_offset = %zd, fixed_len = %d, ttl = %lld, query_time_after_num_entries = %lld",
           job_id, params.timestamp_offset, params.list_elem_fixed_len, (llong)params.ttl, (llong)params.query_time_after_num_entries);
+    return params;
+  }
+  void SerializeRequest(FILE* output, const CompactionFilterFactory& cbase)
+  const override {
+    auto& base = const_cast<CompactionFilterFactory&>(cbase);
+    LittleEndianDataOutput<NonOwnerFileStream> dio(output);
+    DEBG("job-%05d: FlinkCompactionFilterFactory_SerDe::Serialize: job raw = %.3f GB, zip = %.3f GB, smallest_seqno = %lld",
+          job_id, rawzip[0]/1e9, rawzip[1]/1e9, (llong)m_cp->smallest_seqno);
+    auto tmp = base.CreateCompactionFilter({}); // just for get config
+    auto flink_compact_filter = dynamic_cast<FlinkCompactionFilter*>(tmp.get());
+    auto config = flink_compact_filter->GetConfig();
+    auto params = GetParams(config);
     dio << params;
   }
   void DeSerializeRequest(FILE* reader, CompactionFilterFactory* base)

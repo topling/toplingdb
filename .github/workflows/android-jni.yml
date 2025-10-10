@@ -78,7 +78,7 @@ jobs:
           echo $JAVA_HOME
           export V=${{inputs.verbose_build_output}}
           export USE_LTO=${{inputs.use_lto}}
-          bash -x android-build.sh
+          bash -x android-build.sh jtest
 
       - name: Generate java/pom.xml from template
         run: |

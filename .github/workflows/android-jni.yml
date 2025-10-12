@@ -59,6 +59,9 @@ jobs:
           env | egrep 'ANDROID|NDK'
           #find /usr/local/lib/android/sdk -type d
           $ANDROID_NDK_HOME/ndk-build --version
+          uname -a
+          uname -m
+          uname -m -s
 
       - name: Init submodule & Setup ssh
         run: |

@@ -2923,6 +2923,9 @@ TEST_F(DBBloomFilterTest, DynamicBloomFilterMultipleSST) {
               "rocksdb.CappedPrefix.3");
     read_options.iterate_upper_bound = &upper_bound;
     std::unique_ptr<Iterator> iter(db_->NewIterator(read_options));
+    iter->SeekToFirst(); ASSERT_EQ(iter->Valid(), true);
+    iter->SeekToLast(); // == SeekForPrev(upper_bound);
+    ASSERT_EQ(iter->Valid(), false); // respect prefix_same_as_start
     ASSERT_EQ(CountIter(iter, "foo"), 2);
     EXPECT_EQ(PopTicker(options, NON_LAST_LEVEL_SEEK_FILTERED), 0);
     EXPECT_EQ(PopTicker(options, NON_LAST_LEVEL_SEEK_FILTER_MATCH), 1);

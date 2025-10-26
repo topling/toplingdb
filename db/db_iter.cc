@@ -798,7 +798,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
     }
 
     assert(prefix == nullptr || prefix_extractor_ != nullptr);
-    if (HasPrefix &&
+    if (HasPrefix && prefix &&
         prefix_extractor_->Transform(user_key_without_ts).compare(*prefix) !=
             0) {
       assert(prefix_same_as_start_);

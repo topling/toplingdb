@@ -27,11 +27,13 @@ class NonBatchedOpsStressTest : public StressTest {
     ReadOptions options(FLAGS_verify_checksum, true);
     std::string ts_str;
     Slice ts;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (FLAGS_user_timestamp_size > 0) {
       ts_str = GetNowNanos();
       ts = ts_str;
       options.timestamp = &ts;
     }
+   #endif
 
     auto shared = thread->shared;
     const int64_t max_key = shared->GetMaxKey();
@@ -358,11 +360,13 @@ class NonBatchedOpsStressTest : public StressTest {
     ReadOptions read_opts(FLAGS_verify_checksum, true);
     std::string ts_str;
     Slice ts;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (FLAGS_user_timestamp_size > 0) {
       ts_str = GetNowNanos();
       ts = ts_str;
       read_opts.timestamp = &ts;
     }
+   #endif
 
     static Random64 rand64(shared->GetSeed());
 
@@ -479,11 +483,13 @@ class NonBatchedOpsStressTest : public StressTest {
     ReadOptions read_opts_copy = read_opts;
     std::string read_ts_str;
     Slice read_ts_slice;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (FLAGS_user_timestamp_size > 0) {
       read_ts_str = GetNowNanos();
       read_ts_slice = read_ts_str;
       read_opts_copy.timestamp = &read_ts_slice;
     }
+   #endif
     bool read_older_ts = MaybeUseOlderTimestampForPointLookup(
         thread, read_ts_str, read_ts_slice, read_opts_copy);
 
@@ -1618,11 +1624,13 @@ class NonBatchedOpsStressTest : public StressTest {
 
     std::string read_ts_str;
     Slice read_ts;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (FLAGS_user_timestamp_size > 0) {
       read_ts_str = GetNowNanos();
       read_ts = read_ts_str;
       ro.timestamp = &read_ts;
     }
+   #endif
 
     std::string max_key_str;
     Slice max_key_slice;

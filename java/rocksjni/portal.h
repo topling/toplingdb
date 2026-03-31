@@ -2053,7 +2053,8 @@ class JniUtil {
    *     is null (or empty and treat_empty_as_null is set), or if an
    *     exception occurs allocating the Java String.
    */
-  static jstring toJavaString(JNIEnv* env, const std::string* string,
+  template<class StringType>
+  static jstring toJavaString(JNIEnv* env, const StringType* string,
                               const bool treat_empty_as_null = false) {
     if (string == nullptr) {
       return nullptr;
@@ -2543,10 +2544,10 @@ class HashMapJni : public JavaClass {
   /**
    * Returns true if it succeeds, false if an error occurs
    */
-  template <class iterator_type, typename K, typename V>
+  template <class iterator_type, typename TplFnMapKV>
   static bool putAll(JNIEnv* env, const jobject jhash_map,
                      iterator_type iterator, iterator_type end,
-                     const FnMapKV<K, V, jobject, jobject>& fn_map_kv) {
+                     const TplFnMapKV& fn_map_kv) {
     const jmethodID jmid_put =
         ROCKSDB_NAMESPACE::MapJni::getMapPutMethodId(env);
     if (jmid_put == nullptr) {
@@ -2598,10 +2599,7 @@ class HashMapJni : public JavaClass {
       return nullptr;
     }
 
-    const ROCKSDB_NAMESPACE::HashMapJni::FnMapKV<
-        const std::string, const std::string, jobject, jobject>
-        fn_map_kv =
-            [env](const std::pair<const std::string, const std::string>& kv) {
+    auto fn_map_kv = [env](const auto& kv) {
               jstring jkey = ROCKSDB_NAMESPACE::JniUtil::toJavaString(
                   env, &(kv.first), false);
               if (env->ExceptionCheck()) {
@@ -2657,10 +2655,7 @@ class HashMapJni : public JavaClass {
       return nullptr;
     }
 
-    const ROCKSDB_NAMESPACE::HashMapJni::FnMapKV<
-        const std::string, const uint32_t, jobject, jobject>
-        fn_map_kv =
-            [env](const std::pair<const std::string, const uint32_t>& kv) {
+    auto fn_map_kv = [env](const auto& kv) {
               jstring jkey = ROCKSDB_NAMESPACE::JniUtil::toJavaString(
                   env, &(kv.first), false);
               if (env->ExceptionCheck()) {
@@ -2711,10 +2706,7 @@ class HashMapJni : public JavaClass {
       return nullptr;
     }
 
-    const ROCKSDB_NAMESPACE::HashMapJni::FnMapKV<
-        const std::string, const uint64_t, jobject, jobject>
-        fn_map_kv =
-            [env](const std::pair<const std::string, const uint64_t>& kv) {
+    auto fn_map_kv = [env](const auto& kv) {
               jstring jkey = ROCKSDB_NAMESPACE::JniUtil::toJavaString(
                   env, &(kv.first), false);
               if (env->ExceptionCheck()) {
@@ -2764,9 +2756,7 @@ class HashMapJni : public JavaClass {
       return nullptr;
     }
 
-    const ROCKSDB_NAMESPACE::HashMapJni::FnMapKV<const uint32_t, const uint64_t,
-                                                 jobject, jobject>
-        fn_map_kv = [env](const std::pair<const uint32_t, const uint64_t>& kv) {
+    auto fn_map_kv = [env](const auto& kv) {
           jobject jkey = ROCKSDB_NAMESPACE::IntegerJni::valueOf(
               env, static_cast<jint>(kv.first));
           if (env->ExceptionCheck()) {
@@ -4918,7 +4908,7 @@ class TickerTypeJni {
         return 0x31;
       case ROCKSDB_NAMESPACE::Tickers::STALL_MICROS:
         return 0x35;
-      case ROCKSDB_NAMESPACE::Tickers::DB_MUTEX_WAIT_MICROS:
+      case ROCKSDB_NAMESPACE::Tickers::DB_MUTEX_WAIT_NANOS:
         return 0x36;
       case ROCKSDB_NAMESPACE::Tickers::NUMBER_MULTIGET_CALLS:
         return 0x39;
@@ -5301,7 +5291,7 @@ class TickerTypeJni {
       case 0x35:
         return ROCKSDB_NAMESPACE::Tickers::STALL_MICROS;
       case 0x36:
-        return ROCKSDB_NAMESPACE::Tickers::DB_MUTEX_WAIT_MICROS;
+        return ROCKSDB_NAMESPACE::Tickers::DB_MUTEX_WAIT_NANOS;
       case 0x39:
         return ROCKSDB_NAMESPACE::Tickers::NUMBER_MULTIGET_CALLS;
       case 0x3A:
@@ -8992,6 +8982,84 @@ class BlockBasedTableOptionsJni
 
     return jcfd;
   }
+};
+
+/// requires Object::Reset()
+template<class Object>
+class ObjectPool {
+  struct ListNode : Object {
+    ListNode* next;
+  };
+  struct ListMeta {
+    ~ListMeta() {
+      for (auto node = m_head; node; ) {
+        auto next = node->next;
+        delete node;
+        node = next;
+      }
+    }
+    ListNode* m_head = nullptr;
+    size_t  m_size = 0;
+  };
+  ListMeta m_pinning_list;
+  ListMeta m_pooling_list;
+public:
+  ~ObjectPool() {
+    ROCKSDB_ASSERT_EQ(m_pinning_list.m_size, 0);
+  }
+  auto NewObjectUniquePtr() {
+    if (auto p = m_pooling_list.m_head) {
+      m_pooling_list.m_head = p->next;
+      m_pooling_list.m_size--;
+      return std::unique_ptr<ListNode>(p);
+    }
+    return std::unique_ptr<ListNode>(new ListNode());
+  }
+  void PinObject(std::unique_ptr<ListNode>&& node) {
+    node->next = m_pinning_list.m_head;
+    m_pinning_list.m_head = node.release();
+    m_pinning_list.m_size++;
+  }
+  void ClearPinningList() {
+    auto pp = &m_pinning_list.m_head;
+    while (auto p = *pp)
+      p->Reset(), pp = &p->next;
+    *pp = m_pooling_list.m_head;
+    m_pooling_list.m_head  = m_pinning_list.m_head;
+    m_pooling_list.m_size += m_pinning_list.m_size;
+    new (&m_pinning_list) ListMeta();
+  }
+  size_t PinningListLen() const { return m_pinning_list.m_size; }
+};
+
+struct ReadOptionsWithValue : public ReadOptions {
+  using ReadOptions::ReadOptions;
+  // do not copy m_single_get & m_multi_get
+  ReadOptionsWithValue(const ReadOptionsWithValue& y) : ReadOptions(y) {}
+  ReadOptionsWithValue& operator=(const ReadOptionsWithValue& y) {
+    ReadOptions::operator=(y);
+    // do not copy m_single_get & m_multi_get
+    return *this;
+  }
+  size_t ZeroCopyListLen() const { return m_single_get.PinningListLen(); }
+  auto NewPinnableSlice() {
+    return m_single_get.NewObjectUniquePtr();
+  }
+  template<class PinnableSliceNode>
+  void RegisterZeroCopy(std::unique_ptr<PinnableSliceNode>&& node) {
+    m_single_get.PinObject(std::move(node));
+  }
+  void ClearZeroCopyList() {
+    m_single_get.ClearPinningList();
+  }
+  struct MultiGetVector : std::vector<PinnableSlice> {
+    void Reset() {
+      for (PinnableSlice& x : *this)
+        x.Reset();
+    }
+  };
+  ObjectPool<PinnableSlice> m_single_get;
+  ObjectPool<MultiGetVector> m_multi_get;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

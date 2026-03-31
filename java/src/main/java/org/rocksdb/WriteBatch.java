@@ -6,6 +6,7 @@
 package org.rocksdb;
 
 import java.nio.ByteBuffer;
+import sun.misc.Unsafe;
 
 /**
  * WriteBatch holds a collection of updates to apply atomically to a DB.
@@ -39,6 +40,7 @@ public class WriteBatch extends AbstractWriteBatch {
    */
   public WriteBatch(final int reserved_bytes) {
     super(newWriteBatch(reserved_bytes));
+    isJniWriteBatch = BUILD_WRITE_BATCH_IN_JAVA_SIDE;
   }
 
   /**
@@ -49,6 +51,320 @@ public class WriteBatch extends AbstractWriteBatch {
    */
   public WriteBatch(final byte[] serialized) {
     super(newWriteBatch(serialized, serialized.length));
+    isJniWriteBatch = BUILD_WRITE_BATCH_IN_JAVA_SIDE;
+  }
+
+  private final boolean isJniWriteBatch;
+  private static final boolean BUILD_WRITE_BATCH_IN_JAVA_SIDE;
+  static {
+    final String env = System.getenv("BUILD_WRITE_BATCH_IN_JAVA_SIDE");
+    if (env != null)
+      BUILD_WRITE_BATCH_IN_JAVA_SIDE = Boolean.parseBoolean(env);
+    else
+      BUILD_WRITE_BATCH_IN_JAVA_SIDE = true; // default
+  }
+  private static final Unsafe myUnsafe = DirectSlice.getUnsafe();
+  private static final long writeVarLenPrefixedByteArray(long dst, byte[] ba) {
+    int len = ba.length;
+    dst = EncodeVarint32(dst, len);
+    myUnsafe.copyMemory(ba, Unsafe.ARRAY_BYTE_BASE_OFFSET, null, dst, len);
+    return dst + len;
+  }
+  public static final int VarUint32Length(int v) {
+    if (v < (1 <<  7))
+      return 1;
+    else if (v < (1 << 14))
+      return 2;
+    else if (v < (1 << 21))
+      return 3;
+    else if (v < (1 << 28))
+      return 4;
+    else
+      return 5;
+  }
+  // copy from coding.cc
+  public static final long EncodeVarint32(long dst, int v) {
+    long ptr = dst;
+    final int B = 128;
+    if (v < (1 << 7)) {
+      myUnsafe.putByte(ptr++, (byte)v);
+    } else if (v < (1 << 14)) {
+      myUnsafe.putByte(ptr++, (byte)(v | B));
+      myUnsafe.putByte(ptr++, (byte)(v >>> 7));
+    } else if (v < (1 << 21)) {
+      myUnsafe.putByte(ptr++, (byte)(v | B));
+      myUnsafe.putByte(ptr++, (byte)((v >>> 7) | B));
+      myUnsafe.putByte(ptr++, (byte)(v >>> 14));
+    } else if (v < (1 << 28)) {
+      myUnsafe.putByte(ptr++, (byte)(v | B));
+      myUnsafe.putByte(ptr++, (byte)((v >>> 7) | B));
+      myUnsafe.putByte(ptr++, (byte)((v >>> 14) | B));
+      myUnsafe.putByte(ptr++, (byte)(v >>> 21));
+    } else {
+      myUnsafe.putByte(ptr++, (byte)(v | B));
+      myUnsafe.putByte(ptr++, (byte)((v >>> 7) | B));
+      myUnsafe.putByte(ptr++, (byte)((v >>> 14) | B));
+      myUnsafe.putByte(ptr++, (byte)((v >>> 21) | B));
+      myUnsafe.putByte(ptr++, (byte)(v >>> 28));
+    }
+    return ptr;
+  }
+
+  private static final  int ADDR_SIZE_CAP_OFFSET = getAddrSizeCapOffset();
+  private static native int getAddrSizeCapOffset();
+  private static final  int content_flags_offset = get_content_flags_offset();
+  private static native int get_content_flags_offset();
+  private final boolean fastContentFlags(int flag) {
+    int bits = myUnsafe.getInt(nativeHandle_ + content_flags_offset);
+    return (bits & flag) != 0;
+  }
+  private final native void updateNativeDataSizeFromJava0(long handle);
+  final void updateNativeDataSizeFromJava() {
+    if (isJniWriteBatch) {
+      updateNativeDataSizeFromJava0(nativeHandle_);
+    }
+  }
+  private final native void updateJavaAddrSizeCapFromNative0(long handle);
+  final void updateJavaAddrSizeCapFromNative() {
+    if (isJniWriteBatch) {
+      updateJavaAddrSizeCapFromNative0(nativeHandle_);
+    }
+  }
+  private final native void ensureCapacity(long handle, long newCap);
+  private final long repDataAddr() {
+    return myUnsafe.getLong(nativeHandle_ + ADDR_SIZE_CAP_OFFSET);
+  }
+  private final long repSize() {
+    return myUnsafe.getLong(nativeHandle_ + ADDR_SIZE_CAP_OFFSET + 8);
+  }
+  private final long repCap() {
+    return myUnsafe.getLong(nativeHandle_ + ADDR_SIZE_CAP_OFFSET + 16);
+  }
+  private final void updateRepSize(long ptr) {
+    long addr = repDataAddr();
+    long size = ptr - addr;
+    assert size > 12;
+    assert size <= repCap();
+    myUnsafe.putByte(ptr, (byte)0); // end of str
+    myUnsafe.putLong(nativeHandle_ + ADDR_SIZE_CAP_OFFSET + 8, size);
+  }
+  private final void finishOperation(long ptr, int flag) {
+    long addr = repDataAddr();
+    long size = ptr - addr;
+    assert size > 12;
+    assert size <= repCap();
+    int cnt = myUnsafe.getInt(addr + 8);
+    myUnsafe.putInt(addr + 8, cnt + 1);
+    myUnsafe.putByte(ptr, (byte)0); // end of str
+    myUnsafe.putLong(nativeHandle_ + ADDR_SIZE_CAP_OFFSET + 8, size);
+    long flagsPtr = nativeHandle_ + content_flags_offset;
+    int old = myUnsafe.getInt(flagsPtr);
+    myUnsafe.putInt(flagsPtr, old | flag);
+  }
+
+  private static final byte kTypeDeletion = 0x0;
+  private static final byte kTypeValue = 0x1;
+  private static final byte kTypeMerge = 0x2;
+  private static final byte kTypeLogData = 0x3;               // WAL only.
+  private static final byte kTypeColumnFamilyDeletion = 0x4;  // WAL only.
+  private static final byte kTypeColumnFamilyValue = 0x5;     // WAL only.
+  private static final byte kTypeColumnFamilyMerge = 0x6;     // WAL only.
+  private static final byte kTypeSingleDeletion = 0x7;
+  private static final byte kTypeColumnFamilySingleDeletion = 0x8;  // WAL only.
+
+  private static final int DEFERRED = 1 << 0;
+  private static final int HAS_PUT = 1 << 1;
+  private static final int HAS_DELETE = 1 << 2;
+  private static final int HAS_SINGLE_DELETE = 1 << 3;
+  private static final int HAS_MERGE = 1 << 4;
+  private static final int HAS_BEGIN_PREPARE = 1 << 5;
+  private static final int HAS_END_PREPARE = 1 << 6;
+  private static final int HAS_COMMIT = 1 << 7;
+  private static final int HAS_ROLLBACK = 1 << 8;
+  private static final int HAS_DELETE_RANGE = 1 << 9;
+  private static final int HAS_BLOB_INDEX = 1 << 10;
+  private static final int HAS_BEGIN_UNPREPARE = 1 << 11;
+  private static final int HAS_PUT_ENTITY = 1 << 12;
+
+  private final int fastCount() {
+    int cnt = myUnsafe.getInt(repDataAddr() + 8);
+    assert count0(nativeHandle_) == cnt;
+    return cnt;
+  }
+
+  @Override
+  public final int count() {
+    if (isJniWriteBatch)
+      return fastCount();
+    else
+      return count0(nativeHandle_);
+  }
+
+  @Override
+  public final void put(final byte[] key, final byte[] value) throws RocksDBException {
+    put(null, key, value);
+  }
+
+  private static final long operationSize(int cf_id, byte[] key) {
+    return 1 + (cf_id != 0 ? VarUint32Length(cf_id) : 0)
+             + VarUint32Length(key.length) + key.length;
+  }
+  private static final long operationSize(int cf_id, byte[] key, byte[] value) {
+    return operationSize(cf_id, key) + VarUint32Length(value.length) + value.length;
+  }
+  @Override
+  public void put(final ColumnFamilyHandle cf, final byte[] key, final byte[] value)
+      throws RocksDBException {
+    if (!isJniWriteBatch) {
+      if (cf != null) {
+        put(nativeHandle_, key, key.length, value, value.length, cf.nativeHandle_);
+      } else {
+        put(nativeHandle_, key, key.length, value, value.length);
+      }
+      return;
+    }
+    int cf_id = cf != null ? cf.getID() : 0;
+    long old_size = repSize();
+    long inc_size = operationSize(cf_id, key, value);
+    if (old_size + inc_size > repCap()) { // slow path, call to jni
+      ensureCapacity(nativeHandle_, old_size + inc_size);
+      assert repCap() >= old_size + inc_size;
+    }
+    long ptr = repDataAddr() + old_size;
+    if (cf_id == 0) {
+      myUnsafe.putByte(ptr, kTypeValue);
+      ptr += 1;
+    } else {
+      myUnsafe.putByte(ptr, kTypeColumnFamilyValue);
+      ptr = EncodeVarint32(ptr + 1, cf_id);
+    }
+    ptr = writeVarLenPrefixedByteArray(ptr, key);
+    ptr = writeVarLenPrefixedByteArray(ptr, value);
+    finishOperation(ptr, HAS_PUT);
+  }
+
+  @Override
+  public void merge(final byte[] key, final byte[] value) throws RocksDBException {
+    merge(null, key, value);
+  }
+
+  @Override
+  public void merge(final ColumnFamilyHandle cf, final byte[] key, final byte[] value)
+      throws RocksDBException {
+    if (!isJniWriteBatch) {
+      if (cf != null) {
+        merge(nativeHandle_, key, key.length, value, value.length, cf.nativeHandle_);
+      } else {
+        merge(nativeHandle_, key, key.length, value, value.length);
+      }
+      return;
+    }
+    int cf_id = cf != null ? cf.getID() : 0;
+    long old_size = repSize();
+    long inc_size = operationSize(cf_id, key, value);
+    if (old_size + inc_size > repCap()) { // slow path, call to jni
+      ensureCapacity(nativeHandle_, old_size + inc_size);
+      assert repCap() >= old_size + inc_size;
+    }
+    long ptr = repDataAddr() + old_size;
+    if (cf_id == 0) {
+      myUnsafe.putByte(ptr, kTypeMerge);
+      ptr += 1;
+    } else {
+      myUnsafe.putByte(ptr, kTypeColumnFamilyMerge);
+      ptr = EncodeVarint32(ptr + 1, cf_id);
+    }
+    ptr = writeVarLenPrefixedByteArray(ptr, key);
+    ptr = writeVarLenPrefixedByteArray(ptr, value);
+    finishOperation(ptr, HAS_MERGE);
+  }
+
+  @Override
+  public void delete(final byte[] key) throws RocksDBException {
+    delete(null, key);
+  }
+
+  @Override
+  public void delete(final ColumnFamilyHandle cf, final byte[] key)
+      throws RocksDBException {
+    if (!isJniWriteBatch) {
+      if (cf != null) {
+        delete(nativeHandle_, key, key.length, cf.nativeHandle_);
+      } else {
+        delete(nativeHandle_, key, key.length);
+      }
+      return;
+    }
+    int cf_id = cf != null ? cf.getID() : 0;
+    long old_size = repSize();
+    long inc_size = operationSize(cf_id, key);
+    if (old_size + inc_size > repCap()) { // slow path, call to jni
+      ensureCapacity(nativeHandle_, old_size + inc_size);
+      assert repCap() >= old_size + inc_size;
+    }
+    long ptr = repDataAddr() + old_size;
+    if (cf_id == 0) {
+      myUnsafe.putByte(ptr, kTypeDeletion);
+      ptr += 1;
+    } else {
+      myUnsafe.putByte(ptr, kTypeColumnFamilyDeletion);
+      ptr = EncodeVarint32(ptr + 1, cf_id);
+    }
+    ptr = writeVarLenPrefixedByteArray(ptr, key);
+    finishOperation(ptr, HAS_DELETE);
+  }
+
+  @Override
+  public void singleDelete(final byte[] key) throws RocksDBException {
+    singleDelete(null, key);
+  }
+
+  @Override
+  public void singleDelete(final ColumnFamilyHandle cf, final byte[] key)
+      throws RocksDBException {
+    if (!isJniWriteBatch) {
+      if (cf != null) {
+        singleDelete(nativeHandle_, key, key.length, cf.nativeHandle_);
+      } else {
+        singleDelete(nativeHandle_, key, key.length);
+      }
+      return;
+    }
+    int cf_id = cf != null ? cf.getID() : 0;
+    long old_size = repSize();
+    long inc_size = operationSize(cf_id, key);
+    if (old_size + inc_size > repCap()) { // slow path, call to jni
+      ensureCapacity(nativeHandle_, old_size + inc_size);
+      assert repCap() >= old_size + inc_size;
+    }
+    long ptr = repDataAddr() + old_size;
+    if (cf_id == 0) {
+      myUnsafe.putByte(ptr, kTypeSingleDeletion);
+      ptr += 1;
+    } else {
+      myUnsafe.putByte(ptr, kTypeColumnFamilySingleDeletion);
+      ptr = EncodeVarint32(ptr + 1, cf_id);
+    }
+    ptr = writeVarLenPrefixedByteArray(ptr, key);
+    finishOperation(ptr, HAS_SINGLE_DELETE);
+  }
+
+  @Override
+  public void putLogData(final byte[] blob) throws RocksDBException {
+    if (!isJniWriteBatch) {
+      putLogData(nativeHandle_, blob, blob.length);
+      return;
+    }
+    long old_size = repSize();
+    long inc_size = 1 + VarUint32Length(blob.length) + blob.length;
+    if (old_size + inc_size > repCap()) { // slow path, call to jni
+      ensureCapacity(nativeHandle_, old_size + inc_size);
+      assert repCap() >= old_size + inc_size;
+    }
+    long ptr = repDataAddr() + old_size;
+    myUnsafe.putByte(ptr, kTypeLogData);
+    ptr = writeVarLenPrefixedByteArray(ptr + 1, blob);
+    updateRepSize(ptr);
   }
 
   /**
@@ -60,6 +376,7 @@ public class WriteBatch extends AbstractWriteBatch {
    * @throws RocksDBException If we cannot iterate over the batch
    */
   public void iterate(final Handler handler) throws RocksDBException {
+    updateNativeDataSizeFromJava();
     iterate(nativeHandle_, handler.nativeHandle_);
   }
 
@@ -72,6 +389,10 @@ public class WriteBatch extends AbstractWriteBatch {
    *   the serialized batch data.
    */
   public byte[] data() throws RocksDBException {
+    if (isJniWriteBatch) {
+      long slice = nativeHandle_ + ADDR_SIZE_CAP_OFFSET;
+      return DirectSlice.copyOfNativeByteArray(slice);
+    }
     return data(nativeHandle_);
   }
 
@@ -81,6 +402,9 @@ public class WriteBatch extends AbstractWriteBatch {
    * @return the serialized data size of the batch.
    */
   public long getDataSize() {
+    if (isJniWriteBatch) {
+      return repSize();
+    }
     return getDataSize(nativeHandle_);
   }
 
@@ -90,7 +414,9 @@ public class WriteBatch extends AbstractWriteBatch {
    * @return true if Put will be called during Iterate.
    */
   public boolean hasPut() {
-    return hasPut(nativeHandle_);
+    boolean b = fastContentFlags(HAS_PUT);
+    assert b == hasPut(nativeHandle_);
+    return b;
   }
 
   /**
@@ -99,7 +425,9 @@ public class WriteBatch extends AbstractWriteBatch {
    * @return true if Delete will be called during Iterate.
    */
   public boolean hasDelete() {
-    return hasDelete(nativeHandle_);
+    boolean b = fastContentFlags(HAS_DELETE);
+    assert b == hasDelete(nativeHandle_);
+    return b;
   }
 
   /**
@@ -108,7 +436,9 @@ public class WriteBatch extends AbstractWriteBatch {
    * @return true if SingleDelete will be called during Iterate.
    */
   public boolean hasSingleDelete() {
-    return hasSingleDelete(nativeHandle_);
+    boolean b = fastContentFlags(HAS_SINGLE_DELETE);
+    assert b == hasSingleDelete(nativeHandle_);
+    return b;
   }
 
   /**
@@ -117,7 +447,9 @@ public class WriteBatch extends AbstractWriteBatch {
    * @return true if DeleteRange will be called during Iterate.
    */
   public boolean hasDeleteRange() {
-    return hasDeleteRange(nativeHandle_);
+    boolean b = fastContentFlags(HAS_DELETE_RANGE);
+    assert b == hasDeleteRange(nativeHandle_);
+    return b;
   }
 
   /**
@@ -126,7 +458,9 @@ public class WriteBatch extends AbstractWriteBatch {
    * @return true if Merge will be called during Iterate.
    */
   public boolean hasMerge() {
-    return hasMerge(nativeHandle_);
+    boolean b = fastContentFlags(HAS_MERGE);
+    assert b == hasMerge(nativeHandle_);
+    return b;
   }
 
   /**
@@ -135,7 +469,9 @@ public class WriteBatch extends AbstractWriteBatch {
    * @return true if MarkBeginPrepare will be called during Iterate.
    */
   public boolean hasBeginPrepare() {
-    return hasBeginPrepare(nativeHandle_);
+    boolean b = fastContentFlags(HAS_BEGIN_PREPARE);
+    assert b == hasBeginPrepare(nativeHandle_);
+    return b;
   }
 
   /**
@@ -144,7 +480,9 @@ public class WriteBatch extends AbstractWriteBatch {
    * @return true if MarkEndPrepare will be called during Iterate.
    */
   public boolean hasEndPrepare() {
-    return hasEndPrepare(nativeHandle_);
+    boolean b = fastContentFlags(HAS_END_PREPARE);
+    assert b == hasEndPrepare(nativeHandle_);
+    return b;
   }
 
   /**
@@ -153,7 +491,9 @@ public class WriteBatch extends AbstractWriteBatch {
    * @return true if MarkCommit will be called during Iterate.
    */
   public boolean hasCommit() {
-    return hasCommit(nativeHandle_);
+    boolean b = fastContentFlags(HAS_COMMIT);
+    assert b == hasCommit(nativeHandle_);
+    return b;
   }
 
   /**
@@ -162,7 +502,9 @@ public class WriteBatch extends AbstractWriteBatch {
    * @return true if MarkRollback will be called during Iterate.
    */
   public boolean hasRollback() {
-    return hasRollback(nativeHandle_);
+    boolean b = fastContentFlags(HAS_ROLLBACK);
+    assert b == hasRollback(nativeHandle_);
+    return b;
   }
 
   @Override
@@ -216,6 +558,7 @@ public class WriteBatch extends AbstractWriteBatch {
     super(nativeHandle);
     if(!owningNativeHandle)
       disOwnNativeHandle();
+    isJniWriteBatch = false;
   }
 
   @Override protected final native void disposeInternal(final long handle);

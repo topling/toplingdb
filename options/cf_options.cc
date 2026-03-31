@@ -296,11 +296,6 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct MutableCFOptions, max_compaction_bytes),
           OptionType::kUInt64T, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
-        {"ignore_max_compaction_bytes_for_input",
-         {offsetof(struct MutableCFOptions,
-                   ignore_max_compaction_bytes_for_input),
-          OptionType::kBoolean, OptionVerificationType::kNormal,
-          OptionTypeFlags::kMutable}},
         {"expanded_compaction_factor",
          {0, OptionType::kInt, OptionVerificationType::kDeprecated,
           OptionTypeFlags::kMutable}},
@@ -362,6 +357,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
           OptionTypeFlags::kMutable}},
         {"memtable_prefix_bloom_probes",
          {0, OptionType::kUInt32T, OptionVerificationType::kDeprecated,
+          OptionTypeFlags::kMutable}},
+        {"allow_merge_memtables",
+         {offsetof(struct MutableCFOptions, allow_merge_memtables),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
         {"memtable_whole_key_filtering",
          {offsetof(struct MutableCFOptions, memtable_whole_key_filtering),
@@ -483,6 +482,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
           OptionTypeFlags::kMutable}},
         {"blob_file_starting_level",
          {offsetof(struct MutableCFOptions, blob_file_starting_level),
+          OptionType::kInt, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"min_filter_level",
+         {offsetof(struct MutableCFOptions, min_filter_level),
           OptionType::kInt, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
         {"prepopulate_blob_cache",
@@ -958,6 +961,8 @@ ImmutableCFOptions::ImmutableCFOptions(const ColumnFamilyOptions& cf_options)
           cf_options.memtable_insert_with_hint_prefix_extractor),
       cf_paths(cf_options.cf_paths),
       compaction_thread_limiter(cf_options.compaction_thread_limiter),
+      compaction_executor_factory(cf_options.compaction_executor_factory),
+      html_user_key_coder(cf_options.html_user_key_coder),
       sst_partitioner_factory(cf_options.sst_partitioner_factory),
       blob_cache(cf_options.blob_cache),
       persist_user_defined_timestamps(
@@ -1027,13 +1032,19 @@ size_t MaxFileSizeForL0MetaPin(const MutableCFOptions& cf_options) {
 
 void MutableCFOptions::RefreshDerivedOptions(int num_levels,
                                              CompactionStyle compaction_style) {
+#if defined(NDEBUG)
+  uint64_t min_size = 512<<10; // 512K, to prevent typo in http set options
+  target_file_size_base = std::max(target_file_size_base, min_size);
+#endif
   max_file_size.resize(num_levels);
   for (int i = 0; i < num_levels; ++i) {
     if (i == 0 && compaction_style == kCompactionStyleUniversal) {
       max_file_size[i] = ULLONG_MAX;
     } else if (i > 1) {
-      max_file_size[i] = MultiplyCheckOverflow(max_file_size[i - 1],
-                                               target_file_size_multiplier);
+      double q = target_file_size_multiplier < 100
+               ? target_file_size_multiplier
+               : target_file_size_multiplier / 100.0;
+      max_file_size[i] = MultiplyCheckOverflow(max_file_size[i - 1], q);
     } else {
       max_file_size[i] = target_file_size_base;
     }
@@ -1052,6 +1063,9 @@ void MutableCFOptions::Dump(Logger* log) const {
                  arena_block_size);
   ROCKS_LOG_INFO(log, "              memtable_prefix_bloom_ratio: %f",
                  memtable_prefix_bloom_size_ratio);
+
+  ROCKS_LOG_INFO(log, "                     allow_merge_memtables: %d",
+                 allow_merge_memtables);
   ROCKS_LOG_INFO(log, "              memtable_whole_key_filtering: %d",
                  memtable_whole_key_filtering);
   ROCKS_LOG_INFO(log,
@@ -1081,8 +1095,6 @@ void MutableCFOptions::Dump(Logger* log) const {
                  level0_stop_writes_trigger);
   ROCKS_LOG_INFO(log, "                     max_compaction_bytes: %" PRIu64,
                  max_compaction_bytes);
-  ROCKS_LOG_INFO(log, "    ignore_max_compaction_bytes_for_input: %s",
-                 ignore_max_compaction_bytes_for_input ? "true" : "false");
   ROCKS_LOG_INFO(log, "                    target_file_size_base: %" PRIu64,
                  target_file_size_base);
   ROCKS_LOG_INFO(log, "              target_file_size_multiplier: %d",

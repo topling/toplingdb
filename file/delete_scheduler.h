@@ -86,6 +86,8 @@ class DeleteScheduler {
     stats_ = stats;
   }
 
+  uint64_t bytes_max_delete_chunk() const { return bytes_max_delete_chunk_; }
+
  private:
   Status MarkAsTrash(const std::string& file_path, std::string* path_in_trash);
 

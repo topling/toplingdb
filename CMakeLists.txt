@@ -15,6 +15,7 @@
 # 3. Run cmake to generate project files for Windows, add more options to enable required third-party libraries.
 #    See thirdparty.inc for more information.
 #        sample command: cmake -G "Visual Studio 16 2019" -DCMAKE_BUILD_TYPE=Release -DWITH_GFLAGS=1 -DWITH_SNAPPY=1 -DWITH_JEMALLOC=1 -DWITH_JNI=1 ..
+#        cmake -G "Visual Studio 17 2022" -DWITH_GFLAGS=1 -DWITH_SNAPPY=0 -DWITH_JEMALLOC=0 -DWITH_JNI=0 -DUSE_RTTI=ON -DFAIL_ON_WARNINGS=OFF ..\rocksdb
 # 4. Then build the project in debug mode (you may want to add /m[:<N>] flag to run msbuild in <N> parallel threads
 #                                          or simply /m to use all avail cores)
 #        msbuild rocksdb.sln
@@ -47,6 +48,9 @@ project(rocksdb
 if(POLICY CMP0042)
   cmake_policy(SET CMP0042 NEW)
 endif()
+
+add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
+add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
 if(NOT CMAKE_BUILD_TYPE)
   if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
@@ -176,6 +180,8 @@ else()
   endif()
 endif()
 
+include_directories(sideplugin/rockside/src)
+
 option(WITH_MD_LIBRARY "build with MD" ON)
 if(WIN32 AND MSVC)
   if(WITH_MD_LIBRARY)
@@ -186,8 +192,20 @@ if(WIN32 AND MSVC)
 endif()
 
 if(MSVC)
+  if(MSVC_VERSION LESS 1926)
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /experimental:preprocessor")
+  else()
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:preprocessor")
+  endif()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /EHsc /GS /Gd /GR /GF /fp:precise /Zc:wchar_t /Zc:forScope /errorReport:queue")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /d2Zi+ /W4 /wd4127 /wd4800 /wd4996 /wd4351 /wd4100 /wd4204 /wd4324")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4200") # zero-len array
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4201") # non-standard extention
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4275") # non dll-interface class used as base for dll-interface
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4505") # unreferenced function with internal linkage has been removed
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4551") # function call missing arg list(test weak symbol on linux)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP") # parallel compile
 else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -W -Wextra -Wall -pthread")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wsign-compare -Wshadow -Wno-unused-parameter -Wno-unused-variable -Woverloaded-virtual -Wnon-virtual-dtor -Wno-missing-field-initializers -Wno-strict-aliasing -Wno-invalid-offsetof")
@@ -254,7 +272,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "loongarch64")
 endif(CMAKE_SYSTEM_PROCESSOR MATCHES "loongarch64")
 
 set(PORTABLE 0 CACHE STRING "Minimum CPU arch to support, or 0 = current CPU, 1 = baseline CPU")
-if(PORTABLE MATCHES "1|ON|YES|TRUE|Y")
+if(PORTABLE MATCHES "^(1|ON|YES|TRUE|Y)$")
   # Usually nothing to do; compiler default is typically the most general
   if(NOT MSVC)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^s390x")
@@ -264,7 +282,7 @@ if(PORTABLE MATCHES "1|ON|YES|TRUE|Y")
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=loongarch64")
     endif()
   endif()
-elseif(PORTABLE MATCHES "0|OFF|NO|FALSE|N")
+elseif(PORTABLE MATCHES "^(0|OFF|NO|FALSE|N)$")
   if(MSVC)
     # NOTE: No auto-detection of current CPU, but instead assume some useful
     # level of optimization is supported
@@ -618,8 +636,142 @@ endif()
 find_package(Threads REQUIRED)
 
 # Main library source code
+find_package(Git)
+
+function(GenerateGitVerFile subdir)
+  if (ARGV1)
+    set(SidePluginName ${ARGV1})
+    message(STATUS "GenerateGitVerFile: ${PROJECT_SOURCE_DIR}/sideplugin/${subdir} ${SidePluginName}")
+  else()
+    set(SidePluginName ${subdir})
+    string(REGEX REPLACE "-" "_" SidePluginName ${subdir})
+  endif()
+  execute_process(WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/sideplugin/${subdir}" OUTPUT_VARIABLE GIT_LOG COMMAND "${GIT_EXECUTABLE}" log -n1)
+  execute_process(WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/sideplugin/${subdir}" OUTPUT_VARIABLE GIT_DIFF COMMAND "${GIT_EXECUTABLE}" diff)
+  if(MSVC)
+    execute_process(WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/sideplugin/${subdir}" OUTPUT_VARIABLE ignore
+                    ERROR_VARIABLE CXX_VER COMMAND "${CMAKE_CXX_COMPILER}")
+  else()
+    execute_process(WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/sideplugin/${subdir}" OUTPUT_VARIABLE CXX_VER COMMAND "${CMAKE_CXX_COMPILER}" --version)
+  endif()
+  configure_file(${PROJECT_SOURCE_DIR}/cmake/git-version-each-sideplugin.cc.in
+                 ${CMAKE_BINARY_DIR}/git-version-${SidePluginName}.cc @ONLY)
+  set(GIT_VER_SRCS ${GIT_VER_SRCS} ${CMAKE_BINARY_DIR}/git-version-${SidePluginName}.cc PARENT_SCOPE)
+endfunction()
+
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-core)
+  set(TOPLING_CORE topling-core)
+elseif(EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-ark)
+  set(TOPLING_CORE topling-ark)
+elseif(EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-zip)
+  set(TOPLING_CORE topling-zip)
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-{core,ark,zip}")
+endif()
+
+message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/${TOPLING_CORE}")
+add_compile_definitions(GITHUB_TOPLING_ZIP="https://github.com/rockeet/${TOPLING_CORE}")
+include_directories(${PROJECT_SOURCE_DIR}/sideplugin/${TOPLING_CORE}/src)
+include_directories(${PROJECT_SOURCE_DIR}/sideplugin/${TOPLING_CORE}/boost-include)
+if(MSVC)
+  #add_compile_definitions(TERARK_USE_DLL) # makes non dll-export base class dll-export
+  link_directories(${PROJECT_SOURCE_DIR}/sideplugin/${TOPLING_CORE}/boost-include/stage/lib)
+  link_directories(${PROJECT_SOURCE_DIR}/sideplugin/${TOPLING_CORE}/vs2022/terark-fsa/x64/${CMAKE_BUILD_TYPE})
+  GenerateGitVerFile(${TOPLING_CORE} core)
+  GenerateGitVerFile(${TOPLING_CORE} fsa)
+  GenerateGitVerFile(${TOPLING_CORE} zbs)
+endif()
+
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt)
+  message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt")
+  include(${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt)
+  add_compile_definitions(HAS_TOPLING_ROCKS)
+  GenerateGitVerFile(topling-rocks)
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-rocks/CMakeFileList.txt")
+endif()
+
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)
+  message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
+  include(${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt)
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/rockside/CMakeFileList.txt")
+endif()
+
+set (cspp_memtab ${PROJECT_SOURCE_DIR}/sideplugin/cspp-memtable/cspp_memtable.cc)
+if (EXISTS ${cspp_memtab})
+  message(STATUS "found ${cspp_memtab}")
+  set (topling_rocks_src ${topling_rocks_src} ${cspp_memtab})
+  add_compile_definitions(HAS_TOPLING_CSPP_MEMTABLE)
+  GenerateGitVerFile(cspp-memtable)
+else()
+  message(STATUS "not found ${cspp_memtab}")
+endif()
+
+set (cspp_wbwi ${PROJECT_SOURCE_DIR}/sideplugin/cspp-wbwi/cspp_wbwi.cc)
+if (EXISTS ${cspp_wbwi})
+  message(STATUS "found ${cspp_wbwi}")
+  set (topling_rocks_src ${topling_rocks_src} ${cspp_wbwi})
+  add_compile_definitions(HAS_TOPLING_CSPP_WBWI)
+  GenerateGitVerFile(cspp-wbwi)
+else()
+  message(STATUS "not found ${cspp_wbwi}")
+endif()
+
+FILE(GLOB toplingdb_fs ${PROJECT_SOURCE_DIR}/sideplugin/toplingdb-fs/src/*.cc)
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/toplingdb-fs/src)
+  message(STATUS "found ${toplingdb_fs}")
+  set (topling_rocks_src ${topling_rocks_src} ${toplingdb_fs})
+  GenerateGitVerFile(toplingdb-fs)
+  if(MSVC)
+    include_directories(${PROJECT_SOURCE_DIR}/../libnfs/include)
+    link_directories(${PROJECT_SOURCE_DIR}/../libnfs/build-msvc/lib/${CMAKE_BUILD_TYPE})
+  endif()
+  set(SYSTEM_LIBS ${SYSTEM_LIBS} nfs.lib)
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/toplingdb-fs/src/*.cc")
+endif()
+
+FILE(GLOB topling_sst ${PROJECT_SOURCE_DIR}/sideplugin/topling-sst/src/table/*.cc)
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-sst/src/table)
+  message(STATUS "found ${topling_sst}")
+  set (topling_rocks_src ${topling_rocks_src} ${topling_sst})
+  add_compile_definitions(HAS_TOPLING_SST)
+  include_directories(sideplugin/topling-sst/src)
+  GenerateGitVerFile(topling-sst)
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-sst/src/table/*.cc")
+endif()
+
+FILE(GLOB topling_zip_table_reader ${PROJECT_SOURCE_DIR}/sideplugin/topling-zip_table_reader/src/table/*.cc)
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-zip_table_reader/src/table)
+  message(STATUS "found ${topling_zip_table_reader}")
+  set (topling_rocks_src ${topling_rocks_src} ${topling_zip_table_reader})
+  include_directories(sideplugin/topling-zip_table_reader/src)
+  GenerateGitVerFile(topling-zip_table_reader)
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-zip_table_reader/src/table/*.cc")
+endif()
+
+FILE(GLOB topling_dcompact ${PROJECT_SOURCE_DIR}/sideplugin/topling-dcompact/src/dcompact/*.cc)
+if (EXISTS ${PROJECT_SOURCE_DIR}/sideplugin/topling-dcompact/src/dcompact)
+  message(STATUS "found ${topling_dcompact}")
+  if(MSVC)
+    list(REMOVE_ITEM topling_dcompact ${PROJECT_SOURCE_DIR}/sideplugin/topling-dcompact/src/dcompact/dcompact_cmd.cc)
+    include_directories(${PROJECT_SOURCE_DIR}/../curl/include)
+    link_directories(${PROJECT_SOURCE_DIR}/../curl/build-msvc/lib/${CMAKE_BUILD_TYPE})
+    set(SYSTEM_LIBS ${SYSTEM_LIBS} libcurl_imp.lib)
+  endif()
+  GenerateGitVerFile(topling-dcompact)
+  set (topling_rocks_src ${topling_rocks_src} ${topling_dcompact})
+else()
+  message(STATUS "not found ${PROJECT_SOURCE_DIR}/sideplugin/topling-dcompact/src/dcompact/*.cc")
+endif()
 
 set(SOURCES
+        ${rockside_src}
+        ${topling_rocks_src}
+        ${GIT_VER_SRCS}
         cache/cache.cc
         cache/cache_entry_roles.cc
         cache/cache_key.cc
@@ -651,6 +803,7 @@ set(SOURCES
         db/builder.cc
         db/c.cc
         db/column_family.cc
+        db/compaction/compaction_executor.cc
         db/compaction/compaction.cc
         db/compaction/compaction_iterator.cc
         db/compaction/compaction_picker.cc
@@ -727,6 +880,7 @@ set(SOURCES
         env/env_encryption.cc
         env/file_system.cc
         env/file_system_tracer.cc
+        env/fs_cat.cc
         env/fs_remap.cc
         env/mock_env.cc
         env/unique_id_gen.cc
@@ -1047,11 +1201,24 @@ endif()
 set(ROCKSDB_STATIC_LIB rocksdb${ARTIFACT_SUFFIX})
 set(ROCKSDB_SHARED_LIB rocksdb-shared${ARTIFACT_SUFFIX})
 
+if (${CMAKE_BUILD_TYPE} MATCHES "Release")
+  set(TOPLING_LIB_TYPE r)
+elseif(${CMAKE_BUILD_TYPE} MATCHES "Debug")
+  set(TOPLING_LIB_TYPE d)
+else()
+  set(TOPLING_LIB_TYPE a)
+endif()
 
 if(WIN32)
   set(SYSTEM_LIBS ${SYSTEM_LIBS} shlwapi.lib rpcrt4.lib)
+  list(PREPEND SYSTEM_LIBS terark-zbs-${TOPLING_LIB_TYPE}.lib
+                           terark-fsa-${TOPLING_LIB_TYPE}.lib
+                           terark-core-${TOPLING_LIB_TYPE}.lib)
 else()
   set(SYSTEM_LIBS ${CMAKE_THREAD_LIBS_INIT})
+  list(PREPEND SYSTEM_LIBS terark-zbs-${TOPLING_LIB_TYPE}
+                           terark-fsa-${TOPLING_LIB_TYPE}
+                           terark-core-${TOPLING_LIB_TYPE})
 endif()
 
 set(ROCKSDB_PLUGIN_EXTERNS "")
@@ -1093,12 +1260,10 @@ endforeach()
 string(TIMESTAMP TS "%Y-%m-%d %H:%M:%S" UTC)
 set(BUILD_DATE "${TS}" CACHE STRING "the time we first built rocksdb")
 
-find_package(Git)
-
 if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
   execute_process(WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" OUTPUT_VARIABLE GIT_SHA COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD )
   execute_process(WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESULT_VARIABLE GIT_MOD COMMAND "${GIT_EXECUTABLE}" diff-index HEAD --quiet)
-  execute_process(WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" OUTPUT_VARIABLE GIT_DATE COMMAND "${GIT_EXECUTABLE}" log -1 --date=format:"%Y-%m-%d %T" --format="%ad")
+  execute_process(WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" OUTPUT_VARIABLE GIT_DATE COMMAND "${GIT_EXECUTABLE}" log -1 --date=format:"%Y-%m-%d %H:%M:%S" --format="%ad")
   execute_process(WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" OUTPUT_VARIABLE GIT_TAG RESULT_VARIABLE rv COMMAND "${GIT_EXECUTABLE}" symbolic-ref -q --short HEAD OUTPUT_STRIP_TRAILING_WHITESPACE)
   if (rv AND NOT rv EQUAL 0)
     execute_process(WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" OUTPUT_VARIABLE GIT_TAG COMMAND "${GIT_EXECUTABLE}" describe --tags --exact-match OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -1610,3 +1775,6 @@ option(WITH_BENCHMARK "build benchmark tests" OFF)
 if(WITH_BENCHMARK)
   add_subdirectory(${PROJECT_SOURCE_DIR}/microbench/)
 endif()
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)

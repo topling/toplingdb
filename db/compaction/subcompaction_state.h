@@ -215,6 +215,10 @@ class SubcompactionState {
   CompactionOutputs* current_outputs_ = &compaction_outputs_;
   bool is_current_penultimate_level_ = false;
   bool has_penultimate_level_outputs_ = false;
+public:
+  std::vector<CompactionOutputs::Output>& outputs = compaction_outputs_.GetOutputs();
+  size_t total_bytes = 0;
+  size_t num_output_records = 0;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

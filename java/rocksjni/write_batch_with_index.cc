@@ -7,12 +7,16 @@
 // calling c++ ROCKSDB_NAMESPACE::WriteBatchWithIndex methods from Java side.
 
 #include "rocksdb/utilities/write_batch_with_index.h"
+#include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
 
 #include "include/org_rocksdb_WBWIRocksIterator.h"
 #include "include/org_rocksdb_WriteBatchWithIndex.h"
 #include "rocksdb/comparator.h"
 #include "rocksjni/cplusplus_to_java_convert.h"
 #include "rocksjni/portal.h"
+#include "kv_helper.h"
+
+using ROCKSDB_NAMESPACE::JZeroCopyIter;
 
 /*
  * Class:     org_rocksdb_WriteBatchWithIndex
@@ -544,8 +548,11 @@ jlong Java_org_rocksdb_WriteBatchWithIndex_iteratorWithBase(
       reinterpret_cast<ROCKSDB_NAMESPACE::WriteBatchWithIndex*>(jwbwi_handle);
   auto* cf_handle =
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
-  auto* base_iterator =
-      reinterpret_cast<ROCKSDB_NAMESPACE::Iterator*>(jbase_iterator_handle);
+  auto* zc_iter =
+      reinterpret_cast<ROCKSDB_NAMESPACE::JZeroCopyIter*>(jbase_iterator_handle);
+  auto* base_iterator = zc_iter->own_iter;
+  zc_iter->own_iter = nullptr; // ownership has been moved, reset to nullptr
+  delete zc_iter; // java side will not delete it, we delete it here
   ROCKSDB_NAMESPACE::ReadOptions* read_opts =
       jread_opts_handle == 0
           ? nullptr
@@ -553,7 +560,7 @@ jlong Java_org_rocksdb_WriteBatchWithIndex_iteratorWithBase(
                 jread_opts_handle);
   auto* iterator =
       wbwi->NewIteratorWithBase(cf_handle, base_iterator, read_opts);
-  return GET_CPLUSPLUS_POINTER(iterator);
+  return GET_CPLUSPLUS_POINTER(JZeroCopyIter::Make(iterator));
 }
 
 /*

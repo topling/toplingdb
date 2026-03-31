@@ -514,6 +514,14 @@ TEST_F(DBWALTestWithTimestamp, EnableDisableUDT) {
 
   options.comparator = test::BytewiseComparatorWithU64TsWrapper();
   options.persist_user_defined_timestamps = false;
+  if (options.memtable_as_log_index) {
+    auto s = ReopenColumnFamiliesWithTs({"pikachu"}, options,
+                                        false /* persist_udt */,
+                                        avoid_flush_during_recovery);
+    ASSERT_TRUE(s.IsNotSupported());
+    return;
+  }
+
   // Test handle timestamp size inconsistency in WAL when enabling user-defined
   // timestamps.
   ASSERT_OK(ReopenColumnFamiliesWithTs({"pikachu"}, options,
@@ -814,10 +822,12 @@ TEST_F(DBWALTest, WALWithChecksumHandoff) {
     writeOpt.disableWAL = false;
     // Data is persisted in the WAL
     ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "zoo", "v3"));
+  if (!terark::getEnvBool("WAL_USE_WRITEV")) {
     // The hash does not match, write fails
     fault_fs->SetChecksumHandoffFuncType(ChecksumType::kxxHash);
     writeOpt.disableWAL = false;
     ASSERT_NOK(dbfull()->Put(writeOpt, handles_[1], "foo", "v3"));
+  }
 
     ReopenWithColumnFamilies({"default", "pikachu"}, options);
     // Due to the write failure, Get should not find
@@ -828,10 +838,14 @@ TEST_F(DBWALTest, WALWithChecksumHandoff) {
     fault_fs->SetChecksumHandoffFuncType(ChecksumType::kCRC32c);
     // Each write will be similated as corrupted.
     fault_fs->IngestDataCorruptionBeforeWrite();
-    writeOpt.disableWAL = true;
-    ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "bar", "v4"));
+    if (!options.memtable_as_log_index) {
+      writeOpt.disableWAL = true;
+      ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "bar", "v4"));
+    }
+  if (!terark::getEnvBool("WAL_USE_WRITEV")) {
     writeOpt.disableWAL = false;
     ASSERT_NOK(dbfull()->Put(writeOpt, handles_[1], "foo", "v4"));
+  }
     ReopenWithColumnFamilies({"default", "pikachu"}, options);
     ASSERT_NE("v4", Get(1, "foo"));
     ASSERT_NE("v4", Get(1, "bar"));
@@ -957,6 +971,7 @@ TEST_F(DBWALTest, IgnoreRecoveredLog) {
     options.create_if_missing = true;
     options.merge_operator = MergeOperators::CreateUInt64AddOperator();
     options.wal_dir = dbname_ + "/logs";
+
     DestroyAndReopen(options);
 
     // fill up the DB
@@ -1561,6 +1576,9 @@ class RecoveryTestHelper {
           new log::Writer(std::move(file_writer), current_log_number,
                           db_options.recycle_log_file_num > 0, false,
                           db_options.wal_compression);
+      if (db_options.memtable_as_log_index) {
+        log_writer->InitReaderMmap(*db_options.fs, 16*1024*1024);
+      }
       ASSERT_OK(log_writer->AddCompressionTypeRecord());
       current_log_writer.reset(log_writer);
 
@@ -1636,6 +1654,10 @@ class DBWALTestWithParams : public DBWALTestBase,
                                 std::tuple<bool, int, int, CompressionType>> {
  public:
   DBWALTestWithParams() : DBWALTestBase("/db_wal_test_with_params") {}
+  Options CurrentOptions() {
+    auto opt = DBWALTestBase::CurrentOptions();
+    return opt;
+  }
 };
 
 INSTANTIATE_TEST_CASE_P(
@@ -2112,6 +2134,7 @@ TEST_F(DBWALTest, WalCleanupAfterAvoidFlushDuringRecovery) {
 
 TEST_F(DBWALTest, RecoverWithoutFlush) {
   Options options = CurrentOptions();
+
   options.avoid_flush_during_recovery = true;
   options.create_if_missing = false;
   options.disable_auto_compactions = true;
@@ -2601,10 +2624,14 @@ TEST_F(DBWALTest, WalTermTest) {
 
   WriteBatch batch;
   ASSERT_OK(batch.Put("foo", "bar"));
-  batch.MarkWalTerminationPoint();
-  ASSERT_OK(batch.Put("foo2", "bar2"));
+  WriteBatch batch2;
+  ASSERT_OK(batch2.Put("foo2", "bar2"));
+  batch.SetWriteMemNext(&batch2);
 
-  ASSERT_OK(dbfull()->Write(wo, &batch));
+  if (options.memtable_as_log_index)
+    ASSERT_TRUE(dbfull()->Write(wo, &batch).IsNotSupported());
+  else
+    ASSERT_OK(dbfull()->Write(wo, &batch));
 
   // make sure we can re-open it.
   ASSERT_OK(TryReopenWithColumnFamilies({"default", "pikachu"}, options));

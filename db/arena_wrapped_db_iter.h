@@ -33,10 +33,11 @@ class Version;
 // to allocate.
 // When using the class's Iterator interface, the behavior is exactly
 // the same as the inner DBIter.
-class ArenaWrappedDBIter : public Iterator {
+class ArenaWrappedDBIter final : public Iterator {
  public:
+  ArenaWrappedDBIter();
   ~ArenaWrappedDBIter() override {
-    if (db_iter_ != nullptr) {
+    if (db_iter_inited_) {
       db_iter_->~DBIter();
     } else {
       assert(false);
@@ -70,7 +71,15 @@ class ArenaWrappedDBIter : public Iterator {
   }
   void Next() override { db_iter_->Next(); }
   void Prev() override { db_iter_->Prev(); }
+  Slice NextWithKey() override { return db_iter_->NextWithKey(); }
+  Slice PrevWithKey() override { return db_iter_->PrevWithKey(); }
+  size_t CountKeysInRange(const Slice& beg, const Slice& end, size_t fixed_user_key_len) override {
+    return db_iter_->CountKeysInRange(beg, end, fixed_user_key_len);
+  }
+
+  ROCKSDB_FLATTEN
   Slice key() const override { return db_iter_->key(); }
+  ROCKSDB_FLATTEN
   Slice value() const override { return db_iter_->value(); }
   const WideColumns& columns() const override { return db_iter_->columns(); }
   Status status() const override { return db_iter_->status(); }
@@ -80,7 +89,8 @@ class ArenaWrappedDBIter : public Iterator {
   Status GetProperty(std::string prop_name, std::string* prop) override;
 
   Status Refresh() override;
-  Status Refresh(const Snapshot*) override;
+  Status Refresh(const Snapshot*, bool keep_iter_pos) override;
+  Iterator* GetUnwrapped() override { return db_iter_; }
 
   void Init(Env* env, const ReadOptions& read_options,
             const ImmutableOptions& ioptions,
@@ -101,15 +111,16 @@ class ArenaWrappedDBIter : public Iterator {
   }
 
  private:
-  DBIter* db_iter_ = nullptr;
+  union { DBIter db_iter_[1]; };
   Arena arena_;
   uint64_t sv_number_;
   ColumnFamilyData* cfd_ = nullptr;
   DBImpl* db_impl_ = nullptr;
   ReadOptions read_options_;
-  ReadCallback* read_callback_;
+  ReadCallback* read_callback_ = nullptr;
   bool expose_blob_index_ = false;
   bool allow_refresh_ = true;
+  bool db_iter_inited_ = false;
   // If this is nullptr, it means the mutable memtable does not contain range
   // tombstone when added under this DBIter.
   TruncatedRangeDelIterator** memtable_range_tombstone_iter_ = nullptr;
@@ -119,10 +130,7 @@ class ArenaWrappedDBIter : public Iterator {
 // `db_impl` and `cfd` are used for reneweal. If left null, renewal will not
 // be supported.
 extern ArenaWrappedDBIter* NewArenaWrappedDbIterator(
-    Env* env, const ReadOptions& read_options, const ImmutableOptions& ioptions,
-    const MutableCFOptions& mutable_cf_options, const Version* version,
-    const SequenceNumber& sequence, uint64_t max_sequential_skip_in_iterations,
-    uint64_t version_number, ReadCallback* read_callback,
-    DBImpl* db_impl = nullptr, ColumnFamilyData* cfd = nullptr,
+    const ReadOptions&, const SuperVersion*, SequenceNumber sequence,
+    ReadCallback*, DBImpl* db_impl = nullptr,
     bool expose_blob_index = false, bool allow_refresh = true);
 }  // namespace ROCKSDB_NAMESPACE

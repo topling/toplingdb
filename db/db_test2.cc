@@ -4167,12 +4167,21 @@ TEST_F(DBTest2, TestNumPread) {
   if (prefetch_supported) {
     // After flush, we'll open the file and read footer, meta block,
     // property block and index block.
-    ASSERT_EQ(4, env_->random_read_counter_.Read());
+    if (options.memtable_as_log_index) {
+      // extra Read in InitReaderMmap Read whole file mmap
+      ASSERT_EQ(5, env_->random_read_counter_.Read());
+    } else {
+      ASSERT_EQ(4, env_->random_read_counter_.Read());
+    }
   } else {
     // With prefetch not supported, we will do a single read into a buffer
     ASSERT_EQ(1, env_->random_read_counter_.Read());
   }
-  ASSERT_EQ(1, env_->random_file_open_counter_.load());
+  if (options.memtable_as_log_index) {
+    ASSERT_EQ(2, env_->random_file_open_counter_.load());
+  } else {
+    ASSERT_EQ(1, env_->random_file_open_counter_.load());
+  }
 
   // One pread per a normal data block read
   env_->random_file_open_counter_.store(0);
@@ -4190,12 +4199,18 @@ TEST_F(DBTest2, TestNumPread) {
   if (prefetch_supported) {
     // After flush, we'll open the file and read footer, meta block,
     // property block and index block.
-    ASSERT_EQ(4, env_->random_read_counter_.Read());
+    if (options.memtable_as_log_index)
+      ASSERT_EQ(5, env_->random_read_counter_.Read());
+    else
+      ASSERT_EQ(4, env_->random_read_counter_.Read());
   } else {
     // With prefetch not supported, we will do a single read into a buffer
     ASSERT_EQ(1, env_->random_read_counter_.Read());
   }
-  ASSERT_EQ(1, env_->random_file_open_counter_.load());
+  if (options.memtable_as_log_index)
+    ASSERT_EQ(2, env_->random_file_open_counter_.load());
+  else
+    ASSERT_EQ(1, env_->random_file_open_counter_.load());
 
   env_->random_file_open_counter_.store(0);
   env_->random_read_counter_.Reset();
@@ -5502,6 +5517,8 @@ class DummyOldStats : public Statistics {
   }
   bool HistEnabledForType(uint32_t /*type*/) const override { return false; }
   std::string ToString() const override { return ""; }
+  void GetAggregated(uint64_t* tickers, struct HistogramStat*) const override {}
+  void Merge(const uint64_t* tickers, const struct HistogramStat*) override {}
   std::atomic<int> num_rt{0};
   std::atomic<int> num_mt{0};
 };
@@ -7174,7 +7191,9 @@ TEST_F(DBTest2, PointInTimeRecoveryWithIOErrorWhileReadingWal) {
   options.avoid_flush_during_recovery = true;
   options.wal_recovery_mode = WALRecoveryMode::kPointInTimeRecovery;
   Status s = TryReopen(options);
-  ASSERT_TRUE(s.IsIOError());
+  if (!options.memtable_as_log_index) {
+    ASSERT_TRUE(s.IsIOError());
+  }
 }
 
 TEST_F(DBTest2, PointInTimeRecoveryWithSyncFailureInCFCreation) {

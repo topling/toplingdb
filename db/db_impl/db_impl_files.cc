@@ -192,10 +192,7 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
       for (size_t path_id = 0; path_id < cfd->ioptions()->cf_paths.size();
            path_id++) {
         auto& path = cfd->ioptions()->cf_paths[path_id].path;
-
-        if (paths.find(path) == paths.end()) {
-          paths.insert(path);
-        }
+        paths.insert(path);
       }
     }
 
@@ -627,7 +624,8 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
     }
     if (schedule_only) {
       InstrumentedMutexLock guard_lock(&mutex_);
-      SchedulePendingPurge(fname, dir_to_sync, type, number, state.job_id);
+      SchedulePendingPurge(std::move(fname), std::move(dir_to_sync),
+                           type, number, state.job_id);
     } else {
       DeleteObsoleteFileImpl(state.job_id, fname, dir_to_sync, type, number);
     }
@@ -999,9 +997,7 @@ Status DBImpl::DeleteUnreferencedSstFiles(RecoveryContext* recovery_ctx) {
       // path ends with '/' or '\\'
       const std::string normalized_fpath = path + fname;
       largest_file_number = std::max(largest_file_number, number);
-      if (type == kTableFile && number >= next_file_number &&
-          recovery_ctx->files_to_delete_.find(normalized_fpath) ==
-              recovery_ctx->files_to_delete_.end()) {
+      if (type == kTableFile && number >= next_file_number) {
         recovery_ctx->files_to_delete_.emplace(normalized_fpath, path);
       }
     }

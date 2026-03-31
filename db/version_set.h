@@ -327,6 +327,9 @@ class VersionStorageInfo {
   // Return the combined file size of all files at the specified level.
   uint64_t NumLevelBytes(int level) const;
 
+  // Return the combined raw kv size of all files at the specified level.
+  uint64_t NumLevelRawKV(int level) const;
+
   // REQUIRES: This version has been saved (see VersionBuilder::SaveTo)
   const std::vector<FileMetaData*>& LevelFiles(int level) const {
     return files_[level];
@@ -350,6 +353,8 @@ class VersionStorageInfo {
   // @param force Force resetting all files' epoch number.
   void RecoverEpochNumbers(ColumnFamilyData* cfd, bool restart_epoch = true,
                            bool force = false);
+
+  int FindFileInRange(int level, const Slice& key, uint32_t left, uint32_t right) const;
 
   class FileLocation {
    public:
@@ -624,7 +629,7 @@ class VersionStorageInfo {
                                      const Slice& largest_user_key,
                                      int last_level, int last_l0_idx);
 
- private:
+ protected:
   void ComputeCompensatedSizes();
   void UpdateNumNonEmptyLevels();
   void CalculateBaseBytes(const ImmutableOptions& ioptions,
@@ -897,14 +902,42 @@ class Version {
   //    merge_context.operands_list and don't merge the operands
   // REQUIRES: lock is not held
   // REQUIRES: pinned_iters_mgr != nullptr
-  void Get(const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+  void Get(const ReadOptions& ro, const LookupKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* status,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
            PinnedIteratorsManager* pinned_iters_mgr,
            bool* value_found = nullptr, bool* key_exists = nullptr,
            SequenceNumber* seq = nullptr, ReadCallback* callback = nullptr,
-           bool* is_blob = nullptr, bool do_merge = true);
+           bool* is_blob = nullptr, bool do_merge = true)
+  {
+    return m_get(this, ro, key, value, columns, timestamp, status,
+                 merge_context, max_covering_tombstone_seq, pinned_iters_mgr,
+                 value_found, key_exists, seq, callback, is_blob, do_merge);
+  }
+
+private:
+  template<class UKCmp, class IKCmp>
+  void GetInst(const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+           PinnableWideColumns* columns, std::string* timestamp, Status* status,
+           MergeContext* merge_context,
+           SequenceNumber* max_covering_tombstone_seq,
+           PinnedIteratorsManager* pinned_iters_mgr,
+           bool* value_found, bool* key_exists,
+           SequenceNumber* seq, ReadCallback* callback,
+           bool* is_blob, bool do_merge);
+
+  void (*m_get)(Version*,
+           const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+           PinnableWideColumns* columns, std::string* timestamp, Status* status,
+           MergeContext* merge_context,
+           SequenceNumber* max_covering_tombstone_seq,
+           PinnedIteratorsManager* pinned_iters_mgr,
+           bool* value_found, bool* key_exists,
+           SequenceNumber* seq, ReadCallback* callback,
+           bool* is_blob, bool do_merge);
+
+public:
 
   void MultiGet(const ReadOptions&, MultiGetRange* range,
                 ReadCallback* callback = nullptr);
@@ -988,6 +1021,7 @@ class Version {
   Status GetPropertiesOfTablesInRange(const ReadOptions& read_options,
                                       const Range* range, std::size_t n,
                                       TablePropertiesCollection* props) const;
+  Status ApproximateKeyAnchors(const ReadOptions&, const Range*, std::vector<Anchor>*) const;
 
   // Print summary of range delete tombstones in SST files into out_str,
   // with maximum max_entries_to_print entries printed out.
@@ -1006,6 +1040,8 @@ class Version {
   }
 
   size_t GetMemoryUsageByTableReaders(const ReadOptions& read_options);
+
+  Env* env() const { return env_; }
 
   ColumnFamilyData* cfd() const { return cfd_; }
 
@@ -1120,6 +1156,12 @@ class Version {
   uint64_t version_number_;
   std::shared_ptr<IOTracer> io_tracer_;
   bool use_async_io_;
+
+ public:
+  // ToplingDB specific:
+  TablePropertiesCollection props_of_all_tables_; // just for dcompact worker
+
+ private:
 
   Version(ColumnFamilyData* cfd, VersionSet* vset, const FileOptions& file_opt,
           MutableCFOptions mutable_cf_options,
@@ -1450,6 +1492,7 @@ class VersionSet {
   // The caller should delete the iterator when no longer needed.
   // @param read_options Must outlive the returned iterator.
   // @param start, end indicates compaction range
+  static
   InternalIterator* MakeInputIterator(
       const ReadOptions& read_options, const Compaction* c,
       RangeDelAggregator* range_del_agg,
@@ -1475,6 +1518,12 @@ class VersionSet {
                            const Slice& start, const Slice& end,
                            int start_level, int end_level,
                            TableReaderCaller caller);
+  template<class InternalCmp>
+  uint64_t ApproximateSizeTmpl(const SizeApproximationOptions& options,
+                               const ReadOptions& read_options, Version* v,
+                               const Slice& start, const Slice& end,
+                               int start_level, int end_level,
+                               TableReaderCaller, InternalCmp);
 
   // Return the size of the current manifest file
   uint64_t manifest_file_size() const { return manifest_file_size_; }
@@ -1584,11 +1633,22 @@ class VersionSet {
                                const FdWithKeyRange& f, const Slice& key,
                                TableReaderCaller caller);
 
+  template<class InternalCmp>
+  uint64_t ApproximateOffsetOfTmpl(const ReadOptions& read_options, Version* v,
+                                   const FdWithKeyRange& f, const Slice& key,
+                                   TableReaderCaller, InternalCmp);
+
   // Returns approximated data size between start and end keys in a file
   // for a given version.
   uint64_t ApproximateSize(const ReadOptions& read_options, Version* v,
                            const FdWithKeyRange& f, const Slice& start,
                            const Slice& end, TableReaderCaller caller);
+
+  template<class InternalCmp>
+  uint64_t ApproximateSizeTmpl(const ReadOptions& read_options, Version* v,
+                               const FdWithKeyRange& f,
+                               const Slice& start, const Slice& end,
+                               TableReaderCaller, InternalCmp);
 
   struct MutableCFState {
     uint64_t log_number;

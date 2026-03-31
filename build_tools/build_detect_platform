@@ -49,7 +49,7 @@ fi
 if [ "$ROCKSDB_CXX_STANDARD" ]; then
   PLATFORM_CXXFLAGS="-std=$ROCKSDB_CXX_STANDARD"
 else
-  PLATFORM_CXXFLAGS="-std=c++17"
+  PLATFORM_CXXFLAGS="-std=gnu++17"
 fi
 
 # we currently depend on POSIX platform
@@ -235,10 +235,10 @@ EOF
         PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lpthread"
         # PORT_FILES=port/dragonfly/dragonfly_specific.cc
         ;;
-    Cygwin)
+    Cygwin*|CYGWIN*)
         PLATFORM=CYGWIN
         PLATFORM_SHARED_CFLAGS=""
-        PLATFORM_CXXFLAGS="-std=gnu++11"
+        PLATFORM_CXXFLAGS="-std=gnu++17"
         COMMON_FLAGS="$COMMON_FLAGS -DCYGWIN"
         if [ -z "$USE_CLANG" ]; then
             COMMON_FLAGS="$COMMON_FLAGS -fno-builtin-memcmp"
@@ -263,7 +263,9 @@ esac
 PLATFORM_CXXFLAGS="$PLATFORM_CXXFLAGS ${CXXFLAGS}"
 JAVA_LDFLAGS="$PLATFORM_LDFLAGS"
 JAVA_STATIC_LDFLAGS="$PLATFORM_LDFLAGS"
-JAVAC_ARGS="-source 8"
+if [ -z "$JAVAC_ARGS" ]; then
+  JAVAC_ARGS="-source 8"
+fi
 
 if [ "$CROSS_COMPILE" = "true" -o "$FBCODE_BUILD" = "true" ]; then
     # Cross-compiling; do not try any compilation tests.
@@ -293,6 +295,7 @@ EOF
     if ! test $ROCKSDB_DISABLE_SNAPPY; then
         # Test whether Snappy library is installed
         # http://code.google.com/p/snappy/
+        test -s libsnappy.a ||
         $CXX $PLATFORM_CXXFLAGS -x c++ - -o test.o 2>/dev/null  <<EOF
           #include <snappy.h>
           int main() {}
@@ -334,11 +337,16 @@ EOF
         then
           COMMON_FLAGS="$COMMON_FLAGS -DGFLAGS=1 -DGFLAGS_NAMESPACE=google"
           PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lgflags"
+        else
+          echo Not found: GFLAGS 1>&2
+          exit 1
         fi
     fi
 
     if ! test $ROCKSDB_DISABLE_ZLIB; then
         # Test whether zlib library is installed
+        test -s libz.a ||
+        test "$ZLIB_READY_SKIP_CHECK" = 1 ||
         $CXX $PLATFORM_CXXFLAGS $COMMON_FLAGS -x c++ - -o test.o 2>/dev/null  <<EOF
           #include <zlib.h>
           int main() {}
@@ -347,11 +355,15 @@ EOF
             COMMON_FLAGS="$COMMON_FLAGS -DZLIB"
             PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lz"
             JAVA_LDFLAGS="$JAVA_LDFLAGS -lz"
+        else
+          echo Not found: zlib "(for gzip)" 1>&2
+          exit 1
         fi
     fi
 
     if ! test $ROCKSDB_DISABLE_BZIP; then
         # Test whether bzip library is installed
+        test -s libbz2.a ||
         $CXX $PLATFORM_CXXFLAGS $COMMON_FLAGS -x c++ - -o test.o 2>/dev/null  <<EOF
           #include <bzlib.h>
           int main() {}
@@ -365,6 +377,7 @@ EOF
 
     if ! test $ROCKSDB_DISABLE_LZ4; then
         # Test whether lz4 library is installed
+        test -s liblz4.a ||
         $CXX $PLATFORM_CXXFLAGS $COMMON_FLAGS -x c++ - -o test.o 2>/dev/null  <<EOF
           #include <lz4.h>
           #include <lz4hc.h>
@@ -616,6 +629,7 @@ EOF
 
 fi
 
+if [ -z "${W_shorten_64_to_32}" ]; then
 # TODO(tec): Fix -Wshorten-64-to-32 errors on FreeBSD and enable the warning.
 # -Wshorten-64-to-32 breaks compilation on FreeBSD aarch64 and i386
 if ! { [ "$TARGET_OS" = FreeBSD ] && [ "$TARGET_ARCHITECTURE" = arm64 -o "$TARGET_ARCHITECTURE" = i386 ]; }; then
@@ -626,6 +640,7 @@ EOF
   if [ "$?" = 0 ]; then
     COMMON_FLAGS="$COMMON_FLAGS -Wshorten-64-to-32"
   fi
+fi
 fi
 
 if [ "$PORTABLE" == "" ] || [ "$PORTABLE" == 0 ]; then

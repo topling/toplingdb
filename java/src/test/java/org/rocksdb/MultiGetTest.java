@@ -198,7 +198,7 @@ public class MultiGetTest {
   }
 
   @Test
-  public void putNThenMultiGetDirectShortValueBuffers() throws RocksDBException {
+  public void putNThenMultiGetDirectShortValueBuffers() throws RocksDBException, Exception {
     try (final Options opt = new Options().setCreateIfMissing(true);
          final RocksDB db = RocksDB.open(opt, dbFolder.getRoot().getAbsolutePath())) {
       db.put("key1".getBytes(), "value1ForKey1".getBytes());
@@ -214,28 +214,55 @@ public class MultiGetTest {
         key.flip();
       }
 
-      {
-        final List<ByteBuffer> values = new ArrayList<>();
+      try (ReadOptions ro = new ReadOptions(); AutoCloseable zc = ro.autoZeroCopy()) {
+        final ArrayList<ByteBuffer> values = new ArrayList<>();
         for (int i = 0; i < keys.size(); i++) {
           values.add(ByteBuffer.allocateDirect(4));
         }
 
-        final List<ByteBufferGetStatus> statii = db.multiGetByteBuffers(keys, values);
+        final List<ByteBufferGetStatus> statii = db.multiGetByteBuffers(ro, keys, values);
         assertThat(statii.size()).isEqualTo(values.size());
         for (final ByteBufferGetStatus status : statii) {
           assertThat(status.status.getCode()).isEqualTo(Status.Code.Ok);
           assertThat(status.requiredSize).isEqualTo("value3ForKey3".getBytes().length);
           final ByteBuffer expected =
               ByteBuffer.allocateDirect(24).put(Arrays.copyOf("valueX".getBytes(), 4));
-          expected.flip();
-          assertThat(status.value).isEqualTo(expected);
+          if (DirectSlice.supportDirectBorrowMemory(status.value)) {
+            assertThat(status.value.capacity()).isEqualTo(status.requiredSize);
+            assertThat(status.value.position()).isEqualTo(0);
+            assertThat(status.value.limit()).isEqualTo(status.value.capacity());
+          } else {
+            expected.flip();
+            assertThat(status.value).isEqualTo(expected);
+          }
+        }
+
+        values.clear();
+        values.add(null);
+        values.add(ByteBuffer.allocateDirect(4));
+        byte[][] ba_keys = {"key1".getBytes(), "key2".getBytes(), "key3".getBytes()};
+        final ByteBufferGetStatus[] statii2 = db.multiGetZeroCopy(ro, ba_keys, values);
+        assertThat(statii2.length).isEqualTo(ba_keys.length);
+        for (final ByteBufferGetStatus status : statii2) {
+          assertThat(status.isOk()).isEqualTo(true);
+          assertThat(status.requiredSize).isEqualTo("value3ForKey3".getBytes().length);
+          final ByteBuffer expected =
+              ByteBuffer.allocateDirect(24).put(Arrays.copyOf("valueX".getBytes(), 4));
+          if (DirectSlice.supportDirectBorrowMemory(status.value)) {
+            assertThat(status.value.capacity()).isEqualTo(status.requiredSize);
+            assertThat(status.value.position()).isEqualTo(0);
+            assertThat(status.value.limit()).isEqualTo(status.value.capacity());
+          } else {
+            expected.flip();
+            assertThat(status.value).isEqualTo(expected);
+          }
         }
       }
     }
   }
 
   @Test
-  public void putNThenMultiGetDirectNondefaultCF() throws RocksDBException {
+  public void putNThenMultiGetDirectNondefaultCF() throws RocksDBException, Exception {
     try (final Options opt = new Options().setCreateIfMissing(true);
          final RocksDB db = RocksDB.open(opt, dbFolder.getRoot().getAbsolutePath())) {
       final List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>(0);
@@ -292,13 +319,13 @@ public class MultiGetTest {
             .isEqualTo("value3ForKey3".getBytes());
       }
 
-      {
+      try (ReadOptions ro = new ReadOptions(); AutoCloseable zc = ro.autoZeroCopy()) {
         final List<ColumnFamilyHandle> columnFamilyHandles = new ArrayList<>();
         columnFamilyHandles.add(cf.get(0));
         columnFamilyHandles.add(cf.get(0));
         columnFamilyHandles.add(cf.get(0));
         final List<ByteBufferGetStatus> results =
-            db.multiGetByteBuffers(columnFamilyHandles, keys, values);
+            db.multiGetByteBuffers(ro, columnFamilyHandles, keys, values);
 
         assertThat(results.get(0).status.getCode()).isEqualTo(Status.Code.Ok);
         assertThat(results.get(1).status.getCode()).isEqualTo(Status.Code.Ok);

@@ -4,11 +4,18 @@
 //  (found in the LICENSE.Apache file in the root directory).
 //
 #pragma once
+
+#include "port/lang.h"
 #include "port/port.h"
 #include "rocksdb/perf_level.h"
 
+
 namespace ROCKSDB_NAMESPACE {
 
-extern thread_local PerfLevel perf_level;
+#if !defined(ROCKSDB_NON_TLS_PERF_LEVEL)
+  extern ROCKSDB_RAW_TLS PerfLevel perf_level ROCKSDB_STATIC_TLS;
+#else
+extern PerfLevel perf_level;
+#endif
 
 }  // namespace ROCKSDB_NAMESPACE

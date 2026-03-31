@@ -37,12 +37,29 @@ public class RocksIteratorTest {
 
   private void validateKey(
       final RocksIterator iterator, final ByteBuffer byteBuffer, final String key) {
-    validateByteBufferResult(iterator.key(byteBuffer), byteBuffer, key);
+    int oldlimit = byteBuffer.limit();
+    int keylen = iterator.key(byteBuffer);
+    byteBuffer.limit(Math.min(oldlimit, byteBuffer.limit()));
+    validateByteBufferResult(keylen, byteBuffer, key);
   }
 
   private void validateValue(
       final RocksIterator iterator, final ByteBuffer byteBuffer, final String value) {
-    validateByteBufferResult(iterator.value(byteBuffer), byteBuffer, value);
+    int oldlimit = byteBuffer.limit();
+    int valuelen = iterator.value(byteBuffer);
+    byteBuffer.limit(Math.min(oldlimit, byteBuffer.limit()));
+    validateByteBufferResult(valuelen, byteBuffer, value);
+  }
+
+  private ByteBuffer newZeroCopyBuffer(int limit) {
+    final ByteBuffer buffer = DirectSlice.newZeroCopyDirectBuffer();
+    if (buffer == null) {
+      throw new RuntimeException("Failed to create zero copy direct buffer");
+    }
+    // just to save the limit, this is used to pass the test
+    DirectSlice.directBorrowMemory(buffer, 0, limit);
+    buffer.limit(limit);
+    return buffer;
   }
 
   @Test
@@ -73,6 +90,29 @@ public class RocksIteratorTest {
         validateKey(iterator, ByteBuffer.allocate(5), "key1");
         validateValue(iterator, ByteBuffer.allocate(2), "value1");
         validateValue(iterator, ByteBuffer.allocate(8), "value1");
+
+        if (DirectSlice.supportZeroCopy()) {
+          validateKey(iterator, newZeroCopyBuffer(2), "key1");
+          validateKey(iterator, newZeroCopyBuffer(2), "key0");
+          validateKey(iterator, newZeroCopyBuffer(4), "key1");
+          validateKey(iterator, newZeroCopyBuffer(5), "key1");
+          validateValue(iterator, newZeroCopyBuffer(2), "value2");
+          validateValue(iterator, newZeroCopyBuffer(2), "vasicu");
+          validateValue(iterator, newZeroCopyBuffer(8), "value1");
+
+          validateKey(iterator, newZeroCopyBuffer(2), "key1");
+          validateKey(iterator, newZeroCopyBuffer(2), "key0");
+          validateKey(iterator, newZeroCopyBuffer(4), "key1");
+          validateKey(iterator, newZeroCopyBuffer(5), "key1");
+          validateValue(iterator, newZeroCopyBuffer(2), "value1");
+          validateValue(iterator, newZeroCopyBuffer(8), "value1");
+        } else {
+          System.out.println(
+            "Does not support zero-copy, skipping zero copy tests\n" +
+            "   try add java startup option\n" +
+            "        --add-opens java.base/java.nio=ALL-UNNAMED"
+          );
+        }
       }
     }
   }
@@ -187,6 +227,41 @@ public class RocksIteratorTest {
         assertThat(iterator.isValid()).isTrue();
         assertThat(iterator.key()).isEqualTo("key2".getBytes());
         assertThat(iterator.value()).isEqualTo("value2".getBytes());
+        iterator.status();
+      }
+    }
+  }
+
+  @Test
+  public void rocksIteratorCount() throws RocksDBException {
+    try (final Options options =
+             new Options().setCreateIfMissing(true).setCreateMissingColumnFamilies(true);
+         final RocksDB db = RocksDB.open(options, dbFolder.getRoot().getAbsolutePath())) {
+      db.put("key1-001".getBytes(), "value11".getBytes());
+      db.put("key1-002".getBytes(), "value12".getBytes());
+      db.put("key1-003".getBytes(), "value13".getBytes());
+      db.put("key2-001".getBytes(), "value21".getBytes());
+      db.put("key2-002".getBytes(), "value22".getBytes());
+      db.put("key2-003".getBytes(), "value23".getBytes());
+
+      try (final RocksIterator iterator = db.newIterator()) {
+        assertThat(iterator.countKeysInRange("key1-000".getBytes(), "key2-000".getBytes(), 8)).isEqualTo(3);
+        assertThat(iterator.isValid()).isFalse();
+        assertThat(iterator.countKeysInRange("key1-000".getBytes(), "key3-000".getBytes(), 8)).isEqualTo(6);
+        assertThat(iterator.isValid()).isFalse();
+        assertThat(iterator.countKeysInRange("key1-002".getBytes(), "key2-002".getBytes(), 8)).isEqualTo(3);
+        assertThat(iterator.isValid()).isFalse();
+        iterator.status();
+        assertThat(iterator.countKeysInRange("key1-000".getBytes(), "key2-000".getBytes())).isEqualTo(3);
+        assertThat(iterator.isValid()).isFalse();
+        assertThat(iterator.countKeysInRange("key1-000".getBytes(), "key3-000".getBytes())).isEqualTo(6);
+        assertThat(iterator.isValid()).isFalse();
+        assertThat(iterator.countKeysInRange("key1-002".getBytes(), "key2-002".getBytes())).isEqualTo(3);
+        assertThat(iterator.isValid()).isFalse();
+        iterator.status();
+        assertThat(iterator.countKeysInRange(new byte[0], new byte[0])).isEqualTo(0);
+        assertThat(iterator.countKeysInRange(new byte[0], new byte[]{-1})).isEqualTo(6);
+        assertThat(iterator.countKeysInRange(new byte[]{-1}, new byte[0])).isEqualTo(0);
         iterator.status();
       }
     }

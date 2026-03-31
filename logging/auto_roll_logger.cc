@@ -178,10 +178,23 @@ std::string AutoRollLogger::ValistToString(const char* format,
   return buffer;
 }
 
+bool AutoRollLogger::SanitizeLogFile() {
+  if (logger_) {
+    return true;
+  }
+  ResetLogger();
+  if (status_.ok()) {
+    if (logger_) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void AutoRollLogger::LogInternal(const char* format, ...) {
   mutex_.AssertHeld();
 
-  if (!logger_) {
+  if (!SanitizeLogFile()) {
     return;
   }
 
@@ -193,13 +206,13 @@ void AutoRollLogger::LogInternal(const char* format, ...) {
 
 void AutoRollLogger::Logv(const char* format, va_list ap) {
   assert(GetStatus().ok());
-  if (!logger_) {
-    return;
-  }
 
   std::shared_ptr<Logger> logger;
   {
     MutexLock l(&mutex_);
+    if (!SanitizeLogFile()) {
+      return;
+    }
     if ((kLogFileTimeToRoll > 0 && LogExpired()) ||
         (kMaxLogFileSize > 0 && logger_->GetLogFileSize() >= kMaxLogFileSize)) {
       RollLogFile();
@@ -241,7 +254,9 @@ void AutoRollLogger::WriteHeaderInfo() {
 
 void AutoRollLogger::LogHeader(const char* format, va_list args) {
   if (!logger_) {
-    return;
+    MutexLock l(&mutex_);
+    if (!SanitizeLogFile())
+      return;
   }
 
   // header message are to be retained in memory. Since we cannot make any

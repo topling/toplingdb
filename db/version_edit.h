@@ -27,6 +27,10 @@
 #include "table/unique_id_impl.h"
 #include "util/autovector.h"
 
+#if defined(__AVX512VL__) && defined(__AVX512BW__)
+  #include <immintrin.h> // for _mm_maskz_loadu_epi8 in HostPrefixCache
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 // Tag numbers for serialized VersionEdit.  These numbers are written to
@@ -197,6 +201,7 @@ struct FileMetaData {
       0;  // The number of entries, including deletions and range deletions.
   // The number of deletion entries, including range deletions.
   uint64_t num_deletions = 0;
+  uint64_t num_merges = 0;
   uint64_t raw_key_size = 0;    // total uncompressed key size.
   uint64_t raw_value_size = 0;  // total uncompressed value size.
   uint64_t num_range_deletions = 0;
@@ -207,6 +212,11 @@ struct FileMetaData {
 
   int refs = 0;  // Reference count
 
+  int job_id = -1;
+  short job_attempt = -1;
+
+  CompactionReason compaction_reason = CompactionReason::kUnknown;
+  bool is_bottom_most_compaction = false; // for webview
   bool being_compacted = false;       // Is this file undergoing compaction?
   bool init_stats_from_file = false;  // true if the data-entry stats of this
                                       // file has initialized from file.
@@ -377,11 +387,33 @@ struct FdWithKeyRange {
 struct LevelFilesBrief {
   size_t num_files;
   FdWithKeyRange* files;
+  std::shared_ptr<class SSTUnionDFA> udfa = nullptr;
+  uint64_t* prefix_cache = nullptr;
   LevelFilesBrief() {
     num_files = 0;
     files = nullptr;
   }
 };
+inline uint64_t HostPrefixCache(const Slice& ikey) {
+  ROCKSDB_ASSERT_GE(ikey.size_, 8);
+  ROCKSDB_ASSUME(ikey.size_ >= 8);
+  uint64_t data;
+  if (LIKELY(ikey.size_ >= 16)) {
+    memcpy(&data, ikey.data_, 8);
+  } else {
+   #if defined(__AVX512VL__) && defined(__AVX512BW__)
+    //#pragma message "__AVX512VL__ && __AVX512BW__, use _mm_maskz_loadu_epi8"
+    // load 128 bits, keep low 64 bits, discard high 64 bits
+    auto mask = _bzhi_u32(-1, uint32_t(ikey.size_ - 8));
+    auto m128 = _mm_maskz_loadu_epi8(mask, ikey.data_);
+    data = (uint64_t)_mm_extract_epi64(m128, 0);
+   #else
+    data = 0;
+    memcpy(&data, ikey.data_, ikey.size_ - 8);
+   #endif
+  }
+  return NativeOfBigEndian64(data);
+}
 
 // The state of a DB at any given time is referred to as a Version.
 // Any modification to the Version is considered a Version Edit. A Version is

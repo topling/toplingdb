@@ -164,7 +164,7 @@ class HybridRowBlockCacheSimulator : public PrioritizedCacheSimulator {
   void Access(const BlockCacheTraceRecord& access) override;
 
  private:
-  enum InsertResult : char {
+  enum InsertResult : unsigned char {
     INSERTED,
     ADMITTED,
     NO_INSERT,

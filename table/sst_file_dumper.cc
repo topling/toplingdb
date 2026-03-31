@@ -60,7 +60,9 @@ SstFileDumper::SstFileDumper(const Options& options,
       moptions_(ColumnFamilyOptions(options_)),
       read_options_(verify_checksum, false),
       internal_comparator_(BytewiseComparator()) {
+ #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   read_options_.readahead_size = readahead_size;
+ #endif
   if (!silent_) {
     fprintf(stdout, "Process %s\n", file_path.c_str());
   }
@@ -102,6 +104,7 @@ Status SstFileDumper::GetTableReader(const std::string& file_path) {
 
   file_.reset(new RandomAccessFileReader(std::move(file), file_path));
 
+if (!getenv("TOPLING_SIDEPLUGIN_CONF")) {
   FilePrefetchBuffer prefetch_buffer(
       0 /* readahead_size */, 0 /* max_readahead_size */, true /* enable */,
       false /* track_min_offset */);
@@ -162,6 +165,7 @@ Status SstFileDumper::GetTableReader(const std::string& file_path) {
     }
     options_.comparator = internal_comparator_.user_comparator();
   }
+}
 
   if (s.ok()) {
     s = NewTableReader(ioptions_, soptions_, internal_comparator_, file_size,
@@ -440,6 +444,8 @@ Status SstFileDumper::SetTableOptionsByMagicNumber(
     if (!silent_) {
       fprintf(stdout, "Sst file format: cuckoo table\n");
     }
+  } else if (!getenv("TOPLING_SIDEPLUGIN_CONF")) {
+    // do nothing, let it fall through
   } else {
     char error_msg_buffer[80];
     snprintf(error_msg_buffer, sizeof(error_msg_buffer) - 1,

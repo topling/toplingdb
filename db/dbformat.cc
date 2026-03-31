@@ -54,6 +54,7 @@ EntryType GetEntryType(ValueType value_type) {
 }
 
 void AppendInternalKey(std::string* result, const ParsedInternalKey& key) {
+  result->reserve(key.user_key.size() + 8);
   result->append(key.user_key.data(), key.user_key.size());
   PutFixed64(result, PackSequenceAndType(key.sequence, key.type));
 }
@@ -62,6 +63,7 @@ void AppendInternalKeyWithDifferentTimestamp(std::string* result,
                                              const ParsedInternalKey& key,
                                              const Slice& ts) {
   assert(key.user_key.size() >= ts.size());
+  result->reserve(key.user_key.size() + 8);
   result->append(key.user_key.data(), key.user_key.size() - ts.size());
   result->append(ts.data(), ts.size());
   PutFixed64(result, PackSequenceAndType(key.sequence, key.type));
@@ -211,31 +213,39 @@ int InternalKeyComparator::Compare(const ParsedInternalKey& a,
   return -Compare(b, a);
 }
 
-LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
+LookupKey::LookupKey(const Slice _user_key, SequenceNumber s,
                      const Slice* ts) {
+  static_assert(offsetof(LookupKey, longstart_) == 8);
   size_t usize = _user_key.size();
   size_t ts_sz = (nullptr == ts) ? 0 : ts->size();
-  size_t needed = usize + ts_sz + 13;  // A conservative estimate
+  klength_ = uint32_t(usize + ts_sz + 8);
   char* dst;
-  if (needed <= sizeof(space_)) {
+  if (LIKELY(klength_ <= sizeof(space_))) {
+    static_assert(sizeof(space_) < 128);
+    klen_len_ = short_klen_len; // here VarUint length is 1 byte
+    klen_data_[2] = uint8_t(klength_);
+    static_assert(offsetof(LookupKey, klen_data_[3]) ==
+                  offsetof(LookupKey, space_));
     dst = space_;
   } else {
-    dst = new char[needed];
+    auto klen_len = VarUint32Length(klength_);
+    klen_len_ = char(klen_len);
+    char* ptr = new char[usize + ts_sz + 16]; // precise space
+    longstart_ = ptr + 8;
+    dst = EncodeVarint32(ptr + 8 - klen_len, klength_);
   }
-  start_ = dst;
-  // NOTE: We don't support users keys of more than 2GB :)
-  dst = EncodeVarint32(dst, static_cast<uint32_t>(usize + ts_sz + 8));
-  kstart_ = dst;
+  // set tag first, memcpy will be optimized to tail call(jmp),
+  // gcc-15 aggressively optimized fast path(short key) gracefully
+  EncodeFixed64(dst + usize + ts_sz, PackSequenceAndType(s, kValueTypeForSeek));
   memcpy(dst, _user_key.data(), usize);
-  dst += usize;
-  if (nullptr != ts) {
-    memcpy(dst, ts->data(), ts_sz);
-    dst += ts_sz;
+  if (UNLIKELY(nullptr != ts)) {
+    memcpy(dst + usize, ts->data(), ts_sz);
   }
-  EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek));
-  dst += 8;
-  end_ = dst;
 }
+
+ROCKSDB_FLATTEN
+LookupKey::LookupKey(const Slice uk, SequenceNumber s)
+  : LookupKey(uk, s, nullptr) {}
 
 void IterKey::EnlargeBuffer(size_t key_size) {
   // If size is smaller than buffer size, continue using current buffer,
@@ -246,4 +256,32 @@ void IterKey::EnlargeBuffer(size_t key_size) {
   buf_ = new char[key_size];
   buf_size_ = key_size;
 }
+
+void IterKey::TrimAppend(const size_t shared_len, const char* non_shared_data,
+                         const size_t non_shared_len) {
+  assert(shared_len <= key_size_);
+  size_t total_size = shared_len + non_shared_len;
+
+  if (IsKeyPinned() /* key is not in buf_ */) {
+    // Copy the key from external memory to buf_ (copy shared_len bytes)
+    EnlargeBufferIfNeeded(total_size);
+    memcpy(buf(), key_, shared_len);
+  } else if (total_size > buf_size_) {
+    // Need to allocate space, delete previous space
+    char* p = new char[total_size];
+    memcpy(p, key_, shared_len);
+
+    if (buf_size_ != sizeof(space_)) {
+      delete[] buf_;
+    }
+
+    buf_ = p;
+    buf_size_ = total_size;
+  }
+
+  memcpy(buf() + shared_len, non_shared_data, non_shared_len);
+  key_ = buf();
+  key_size_ = total_size;
+}
+
 }  // namespace ROCKSDB_NAMESPACE

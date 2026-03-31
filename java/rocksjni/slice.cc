@@ -307,6 +307,12 @@ jlong Java_org_rocksdb_DirectSlice_createNewDirectSlice1(JNIEnv* env,
   return GET_CPLUSPLUS_POINTER(slice);
 }
 
+JNIEXPORT jobject JNICALL Java_org_rocksdb_DirectSlice_newZeroCopyDirectBuffer0
+(JNIEnv *env, jclass clazz)
+{
+  return env->NewDirectByteBuffer(nullptr, 0);
+}
+
 /*
  * Class:     org_rocksdb_DirectSlice
  * Method:    data0

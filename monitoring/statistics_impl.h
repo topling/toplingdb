@@ -68,6 +68,8 @@ class StatisticsImpl : public Statistics {
   virtual std::string ToString() const override;
   virtual bool getTickerMap(std::map<std::string, uint64_t>*) const override;
   virtual bool HistEnabledForType(uint32_t type) const override;
+  virtual void GetAggregated(uint64_t* tickers, struct HistogramStat*) const override;
+  virtual void Merge(const uint64_t* tickers, const HistogramStat*) override;
 
   const Customizable* Inner() const override { return stats_.get(); }
 

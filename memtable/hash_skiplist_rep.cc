@@ -28,12 +28,12 @@ class HashSkipListRep : public MemTableRep {
 
   void Insert(KeyHandle handle) override;
 
-  bool Contains(const char* key) const override;
+  bool Contains(const Slice& internal_key) const override;
 
   size_t ApproximateMemoryUsage() override;
 
-  void Get(const LookupKey& k, void* callback_args,
-           bool (*callback_func)(void* arg, const char* entry)) override;
+  void Get(const ReadOptions&, const LookupKey& k, void* callback_args,
+           bool (*callback_func)(void* arg, const KeyValuePair&)) override;
 
   ~HashSkipListRep() override;
 
@@ -95,10 +95,12 @@ class HashSkipListRep : public MemTableRep {
 
     // Returns the key at the current position.
     // REQUIRES: Valid()
-    const char* key() const override {
+    const char* varlen_key() const override {
       assert(Valid());
       return iter_.key();
     }
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
 
     // Advances to the next position.
     // REQUIRES: Valid()
@@ -176,6 +178,9 @@ class HashSkipListRep : public MemTableRep {
         : HashSkipListRep::Iterator(nullptr, false),
           memtable_rep_(memtable_rep) {}
 
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
+
     // Advance to the first entry with a key >= target
     void Seek(const Slice& k, const char* memtable_key) override {
       auto transformed = memtable_rep_.transform_->Transform(ExtractUserKey(k));
@@ -210,7 +215,9 @@ class HashSkipListRep : public MemTableRep {
    public:
     EmptyIterator() = default;
     bool Valid() const override { return false; }
-    const char* key() const override {
+    using MemTableRep::Iterator::Seek;
+    using MemTableRep::Iterator::SeekForPrev;
+    const char* varlen_key() const override {
       assert(false);
       return nullptr;
     }
@@ -265,31 +272,33 @@ HashSkipListRep::Bucket* HashSkipListRep::GetInitializedBucket(
 
 void HashSkipListRep::Insert(KeyHandle handle) {
   auto* key = static_cast<char*>(handle);
-  assert(!Contains(key));
-  auto transformed = transform_->Transform(UserKey(key));
+  Slice internal_key = GetLengthPrefixedSlice(key);
+  assert(!Contains(internal_key));
+  auto transformed = transform_->Transform(ExtractUserKey(internal_key));
   auto bucket = GetInitializedBucket(transformed);
   bucket->Insert(key);
 }
 
-bool HashSkipListRep::Contains(const char* key) const {
-  auto transformed = transform_->Transform(UserKey(key));
+bool HashSkipListRep::Contains(const Slice& internal_key) const {
+  auto transformed = transform_->Transform(ExtractUserKey(internal_key));
   auto bucket = GetBucket(transformed);
   if (bucket == nullptr) {
     return false;
   }
-  return bucket->Contains(key);
+  return ContainsForwardToLegacy(*bucket, internal_key);
 }
 
 size_t HashSkipListRep::ApproximateMemoryUsage() { return 0; }
 
-void HashSkipListRep::Get(const LookupKey& k, void* callback_args,
-                          bool (*callback_func)(void* arg, const char* entry)) {
+void HashSkipListRep::Get(const ReadOptions&,
+                          const LookupKey& k, void* callback_args,
+                          bool (*callback_func)(void*, const KeyValuePair&)) {
   auto transformed = transform_->Transform(k.user_key());
   auto bucket = GetBucket(transformed);
   if (bucket != nullptr) {
     Bucket::Iterator iter(bucket);
-    for (iter.Seek(k.memtable_key().data());
-         iter.Valid() && callback_func(callback_args, iter.key());
+    for (iter.Seek(k.memtable_key_data());
+         iter.Valid() && callback_func(callback_args, KeyValuePair(iter.key()));
          iter.Next()) {
     }
   }

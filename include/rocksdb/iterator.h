@@ -107,18 +107,18 @@ class Iterator : public Cleanable {
   // satisfied without doing some IO, then this returns Status::Incomplete().
   virtual Status status() const = 0;
 
-  // If supported, the DB state that the iterator reads from is updated to
-  // the latest state. The iterator will be invalidated after the call.
-  // Regardless of whether the iterator was created/refreshed previously
-  // with or without a snapshot, the iterator will be reading the
-  // latest DB state after this call.
-  virtual Status Refresh() { return Refresh(nullptr); }
+  // If supported, renew the iterator to represent the latest state. The
+  // iterator will be invalidated after the call. Not supported if
+  // ReadOptions.snapshot is given when creating the iterator.
+  virtual Status Refresh() {
+    return Refresh(nullptr, false);
+  }
 
-  // Similar to Refresh() but the iterator will be reading the latest DB state
-  // under the given snapshot.
-  virtual Status Refresh(const class Snapshot*) {
+  virtual Status Refresh(const class Snapshot*, bool/*keep_iter_pos*/=false) {
     return Status::NotSupported("Refresh() is not supported");
   }
+
+  Status RefreshKeepSnapshot(bool keep_iter_pos = true);
 
   // Property "rocksdb.iterator.is-key-pinned":
   //   If returning "1", this means that the Slice returned by key() is valid
@@ -149,6 +149,20 @@ class Iterator : public Cleanable {
     assert(false);
     return Slice();
   }
+
+  virtual Slice NextWithKey();
+  virtual Slice PrevWithKey();
+  Slice SeekToFirstWithKey();
+  Slice SeekToLastWithKey();
+  Slice SeekWithKey(const Slice& target);
+  Slice SeekForPrevWithKey(const Slice& target);
+
+  // if fixed_user_key_len > 0, user keys are assumed to be of the given length
+  //  - this will trigger aggressive optimization for non-transactional db iter
+  //  - if fixed_user_key_len is not equal to beg/end user key length, it is ignored
+  // if fixed_user_key_len == 0, user keys are of variable length, no optimizations
+  virtual size_t CountKeysInRange(const Slice& beg, const Slice& end, size_t fixed_user_key_len = 0);
+  virtual Iterator* GetUnwrapped() { return this; }
 };
 
 // Return an empty iterator (yields nothing).

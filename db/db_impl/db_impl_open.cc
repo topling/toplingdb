@@ -47,6 +47,16 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     result.env = Env::Default();
   }
 
+  if (result.memtable_as_log_index) {
+    result.recycle_log_file_num = 0;
+    result.manual_wal_flush = false;
+#if !defined(ROCKSDB_UNIT_TEST)
+    // avoid infrequent CFs reference too many WALs when frequent CFs
+    // writing many data
+    result.atomic_flush = true;
+#endif
+  }
+
   // result.max_open_files means an "infinite" open files.
   if (result.max_open_files != -1) {
     int max_max_open_files = port::GetMaxOpenFiles();
@@ -81,11 +91,13 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
   result.env->IncBackgroundThreadsIfNeeded(bg_job_limits.max_flushes,
                                            Env::Priority::HIGH);
 
+#ifdef ROCKSDB_UNIT_TEST // the document says bytes_per_sync == 0 means turn off
   if (result.rate_limiter.get() != nullptr) {
     if (result.bytes_per_sync == 0) {
       result.bytes_per_sync = 1024 * 1024;
     }
   }
+#endif
 
   if (result.delayed_write_rate == 0) {
     if (result.rate_limiter.get() != nullptr) {
@@ -1194,6 +1206,15 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     // large sequence numbers).
     log::Reader reader(immutable_db_options_.info_log, std::move(file_reader),
                        &reporter, true /*checksum*/, wal_number);
+    boost::intrusive_ptr<ReadonlyFileMmap> fmap;
+    if (immutable_db_options_.memtable_as_log_index) {
+      reader.InitSetMemTableAsLogIndex(*fs_);
+      IOStatus ios = ReadonlyFileMmap::New(&fmap, *fs_, wal_number, fname);
+      if (!ios.ok() && ios.ToString() != "Invalid argument: Empty File")
+        return Status(ios);
+      if (fmap)
+        fmap->tail_pos = std::make_shared<uint64_t>(fmap->size_);
+    }
 
     // Determine if we should tolerate incomplete records at the tail end of the
     // Read all the records and add to a memtable
@@ -1233,6 +1254,10 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
           TimestampSizeConsistencyMode::kReconcileInconsistency, &new_batch);
       if (!status.ok()) {
         return status;
+      }
+      if (new_batch && immutable_db_options_.memtable_as_log_index) {
+        return Status::NotSupported("memtable_as_log_index",
+                                    "WriteBatchTimestampSizeDifference");
       }
 
       bool batch_updated = new_batch != nullptr;
@@ -1288,6 +1313,9 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       // we just ignore the update.
       // That's why we set ignore missing column families to true
       bool has_valid_writes = false;
+      if (fmap) {
+        batch_to_use->SetWAL({fmap, wal_number, reader.LastRecordOffset()});
+      }
       status = WriteBatchInternal::InsertInto(
           batch_to_use, column_family_memtables_.get(), &flush_scheduler_,
           &trim_history_scheduler_, true, wal_number, this,
@@ -1901,6 +1929,17 @@ IOStatus DBImpl::CreateWAL(uint64_t log_file_num, uint64_t recycle_log_number,
   std::string wal_dir = immutable_db_options_.GetWalDir();
   std::string log_fname = LogFileName(wal_dir, log_file_num);
 
+  if (immutable_db_options_.memtable_as_log_index) {
+    if (recycle_log_number || opt_file_options.use_direct_writes) {
+      ROCKS_LOG_WARN(immutable_db_options_.info_log,
+        "memtable_as_log_index fix bad: reusing log %zd or direct write %s\n",
+        size_t(recycle_log_number),
+        opt_file_options.use_direct_writes ? "true" : "false");
+    }
+    opt_file_options.use_direct_writes = false;
+    recycle_log_number = 0;
+  }
+
   if (recycle_log_number) {
     ROCKS_LOG_INFO(immutable_db_options_.info_log,
                    "reusing log %" PRIu64 " from recycle list\n",
@@ -1929,6 +1968,9 @@ IOStatus DBImpl::CreateWAL(uint64_t log_file_num, uint64_t recycle_log_number,
                                immutable_db_options_.recycle_log_file_num > 0,
                                immutable_db_options_.manual_wal_flush,
                                immutable_db_options_.wal_compression);
+    if (immutable_db_options_.memtable_as_log_index) {
+      (*new_log)->InitReaderMmap(*fs_, GetMaxTotalWalSize() + 8*1024*1024);
+    }
     io_s = (*new_log)->AddCompressionTypeRecord();
   }
   return io_s;
@@ -2167,7 +2209,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     std::vector<ColumnFamilyMetaData> metadata;
     impl->GetAllColumnFamilyMetaData(&metadata);
 
-    std::unordered_map<std::string, uint64_t> known_file_sizes;
+    terark::hash_strmap<uint64_t> known_file_sizes;
     for (const auto& md : metadata) {
       for (const auto& lmd : md.levels) {
         for (const auto& fmd : lmd.files) {
@@ -2209,11 +2251,12 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
         if (ParseFileName(file_name, &file_number, &file_type) &&
             (file_type == kTableFile || file_type == kBlobFile)) {
           // TODO: Check for errors from OnAddFile?
-          if (known_file_sizes.count(file_name)) {
+          auto idx = known_file_sizes.find_i(file_name);
+          if (idx != known_file_sizes.end_i()) {
             // We're assuming that each sst file name exists in at most one of
             // the paths.
-            sfm->OnAddFile(file_path, known_file_sizes.at(file_name))
-                .PermitUncheckedError();
+            uint64_t file_size = known_file_sizes.val(idx);
+            sfm->OnAddFile(file_path, file_size).PermitUncheckedError();
           } else {
             sfm->OnAddFile(file_path).PermitUncheckedError();
           }

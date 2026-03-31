@@ -135,6 +135,9 @@ IOStatus EncryptedRandomAccessFile::InvalidateCache(size_t offset,
                                                     size_t length) {
   return file_->InvalidateCache(offset + prefixLength_, length);
 }
+intptr_t EncryptedRandomAccessFile::FileDescriptor() const {
+  return file_->FileDescriptor();
+}
 
 IOStatus EncryptedWritableFile::Append(const Slice& data,
                                        const IOOptions& options,

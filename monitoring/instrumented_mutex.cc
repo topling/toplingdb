@@ -13,6 +13,7 @@
 namespace ROCKSDB_NAMESPACE {
 namespace {
 #ifndef NPERF_CONTEXT
+static inline
 Statistics* stats_for_report(SystemClock* clock, Statistics* stats) {
   if (clock != nullptr && stats != nullptr &&
       stats->get_stats_level() > kExceptTimeForMutex) {
@@ -24,10 +25,12 @@ Statistics* stats_for_report(SystemClock* clock, Statistics* stats) {
 #endif  // NPERF_CONTEXT
 }  // namespace
 
+#ifdef __GNUC__
+__attribute__((flatten))
+#endif
 void InstrumentedMutex::Lock() {
-  PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(
-      db_mutex_lock_nanos, stats_code_ == DB_MUTEX_WAIT_MICROS,
-      stats_for_report(clock_, stats_), stats_code_);
+  PERF_TIMER_MUTEX_WAIT_GUARD(
+      db_mutex_lock_nanos, stats_for_report(clock_, stats_));
   LockInternal();
 }
 
@@ -56,9 +59,8 @@ void InstrumentedMutex::LockInternal() {
 }
 
 void InstrumentedCondVar::Wait() {
-  PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(
-      db_condition_wait_nanos, stats_code_ == DB_MUTEX_WAIT_MICROS,
-      stats_for_report(clock_, stats_), stats_code_);
+  PERF_TIMER_COND_WAIT_GUARD(
+      db_condition_wait_nanos, stats_for_report(clock_, stats_));
   WaitInternal();
 }
 
@@ -70,9 +72,8 @@ void InstrumentedCondVar::WaitInternal() {
 }
 
 bool InstrumentedCondVar::TimedWait(uint64_t abs_time_us) {
-  PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(
-      db_condition_wait_nanos, stats_code_ == DB_MUTEX_WAIT_MICROS,
-      stats_for_report(clock_, stats_), stats_code_);
+  PERF_TIMER_COND_WAIT_GUARD(
+      db_condition_wait_nanos, stats_for_report(clock_, stats_));
   return TimedWaitInternal(abs_time_us);
 }
 

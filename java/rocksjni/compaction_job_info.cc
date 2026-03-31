@@ -151,15 +151,7 @@ jobject Java_org_rocksdb_CompactionJobInfo_tableProperties(JNIEnv* env, jclass,
     return nullptr;
   }
 
-  const ROCKSDB_NAMESPACE::HashMapJni::FnMapKV<
-      const std::string,
-      std::shared_ptr<const ROCKSDB_NAMESPACE::TableProperties>, jobject,
-      jobject>
-      fn_map_kv =
-          [env](const std::pair<
-                const std::string,
-                std::shared_ptr<const ROCKSDB_NAMESPACE::TableProperties>>&
-                    kv) {
+  auto fn_map_kv = [env](const auto& kv) {
             jstring jkey = ROCKSDB_NAMESPACE::JniUtil::toJavaString(
                 env, &(kv.first), false);
             if (env->ExceptionCheck()) {

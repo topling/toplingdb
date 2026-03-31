@@ -3886,6 +3886,10 @@ TEST_P(DBBasicTestWithParallelIO, MultiGetDirectIO) {
 
   std::unique_ptr<FakeDirectIOEnv> env(new FakeDirectIOEnv(env_));
   Options opts = get_options();
+  if (opts.memtable_as_log_index) {
+    fprintf(stderr, "DBBasicTestWithParallelIO.MultiGetDirectIO skipped for memtable_as_log_index\n");
+    return;
+  }
   opts.env = env.get();
   opts.use_direct_reads = true;
   Reopen(opts);

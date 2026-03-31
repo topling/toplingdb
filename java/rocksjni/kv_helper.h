@@ -281,4 +281,23 @@ class JDirectBufferPinnableSlice {
   PinnableSlice pinnable_slice_;
 };
 
+class Iterator; // declare
+struct JZeroCopyIter {
+  Iterator* iter;
+  Slice key{nullptr, 0};
+  Slice value{nullptr, 0};
+  Iterator* own_iter;
+  bool Valid() const { return key.data_ != nullptr; }
+  ~JZeroCopyIter();
+  JZeroCopyIter(Iterator* it) : iter(it->GetUnwrapped()), own_iter(it) {}
+  JZeroCopyIter(const JZeroCopyIter&) = delete;
+  JZeroCopyIter& operator=(const JZeroCopyIter&) = delete;
+  static JZeroCopyIter* Make(Iterator* it) {
+    if (it == nullptr) {
+      return nullptr;
+    }
+    return new JZeroCopyIter(it);
+  }
+};
+
 }  // namespace ROCKSDB_NAMESPACE

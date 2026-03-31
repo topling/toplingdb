@@ -1,0 +1,3 @@
+[submodule "sideplugin/rockside"]
+	path = sideplugin/rockside
+	url = https://github.com/topling/rockside.git

@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 
+#include "db/version_edit.h"
 #include "rocksdb/table_properties.h"
 #include "rocksjni/jnicallback.h"
 
@@ -22,12 +23,14 @@ namespace ROCKSDB_NAMESPACE {
 class TableFilterJniCallback : public JniCallback {
  public:
   TableFilterJniCallback(JNIEnv* env, jobject jtable_filter);
-  std::function<bool(const ROCKSDB_NAMESPACE::TableProperties&)>
+  std::function<bool(const ROCKSDB_NAMESPACE::TableProperties&,
+                     const ROCKSDB_NAMESPACE::FileMetaData&)>
   GetTableFilterFunction();
 
  private:
   jmethodID m_jfilter_methodid;
-  std::function<bool(const ROCKSDB_NAMESPACE::TableProperties&)>
+  std::function<bool(const ROCKSDB_NAMESPACE::TableProperties&,
+                     const ROCKSDB_NAMESPACE::FileMetaData&)>
       m_table_filter_function;
 };
 

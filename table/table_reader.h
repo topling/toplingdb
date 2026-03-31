@@ -27,6 +27,7 @@ class Iterator;
 struct ParsedInternalKey;
 class Slice;
 class Arena;
+struct Anchor;
 struct ReadOptions;
 struct TableProperties;
 class GetContext;
@@ -37,7 +38,7 @@ class MultiGetContext;
 // multiple threads without external synchronization. Table readers are used
 // for reading various types of table formats supported by rocksdb including
 // BlockBasedTable, PlainTable and CuckooTable format.
-class TableReader {
+class TableReader : public CacheAlignedNewDelete {
  public:
   virtual ~TableReader() {}
 
@@ -95,12 +96,7 @@ class TableReader {
                                    const Slice& start, const Slice& end,
                                    TableReaderCaller caller) = 0;
 
-  struct Anchor {
-    Anchor(const Slice& _user_key, size_t _range_size)
-        : user_key(_user_key.ToStringView()), range_size(_range_size) {}
-    std::string user_key;
-    size_t range_size;
-  };
+  using Anchor = ROCKSDB_NAMESPACE::Anchor;
 
   // Now try to return approximately 128 anchor keys.
   // The last one tends to be the largest key.
@@ -179,15 +175,21 @@ class TableReader {
   }
 
   // convert db file to a human readable form
-  virtual Status DumpTable(WritableFile* /*out_file*/) {
-    return Status::NotSupported("DumpTable() not supported");
-  }
+  virtual Status DumpTable(WritableFile* /*out_file*/);
 
   // check whether there is corruption in this db file
   virtual Status VerifyChecksum(const ReadOptions& /*read_options*/,
                                 TableReaderCaller /*caller*/) {
     return Status::NotSupported("VerifyChecksum() not supported");
   }
+
+  // if implemented, returns true
+  virtual bool GetRandomInternalKeysAppend(
+                  size_t /*num*/, std::vector<std::string>* /*output*/) const {
+    return false; // indicate not implemented
+  }
+
+  virtual bool IsMyFactory(const class TableFactory*) const { return true; }
 };
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -45,7 +45,9 @@ Status BlockBasedTable::IndexReaderCommon::GetOrReadIndexBlock(
     return Status::OK();
   }
 
-  ReadOptions read_options = ro;
+  ReadOptions& read_options = const_cast<ReadOptions&>(ro);
+  auto old_read_tier = ro.read_tier;
+  ROCKSDB_SCOPE_EXIT(read_options.read_tier = old_read_tier);
   if (no_io) {
     read_options.read_tier = kBlockCacheTier;
   }

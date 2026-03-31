@@ -15,10 +15,12 @@
 #include "rocksdb/utilities/transaction.h"
 #include "util/autovector.h"
 #include "util/hash_containers.h"
-#include "util/hash_map.h"
 #include "util/thread_local.h"
 #include "utilities/transactions/lock/lock_manager.h"
 #include "utilities/transactions/lock/point/point_lock_tracker.h"
+
+#include <terark/gold_hash_map.hpp>
+#include <terark/util/vec_idx_map.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -56,7 +58,7 @@ class DeadlockInfoBufferTempl {
   explicit DeadlockInfoBufferTempl(uint32_t n_latest_dlocks)
       : paths_buffer_(n_latest_dlocks), buffer_idx_(0) {}
 
-  void AddNewPath(Path path) {
+  void AddNewPath(Path&& path) {
     std::lock_guard<std::mutex> lock(paths_buffer_mutex_);
 
     if (paths_buffer_.empty()) {
@@ -104,7 +106,7 @@ struct TrackedTrxInfo {
   autovector<TransactionID> m_neighbors;
   uint32_t m_cf_id;
   bool m_exclusive;
-  std::string m_waiting_key;
+  Slice m_waiting_key;
 };
 
 class PointLockManager : public LockManager {
@@ -117,10 +119,6 @@ class PointLockManager : public LockManager {
 
   ~PointLockManager() override {}
 
-  bool IsPointLockSupported() const override { return true; }
-
-  bool IsRangeLockSupported() const override { return false; }
-
   const LockTrackerFactory& GetLockTrackerFactory() const override {
     return PointLockTrackerFactory::Get();
   }
@@ -132,8 +130,9 @@ class PointLockManager : public LockManager {
   // this column family is no longer in use.
   void RemoveColumnFamily(const ColumnFamilyHandle* cf) override;
 
+  using LockManager::TryLock;
   Status TryLock(PessimisticTransaction* txn, ColumnFamilyId column_family_id,
-                 const std::string& key, Env* env, bool exclusive) override;
+                 const Slice& key, size_t hash, Env*, bool exclusive) override;
   Status TryLock(PessimisticTransaction* txn, ColumnFamilyId column_family_id,
                  const Endpoint& start, const Endpoint& end, Env* env,
                  bool exclusive) override;
@@ -141,7 +140,7 @@ class PointLockManager : public LockManager {
   void UnLock(PessimisticTransaction* txn, const LockTracker& tracker,
               Env* env) override;
   void UnLock(PessimisticTransaction* txn, ColumnFamilyId column_family_id,
-              const std::string& key, Env* env) override;
+              const Slice& key, Env* env) override;
   void UnLock(PessimisticTransaction* txn, ColumnFamilyId column_family_id,
               const Endpoint& start, const Endpoint& end, Env* env) override;
 
@@ -155,6 +154,9 @@ class PointLockManager : public LockManager {
 
  private:
   PessimisticTransactionDB* txn_db_impl_;
+
+  const uint16_t key_prefix_len_;
+  const uint16_t super_stripes_;
 
   // Default number of lock map stripes per column family
   const size_t default_num_stripes_;
@@ -171,21 +173,30 @@ class PointLockManager : public LockManager {
   // Must be held when accessing/modifying lock_maps_.
   InstrumentedMutex lock_map_mutex_;
 
+ public:
   // Map of ColumnFamilyId to locked key info
+#if 0
   using LockMaps = UnorderedMap<uint32_t, std::shared_ptr<LockMap>>;
+#else
+//using LockMaps = std::map<uint32_t, std::shared_ptr<LockMap>>;
+  using LockMaps = terark::VectorIndexMap<uint32_t, std::shared_ptr<LockMap> >;
+#endif
+ private:
   LockMaps lock_maps_;
 
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
   // Thread-local cache of entries in lock_maps_.  This is an optimization
   // to avoid acquiring a mutex in order to look up a LockMap
-  std::unique_ptr<ThreadLocalPtr> lock_maps_cache_;
+  ThreadLocalPtr lock_maps_cache_;
+#endif
 
   // Must be held when modifying wait_txn_map_ and rev_wait_txn_map_.
   std::mutex wait_txn_map_mutex_;
 
   // Maps from waitee -> number of waiters.
-  HashMap<TransactionID, int> rev_wait_txn_map_;
+  terark::gold_hash_map<TransactionID, int> rev_wait_txn_map_;
   // Maps from waiter -> waitee.
-  HashMap<TransactionID, TrackedTrxInfo> wait_txn_map_;
+  terark::gold_hash_map<TransactionID, TrackedTrxInfo> wait_txn_map_;
   DeadlockInfoBuffer dlock_buffer_;
 
   // Used to allocate mutexes/condvars to use when locking keys
@@ -194,24 +205,25 @@ class PointLockManager : public LockManager {
   bool IsLockExpired(TransactionID txn_id, const LockInfo& lock_info, Env* env,
                      uint64_t* wait_time);
 
-  std::shared_ptr<LockMap> GetLockMap(uint32_t column_family_id);
+  LockMap* GetLockMap(uint32_t column_family_id);
 
   Status AcquireWithTimeout(PessimisticTransaction* txn, LockMap* lock_map,
                             LockMapStripe* stripe, uint32_t column_family_id,
-                            const std::string& key, Env* env, int64_t timeout,
-                            const LockInfo& lock_info);
+                            const Slice& key, Env* env, int64_t timeout,
+                            LockInfo&& lock_info, size_t key_hash);
 
   Status AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
-                       const std::string& key, Env* env,
-                       const LockInfo& lock_info, uint64_t* wait_time,
-                       autovector<TransactionID>* txn_ids);
+                       const Slice& key, Env* env, LockInfo&& lock_info,
+                       size_t key_hash,
+                       uint64_t* wait_time, autovector<TransactionID>* txn_ids);
 
-  void UnLockKey(PessimisticTransaction* txn, const std::string& key,
+  void UnLockKey(PessimisticTransaction* txn, const LockString& key,
+                 size_t key_hash,
                  LockMapStripe* stripe, LockMap* lock_map, Env* env);
 
   bool IncrementWaiters(const PessimisticTransaction* txn,
                         const autovector<TransactionID>& wait_ids,
-                        const std::string& key, const uint32_t& cf_id,
+                        const Slice& key, const uint32_t& cf_id,
                         const bool& exclusive, Env* const env);
   void DecrementWaiters(const PessimisticTransaction* txn,
                         const autovector<TransactionID>& wait_ids);

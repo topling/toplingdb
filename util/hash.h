@@ -101,12 +101,20 @@ inline uint64_t GetSliceHash64(const Slice& key) {
 // specific overload needs to be used.
 extern uint64_t (*kGetSliceNPHash64UnseededFnPtr)(const Slice&);
 
-inline uint64_t GetSliceNPHash64(const Slice& s) {
+template<class Str>
+inline uint64_t GetSliceNPHash64(const Str& s) {
   return NPHash64(s.data(), s.size());
 }
+inline uint64_t GetSliceNPHash64(const char* s) {
+  return NPHash64(s, strlen(s));
+}
 
-inline uint64_t GetSliceNPHash64(const Slice& s, uint64_t seed) {
+template<class Str>
+inline uint64_t GetSliceNPHash64(const Str& s, uint64_t seed) {
   return NPHash64(s.data(), s.size(), seed);
+}
+inline uint64_t GetSliceNPHash64(const char* s, uint64_t seed) {
+  return NPHash64(s, strlen(s), seed);
 }
 
 // Similar to `GetSliceNPHash64()` with `seed`, but input comes from

@@ -8,6 +8,8 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "rocksdb/cleanable.h"
+#include "rocksdb/preproc.h"
+#include "port/port.h"
 
 #include <atomic>
 #include <cassert>

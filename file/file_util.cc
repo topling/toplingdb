@@ -46,10 +46,17 @@ IOStatus CopyFile(FileSystem* fs, const std::string& source,
         new SequentialFileReader(std::move(srcfile), source, io_tracer));
   }
 
-  char buffer[4096];
+  const size_t bufsize = 1024 * 1024;
+#if defined(_MSC_VER)
+  char* buffer = (char*)_aligned_malloc(bufsize, 4096);
+  ROCKSDB_SCOPE_EXIT(_aligned_free(buffer));
+#else
+  char* buffer = (char*)std::aligned_alloc(4096, bufsize);
+  ROCKSDB_SCOPE_EXIT(free(buffer));
+#endif
   Slice slice;
   while (size > 0) {
-    size_t bytes_to_read = std::min(sizeof(buffer), static_cast<size_t>(size));
+    size_t bytes_to_read = std::min(bufsize, static_cast<size_t>(size));
     // TODO: rate limit copy file
     io_s = status_to_io_status(
         src_reader->Read(bytes_to_read, &slice, buffer,

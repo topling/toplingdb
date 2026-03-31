@@ -118,13 +118,13 @@ std::string NumberToHumanString(int64_t num) {
   char buf[19];
   int64_t absnum = num < 0 ? -num : num;
   if (absnum < 10000) {
-    snprintf(buf, sizeof(buf), "%" PRIi64, num);
+    snprintf(buf, sizeof(buf), "%4" PRIi64 " ", num);
   } else if (absnum < 10000000) {
-    snprintf(buf, sizeof(buf), "%" PRIi64 "K", num / 1000);
+    snprintf(buf, sizeof(buf), "%4" PRIi64 "K", num / 1000);
   } else if (absnum < 10000000000LL) {
-    snprintf(buf, sizeof(buf), "%" PRIi64 "M", num / 1000000);
+    snprintf(buf, sizeof(buf), "%4" PRIi64 "M", num / 1000000);
   } else {
-    snprintf(buf, sizeof(buf), "%" PRIi64 "G", num / 1000000000);
+    snprintf(buf, sizeof(buf), "%4" PRIi64 "G", num / 1000000000);
   }
   return std::string(buf);
 }
@@ -144,7 +144,7 @@ std::string BytesToHumanString(uint64_t bytes) {
   }
 
   char buf[20];
-  snprintf(buf, sizeof(buf), "%.2f %s", final_size, size_name[size_idx]);
+  snprintf(buf, sizeof(buf), "%7.2f %s", final_size, size_name[size_idx]);
   return std::string(buf);
 }
 
@@ -345,6 +345,10 @@ uint64_t ParseUint64(const std::string& value) {
       num <<= 30LL;
     else if (c == 't' || c == 'T')
       num <<= 40LL;
+    else if (c == 'p' || c == 'P')
+      num <<= 50LL;
+    else if (c == 'e' || c == 'E')
+      num <<= 60LL;
   }
 
   return num;

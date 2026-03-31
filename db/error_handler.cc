@@ -393,8 +393,8 @@ const Status& ErrorHandler::SetBGError(const Status& bg_status,
   if (bg_io_err.ok()) {
     return kOkStatus;
   }
-  ROCKS_LOG_WARN(db_options_.info_log, "Background IO error %s",
-                 bg_io_err.ToString().c_str());
+  ROCKS_LOG_WARN(db_options_.info_log, "Background IO error %s, reason %s",
+                 bg_io_err.ToString().c_str(), enum_cstr(reason));
 
   Status new_bg_io_err = bg_io_err;
   DBRecoverContext context;

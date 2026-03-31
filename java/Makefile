@@ -1,3 +1,14 @@
+AM_DEFAULT_VERBOSITY ?= 0
+
+AM_V_GEN = $(am__v_GEN_$(V))
+am__v_GEN_ = $(am__v_GEN_$(AM_DEFAULT_VERBOSITY))
+am__v_GEN_0 = @echo "  GEN     " $@;
+am__v_GEN_1 =
+AM_V_at = $(am__v_at_$(V))
+am__v_at_ = $(am__v_at_$(AM_DEFAULT_VERBOSITY))
+am__v_at_0 = @
+am__v_at_1 =
+
 NATIVE_JAVA_CLASSES = \
 	org.rocksdb.AbstractCompactionFilter\
 	org.rocksdb.AbstractCompactionFilterFactory\
@@ -64,6 +75,7 @@ NATIVE_JAVA_CLASSES = \
 	org.rocksdb.RocksEnv\
 	org.rocksdb.RocksIterator\
 	org.rocksdb.RocksMemEnv\
+	org.rocksdb.SidePluginRepo\
 	org.rocksdb.SkipListMemTableConfig\
 	org.rocksdb.Slice\
 	org.rocksdb.SstFileManager\
@@ -250,12 +262,26 @@ JAVA_TESTCLASSPATH = $(JAVA_JUNIT_JAR_PATH):$(JAVA_HAMCREST_JAR_PATH):$(JAVA_MOC
 MVN_LOCAL = ~/.m2/repository
 
 # Set the path of the java commands
+ifndef JAVA_HOME
+  JAVA_HOME := $(shell javac -J-XshowSettings:properties -version 2>&1 | awk '/java.home/{print $$NF}')
+  $(warning Auto detected JAVA_HOME = ${JAVA_HOME}, if it is not true please set JAVA_HOME)
+endif
 ifeq ($(JAVA_CMD),)
 ifneq ($(JAVA_HOME),)
 JAVA_CMD := $(JAVA_HOME)/bin/java
 else
 JAVA_CMD := java
 endif
+ifneq (${DISABLE_JEMALLOC},1)
+LD_PRELOAD := libjemalloc.so
+endif
+ifneq ($(TOPLING_USE_DYNAMIC_TLS),1)
+LD_PRELOAD := ${LD_PRELOAD}:${ROCKSDBJNILIB}
+endif
+ifneq ($(LD_PRELOAD),)
+JAVA_CMD := LD_PRELOAD=${LD_PRELOAD} ${JAVA_CMD}
+endif
+JAVA_CMD := env LD_LIBRARY_PATH=target:${LD_LIBRARY_PATH} ${JAVA_CMD}
 endif
 
 ifeq ($(JAVAC_CMD),)
@@ -290,7 +316,18 @@ JAVAC_VERSION_GE_MIN := $(shell [ $(JAVAC_MAJOR_VERSION) -ge $(MIN_JAVAC_MAJOR_V
 # Set the default JAVA_ARGS to "" for DEBUG_LEVEL=0
 JAVA_ARGS ?=
 
+ifeq (${ROCKSDB_FORCE_DIRECT_BUFFER_ZERO_COPY},true)
+  JAVA_ARGS += --add-opens java.base/jdk.internal.ref=ALL-UNNAMED
+endif
+JAVA_ARGS += --add-opens java.base/java.nio=ALL-UNNAMED
+JAVA_ARGS += --add-opens java.base/jdk.internal.misc=ALL-UNNAMED
+
 JAVAC_ARGS ?=
+
+JAVAC_ARGS += --add-exports java.base/jdk.internal.misc=ALL-UNNAMED
+
+JAVADOC_CMD += --add-exports java.base/jdk.internal.misc=ALL-UNNAMED
+JAVADOC_CMD += -Xdoclint:none
 
 # Read plugin configuration
 PLUGIN_PATH = ../plugin
@@ -311,11 +348,21 @@ ROCKSDB_PLUGIN_NATIVE_JAVA_CLASSES = $(foreach plugin, $(ROCKSDB_PLUGINS), $(for
 NATIVE_JAVA_CLASSES = $(NATIVE_JAVA_CLASSES) $(ROCKSDB_PLUGIN_NATIVE_JAVA_CLASSES)
 ROCKSDB_PLUGIN_JAVA_TESTS = $(foreach plugin, $(ROCKSDB_PLUGINS), $(foreach testclass, $($(plugin)_JAVA_TESTS), $(testclass)))
 ALL_JAVA_TESTS = $(JAVA_TESTS) $(ROCKSDB_PLUGIN_JAVA_TESTS)
+ifneq (${RUN_JAVA_TESTS},)
+  ALL_JAVA_TESTS := $(filter ${RUN_JAVA_TESTS}, ${ALL_JAVA_TESTS})
+endif
+ifneq (${SKIP_JAVA_TESTS},)
+  ALL_JAVA_TESTS := $(filter-out ${SKIP_JAVA_TESTS}, ${ALL_JAVA_TESTS})
+endif
 
 # When debugging add -Xcheck:jni to the java args
 ifneq ($(DEBUG_LEVEL),0)
 	JAVA_ARGS += -ea -Xcheck:jni
+endif
+ifeq (${ENABLE_JAVA_LINT},1)
 	JAVAC_ARGS += -Xlint:deprecation -Xlint:unchecked
+else
+	JAVAC_ARGS += -Xlint:none -nowarn -XDignore.symbol.file
 endif
 
 # Using a Facebook AWS account for S3 storage. (maven.org has a history
@@ -347,10 +394,15 @@ javadocs: java
 javalib: java java_test javadocs
 
 java: java-version
-	$(AM_V_GEN)mkdir -p $(MAIN_CLASSES)
-	$(AM_V_at) $(JAVAC_CMD) $(JAVAC_ARGS) -h $(NATIVE_INCLUDE) -d $(MAIN_CLASSES) $(SOURCES)
-	$(AM_V_at)@cp ../HISTORY.md ./HISTORY-CPP.md
-	$(AM_V_at)@rm -f ./HISTORY-CPP.md
+	$(AM_V_GEN)mkdir -p $(MAIN_CLASSES) $(NATIVE_INCLUDE)
+	$(AM_V_at)$(JAVAC_CMD) $(JAVAC_ARGS) -h $(NATIVE_INCLUDE)-tmp -d $(MAIN_CLASSES) $(SOURCES)
+	$(AM_V_at)cd $(NATIVE_INCLUDE)-tmp; \
+		for f in *.h; do \
+			if ! cmp -s $$f ../$(NATIVE_INCLUDE)/$$f; then \
+				mv $$f ../$(NATIVE_INCLUDE); \
+			fi \
+		done
+	$(AM_V_at)rm -rf $(NATIVE_INCLUDE)-tmp
 
 sample: java
 	$(AM_V_GEN)mkdir -p $(SAMPLES_MAIN_CLASSES)
@@ -449,8 +501,20 @@ resolve_test_deps: $(JAVA_JUNIT_JAR_PATH) $(JAVA_HAMCREST_JAR_PATH) $(JAVA_MOCKI
 
 java_test: java resolve_test_deps
 	$(AM_V_GEN)mkdir -p $(TEST_CLASSES)
-	$(AM_V_at) $(JAVAC_CMD) $(JAVAC_ARGS) -cp $(MAIN_CLASSES):$(JAVA_TESTCLASSPATH) -h $(NATIVE_INCLUDE) -d $(TEST_CLASSES)\
+	$(AM_V_at) $(JAVAC_CMD) $(JAVAC_ARGS) -cp $(MAIN_CLASSES):$(JAVA_TESTCLASSPATH) -h $(NATIVE_INCLUDE)-test -d $(TEST_CLASSES)\
 		$(TEST_SOURCES)
+	$(AM_V_at)cd $(NATIVE_INCLUDE)-test; \
+		for f in *.h; do \
+			if ! cmp -s $$f ../$(NATIVE_INCLUDE)/$$f; then \
+				mv $$f ../$(NATIVE_INCLUDE); \
+			fi \
+		done
+	$(AM_V_at)rm -rf $(NATIVE_INCLUDE)-test
+	$(AM_V_at)echo "JAVA_HEADER_LIST_VAR := $(wildcard ${NATIVE_INCLUDE}/*.h)" > $(NATIVE_INCLUDE)/java_header_list.mk.tmp
+	$(AM_V_at)cd $(NATIVE_INCLUDE); \
+		if ! cmp -s java_header_list.mk.tmp  java_header_list.mk; then \
+		     mv  -f java_header_list.mk.tmp  java_header_list.mk; \
+		else rm  -f java_header_list.mk.tmp; fi
 
 test: java java_test
 	$(MAKE) run_test

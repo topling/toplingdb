@@ -16,8 +16,8 @@ class TransactionDBCondVar;
 // by TransactionDBOptions.custom_mutex_factory.
 class TransactionDBMutexFactoryImpl : public TransactionDBMutexFactory {
  public:
-  std::shared_ptr<TransactionDBMutex> AllocateMutex() override;
-  std::shared_ptr<TransactionDBCondVar> AllocateCondVar() override;
+  TransactionDBMutex* AllocateMutex() override;
+  TransactionDBCondVar* AllocateCondVar() override;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -41,10 +41,12 @@ class TransactionBaseImpl : public Transaction {
   // returns non-OK, the Put/Merge/Delete/GetForUpdate will be failed.
   // do_validate will be false if called from PutUntracked, DeleteUntracked,
   // MergeUntracked, or GetForUpdate(do_validate=false)
+  using Transaction::TryLock;
   virtual Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
+                         size_t key_hash,
                          bool read_only, bool exclusive,
-                         const bool do_validate = true,
-                         const bool assume_tracked = false) = 0;
+                         const bool do_validate,
+                         const bool assume_tracked) override = 0;
 
   void SetSavePoint() override;
 
@@ -63,6 +65,10 @@ class TransactionBaseImpl : public Transaction {
 
   Status Get(const ReadOptions& options, const Slice& key,
              std::string* value) override {
+    return Get(options, db_->DefaultColumnFamily(), key, value);
+  }
+  Status Get(const ReadOptions& options, const Slice& key,
+             PinnableSlice* value) override {
     return Get(options, db_->DefaultColumnFamily(), key, value);
   }
 
@@ -274,8 +280,7 @@ class TransactionBaseImpl : public Transaction {
   //
   // seqno is the earliest seqno this key was involved with this transaction.
   // readonly should be set to true if no data was written for this key
-  void TrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
-                bool readonly, bool exclusive);
+  void TrackKey(const PointLockRequest&);
 
   // Called when UndoGetForUpdate determines that this key can be unlocked.
   virtual void UnlockGetForUpdate(ColumnFamilyHandle* column_family,
@@ -328,9 +333,10 @@ class TransactionBaseImpl : public Transaction {
     // Record all locks tracked since the last savepoint
     std::shared_ptr<LockTracker> new_locks_;
 
-    SavePoint(std::shared_ptr<const Snapshot> snapshot, bool snapshot_needed,
-              std::shared_ptr<TransactionNotifier> snapshot_notifier,
+    SavePoint(const std::shared_ptr<const Snapshot>& snapshot, bool snapshot_needed,
+              const std::shared_ptr<TransactionNotifier>& snapshot_notifier,
               uint64_t num_puts, uint64_t num_deletes, uint64_t num_merges,
+              const LockTracker* base_locks,
               const LockTrackerFactory& lock_tracker_factory)
         : snapshot_(snapshot),
           snapshot_needed_(snapshot_needed),
@@ -338,14 +344,15 @@ class TransactionBaseImpl : public Transaction {
           num_puts_(num_puts),
           num_deletes_(num_deletes),
           num_merges_(num_merges),
-          new_locks_(lock_tracker_factory.Create()) {}
-
-    explicit SavePoint(const LockTrackerFactory& lock_tracker_factory)
-        : new_locks_(lock_tracker_factory.Create()) {}
+          new_locks_(lock_tracker_factory.CreateDelta(base_locks)) {}
   };
 
+  void SavePointTrackKey(const PointLockRequest&);
+
   // Records writes pending in this transaction
-  WriteBatchWithIndex write_batch_;
+  // topling spec: should use union{ptr,ref}, but ref can not be in union
+  WriteBatchWithIndex* write_batch_pre_ = nullptr;
+  WriteBatchWithIndex& write_batch_;
 
   // For Pessimistic Transactions this is the set of acquired locks.
   // Optimistic Transactions will keep note the requested locks (not actually
@@ -355,13 +362,27 @@ class TransactionBaseImpl : public Transaction {
 
   // Stack of the Snapshot saved at each save point. Saved snapshots may be
   // nullptr if there was no snapshot at the time SetSavePoint() was called.
-  std::unique_ptr<std::stack<TransactionBaseImpl::SavePoint,
-                             autovector<TransactionBaseImpl::SavePoint>>>
-      save_points_;
-
- private:
-  friend class WriteCommittedTxn;
-  friend class WritePreparedTxn;
+ #if 0
+  std::unique_ptr<autovector<SavePoint>> save_points_;
+ #endif
+ #if 0
+  // We want to remove the unnesscesary cost of unique_ptr<autovector...> and
+  // minimize code changes(check save_points_ for null and change `->` to `.`).
+  // This should be simple and perfect, but compiler warn address will never
+  // be null, it is very ugly and non-portable to suppress the warning.
+  autovector<SavePoint, 4, terark::valvec32<SavePoint> > save_points_[1];
+ #else
+  // this is just to suppress compiler warn address will never be null, I know
+  // #pragma GCC diagnostic ignored "-Waddress" works, but it is not portable.
+  struct SavePointAsPtr : autovector<SavePoint, 4, terark::valvec32<SavePoint> > {
+    bool operator==(std::nullptr_t) const { return false; }
+    bool operator!=(std::nullptr_t) const { return true; }
+    operator bool() const { return true; } // for if (save_points_)
+    auto operator->() const { return this; }
+    auto operator->() { return this; }
+  };
+  SavePointAsPtr save_points_;
+ #endif
 
   // Extra data to be persisted with the commit. Note this is only used when
   // prepare phase is not skipped.

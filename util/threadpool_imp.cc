@@ -372,7 +372,6 @@ void ThreadPoolImpl::Impl::SetBackgroundThreadsInternal(int num,
 }
 
 int ThreadPoolImpl::Impl::GetBackgroundThreads() {
-  std::unique_lock<std::mutex> lock(mu_);
   return total_threads_limit_;
 }
 
@@ -397,6 +396,20 @@ void ThreadPoolImpl::Impl::StartBGThreads() {
 #endif
     bgthreads_.push_back(std::move(p_t));
   }
+}
+
+bool IsRocksBackgroundThread() {
+#if defined(_GNU_SOURCE) && defined(__GLIBC_PREREQ)
+#if __GLIBC_PREREQ(2, 12)
+  char tname[128] = {};
+  pthread_getname_np(pthread_self(), tname, sizeof(tname));
+  if (Slice(tname).starts_with("rocksdb:")) {
+    // this is background thread
+    return true;
+  }
+#endif
+#endif
+  return false;
 }
 
 void ThreadPoolImpl::Impl::Submit(std::function<void()>&& schedule,

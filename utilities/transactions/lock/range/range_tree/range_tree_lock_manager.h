@@ -46,7 +46,7 @@ class RangeTreeLockManager : public RangeLockManagerBase,
   void UnLock(PessimisticTransaction* txn, const LockTracker& tracker,
               Env* env) override;
   void UnLock(PessimisticTransaction* txn, ColumnFamilyId column_family_id,
-              const std::string& key, Env* env) override;
+              const Slice& key, Env* env) override;
   void UnLock(PessimisticTransaction*, ColumnFamilyId, const Endpoint&,
               const Endpoint&, Env*) override {
     // TODO: range unlock does nothing...
@@ -65,11 +65,6 @@ class RangeTreeLockManager : public RangeLockManagerBase,
 
   Counters GetStatus() override;
 
-  bool IsPointLockSupported() const override {
-    // One could have acquired a point lock (it is reduced to range lock)
-    return true;
-  }
-
   PointLockStatus GetPointLockStatus() override;
 
   // This is from LockManager
@@ -80,8 +75,6 @@ class RangeTreeLockManager : public RangeLockManagerBase,
   RangeLockManagerHandle::RangeLockStatus GetRangeLockStatusData() override {
     return GetRangeLockStatus();
   }
-
-  bool IsRangeLockSupported() const override { return true; }
 
   const LockTrackerFactory& GetLockTrackerFactory() const override {
     return RangeTreeLockTrackerFactory::Get();
@@ -105,14 +98,14 @@ class RangeTreeLockManager : public RangeLockManagerBase,
   // Map from cf_id to locktree*. Can only be accessed while holding the
   // ltree_map_mutex_. Must use a custom deleter that calls ltm_.release_lt
   using LockTreeMap =
-      std::unordered_map<ColumnFamilyId, std::shared_ptr<toku::locktree>>;
+      terark::VectorIndexMap<ColumnFamilyId, std::shared_ptr<toku::locktree>>;
   LockTreeMap ltree_map_;
 
   InstrumentedMutex ltree_map_mutex_;
 
   // Per-thread cache of ltree_map_.
   // (uses the same approach as TransactionLockMgr::lock_maps_cache_)
-  std::unique_ptr<ThreadLocalPtr> ltree_lookup_cache_;
+  ThreadLocalPtr ltree_lookup_cache_;
 
   RangeDeadlockInfoBuffer dlock_buffer_;
 

@@ -1,0 +1,92 @@
+# TODO: How to cache make files / speed up build progress here?
+name: "db_bench"
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_clang:
+        type: boolean
+        required: false
+        default: false
+        description: use clang
+
+jobs:
+  build:
+    # refer https://github.com/actions/runner-images to get the details
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{github.token}}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Prerequisites
+        run: |
+         set -xe
+         sudo apt-get update -y && sudo apt-get install -y \
+         libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
+         libbz2-dev libcurl4-openssl-dev liburing-dev \
+         libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
+
+      - name: Init submodule & Setup ssh
+        run: |
+         git submodule update --init --recursive
+         mkdir -p ~/.ssh && mkdir -p /opt/lib
+         ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+         echo nproc = `nproc`
+
+      - name: Git clone SidePlugin(s)
+        run: |
+          # this will be auto triggerred in normal build, we defined
+          # it here is just for seperate steps more clearly.
+          # there is no dedicated target for this purpose, so we use `clean`
+          # as the target, it need not any `clean` at this point.
+          # `clean` is just used for triggers auto git clone
+          make clean
+
+      - name: Compile db_bench
+        run: |
+          set -xe
+          if ${{inputs.use_clang}}; then
+            export CXX=clang++
+            export CC=clang
+          fi
+          make db_bench memtablerep_bench -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0
+
+      - name: Run db_bench
+        run: |
+          set -xe
+          make db_bench -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0
+          export TOPLINGDB_GetContext_sampling=kNone
+          export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
+          args=(
+              -json sideplugin/rockside/sample-conf/db_bench_enterprise.yaml
+              -num=50000000
+              -key_size=8
+              -value_size=10
+              -batch_size=1000
+              -benchmarks=fillseq,compact,nextwithkey,nextwithkey,nextwithkey,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -scan_omit_key -scan_omit_value # ToplingDB specific
+              -enable_zero_copy # ToplingDB specific, for point search by Get/MultiGet
+              -progress_reports=false
+          )
+          ./db_bench ${args[@]}
+
+      - name: Run memtablerep_bench
+        run: |
+          args=(
+            -benchmarks=fillrandom,readrandom,readwrite
+            -item_size=0
+            -num_operations=100000000
+            -write_buffer_size=536870912
+          )
+          set -xe
+          ./memtablerep_bench ${args[@]} -memtablerep=skiplist
+          echo
+          ./memtablerep_bench ${args[@]} -memtablerep='cspp:{"mem_cap":"16G","use_hugepage":false}'

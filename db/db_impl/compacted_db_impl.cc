@@ -46,6 +46,7 @@ Status CompactedDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle*,
 Status CompactedDBImpl::Get(const ReadOptions& _read_options,
                             ColumnFamilyHandle*, const Slice& key,
                             PinnableSlice* value, std::string* timestamp) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kGet) {
     return Status::InvalidArgument(
@@ -56,9 +57,14 @@ Status CompactedDBImpl::Get(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   assert(user_comparator_);
   if (read_options.timestamp) {
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     Status s =
         FailIfTsMismatchCf(DefaultColumnFamily(), *(read_options.timestamp));
     if (!s.ok()) {
@@ -71,6 +77,7 @@ Status CompactedDBImpl::Get(const ReadOptions& _read_options,
         return s;
       }
     }
+   #endif
   } else {
     const Status s = FailIfCfHasTs(DefaultColumnFamily());
     if (!s.ok()) {
@@ -124,6 +131,8 @@ std::vector<Status> CompactedDBImpl::MultiGet(
     std::vector<std::string>* timestamps) {
   assert(user_comparator_);
   size_t num_keys = keys.size();
+
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kMultiGet) {
     Status s = Status::InvalidArgument(
@@ -136,8 +145,13 @@ std::vector<Status> CompactedDBImpl::MultiGet(
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kMultiGet;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kMultiGet;
+  const ReadOptions& read_options(_read_options);
+#endif
 
   if (read_options.timestamp) {
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     Status s =
         FailIfTsMismatchCf(DefaultColumnFamily(), *(read_options.timestamp));
     if (!s.ok()) {
@@ -150,6 +164,7 @@ std::vector<Status> CompactedDBImpl::MultiGet(
         return std::vector<Status>(num_keys, s);
       }
     }
+   #endif
   } else {
     Status s = FailIfCfHasTs(DefaultColumnFamily());
     if (!s.ok()) {
@@ -189,8 +204,8 @@ std::vector<Status> CompactedDBImpl::MultiGet(
   int idx = 0;
   for (auto* r : reader_list) {
     if (r != nullptr) {
-      PinnableSlice pinnable_val;
-      std::string& value = (*values)[idx];
+      PinnableSlice pinnable_val(&(*values)[idx]);
+      pinnable_val.GetSelf()->clear();
       LookupKey lkey(keys[idx], kMaxSequenceNumber, read_options.timestamp);
       std::string* timestamp = timestamps ? &(*timestamps)[idx] : nullptr;
       GetContext get_context(
@@ -204,7 +219,7 @@ std::vector<Status> CompactedDBImpl::MultiGet(
       if (!s.ok() && !s.IsNotFound()) {
         statuses[idx] = s;
       } else {
-        value.assign(pinnable_val.data(), pinnable_val.size());
+        pinnable_val.SyncToString();
         if (get_context.State() == GetContext::kFound) {
           statuses[idx] = Status::OK();
         }

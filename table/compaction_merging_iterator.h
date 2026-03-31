@@ -34,7 +34,6 @@ namespace ROCKSDB_NAMESPACE {
  * different layers: file boundary and range tombstone keys. Separate them into
  * two APIs for clarity.
  */
-class CompactionMergingIterator;
 
 InternalIterator* NewCompactionMergingIterator(
     const InternalKeyComparator* comparator, InternalIterator** children, int n,

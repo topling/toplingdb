@@ -116,20 +116,20 @@ class PessimisticTransactionDB : public TransactionDB {
       const std::vector<ColumnFamilyHandle*>& column_families) override;
 
   Status TryLock(PessimisticTransaction* txn, uint32_t cfh_id,
-                 const std::string& key, bool exclusive);
+                 const Slice& key, size_t key_hash, bool exclusive);
   Status TryRangeLock(PessimisticTransaction* txn, uint32_t cfh_id,
                       const Endpoint& start_endp, const Endpoint& end_endp);
 
   void UnLock(PessimisticTransaction* txn, const LockTracker& keys);
   void UnLock(PessimisticTransaction* txn, uint32_t cfh_id,
-              const std::string& key);
+              const Slice& key);
 
   void AddColumnFamily(const ColumnFamilyHandle* handle);
 
   static TransactionDBOptions ValidateTxnDBOptions(
       const TransactionDBOptions& txn_db_options);
 
-  const TransactionDBOptions& GetTxnDBOptions() const {
+  const TransactionDBOptions& GetTxnDBOptions() const override {
     return txn_db_options_;
   }
 
@@ -180,6 +180,8 @@ class PessimisticTransactionDB : public TransactionDB {
                                  std::vector<std::shared_ptr<const Snapshot>>&
                                      timestamped_snapshots) const override;
 
+  Env* GetEnv() const final { return db_impl_->GetEnv(); }
+
  protected:
   DBImpl* db_impl_;
   std::shared_ptr<Logger> info_log_;
@@ -226,7 +228,7 @@ class PessimisticTransactionDB : public TransactionDB {
 
   // map from name to two phase transaction instance
   std::mutex name_map_mutex_;
-  std::unordered_map<TransactionName, Transaction*> transactions_;
+  terark::hash_strmap<Transaction*> transactions_;
 
   // Signal that we are testing a crash scenario. Some asserts could be relaxed
   // in such cases.
@@ -258,6 +260,67 @@ class WriteCommittedTxnDB : public PessimisticTransactionDB {
                        const TransactionDBWriteOptimizations& optimizations,
                        WriteBatch* updates) override;
   virtual Status Write(const WriteOptions& opts, WriteBatch* updates) override;
+};
+
+// A secondary instance of PessimisicTransactionDB .
+class SecondaryTxnDB : public PessimisticTransactionDB {
+  public:
+    explicit SecondaryTxnDB(DB* db,
+                            const TransactionDBOptions& txn_db_options)
+      : PessimisticTransactionDB(db , txn_db_options) {}
+
+    explicit SecondaryTxnDB(StackableDB* db,
+                            const TransactionDBOptions& txn_db_options)
+      : PessimisticTransactionDB(db , txn_db_options) {}
+
+    virtual ~SecondaryTxnDB() {}
+
+    virtual Status Initialize(
+      const std::vector<size_t>& compaction_enabled_cf_indices,
+      const std::vector<ColumnFamilyHandle*>& handles) override;
+
+    Transaction* BeginTransaction(const WriteOptions& write_options,
+                                const TransactionOptions& txn_options,
+                                Transaction* old_txn) override;
+
+    using PessimisticTransactionDB::Put;
+    virtual Status Put(const WriteOptions& /*options*/,
+                     ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                     const Slice& /*val*/) override {
+      return Status::NotSupported("Not supported operation in secondary mode.");
+    }
+
+    using PessimisticTransactionDB::Delete;
+    virtual Status Delete(const WriteOptions& /*wopts*/,
+                        ColumnFamilyHandle* /*column_family*/,
+                        const Slice& /*key*/) override {
+      return Status::NotSupported("Not supported operation in secondary mode.");
+    }
+
+    using PessimisticTransactionDB::SingleDelete;
+    virtual Status SingleDelete(const WriteOptions& /*wopt*/s,
+                                ColumnFamilyHandle* /*column_family*/,
+                                const Slice& /*key*/) override {
+      return Status::NotSupported("Not supported operation in secondary mode.");
+    }
+
+    using PessimisticTransactionDB::Merge;
+    virtual Status Merge(const WriteOptions& /*options*/,
+                        ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
+                        const Slice& /*value*/) override {
+      return Status::NotSupported("Not supported operation in secondary mode.");
+    }
+
+    using PessimisticTransactionDB::Write;
+    virtual Status Write(const WriteOptions& /*opts*/,
+                         WriteBatch* /*updates*/) override {
+      return Status::NotSupported("Not supported operation in secondary mode.");
+    }
+    virtual Status Write(const WriteOptions& /*opts*/,
+                       const TransactionDBWriteOptimizations& /*optimizations*/,
+                       WriteBatch* /*updates*/) override {
+      return Status::NotSupported("Not supported operation in secondary mode.");
+    }
 };
 
 inline Status PessimisticTransactionDB::FailIfBatchHasTs(

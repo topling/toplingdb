@@ -14,6 +14,10 @@
 #include "monitoring/perf_context_imp.h"
 #include "util/cast_util.h"
 
+#if !defined(TOPLINGDB_WITH_TIMESTAMP)
+  #pragma GCC diagnostic ignored "-Wnonnull" // timestamp && timestamp->size()
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 
@@ -51,11 +55,13 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
     }
   }
 
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   // Clear the timestamps for returning results so that we can distinguish
   // between tombstone or key that has never been written
   if (get_impl_options.timestamp) {
     get_impl_options.timestamp->clear();
   }
+ #endif
 
   PERF_CPU_TIMER_GUARD(get_cpu_nanos, immutable_db_options_.clock);
   StopWatch sw(immutable_db_options_.clock, stats_, DB_GET);
@@ -80,6 +86,7 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
   // In read-only mode Get(), no super version operation is needed (i.e.
   // GetAndRefSuperVersion and ReturnAndCleanupSuperVersion)
   SuperVersion* super_version = cfd->GetSuperVersion();
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (read_options.timestamp && read_options.timestamp->size() > 0) {
     s = FailIfReadCollapsedHistory(cfd, super_version,
                                    *(read_options.timestamp));
@@ -87,6 +94,7 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
       return s;
     }
   }
+ #endif
   MergeContext merge_context;
   SequenceNumber max_covering_tombstone_seq = 0;
   LookupKey lkey(key, snapshot, read_options.timestamp);
@@ -95,13 +103,15 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
   // Look up starts here
   if (super_version->mem->Get(
           lkey,
-          get_impl_options.value ? get_impl_options.value->GetSelf() : nullptr,
+          get_impl_options.value,
           get_impl_options.columns, ts, &s, &merge_context,
           &max_covering_tombstone_seq, read_options,
           false /* immutable_memtable */, &read_cb)) {
+   #if 0 // ToplingDB must not need PinSelf() here, otherwise it assert fail
     if (get_impl_options.value) {
       get_impl_options.value->PinSelf();
     }
+   #endif
     RecordTick(stats_, MEMTABLE_HIT);
   } else {
     PERF_TIMER_GUARD(get_from_output_files_time);
@@ -132,6 +142,7 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
 
 Iterator* DBImplReadOnly::NewIterator(const ReadOptions& _read_options,
                                       ColumnFamilyHandle* column_family) {
+#if defined(TOPLINGDB_COPY_READ_OPTIONS_FOR_IO_ACTIVITY)
   if (_read_options.io_activity != Env::IOActivity::kUnknown &&
       _read_options.io_activity != Env::IOActivity::kDBIterator) {
     return NewErrorIterator(Status::InvalidArgument(
@@ -142,6 +153,10 @@ Iterator* DBImplReadOnly::NewIterator(const ReadOptions& _read_options,
   if (read_options.io_activity == Env::IOActivity::kUnknown) {
     read_options.io_activity = Env::IOActivity::kDBIterator;
   }
+#else
+  _read_options.io_activity = Env::IOActivity::kDBIterator;
+  const ReadOptions& read_options(_read_options);
+#endif
   assert(column_family);
   if (read_options.timestamp) {
     const Status s =
@@ -158,6 +173,7 @@ Iterator* DBImplReadOnly::NewIterator(const ReadOptions& _read_options,
   auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
   auto cfd = cfh->cfd();
   SuperVersion* super_version = cfd->GetSuperVersion()->Ref();
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (read_options.timestamp && read_options.timestamp->size() > 0) {
     const Status s = FailIfReadCollapsedHistory(cfd, super_version,
                                                 *(read_options.timestamp));
@@ -166,6 +182,7 @@ Iterator* DBImplReadOnly::NewIterator(const ReadOptions& _read_options,
       return NewErrorIterator(s);
     }
   }
+ #endif
   SequenceNumber latest_snapshot = versions_->LastSequence();
   SequenceNumber read_seq =
       read_options.snapshot != nullptr
@@ -174,10 +191,7 @@ Iterator* DBImplReadOnly::NewIterator(const ReadOptions& _read_options,
           : latest_snapshot;
   ReadCallback* read_callback = nullptr;  // No read callback provided.
   auto db_iter = NewArenaWrappedDbIterator(
-      env_, read_options, *cfd->ioptions(), super_version->mutable_cf_options,
-      super_version->current, read_seq,
-      super_version->mutable_cf_options.max_sequential_skip_in_iterations,
-      super_version->version_number, read_callback);
+      read_options, super_version, read_seq, read_callback);
   auto internal_iter = NewInternalIterator(
       db_iter->GetReadOptions(), cfd, super_version, db_iter->GetArena(),
       read_seq, /* allow_unprepared_value */ true, db_iter);
@@ -242,10 +256,7 @@ Status DBImplReadOnly::NewIterators(
   assert(cfd_to_sv.size() == column_families.size());
   for (auto [cfd, sv] : cfd_to_sv) {
     auto* db_iter = NewArenaWrappedDbIterator(
-        env_, read_options, *cfd->ioptions(), sv->mutable_cf_options,
-        sv->current, read_seq,
-        sv->mutable_cf_options.max_sequential_skip_in_iterations,
-        sv->version_number, read_callback);
+        read_options, sv, read_seq, read_callback);
     auto* internal_iter = NewInternalIterator(
         db_iter->GetReadOptions(), cfd, sv, db_iter->GetArena(), read_seq,
         /* allow_unprepared_value */ true, db_iter);

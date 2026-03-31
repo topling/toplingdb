@@ -1,0 +1,13 @@
+
+#if defined(__GNUC__)
+__attribute__ ((visibility ("default")))
+#endif
+const char* git_version_hash_info_@SidePluginName@ () {
+    return R"StrLiteral(git_version_hash_info_is:
+@GIT_LOG@
+@GIT_DIFF@
+----------------------------
+@CXX_VER@
+----------------------------
+@CMAKE_CXX_FLAGS@
+)StrLiteral";}

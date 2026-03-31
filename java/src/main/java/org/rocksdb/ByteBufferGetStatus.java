@@ -24,6 +24,10 @@ public class ByteBufferGetStatus {
   public final int requiredSize;
   public final ByteBuffer value;
 
+  boolean isOk() {
+    return Status.isOk(status);
+  }
+
   /**
    * Constructor used for success status, when the value is contained in the buffer
    *

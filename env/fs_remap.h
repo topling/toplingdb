@@ -65,6 +65,10 @@ class RemapFileSystem : public FileSystemWrapper {
                            std::unique_ptr<FSWritableFile>* result,
                            IODebugContext* dbg) override;
 
+  IOStatus ReopenWritableFile(const std::string& fname, const FileOptions& options,
+                           std::unique_ptr<FSWritableFile>* result,
+                           IODebugContext* dbg) override;
+
   IOStatus ReuseWritableFile(const std::string& fname,
                              const std::string& old_fname,
                              const FileOptions& options,
@@ -93,6 +97,9 @@ class RemapFileSystem : public FileSystemWrapper {
 
   IOStatus DeleteFile(const std::string& fname, const IOOptions& options,
                       IODebugContext* dbg) override;
+
+  IOStatus Truncate(const std::string& fname, size_t size,
+                    const IOOptions& options, IODebugContext* dbg) override;
 
   IOStatus CreateDir(const std::string& dirname, const IOOptions& options,
                      IODebugContext* dbg) override;

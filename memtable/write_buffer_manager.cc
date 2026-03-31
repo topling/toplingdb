@@ -25,6 +25,7 @@ WriteBufferManager::WriteBufferManager(size_t _buffer_size,
       mutable_limit_(buffer_size_ * 7 / 8),
       memory_used_(0),
       memory_active_(0),
+      cache_(cache),
       cache_res_mgr_(nullptr),
       allow_stall_(allow_stall),
       stall_active_(false) {

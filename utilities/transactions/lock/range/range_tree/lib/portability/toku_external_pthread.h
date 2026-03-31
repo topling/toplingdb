@@ -31,8 +31,8 @@ using ROCKSDB_NAMESPACE::TransactionDBMutex;
 typedef std::shared_ptr<ROCKSDB_NAMESPACE::TransactionDBMutexFactory>
     toku_external_mutex_factory_t;
 
-typedef std::shared_ptr<TransactionDBMutex> toku_external_mutex_t;
-typedef std::shared_ptr<TransactionDBCondVar> toku_external_cond_t;
+typedef TransactionDBMutex* toku_external_mutex_t;
+typedef TransactionDBCondVar* toku_external_cond_t;
 
 static inline void toku_external_cond_init(
     toku_external_mutex_factory_t mutex_factory, toku_external_cond_t *cond) {
@@ -40,7 +40,8 @@ static inline void toku_external_cond_init(
 }
 
 inline void toku_external_cond_destroy(toku_external_cond_t *cond) {
-  cond->reset();  // this will destroy the managed object
+  delete *cond;  // this will destroy the managed object
+  *cond = nullptr;
 }
 
 inline void toku_external_cond_signal(toku_external_cond_t *cond) {
@@ -83,5 +84,6 @@ inline void toku_external_mutex_unlock(toku_external_mutex_t *mutex) {
 }
 
 inline void toku_external_mutex_destroy(toku_external_mutex_t *mutex) {
-  mutex->reset();  // this will destroy the managed object
+  delete *mutex;  // this will destroy the managed object
+  *mutex = nullptr;
 }

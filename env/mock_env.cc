@@ -142,9 +142,22 @@ class MemFile {
   void Truncate(size_t size, const IOOptions& /*options*/,
                 IODebugContext* /*dbg*/) {
     MutexLock lock(&mutex_);
-    if (size < size_) {
-      data_.resize(size);
-      size_ = size;
+    data_.resize(size);
+    size_ = size; // be same behavior of PosixWritableFile
+  }
+
+  void SetWriteOffset(size_t offset) {
+    MutexLock lock(&mutex_);
+    if (offset > data_.size()) {
+      data_.resize(offset);
+    }
+    size_ = offset;
+  }
+
+  void ReserveMemory(size_t cap) {
+    MutexLock lock(&mutex_);
+    if (cap > data_.size()) {
+      data_.resize(cap);
     }
   }
 
@@ -174,7 +187,7 @@ class MemFile {
       }
     }
     MutexLock lock(&mutex_);
-    const uint64_t available = Size() - std::min(Size(), offset);
+    const uint64_t available = data_.size() - std::min(data_.size(), offset);
     size_t offset_ = static_cast<size_t>(offset);
     if (n > available) {
       n = static_cast<size_t>(available);
@@ -208,8 +221,11 @@ class MemFile {
   IOStatus Append(const Slice& data, const IOOptions& /*options*/,
                   IODebugContext* /*dbg*/) {
     MutexLock lock(&mutex_);
-    data_.append(data.data(), data.size());
-    size_ = data_.size();
+    if (size_ + data.size_ > data_.size()) {
+      data_.resize(size_ + data.size_);
+    }
+    memmove(data_.data() + size_, data.data_, data.size_);
+    size_ += data.size_;
     modified_time_ = Now();
     return IOStatus::OK();
   }
@@ -241,7 +257,33 @@ class MemFile {
 
   // Data written into this file, all bytes before fsynced_bytes are
   // persistent.
-  std::string data_;
+  struct DataHolder {
+    ~DataHolder() { free(data_); }
+    char*  data_ = nullptr;
+    size_t size_ = 0;
+    size_t size() const { return size_; }
+    char*  data() const { return data_; }
+    operator char*() const { return data_; }
+    void resize(size_t sz) {
+      if (sz) {
+        // realloc is faster(by mmap alloc vm) than std::string::resize()
+        data_ = (char*)realloc(data_, sz); // `sz==0 for free` is not portable
+        ROCKSDB_VERIFY(data_ != nullptr);
+      } else {
+        free(data_);
+        data_ = nullptr;
+      }
+      size_ = sz;
+    }
+    void replace(size_t pos, size_t len, const char* src, size_t len2) {
+      ROCKSDB_VERIFY_EQ(len, len2);
+      if (pos + len > size_) {
+        resize(pos + len);
+      }
+      memmove(data_ + pos, src, len);
+    }
+  };
+  DataHolder data_;
   std::atomic<uint64_t> size_;
   std::atomic<uint64_t> modified_time_;
 
@@ -299,6 +341,7 @@ class MockRandomAccessFile : public FSRandomAccessFile {
       : file_(file),
         use_direct_io_(opts.use_direct_reads),
         use_mmap_read_(opts.use_mmap_reads) {
+    file_->ReserveMemory(opts.mmap_size);
     file_->Ref();
   }
 
@@ -320,6 +363,10 @@ class MockRandomAccessFile : public FSRandomAccessFile {
     } else {
       return file_->Read(offset, n, options, result, scratch, dbg);
     }
+  }
+  intptr_t FileDescriptor() const final {
+    assert(false);
+    return -1;
   }
 
  private:
@@ -421,6 +468,14 @@ class MockWritableFile : public FSWritableFile {
                        IODebugContext* /*dbg*/) override {
     return file_->Size();
   }
+
+    intptr_t FileDescriptor() const final {
+      ROCKSDB_DIE("Should not goes here");
+      return -1;
+    }
+    void SetFileSize(uint64_t fsize) final {
+      file_->SetWriteOffset(fsize);
+    }
 
  private:
   inline size_t RequestToken(size_t bytes) {

@@ -163,7 +163,14 @@ struct PerfContextInt {
 // Put here just to make get_perf_context() simple without ifdef.
 PerfContext perf_context;
 #else
-thread_local PerfContext perf_context;
+  ROCKSDB_STATIC_TLS ROCKSDB_RAW_TLS PerfContext* p_perf_context;
+  PerfContext* init_perf_context() noexcept {
+    // not need ROCKSDB_STATIC_TLS
+    static thread_local PerfContext g_del_perf_context;
+    // tls is always init at first use, this function is a must
+    auto ptr = p_perf_context = &g_del_perf_context;
+    return ptr;
+  }
 #endif
 
 PerfContext* get_perf_context() {
@@ -229,13 +236,7 @@ void PerfContext::copyMetrics(const PerfContext* other) noexcept {
 #define EMIT_COPY_FIELDS(x) x = other->x;
   DEF_PERF_CONTEXT_METRICS(EMIT_COPY_FIELDS)
 #undef EMIT_COPY_FIELDS
-  if (per_level_perf_context_enabled && level_to_perf_context != nullptr) {
-    ClearPerLevelPerfContext();
-  }
-  if (other->level_to_perf_context != nullptr) {
-    level_to_perf_context = new std::map<uint32_t, PerfContextByLevel>();
-    *level_to_perf_context = *other->level_to_perf_context;
-  }
+  level_to_perf_context = other->level_to_perf_context;
   per_level_perf_context_enabled = other->per_level_perf_context_enabled;
 #endif
 }
@@ -245,11 +246,7 @@ void PerfContext::Reset() {
 #define EMIT_FIELDS(x) x = 0;
   DEF_PERF_CONTEXT_METRICS(EMIT_FIELDS)
 #undef EMIT_FIELDS
-  if (per_level_perf_context_enabled && level_to_perf_context) {
-    for (auto& kv : *level_to_perf_context) {
-      kv.second.Reset();
-    }
-  }
+  level_to_perf_context.resize(0);
 #endif
 }
 
@@ -273,12 +270,13 @@ std::string PerfContext::ToString(bool exclude_zero_counters) const {
   }
   DEF_PERF_CONTEXT_METRICS(PERF_CONTEXT_OUTPUT)
 #undef PERF_CONTEXT_OUTPUT
-  if (per_level_perf_context_enabled && level_to_perf_context) {
+  if (per_level_perf_context_enabled) {
 #define PERF_CONTEXT_BY_LEVEL_OUTPUT_ONE_COUNTER(counter)      \
   ss << #counter << " = ";                                     \
-  for (auto& kv : *level_to_perf_context) {                    \
-    if (!exclude_zero_counters || (kv.second.counter > 0)) {   \
-      ss << kv.second.counter << "@level" << kv.first << ", "; \
+  for (size_t level = 0, n = level_to_perf_context.size(); level < n; level++) { \
+    auto& perf_ctx = level_to_perf_context[level];             \
+    if (!exclude_zero_counters || perf_ctx.counter > 0) {      \
+      ss << perf_ctx.counter << "@level" << level << ", ";     \
     }                                                          \
   }
     DEF_PERF_CONTEXT_LEVEL_METRICS(PERF_CONTEXT_BY_LEVEL_OUTPUT_ONE_COUNTER)
@@ -291,9 +289,6 @@ std::string PerfContext::ToString(bool exclude_zero_counters) const {
 }
 
 void PerfContext::EnablePerLevelPerfContext() {
-  if (level_to_perf_context == nullptr) {
-    level_to_perf_context = new std::map<uint32_t, PerfContextByLevel>();
-  }
   per_level_perf_context_enabled = true;
 }
 
@@ -301,12 +296,8 @@ void PerfContext::DisablePerLevelPerfContext() {
   per_level_perf_context_enabled = false;
 }
 
-void PerfContext::ClearPerLevelPerfContext() {
-  if (level_to_perf_context != nullptr) {
-    level_to_perf_context->clear();
-    delete level_to_perf_context;
-    level_to_perf_context = nullptr;
-  }
+void PerfContext::ClearPerLevelPerfContext(){
+  level_to_perf_context.resize(0);
   per_level_perf_context_enabled = false;
 }
 

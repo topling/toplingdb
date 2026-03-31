@@ -45,14 +45,13 @@ class HistogramBucketMapper {
 
 struct HistogramStat {
   HistogramStat();
-  ~HistogramStat() {}
-
   HistogramStat(const HistogramStat&) = delete;
   HistogramStat& operator=(const HistogramStat&) = delete;
 
   void Clear();
   bool Empty() const;
   void Add(uint64_t value);
+  void Del(uint64_t value);
   void Merge(const HistogramStat& other);
 
   inline uint64_t min() const { return min_.load(std::memory_order_relaxed); }
@@ -82,7 +81,8 @@ struct HistogramStat {
   std::atomic_uint_fast64_t sum_;
   std::atomic_uint_fast64_t sum_squares_;
   std::atomic_uint_fast64_t buckets_[109];  // 109==BucketMapper::BucketCount()
-  const uint64_t num_buckets_;
+  std::atomic_uint_fast64_t overrun_; // to simplify code changes
+  static const uint64_t num_buckets_;
 };
 
 class Histogram {
@@ -119,6 +119,8 @@ class HistogramImpl : public Histogram {
   virtual void Add(uint64_t value) override;
   virtual void Merge(const Histogram& other) override;
   void Merge(const HistogramImpl& other);
+  void Merge(const HistogramStat& stats);
+  const HistogramStat& GetHistogramStat() const { return stats_; }
 
   virtual std::string ToString() const override;
   virtual const char* Name() const override { return "HistogramImpl"; }

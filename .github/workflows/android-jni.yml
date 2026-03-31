@@ -1,0 +1,104 @@
+name: "build android-jni"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_suffix:
+        required: false
+        default: '-SNAPSHOT'
+      use_lto:
+        required: false
+        description: Link Use LTO
+        default: '1'
+      verbose_build_output:
+        required: false
+        description: run make with V=...
+        default: '0'
+      publish:
+        required: false
+        type: boolean
+        description: publish to github
+        default: true
+
+env:
+  NDK_VERSION: 26.1.10909125
+  ANDROID_ABI: arm64-v8a
+  ANDROID_PLATFORM: android-34
+  ANDROID_NDK_ROOT: ${{github.workspace}}/android-ndk
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      GITHUB_TOKEN: ${{github.token}}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+          server-id: github # Value of the distributionManagement/repository/id field of the pom.xml
+          settings-path: ${{github.workspace}} # location for the settings.xml file
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Display NDK information
+        run: |
+          set -xe
+          env | egrep 'ANDROID|NDK'
+          #find /usr/local/lib/android/sdk -type d
+          $ANDROID_NDK_HOME/ndk-build --version
+
+      - name: Init submodule & Setup ssh
+        run: |
+         git submodule update --init --recursive
+         mkdir -p ~/.ssh && mkdir -p /opt/lib
+         ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+         echo nproc = `nproc`
+
+      - name: Git clone SidePlugin(s)
+        run: |
+          export ROCKSDB_DISABLE_GFLAGS=1
+          make clean # this triggers auto git clone
+
+      - name: Compile RocksDB Java Release
+        run: |
+          set -xe
+          echo $JAVA_HOME
+          export V=${{inputs.verbose_build_output}}
+          export USE_LTO=${{inputs.use_lto}}
+          bash -x android-build.sh
+
+      - name: Generate java/pom.xml from template
+        run: |
+          set -xe
+          ROCKSDB_VERSION=`build_tools/version.sh full`
+          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${{inputs.version_suffix}}
+          cd java
+          # F\?ROCKSDB_JAVA_VERSION for both flink and normal rocksdbjni
+          sed -e 's/\${F\?ROCKSDB_JAVA_VERSION}/'"${ROCKSDB_JAVA_VERSION}/" \
+              -e 's/\(.*<artifactId>\)\(f\?rocksdbjni\)\(<\/artifactId>.*\)/\1\2-'"$ANDROID_PLATFORM"'\3/' \
+              pom.xml.template > pom.xml
+
+      - name: Publish rocksjni-android jar to GitHub Packages
+        run: |
+          ROCKSDB_VERSION=`build_tools/version.sh full`
+          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${{inputs.version_suffix}}
+          set -xe
+          cd java/target
+          mvn deploy:deploy-file -e -s $GITHUB_WORKSPACE/settings.xml \
+              -DpomFile=../pom.xml \
+              -Durl=https://maven.pkg.github.com/$GITHUB_REPOSITORY -DrepositoryId=github \
+              -Dfile=rocksdbjni-${ROCKSDB_VERSION}-linux64.jar \
+              -Dversion=${ROCKSDB_JAVA_VERSION}

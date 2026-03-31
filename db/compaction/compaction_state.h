@@ -27,6 +27,11 @@ class CompactionState {
   // REQUIRED: subcompaction states are stored in order of increasing key-range
   std::vector<SubcompactionState> sub_compact_states;
   Status status;
+  size_t num_output_files = 0;
+  uint64_t total_bytes = 0;
+  size_t num_blob_output_files = 0;
+  uint64_t total_blob_bytes = 0;
+  uint64_t num_output_records = 0;
 
   void AggregateCompactionStats(
       InternalStats::CompactionStatsFull& compaction_stats,

@@ -1,0 +1,65 @@
+# TODO: How to cache make files / speed up build progress here?
+name: "unit-test"
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_clang:
+        type: boolean
+        required: false
+        default: false
+        description: use clang
+
+jobs:
+  build:
+    # refer https://github.com/actions/runner-images to get the details
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{github.token}}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Prerequisites
+        run: |
+         set -xe
+         sudo apt-get update -y && sudo apt-get install -y \
+         libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
+         libbz2-dev libcurl4-openssl-dev liburing-dev \
+         libsnappy-dev libbz2-dev liblz4-dev libzstd-dev clang
+
+      - name: Init submodule & Setup ssh
+        run: |
+         git submodule update --init --recursive
+         mkdir -p ~/.ssh && mkdir -p /opt/lib
+         ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+         echo nproc = `nproc`
+
+      - name: Git clone SidePlugin(s)
+        run: |
+          # this will be auto triggerred in normal build, we defined
+          # it here is just for seperate steps more clearly.
+          # there is no dedicated target for this purpose, so we use `clean`
+          # as the target, it need not any `clean` at this point.
+          # `clean` is just used for triggers auto git clone
+          set -xe
+          if ${{inputs.use_clang}}; then
+            export CXX=clang++
+            export CC=clang
+          fi
+          make clean
+
+      - name: Compile & Run Unit Test
+        run: |
+          set -xe
+          if ${{inputs.use_clang}}; then
+            export CXX=clang++
+            export CC=clang
+          fi
+          make check -j`nproc` DEBUG_LEVEL=1 UPDATE_REPO=0

@@ -20,6 +20,10 @@ public class Status implements Serializable {
   /* @Nullable */ private final SubCode subCode;
   /* @Nullable */ private final String state;
 
+  public static boolean isOk(Status s) {
+    return s == null || s.code == Code.Ok;
+  }
+
   public Status(final Code code, final SubCode subCode, final String state) {
     this.code = code;
     this.subCode = subCode;

@@ -291,6 +291,9 @@ Status TransactionLogIteratorImpl::OpenLogReader(const LogFile* log_file) {
   current_log_reader_.reset(
       new log::Reader(options_->info_log, std::move(file), &reporter_,
                       read_options_.verify_checksums_, log_file->LogNumber()));
+  if (options_->memtable_as_log_index) {
+    current_log_reader_->InitSetMemTableAsLogIndex(*options_->fs);
+  }
   return Status::OK();
 }
 }  // namespace ROCKSDB_NAMESPACE

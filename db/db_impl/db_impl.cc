@@ -5051,46 +5051,63 @@ terark_pure_func inline static size_t ThisThreadID() {
 #endif
 }
 
-struct ReadOptionsTLS : std::enable_shared_from_this<ReadOptionsTLS> {
+static const size_t RO_TLS_SV_VEC_INIT_NUM = TERARK_IF_DEBUG(0, 1);
+static const size_t RO_TLS_SV_VEC_INIT_CAP = 5;
+struct ReadOptionsTLS {
   size_t thread_id = size_t(-1);
-  SuperVersion* sv = nullptr;
   DBImpl* db_impl = nullptr;
-  std::vector<SuperVersion*> cfsv;
-  SuperVersion*& GetSuperVersionRef(size_t cfid);
+  uint32_t       num_cf = RO_TLS_SV_VEC_INIT_NUM;
+  uint32_t       cap_cf = RO_TLS_SV_VEC_INIT_CAP;
+  SuperVersion*  vec_cf[RO_TLS_SV_VEC_INIT_CAP] = {nullptr};
   void FinishPin();
   ReadOptionsTLS();
-  ~ReadOptionsTLS();
+  static ReadOptionsTLS* New();
+  static void DestroyAndFree(ReadOptionsTLS**);
 };
 
 ReadOptionsTLS::ReadOptionsTLS() {
   // do nothing
 }
-ReadOptionsTLS::~ReadOptionsTLS() {
-  FinishPin();
+ReadOptionsTLS* ReadOptionsTLS::New() {
+  return new(malloc(sizeof(ReadOptionsTLS))) ReadOptionsTLS();
 }
-inline SuperVersion*& ReadOptionsTLS::GetSuperVersionRef(size_t cfid) {
-  if (0 == cfid) {
-    return sv;
-  } else {
-    if (UNLIKELY(cfsv.size() < cfid)) {
-      cfsv.resize(cfid, nullptr);
-    }
-    return cfsv[cfid - 1];
+void ReadOptionsTLS::DestroyAndFree(ReadOptionsTLS** pp) {
+  auto& self = *pp;
+  self->FinishPin();
+  free(self);
+  self = nullptr;
+}
+terark_no_inline
+static SuperVersion*& ResizeReadOptionsTLS(ReadOptionsTLS*& ptr, size_t cfid) {
+  if (UNLIKELY(ptr->cap_cf <= cfid)) {
+    size_t new_cap = std::max(size_t(ptr->cap_cf * 2), cfid + 1);
+    size_t mem_len = offsetof(ReadOptionsTLS, vec_cf) + sizeof(SuperVersion*) * new_cap;
+    ptr = (ReadOptionsTLS*)realloc(ptr, mem_len);
+    ROCKSDB_VERIFY(ptr != nullptr); // unrecoverable failure
+    ptr->cap_cf = new_cap;
+  }
+  std::fill_n(ptr->vec_cf + ptr->num_cf, cfid + 1 - ptr->num_cf, nullptr);
+  ptr->num_cf = cfid + 1;
+  return ptr->vec_cf[cfid];
+}
+__always_inline SuperVersion*&
+ReadOptions::SkipCopyPtrReadOptionsTLS::GetSuperVersionRef(size_t cfid) {
+  if (LIKELY(cfid < ptr->num_cf)) {
+    return ptr->vec_cf[cfid];
+  } else { // slow path, not inline
+    return ResizeReadOptionsTLS(ptr, cfid);
   }
 }
 
 void ReadOptionsTLS::FinishPin() {
-  if (sv) {
-    db_impl->ReturnAndCleanupSuperVersion(sv->cfd, sv);
-    sv = nullptr;
-  }
-  for (auto& x : cfsv) {
+  for (size_t i = 0; i < num_cf; i++) {
+    auto& x = vec_cf[i];
     if (x) {
       db_impl->ReturnAndCleanupSuperVersion(x->cfd, x);
       x = nullptr;
     }
   }
-  cfsv.resize(0);
+  num_cf = RO_TLS_SV_VEC_INIT_NUM;
   db_impl = nullptr;
 }
 
@@ -5116,18 +5133,17 @@ ReadOptions::ReadOptions(const ReadOptions& y, BooleanDontCopyTrue tag)
 
 void ReadOptions::SkipCopyPtrReadOptionsTLS::reset(ReadOptionsTLS* p) {
   if (ptr) {
-    delete ptr;
+    ReadOptionsTLS::DestroyAndFree(&ptr);
   }
   ptr = p;
 }
 
 void ReadOptions::StartPin() {
   if (!pinning_tls) {
-    pinning_tls = new ReadOptionsTLS();
+    pinning_tls = ReadOptionsTLS::New();
   } else {
     ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->db_impl);
-    ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->sv);
-    ROCKSDB_VERIFY_EQ(pinning_tls->cfsv.size(), 0);
+    ROCKSDB_VERIFY_EQ(pinning_tls->num_cf, 0);
   }
   ROCKSDB_VERIFY(!internal_is_in_pinning_section);
   internal_is_in_pinning_section.value = true;
@@ -5144,8 +5160,10 @@ ReadOptions::~ReadOptions() {
   ROCKSDB_VERIFY(!internal_is_in_pinning_section);
   if (pinning_tls) {
     ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->db_impl);
-    ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->sv);
-    ROCKSDB_VERIFY_EQ(pinning_tls->cfsv.size(), 0);
+    ROCKSDB_VERIFY_EQ(pinning_tls->num_cf, RO_TLS_SV_VEC_INIT_NUM);
+    for (size_t i = 0; i < RO_TLS_SV_VEC_INIT_NUM; i++) {
+      ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->vec_cf[i]);
+    }
   }
 }
 
@@ -5155,10 +5173,10 @@ DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd, const ReadOptions* ro) {
     // do not use zero copy, same as old behavior
     return GetAndRefSuperVersion(cfd);
   }
-  auto tls = ro->pinning_tls.get();
+  auto& tls = ro->pinning_tls;
   ROCKSDB_ASSERT_EQ(tls->thread_id, ThisThreadID());
   size_t cfid = cfd->GetID();
-  SuperVersion*& sv = tls->GetSuperVersionRef(cfid);
+  SuperVersion*& sv = tls.GetSuperVersionRef(cfid);
   if (sv) {
     if (LIKELY(sv->version_number == cfd->GetSuperVersionNumberNoAtomic())) {
       ROCKSDB_ASSERT_EQ(sv->cfd, cfd);

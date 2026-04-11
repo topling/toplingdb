@@ -1846,8 +1846,9 @@ struct ReadOptions {
     void reset(struct ReadOptionsTLS*); // defined in dbimpl.cc
     struct ReadOptionsTLS* operator->() const { return ptr; }
     operator bool() const { return ptr != nullptr; }
+    struct SuperVersion*& GetSuperVersionRef(size_t cfid);
   };
-  SkipCopyPtrReadOptionsTLS pinning_tls;
+  mutable SkipCopyPtrReadOptionsTLS pinning_tls;
 
   // *** END options for RocksDB internal use only ***
 

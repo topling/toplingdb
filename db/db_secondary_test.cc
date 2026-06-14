@@ -1759,6 +1759,80 @@ TEST_F(DBSecondaryTestWithTimestamp, Iterators) {
   Close();
 }
 
+TEST_F(DBSecondaryTest, KeepCatchUpWithPrimary) {
+  // Requires tailing-fuse to be meaningful.  On a regular filesystem
+  // the loop busy-waits (reads at EOF return immediately), so this
+  // test is skipped by default.  Enable with:
+  //   TEST_TAILING_FUSE=1 ./db_secondary_test
+  if (!terark::getEnvBool("TEST_TAILING_FUSE")) {
+    ROCKSDB_GTEST_SKIP("Skipped: set TEST_TAILING_FUSE=1 to enable");
+    return;
+  }
+
+  Options options;
+  options.env = env_;
+  Reopen(options);
+  ASSERT_OK(Put("foo", "initial_foo"));
+  ASSERT_OK(Put("bar", "initial_bar"));
+  ASSERT_OK(dbfull()->Flush(FlushOptions()));
+
+  Options opts2;
+  opts2.env = env_;
+  opts2.max_open_files = -1;
+  OpenSecondary(opts2);
+
+  DBImplSecondary* secondary = db_secondary_full();
+
+  // Start the tailing loop in a background thread.
+  std::thread t([secondary]() { secondary->KeepCatchUpWithPrimary(); });
+
+  // Write more data while the tailing loop is running.
+  ASSERT_OK(Put("foo", "after_update1"));
+  ASSERT_OK(Put("baz", "new_baz"));
+
+  // Poll the secondary until it has caught up (timeout 10 s).
+  {
+    ReadOptions ropts;
+    ropts.verify_checksums = true;
+    std::string val;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (true) {
+      Status s = db_secondary_->Get(ropts, "foo", &val);
+      if (s.ok() && val == "after_update1") break;
+      ASSERT_LT(std::chrono::steady_clock::now(), deadline)
+          << "Timed out waiting for secondary to catch up";
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_OK(db_secondary_->Get(ropts, "baz", &val));
+    ASSERT_EQ("new_baz", val);
+  }
+
+  // Write + flush (exercises the MANIFEST tailing thread as well).
+  ASSERT_OK(Put("foo", "after_flush"));
+  ASSERT_OK(dbfull()->Flush(FlushOptions()));
+
+  {
+    ReadOptions ropts;
+    ropts.verify_checksums = true;
+    std::string val;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (true) {
+      Status s = db_secondary_->Get(ropts, "foo", &val);
+      if (s.ok() && val == "after_flush") break;
+      ASSERT_LT(std::chrono::steady_clock::now(), deadline)
+          << "Timed out waiting for secondary to catch up after flush";
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
+  // Shut down the tailing loop cleanly.
+  // DB::Close() sets shutting_down_ which causes KeepCatchUpWithPrimary
+  // to exit.  After that we join the thread and delete the secondary.
+  ASSERT_OK(db_secondary_->Close());
+  t.join();
+  CloseSecondary();
+}
+
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {

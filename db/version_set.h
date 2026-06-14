@@ -1786,6 +1786,13 @@ class ReactiveVersionSet : public VersionSet {
       Status* manifest_read_status,
       std::unordered_set<ColumnFamilyData*>* cfds_changed);
 
+  // Apply a previously-read MANIFEST record (apply phase, must hold
+  // the secondary instance's mutex_).  Decodes the raw record into a
+  // VersionEdit and applies it via ManifestTailer.
+  Status ApplyOneManifestRecord(
+      Slice& record,
+      std::unordered_set<ColumnFamilyData*>* cfds_changed);
+
   Status Recover(const std::vector<ColumnFamilyDescriptor>& column_families,
                  std::unique_ptr<log::FragmentBufferedReader>* manifest_reader,
                  std::unique_ptr<log::Reader::Reporter>* manifest_reporter,
@@ -1802,6 +1809,7 @@ class ReactiveVersionSet : public VersionSet {
       VersionEdit& edit, std::unordered_set<ColumnFamilyData*>* cfds_changed,
       VersionEdit* version_edit);
 
+ public:
   Status MaybeSwitchManifest(
       log::Reader::Reporter* reporter,
       std::unique_ptr<log::FragmentBufferedReader>* manifest_reader);

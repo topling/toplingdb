@@ -280,8 +280,10 @@ class ManifestTailer : public VersionEditHandlerPointInTime {
 
   bool MustOpenAllColumnFamilies() const override { return false; }
 
+ public:
   Status ApplyVersionEdit(VersionEdit& edit, ColumnFamilyData** cfd) override;
 
+ protected:
   Status OnColumnFamilyAdd(VersionEdit& edit, ColumnFamilyData** cfd) override;
 
   void CheckIterationResult(const log::Reader& reader, Status* s) override;

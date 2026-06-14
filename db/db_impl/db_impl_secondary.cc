@@ -6,6 +6,7 @@
 #include "db/db_impl/db_impl_secondary.h"
 
 #include <cinttypes>
+#include <thread>
 
 #include "db/arena_wrapped_db_iter.h"
 #include "db/merge_context.h"
@@ -782,6 +783,365 @@ Status DBImplSecondary::TryCatchUpWithPrimary() {
   }
   purge_files_job_context.Clean();
   return s;
+}
+
+// Tailing-fuse: continuous catch-up, only returns on error or shutdown.
+//
+// Background
+// ----------
+// RocksDB's TryCatchUpWithPrimary() periodically polls the primary's WAL
+// and MANIFEST.  The classic pattern is: read WAL → EOF → sleep → retry.
+// This forces a trade-off between CPU consumption and replication lag.
+//
+// A Chinese-language article, "四两拨千斤：微秒延迟的消息队列：用 fuse 实现"
+// (https://zhuanlan.zhihu.com/p/980873076), describes an alternative:
+// mount the WAL (and optionally the MANIFEST) on a custom FUSE filesystem
+// ("tailing-fuse") whose read(2) blocks at EOF on files that are still
+// open for writing.  When the primary instance appends data, the blocked
+// reader is woken immediately — polling becomes "push from the filesystem"
+// with microsecond overhead.
+//
+// The tailing-fuse implementation:
+//   https://github.com/rockeet/libfuse/tree/passthrough-tailing-read-better-log
+//
+// The problem with TryCatchUpWithPrimary on tailing-fuse
+// -------------------------------------------------------
+// The vanilla method serialises:
+//   1. ReadAndApply(MANIFEST)  – read and apply all new version edits
+//   2. FindAndRecoverLogFiles   – discover and replay new WALs
+//   3. cleanup, return          – caller sleeps and loops
+//
+// On a tailing-fuse mount step 1 never returns because ReadRecord inside
+// the MANIFEST reader blocks at EOF.  WAL processing is starved forever.
+// Putting MANIFEST and WAL reads in the same interleaved loop doesn't
+// help either — whichever stream is read first may block and starve the
+// other.
+//
+// Solution: two independent reader threads
+// -----------------------------------------
+// Each of the two threads runs its own "read one record → lock → apply →
+// unlock" cycle.  The key design point is that the secondary mutex is
+// held ONLY during the short apply phase, so a blocking I/O on one
+// stream never prevents the other stream from making progress.
+//
+// Execution flow (tailing-fuse):
+//
+//   MANIFEST thread                      WAL thread
+//   ┌──────────────────┐                ┌──────────────────┐
+//   │ MaybeSwitch      │ ← quick check  │ PickReader       │ ← latest WAL reader
+//   │ ReadRecord       │ ← blocks at    │ ReadRecord       │ ← blocks at
+//   │                  │   MANIFEST EOF │                  │   WAL EOF
+//   │ Lock mutex_      │                │ Lock mutex_      │
+//   │ ApplyOneRecord   │                │ InsertInto       │
+//   │ InstallSuperVer  │                │ Update seqnum    │
+//   │ Unlock mutex_    │                │ InstallSuperVer  │
+//   └──────────────────┘                └──────────────────┘
+//
+// The two streams are decoupled: the WAL thread does not depend on
+// MANIFEST results before replaying records, and the MANIFEST thread
+// independently updates SST-file metadata and column-family state in
+// VersionSet.  They coordinate implicitly through the shared VersionSet
+// and MemTableList.
+//
+// When the primary switches to a new WAL (closing the old one), the
+// tailing-fuse read on the old WAL unblocks and returns EOF.  The WAL
+// thread then calls FindNewLogNumbers, discovers the new WAL, opens a
+// reader for it, and continues tailing.
+//
+// Exit
+// ----
+// The function returns only when shutting_down_ is set (via DB::Close)
+// or an I/O / decoding error occurs.
+void DBImplSecondary::KeepCatchUpWithPrimary() {
+  assert(versions_.get() != nullptr);
+  assert(manifest_reader_.get() != nullptr);
+
+  std::atomic<bool> tailing_error{false};
+  Status tailing_status;
+  std::mutex error_mtx;
+
+  // --- MANIFEST reader thread ---
+  std::thread manifest_th([&]() {
+    const auto& log = immutable_db_options_.info_log;
+    while (!shutting_down_.load(std::memory_order_acquire) &&
+           !tailing_error.load(std::memory_order_acquire)) {
+      // I/O phase (no mutex): may block at EOF on tailing-fuse.
+      auto* reactive_vs =
+          static_cast_with_check<ReactiveVersionSet>(versions_.get());
+      Status rs = reactive_vs->MaybeSwitchManifest(
+          manifest_reader_->GetReporter(), &manifest_reader_);
+      if (!rs.ok()) {
+        if (rs.IsTryAgain()) continue;
+        ROCKS_LOG_ERROR(log, "KeepCatchUp manifest I/O: %s",
+                        rs.ToString().c_str());
+        std::lock_guard<std::mutex> l(error_mtx);
+        tailing_error.store(true, std::memory_order_release);
+        tailing_status = rs;
+        break;
+      }
+      Slice record;
+      std::string scratch;
+      if (!manifest_reader_->ReadRecord(&record, &scratch)) {
+        // tailing-fuse blocks here and never reaches this point;
+        // regular FS has no new data yet.
+        continue;
+      }
+
+      mutex_.Lock();
+      std::unordered_set<ColumnFamilyData*> m_cfds;
+      Status as = static_cast_with_check<ReactiveVersionSet>(
+                      versions_.get())
+                      ->ApplyOneManifestRecord(record, &m_cfds);
+      if (!as.ok()) {
+        ROCKS_LOG_ERROR(log, "KeepCatchUp manifest apply: %s",
+                        as.ToString().c_str());
+        std::lock_guard<std::mutex> l(error_mtx);
+        tailing_error.store(true, std::memory_order_release);
+        tailing_status = as;
+        mutex_.Unlock();
+        break;
+      }
+      for (auto cfd : m_cfds) {
+        if (cfd->IsDropped()) continue;
+        autovector<MemTable*> mt_free;
+        cfd->imm()->RemoveOldMemTables(
+            cfd->GetLogNumber(), &mt_free);
+        SuperVersionContext sv_context(true);
+        cfd->InstallSuperVersion(&sv_context, &mutex_);
+        sv_context.Clean();
+        for (auto m : mt_free) m->Unref();
+      }
+      mutex_.Unlock();
+    }
+  });
+
+  // --- WAL reader thread ---
+  std::thread wal_th([&]() {
+    const auto& wal_recovery_mode =
+        immutable_db_options_.wal_recovery_mode;
+    const auto& log = immutable_db_options_.info_log;
+    while (!shutting_down_.load(std::memory_order_acquire) &&
+           !tailing_error.load(std::memory_order_acquire)) {
+      // Pick a reader (under mutex).
+      mutex_.Lock();
+      if (log_readers_.empty()) {
+        mutex_.Unlock();
+        continue;
+      }
+      uint64_t log_number = log_readers_.rbegin()->first;
+      LogReaderContainer* container =
+          log_readers_.rbegin()->second.get();
+      auto* wal_reader = container->reader_;
+      auto* wal_rstatus = container->status_;
+      mutex_.Unlock();
+
+      // Read one WAL record (no mutex — may block on tailing-fuse).
+      std::string scratch;
+      Slice record;
+      if (!wal_reader->ReadRecord(&record, &scratch,
+                                   wal_recovery_mode)) {
+        if (wal_rstatus && !wal_rstatus->ok()) {
+          if (!wal_rstatus->IsPathNotFound()) {
+            std::lock_guard<std::mutex> l(error_mtx);
+            tailing_error.store(true, std::memory_order_release);
+            tailing_status = *wal_rstatus;
+          }
+          break;
+        }
+        // Discover new WALs (under mutex).
+        mutex_.Lock();
+        std::vector<uint64_t> new_logs;
+        Status ls = FindNewLogNumbers(&new_logs);
+        if (!ls.ok()) {
+          if (!ls.IsPathNotFound()) {
+            std::lock_guard<std::mutex> l(error_mtx);
+            tailing_error.store(true, std::memory_order_release);
+            tailing_status = ls;
+          }
+          mutex_.Unlock();
+          break;
+        }
+        for (auto new_ln : new_logs) {
+          log::FragmentBufferedReader* r = nullptr;
+          ls = MaybeInitLogReader(new_ln, &r);
+          if (!ls.ok()) {
+            std::lock_guard<std::mutex> l(error_mtx);
+            tailing_error.store(true, std::memory_order_release);
+            tailing_status = ls;
+            mutex_.Unlock();
+            break;
+          }
+          versions_->MarkFileNumberUsed(new_ln);
+        }
+        if (tailing_error.load(std::memory_order_acquire)) {
+          mutex_.Unlock();
+          break;
+        }
+        if (log_readers_.size() > 1) {
+          auto erase_iter = log_readers_.begin();
+          std::advance(erase_iter, log_readers_.size() - 1);
+          log_readers_.erase(log_readers_.begin(), erase_iter);
+        }
+        mutex_.Unlock();
+        continue;
+      }
+
+      // Apply the WAL record (under mutex).
+      mutex_.Lock();
+      const auto& running_ts_sz =
+          versions_->GetRunningColumnFamiliesTimestampSize();
+
+      if (record.size() < WriteBatchInternal::kHeader) {
+        wal_reader->GetReporter()->Corruption(
+            record.size(),
+            Status::Corruption("log record too small"));
+        mutex_.Unlock();
+        continue;
+      }
+
+      WriteBatch batch;
+      Status ws = WriteBatchInternal::SetContents(&batch, record);
+      if (!ws.ok()) {
+        ROCKS_LOG_ERROR(log, "KeepCatchUp WAL SetContents: %s",
+                        ws.ToString().c_str());
+        std::lock_guard<std::mutex> l(error_mtx);
+        tailing_error.store(true, std::memory_order_release);
+        tailing_status = ws;
+        mutex_.Unlock();
+        break;
+      }
+
+      const UnorderedMap<uint32_t, size_t>& record_ts_sz =
+          wal_reader->GetRecordedTimestampSize();
+      ws = HandleWriteBatchTimestampSizeDifference(
+          &batch, running_ts_sz, record_ts_sz,
+          TimestampSizeConsistencyMode::kVerifyConsistency);
+      if (!ws.ok()) {
+        std::lock_guard<std::mutex> l(error_mtx);
+        tailing_error.store(true, std::memory_order_release);
+        tailing_status = ws;
+        mutex_.Unlock();
+        break;
+      }
+
+      SequenceNumber seq_of_batch = WriteBatchInternal::Sequence(&batch);
+      std::vector<uint32_t> column_family_ids;
+      ws = CollectColumnFamilyIdsFromWriteBatch(batch, &column_family_ids);
+      if (!ws.ok()) {
+        std::lock_guard<std::mutex> l(error_mtx);
+        tailing_error.store(true, std::memory_order_release);
+        tailing_status = ws;
+        mutex_.Unlock();
+        break;
+      }
+
+      {
+        SequenceNumber next_sequence = seq_of_batch;
+        autovector<MemTable*> mt_free;
+        std::unordered_set<ColumnFamilyData*> sv_needed;
+
+        uint64_t* tail_pos = nullptr;
+        if (auto fmap = container->fmap_) {
+          batch.SetWAL({fmap, log_number, 0});
+          tail_pos = fmap->tail_pos.get();
+          assert(tail_pos != nullptr);
+        }
+
+        for (const auto id : column_family_ids) {
+          ColumnFamilyData* cfd =
+              versions_->GetColumnFamilySet()->GetColumnFamily(id);
+          if (cfd == nullptr) continue;
+
+          const std::vector<FileMetaData*>& l0_files =
+              cfd->current()->storage_info()->LevelFiles(0);
+          SequenceNumber seq =
+              l0_files.empty() ? 0
+                               : l0_files.back()->fd.largest_seqno;
+          if (seq_of_batch <= seq) continue;
+
+          auto cl_it = cfd_to_current_log_.find(cfd);
+          uint64_t curr_log_num =
+              cl_it != cfd_to_current_log_.end()
+                  ? cl_it->second
+                  : std::numeric_limits<uint64_t>::max();
+
+          if (!cfd->mem()->IsEmpty() &&
+              (curr_log_num ==
+                   std::numeric_limits<uint64_t>::max() ||
+               curr_log_num != log_number)) {
+            const MutableCFOptions mutable_cf_options =
+                *cfd->GetLatestMutableCFOptions();
+            MemTable* new_mem = cfd->ConstructNewMemtable(
+                mutable_cf_options, seq_of_batch);
+            cfd->mem()->SetNextLogNumber(log_number);
+            cfd->mem()->ConstructFragmentedRangeTombstones();
+            cfd->imm()->Add(cfd->mem(), &mt_free);
+            new_mem->Ref();
+            cfd->SetMemtable(new_mem);
+            sv_needed.insert(cfd);
+          }
+        }
+
+        if (tail_pos) {
+          batch.SetOffsetOfWAL(wal_reader->LastRecordOffset());
+          *tail_pos = wal_reader->LastRecordEnd();
+        }
+
+        bool has_valid_writes = false;
+        ws = WriteBatchInternal::InsertInto(
+            &batch, column_family_memtables_.get(),
+            nullptr /* flush_scheduler */,
+            nullptr /* trim_history_scheduler */,
+            true /* ignore_missing_cf */, log_number, this,
+            false /* concurrent_memtable_writes */,
+            &next_sequence, &has_valid_writes,
+            seq_per_batch_, batch_per_txn_);
+
+        if (ws.ok()) {
+          for (const auto id : column_family_ids) {
+            ColumnFamilyData* cfd =
+                versions_->GetColumnFamilySet()->GetColumnFamily(id);
+            if (cfd == nullptr) continue;
+            auto [iter, success] =
+                cfd_to_current_log_.emplace(cfd, log_number);
+            if (!success && log_number > iter->second) {
+              iter->second = log_number;
+            }
+          }
+          auto last_sequence = next_sequence - 1;
+          if ((next_sequence != kMaxSequenceNumber) &&
+              (versions_->LastSequence() <= last_sequence)) {
+            versions_->SetLastAllocatedSequence(last_sequence);
+            versions_->SetLastPublishedSequence(last_sequence);
+            versions_->SetLastSequence(last_sequence);
+          }
+        } else {
+          wal_reader->GetReporter()->Corruption(record.size(), ws);
+        }
+
+        // Install SuperVersions for CFDs whose memtable was sealed
+        // so that new memtables are visible to concurrent reads.
+        for (auto cfd : sv_needed) {
+          if (cfd->IsDropped()) continue;
+          SuperVersionContext svc(true);
+          cfd->InstallSuperVersion(&svc, &mutex_);
+          svc.Clean();
+        }
+
+        for (auto m : mt_free) m->Unref();
+      }
+      mutex_.Unlock();
+    }
+  });
+
+  manifest_th.join();
+  wal_th.join();
+
+  if (tailing_error.load(std::memory_order_acquire)) {
+    ROCKS_LOG_ERROR(immutable_db_options_.info_log,
+                    "KeepCatchUpWithPrimary exit error: %s",
+                    tailing_status.ToString().c_str());
+  }
 }
 
 Status DB::OpenAsSecondary(const Options& options, const std::string& dbname,

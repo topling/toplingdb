@@ -7769,6 +7769,43 @@ Status ReactiveVersionSet::ReadAndApply(
   return s;
 }
 
+Status ReactiveVersionSet::ApplyOneManifestRecord(
+    Slice& record,
+    std::unordered_set<ColumnFamilyData*>* cfds_changed) {
+  assert(cfds_changed != nullptr);
+
+  VersionEdit edit;
+  Status s = edit.DecodeFrom(record);
+  if (!s.ok()) return s;
+
+  auto& read_buffer = manifest_tailer_->GetReadBuffer();
+  s = read_buffer.AddEdit(&edit);
+  if (!s.ok()) return s;
+
+  ColumnFamilyData* cfd = nullptr;
+  if (edit.IsInAtomicGroup()) {
+    if (read_buffer.IsFull()) {
+      for (auto& e : read_buffer.replay_buffer()) {
+        ColumnFamilyData* cfd_inner = nullptr;
+        s = manifest_tailer_->ApplyVersionEdit(e, &cfd_inner);
+        if (!s.ok()) return s;
+        if (cfd_inner && !cfd_inner->IsDropped()) {
+          cfds_changed->insert(cfd_inner);
+        }
+      }
+      read_buffer.Clear();
+    }
+  } else {
+    s = manifest_tailer_->ApplyVersionEdit(edit, &cfd);
+    if (!s.ok()) return s;
+    if (cfd && !cfd->IsDropped()) {
+      cfds_changed->insert(cfd);
+    }
+  }
+
+  return s;
+}
+
 Status ReactiveVersionSet::MaybeSwitchManifest(
     log::Reader::Reporter* reporter,
     std::unique_ptr<log::FragmentBufferedReader>* manifest_reader) {

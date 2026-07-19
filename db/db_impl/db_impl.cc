@@ -4162,8 +4162,6 @@ Status DBImpl::DropColumnFamilyImpl(ColumnFamilyHandle* column_family) {
     return Status::InvalidArgument("Can't drop default column family");
   }
 
-  MaybeForgetCF(this, column_family);
-
   bool cf_support_snapshot = cfd->mem()->IsSnapshotSupported();
 
   VersionEdit edit;
@@ -4212,6 +4210,7 @@ Status DBImpl::DropColumnFamilyImpl(ColumnFamilyHandle* column_family) {
   }
 
   if (s.ok()) {
+    MaybeForgetCF(this, column_family);
     // Note that here we erase the associated cf_info of the to-be-dropped
     // cfd before its ref-count goes to zero to avoid having to erase cf_info
     // later inside db_mutex.

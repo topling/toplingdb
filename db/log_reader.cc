@@ -84,6 +84,11 @@ IOStatus Reader::IsMemTableAsLogIndexFile
   if (!ios.ok()) {
     return ios;
   }
+  // Short/empty file: do not CRC uninitialized stack bytes.
+  if (data.size() != sizeof(header)) {
+    *result = false;
+    return IOStatus::OK();
+  }
   auto computed = crc32c::Value(header.hbytes, sizeof(header.hbytes));
   *result = computed == header.header_checksum;
   return ios;

@@ -128,8 +128,8 @@ ReadNextRecord:
   auto computed = crc32c::Value(header.hbytes, sizeof(header.hbytes));
   if (computed != header.header_checksum) {
     static const char zeros[sizeof(RawRecHeader)] = {};
-    if (memcmp(&header, zeros, sizeof(sizeof(RawRecHeader))) == 0) {
-      auto pos = size_t(end_of_buffer_offset_ - buffer_.size_);
+    if (memcmp(&header, zeros, sizeof(RawRecHeader)) == 0) {
+      auto pos = end_of_buffer_offset_ - buffer_.size_;
       fprintf(stderr, "ERR: %s:%d: Reader::ReadRawRec(%s) ZeroEOF at %zd\n",
               __FILE__, __LINE__, file_->file_name().c_str(), pos);
     } else {

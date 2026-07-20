@@ -1,0 +1,386 @@
+# Triggered after db_bench-avx512-build. Runs ToplingDB + RocksDB v8.10 + RocksDB master,
+# emits comparison tables, publishes Pages.
+name: "db_bench-avx512-run"
+
+on:
+  workflow_run:
+    workflows: ["db_bench-avx512-build"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Build workflow run id whose artifact to download
+        required: true
+        type: string
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  actions: read
+
+jobs:
+  bench-and-publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      VARIANT: avx512
+      ARTIFACT_NAME: db_bench-bin-avx512
+    steps:
+      - name: Checkout build commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Install runtime dependencies
+        run: |
+          set -xe
+          sudo apt-get update -y && sudo apt-get install -y \
+            libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
+            libbz2-dev libcurl4-openssl-dev liburing-dev \
+            libsnappy-dev liblz4-dev libzstd-dev
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.build_run_id || github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: _artifact
+
+      - name: Unpack bench bundle
+        run: |
+          set -xe
+          RUN_PREFIX="$PWD/_run_prefix"
+          rm -rf "$RUN_PREFIX" logs
+          mkdir -p "$RUN_PREFIX" logs
+          tar -C "$RUN_PREFIX" -xzf _artifact/bench-prefix.tgz
+          test -d "$RUN_PREFIX/topling"
+          test -d "$RUN_PREFIX/rocksdb-v8.10"
+          test -d "$RUN_PREFIX/rocksdb-master"
+          test -x "$RUN_PREFIX/topling/bin/db_bench"
+          test -x "$RUN_PREFIX/rocksdb-v8.10/bin/db_bench"
+          test -x "$RUN_PREFIX/rocksdb-master/bin/db_bench"
+          echo "RUN_PREFIX=$RUN_PREFIX" >> "$GITHUB_ENV"
+
+      - name: Probe /dev/shm
+        run: |
+          set -xe
+          # Engines rotate exclusive use of /dev/shm (one DB at a time).
+          # Do not pre-create all three DB dirs here.
+          df -h /dev/shm
+
+      - name: Run ToplingDB benches
+        run: |
+          set -xe
+          TOPLING="$RUN_PREFIX/topling"
+          export LD_LIBRARY_PATH="$TOPLING/lib:${LD_LIBRARY_PATH:-}"
+          ldd "$TOPLING/bin/db_bench"
+          export TOPLINGDB_GetContext_sampling=kNone
+          export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
+          DB_PATH=/dev/shm/db_bench_enterprise
+          YAML_BASE="$TOPLING/toplingdb-conf/db_bench_enterprise.yaml"
+          # CI-only: shrink write_buffer without touching rockside submodule.
+          sed -i 's/^\([[:space:]]*write_buffer_size:[[:space:]]*\)2G/\1512M/' "$YAML_BASE"
+          grep -E 'write_buffer_size:[[:space:]]*512M' "$YAML_BASE"
+          # Parallel config: enable DictZip for value_size=15 (default yaml is 3000).
+          YAML_DZ10="$TOPLING/toplingdb-conf/db_bench_enterprise_dictzip10.yaml"
+          cp -a "$YAML_BASE" "$YAML_DZ10"
+          sed -i 's/^\([[:space:]]*minDictZipValueSize:[[:space:]]*\)3000/\110/' "$YAML_DZ10"
+          grep -E 'minDictZipValueSize:[[:space:]]*10$' "$YAML_DZ10"
+
+          prepare_db() {
+            rm -rf "$DB_PATH"
+            mkdir -p "$DB_PATH"
+            if [ -d "$TOPLING/site" ]; then
+              cp -a "$TOPLING/site/." "$DB_PATH/"
+            fi
+          }
+
+          # eng_id log dir name; yaml path; run_memtable 0|1
+          run_topling_suite() {
+            local eng_id="$1"
+            local yaml="$2"
+            local run_memtable="$3"
+            local logdir="logs/${eng_id}"
+            mkdir -p "$logdir"
+            record_shm() {
+              local label="$1"
+              {
+                echo "apparent_bytes=$(du -sb "$DB_PATH" | awk '{print $1}')"
+                echo "allocated_bytes=$(du -s -B1 "$DB_PATH" | awk '{print $1}')"
+              } | tee "${logdir}/shm_usage-${label}.txt"
+              du -sh --apparent-size "$DB_PATH" || true
+              du -sh "$DB_PATH" || true
+              df -h /dev/shm
+            }
+
+            # Pass 1: fillrandom suite, then omit lazy-load demo.
+            prepare_db
+            args_fr=(
+                -json "$yaml"
+                -num=50000000
+                -key_size=8
+                -value_size=15
+                -batch_size=1000
+                -benchmarks=fillrandom,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+                -enable_zero_copy
+                -progress_reports=false
+            )
+            "$TOPLING/bin/db_bench" "${args_fr[@]}" 2>&1 | tee "${logdir}/db_bench-fillrandom.log"
+            args_omit=(
+                -json "$yaml"
+                -num=50000000
+                -key_size=8
+                -value_size=15
+                -batch_size=1000
+                -benchmarks=nextwithkey,nextwithkey,nextwithkey,readseq,readseq,readseq
+                -scan_omit_key -scan_omit_value
+                -use_existing_db=1
+                -enable_zero_copy
+                -progress_reports=false
+            )
+            "$TOPLING/bin/db_bench" "${args_omit[@]}" 2>&1 | tee "${logdir}/db_bench-fillrandom-omit.log"
+            record_shm fillrandom
+            rm -rf "$DB_PATH"
+
+            # Pass 2: fillseq suite, then omit lazy-load demo.
+            prepare_db
+            args=(
+                -json "$yaml"
+                -num=50000000
+                -key_size=8
+                -value_size=15
+                -batch_size=1000
+                -benchmarks=fillseq,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+                -enable_zero_copy
+                -progress_reports=false
+            )
+            "$TOPLING/bin/db_bench" "${args[@]}" 2>&1 | tee "${logdir}/db_bench.log"
+            "$TOPLING/bin/db_bench" "${args_omit[@]}" 2>&1 | tee "${logdir}/db_bench-fillseq-omit.log"
+            record_shm fillseq
+            if [ "$run_memtable" = "1" ]; then
+              mt=(
+                -benchmarks=fillrandom,readrandom,readwrite
+                -item_size=0
+                -num_operations=100000000
+                -write_buffer_size=536870912
+              )
+              "$TOPLING/bin/memtablerep_bench" "${mt[@]}" -memtablerep=skiplist \
+                2>&1 | tee "${logdir}/memtablerep_bench-skiplist.log"
+              "$TOPLING/bin/memtablerep_bench" "${mt[@]}" \
+                -memtablerep='cspp:{"mem_cap":"16G","use_hugepage":false}' \
+                2>&1 | tee "${logdir}/memtablerep_bench-cspp.log"
+            fi
+            rm -rf "$DB_PATH"
+          }
+
+          run_topling_suite topling "$YAML_BASE" 1
+          run_topling_suite topling-dictzip10 "$YAML_DZ10" 0
+
+      - name: Run RocksDB v8.10 benches
+        run: |
+          set -xe
+          ENG="$RUN_PREFIX/rocksdb-v8.10"
+          export LD_LIBRARY_PATH="$ENG/lib:${LD_LIBRARY_PATH:-}"
+          ldd "$ENG/bin/db_bench" || true
+          mkdir -p logs/rocksdb-v8.10
+          DB_PATH=/dev/shm/db_bench_rocksdb_v810
+          record_shm() {
+            local label="$1"
+            {
+              echo "apparent_bytes=$(du -sb "$DB_PATH" | awk '{print $1}')"
+              echo "allocated_bytes=$(du -s -B1 "$DB_PATH" | awk '{print $1}')"
+            } | tee "logs/rocksdb-v8.10/shm_usage-${label}.txt"
+            du -sh --apparent-size "$DB_PATH" || true
+            du -sh "$DB_PATH" || true
+            df -h /dev/shm
+          }
+
+          # Pass 1: fillrandom + compact.
+          rm -rf "$DB_PATH"
+          mkdir -p "$DB_PATH"
+          args_fr=(
+              -db="$DB_PATH"
+              -num=50000000
+              -key_size=8
+              -value_size=15
+              -batch_size=1000
+              -benchmarks=fillrandom,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -progress_reports=false
+          )
+          "$ENG/bin/db_bench" "${args_fr[@]}" 2>&1 | tee logs/rocksdb-v8.10/db_bench-fillrandom.log
+          record_shm fillrandom
+          rm -rf "$DB_PATH"
+
+          # Pass 2: existing fillseq suite.
+          mkdir -p "$DB_PATH"
+          args=(
+              -db="$DB_PATH"
+              -num=50000000
+              -key_size=8
+              -value_size=15
+              -batch_size=1000
+              -benchmarks=fillseq,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -progress_reports=false
+          )
+          "$ENG/bin/db_bench" "${args[@]}" 2>&1 | tee logs/rocksdb-v8.10/db_bench.log
+          record_shm fillseq
+          mt=(
+            -benchmarks=fillrandom,readrandom,readwrite
+            -item_size=0
+            -num_operations=100000000
+            -write_buffer_size=536870912
+          )
+          "$ENG/bin/memtablerep_bench" "${mt[@]}" -memtablerep=skiplist \
+            2>&1 | tee logs/rocksdb-v8.10/memtablerep_bench-skiplist.log
+          rm -rf "$DB_PATH"
+
+      - name: Run RocksDB master benches
+        run: |
+          set -xe
+          ENG="$RUN_PREFIX/rocksdb-master"
+          export LD_LIBRARY_PATH="$ENG/lib:${LD_LIBRARY_PATH:-}"
+          ldd "$ENG/bin/db_bench" || true
+          mkdir -p logs/rocksdb-master
+          DB_PATH=/dev/shm/db_bench_rocksdb_master
+          record_shm() {
+            local label="$1"
+            {
+              echo "apparent_bytes=$(du -sb "$DB_PATH" | awk '{print $1}')"
+              echo "allocated_bytes=$(du -s -B1 "$DB_PATH" | awk '{print $1}')"
+            } | tee "logs/rocksdb-master/shm_usage-${label}.txt"
+            du -sh --apparent-size "$DB_PATH" || true
+            du -sh "$DB_PATH" || true
+            df -h /dev/shm
+          }
+
+          # Pass 1: fillrandom + compact.
+          rm -rf "$DB_PATH"
+          mkdir -p "$DB_PATH"
+          args_fr=(
+              -db="$DB_PATH"
+              -num=50000000
+              -key_size=8
+              -value_size=15
+              -batch_size=1000
+              -benchmarks=fillrandom,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -progress_reports=false
+          )
+          "$ENG/bin/db_bench" "${args_fr[@]}" 2>&1 | tee logs/rocksdb-master/db_bench-fillrandom.log
+          record_shm fillrandom
+          rm -rf "$DB_PATH"
+
+          # Pass 2: existing fillseq suite.
+          mkdir -p "$DB_PATH"
+          args=(
+              -db="$DB_PATH"
+              -num=50000000
+              -key_size=8
+              -value_size=15
+              -batch_size=1000
+              -benchmarks=fillseq,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -progress_reports=false
+          )
+          "$ENG/bin/db_bench" "${args[@]}" 2>&1 | tee logs/rocksdb-master/db_bench.log
+          record_shm fillseq
+          mt=(
+            -benchmarks=fillrandom,readrandom,readwrite
+            -item_size=0
+            -num_operations=100000000
+            -write_buffer_size=536870912
+          )
+          "$ENG/bin/memtablerep_bench" "${mt[@]}" -memtablerep=skiplist \
+            2>&1 | tee logs/rocksdb-master/memtablerep_bench-skiplist.log
+          rm -rf "$DB_PATH"
+
+      - name: Emit pages fragment
+        run: |
+          set -xe
+          python3 .github/scripts/bench_logs_to_pages.py emit \
+            --variant "$VARIANT" \
+            --run-id "$GITHUB_RUN_ID" \
+            --log-root logs \
+            --out _pages
+
+      - name: Checkout gh-pages
+        id: checkout_pages
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: _gh_pages
+
+      - name: Init gh-pages if missing
+        if: steps.checkout_pages.outcome == 'failure'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -xe
+          rm -rf _gh_pages
+          mkdir -p _gh_pages
+          cd _gh_pages
+          git init
+          git checkout -b gh-pages
+          echo '[]' > history.json
+          touch .nojekyll
+          printf '%s\n' '<!DOCTYPE html><html><body><h1>ToplingDB vs RocksDB</h1><p>empty</p></body></html>' > index.html
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Initialize gh-pages for db_bench results"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -u origin gh-pages
+
+      - name: Merge into gh-pages tree
+        run: |
+          set -xe
+          python3 .github/scripts/bench_logs_to_pages.py merge \
+            --merge-into _gh_pages \
+            --from _pages \
+            --variant "$VARIANT"
+
+      - name: Push gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -xe
+          cd _gh_pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No site changes to commit"
+          else
+            git commit -m "db_bench ${VARIANT} comparison from run ${GITHUB_RUN_ID}"
+          fi
+          git push origin HEAD:gh-pages
+
+      - name: Prepare Pages payload without .git
+        run: |
+          set -xe
+          rm -rf _pages_payload
+          mkdir -p _pages_payload
+          tar -C _gh_pages --exclude .git -cf - . | tar -C _pages_payload -xf -
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _pages_payload
+
+  deploy:
+    needs: bench-and-publish
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

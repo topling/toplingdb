@@ -1,0 +1,139 @@
+# Replaces the old db_bench.yml (compile+run monolith).
+# Builds ToplingDB + upstream RocksDB v8.10 + RocksDB master for comparison.
+# db_bench-run.yml executes benches and publishes Pages.
+name: "db_bench-build"
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_clang:
+        type: boolean
+        required: false
+        default: false
+        description: use clang
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{github.token}}
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Prerequisites
+        run: |
+          set -xe
+          sudo apt-get update -y && sudo apt-get install -y \
+            libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
+            libbz2-dev libcurl4-openssl-dev liburing-dev \
+            libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
+
+      - name: Init submodule & Setup ssh
+        run: |
+          git submodule update --init --recursive
+          mkdir -p ~/.ssh && mkdir -p /opt/lib
+          ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+          echo nproc = `nproc`
+
+      - name: Git clone SidePlugin(s)
+        run: |
+          # make clean triggers SidePlugin auto git clone
+          make clean
+
+      - name: Compile ToplingDB db_bench
+        run: |
+          set -xe
+          if ${{inputs.use_clang}}; then
+            export CXX=clang++
+            export CC=clang
+          fi
+          make db_bench memtablerep_bench -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0
+
+      - name: Stage ToplingDB prefix
+        run: |
+          set -xe
+          BUNDLE="$PWD/_bench_bundle"
+          STAGE="$PWD/_bench_stage"
+          PREFIX="/usr/local"
+          rm -rf "$BUNDLE" "$STAGE"
+          mkdir -p "$BUNDLE"
+          make install DESTDIR="$STAGE" PREFIX="$PREFIX" DEBUG_LEVEL=0 UPDATE_REPO=0
+          mkdir -p "$STAGE$PREFIX/bin" "$STAGE$PREFIX/toplingdb-conf" "$STAGE$PREFIX/site"
+          cp -a db_bench memtablerep_bench "$STAGE$PREFIX/bin/"
+          cp -a sideplugin/rockside/sample-conf/db_bench_enterprise.yaml \
+                "$STAGE$PREFIX/toplingdb-conf/"
+          # CI-only override in staged copy (do not edit rockside submodule).
+          sed -i 's/^\([[:space:]]*write_buffer_size:[[:space:]]*\)2G/\1512M/' \
+            "$STAGE$PREFIX/toplingdb-conf/db_bench_enterprise.yaml"
+          grep -E 'write_buffer_size:[[:space:]]*512M' \
+            "$STAGE$PREFIX/toplingdb-conf/db_bench_enterprise.yaml"
+          cp -a sideplugin/rockside/src/topling/web/index.html \
+                sideplugin/rockside/src/topling/web/style.css \
+                "$STAGE$PREFIX/site/"
+          test -x "$STAGE$PREFIX/bin/db_bench"
+          test -x "$STAGE$PREFIX/bin/memtablerep_bench"
+          test -f "$STAGE$PREFIX/toplingdb-conf/db_bench_enterprise.yaml"
+          test -d "$STAGE$PREFIX/lib"
+          mv "$STAGE$PREFIX" "$BUNDLE/topling"
+          rm -rf "$STAGE"
+          echo "BUNDLE=$BUNDLE" >> "$GITHUB_ENV"
+        env:
+          USE_CLANG: ${{ inputs.use_clang }}
+
+      - name: Build upstream RocksDB v8.10 and master
+        run: |
+          set -xe
+          chmod +x .github/scripts/build_upstream_rocksdb.sh
+          if ${{inputs.use_clang}}; then
+            export CXX=clang++
+            export CC=clang
+          fi
+          # Script removes each clone tree after staging that engine.
+          .github/scripts/build_upstream_rocksdb.sh v8.10.2 "$BUNDLE/rocksdb-v8.10"
+          df -h
+          .github/scripts/build_upstream_rocksdb.sh master "$BUNDLE/rocksdb-master"
+          test -x "$BUNDLE/rocksdb-v8.10/bin/db_bench"
+          test -x "$BUNDLE/rocksdb-master/bin/db_bench"
+          df -h
+
+      - name: Pack bench bundle artifact
+        run: |
+          set -xe
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          bundle = Path(os.environ["BUNDLE"])
+          meta = {
+              "git_sha": os.environ.get("GITHUB_SHA", ""),
+              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "variant": "plain",
+              "use_clang": os.environ.get("USE_CLANG", "false"),
+              "timestamp": datetime.now(timezone.utc).isoformat(),
+              "engines": ["topling", "rocksdb-v8.10", "rocksdb-master"],
+          }
+          (bundle / "build-meta.json").write_text(
+              json.dumps(meta, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+          tar -C "$BUNDLE" -czf bench-prefix.tgz .
+          tar -tzf bench-prefix.tgz | head -40
+          # Keep only the tarball for upload.
+          rm -rf "$BUNDLE"
+          df -h
+        env:
+          USE_CLANG: ${{ inputs.use_clang }}
+
+      - name: Upload bench prefix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db_bench-bin-plain
+          path: bench-prefix.tgz
+          retention-days: 14

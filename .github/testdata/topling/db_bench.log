@@ -1,0 +1,4 @@
+fillseq      :     1.234567 micros/op 810000 ops/sec 61.728 seconds 50000000 operations;    6.1 MB/s
+compact      :   123.456789 micros/op   8100 ops/sec 12.345 seconds   100000 operations;
+readseq      :     0.180000 micros/op 5555555 ops/sec 9.000 seconds 50000000 operations;
+readrandom   :     0.900000 micros/op 1111111 ops/sec 45.000 seconds 50000000 operations;

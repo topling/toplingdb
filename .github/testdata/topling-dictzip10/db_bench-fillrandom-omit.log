@@ -1,0 +1,6 @@
+nextwithkey  :     0.100000 micros/op 10000000 ops/sec 5.000 seconds 50000000 operations;
+nextwithkey  :     0.095000 micros/op 10526315 ops/sec 4.750 seconds 50000000 operations;
+nextwithkey  :     0.090000 micros/op 11111111 ops/sec 4.500 seconds 50000000 operations;
+readseq      :     0.050000 micros/op 20000000 ops/sec 2.500 seconds 50000000 operations;
+readseq      :     0.048000 micros/op 20833333 ops/sec 2.400 seconds 50000000 operations;
+readseq      :     0.045000 micros/op 22222222 ops/sec 2.250 seconds 50000000 operations;

@@ -7,7 +7,11 @@ on:
 
 jobs:
   build-and-publish:
-    runs-on: ubuntu-latest
+    # Keep the linker compatible with the GCC 13 LTO trial objects.
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-13
+      CXX: g++-13
     permissions:
       contents: write
       packages: write

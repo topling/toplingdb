@@ -30,9 +30,11 @@ on:
 jobs:
   build:
     # refer https://github.com/actions/runner-images to get the details
-    runs-on: ubuntu-22.04
+    # Prebuilt trial objects use GCC 13 LTO bytecode.
+    runs-on: ubuntu-24.04
     env:
-      GCC_VER: "11.3" # TODO: better get from the 'gcc --version'
+      CC: gcc-13
+      CXX: g++-13
       GITHUB_TOKEN: ${{ github.token }}
     permissions:
       contents: read

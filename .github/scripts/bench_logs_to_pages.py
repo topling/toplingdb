@@ -33,8 +33,6 @@ METRIC_RE = re.compile(
 ENGINES = ("topling", "topling-dictzip10", "rocksdb-v8.10", "rocksdb-master")
 TOPLING_ENGINES = ("topling", "topling-dictzip10")
 ROCKSDB_ENGINES = ("rocksdb-v8.10", "rocksdb-master")
-# memtablerep is identical across Topling yaml variants; only default topling runs it.
-MEMTABLE_ENGINES = ("topling", "rocksdb-v8.10", "rocksdb-master")
 ENGINE_LABELS = {
     "topling": "ToplingDB",
     "topling-dictzip10": "ToplingDB minDictZip=10",
@@ -50,6 +48,40 @@ RATIO_OTHER_LABELS = {
     "rocksdb-v8.10": "v8.10",
     "rocksdb-master": "master",
 }
+
+
+def set_rocksdb_master_label(sha: Optional[str]) -> None:
+    """Set RocksDB master display labels; include short git SHA when known."""
+    if sha:
+        short = str(sha).strip()[:8]
+        if short:
+            ENGINE_LABELS["rocksdb-master"] = f"RocksDB master ({short})"
+            RATIO_OTHER_LABELS["rocksdb-master"] = f"master ({short})"
+            return
+    ENGINE_LABELS["rocksdb-master"] = "RocksDB master"
+    RATIO_OTHER_LABELS["rocksdb-master"] = "master"
+
+
+def apply_engine_meta(meta_roots: List[Path]) -> Optional[str]:
+    """Annotate RocksDB master label with short git SHA from engine-meta.json.
+
+    Searches each root for rocksdb-master/engine-meta.json. Returns full SHA or None.
+    """
+    for root in meta_roots:
+        path = root / "rocksdb-master" / "engine-meta.json"
+        if not path.is_file():
+            continue
+        try:
+            meta = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        sha = str(meta.get("git_sha") or "").strip()
+        if not sha:
+            continue
+        set_rocksdb_master_label(sha)
+        return sha
+    set_rocksdb_master_label(None)
+    return None
 
 
 def parse_shm_usage(text: str) -> Optional[Dict[str, int]]:
@@ -259,6 +291,11 @@ def _seconds_by_benchmark(rows: List[Dict[str, str]]) -> Dict[str, float]:
     return out
 
 
+def _readseq_rows(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Keep only readseq lines (for RocksDB lazy-load baseline from main suite)."""
+    return [r for r in rows if r.get("benchmark") == "readseq"]
+
+
 def _metric_map(rows: List[Dict[str, str]]) -> Dict[str, str]:
     """Key: benchmark|metric -> value."""
     out: Dict[str, str] = {}
@@ -350,22 +387,44 @@ def build_db_bench_compare(
     )
 
 
-def build_topling_omit_compare(
+LAZY_ENGINES = ("topling", "topling-dictzip10", "rocksdb-v8.10")
+
+
+def _hl(text: str, kind: str) -> str:
+    """Color a short phrase: kind is 'faster' (green) or 'slower' (red)."""
+    return f'<span class="{kind}">{html.escape(text)}</span>'
+
+
+def build_lazy_load_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
-    """Parallel Topling variants lazy-load demo (ops/sec; last run per name)."""
-    ops_by = {e: _ops_by_benchmark(engines.get(e, [])) for e in TOPLING_ENGINES}
+    """Lazy-load / scan compare; RocksDB v8.10 is the baseline."""
+    ops_by = {e: _ops_by_benchmark(engines.get(e, [])) for e in LAZY_ENGINES}
+    sec_by = {e: _seconds_by_benchmark(engines.get(e, [])) for e in LAZY_ENGINES}
     key_sets = [set(m.keys()) for m in ops_by.values() if m]
     names = sorted(set().union(*key_sets)) if key_sets else []
     headers = ["benchmark"] + [
-        f"{ENGINE_LABELS[e]} ops/sec" for e in TOPLING_ENGINES
+        f"{ENGINE_LABELS[e]} ops/sec" for e in LAZY_ENGINES
     ]
+    headers.extend(
+        [
+            "v8.10 time / Topling",
+            "v8.10 time / dictzip10",
+        ]
+    )
     rows_html = []
     for name in names:
         cells = [f"<td>{html.escape(name)}</td>"]
-        for e in TOPLING_ENGINES:
+        for e in LAZY_ENGINES:
             v = ops_by[e].get(name)
             cells.append(f"<td>{v if v is not None else '—'}</td>")
+        # Baseline = v8.10; green when Topling* is faster (ratio >= 1).
+        cells.append(
+            f"<td>{_time_ratio_cell(sec_by['topling'].get(name), sec_by['rocksdb-v8.10'].get(name))}</td>"
+        )
+        cells.append(
+            f"<td>{_time_ratio_cell(sec_by['topling-dictzip10'].get(name), sec_by['rocksdb-v8.10'].get(name))}</td>"
+        )
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     if not rows_html:
         rows_html.append(
@@ -381,25 +440,105 @@ def build_topling_omit_compare(
     )
 
 
-def build_memtable_compare(
-    engines: Dict[str, List[Dict[str, str]]],
+_METRIC_NUM_RE = re.compile(r"^\s*([+-]?(?:\d+\.?\d*|\.\d+))")
+
+
+def _metric_number(value: str) -> Optional[float]:
+    m = _METRIC_NUM_RE.match(value or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
+def _throughput_ratio_cell(
+    baseline: Optional[float], subject: Optional[float]
 ) -> str:
-    maps = {e: _metric_map(engines.get(e, [])) for e in MEMTABLE_ENGINES}
-    key_sets = [set(m.keys()) for m in maps.values() if m]
-    keys = sorted(set().union(*key_sets)) if key_sets else []
-    headers = ["benchmark", "metric"] + [
-        ENGINE_LABELS[e] for e in MEMTABLE_ENGINES
+    """ratio = subject / baseline; >1 means subject higher throughput (green)."""
+    if baseline is None or subject is None or baseline <= 0:
+        return "—"
+    ratio = subject / baseline
+    if ratio > 1.0:
+        cls = "faster"
+    elif ratio < 1.0:
+        cls = "slower"
+    else:
+        return f"{ratio:.2f}x"
+    return f'<span class="{cls}">{ratio:.2f}x</span>'
+
+
+def _cost_ratio_cell(baseline: Optional[float], subject: Optional[float]) -> str:
+    """ratio = subject / baseline for cost metrics (us/op, elapsed); <1 green."""
+    if baseline is None or subject is None or baseline <= 0:
+        return "—"
+    ratio = subject / baseline
+    if ratio < 1.0:
+        cls = "faster"
+    elif ratio > 1.0:
+        cls = "slower"
+    else:
+        return f"{ratio:.2f}x"
+    return f'<span class="{cls}">{ratio:.2f}x</span>'
+
+
+# Metrics that show CSPP advantage; higher-is-better vs lower-is-better.
+_CSPP_METRICS_HIGH = (
+    "Write throughput",
+    "Read throughput",
+)
+_CSPP_METRICS_LOW = (
+    "Elapsed time",
+    "write us/op",
+    "read us/op",
+)
+
+
+def build_cspp_memtable_compare(
+    cspp_rows: List[Dict[str, str]],
+    skiplist_topling: List[Dict[str, str]],
+    skiplist_v810: List[Dict[str, str]],
+) -> str:
+    """Highlight CSPPMemTable vs skiplist; RocksDB v8.10 skiplist is baseline."""
+    cspp = _metric_map(cspp_rows)
+    skip_t = _metric_map(skiplist_topling)
+    skip_r = _metric_map(skiplist_v810)
+    interesting = set(_CSPP_METRICS_HIGH) | set(_CSPP_METRICS_LOW)
+    keys = sorted(
+        k
+        for k in set(cspp) | set(skip_t) | set(skip_r)
+        if k.split("|", 1)[-1] in interesting
+    )
+    headers = [
+        "benchmark",
+        "metric",
+        "CSPP (ToplingDB)",
+        "skiplist (ToplingDB)",
+        "skiplist (RocksDB v8.10)",
+        "CSPP / v8.10",
     ]
     rows_html = []
     for key in keys:
         bench, metric = key.split("|", 1)
-        cells = [
-            f"<td>{html.escape(bench)}</td>",
-            f"<td>{html.escape(metric)}</td>",
-        ]
-        for e in MEMTABLE_ENGINES:
-            cells.append(f"<td>{html.escape(maps[e].get(key, '—'))}</td>")
-        rows_html.append("<tr>" + "".join(cells) + "</tr>")
+        c_raw = cspp.get(key, "—")
+        t_raw = skip_t.get(key, "—")
+        r_raw = skip_r.get(key, "—")
+        c_n, r_n = _metric_number(c_raw), _metric_number(r_raw)
+        if metric in _CSPP_METRICS_HIGH:
+            ratio_html = _throughput_ratio_cell(r_n, c_n)
+        else:
+            ratio_html = _cost_ratio_cell(r_n, c_n)
+        rows_html.append(
+            "<tr>"
+            f"<td>{html.escape(bench)}</td>"
+            f"<td>{html.escape(metric)}</td>"
+            f"<td>{html.escape(c_raw)}</td>"
+            f"<td>{html.escape(t_raw)}</td>"
+            f"<td>{html.escape(r_raw)}</td>"
+            f"<td>{ratio_html}</td>"
+            "</tr>"
+        )
     if not rows_html:
         rows_html.append(
             f'<tr><td colspan="{len(headers)}"><em>no rows parsed</em></td></tr>'
@@ -435,16 +574,21 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
             )
         omit_fr_rows: List[Dict[str, str]] = []
         omit_fs_rows: List[Dict[str, str]] = []
-        omit_fr = eng_dir / "db_bench-fillrandom-omit.log"
-        omit_fs = eng_dir / "db_bench-fillseq-omit.log"
-        if omit_fr.is_file():
-            omit_fr_rows = parse_db_bench(
-                omit_fr.read_text(encoding="utf-8", errors="replace")
-            )
-        if omit_fs.is_file():
-            omit_fs_rows = parse_db_bench(
-                omit_fs.read_text(encoding="utf-8", errors="replace")
-            )
+        if eng == "rocksdb-v8.10":
+            # Reuse readseq×3 from the main fill* suites (no separate omit/scan pass).
+            omit_fr_rows = _readseq_rows(fr_rows)
+            omit_fs_rows = _readseq_rows(db_rows)
+        else:
+            omit_fr = eng_dir / "db_bench-fillrandom-omit.log"
+            omit_fs = eng_dir / "db_bench-fillseq-omit.log"
+            if omit_fr.is_file():
+                omit_fr_rows = parse_db_bench(
+                    omit_fr.read_text(encoding="utf-8", errors="replace")
+                )
+            if omit_fs.is_file():
+                omit_fs_rows = parse_db_bench(
+                    omit_fs.read_text(encoding="utf-8", errors="replace")
+                )
         skiplist_rows: List[Dict[str, str]] = []
         cspp_rows: List[Dict[str, str]] = []
         if skip_path.is_file():
@@ -474,6 +618,10 @@ def emit(args: argparse.Namespace) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     log_root = Path(args.log_root)
+    meta_roots = [log_root]
+    if getattr(args, "engine_meta_root", None):
+        meta_roots.insert(0, Path(args.engine_meta_root))
+    master_sha = apply_engine_meta(meta_roots)
     engines_data = _load_engine_logs(log_root)
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -497,10 +645,21 @@ def emit(args: argparse.Namespace) -> None:
             "shm_usage.txt",
             "shm_usage-fillrandom.txt",
             "shm_usage-fillseq.txt",
+            "engine-meta.json",
         ):
             p = src / name
             if p.is_file():
                 shutil.copy2(p, eng_raw / name)
+        # Prefer engine-meta from build prefix when not already under logs/.
+        if args.engine_meta_root:
+            src_meta = Path(args.engine_meta_root) / eng / "engine-meta.json"
+            dst_meta = eng_raw / "engine-meta.json"
+            if src_meta.is_file() and not dst_meta.is_file():
+                shutil.copy2(src_meta, dst_meta)
+            log_meta = log_root / eng / "engine-meta.json"
+            if src_meta.is_file() and not log_meta.is_file():
+                log_meta.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_meta, log_meta)
 
     db_compare = build_db_bench_compare(
         {e: engines_data.get(e, {}).get("db_bench", []) for e in ENGINES}
@@ -511,22 +670,23 @@ def emit(args: argparse.Namespace) -> None:
             for e in ENGINES
         }
     )
-    skip_compare = build_memtable_compare(
-        {
-            e: engines_data.get(e, {}).get("memtablerep_skiplist", [])
-            for e in MEMTABLE_ENGINES
-        }
+    topling = engines_data.get("topling") or {}
+    v810 = engines_data.get("rocksdb-v8.10") or {}
+    cspp_compare = build_cspp_memtable_compare(
+        topling.get("memtablerep_cspp") or [],
+        topling.get("memtablerep_skiplist") or [],
+        v810.get("memtablerep_skiplist") or [],
     )
-    omit_fr_table = build_topling_omit_compare(
+    omit_fr_table = build_lazy_load_compare(
         {
             e: engines_data.get(e, {}).get("db_bench_omit_fillrandom") or []
-            for e in TOPLING_ENGINES
+            for e in LAZY_ENGINES
         }
     )
-    omit_fs_table = build_topling_omit_compare(
+    omit_fs_table = build_lazy_load_compare(
         {
             e: engines_data.get(e, {}).get("db_bench_omit_fillseq") or []
-            for e in TOPLING_ENGINES
+            for e in LAZY_ENGINES
         }
     )
     shm_usages = {
@@ -620,23 +780,24 @@ def emit(args: argparse.Namespace) -> None:
   <h1>Bench run: {html.escape(args.variant)} / {html.escape(str(args.run_id))}</h1>
   <p class="meta">generated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
   <p>{raw_links}</p>
-  <h2>/dev/shm usage (space; after db_bench + omit, before delete)</h2>
-  <p class="meta">实际占盘 = allocated blocks (IEC). Parallel engines: default Topling (minDictZipValueSize=3000) vs minDictZip=10. Space ratio = dictzip10 / Topling; &lt;1 means minDictZip=10 uses less space.</p>
+  <h2>/dev/shm usage (space; after db_bench + omit/scan, before delete)</h2>
+  <p class="meta">Allocated disk usage (IEC blocks). Default Topling keeps minDictZipValueSize=3000; parallel column uses minDictZip=10. Space ratio = dictzip10 / Topling; {_hl('<1 = less space (better compression)', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
   {shm_table}
   <h2>Comparison: db_bench fillrandom suite (perf)</h2>
-  <p class="meta">Benchmarks aligned (includes fillrandom/compact/readseq/readrandom). minDictZip=10 raises compression but typically slows compact and reads. Column &quot;dictzip10 time / Topling&quot; = subject/baseline seconds; &gt;1 (red) means minDictZip=10 is slower, &lt;1 (green) means faster. RocksDB time ratios use rocksdb_seconds / topling*_seconds; &gt;1 (green) means that Topling variant is faster. Values show ops/sec.</p>
+  <p class="meta">Benchmarks aligned (fillrandom/compact/readseq/readrandom). minDictZip=10 raises compression but typically {_hl('slows compact and reads', 'slower')}. Column &quot;dictzip10 time / Topling&quot;: {_hl('>1 = minDictZip=10 slower', 'slower')}, {_hl('<1 = faster', 'faster')}. RocksDB time / Topling*: {_hl('>1 = that Topling variant faster', 'faster')}. Values show ops/sec.</p>
   {fr_compare}
   <h2>Comparison: db_bench fillseq suite (perf)</h2>
-  <p class="meta">Same as fillrandom suite. Watch compact / readseq / readrandom rows for minDictZip=10 cost vs space savings above.</p>
+  <p class="meta">Same as fillrandom. Watch {_hl('compact / readseq / readrandom', 'slower')} cost for minDictZip=10 vs {_hl('space savings', 'faster')} above.</p>
   {db_compare}
-  <h2>Lazy load demo (ToplingDB only, scan_omit)</h2>
-  <p class="meta">Not a fair comparison vs RocksDB. Parallel Topling variants (default vs minDictZip=10). Throughput is a lazy-load demo (scan_omit_key/value).</p>
-  <h3>fillrandom-omit</h3>
+  <h2>Lazy load demo (scan; RocksDB v8.10 baseline)</h2>
+  <p class="meta">Topling needs an extra omit pass: scan_omit_key/value enables lazy value load (no real value load). RocksDB has no omit API, so the baseline is readseq×3 already present in the main fill* suite (no extra pass). master omitted here (v8.10 is the stronger RocksDB baseline). Time ratio = v8.10 / Topling*: {_hl('>1 = Topling* faster', 'faster')}, {_hl('<1 = Topling* slower', 'slower')}. nextwithkey is Topling-only.</p>
+  <h3>fillrandom-omit / scan</h3>
   {omit_fr_table}
-  <h3>fillseq-omit</h3>
+  <h3>fillseq-omit / scan</h3>
   {omit_fs_table}
-  <h2>Comparison: memtablerep_bench (skiplist)</h2>
-  {skip_compare}
+  <h2>memtablerep_bench: CSPPMemTable advantage</h2>
+  <p class="meta">Focus: {_hl('CSPP (ToplingDB)', 'faster')} vs skiplist. Baseline = RocksDB v8.10 skiplist. Column &quot;CSPP / v8.10&quot;: for throughput {_hl('>1 = CSPP faster', 'faster')}; for us/op and elapsed {_hl('<1 = CSPP cheaper', 'faster')}.</p>
+  {cspp_compare}
   <h2>Per-engine details</h2>
   {"".join(detail_parts)}
 """
@@ -649,6 +810,7 @@ def emit(args: argparse.Namespace) -> None:
         "run_id": str(args.run_id),
         "run_dir": run_dir_name,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "rocksdb_master_git_sha": master_sha,
         "engines": {
             eng: {
                 "db_bench": engines_data.get(eng, {}).get("db_bench", []),
@@ -686,10 +848,22 @@ def emit(args: argparse.Namespace) -> None:
     )
 
 
-def _render_latest_section(variant: str, entry: Optional[Dict[str, Any]]) -> str:
+def _render_latest_section(
+    variant: str,
+    entry: Optional[Dict[str, Any]],
+    pages_root: Optional[Path] = None,
+) -> str:
     if not entry:
+        set_rocksdb_master_label(None)
         return f"<h2>Latest: {html.escape(variant)}</h2><p><em>no runs yet</em></p>"
     run_dir = entry["run_dir"]
+    sha = entry.get("rocksdb_master_git_sha")
+    if sha:
+        set_rocksdb_master_label(str(sha))
+    elif pages_root is not None:
+        apply_engine_meta([pages_root / "runs" / run_dir / "raw"])
+    else:
+        set_rocksdb_master_label(None)
     engines = entry.get("engines") or {
         "topling": {
             "db_bench": entry.get("db_bench", []),
@@ -700,11 +874,12 @@ def _render_latest_section(variant: str, entry: Optional[Dict[str, Any]]) -> str
     db_compare = build_db_bench_compare(
         {e: engines.get(e, {}).get("db_bench", []) for e in ENGINES}
     )
-    skip_compare = build_memtable_compare(
-        {
-            e: engines.get(e, {}).get("memtablerep_skiplist", [])
-            for e in MEMTABLE_ENGINES
-        }
+    t_eng = engines.get("topling") or {}
+    r_eng = engines.get("rocksdb-v8.10") or {}
+    cspp_compare = build_cspp_memtable_compare(
+        t_eng.get("memtablerep_cspp") or [],
+        t_eng.get("memtablerep_skiplist") or [],
+        r_eng.get("memtablerep_skiplist") or [],
     )
     return f"""
   <h2>Latest: {html.escape(variant)}</h2>
@@ -713,8 +888,8 @@ def _render_latest_section(variant: str, entry: Optional[Dict[str, Any]]) -> str
      {html.escape(str(entry.get('timestamp', '')))}</p>
   <h3>db_bench comparison (time ratio = rocksdb / topling*)</h3>
   {db_compare}
-  <h3>memtablerep_bench skiplist comparison</h3>
-  {skip_compare}
+  <h3>memtablerep: CSPPMemTable vs skiplist (v8.10 baseline)</h3>
+  {cspp_compare}
 """
 
 
@@ -780,6 +955,7 @@ def merge(args: argparse.Namespace) -> None:
         "run_dir": run_dir_name,
         "timestamp": meta.get("timestamp")
         or datetime.now(timezone.utc).isoformat(),
+        "rocksdb_master_git_sha": meta.get("rocksdb_master_git_sha"),
         "engines": meta.get("engines", {}),
         "db_bench": meta.get("db_bench", []),
         "memtablerep_skiplist": meta.get("memtablerep_skiplist", []),
@@ -794,8 +970,8 @@ def merge(args: argparse.Namespace) -> None:
     body = f"""
   <h1>ToplingDB vs RocksDB bench results</h1>
   <p class="meta">Updated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
-  {_render_latest_section("plain", latest["plain"])}
-  {_render_latest_section("avx512", latest["avx512"])}
+  {_render_latest_section("plain", latest["plain"], merge_into)}
+  {_render_latest_section("avx512", latest["avx512"], merge_into)}
   <h2>History</h2>
   {_render_history(history)}
 """
@@ -815,6 +991,11 @@ def main() -> None:
         "--log-root",
         required=True,
         help="Directory with topling/, topling-dictzip10/, rocksdb-*/ log subdirs",
+    )
+    p_emit.add_argument(
+        "--engine-meta-root",
+        default=None,
+        help="Optional prefix containing <engine>/engine-meta.json (build artifact)",
     )
     p_emit.add_argument("--out", required=True)
     p_emit.set_defaults(func=emit)

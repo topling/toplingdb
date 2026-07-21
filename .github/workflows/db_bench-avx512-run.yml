@@ -215,6 +215,7 @@ jobs:
               -progress_reports=false
           )
           "$ENG/bin/db_bench" "${args_fr[@]}" 2>&1 | tee logs/rocksdb-v8.10/db_bench-fillrandom.log
+          # Lazy-load baseline reuses readseq×3 from this main pass (no extra scan).
           record_shm fillrandom
           rm -rf "$DB_PATH"
 
@@ -306,6 +307,7 @@ jobs:
             --variant "$VARIANT" \
             --run-id "$GITHUB_RUN_ID" \
             --log-root logs \
+            --engine-meta-root "$RUN_PREFIX" \
             --out _pages
 
       - name: Checkout gh-pages

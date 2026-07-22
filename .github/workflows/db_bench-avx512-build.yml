@@ -89,9 +89,8 @@ jobs:
             export CXX=clang++
             export CC=clang
           fi
-          # Match Topling avx512 flags when possible (runner may still lack AVX512).
-          export EXTRA_CXXFLAGS="${EXTRA_CXXFLAGS:-} -march=skylake-avx512"
-          export EXTRA_CFLAGS="${EXTRA_CFLAGS:-} -march=skylake-avx512"
+          # Match Topling avx512 (-march=skylake-avx512); overrides script default haswell.
+          export PORTABLE=skylake-avx512
           # Script removes each clone tree after staging that engine.
           .github/scripts/build_upstream_rocksdb.sh v8.10.2 "$BUNDLE/rocksdb-v8.10"
           df -h

@@ -77,7 +77,7 @@ jobs:
 
       - name: Run ToplingDB benches
         run: |
-          set -xe
+          set -xeo pipefail
           TOPLING="$RUN_PREFIX/topling"
           export LD_LIBRARY_PATH="$TOPLING/lib:${LD_LIBRARY_PATH:-}"
           ldd "$TOPLING/bin/db_bench"
@@ -182,10 +182,16 @@ jobs:
 
           run_topling_suite topling "$YAML_BASE" 1
           run_topling_suite topling-dictzip10 "$YAML_DZ10" 0
+          for f in logs/topling/db_bench*.log logs/topling/memtablerep_bench*.log \
+                   logs/topling-dictzip10/db_bench*.log; do
+            test -s "$f" || { echo "empty bench log: $f" >&2; exit 1; }
+            grep -Eiq 'ops/sec|us/op|micros/op|Elapsed time' "$f" \
+              || { echo "bench log lacks metrics: $f" >&2; exit 1; }
+          done
 
       - name: Run RocksDB v8.10 benches
         run: |
-          set -xe
+          set -xeo pipefail
           ENG="$RUN_PREFIX/rocksdb-v8.10"
           export LD_LIBRARY_PATH="$ENG/lib:${LD_LIBRARY_PATH:-}"
           ldd "$ENG/bin/db_bench" || true
@@ -240,11 +246,17 @@ jobs:
           )
           "$ENG/bin/memtablerep_bench" "${mt[@]}" -memtablerep=skiplist \
             2>&1 | tee logs/rocksdb-v8.10/memtablerep_bench-skiplist.log
+          for f in logs/rocksdb-v8.10/db_bench*.log \
+                   logs/rocksdb-v8.10/memtablerep_bench*.log; do
+            test -s "$f" || { echo "empty bench log: $f" >&2; exit 1; }
+            grep -Eiq 'ops/sec|us/op|micros/op|Elapsed time' "$f" \
+              || { echo "bench log lacks metrics: $f" >&2; exit 1; }
+          done
           rm -rf "$DB_PATH"
 
       - name: Run RocksDB master benches
         run: |
-          set -xe
+          set -xeo pipefail
           ENG="$RUN_PREFIX/rocksdb-master"
           export LD_LIBRARY_PATH="$ENG/lib:${LD_LIBRARY_PATH:-}"
           ldd "$ENG/bin/db_bench" || true
@@ -298,6 +310,12 @@ jobs:
           )
           "$ENG/bin/memtablerep_bench" "${mt[@]}" -memtablerep=skiplist \
             2>&1 | tee logs/rocksdb-master/memtablerep_bench-skiplist.log
+          for f in logs/rocksdb-master/db_bench*.log \
+                   logs/rocksdb-master/memtablerep_bench*.log; do
+            test -s "$f" || { echo "empty bench log: $f" >&2; exit 1; }
+            grep -Eiq 'ops/sec|us/op|micros/op|Elapsed time' "$f" \
+              || { echo "bench log lacks metrics: $f" >&2; exit 1; }
+          done
           rm -rf "$DB_PATH"
 
       - name: Emit pages fragment

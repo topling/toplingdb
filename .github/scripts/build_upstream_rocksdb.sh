@@ -24,10 +24,15 @@ else
 fi
 
 
-# Allow caller to inject CC/CXX/CPU/EXTRA_* via environment
+# Allow caller to inject CC/CXX/CPU/EXTRA_* / PORTABLE via environment.
+# Default PORTABLE=haswell matches ToplingDB plain (-march=haswell) and avoids
+# upstream's -march=native, which can pull AVX-512 on capable build hosts and
+# SIGILL on run hosts without AVX-512. Override e.g. PORTABLE=skylake-avx512.
 export DEBUG_LEVEL="${DEBUG_LEVEL:-0}"
+export PORTABLE="${PORTABLE:-haswell}"
 cd "$SRC_DIR"
-make db_bench memtablerep_bench -j"$(nproc)" DEBUG_LEVEL="$DEBUG_LEVEL"
+echo "Building upstream rocksdb with PORTABLE=${PORTABLE} DEBUG_LEVEL=${DEBUG_LEVEL}"
+make db_bench memtablerep_bench -j"$(nproc)" DEBUG_LEVEL="$DEBUG_LEVEL" PORTABLE="$PORTABLE"
 
 test -x "$SRC_DIR/db_bench"
 test -x "$SRC_DIR/memtablerep_bench"

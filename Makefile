@@ -503,12 +503,14 @@ ifeq (${WITH_CSPP_MEMTABLE}${WITH_TOPLING_ROCKS},10)
   $(error "When WITH_CSPP_MEMTABLE is 1, WITH_TOPLING_ROCKS must be 1 also")
 endif
 
+ifeq (${WITH_CSPP_MEMTABLE},1)
+  CXXFLAGS   += -DHAS_TOPLING_CSPP_MEMTABLE
+endif
+
 ifneq (,$(wildcard sideplugin/cspp-memtable/cspp_memtable.cc))
   ifeq (${WITH_CSPP_MEMTABLE},0)
     $(warning cspp-memtable exists but intentional disabled)
   else
-    # now we have cspp-memtable
-    CXXFLAGS   += -DHAS_TOPLING_CSPP_MEMTABLE
     CSPP_MEMTABLE_GIT_VER_SRC = ${BUILD_ROOT}/git-version-cspp_memtable.cc
     ifeq (,${TOPLING_ZIP_TABLE_TRIAL_DAYS})
       EXTRA_LIB_SOURCES += sideplugin/cspp-memtable/cspp_memtable.cc \

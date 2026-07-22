@@ -133,6 +133,52 @@ def load_shm_usages(eng_dir: Path) -> Dict[str, Optional[Dict[str, int]]]:
     return out
 
 
+RSS_WORKLOADS = ("fillrandom", "fillseq", "fillrandom-omit", "fillseq-omit")
+
+
+def parse_rss_usage(text: str) -> Optional[int]:
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("max_rss_bytes="):
+            return int(line.split("=", 1)[1])
+    return None
+
+
+def load_rss_usages(eng_dir: Path) -> Dict[str, Optional[int]]:
+    out: Dict[str, Optional[int]] = {}
+    for wl in RSS_WORKLOADS:
+        path = eng_dir / f"rss_usage-{wl}.txt"
+        if path.is_file():
+            out[wl] = parse_rss_usage(
+                path.read_text(encoding="utf-8", errors="replace")
+            )
+        else:
+            out[wl] = None
+    return out
+
+
+def load_bench_settings(eng_dir: Path) -> Dict[str, str]:
+    path = eng_dir / "bench_settings.txt"
+    out: Dict[str, str] = {}
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
+    return out
+
+
+def load_runner_env(log_root: Path) -> Dict[str, str]:
+    path = log_root / "runner_env.txt"
+    out: Dict[str, str] = {}
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
+    return out
+
+
 def _size_ratio_cell(
     base_bytes: Optional[int], other_bytes: Optional[int]
 ) -> str:
@@ -147,7 +193,7 @@ def _size_ratio_cell(
 def build_shm_usage_table(
     usages: Dict[str, Dict[str, Optional[Dict[str, int]]]],
 ) -> str:
-    """Wide space compare: allocated bytes per engine + dictzip10/Topling size ratio."""
+    """Wide space compare: allocated bytes per engine + ratios vs RocksDB v8.10."""
 
     def _bytes(eng: str, wl: str, key: str) -> Optional[int]:
         u = (usages.get(eng) or {}).get(wl)
@@ -158,7 +204,8 @@ def build_shm_usage_table(
     headers = ["workload"]
     for e in ENGINES:
         headers.append(ENGINE_LABELS[e])
-    headers.append("dictzip10 / Topling (space)")
+    headers.append("Topling / v8.10 (space)")
+    headers.append("dictzip10 / v8.10 (space)")
 
     rows_html = []
     for wl in SHM_WORKLOADS:
@@ -169,8 +216,62 @@ def build_shm_usage_table(
                 f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
             )
         cells.append(
-            f"<td>{_size_ratio_cell(_bytes('topling', wl, 'allocated_bytes'), _bytes('topling-dictzip10', wl, 'allocated_bytes'))}</td>"
+            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('topling', wl, 'allocated_bytes'))}</td>"
         )
+        cells.append(
+            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('topling-dictzip10', wl, 'allocated_bytes'))}</td>"
+        )
+        rows_html.append("<tr>" + "".join(cells) + "</tr>")
+    if not rows_html:
+        rows_html.append(
+            f'<tr><td colspan="{len(headers)}"><em>no rows</em></td></tr>'
+        )
+    th = "".join(f"<th>{html.escape(h)}</th>" for h in headers)
+    return (
+        "<table>\n<thead><tr>"
+        + th
+        + "</tr></thead>\n<tbody>\n"
+        + "\n".join(rows_html)
+        + "\n</tbody>\n</table>"
+    )
+
+
+def build_rss_usage_table(
+    rss_data: Dict[str, Dict[str, Optional[int]]],
+    derived_engines: Optional[set] = None,
+) -> str:
+    """Peak RSS compare: absolute + ratio vs RocksDB v8.10. derived_engines marks omit-from-main."""
+    if derived_engines is None:
+        derived_engines = set()
+
+    headers = ["workload"]
+    for e in ENGINES:
+        label = ENGINE_LABELS[e]
+        if e in derived_engines:
+            label += " (derived-from-main)"
+        headers.append(label)
+    headers.append("Topling / v8.10 (RSS)")
+    headers.append("dictzip10 / v8.10 (RSS)")
+
+    workloads = sorted(
+        {wl for eng_data in rss_data.values() for wl in eng_data if eng_data.get(wl) is not None}
+    )
+    if not workloads:
+        workloads = list(RSS_WORKLOADS)
+
+    rows_html = []
+    for wl in workloads:
+        cells = [f"<td>{html.escape(wl)}</td>"]
+        for e in ENGINES:
+            b = (rss_data.get(e) or {}).get(wl)
+            cells.append(
+                f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
+            )
+        v810_bytes = (rss_data.get("rocksdb-v8.10") or {}).get(wl)
+        topling_bytes = (rss_data.get("topling") or {}).get(wl)
+        dz10_bytes = (rss_data.get("topling-dictzip10") or {}).get(wl)
+        cells.append(f"<td>{_size_ratio_cell(v810_bytes, topling_bytes)}</td>")
+        cells.append(f"<td>{_size_ratio_cell(v810_bytes, dz10_bytes)}</td>")
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     if not rows_html:
         rows_html.append(
@@ -291,6 +392,16 @@ def _seconds_by_benchmark(rows: List[Dict[str, str]]) -> Dict[str, float]:
     return out
 
 
+def _operations_by_benchmark(rows: List[Dict[str, str]]) -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    for row in rows:
+        try:
+            out[row["benchmark"]] = int(row["operations"])
+        except (KeyError, ValueError):
+            continue
+    return out
+
+
 def _readseq_rows(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """Keep only readseq lines (for RocksDB lazy-load baseline from main suite)."""
     return [r for r in rows if r.get("benchmark") == "readseq"]
@@ -344,16 +455,19 @@ def _ratio_pairs() -> List[Tuple[str, str]]:
 def build_db_bench_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
-    """Wide comparison: ops/sec + dictzip10/Topling time + rocksdb/topling* time."""
+    """Wide comparison: ops/sec + dictzip10/Topling time + rocksdb/topling* time.
+
+    compact rows display operations/seconds instead of ops/sec.
+    """
     ops_by = {e: _ops_by_benchmark(engines.get(e, [])) for e in ENGINES}
     sec_by = {e: _seconds_by_benchmark(engines.get(e, [])) for e in ENGINES}
+    operations_by = {e: _operations_by_benchmark(engines.get(e, [])) for e in ENGINES}
     key_sets = [set(m.keys()) for m in ops_by.values() if m]
     names = sorted(set().union(*key_sets)) if key_sets else []
     ratio_pairs = _ratio_pairs()
     headers = ["benchmark"] + [
         f"{ENGINE_LABELS[e]} ops/sec" for e in ENGINES
     ]
-    # Direct Topling-vs-dictzip10 cost: >1 means minDictZip=10 is slower.
     headers.append("dictzip10 time / Topling")
     for base, other in ratio_pairs:
         headers.append(
@@ -361,10 +475,19 @@ def build_db_bench_compare(
         )
     rows_html = []
     for name in names:
+        is_compact = name == "compact"
         cells = [f"<td>{html.escape(name)}</td>"]
         for e in ENGINES:
-            v = ops_by[e].get(name)
-            cells.append(f"<td>{v if v is not None else '—'}</td>")
+            if is_compact:
+                n_ops = operations_by[e].get(name)
+                secs = sec_by[e].get(name)
+                if n_ops is not None and secs is not None:
+                    cells.append(f"<td>{n_ops}/{secs:.1f}s</td>")
+                else:
+                    cells.append("<td>—</td>")
+            else:
+                v = ops_by[e].get(name)
+                cells.append(f"<td>{v if v is not None else '—'}</td>")
         cells.append(
             f"<td>{_subject_time_ratio_cell(sec_by['topling'].get(name), sec_by['topling-dictzip10'].get(name))}</td>"
         )
@@ -607,11 +730,62 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
             "memtablerep_skiplist": skiplist_rows,
             "memtablerep_cspp": cspp_rows,
             "shm_usage": load_shm_usages(eng_dir),
+            "rss_usage": load_rss_usages(eng_dir),
+            "bench_settings": load_bench_settings(eng_dir),
         }
     for req in TOPLING_ENGINES:
         if req not in result:
             raise SystemExit(f"missing required logs under {log_root}/{req}/")
     return result
+
+
+def _build_runner_section(
+    runner_env: Dict[str, Any],
+    cache_size_bytes: Optional[int],
+    dataset_bytes: Optional[int],
+    dataset_estimated: bool,
+) -> str:
+    if not runner_env:
+        return "<h2>Runner hardware/software</h2><p><em>n/a</em></p>"
+    rows = [
+        ("OS", runner_env.get("os_pretty_name", "n/a")),
+        ("Kernel", runner_env.get("kernel", "n/a")),
+        ("CPU", runner_env.get("cpu_model", "n/a")),
+        ("Logical CPUs", runner_env.get("cpu_count", "n/a")),
+    ]
+    mem_str = runner_env.get("mem_total_bytes")
+    if mem_str:
+        try:
+            rows.append(("Memory", format_iec(int(mem_str))))
+        except (ValueError, TypeError):
+            rows.append(("Memory", str(mem_str)))
+    shm_str = runner_env.get("shm_size_bytes")
+    if shm_str:
+        try:
+            rows.append(("/dev/shm", format_iec(int(shm_str))))
+        except (ValueError, TypeError):
+            rows.append(("/dev/shm", str(shm_str)))
+    if cache_size_bytes is not None:
+        rows.append(("RocksDB block cache", format_iec(cache_size_bytes)))
+    trs = "\n".join(
+        f"<tr><td><strong>{html.escape(str(k))}</strong></td><td>{html.escape(str(v))}</td></tr>"
+        for k, v in rows
+    )
+    section = f"""<h2>Runner hardware/software</h2>
+<table>
+<tbody>
+{trs}
+</tbody>
+</table>"""
+    if cache_size_bytes is not None and dataset_bytes is not None:
+        cache_iec = format_iec(cache_size_bytes)
+        ds_iec = format_iec(dataset_bytes)
+        est_note = " (estimated)" if dataset_estimated else ""
+        if cache_size_bytes >= dataset_bytes:
+            section += f'\n<p class="meta"><strong>On-disk DB size{est_note} ({ds_iec}) ≤ block cache ({cache_iec})</strong> — cache can hold the entire dataset.</p>'
+        else:
+            section += f'\n<p class="meta" style="color:#a30d0d"><strong>On-disk DB size{est_note} ({ds_iec}) &gt; block cache ({cache_iec})</strong> — cache cannot hold the entire dataset.</p>'
+    return section
 
 
 def emit(args: argparse.Namespace) -> None:
@@ -645,6 +819,15 @@ def emit(args: argparse.Namespace) -> None:
             "shm_usage.txt",
             "shm_usage-fillrandom.txt",
             "shm_usage-fillseq.txt",
+            "rss_usage-fillrandom.txt",
+            "rss_usage-fillseq.txt",
+            "rss_usage-fillrandom-omit.txt",
+            "rss_usage-fillseq-omit.txt",
+            "time-fillrandom.txt",
+            "time-fillseq.txt",
+            "time-fillrandom-omit.txt",
+            "time-fillseq-omit.txt",
+            "bench_settings.txt",
             "engine-meta.json",
         ):
             p = src / name
@@ -660,6 +843,47 @@ def emit(args: argparse.Namespace) -> None:
             if src_meta.is_file() and not log_meta.is_file():
                 log_meta.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_meta, log_meta)
+
+    runner_env_src = log_root / "runner_env.txt"
+    if runner_env_src.is_file():
+        shutil.copy2(runner_env_src, raw_dir / "runner_env.txt")
+
+    runner_env = load_runner_env(log_root)
+
+    rss_data: Dict[str, Dict[str, Optional[int]]] = {
+        e: engines_data.get(e, {}).get("rss_usage") or {} for e in ENGINES
+    }
+    rss_derived_engines: set = set()
+    for re_name in ROCKSDB_ENGINES:
+        eng_rss = rss_data.get(re_name) or {}
+        if eng_rss.get("fillrandom-omit") is not None or eng_rss.get("fillseq-omit") is not None:
+            rss_derived_engines.add(re_name)
+    rss_table = build_rss_usage_table(rss_data, rss_derived_engines)
+
+    bench_settings: Dict[str, Dict[str, str]] = {
+        e: engines_data.get(e, {}).get("bench_settings") or {} for e in ENGINES
+    }
+
+    v810_shm = engines_data.get("rocksdb-v8.10", {}).get("shm_usage") or {}
+    dataset_bytes: Optional[int] = None
+    dataset_estimated = False
+    for wl in SHM_WORKLOADS:
+        u = v810_shm.get(wl)
+        if u and u.get("allocated_bytes"):
+            b = u["allocated_bytes"]
+            if dataset_bytes is None or b > dataset_bytes:
+                dataset_bytes = b
+    if dataset_bytes is None:
+        dataset_bytes = 100000000 * (8 + 15)
+        dataset_estimated = True
+
+    cache_size_bytes: Optional[int] = None
+    cs_str = bench_settings.get("rocksdb-v8.10", {}).get("cache_size_bytes")
+    if cs_str:
+        try:
+            cache_size_bytes = int(cs_str)
+        except ValueError:
+            pass
 
     db_compare = build_db_bench_compare(
         {e: engines_data.get(e, {}).get("db_bench", []) for e in ENGINES}
@@ -776,15 +1000,21 @@ def emit(args: argparse.Namespace) -> None:
         if (raw_dir / eng / "db_bench.log").is_file()
     )
 
+    runner_html = _build_runner_section(runner_env, cache_size_bytes, dataset_bytes, dataset_estimated)
+
     body = f"""
   <h1>Bench run: {html.escape(args.variant)} / {html.escape(str(args.run_id))}</h1>
   <p class="meta">generated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
   <p>{raw_links}</p>
+  {runner_html}
   <h2>/dev/shm usage (space; after db_bench + omit/scan, before delete)</h2>
-  <p class="meta">Allocated disk usage (IEC blocks). Default Topling keeps minDictZipValueSize=3000; parallel column uses minDictZip=10. Space ratio = dictzip10 / Topling; {_hl('<1 = less space (better compression)', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
+  <p class="meta">Allocated disk usage (IEC blocks). RocksDB uses default Snappy compression. Space ratio = engine / v8.10; {_hl('<1 = less space than RocksDB', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
   {shm_table}
+  <h2>Peak RSS (memory; during db_bench)</h2>
+  <p class="meta">Peak resident set size. RocksDB block cache = half physical memory ({html.escape(format_iec(cache_size_bytes) if cache_size_bytes else 'n/a')}). Ratio = engine / v8.10; {_hl('<1 = less memory', 'faster')}, {_hl('>1 = more memory', 'slower')}. RocksDB omit columns are {_hl('derived-from-main', 'slower')} (no separate omit pass).</p>
+  {rss_table}
   <h2>Comparison: db_bench fillrandom suite (perf)</h2>
-  <p class="meta">Benchmarks aligned (fillrandom/compact/readseq/readrandom). minDictZip=10 raises compression but typically {_hl('slows compact and reads', 'slower')}. Column &quot;dictzip10 time / Topling&quot;: {_hl('>1 = minDictZip=10 slower', 'slower')}, {_hl('<1 = faster', 'faster')}. RocksDB time / Topling*: {_hl('>1 = that Topling variant faster', 'faster')}. Values show ops/sec.</p>
+  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom×3. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / Topling*: {_hl('>1 = that Topling variant faster', 'faster')}. Values show ops/sec.</p>
   {fr_compare}
   <h2>Comparison: db_bench fillseq suite (perf)</h2>
   <p class="meta">Same as fillrandom. Watch {_hl('compact / readseq / readrandom', 'slower')} cost for minDictZip=10 vs {_hl('space savings', 'faster')} above.</p>
@@ -805,12 +1035,20 @@ def emit(args: argparse.Namespace) -> None:
         _page(f"Bench {args.variant} {args.run_id}", body), encoding="utf-8"
     )
 
+    runner_env_meta = {
+        **runner_env,
+        "cache_size_bytes": cache_size_bytes,
+        "dataset_bytes": dataset_bytes,
+        "dataset_estimated": dataset_estimated,
+    }
+
     meta = {
         "variant": args.variant,
         "run_id": str(args.run_id),
         "run_dir": run_dir_name,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "rocksdb_master_git_sha": master_sha,
+        "runner_env": runner_env_meta,
         "engines": {
             eng: {
                 "db_bench": engines_data.get(eng, {}).get("db_bench", []),
@@ -831,10 +1069,14 @@ def emit(args: argparse.Namespace) -> None:
                 ),
                 "shm_usage": engines_data.get(eng, {}).get("shm_usage")
                 or {wl: None for wl in SHM_WORKLOADS},
+                "rss_usage": engines_data.get(eng, {}).get("rss_usage")
+                or {wl: None for wl in RSS_WORKLOADS},
+                "bench_settings": engines_data.get(eng, {}).get(
+                    "bench_settings", {}
+                ),
             }
             for eng in ENGINES
         },
-        # Keep legacy flat fields for topling (homepage snippets)
         "db_bench": engines_data.get("topling", {}).get("db_bench", []),
         "memtablerep_skiplist": engines_data.get("topling", {}).get(
             "memtablerep_skiplist", []
@@ -871,9 +1113,52 @@ def _render_latest_section(
             "memtablerep_cspp": entry.get("memtablerep_cspp", []),
         }
     }
-    db_compare = build_db_bench_compare(
+
+    runner_env_data = entry.get("runner_env") or {}
+    cache_size_bytes: Optional[int] = None
+    dataset_bytes: Optional[int] = None
+    dataset_estimated = False
+    if runner_env_data:
+        try:
+            cache_size_bytes = int(runner_env_data.get("cache_size_bytes") or 0) or None
+        except (ValueError, TypeError):
+            pass
+        try:
+            dataset_bytes = int(runner_env_data.get("dataset_bytes") or 0) or None
+        except (ValueError, TypeError):
+            pass
+        dataset_estimated = bool(runner_env_data.get("dataset_estimated"))
+    runner_html = _build_runner_section(runner_env_data, cache_size_bytes, dataset_bytes, dataset_estimated)
+
+    shm_usages = {
+        e: engines.get(e, {}).get("shm_usage") or {} for e in ENGINES
+    }
+    shm_table = build_shm_usage_table(shm_usages)
+
+    rss_data: Dict[str, Dict[str, Optional[int]]] = {}
+    rss_derived_engines: set = set()
+    for e in ENGINES:
+        eng_rss_raw = engines.get(e, {}).get("rss_usage") or {}
+        rss_data[e] = {wl: v for wl, v in eng_rss_raw.items()}
+        if e in ROCKSDB_ENGINES:
+            if eng_rss_raw.get("fillrandom-omit") is not None or eng_rss_raw.get("fillseq-omit") is not None:
+                rss_derived_engines.add(e)
+    rss_table = build_rss_usage_table(rss_data, rss_derived_engines)
+
+    db_compare_fs = build_db_bench_compare(
         {e: engines.get(e, {}).get("db_bench", []) for e in ENGINES}
     )
+    fr_compare = build_db_bench_compare(
+        {e: engines.get(e, {}).get("db_bench_fillrandom", []) for e in ENGINES}
+    )
+
+    omit_fr_table = build_lazy_load_compare(
+        {e: engines.get(e, {}).get("db_bench_omit_fillrandom") or [] for e in LAZY_ENGINES}
+    )
+    omit_fs_table = build_lazy_load_compare(
+        {e: engines.get(e, {}).get("db_bench_omit_fillseq") or [] for e in LAZY_ENGINES}
+    )
+
     t_eng = engines.get("topling") or {}
     r_eng = engines.get("rocksdb-v8.10") or {}
     cspp_compare = build_cspp_memtable_compare(
@@ -881,13 +1166,30 @@ def _render_latest_section(
         t_eng.get("memtablerep_skiplist") or [],
         r_eng.get("memtablerep_skiplist") or [],
     )
+
+    cache_iec = format_iec(cache_size_bytes) if cache_size_bytes else "n/a"
+
     return f"""
   <h2>Latest: {html.escape(variant)}</h2>
   <p class="meta">run_id={html.escape(str(entry.get('run_id', '')))} |
      <a href="runs/{html.escape(run_dir)}/index.html">full report</a> |
      {html.escape(str(entry.get('timestamp', '')))}</p>
-  <h3>db_bench comparison (time ratio = rocksdb / topling*)</h3>
-  {db_compare}
+  {runner_html}
+  <h3>/dev/shm usage (disk; ratio vs RocksDB v8.10)</h3>
+  <p class="meta">RocksDB uses default Snappy compression. Ratio = engine / v8.10; {_hl('<1 = less space', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
+  {shm_table}
+  <h3>Peak RSS (memory; ratio vs RocksDB v8.10)</h3>
+  <p class="meta">RocksDB block cache = half physical memory ({html.escape(cache_iec)}). Ratio = engine / v8.10; {_hl('<1 = less memory', 'faster')}, {_hl('>1 = more memory', 'slower')}. RocksDB omit columns are {_hl('derived-from-main', 'slower')} (no separate omit pass).</p>
+  {rss_table}
+  <h3>db_bench fillrandom suite (time ratio = rocksdb / topling*)</h3>
+  <p class="meta">compact row shows operations/seconds. RocksDB uses default Snappy compression.</p>
+  {fr_compare}
+  <h3>db_bench fillseq suite</h3>
+  {db_compare_fs}
+  <h3>Lazy load: fillrandom-omit (scan; v8.10 baseline)</h3>
+  {omit_fr_table}
+  <h3>Lazy load: fillseq-omit (scan; v8.10 baseline)</h3>
+  {omit_fs_table}
   <h3>memtablerep: CSPPMemTable vs skiplist (v8.10 baseline)</h3>
   {cspp_compare}
 """
@@ -956,6 +1258,7 @@ def merge(args: argparse.Namespace) -> None:
         "timestamp": meta.get("timestamp")
         or datetime.now(timezone.utc).isoformat(),
         "rocksdb_master_git_sha": meta.get("rocksdb_master_git_sha"),
+        "runner_env": meta.get("runner_env"),
         "engines": meta.get("engines", {}),
         "db_bench": meta.get("db_bench", []),
         "memtablerep_skiplist": meta.get("memtablerep_skiplist", []),
@@ -967,13 +1270,14 @@ def merge(args: argparse.Namespace) -> None:
     (merge_into / ".nojekyll").write_text("", encoding="utf-8")
 
     latest = _latest_by_variant(history)
+    plain_section = _render_latest_section("plain", latest["plain"], merge_into)
+    history_plain = [e for e in history if e.get("variant") != "avx512"]
     body = f"""
   <h1>ToplingDB vs RocksDB bench results</h1>
   <p class="meta">Updated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
-  {_render_latest_section("plain", latest["plain"], merge_into)}
-  {_render_latest_section("avx512", latest["avx512"], merge_into)}
+  {plain_section}
   <h2>History</h2>
-  {_render_history(history)}
+  {_render_history(history_plain)}
 """
     (merge_into / "index.html").write_text(
         _page("ToplingDB vs RocksDB bench results", body), encoding="utf-8"

@@ -119,23 +119,34 @@ jobs:
               du -sh "$DB_PATH" || true
               df -h /dev/shm
             }
+            record_rss() {
+              local label="$1"
+              local time_file="${logdir}/time-${label}.txt"
+              if [ -f "$time_file" ]; then
+                local kb
+                kb=$(grep -oP 'max_rss_kb=\K\d+' "$time_file")
+                echo "max_rss_bytes=$((kb * 1024))" > "${logdir}/rss_usage-${label}.txt"
+              fi
+            }
 
             # Pass 1: fillrandom suite, then omit lazy-load demo.
             prepare_db
             args_fr=(
                 -json "$yaml"
-                -num=50000000
+                -num=100000000
                 -key_size=8
                 -value_size=15
                 -batch_size=1000
-                -benchmarks=fillrandom,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+                -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
                 -enable_zero_copy
                 -progress_reports=false
             )
-            "$TOPLING/bin/db_bench" "${args_fr[@]}" 2>&1 | tee "${logdir}/db_bench-fillrandom.log"
+            /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillrandom.txt" -- \
+              "$TOPLING/bin/db_bench" "${args_fr[@]}" >"${logdir}/db_bench-fillrandom.log" 2>&1
+            cat "${logdir}/db_bench-fillrandom.log"
             args_omit=(
                 -json "$yaml"
-                -num=50000000
+                -num=100000000
                 -key_size=8
                 -value_size=15
                 -batch_size=1000
@@ -145,7 +156,11 @@ jobs:
                 -enable_zero_copy
                 -progress_reports=false
             )
-            "$TOPLING/bin/db_bench" "${args_omit[@]}" 2>&1 | tee "${logdir}/db_bench-fillrandom-omit.log"
+            /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillrandom-omit.txt" -- \
+              "$TOPLING/bin/db_bench" "${args_omit[@]}" >"${logdir}/db_bench-fillrandom-omit.log" 2>&1
+            cat "${logdir}/db_bench-fillrandom-omit.log"
+            record_rss fillrandom
+            record_rss fillrandom-omit
             record_shm fillrandom
             rm -rf "$DB_PATH"
 
@@ -153,20 +168,26 @@ jobs:
             prepare_db
             args=(
                 -json "$yaml"
-                -num=50000000
+                -num=100000000
                 -key_size=8
                 -value_size=15
                 -batch_size=1000
-                -benchmarks=fillseq,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+                -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
                 -enable_zero_copy
                 -progress_reports=false
             )
-            "$TOPLING/bin/db_bench" "${args[@]}" 2>&1 | tee "${logdir}/db_bench.log"
-            "$TOPLING/bin/db_bench" "${args_omit[@]}" 2>&1 | tee "${logdir}/db_bench-fillseq-omit.log"
+            /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillseq.txt" -- \
+              "$TOPLING/bin/db_bench" "${args[@]}" >"${logdir}/db_bench.log" 2>&1
+            cat "${logdir}/db_bench.log"
+            /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillseq-omit.txt" -- \
+              "$TOPLING/bin/db_bench" "${args_omit[@]}" >"${logdir}/db_bench-fillseq-omit.log" 2>&1
+            cat "${logdir}/db_bench-fillseq-omit.log"
+            record_rss fillseq
+            record_rss fillseq-omit
             record_shm fillseq
             if [ "$run_memtable" = "1" ]; then
               mt=(
-                -benchmarks=fillrandom,readrandom,readwrite
+                -benchmarks=fillrandom,readrandom
                 -item_size=0
                 -num_operations=100000000
                 -write_buffer_size=536870912
@@ -189,6 +210,27 @@ jobs:
               || { echo "bench log lacks metrics: $f" >&2; exit 1; }
           done
 
+      - name: Compute RocksDB cache_size
+        run: |
+          set -xe
+          mem_total_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+          cache_size_bytes=$(( mem_total_kb * 1024 / 2 ))
+          echo "ROCKSDB_CACHE_SIZE=$cache_size_bytes" >> "$GITHUB_ENV"
+          echo "MEM_TOTAL_BYTES=$(( mem_total_kb * 1024 ))" >> "$GITHUB_ENV"
+          echo "cache_size_bytes=$cache_size_bytes ($(numfmt --to=iec-i --suffix=B $cache_size_bytes))"
+
+      - name: Collect runner environment
+        run: |
+          set -xe
+          {
+            echo "os_pretty_name=$(grep -oP 'PRETTY_NAME="\K[^"]+' /etc/os-release || echo unknown)"
+            echo "kernel=$(uname -r)"
+            echo "cpu_model=$(lscpu | grep -oP 'Model name:\s+\K.*')"
+            echo "cpu_count=$(nproc)"
+            echo "mem_total_bytes=$MEM_TOTAL_BYTES"
+            echo "shm_size_bytes=$(df -B1 /dev/shm | awk 'NR==2{print $2}')"
+          } | tee logs/runner_env.txt
+
       - name: Run RocksDB v8.10 benches
         run: |
           set -xeo pipefail
@@ -197,31 +239,47 @@ jobs:
           ldd "$ENG/bin/db_bench" || true
           mkdir -p logs/rocksdb-v8.10
           DB_PATH=/dev/shm/db_bench_rocksdb_v810
+          LOGDIR=logs/rocksdb-v8.10
           record_shm() {
             local label="$1"
             {
               echo "apparent_bytes=$(du -sb "$DB_PATH" | awk '{print $1}')"
               echo "allocated_bytes=$(du -s -B1 "$DB_PATH" | awk '{print $1}')"
-            } | tee "logs/rocksdb-v8.10/shm_usage-${label}.txt"
+            } | tee "${LOGDIR}/shm_usage-${label}.txt"
             du -sh --apparent-size "$DB_PATH" || true
             du -sh "$DB_PATH" || true
             df -h /dev/shm
           }
+          record_rss() {
+            local label="$1"
+            local time_file="${LOGDIR}/time-${label}.txt"
+            if [ -f "$time_file" ]; then
+              local kb
+              kb=$(grep -oP 'max_rss_kb=\K\d+' "$time_file")
+              echo "max_rss_bytes=$((kb * 1024))" > "${LOGDIR}/rss_usage-${label}.txt"
+            fi
+          }
+          echo "cache_size_bytes=$ROCKSDB_CACHE_SIZE" > "${LOGDIR}/bench_settings.txt"
 
           # Pass 1: fillrandom + compact.
           rm -rf "$DB_PATH"
           mkdir -p "$DB_PATH"
           args_fr=(
               -db="$DB_PATH"
-              -num=50000000
+              -num=100000000
               -key_size=8
               -value_size=15
               -batch_size=1000
-              -benchmarks=fillrandom,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -cache_size="$ROCKSDB_CACHE_SIZE"
+              -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
               -progress_reports=false
           )
-          "$ENG/bin/db_bench" "${args_fr[@]}" 2>&1 | tee logs/rocksdb-v8.10/db_bench-fillrandom.log
-          # Lazy-load baseline reuses readseq×3 from this main pass (no extra scan).
+          /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillrandom.txt" -- \
+            "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
+          cat "${LOGDIR}/db_bench-fillrandom.log"
+          record_rss fillrandom
+          # RocksDB has no omit API; derive omit RSS from main pass
+          cp "${LOGDIR}/rss_usage-fillrandom.txt" "${LOGDIR}/rss_usage-fillrandom-omit.txt" 2>/dev/null || true
           record_shm fillrandom
           rm -rf "$DB_PATH"
 
@@ -229,25 +287,31 @@ jobs:
           mkdir -p "$DB_PATH"
           args=(
               -db="$DB_PATH"
-              -num=50000000
+              -num=100000000
               -key_size=8
               -value_size=15
               -batch_size=1000
-              -benchmarks=fillseq,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -cache_size="$ROCKSDB_CACHE_SIZE"
+              -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
               -progress_reports=false
           )
-          "$ENG/bin/db_bench" "${args[@]}" 2>&1 | tee logs/rocksdb-v8.10/db_bench.log
+          /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillseq.txt" -- \
+            "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log" 2>&1
+          cat "${LOGDIR}/db_bench.log"
+          record_rss fillseq
+          # RocksDB has no omit API; derive omit RSS from main pass
+          cp "${LOGDIR}/rss_usage-fillseq.txt" "${LOGDIR}/rss_usage-fillseq-omit.txt" 2>/dev/null || true
           record_shm fillseq
           mt=(
-            -benchmarks=fillrandom,readrandom,readwrite
+            -benchmarks=fillrandom,readrandom
             -item_size=0
             -num_operations=100000000
             -write_buffer_size=536870912
           )
           "$ENG/bin/memtablerep_bench" "${mt[@]}" -memtablerep=skiplist \
-            2>&1 | tee logs/rocksdb-v8.10/memtablerep_bench-skiplist.log
-          for f in logs/rocksdb-v8.10/db_bench*.log \
-                   logs/rocksdb-v8.10/memtablerep_bench*.log; do
+            2>&1 | tee "${LOGDIR}/memtablerep_bench-skiplist.log"
+          for f in "${LOGDIR}"/db_bench*.log \
+                   "${LOGDIR}"/memtablerep_bench*.log; do
             test -s "$f" || { echo "empty bench log: $f" >&2; exit 1; }
             grep -Eiq 'ops/sec|us/op|micros/op|Elapsed time' "$f" \
               || { echo "bench log lacks metrics: $f" >&2; exit 1; }
@@ -262,30 +326,45 @@ jobs:
           ldd "$ENG/bin/db_bench" || true
           mkdir -p logs/rocksdb-master
           DB_PATH=/dev/shm/db_bench_rocksdb_master
+          LOGDIR=logs/rocksdb-master
           record_shm() {
             local label="$1"
             {
               echo "apparent_bytes=$(du -sb "$DB_PATH" | awk '{print $1}')"
               echo "allocated_bytes=$(du -s -B1 "$DB_PATH" | awk '{print $1}')"
-            } | tee "logs/rocksdb-master/shm_usage-${label}.txt"
+            } | tee "${LOGDIR}/shm_usage-${label}.txt"
             du -sh --apparent-size "$DB_PATH" || true
             du -sh "$DB_PATH" || true
             df -h /dev/shm
           }
+          record_rss() {
+            local label="$1"
+            local time_file="${LOGDIR}/time-${label}.txt"
+            if [ -f "$time_file" ]; then
+              local kb
+              kb=$(grep -oP 'max_rss_kb=\K\d+' "$time_file")
+              echo "max_rss_bytes=$((kb * 1024))" > "${LOGDIR}/rss_usage-${label}.txt"
+            fi
+          }
+          echo "cache_size_bytes=$ROCKSDB_CACHE_SIZE" > "${LOGDIR}/bench_settings.txt"
 
           # Pass 1: fillrandom + compact.
           rm -rf "$DB_PATH"
           mkdir -p "$DB_PATH"
           args_fr=(
               -db="$DB_PATH"
-              -num=50000000
+              -num=100000000
               -key_size=8
               -value_size=15
               -batch_size=1000
-              -benchmarks=fillrandom,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -cache_size="$ROCKSDB_CACHE_SIZE"
+              -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
               -progress_reports=false
           )
-          "$ENG/bin/db_bench" "${args_fr[@]}" 2>&1 | tee logs/rocksdb-master/db_bench-fillrandom.log
+          /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillrandom.txt" -- \
+            "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
+          cat "${LOGDIR}/db_bench-fillrandom.log"
+          record_rss fillrandom
           record_shm fillrandom
           rm -rf "$DB_PATH"
 
@@ -293,25 +372,29 @@ jobs:
           mkdir -p "$DB_PATH"
           args=(
               -db="$DB_PATH"
-              -num=50000000
+              -num=100000000
               -key_size=8
               -value_size=15
               -batch_size=1000
-              -benchmarks=fillseq,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -cache_size="$ROCKSDB_CACHE_SIZE"
+              -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
               -progress_reports=false
           )
-          "$ENG/bin/db_bench" "${args[@]}" 2>&1 | tee logs/rocksdb-master/db_bench.log
+          /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillseq.txt" -- \
+            "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log" 2>&1
+          cat "${LOGDIR}/db_bench.log"
+          record_rss fillseq
           record_shm fillseq
           mt=(
-            -benchmarks=fillrandom,readrandom,readwrite
+            -benchmarks=fillrandom,readrandom
             -item_size=0
             -num_operations=100000000
             -write_buffer_size=536870912
           )
           "$ENG/bin/memtablerep_bench" "${mt[@]}" -memtablerep=skiplist \
-            2>&1 | tee logs/rocksdb-master/memtablerep_bench-skiplist.log
-          for f in logs/rocksdb-master/db_bench*.log \
-                   logs/rocksdb-master/memtablerep_bench*.log; do
+            2>&1 | tee "${LOGDIR}/memtablerep_bench-skiplist.log"
+          for f in "${LOGDIR}"/db_bench*.log \
+                   "${LOGDIR}"/memtablerep_bench*.log; do
             test -s "$f" || { echo "empty bench log: $f" >&2; exit 1; }
             grep -Eiq 'ops/sec|us/op|micros/op|Elapsed time' "$f" \
               || { echo "bench log lacks metrics: $f" >&2; exit 1; }

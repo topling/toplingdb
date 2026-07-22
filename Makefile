@@ -497,7 +497,8 @@ else
   endif
 endif
 
-WITH_CSPP_MEMTABLE ?= 1 # allow override by env or cmd line
+# allow override by env or cmd line
+WITH_CSPP_MEMTABLE ?= 1
 
 ifeq (${WITH_CSPP_MEMTABLE}${WITH_TOPLING_ROCKS},10)
   $(error "When WITH_CSPP_MEMTABLE is 1, WITH_TOPLING_ROCKS must be 1 also")

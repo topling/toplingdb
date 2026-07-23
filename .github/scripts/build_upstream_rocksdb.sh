@@ -31,6 +31,8 @@ fi
 export DEBUG_LEVEL="${DEBUG_LEVEL:-0}"
 export PORTABLE="${PORTABLE:-haswell}"
 cd "$SRC_DIR"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$SCRIPT_DIR/patch_db_bench_time.py" "$SRC_DIR/tools/db_bench_tool.cc"
 echo "Building upstream rocksdb with PORTABLE=${PORTABLE} DEBUG_LEVEL=${DEBUG_LEVEL}"
 make db_bench memtablerep_bench -j"$(nproc)" DEBUG_LEVEL="$DEBUG_LEVEL" PORTABLE="$PORTABLE"
 

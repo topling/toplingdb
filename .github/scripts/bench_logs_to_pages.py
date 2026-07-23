@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 DB_BENCH_RE = re.compile(
-    r"^(?P<name>\S+)\s*:\s*"
+    r"^(?:(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+)?"
+    r"(?P<name>\S+)\s*:\s*"
     r"(?P<micros>[\d.]+)\s+micros/op\s+"
     r"(?P<ops>\d+)\s+ops/sec\s+"
     r"(?P<seconds>[\d.]+)\s+seconds\s+"
@@ -293,17 +294,229 @@ def parse_db_bench(text: str) -> List[Dict[str, str]]:
         m = DB_BENCH_RE.match(line.strip())
         if not m:
             continue
-        rows.append(
-            {
-                "benchmark": m.group("name"),
-                "micros/op": m.group("micros"),
-                "ops/sec": m.group("ops"),
-                "seconds": m.group("seconds"),
-                "operations": m.group("operations"),
-                "extra": m.group("extra").strip(),
-            }
-        )
+        row = {
+            "benchmark": m.group("name"),
+            "micros/op": m.group("micros"),
+            "ops/sec": m.group("ops"),
+            "seconds": m.group("seconds"),
+            "operations": m.group("operations"),
+            "extra": m.group("extra").strip(),
+        }
+        ts = m.group("ts")
+        if ts:
+            row["ts"] = ts
+        rows.append(row)
     return rows
+
+
+def parse_rss_series(text: str) -> Tuple[float, int, List[Tuple[float, int]]]:
+    """Parse rss_series file -> (start_epoch, page_size, [(epoch, resident_pages)...])."""
+    start_epoch = 0.0
+    page_size = 4096
+    samples: List[Tuple[float, int]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("#"):
+            for part in line[1:].split():
+                if part.startswith("start_epoch="):
+                    start_epoch = float(part.split("=", 1)[1])
+                elif part.startswith("page_size="):
+                    page_size = int(part.split("=", 1)[1])
+            continue
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            samples.append((float(parts[0]), int(parts[1])))
+    return start_epoch, page_size, samples
+
+
+def _iso_to_epoch(ts: str) -> float:
+    """Parse ISO 8601 UTC timestamp to epoch seconds."""
+    ts = ts.rstrip("Z")
+    if "." in ts:
+        dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%f")
+    else:
+        dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S")
+    return dt.replace(tzinfo=timezone.utc).timestamp()
+
+
+_SEGMENT_COLORS = [
+    "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+    "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
+]
+
+
+def compute_bench_segments(
+    bench_rows: List[Dict[str, str]],
+    start_epoch: float,
+    total_duration: float,
+) -> List[Tuple[str, float, float, bool]]:
+    """Compute (name, rel_start_sec, rel_end_sec, estimated) for each bench item.
+
+    If rows have 'ts' fields, use them directly.  Otherwise fall back to
+    prefix-sum estimation with flush derived from gaps.
+    """
+    segments: List[Tuple[str, float, float, bool]] = []
+    has_ts = any(r.get("ts") for r in bench_rows)
+
+    if has_ts:
+        for i, row in enumerate(bench_rows):
+            ts_str = row.get("ts")
+            if not ts_str:
+                continue
+            secs = float(row.get("seconds", "0"))
+            ts_epoch = _iso_to_epoch(ts_str)
+            rel_start = ts_epoch - start_epoch
+            rel_end = rel_start + secs
+            name = row["benchmark"]
+            segments.append((name, rel_start, rel_end, False))
+        # Derive flush segment from gap between fill* end and compact start
+        fill_end = None
+        compact_start = None
+        for s in segments:
+            if s[0].startswith("fill"):
+                fill_end = s[2]
+            elif s[0] == "compact" and fill_end is not None:
+                compact_start = s[1]
+                break
+        if fill_end is not None and compact_start is not None and compact_start > fill_end:
+            flush_idx = 0
+            for j, s in enumerate(segments):
+                if s[0] == "compact":
+                    flush_idx = j
+                    break
+            segments.insert(flush_idx, ("flush", fill_end, compact_start, False))
+    else:
+        cursor = 0.0
+        for row in bench_rows:
+            name = row["benchmark"]
+            secs = float(row.get("seconds", "0"))
+            segments.append((name, cursor, cursor + secs, True))
+            cursor += secs
+        # Remaining time assigned to startup
+        if cursor < total_duration:
+            segments.insert(0, ("startup", 0, total_duration - cursor, True))
+
+    return segments
+
+
+def build_rss_svg(
+    samples: List[Tuple[float, int]],
+    page_size: int,
+    start_epoch: float,
+    segments: List[Tuple[str, float, float, bool]],
+    title: str,
+) -> str:
+    """Generate an inline SVG chart of RSS over time with benchmark segment bands."""
+    if not samples:
+        return ""
+
+    mib = page_size / (1024 * 1024)
+    xs = [t - start_epoch for t, _ in samples]
+    ys = [pages * mib for _, pages in samples]
+
+    x_max = max(xs) if xs else 1
+    y_max = max(ys) if ys else 1
+    if y_max == 0:
+        y_max = 1
+
+    margin_l, margin_r, margin_t, margin_b = 70, 20, 40, 50
+    chart_w, chart_h = 800, 300
+    svg_w = margin_l + chart_w + margin_r
+    svg_h = margin_t + chart_h + margin_b
+
+    def tx(v: float) -> float:
+        return margin_l + (v / x_max) * chart_w if x_max else margin_l
+
+    def ty(v: float) -> float:
+        return margin_t + chart_h - (v / y_max) * chart_h
+
+    parts: List[str] = []
+    parts.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {svg_w} {svg_h}" '
+        f'style="max-width:{svg_w}px;width:100%;height:auto;font-family:system-ui,sans-serif;font-size:11px">'
+    )
+    parts.append(f'<text x="{svg_w // 2}" y="18" text-anchor="middle" '
+                 f'font-size="13" font-weight="600">{html.escape(title)}</text>')
+
+    # Segment bands
+    for idx, (name, s_start, s_end, est) in enumerate(segments):
+        color = _SEGMENT_COLORS[idx % len(_SEGMENT_COLORS)]
+        sx1 = tx(max(s_start, 0))
+        sx2 = tx(min(s_end, x_max))
+        if sx2 <= sx1:
+            continue
+        parts.append(
+            f'<rect x="{sx1:.1f}" y="{margin_t}" width="{sx2 - sx1:.1f}" '
+            f'height="{chart_h}" fill="{color}" opacity="0.15"/>'
+        )
+        label = name
+        if est:
+            label += " (est.)"
+        mid_x = (sx1 + sx2) / 2
+        parts.append(
+            f'<text x="{mid_x:.1f}" y="{margin_t + chart_h + 14}" '
+            f'text-anchor="middle" font-size="9" fill="{color}" '
+            f'transform="rotate(-30 {mid_x:.1f} {margin_t + chart_h + 14})">'
+            f'{html.escape(label)}</text>'
+        )
+
+    # Axes
+    parts.append(
+        f'<line x1="{margin_l}" y1="{margin_t}" x2="{margin_l}" '
+        f'y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
+    )
+    parts.append(
+        f'<line x1="{margin_l}" y1="{margin_t + chart_h}" '
+        f'x2="{margin_l + chart_w}" y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
+    )
+
+    # Y-axis ticks
+    y_ticks = 5
+    for i in range(y_ticks + 1):
+        val = y_max * i / y_ticks
+        yp = ty(val)
+        parts.append(
+            f'<line x1="{margin_l - 4}" y1="{yp:.1f}" '
+            f'x2="{margin_l}" y2="{yp:.1f}" stroke="#666"/>'
+        )
+        parts.append(
+            f'<text x="{margin_l - 6}" y="{yp + 3:.1f}" '
+            f'text-anchor="end" font-size="10">{val:.0f}</text>'
+        )
+    parts.append(
+        f'<text x="14" y="{margin_t + chart_h // 2}" '
+        f'text-anchor="middle" font-size="11" '
+        f'transform="rotate(-90 14 {margin_t + chart_h // 2})">RSS (MiB)</text>'
+    )
+
+    # X-axis ticks
+    x_ticks = min(10, max(1, int(x_max)))
+    for i in range(x_ticks + 1):
+        val = x_max * i / x_ticks
+        xp = tx(val)
+        parts.append(
+            f'<line x1="{xp:.1f}" y1="{margin_t + chart_h}" '
+            f'x2="{xp:.1f}" y2="{margin_t + chart_h + 4}" stroke="#666"/>'
+        )
+        parts.append(
+            f'<text x="{xp:.1f}" y="{margin_t + chart_h + 38}" '
+            f'text-anchor="middle" font-size="10">{val:.0f}</text>'
+        )
+    parts.append(
+        f'<text x="{margin_l + chart_w // 2}" y="{svg_h - 2}" '
+        f'text-anchor="middle" font-size="11">Time (s)</text>'
+    )
+
+    # Data polyline
+    points = " ".join(f"{tx(x):.1f},{ty(y):.1f}" for x, y in zip(xs, ys))
+    parts.append(
+        f'<polyline points="{points}" fill="none" stroke="#1f77b4" stroke-width="1.5"/>'
+    )
+
+    parts.append("</svg>")
+    return "\n".join(parts)
 
 
 def parse_memtablerep(text: str) -> List[Dict[str, str]]:
@@ -823,6 +1036,8 @@ def emit(args: argparse.Namespace) -> None:
             "rss_usage-fillseq.txt",
             "rss_usage-fillrandom-omit.txt",
             "rss_usage-fillseq-omit.txt",
+            "rss_series-fillrandom.txt",
+            "rss_series-fillseq.txt",
             "time-fillrandom.txt",
             "time-fillseq.txt",
             "time-fillrandom-omit.txt",
@@ -917,6 +1132,43 @@ def emit(args: argparse.Namespace) -> None:
         e: engines_data.get(e, {}).get("shm_usage") or {} for e in ENGINES
     }
     shm_table = build_shm_usage_table(shm_usages)
+
+    # Build RSS-over-time SVG charts
+    rss_svg_parts: List[str] = []
+    for eng in ENGINES:
+        eng_dir = log_root / eng
+        for suite, log_name, bench_key in [
+            ("fillrandom", "db_bench-fillrandom.log", "db_bench_fillrandom"),
+            ("fillseq", "db_bench.log", "db_bench"),
+        ]:
+            series_path = eng_dir / f"rss_series-{suite}.txt"
+            if not series_path.is_file():
+                continue
+            start_epoch, page_size, samples = parse_rss_series(
+                series_path.read_text(encoding="utf-8", errors="replace")
+            )
+            if not samples:
+                continue
+            bench_rows = engines_data.get(eng, {}).get(bench_key, [])
+            total_dur = (samples[-1][0] - start_epoch) if samples else 0
+            segments = compute_bench_segments(bench_rows, start_epoch, total_dur)
+            # Add startup segment if first bench starts after process start
+            if segments and segments[0][1] > 0.5:
+                segments.insert(0, ("startup", 0, segments[0][1], False))
+            svg = build_rss_svg(
+                samples, page_size, start_epoch, segments,
+                f"{ENGINE_LABELS[eng]} — {suite} suite RSS",
+            )
+            if svg:
+                rss_svg_parts.append(svg)
+    rss_svg_section = ""
+    if rss_svg_parts:
+        rss_svg_section = (
+            '<h2>RSS over time</h2>\n'
+            '<p class="meta">RSS sampled once per second from /proc/statm. '
+            'Colored bands show benchmark segments (start time from db_bench output).</p>\n'
+            + "\n".join(rss_svg_parts)
+        )
 
     db_bench_detail_keys = [
         "benchmark",
@@ -1013,6 +1265,7 @@ def emit(args: argparse.Namespace) -> None:
   <h2>Peak RSS (memory; during db_bench)</h2>
   <p class="meta">Peak resident set size. RocksDB block cache = half physical memory ({html.escape(format_iec(cache_size_bytes) if cache_size_bytes else 'n/a')}). Ratio = engine / v8.10; {_hl('<1 = less memory', 'faster')}, {_hl('>1 = more memory', 'slower')}. RocksDB omit columns are {_hl('derived-from-main', 'slower')} (no separate omit pass).</p>
   {rss_table}
+  {rss_svg_section}
   <h2>Comparison: db_bench fillrandom suite (perf)</h2>
   <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom×3. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / Topling*: {_hl('>1 = that Topling variant faster', 'faster')}. Values show ops/sec.</p>
   {fr_compare}

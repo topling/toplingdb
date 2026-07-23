@@ -424,6 +424,10 @@ DEFINE_double(read_random_exp_range, 0.0,
 
 DEFINE_bool(histogram, false, "Print histogram of operation timings");
 
+DEFINE_bool(report_bench_start_time, false,
+            "Prefix each benchmark result line with the ISO 8601 UTC start "
+            "time of that benchmark (microsecond precision)");
+
 DEFINE_bool(confidence_interval_only, false,
             "Print 95% confidence interval upper and lower bounds only for "
             "aggregate stats.");
@@ -2476,6 +2480,16 @@ class Stats {
     AppendWithSpace(&extra, message_);
     double throughput = (double)done_ / elapsed;
 
+    if (FLAGS_report_bench_start_time) {
+      time_t secs = static_cast<time_t>(start_ / 1000000);
+      int usecs = static_cast<int>(start_ % 1000000);
+      struct tm t;
+      gmtime_r(&secs, &t);
+      fprintf(stdout,
+              "%04d-%02d-%02dT%02d:%02d:%02d.%06dZ ",
+              t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+              t.tm_hour, t.tm_min, t.tm_sec, usecs);
+    }
     fprintf(stdout,
             "%-12s : %11.6f micros/op %ld ops/sec %.3f seconds %" PRIu64
             " operations;%s%s\n",

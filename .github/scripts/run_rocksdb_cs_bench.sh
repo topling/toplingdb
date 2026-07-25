@@ -33,6 +33,26 @@ export LD_LIBRARY_PATH="$PREFIX/lib:${LD_LIBRARY_PATH:-}"
 
 BROKER_PID=""
 cleanup() {
+  local ec=$?
+  if [[ "$ec" -ne 0 ]]; then
+    echo "FAIL: run_rocksdb_cs_bench.sh exiting ec=${ec}; dumping diagnostics" >&2
+    ls -la "$LOGDIR" >&2 || true
+    for f in "$LOGDIR"/db_bench*.log "$LOGDIR"/remote_compact_broker.log \
+             "$LOGDIR"/time-*.txt "$LOGDIR"/compaction_service_stat.txt; do
+      if [[ -f "$f" ]]; then
+        echo "----- ${f} -----" >&2
+        cat "$f" >&2 || true
+      fi
+    done
+    echo "----- spool ${SPOOL_DIR} -----" >&2
+    find "$SPOOL_DIR" -type f -print 2>/dev/null | head -80 >&2 || true
+    for f in "$SPOOL_DIR"/*/*/state "$SPOOL_DIR"/*/*/error.txt; do
+      if [[ -f "$f" ]]; then
+        echo "----- ${f} -----" >&2
+        cat "$f" >&2 || true
+      fi
+    done
+  fi
   if [[ -n "${BROKER_PID}" ]] && kill -0 "$BROKER_PID" 2>/dev/null; then
     kill "$BROKER_PID" 2>/dev/null || true
     wait "$BROKER_PID" 2>/dev/null || true
@@ -60,16 +80,21 @@ echo "remote_compact_broker ready pid=${BROKER_PID} spool=${SPOOL_DIR}"
 run_under_cpu_quota() {
   local series="$1" log="$2" time_file="$3"
   shift 3
+  # stdbuf: line-buffer child output so OOM/abort still leaves a readable log
+  # when sample_rss redirects stdout/stderr to a file.
+  local -a runner=(stdbuf -oL -eL)
   if [[ "${CI:-0}" == "1" ]]; then
     python3 "$SCRIPT_DIR/sample_rss.py" \
       --series "$series" --log "$log" -- \
       /usr/bin/time -f 'max_rss_kb=%M' -o "$time_file" -- \
-      sudo systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- "$@"
+      sudo systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
+      "${runner[@]}" "$@"
   else
     python3 "$SCRIPT_DIR/sample_rss.py" \
       --series "$series" --log "$log" -- \
       /usr/bin/time -f 'max_rss_kb=%M' -o "$time_file" -- \
-      systemd-run --user --scope -p "CPUQuota=${CPU_QUOTA}" -- "$@"
+      systemd-run --user --scope -p "CPUQuota=${CPU_QUOTA}" -- \
+      "${runner[@]}" "$@"
   fi
 }
 
@@ -110,12 +135,25 @@ run_suite() {
     -benchmarks="${suite},flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom"
     -progress_reports=false -report_bench_start_time
   )
+  echo "=== starting suite=${suite} NUM=${NUM} ==="
+  set +e
   run_under_cpu_quota \
     "${LOGDIR}/rss_series-${suite}.txt" \
     "${LOGDIR}/${log_name}" \
     "${LOGDIR}/time-${suite}.txt" \
     "$PREFIX/bin/db_bench" "${args[@]}"
-  cat "${LOGDIR}/${log_name}"
+  local rc=$?
+  set -e
+  echo "=== suite=${suite} rc=${rc} log=${LOGDIR}/${log_name} ==="
+  if [[ -f "${LOGDIR}/${log_name}" ]]; then
+    cat "${LOGDIR}/${log_name}"
+  else
+    echo "FAIL: missing bench log ${LOGDIR}/${log_name}" >&2
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    echo "FAIL: db_bench suite=${suite} exited ${rc}" >&2
+    return "$rc"
+  fi
   record_rss "$suite"
   record_shm "$suite"
 }
@@ -124,9 +162,13 @@ run_suite fillrandom db_bench-fillrandom.log
 rm -rf "$DB_PATH"
 run_suite fillseq db_bench.log
 
-# Evidence: at least one DONE job in spool
-done_count=$(find "$SPOOL_DIR" -name state -print0 2>/dev/null \
-  | xargs -0 grep -l '^DONE$' 2>/dev/null | wc -l || echo 0)
+# Evidence: at least one DONE job in spool (avoid xargs+grep pipefail pitfalls)
+done_count=0
+while IFS= read -r -d '' st; do
+  if [[ "$(cat "$st" 2>/dev/null || true)" == "DONE" ]]; then
+    done_count=$((done_count + 1))
+  fi
+done < <(find "$SPOOL_DIR" -name state -print0 2>/dev/null || true)
 echo "compaction_service done_jobs=${done_count}"
 echo "done_jobs=${done_count}" >"${LOGDIR}/compaction_service_stat.txt"
 if [[ "${done_count}" -le 0 ]]; then

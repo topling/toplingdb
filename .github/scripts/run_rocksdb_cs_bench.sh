@@ -119,6 +119,12 @@ record_shm() {
   } | tee "${LOGDIR}/shm_usage-${label}.txt"
 }
 
+save_db_log() {
+  local label="$1"
+  test -f "$DB_PATH/LOG" || { echo "FAIL: missing $DB_PATH/LOG after suite=${label}" >&2; return 1; }
+  cp -f "$DB_PATH/LOG" "${LOGDIR}/LOG-${label}"
+}
+
 echo "cache_size_bytes=$CACHE_SIZE" >"${LOGDIR}/bench_settings.txt"
 echo "cpu_quota=$CPU_QUOTA" >>"${LOGDIR}/bench_settings.txt"
 echo "compact_mode=compaction_service_spool" >>"${LOGDIR}/bench_settings.txt"
@@ -159,6 +165,7 @@ run_suite() {
   fi
   record_rss "$suite"
   record_shm "$suite"
+  save_db_log "$suite"
 }
 
 run_suite fillrandom db_bench-fillrandom.log

@@ -196,6 +196,14 @@ record_shm() {
   df -h /dev/shm
 }
 
+# Archive RocksDB INFO LOG before DB_PATH is deleted (per db_bench suite).
+save_db_log() {
+  local logdir="$1"
+  local label="$2"
+  test -f "$DB_PATH/LOG" || { echo "FAIL: missing $DB_PATH/LOG after suite=${label}" >&2; return 1; }
+  cp -f "$DB_PATH/LOG" "${logdir}/LOG-${label}"
+}
+
 verify_dcompact_evidence() {
   local logdir="$1"
   local stat_json
@@ -257,6 +265,7 @@ run_engine_suite() {
   cat "${logdir}/db_bench-fillrandom.log"
   record_rss "$logdir" fillrandom
   record_shm "$logdir" fillrandom
+  save_db_log "$logdir" fillrandom
   rm -rf "$DB_PATH"
 
   prepare_db
@@ -279,6 +288,7 @@ run_engine_suite() {
   cat "${logdir}/db_bench.log"
   record_rss "$logdir" fillseq
   record_shm "$logdir" fillseq
+  save_db_log "$logdir" fillseq
 
   if [[ "${SKIP_VERIFY:-0}" != "1" ]]; then
     verify_dcompact_evidence "$logdir"

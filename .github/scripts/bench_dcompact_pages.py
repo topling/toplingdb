@@ -800,6 +800,9 @@ def emit(args: argparse.Namespace) -> None:
             p = src / name
             if p.is_file():
                 shutil.copy2(p, eng_raw / name)
+        for p in sorted(src.glob("LOG-*")):
+            if p.is_file():
+                shutil.copy2(p, eng_raw / p.name)
         if args.engine_meta_root:
             src_meta = Path(args.engine_meta_root) / eng / "engine-meta.json"
             dst_meta = eng_raw / "engine-meta.json"
@@ -929,11 +932,18 @@ def emit(args: argparse.Namespace) -> None:
             _table(db_bench_detail_keys, data["db_bench"], db_bench_detail_keys)
         )
 
-    raw_links = " | ".join(
-        f'<a href="raw/{eng}/db_bench.log">{html.escape(ENGINE_LABELS[eng])} db_bench</a>'
-        for eng in ENGINES
-        if (raw_dir / eng / "db_bench.log").is_file()
-    )
+    raw_link_parts: List[str] = []
+    for eng in ENGINES:
+        label = html.escape(ENGINE_LABELS[eng])
+        if (raw_dir / eng / "db_bench.log").is_file():
+            raw_link_parts.append(
+                f'<a href="raw/{eng}/db_bench.log">{label} db_bench</a>'
+            )
+        for p in sorted((raw_dir / eng).glob("LOG-*")):
+            raw_link_parts.append(
+                f'<a href="raw/{eng}/{html.escape(p.name)}">{label} {html.escape(p.name)}</a>'
+            )
+    raw_links = " | ".join(raw_link_parts)
 
     runner_html = _build_runner_section(runner_env, cache_size_bytes, dataset_bytes, dataset_estimated)
     dcompact_notes = _build_dcompact_bench_notes(runner_env)

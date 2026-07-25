@@ -141,7 +141,7 @@ run_suite() {
     -cache_size="$CACHE_SIZE"
     -write_buffer_size="$WRITE_BUFFER_SIZE"
     -compaction_spool_dir="$SPOOL_DIR"
-    -benchmarks="${suite},flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom"
+    -benchmarks="${suite},flush,compact,readseq,readseq,readseq,readrandom"
     -progress_reports=false -report_bench_start_time
   )
   echo "=== starting suite=${suite} NUM=${NUM} ==="

@@ -252,7 +252,7 @@ run_engine_suite() {
     -key_size=8
     -value_size=15
     -batch_size=1000
-    -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+    -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
     -enable_zero_copy
     -progress_reports=false
     -report_bench_start_time
@@ -275,7 +275,7 @@ run_engine_suite() {
     -key_size=8
     -value_size=15
     -batch_size=1000
-    -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+    -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
     -enable_zero_copy
     -progress_reports=false
     -report_bench_start_time

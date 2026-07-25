@@ -137,7 +137,7 @@ jobs:
                 -key_size=8
                 -value_size=15
                 -batch_size=1000
-                -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+                -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
                 -enable_zero_copy
                 -progress_reports=false
             )
@@ -172,7 +172,7 @@ jobs:
                 -key_size=8
                 -value_size=15
                 -batch_size=1000
-                -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+                -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
                 -enable_zero_copy
                 -progress_reports=false
             )
@@ -271,7 +271,7 @@ jobs:
               -value_size=15
               -batch_size=1000
               -cache_size="$ROCKSDB_CACHE_SIZE"
-              -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillrandom.txt" -- \
@@ -291,7 +291,7 @@ jobs:
               -value_size=15
               -batch_size=1000
               -cache_size="$ROCKSDB_CACHE_SIZE"
-              -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillseq.txt" -- \
@@ -356,7 +356,7 @@ jobs:
               -value_size=15
               -batch_size=1000
               -cache_size="$ROCKSDB_CACHE_SIZE"
-              -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillrandom.txt" -- \
@@ -375,7 +375,7 @@ jobs:
               -value_size=15
               -batch_size=1000
               -cache_size="$ROCKSDB_CACHE_SIZE"
-              -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom,readrandom,readrandom
+              -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillseq.txt" -- \

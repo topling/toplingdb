@@ -1319,7 +1319,7 @@ def emit(args: argparse.Namespace) -> None:
   {rss_table}
   {rss_svg_section}
   <h2>Comparison: db_bench fillrandom suite (perf)</h2>
-  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom×3. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / Topling*: {_hl('>1 = that Topling variant faster', 'faster')}. Values show ops/sec.</p>
+  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / Topling*: {_hl('>1 = that Topling variant faster', 'faster')}. Values show ops/sec.</p>
   {fr_compare}
   <h2>Comparison: db_bench fillseq suite (perf)</h2>
   <p class="meta">Same as fillrandom. Watch {_hl('compact / readseq / readrandom', 'slower')} cost for minDictZip=10 vs {_hl('space savings', 'faster')} above.</p>

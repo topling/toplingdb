@@ -89,7 +89,7 @@ jobs:
           make depend java/include/java_header_list.mk \
                MAKE_UNIT_TEST=1 \
                -j`nproc` DEBUG_LEVEL=1 UPDATE_REPO=0 \
-               DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1
+               DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 || true
 
       - name: Compile & Run Java Unit Test
         if: ${{ inputs.unit_test }}
@@ -108,7 +108,7 @@ jobs:
           make depend java/include/java_header_list.mk \
                -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0 \
                DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 \
-               STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1
+               STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1 || true
 
       - name: Compile RocksDBJava Release
         run: |

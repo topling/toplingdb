@@ -14,14 +14,14 @@ on:
         required: true
         type: string
       num:
-        description: db_bench -num (default 20000000; override after local extrapolation)
+        description: db_bench -num (default 100000000)
         required: false
-        default: "20000000"
+        default: "100000000"
         type: string
       cpu_quota:
-        description: Write-side systemd CPUQuota (default 25%)
+        description: Write-side systemd CPUQuota (default 50%)
         required: false
-        default: "25%"
+        default: "50%"
         type: string
 
 # Must match plain run — serialize gh-pages pushes.

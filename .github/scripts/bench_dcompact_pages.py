@@ -296,15 +296,18 @@ def parse_db_bench(text: str) -> List[Dict[str, str]]:
     return rows
 
 
-def parse_rss_series(text: str) -> Tuple[float, int, List[Tuple[float, int]]]:
-    """Parse statm/rss series -> (start_epoch, page_size, [(epoch, resident_pages)...]).
+def parse_rss_series(
+    text: str,
+) -> Tuple[float, int, List[Tuple[float, int, int]]]:
+    """Parse statm/rss series -> (start_epoch, page_size, [(epoch, rss, shared)...]).
 
     New format: <epoch> <size> <resident> <shared> <text> <lib> <data> <dt>
-    Legacy:     <epoch> <resident>
+    Legacy:     <epoch> <resident>  (shared treated as 0)
+    Pages are converted by the caller; anony = rss - shared.
     """
     start_epoch = 0.0
     page_size = 4096
-    samples: List[Tuple[float, int]] = []
+    samples: List[Tuple[float, int, int]] = []
     for line in text.splitlines():
         line = line.strip()
         if line.startswith("#"):
@@ -317,11 +320,14 @@ def parse_rss_series(text: str) -> Tuple[float, int, List[Tuple[float, int]]]:
         if not line:
             continue
         parts = line.split()
-        if len(parts) >= 3:
-            # full statm after epoch: resident is field 2 (1-based) -> parts[2]
-            samples.append((float(parts[0]), int(parts[2])))
+        if len(parts) >= 4:
+            samples.append((float(parts[0]), int(parts[2]), int(parts[3])))
+        elif len(parts) == 3:
+            # epoch size resident (shared missing)
+            samples.append((float(parts[0]), int(parts[2]), 0))
         elif len(parts) >= 2:
-            samples.append((float(parts[0]), int(parts[1])))
+            # legacy: epoch resident
+            samples.append((float(parts[0]), int(parts[1]), 0))
     return start_epoch, page_size, samples
 
 
@@ -384,22 +390,24 @@ def compute_bench_segments(
 
 
 def build_rss_svg(
-    samples: List[Tuple[float, int]],
+    samples: List[Tuple[float, int, int]],
     page_size: int,
     start_epoch: float,
     segments: List[Tuple[str, float, float, bool]],
     title: str,
 ) -> str:
-    """Generate an inline SVG chart of RSS over time with benchmark segment bands."""
+    """SVG: rss/shared/anony(=rss-shared) over time with benchmark segment bands."""
     if not samples:
         return ""
 
     mib = page_size / (1024 * 1024)
-    xs = [t - start_epoch for t, _ in samples]
-    ys = [pages * mib for _, pages in samples]
+    xs = [t - start_epoch for t, _, _ in samples]
+    ys_rss = [res * mib for _, res, _ in samples]
+    ys_shared = [shr * mib for _, _, shr in samples]
+    ys_anony = [max(0, res - shr) * mib for _, res, shr in samples]
 
     x_max = max(xs) if xs else 1
-    y_max = max(ys) if ys else 1
+    y_max = max(ys_rss + ys_shared + ys_anony) if samples else 1
     if y_max == 0:
         y_max = 1
 
@@ -467,7 +475,7 @@ def build_rss_svg(
     parts.append(
         f'<text x="14" y="{margin_t + chart_h // 2}" '
         f'text-anchor="middle" font-size="11" '
-        f'transform="rotate(-90 14 {margin_t + chart_h // 2})">RSS (MiB)</text>'
+        f'transform="rotate(-90 14 {margin_t + chart_h // 2})">MiB</text>'
     )
 
     x_ticks = min(10, max(1, int(x_max)))
@@ -487,10 +495,28 @@ def build_rss_svg(
         f'text-anchor="middle" font-size="11">Time (s)</text>'
     )
 
-    points = " ".join(f"{tx(x):.1f},{ty(y):.1f}" for x, y in zip(xs, ys))
-    parts.append(
-        f'<polyline points="{points}" fill="none" stroke="#1f77b4" stroke-width="1.5"/>'
+    series = (
+        ("rss", ys_rss, "#1558a8"),
+        ("shared", ys_shared, "#258825"),
+        ("anony", ys_anony, "#c11618"),
     )
+    for _, ys, color in series:
+        points = " ".join(f"{tx(x):.1f},{ty(y):.1f}" for x, y in zip(xs, ys))
+        parts.append(
+            f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="1.5"/>'
+        )
+    lx = margin_l + chart_w - 140
+    ly = margin_t + 8
+    for i, (label, _, color) in enumerate(series):
+        y = ly + i * 14
+        parts.append(
+            f'<line x1="{lx}" y1="{y}" x2="{lx + 18}" y2="{y}" '
+            f'stroke="{color}" stroke-width="2"/>'
+        )
+        parts.append(
+            f'<text x="{lx + 22}" y="{y + 3}" font-size="10" fill="#333">'
+            f'{label}</text>'
+        )
 
     parts.append("</svg>")
     return "\n".join(parts)
@@ -893,7 +919,14 @@ def emit(args: argparse.Namespace) -> None:
     if rss_svg_parts:
         rss_svg_section = (
             '<h2>RSS over time</h2>\n'
-            '<p class="meta">statm sampled once per second (/proc/statm); plot uses resident pages. '
+            '<p class="meta">statm sampled once per second (/proc/statm): '
+            'rss=resident, '
+            '<span style="color:#258825;font-weight:600">shared</span>, '
+            '<span style="color:#c11618;font-weight:600">anony</span>=rss−shared. '
+            '<span style="color:#258825;font-weight:600">Shared</span> is mostly read-only '
+            '(cheap; OS prefers reclaiming these, no swap needed); '
+            '<span style="color:#c11618;font-weight:600">anony</span> is mostly read-write '
+            '(costly, needs swap). '
             'Colored bands show benchmark segments (start time from db_bench output).</p>\n'
             + "\n".join(rss_svg_parts)
         )

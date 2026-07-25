@@ -160,6 +160,14 @@ jobs:
           export SPOOL_DIR=/dev/shm/rocksdb-cs-spool-master
           .github/scripts/run_rocksdb_cs_bench.sh
 
+      - name: Upload DB INFO LOGs (Actions artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-info-logs-${{ env.VARIANT }}
+          path: logs/*/LOG-*
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Emit pages fragment
         run: |
           set -xe
@@ -168,6 +176,7 @@ jobs:
             --run-id "$GITHUB_RUN_ID" \
             --log-root logs \
             --engine-meta-root "$RUN_PREFIX" \
+            --actions-run-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             --out _pages
 
       - name: Checkout gh-pages

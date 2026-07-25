@@ -826,9 +826,6 @@ def emit(args: argparse.Namespace) -> None:
             p = src / name
             if p.is_file():
                 shutil.copy2(p, eng_raw / name)
-        for p in sorted(src.glob("LOG-*")):
-            if p.is_file():
-                shutil.copy2(p, eng_raw / p.name)
         if args.engine_meta_root:
             src_meta = Path(args.engine_meta_root) / eng / "engine-meta.json"
             dst_meta = eng_raw / "engine-meta.json"
@@ -972,10 +969,25 @@ def emit(args: argparse.Namespace) -> None:
             raw_link_parts.append(
                 f'<a href="raw/{eng}/db_bench.log">{label} db_bench</a>'
             )
-        for p in sorted((raw_dir / eng).glob("LOG-*")):
-            raw_link_parts.append(
-                f'<a href="raw/{eng}/{html.escape(p.name)}">{label} {html.escape(p.name)}</a>'
-            )
+    actions_run_url = getattr(args, "actions_run_url", None) or ""
+    log_artifact_names: List[str] = []
+    for eng in ENGINES:
+        label = ENGINE_LABELS[eng]
+        for p in sorted((log_root / eng).glob("LOG-*")):
+            if p.is_file():
+                log_artifact_names.append(f"{label} {p.name}")
+    if log_artifact_names and actions_run_url:
+        names = ", ".join(html.escape(n) for n in log_artifact_names)
+        raw_link_parts.append(
+            f'<a href="{html.escape(actions_run_url)}#artifacts">'
+            f"DB INFO LOGs (Actions artifact)</a>"
+            f'<span class="meta"> — {names}</span>'
+        )
+    elif log_artifact_names and not actions_run_url:
+        raise SystemExit(
+            "LOG-* present under --log-root but --actions-run-url was not provided; "
+            "refusing to emit pages without an external link (LOGs must not go into gh-pages)"
+        )
     raw_links = " | ".join(raw_link_parts)
 
     runner_html = _build_runner_section(runner_env, cache_size_bytes, dataset_bytes, dataset_estimated)
@@ -1230,6 +1242,12 @@ def main() -> None:
         "--engine-meta-root",
         default=None,
         help="Optional prefix containing <engine>/engine-meta.json (build artifact)",
+    )
+    p_emit.add_argument(
+        "--actions-run-url",
+        default=None,
+        help="GitHub Actions run URL for linking DB INFO LOGs (Actions artifact); "
+        "required when LOG-* files exist under --log-root",
     )
     p_emit.add_argument("--out", required=True)
     p_emit.set_defaults(func=emit)

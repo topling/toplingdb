@@ -408,6 +408,8 @@ def build_rss_svg(
 
     x_max = max(xs) if xs else 1
     y_max = max(ys_rss + ys_shared + ys_anony) if samples else 1
+    if x_max == 0:
+        x_max = 1
     if y_max == 0:
         y_max = 1
 
@@ -423,9 +425,12 @@ def build_rss_svg(
         return margin_t + chart_h - (v / y_max) * chart_h
 
     parts: List[str] = []
+    parts.append('<div class="rss-chart-wrap">')
     parts.append(
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {svg_w} {svg_h}" '
-        f'style="max-width:{svg_w}px;width:100%;height:auto;font-family:system-ui,sans-serif;font-size:11px">'
+        f'<svg class="rss-chart" xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {svg_w} {svg_h}" overflow="visible" '
+        f'style="max-width:{svg_w}px;width:100%;height:auto;'
+        f'font-family:system-ui,sans-serif;font-size:11px;cursor:crosshair">'
     )
     parts.append(f'<text x="{svg_w // 2}" y="18" text-anchor="middle" '
                  f'font-size="13" font-weight="600">{html.escape(title)}</text>')
@@ -500,7 +505,7 @@ def build_rss_svg(
         ("shared", ys_shared, "#258825"),
         ("anony", ys_anony, "#c11618"),
     )
-    for _, ys, color in series:
+    for label, ys, color in series:
         points = " ".join(f"{tx(x):.1f},{ty(y):.1f}" for x, y in zip(xs, ys))
         parts.append(
             f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="1.5"/>'
@@ -518,7 +523,39 @@ def build_rss_svg(
             f'{label}</text>'
         )
 
+    parts.append(
+        f'<g class="rss-crosshair" style="display:none">'
+        f'<line class="rss-vline" y1="{margin_t}" y2="{margin_t + chart_h}" '
+        f'stroke="#555" stroke-width="1" stroke-dasharray="4 3"/>'
+        f'<g class="rss-marks"></g>'
+        f"</g>"
+    )
+    parts.append(
+        f'<rect class="rss-hit" x="{margin_l}" y="{margin_t}" '
+        f'width="{chart_w}" height="{chart_h}" fill="transparent"/>'
+    )
     parts.append("</svg>")
+    chart_data = {
+        "xs": [round(v, 3) for v in xs],
+        "series": [
+            {"name": label, "ys": [round(v, 2) for v in ys], "color": color}
+            for label, ys, color in series
+        ],
+        "layout": {
+            "ml": margin_l,
+            "mt": margin_t,
+            "cw": chart_w,
+            "ch": chart_h,
+            "xMax": round(x_max, 3),
+            "yMax": round(y_max, 3),
+        },
+    }
+    parts.append(
+        '<script type="application/json" class="rss-chart-data">'
+        + json.dumps(chart_data, separators=(",", ":"))
+        + "</script>"
+    )
+    parts.append("</div>")
     return "\n".join(parts)
 
 
@@ -541,6 +578,93 @@ def _table(headers: List[str], rows: List[Dict[str, str]], keys: List[str]) -> s
     )
 
 
+_RSS_CHART_JS = r"""
+<script>
+(function () {
+  function nearestIdx(xs, x) {
+    var lo = 0, hi = xs.length - 1;
+    if (x <= xs[0]) return 0;
+    if (x >= xs[hi]) return hi;
+    while (lo < hi - 1) {
+      var mid = (lo + hi) >> 1;
+      if (xs[mid] <= x) lo = mid; else hi = mid;
+    }
+    return (x - xs[lo] <= xs[hi] - x) ? lo : hi;
+  }
+  function initWrap(wrap) {
+    var svg = wrap.querySelector("svg.rss-chart");
+    var dataEl = wrap.querySelector(".rss-chart-data");
+    if (!svg || !dataEl) return;
+    var data = JSON.parse(dataEl.textContent);
+    var xs = data.xs, series = data.series, L = data.layout;
+    var hit = svg.querySelector(".rss-hit");
+    var ch = svg.querySelector(".rss-crosshair");
+    var vline = svg.querySelector(".rss-vline");
+    var marks = svg.querySelector(".rss-marks");
+    if (!hit || !ch || !vline || !marks) return;
+    function hide() { ch.style.display = "none"; }
+    function show(ev) {
+      var ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      var pt = svg.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      var p = pt.matrixTransform(ctm.inverse());
+      if (p.x < L.ml || p.x > L.ml + L.cw || p.y < L.mt || p.y > L.mt + L.ch) {
+        hide(); return;
+      }
+      var xVal = L.xMax ? ((p.x - L.ml) / L.cw) * L.xMax : 0;
+      var i = nearestIdx(xs, xVal);
+      var xp = L.xMax ? L.ml + (xs[i] / L.xMax) * L.cw : L.ml;
+      vline.setAttribute("x1", xp.toFixed(1));
+      vline.setAttribute("x2", xp.toFixed(1));
+      while (marks.firstChild) marks.removeChild(marks.firstChild);
+      var NS = "http://www.w3.org/2000/svg";
+      series.forEach(function (s, si) {
+        var y = s.ys[i];
+        var yp = L.mt + L.ch - (y / L.yMax) * L.ch;
+        var dot = document.createElementNS(NS, "circle");
+        dot.setAttribute("cx", xp.toFixed(1));
+        dot.setAttribute("cy", yp.toFixed(1));
+        dot.setAttribute("r", "3.5");
+        dot.setAttribute("fill", s.color);
+        marks.appendChild(dot);
+        var tip = s.name + " (" + xs[i].toFixed(1) + "s, " + y.toFixed(1) + ")";
+        var tipW = Math.max(72, 6.4 * tip.length + 10);
+        var tipH = 16;
+        var tipX = Math.min(Math.max(xp + 8, L.ml), L.ml + L.cw - tipW);
+        var tipY = yp - tipH - 6 - si * (tipH + 2);
+        if (tipY < L.mt) tipY = yp + 8 + si * (tipH + 2);
+        var rect = document.createElementNS(NS, "rect");
+        rect.setAttribute("x", tipX.toFixed(1));
+        rect.setAttribute("y", tipY.toFixed(1));
+        rect.setAttribute("width", tipW.toFixed(1));
+        rect.setAttribute("height", tipH.toFixed(1));
+        rect.setAttribute("rx", "3");
+        rect.setAttribute("fill", "#fff");
+        rect.setAttribute("stroke", s.color);
+        rect.setAttribute("stroke-width", "1");
+        rect.setAttribute("opacity", "0.95");
+        marks.appendChild(rect);
+        var text = document.createElementNS(NS, "text");
+        text.setAttribute("x", (tipX + tipW / 2).toFixed(1));
+        text.setAttribute("y", (tipY + 12).toFixed(1));
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("font-size", "10");
+        text.setAttribute("fill", "#222");
+        text.textContent = tip;
+        marks.appendChild(text);
+      });
+      ch.style.display = "";
+    }
+    hit.addEventListener("mousemove", show);
+    hit.addEventListener("mouseleave", hide);
+  }
+  document.querySelectorAll(".rss-chart-wrap").forEach(initWrap);
+})();
+</script>
+"""
+
+
 def _page(title: str, body: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -558,10 +682,12 @@ def _page(title: str, body: str) -> str:
     .meta {{ color: #555; font-size: 0.9rem; }}
     .faster {{ color: #0a7a28; font-weight: 600; }}
     .slower {{ color: #a30d0d; }}
+    .rss-chart-wrap {{ margin: 0.75rem 0 1.25rem; }}
   </style>
 </head>
 <body>
 {body}
+{_RSS_CHART_JS}
 </body>
 </html>
 """

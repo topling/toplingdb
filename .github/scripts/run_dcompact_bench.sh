@@ -14,13 +14,20 @@
 #   NUM                 db_bench -num (default 1000000 local; CI overrides)
 #   WRITE_BUFFER_SIZE   bytes; if set, rewrite yaml temp copy write_buffer_size
 #   LOGDIR_BASE         Parent of per-engine log dirs (default: logs)
-#   CPU_QUOTA           systemd CPUQuota (default 25%)
+#   CPU_QUOTA           write-side (db_bench) systemd CPUQuota (default 25%)
+#   WORKER_CPU_QUOTA    dcompact_worker systemd CPUQuota (default 350% = 3.5 CPUs)
 #   WORKER_PORT         dcompact_worker listen port (default 8080)
 #   MAX_PARALLEL_COMPACTIONS  (default 4)
 #   CI                  Set to 1 for GitHub Actions (sudo systemd-run --uid=...)
 #   SKIP_VERIFY         Set to 1 to skip post-run evidence checks
 #   ENGINES             Space-separated: "topling" and/or "topling-dictzip10"
 #                       (default: both)
+#
+# Runtime yaml grafts from CPU quotas (temp copy only):
+#   max_level1_subcompactions     = min(7,  ceil(db_cpu))
+#   max_background_flushes        = 1
+#   max_background_compactions    = min(13, ceil(worker_cpu))
+# where db_cpu/worker_cpu are CPUQuota percents / 100 (CI: 0.5 / 3.5).
 set -euo pipefail
 
 PREFIX="${PREFIX:?PREFIX (Topling install root) required}"
@@ -28,6 +35,7 @@ YAML="${YAML:-$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_ci.yaml}"
 NUM="${NUM:-1000000}"
 LOGDIR_BASE="${LOGDIR_BASE:-logs}"
 CPU_QUOTA="${CPU_QUOTA:-25%}"
+WORKER_CPU_QUOTA="${WORKER_CPU_QUOTA:-350%}"
 # DB path must match yaml databases.*.path. hoster_root=/dev/shm — NEVER rm -rf hoster.
 DB_PATH="${DB_PATH:-/dev/shm/db_bench_enterprise}"
 WORKER_PORT="${WORKER_PORT:-8080}"
@@ -96,6 +104,14 @@ export LD_LIBRARY_PATH="$PREFIX/lib:${LD_LIBRARY_PATH:-}"
 export TOPLINGDB_GetContext_sampling="${TOPLINGDB_GetContext_sampling:-kNone}"
 export ROCKSDB_KICK_OUT_OPTIONS_FILE="${ROCKSDB_KICK_OUT_OPTIONS_FILE:-1}"
 
+# Rewrite max_* thread knobs from CPU_QUOTA / WORKER_CPU_QUOTA.
+graft_yaml_cpu_knobs() {
+  local yaml_path="$1"
+  # stderr logs only — make_yaml_for_engine captures stdout as the yaml path.
+  python3 "$SCRIPT_DIR/graft_yaml_cpu_knobs.py" \
+    "$yaml_path" "$CPU_QUOTA" "$WORKER_CPU_QUOTA"
+}
+
 make_yaml_for_engine() {
   local eng="$1"
   local out="$TMP_YAML_DIR/${eng}.yaml"
@@ -107,6 +123,7 @@ make_yaml_for_engine() {
   fi
   # Keep yaml http_workers in sync with WORKER_PORT (CI yaml defaults to 8080).
   sed -i "s|http://127\\.0\\.0\\.1:[0-9]\\+|http://127.0.0.1:${WORKER_PORT}|g" "$out"
+  graft_yaml_cpu_knobs "$out"
   if [[ "$eng" == "topling-dictzip10" ]]; then
     sed -i 's/^\([[:space:]]*minDictZipValueSize:[[:space:]]*\)3000/\110/' "$out"
     grep -E 'minDictZipValueSize:[[:space:]]*10$' "$out" >/dev/null
@@ -125,9 +142,18 @@ start_worker() {
 
   mkdir -p "$(dirname "$WORKER_LOG")"
   : >"$WORKER_LOG"
-  "$WORKER_BIN" -D "listening_ports=${WORKER_PORT}" \
-    -D "document_root=${WORKER_DB_ROOT}" \
-    >>"$WORKER_LOG" 2>&1 &
+  # Same cgroup style as write-side db_bench; default 350% = 3.5 CPUs.
+  if [[ "${CI:-0}" == "1" ]]; then
+    sudo systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${WORKER_CPU_QUOTA}" -- \
+      "$WORKER_BIN" -D "listening_ports=${WORKER_PORT}" \
+      -D "document_root=${WORKER_DB_ROOT}" \
+      >>"$WORKER_LOG" 2>&1 &
+  else
+    systemd-run --user --scope -p "CPUQuota=${WORKER_CPU_QUOTA}" -- \
+      "$WORKER_BIN" -D "listening_ports=${WORKER_PORT}" \
+      -D "document_root=${WORKER_DB_ROOT}" \
+      >>"$WORKER_LOG" 2>&1 &
+  fi
   WORKER_PID=$!
 
   local i
@@ -135,7 +161,7 @@ start_worker() {
     # Prefer /stat: some builds have no /probe (404). Do not use curl -f.
     if curl -sS -o /dev/null -w '%{http_code}' \
          "http://127.0.0.1:${WORKER_PORT}/stat?html=0" 2>/dev/null | grep -q '^200$'; then
-      echo "dcompact_worker ready on :${WORKER_PORT} (pid=${WORKER_PID})"
+      echo "dcompact_worker ready on :${WORKER_PORT} (pid=${WORKER_PID} CPUQuota=${WORKER_CPU_QUOTA})"
       return 0
     fi
     if ! kill -0 "$WORKER_PID" 2>/dev/null; then
@@ -310,4 +336,4 @@ for eng in $ENGINES; do
   run_engine_suite "$eng"
 done
 
-echo "run_dcompact_bench.sh OK (NUM=${NUM} CPU_QUOTA=${CPU_QUOTA} ENGINES=${ENGINES})"
+echo "run_dcompact_bench.sh OK (NUM=${NUM} CPU_QUOTA=${CPU_QUOTA} WORKER_CPU_QUOTA=${WORKER_CPU_QUOTA} ENGINES=${ENGINES})"

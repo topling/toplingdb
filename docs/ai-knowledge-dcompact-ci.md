@@ -72,6 +72,7 @@
 - patch：`.github/scripts/patch_db_bench_compaction_service.py`
 - 启用：`PATCH_COMPACTION_SERVICE=1` → 产出 `remote_compact_broker`、`remote_compact_worker`
 - gflag：`-compaction_spool_dir=<dir>`
+- **SPOOL_DIR 必须与 DB_PATH 同文件系统**（Install 用 `rename`）。CI 曾用 `/tmp` spool + `/dev/shm` DB → `Invalid cross-device link`；拍板方案 A：spool 改 `/dev/shm/rocksdb-cs-spool-*`
 - 本地验证（2026-07-25）：1M fillrandom+compact，`done_jobs=1`，db_bench RC=0
 
 ## 5. 本地实测 → CI num（2026-07-25）

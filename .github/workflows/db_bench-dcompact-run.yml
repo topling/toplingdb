@@ -137,7 +137,7 @@ jobs:
           export CACHE_SIZE="$ROCKSDB_CACHE_SIZE"
           export WRITE_BUFFER_SIZE=67108864
           export DB_PATH=/dev/shm/db_bench_rocksdb_v810
-          export SPOOL_DIR=/tmp/rocksdb-cs-spool-v810
+          export SPOOL_DIR=/dev/shm/rocksdb-cs-spool-v810
           .github/scripts/run_rocksdb_cs_bench.sh
 
       - name: Run RocksDB master (write @ CPU_QUOTA + CompactionService worker)
@@ -154,7 +154,7 @@ jobs:
           export CACHE_SIZE="$ROCKSDB_CACHE_SIZE"
           export WRITE_BUFFER_SIZE=67108864
           export DB_PATH=/dev/shm/db_bench_rocksdb_master
-          export SPOOL_DIR=/tmp/rocksdb-cs-spool-master
+          export SPOOL_DIR=/dev/shm/rocksdb-cs-spool-master
           .github/scripts/run_rocksdb_cs_bench.sh
 
       - name: Emit pages fragment

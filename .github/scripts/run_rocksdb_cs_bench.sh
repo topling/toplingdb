@@ -10,7 +10,8 @@
 #   CACHE_SIZE   -cache_size bytes
 #   WRITE_BUFFER_SIZE  bytes (default 67108864)
 #   DB_PATH      default /dev/shm/db_bench_rocksdb_cs
-#   SPOOL_DIR    default /tmp/rocksdb-cs-spool
+#   SPOOL_DIR    default /dev/shm/rocksdb-cs-spool (must share FS with DB_PATH;
+#                Install uses rename — EXDEV if spool is on /tmp and DB on /dev/shm)
 #   CI           1 = sudo systemd-run --uid=...
 set -euo pipefail
 
@@ -21,7 +22,7 @@ CPU_QUOTA="${CPU_QUOTA:-25%}"
 CACHE_SIZE="${CACHE_SIZE:?CACHE_SIZE required}"
 WRITE_BUFFER_SIZE="${WRITE_BUFFER_SIZE:-67108864}"
 DB_PATH="${DB_PATH:-/dev/shm/db_bench_rocksdb_cs}"
-SPOOL_DIR="${SPOOL_DIR:-/tmp/rocksdb-cs-spool}"
+SPOOL_DIR="${SPOOL_DIR:-/dev/shm/rocksdb-cs-spool}"
 
 test -x "$PREFIX/bin/db_bench"
 test -x "$PREFIX/bin/remote_compact_broker"

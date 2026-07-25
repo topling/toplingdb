@@ -5,6 +5,10 @@
 #   max_level1_subcompactions  = min(7,  ceil(db_cpu))
 #   max_background_flushes     = 1
 #   max_background_compactions = min(13, ceil(worker_cpu))
+#   dcompact_min_level         = 2  (L0→L1 must stay on DB: with
+#                                    memtable_as_log_index, CSPPMemTable SST
+#                                    WAL blob numbers are allocated on DB only;
+#                                    shipping L0→L1 to worker mis-allocates)
 # Logs to stderr only.
 import math
 import re
@@ -33,6 +37,7 @@ worker_cpu = nproc - db_cpu
 max_l1 = min(7, math.ceil(db_cpu))
 max_flush = 1
 max_compact = min(13, math.ceil(worker_cpu))
+dcompact_min_level = 2
 
 with open(path, encoding="utf-8") as f:
     text = f.read()
@@ -40,6 +45,7 @@ for key, val in (
     ("max_level1_subcompactions", max_l1),
     ("max_background_flushes", max_flush),
     ("max_background_compactions", max_compact),
+    ("dcompact_min_level", dcompact_min_level),
 ):
     pat = re.compile(
         rf"^([ \t]*{re.escape(key)}:[ \t]*)(-?\d+)([ \t]*(?:#.*)?)?$",
@@ -54,6 +60,7 @@ print(
     f"yaml cpu knobs: nproc={nproc} db_cpu={db_cpu} worker_cpu={worker_cpu} "
     f"max_level1_subcompactions={max_l1} "
     f"max_background_flushes={max_flush} "
-    f"max_background_compactions={max_compact}",
+    f"max_background_compactions={max_compact} "
+    f"dcompact_min_level={dcompact_min_level}",
     file=sys.stderr,
 )

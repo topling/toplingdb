@@ -33,7 +33,12 @@
 
 - `allow_fallback_to_local: false` + `http_max_retry: 1` + `http_timeout: 1` +
   `overall_timeout: 3` + `timeout_multiplier: 30`
-- `dcompact_min_level: 1`（output ≥ L1 走远端）
+- **`dcompact_min_level` 必须为 2（L0→L1 本地，output ≥ L2 才走远端）**：
+  开启 `memtable_as_log_index` 时，CSPPMemTable SST 里对 WAL blob 的引用编号
+  必须在 **DB 端**分配。若 `dcompact_min_level: 1` 把 L0→L1 打到 worker，
+  blob 编号会在 worker 端分配——这是错误来源。安装 yaml 默认仍是 `1`；
+  **运行时**由 `graft_yaml_cpu_knobs.py` 改成 `2`（勿只改安装 yaml：那份会进
+  install，改了还要 rebuild/restage）。
 - `level_compaction_dynamic_level_bytes: false`
 
 ### 1.3 worker / 构建

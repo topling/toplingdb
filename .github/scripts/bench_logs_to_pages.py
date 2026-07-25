@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
 import re
 import shutil
 from datetime import datetime, timezone
@@ -415,6 +416,37 @@ def compute_bench_segments(
     return segments
 
 
+def _pow10_tick_step(data_max: float, target_ticks: float = 5.0) -> float:
+    """Nice axis-extent unit: 1, 10, 100, 1000, ... (grid/labels use half of this)."""
+    if data_max <= 0:
+        return 1.0
+    rough = data_max / target_ticks
+    exp = math.floor(math.log10(max(rough, 1e-12)))
+    step = 10.0 ** exp
+    # Prefer fewer coarse ticks over many 100-unit labels (e.g. 1888 → 1000).
+    while data_max / step > 8:
+        step *= 10.0
+    return step
+
+
+def _ceil_to_step(value: float, step: float) -> float:
+    if step <= 0:
+        return max(value, 1.0)
+    return max(step, math.ceil(value / step - 1e-12) * step)
+
+
+def _axis_multiples(step: float, axis_max: float, include_zero: bool) -> List[float]:
+    vals: List[float] = []
+    k = 0 if include_zero else 1
+    while True:
+        v = k * step
+        if v > axis_max + 1e-9:
+            break
+        vals.append(v)
+        k += 1
+    return vals
+
+
 def build_rss_svg(
     samples: List[Tuple[float, int, int]],
     page_size: int,
@@ -432,12 +464,19 @@ def build_rss_svg(
     ys_shared = [shr * mib for _, _, shr in samples]
     ys_anony = [max(0, res - shr) * mib for _, res, shr in samples]
 
-    x_max = max(xs) if xs else 1
-    y_max = max(ys_rss + ys_shared + ys_anony) if samples else 1
-    if x_max == 0:
-        x_max = 1
-    if y_max == 0:
-        y_max = 1
+    x_data = max(xs) if xs else 1.0
+    y_data = max(ys_rss + ys_shared + ys_anony) if samples else 1.0
+    if x_data <= 0:
+        x_data = 1.0
+    if y_data <= 0:
+        y_data = 1.0
+    # Axis extent from 10^n units; grid + labels at half-step (5/50/500...).
+    x_unit = _pow10_tick_step(x_data)
+    y_unit = _pow10_tick_step(y_data)
+    x_max = _ceil_to_step(x_data, x_unit)
+    y_max = _ceil_to_step(y_data, y_unit)
+    x_grid = x_unit / 2.0
+    y_grid = y_unit / 2.0
 
     margin_l, margin_r, margin_t, margin_b = 70, 20, 40, 50
     chart_w, chart_h = 800, 300
@@ -447,8 +486,14 @@ def build_rss_svg(
     def tx(v: float) -> float:
         return margin_l + (v / x_max) * chart_w if x_max else margin_l
 
+    # Inset the plotable y-range so a series at data peak (common once block
+    # cache fills) is not glued to the top edge — that reads as "no line" on
+    # long flat plateaus (e.g. RocksDB fillseq readrandom). Same for tiny shared.
+    _pad_top, _pad_bot = 8.0, 4.0
+    _y_usable = chart_h - _pad_top - _pad_bot
+
     def ty(v: float) -> float:
-        return margin_t + chart_h - (v / y_max) * chart_h
+        return margin_t + _pad_top + _y_usable * (1.0 - v / y_max)
 
     parts: List[str] = []
     parts.append('<div class="rss-chart-wrap">')
@@ -483,20 +528,45 @@ def build_rss_svg(
             f'{html.escape(label)}</text>'
         )
 
-    # Axes
+    # Axes (full plot frame so series never looks like the chart border)
     parts.append(
         f'<line x1="{margin_l}" y1="{margin_t}" x2="{margin_l}" '
         f'y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
+    )
+    parts.append(
+        f'<line x1="{margin_l + chart_w}" y1="{margin_t}" '
+        f'x2="{margin_l + chart_w}" y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
+    )
+    parts.append(
+        f'<line x1="{margin_l}" y1="{margin_t}" '
+        f'x2="{margin_l + chart_w}" y2="{margin_t}" stroke="#666" stroke-width="1"/>'
     )
     parts.append(
         f'<line x1="{margin_l}" y1="{margin_t + chart_h}" '
         f'x2="{margin_l + chart_w}" y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
     )
 
-    # Y-axis ticks
-    y_ticks = 5
-    for i in range(y_ticks + 1):
-        val = y_max * i / y_ticks
+    # Grid at 5/50/500.... Skip x==x_max so the light grid does not paint over
+    # the right frame; y==y_max is inset by padT so it stays inside the plot.
+    for val in _axis_multiples(y_grid, y_max, include_zero=True):
+        yp = ty(val)
+        parts.append(
+            f'<line x1="{margin_l}" y1="{yp:.1f}" '
+            f'x2="{margin_l + chart_w}" y2="{yp:.1f}" '
+            f'stroke="#e6e6e6" stroke-width="1"/>'
+        )
+    for val in _axis_multiples(x_grid, x_max, include_zero=False):
+        if val >= x_max - 1e-9:
+            continue
+        xp = tx(val)
+        parts.append(
+            f'<line x1="{xp:.1f}" y1="{margin_t}" '
+            f'x2="{xp:.1f}" y2="{margin_t + chart_h}" '
+            f'stroke="#e6e6e6" stroke-width="1"/>'
+        )
+
+    # Label every grid line (5/50/500...), including 0 and axis max.
+    for val in _axis_multiples(y_grid, y_max, include_zero=True):
         yp = ty(val)
         parts.append(
             f'<line x1="{margin_l - 4}" y1="{yp:.1f}" '
@@ -511,11 +581,7 @@ def build_rss_svg(
         f'text-anchor="middle" font-size="11" '
         f'transform="rotate(-90 14 {margin_t + chart_h // 2})">MiB</text>'
     )
-
-    # X-axis ticks
-    x_ticks = min(10, max(1, int(x_max)))
-    for i in range(x_ticks + 1):
-        val = x_max * i / x_ticks
+    for val in _axis_multiples(x_grid, x_max, include_zero=True):
         xp = tx(val)
         parts.append(
             f'<line x1="{xp:.1f}" y1="{margin_t + chart_h}" '
@@ -530,28 +596,35 @@ def build_rss_svg(
         f'text-anchor="middle" font-size="11">Time (s)</text>'
     )
 
-    # Series: rss / shared / anony(=rss-shared)
+    # shared last so the green line is never buried under rss/anony near the axis.
     series = (
+        ("anony", ys_anony, "#c11618"),
         ("rss", ys_rss, "#1558a8"),
         ("shared", ys_shared, "#258825"),
-        ("anony", ys_anony, "#c11618"),
     )
     for label, ys, color in series:
         points = " ".join(f"{tx(x):.1f},{ty(y):.1f}" for x, y in zip(xs, ys))
         parts.append(
-            f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="1.5"/>'
+            f'<polyline points="{points}" fill="none" stroke="{color}" '
+            f'stroke-width="2"/>'
         )
-    # Legend (top-right of plot)
-    lx = margin_l + chart_w - 140
-    ly = margin_t + 8
-    for i, (label, _, color) in enumerate(series):
-        y = ly + i * 14
+    # Legend above the plot (under title) so it never overlaps series at y_max.
+    legend = (
+        ("rss", "#1558a8"),
+        ("shared", "#258825"),
+        ("anony", "#c11618"),
+    )
+    item_w = 70
+    lx = margin_l + chart_w - item_w * len(legend)
+    ly = 30
+    for i, (label, color) in enumerate(legend):
+        x = lx + i * item_w
         parts.append(
-            f'<line x1="{lx}" y1="{y}" x2="{lx + 18}" y2="{y}" '
+            f'<line x1="{x}" y1="{ly}" x2="{x + 18}" y2="{ly}" '
             f'stroke="{color}" stroke-width="2"/>'
         )
         parts.append(
-            f'<text x="{lx + 22}" y="{y + 3}" font-size="10" fill="#333">'
+            f'<text x="{x + 22}" y="{ly + 3}" font-size="10" fill="#333">'
             f'{label}</text>'
         )
 
@@ -568,11 +641,16 @@ def build_rss_svg(
         f'width="{chart_w}" height="{chart_h}" fill="transparent"/>'
     )
     parts.append("</svg>")
+    ys_by_name = {"rss": ys_rss, "shared": ys_shared, "anony": ys_anony}
     chart_data = {
         "xs": [round(v, 3) for v in xs],
         "series": [
-            {"name": label, "ys": [round(v, 2) for v in ys], "color": color}
-            for label, ys, color in series
+            {
+                "name": label,
+                "ys": [round(v, 2) for v in ys_by_name[label]],
+                "color": color,
+            }
+            for label, color in legend
         ],
         "layout": {
             "ml": margin_l,
@@ -581,6 +659,8 @@ def build_rss_svg(
             "ch": chart_h,
             "xMax": round(x_max, 3),
             "yMax": round(y_max, 3),
+            "padT": _pad_top,
+            "padB": _pad_bot,
         },
     }
     parts.append(
@@ -675,7 +755,9 @@ _RSS_CHART_JS = r"""
       var NS = "http://www.w3.org/2000/svg";
       series.forEach(function (s, si) {
         var y = s.ys[i];
-        var yp = L.mt + L.ch - (y / L.yMax) * L.ch;
+        var padT = L.padT || 0, padB = L.padB || 0;
+        var usable = L.ch - padT - padB;
+        var yp = L.mt + padT + usable * (1 - y / L.yMax);
         var dot = document.createElementNS(NS, "circle");
         dot.setAttribute("cx", xp.toFixed(1));
         dot.setAttribute("cy", yp.toFixed(1));

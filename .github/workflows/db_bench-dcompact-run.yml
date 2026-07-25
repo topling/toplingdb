@@ -23,11 +23,6 @@ on:
         required: false
         default: "50%"
         type: string
-      worker_cpu_quota:
-        description: dcompact_worker systemd CPUQuota (default 350% = 3.5 CPUs)
-        required: false
-        default: "350%"
-        type: string
 
 # Must match plain run — serialize gh-pages pushes.
 concurrency:
@@ -48,7 +43,6 @@ jobs:
       ARTIFACT_NAME: db_bench-bin-plain
       NUM: ${{ inputs.num }}
       CPU_QUOTA: ${{ inputs.cpu_quota }}
-      WORKER_CPU_QUOTA: ${{ inputs.worker_cpu_quota }}
     steps:
       - name: Checkout build commit
         uses: actions/checkout@v4
@@ -115,7 +109,6 @@ jobs:
             echo "mem_total_bytes=$MEM_TOTAL_BYTES"
             echo "shm_size_bytes=$(df -B1 /dev/shm | awk 'NR==2{print $2}')"
             echo "cpu_quota_write=$CPU_QUOTA"
-            echo "cpu_quota_worker=$WORKER_CPU_QUOTA"
             echo "compact_mode_topling=dcompact_worker"
             echo "compact_mode_rocksdb=compaction_service_spool"
             echo "num=$NUM"
@@ -131,7 +124,6 @@ jobs:
           export LOGDIR_BASE=logs
           export NUM
           export CPU_QUOTA
-          export WORKER_CPU_QUOTA
           .github/scripts/run_dcompact_bench.sh
 
       - name: Run RocksDB v8.10 (write @ CPU_QUOTA + CompactionService worker)

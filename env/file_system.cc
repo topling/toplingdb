@@ -286,7 +286,11 @@ IOStatus FSWritableFile::Appendv(const Slice* parts, size_t num, size_t,
   return IOStatus::OK();
 }
 
-ReadonlyFileMmap::ReadonlyFileMmap(PrivateCons) {}
+ReadonlyFileMmap::ReadonlyFileMmap(PrivateCons) : ref_count_(0) {
+  // C++17 std::atomic default ctor does not zero-initialize. Without this,
+  // intrusive_ptr refcounting can start from heap garbage and never reach 0,
+  // leaking CSPP LogRef .blob mmaps after compact.
+}
 ReadonlyFileMmap::~ReadonlyFileMmap() = default;
 
 boost::intrusive_ptr<ReadonlyFileMmap> ReadonlyFileMmap::New

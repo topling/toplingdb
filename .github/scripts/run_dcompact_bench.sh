@@ -74,6 +74,7 @@ if [[ ! -x "$WORKER_BIN" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SAMPLE_STATM="$("$SCRIPT_DIR/ensure_sample_statm.sh")"
 TMP_YAML_DIR="$(mktemp -d)"
 WORKER_PID=""
 WORKER_LOG="${LOGDIR_BASE}/dcompact_worker.log"
@@ -155,16 +156,20 @@ run_under_cpu_quota() {
   local log="$2"
   local time_file="$3"
   shift 3
+  # Absolute paths: systemd-run scope may not keep the caller's cwd.
+  series="$(realpath -m "$series")"
+  log="$(realpath -m "$log")"
+  time_file="$(realpath -m "$time_file")"
+  mkdir -p "$(dirname "$series")" "$(dirname "$log")" "$(dirname "$time_file")"
+  # sample_statm inside the scope so its child is db_bench (no time/wrapper hop).
   if [[ "${CI:-0}" == "1" ]]; then
-    python3 "$SCRIPT_DIR/sample_rss.py" \
-      --series "$series" --log "$log" -- \
-      /usr/bin/time -f 'max_rss_kb=%M' -o "$time_file" -- \
-      sudo systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- "$@"
+    sudo systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
+      "$SAMPLE_STATM" "$series" "$time_file" "$@" \
+      >"$log" 2>&1
   else
-    python3 "$SCRIPT_DIR/sample_rss.py" \
-      --series "$series" --log "$log" -- \
-      /usr/bin/time -f 'max_rss_kb=%M' -o "$time_file" -- \
-      systemd-run --user --scope -p "CPUQuota=${CPU_QUOTA}" -- "$@"
+    systemd-run --user --scope -p "CPUQuota=${CPU_QUOTA}" -- \
+      "$SAMPLE_STATM" "$series" "$time_file" "$@" \
+      >"$log" 2>&1
   fi
 }
 
@@ -245,7 +250,7 @@ run_engine_suite() {
     -report_bench_start_time
   )
   run_under_cpu_quota \
-    "${logdir}/rss_series-fillrandom.txt" \
+    "${logdir}/statm_series-fillrandom.txt" \
     "${logdir}/db_bench-fillrandom.log" \
     "${logdir}/time-fillrandom.txt" \
     "$PREFIX/bin/db_bench" "${args_fr[@]}"
@@ -267,7 +272,7 @@ run_engine_suite() {
     -report_bench_start_time
   )
   run_under_cpu_quota \
-    "${logdir}/rss_series-fillseq.txt" \
+    "${logdir}/statm_series-fillseq.txt" \
     "${logdir}/db_bench.log" \
     "${logdir}/time-fillseq.txt" \
     "$PREFIX/bin/db_bench" "${args_fs[@]}"

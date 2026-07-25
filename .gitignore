@@ -110,3 +110,6 @@ generated-sources
 target
 
 bconf-*
+
+# Built by .github/scripts/ensure_sample_statm.sh
+.github/scripts/sample_statm

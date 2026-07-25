@@ -297,7 +297,11 @@ def parse_db_bench(text: str) -> List[Dict[str, str]]:
 
 
 def parse_rss_series(text: str) -> Tuple[float, int, List[Tuple[float, int]]]:
-    """Parse rss_series file -> (start_epoch, page_size, [(epoch, resident_pages)...])."""
+    """Parse statm/rss series -> (start_epoch, page_size, [(epoch, resident_pages)...]).
+
+    New format: <epoch> <size> <resident> <shared> <text> <lib> <data> <dt>
+    Legacy:     <epoch> <resident>
+    """
     start_epoch = 0.0
     page_size = 4096
     samples: List[Tuple[float, int]] = []
@@ -313,7 +317,10 @@ def parse_rss_series(text: str) -> Tuple[float, int, List[Tuple[float, int]]]:
         if not line:
             continue
         parts = line.split()
-        if len(parts) >= 2:
+        if len(parts) >= 3:
+            # full statm after epoch: resident is field 2 (1-based) -> parts[2]
+            samples.append((float(parts[0]), int(parts[2])))
+        elif len(parts) >= 2:
             samples.append((float(parts[0]), int(parts[1])))
     return start_epoch, page_size, samples
 
@@ -783,8 +790,8 @@ def emit(args: argparse.Namespace) -> None:
             "shm_usage-fillseq.txt",
             "rss_usage-fillrandom.txt",
             "rss_usage-fillseq.txt",
-            "rss_series-fillrandom.txt",
-            "rss_series-fillseq.txt",
+            "statm_series-fillrandom.txt",
+            "statm_series-fillseq.txt",
             "time-fillrandom.txt",
             "time-fillseq.txt",
             "bench_settings.txt",
@@ -860,7 +867,7 @@ def emit(args: argparse.Namespace) -> None:
             ("fillrandom", "db_bench-fillrandom.log", "db_bench_fillrandom"),
             ("fillseq", "db_bench.log", "db_bench"),
         ]:
-            series_path = eng_dir / f"rss_series-{suite}.txt"
+            series_path = eng_dir / f"statm_series-{suite}.txt"
             if not series_path.is_file():
                 continue
             start_epoch, page_size, samples = parse_rss_series(
@@ -883,7 +890,7 @@ def emit(args: argparse.Namespace) -> None:
     if rss_svg_parts:
         rss_svg_section = (
             '<h2>RSS over time</h2>\n'
-            '<p class="meta">RSS sampled once per second from /proc/statm. '
+            '<p class="meta">statm sampled once per second (/proc/statm); plot uses resident pages. '
             'Colored bands show benchmark segments (start time from db_bench output).</p>\n'
             + "\n".join(rss_svg_parts)
         )

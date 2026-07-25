@@ -29,6 +29,7 @@ test -x "$PREFIX/bin/remote_compact_broker"
 test -x "$PREFIX/bin/remote_compact_worker"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SAMPLE_STATM="$("$SCRIPT_DIR/ensure_sample_statm.sh")"
 mkdir -p "$LOGDIR"
 export LD_LIBRARY_PATH="$PREFIX/lib:${LD_LIBRARY_PATH:-}"
 
@@ -81,21 +82,22 @@ echo "remote_compact_broker ready pid=${BROKER_PID} spool=${SPOOL_DIR}"
 run_under_cpu_quota() {
   local series="$1" log="$2" time_file="$3"
   shift 3
-  # stdbuf: line-buffer child output so OOM/abort still leaves a readable log
-  # when sample_rss redirects stdout/stderr to a file.
-  local -a runner=(stdbuf -oL -eL)
+  # Absolute paths: systemd-run scope may not keep the caller's cwd.
+  series="$(realpath -m "$series")"
+  log="$(realpath -m "$log")"
+  time_file="$(realpath -m "$time_file")"
+  mkdir -p "$(dirname "$series")" "$(dirname "$log")" "$(dirname "$time_file")"
+  # sample_statm inside the scope so its child is db_bench; stdbuf line-buffers log.
   if [[ "${CI:-0}" == "1" ]]; then
-    python3 "$SCRIPT_DIR/sample_rss.py" \
-      --series "$series" --log "$log" -- \
-      /usr/bin/time -f 'max_rss_kb=%M' -o "$time_file" -- \
-      sudo systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
-      "${runner[@]}" "$@"
+    sudo systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
+      "$SAMPLE_STATM" "$series" "$time_file" \
+      stdbuf -oL -eL "$@" \
+      >"$log" 2>&1
   else
-    python3 "$SCRIPT_DIR/sample_rss.py" \
-      --series "$series" --log "$log" -- \
-      /usr/bin/time -f 'max_rss_kb=%M' -o "$time_file" -- \
-      systemd-run --user --scope -p "CPUQuota=${CPU_QUOTA}" -- \
-      "${runner[@]}" "$@"
+    systemd-run --user --scope -p "CPUQuota=${CPU_QUOTA}" -- \
+      "$SAMPLE_STATM" "$series" "$time_file" \
+      stdbuf -oL -eL "$@" \
+      >"$log" 2>&1
   fi
 }
 
@@ -139,7 +141,7 @@ run_suite() {
   echo "=== starting suite=${suite} NUM=${NUM} ==="
   set +e
   run_under_cpu_quota \
-    "${LOGDIR}/rss_series-${suite}.txt" \
+    "${LOGDIR}/statm_series-${suite}.txt" \
     "${LOGDIR}/${log_name}" \
     "${LOGDIR}/time-${suite}.txt" \
     "$PREFIX/bin/db_bench" "${args[@]}"

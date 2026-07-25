@@ -54,7 +54,7 @@ jobs:
             export CXX=clang++
             export CC=clang
           fi
-          make db_bench memtablerep_bench -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0
+          make db_bench memtablerep_bench dcompact_worker -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0
 
       - name: Stage ToplingDB prefix
         run: |
@@ -83,6 +83,8 @@ jobs:
           test -d "$STAGE$PREFIX/lib"
           mv "$STAGE$PREFIX" "$BUNDLE/topling"
           rm -rf "$STAGE"
+          chmod +x .github/scripts/stage_dcompact_worker.sh
+          .github/scripts/stage_dcompact_worker.sh "$BUNDLE/topling"
           echo "BUNDLE=$BUNDLE" >> "$GITHUB_ENV"
         env:
           USE_CLANG: ${{ inputs.use_clang }}
@@ -96,6 +98,8 @@ jobs:
             export CC=clang
           fi
           # Script removes each clone tree after staging that engine.
+          # Phase 2: patch CompactionService + build broker/worker into bundle.
+          export PATCH_COMPACTION_SERVICE=1
           .github/scripts/build_upstream_rocksdb.sh v8.10.2 "$BUNDLE/rocksdb-v8.10"
           df -h
           .github/scripts/build_upstream_rocksdb.sh master "$BUNDLE/rocksdb-master"

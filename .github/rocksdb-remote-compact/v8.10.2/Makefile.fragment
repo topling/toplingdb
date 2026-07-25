@@ -1,0 +1,7 @@
+# Appended by patch_db_bench_compaction_service.py.
+# db_bench receives spool_compaction_service.o through its patched target.
+remote_compact_broker: $(OBJ_DIR)/tools/remote_compact/remote_compact_broker.o $(LIBRARY)
+	$(AM_LINK)
+
+remote_compact_worker: $(OBJ_DIR)/tools/remote_compact/remote_compact_worker.o $(LIBRARY)
+	$(AM_LINK)

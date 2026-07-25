@@ -89,8 +89,8 @@ jobs:
           DB_PATH=/dev/shm/db_bench_enterprise
           YAML_BASE="$TOPLING/toplingdb-conf/db_bench_enterprise.yaml"
           # CI-only: shrink write_buffer without touching rockside submodule.
-          sed -i 's/^\([[:space:]]*write_buffer_size:[[:space:]]*\)2G/\1512M/' "$YAML_BASE"
-          grep -E 'write_buffer_size:[[:space:]]*512M' "$YAML_BASE"
+          sed -i 's/^\([[:space:]]*write_buffer_size:[[:space:]]*\)[0-9]\+[MmGgKk]\?/\1128M/' "$YAML_BASE"
+          grep -E 'write_buffer_size:[[:space:]]*128M' "$YAML_BASE"
           # Parallel config: enable DictZip for value_size=15 (default yaml is 3000).
           YAML_DZ10="$TOPLING/toplingdb-conf/db_bench_enterprise_dictzip10.yaml"
           cp -a "$YAML_BASE" "$YAML_DZ10"

@@ -285,12 +285,16 @@ class ThinIteratorWrapperBase {
   InternalIteratorBase<TValue>* Set(InternalIteratorBase<TValue>* i) {
     auto old_iter = iter_;
     iter_ = i;
+   #if TOPLING_USE_BOUND_PMF
     if (i) {
-     #if TOPLING_USE_BOUND_PMF
       next_and_get_result_ = ForgeFuncPtr(i, &InternalIteratorBase<TValue>::NextAndGetResult);
       prepare_and_get_value_ = ForgeFuncPtr(i, &InternalIteratorBase<TValue>::PrepareAndGetValue);
-     #endif
+    } else {
+      // do not keep stale bound fn ptr of old_iter, fail fast on misuse
+      next_and_get_result_ = nullptr;
+      prepare_and_get_value_ = nullptr;
     }
+   #endif
     return old_iter;
   }
 

@@ -3886,7 +3886,7 @@ int main(int argc, char** argv) {
     CheckCondition(err == NULL);
     cfo = side_plugin_repo_get_cf_options(repo, "default", &err);
     CheckCondition(cfo != NULL);
-    dbo = side_plugin_repo_get_db_options(repo, "dbo", &err);
+    dbo = side_plugin_repo_get_db_options(repo, "default", &err);
     CheckCondition(dbo != NULL);
     side_plugin_repo_put_cf_options(repo, "default", cfo);
     side_plugin_repo_put_db_options(repo, "default", dbo);

@@ -1208,6 +1208,10 @@ def emit(args: argparse.Namespace) -> None:
 
     body = f"""
   <h1>Bench run: {html.escape(args.variant)} / {html.escape(str(args.run_id))}</h1>
+  <p class="meta">
+    <a href="../../index.html">← plain home</a> |
+    <a href="../../dcompact/index.html">← dcompact</a>
+  </p>
   <p class="meta">generated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
   <p>{raw_links}</p>
   {dcompact_notes}
@@ -1378,6 +1382,23 @@ def _latest_dcompact(history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _ensure_home_dcompact_nav(home_path: Path) -> None:
+    """If plain home exists, ensure it links to dcompact/ (idempotent)."""
+    if not home_path.is_file():
+        return
+    text = home_path.read_text(encoding="utf-8")
+    if 'href="dcompact/index.html"' in text:
+        return
+    nav = (
+        '\n  <p class="meta">\n'
+        '    <a href="dcompact/index.html">dcompact bench →</a>\n'
+        "  </p>"
+    )
+    new, n = re.subn(r"(<h1>[^<]*</h1>)", r"\1" + nav, text, count=1)
+    if n == 1:
+        home_path.write_text(new, encoding="utf-8")
+
+
 def merge(args: argparse.Namespace) -> None:
     merge_into = Path(args.merge_into)
     from_dir = Path(args.from_dir)
@@ -1426,8 +1447,10 @@ def merge(args: argparse.Namespace) -> None:
     dcompact_section = _render_dcompact_section(latest, merge_into)
     dcompact_body = f"""
   <h1>ToplingDB dcompact bench results</h1>
+  <p class="meta">
+    <a href="../index.html">← plain home</a>
+  </p>
   <p class="meta">Updated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
-  <p class="meta"><a href="../index.html">← plain bench home</a></p>
   {dcompact_section}
   <h2>History</h2>
   {_render_dcompact_history(history)}
@@ -1437,6 +1460,7 @@ def merge(args: argparse.Namespace) -> None:
     (dcompact_dir / "index.html").write_text(
         _page("ToplingDB dcompact bench results", dcompact_body), encoding="utf-8"
     )
+    _ensure_home_dcompact_nav(merge_into / "index.html")
 
 
 def main() -> None:

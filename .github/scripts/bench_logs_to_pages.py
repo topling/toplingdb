@@ -1529,6 +1529,10 @@ def emit(args: argparse.Namespace) -> None:
 
     body = f"""
   <h1>Bench run: {html.escape(args.variant)} / {html.escape(str(args.run_id))}</h1>
+  <p class="meta">
+    <a href="../../index.html">← plain home</a> |
+    <a href="../../dcompact/index.html">dcompact →</a>
+  </p>
   <p class="meta">generated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
   <p>{raw_links}</p>
   {runner_html}
@@ -1800,6 +1804,9 @@ def merge(args: argparse.Namespace) -> None:
     history_plain = [e for e in history if e.get("variant") != "avx512"]
     body = f"""
   <h1>ToplingDB vs RocksDB bench results</h1>
+  <p class="meta">
+    <a href="dcompact/index.html">dcompact bench →</a>
+  </p>
   <p class="meta">Updated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
   {plain_section}
   <h2>History</h2>

@@ -322,7 +322,7 @@ IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
   size_t mmap_size = mmap_reader_->size_;
   if (UNLIKELY(end > mmap_size)) {
     dest_->Sync(false).PermitUncheckedError(); // Sync before return error
-    char msg1[192];
+    char msg1[256];
     sprintf(msg1, "memtable_as_log_index log::Writer::AddRecordv: "
                   "write offset %zd : %zd, len %zd, exceeds mmap size %zd "
                   "by %zd bytes",
@@ -396,7 +396,7 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
     size_t need = *log_offset_ + sizeof(RawRecHeader) + n;
     if (UNLIKELY(need > mmap_reader_->size_)) {
       dest_->Sync(false).PermitUncheckedError(); // Sync before return error
-      char msg1[128];
+      char msg1[192];
       sprintf(msg1, "memtable_as_log_index log::Writer::AddRecord: "
                     "write offset %zd, size %zd, exceeds mmap size %zd",
               size_t(*log_offset_), n, mmap_reader_->size_);
@@ -420,7 +420,9 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
                                0 /* crc32c_checksum */, rate_limiter_priority);
     if (s.ok()) {
       s = dest_->Append(Slice(ptr, n), header.checksum, rate_limiter_priority);
-      *log_offset_ += sizeof(RawRecHeader) + n;
+      if (s.ok()) {
+        *log_offset_ += sizeof(RawRecHeader) + n;
+      }
     }
     return s;
   }

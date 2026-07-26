@@ -41,6 +41,26 @@
   install，改了还要 rebuild/restage）。
 - `level_compaction_dynamic_level_bytes: false`
 
+### 1.2.1 `max_level1_subcompactions` 与 Intra-L0（必读）
+
+Topling 扩展语义（非上游 RocksDB 默认行为）：
+
+- 在 `LevelCompactionBuilder::PickIntraL0Compaction`
+  （`db/compaction/compaction_picker_level.cc`）中：
+  **`max_level1_subcompactions > 1` → 禁止 Intra-L0**（直接 `return false`）；
+  **`≤ 1` → 允许** L0→L0（日志形如 `Compacted N@0 files to L0`，
+  `CompactionReason::kLevelL0FilesNum`）。
+- 开启 `memtable_as_log_index` 时，Intra-L0 会拖住带 LogRef 的 L0
+  CSPPMemTab、产出巨大 `SngFast` mmap，WAL `.blob` 活窗口（`head..tail`）
+  拉宽，进程 **shared RSS** 持续上涨。清 blob 的充分条件是消灭 LogRef L0
+  （通常靠及时 L0→L1），**不是**「看见了 L1→L2」——L1→L2 输入已是 Zip，
+  清不掉仍钉在 L0 上的 blob。
+- **运行配置约定**：`memtable_as_log_index` 场景下应保持
+  `max_level1_subcompactions ≥ 2`（默认 yaml 多为 `7`）。任何限核、graft、
+  或手改 Options 把该值写成 `1`，都会重新打开 Intra-L0。
+- 排障：先看 LOG `Options.max_level1_subcompactions`；再搜
+  `Compacted N@0 files to L0` / Intra-L0。
+
 ### 1.3 worker / 构建
 
 - 启动：`dcompact_worker.exe -D listening_ports=8080`，必设
@@ -96,3 +116,5 @@
 3. RocksDB CS：spool 中 `state=DONE` 计数 > 0；日志含 `CompactionService spool:`
 4. Pages：`bench_dcompact_pages.py` emit/merge；plain 首页不被改写
 5. `db_bench-build.yml` 现存文件改动 ≤10%
+6. `memtable_as_log_index` 跑数：`max_level1_subcompactions >= 2`、
+   `dcompact_min_level: 2`；写路径无大量 `Compacted N@0 files to L0`（Intra-L0）

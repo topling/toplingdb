@@ -2,7 +2,9 @@
 # Usage: graft_yaml_cpu_knobs.py <yaml> <db_cpu_quota> <nproc>
 #   db_cpu = CPUQuota percent / 100  (e.g. 50% -> 0.5)
 #   worker_cpu = nproc - db_cpu       (remaining host CPUs)
-#   max_level1_subcompactions  = min(7,  ceil(db_cpu))
+#   max_level1_subcompactions  = max(2, min(7, ceil(db_cpu)))
+#     floor 2: PickIntraL0Compaction() is disabled only when >1; value 1
+#     allows L0→L0 and keeps WAL LogRef blobs alive under memtable_as_log_index
 #   max_background_flushes     = 1
 #   max_background_compactions = min(13, ceil(worker_cpu))
 #   dcompact_min_level         = 2  (L0→L1 must stay on DB: with
@@ -34,7 +36,7 @@ if db_cpu >= nproc:
     sys.exit(f"FAIL: db_cpu={db_cpu} >= nproc={nproc}")
 
 worker_cpu = nproc - db_cpu
-max_l1 = min(7, math.ceil(db_cpu))
+max_l1 = max(2, min(7, math.ceil(db_cpu)))
 max_flush = 1
 max_compact = min(13, math.ceil(worker_cpu))
 dcompact_min_level = 2

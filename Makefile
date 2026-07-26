@@ -30,12 +30,6 @@ SKIP_FORMAT_BUCK_CHECKS=1
 export ROCKSDB_HOME = $(realpath .)
 
 ENABLE_AUTO_CHECK_LD ?= 1
-ifeq (${ENABLE_AUTO_CHECK_LD},1)
-ifneq ($(shell command -v ld.gold),)
-  LDFLAGS += -fuse-ld=gold
-  #LDFLAGS += -Wl,--icf=all # only reduce size 3.2%
-endif
-endif
 # end topling specific
 
 # Transform parallel LOG output into something more readable.
@@ -1072,6 +1066,15 @@ ifeq "$(shell a=${COMPILER};echo $${a:0:5})" "clang"
   LDFLAGS += -latomic
   #$(error LDFLAGS = ${LDFLAGS})
   WARNING_FLAGS += -Wno-deprecated-builtins
+endif
+
+# Probe the effective linker (do not force gold). gold + non-LTO can break IE TLS.
+ifeq (${ENABLE_AUTO_CHECK_LD},1)
+  ifeq ($(findstring -flto,$(CXXFLAGS) $(LDFLAGS)),)
+    ifneq ($(shell $(CXX) $(LDFLAGS) -Wl,--version 2>&1 | grep -i 'GNU gold'),)
+      CXXFLAGS += -DTOPLINGDB_LD_IS_GOLD_NON_LTO
+    endif
+  endif
 endif
 
 ifdef LUA_PATH

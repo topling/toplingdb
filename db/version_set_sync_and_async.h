@@ -61,13 +61,17 @@ DEFINE_SYNC_AND_ASYNC(Status, Version::MultiGetFromSST)
       sample_file_read_inc(f->file_metadata);
     }
     batch_size++;
-    num_index_read += get_context.get_context_stats_.num_index_read;
-    num_filter_read += get_context.get_context_stats_.num_filter_read;
-    num_sst_read += get_context.get_context_stats_.num_sst_read;
-    // Reset these stats since they're specific to a level
-    get_context.get_context_stats_.num_index_read = 0;
-    get_context.get_context_stats_.num_filter_read = 0;
-    get_context.get_context_stats_.num_sst_read = 0;
+    // get_context_stats_ is constructed only when statistics is enabled,
+    // see GetContext's constructor
+    if (db_statistics_ != nullptr) {
+      num_index_read += get_context.get_context_stats_.num_index_read;
+      num_filter_read += get_context.get_context_stats_.num_filter_read;
+      num_sst_read += get_context.get_context_stats_.num_sst_read;
+      // Reset these stats since they're specific to a level
+      get_context.get_context_stats_.num_index_read = 0;
+      get_context.get_context_stats_.num_filter_read = 0;
+      get_context.get_context_stats_.num_sst_read = 0;
+    }
 
     // report the counters before returning
     if (get_context.State() != GetContext::kNotFound &&

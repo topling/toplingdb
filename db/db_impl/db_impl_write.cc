@@ -1418,6 +1418,9 @@ IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
       versions_->GetColumnFamiliesTimestampSizeForRecord(),
       rate_limiter_priority);
   if (!io_s.ok()) {
+    if (UNLIKELY(needs_locking)) {
+      log_write_mutex_.Unlock();
+    }
     return io_s;
   }
 }

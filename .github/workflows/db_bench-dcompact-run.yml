@@ -24,12 +24,13 @@ on:
         default: "50%"
         type: string
       l1_writer:
-        description: DispatcherTable L1 level_writers (default fast)
+        description: DispatcherTable L1 level_writers (default simple)
         required: false
-        default: fast
+        default: simple
         type: choice
         options:
           - fast
+          - simple
           - light_zip
           - zip
           - bb

@@ -14,14 +14,14 @@
 #   NUM                 db_bench -num (default 1000000 local; CI overrides)
 #   WRITE_BUFFER_SIZE   bytes; if set, rewrite yaml temp copy write_buffer_size
 #   LOGDIR_BASE         Parent of per-engine log dirs (default: logs)
-#   CPU_QUOTA           write-side db_bench systemd CPUQuota (default 25%)
+#   CPU_QUOTA           write-side db_bench systemd CPUQuota (default 50%)
 #   WORKER_PORT         dcompact_worker listen port (default 8080)
 #   MAX_PARALLEL_COMPACTIONS  (default 4)
 #   CI                  Set to 1 for GitHub Actions (sudo systemd-run --uid=...)
 #   SKIP_VERIFY         Set to 1 to skip post-run evidence checks
 #   ENGINES             Space-separated: "topling" and/or "topling-dictzip10"
 #                       (default: both)
-#   L1_WRITER           dispatch level_writers[1]: fast|light_zip|zip|bb (default fast)
+#   L1_WRITER           dispatch level_writers[1]: fast|simple|light_zip|zip|bb (default simple)
 #
 # Runtime yaml grafts (temp copy only; worker_cpu = nproc - db_cpu):
 #   max_level1_subcompactions  = max(2, min(7, ceil(db_cpu)))
@@ -36,8 +36,8 @@ PREFIX="${PREFIX:?PREFIX (Topling install root) required}"
 YAML="${YAML:-$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_ci.yaml}"
 NUM="${NUM:-1000000}"
 LOGDIR_BASE="${LOGDIR_BASE:-logs}"
-CPU_QUOTA="${CPU_QUOTA:-25%}"
-L1_WRITER="${L1_WRITER:-fast}"
+CPU_QUOTA="${CPU_QUOTA:-50%}"
+L1_WRITER="${L1_WRITER:-simple}"
 # DB path must match yaml databases.*.path. hoster_root=/dev/shm — NEVER rm -rf hoster.
 DB_PATH="${DB_PATH:-/dev/shm/db_bench_enterprise}"
 WORKER_PORT="${WORKER_PORT:-8080}"
@@ -47,8 +47,8 @@ NFS_MOUNT_ROOT="${NFS_MOUNT_ROOT:-/dev}"
 ENGINES="${ENGINES:-topling topling-dictzip10}"
 
 case "$L1_WRITER" in
-  fast|light_zip|zip|bb) ;;
-  *) echo "FAIL: L1_WRITER must be fast|light_zip|zip|bb, got $L1_WRITER" >&2; exit 1 ;;
+  fast|simple|light_zip|zip|bb) ;;
+  *) echo "FAIL: L1_WRITER must be fast|simple|light_zip|zip|bb, got $L1_WRITER" >&2; exit 1 ;;
 esac
 
 test -x "$PREFIX/bin/db_bench"

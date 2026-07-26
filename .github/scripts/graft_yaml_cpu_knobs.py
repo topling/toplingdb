@@ -11,15 +11,16 @@
 #                                    memtable_as_log_index, CSPPMemTable SST
 #                                    WAL blob numbers are allocated on DB only;
 #                                    shipping L0→L1 to worker mis-allocates)
-#   l1_writer                  = fast | light_zip | zip | bb (default fast)
+#   l1_writer                  = fast | simple | light_zip | zip | bb (default simple)
 #                                    rewrites L1 slot of the first level_writers:
 #                                    line (TableFactory.dispatch)
+#   forceNeedCompact           = true  (rewrite every forceNeedCompact: line)
 # Logs to stderr only.
 import math
 import re
 import sys
 
-_L1_WRITERS = ("fast", "light_zip", "zip", "bb")
+_L1_WRITERS = ("fast", "simple", "light_zip", "zip", "bb")
 
 if len(sys.argv) not in (4, 5):
     sys.exit(
@@ -27,7 +28,7 @@ if len(sys.argv) not in (4, 5):
     )
 
 path, db_q, nproc_s = sys.argv[1], sys.argv[2], sys.argv[3]
-l1_writer = sys.argv[4] if len(sys.argv) == 5 else "fast"
+l1_writer = sys.argv[4] if len(sys.argv) == 5 else "simple"
 if l1_writer not in _L1_WRITERS:
     sys.exit(
         f"FAIL: l1_writer must be one of {_L1_WRITERS}, got {l1_writer!r}"
@@ -66,6 +67,9 @@ for key, val in (
         re.MULTILINE,
     )
     text, n = pat.subn(rf"\g<1>{val}\g<3>", text, count=1)
+    # plain enterprise yaml has no dcompact_min_level
+    if key == "dcompact_min_level" and n == 0:
+        continue
     if n != 1:
         sys.exit(f"FAIL: expected exactly one {key}: in {path}, got {n}")
 # First level_writers: [L0, L1, ...] — rewrite L1 slot only.
@@ -78,6 +82,14 @@ if n != 1:
     sys.exit(
         f"FAIL: expected to rewrite L1 of first level_writers: in {path}, got {n}"
     )
+text, n = re.subn(
+    r"^([ \t]*forceNeedCompact:[ \t]*)\S+",
+    r"\g<1>true",
+    text,
+    flags=re.MULTILINE,
+)
+if n < 1:
+    sys.exit(f"FAIL: expected forceNeedCompact: in {path}, got {n}")
 with open(path, "w", encoding="utf-8") as f:
     f.write(text)
 print(
@@ -86,6 +98,6 @@ print(
     f"max_background_flushes={max_flush} "
     f"max_background_compactions={max_compact} "
     f"dcompact_min_level={dcompact_min_level} "
-    f"l1_writer={l1_writer}",
+    f"l1_writer={l1_writer} forceNeedCompact=true(n={n})",
     file=sys.stderr,
 )

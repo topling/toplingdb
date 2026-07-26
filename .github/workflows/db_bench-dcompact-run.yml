@@ -23,6 +23,16 @@ on:
         required: false
         default: "50%"
         type: string
+      l1_writer:
+        description: DispatcherTable L1 level_writers (default fast)
+        required: false
+        default: fast
+        type: choice
+        options:
+          - fast
+          - light_zip
+          - zip
+          - bb
 
 # Must match plain run — serialize gh-pages pushes.
 concurrency:
@@ -43,6 +53,7 @@ jobs:
       ARTIFACT_NAME: db_bench-bin-plain
       NUM: ${{ inputs.num }}
       CPU_QUOTA: ${{ inputs.cpu_quota }}
+      L1_WRITER: ${{ inputs.l1_writer }}
     steps:
       - name: Checkout build commit
         uses: actions/checkout@v4
@@ -109,6 +120,7 @@ jobs:
             echo "mem_total_bytes=$MEM_TOTAL_BYTES"
             echo "shm_size_bytes=$(df -B1 /dev/shm | awk 'NR==2{print $2}')"
             echo "cpu_quota_write=$CPU_QUOTA"
+            echo "l1_writer=$L1_WRITER"
             echo "compact_mode_topling=dcompact_worker"
             echo "compact_mode_rocksdb=compaction_service_spool"
             echo "num=$NUM"
@@ -124,6 +136,7 @@ jobs:
           export LOGDIR_BASE=logs
           export NUM
           export CPU_QUOTA
+          export L1_WRITER
           .github/scripts/run_dcompact_bench.sh
 
       - name: Run RocksDB v8.10 (write @ CPU_QUOTA + CompactionService worker)

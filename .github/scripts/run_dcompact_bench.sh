@@ -21,13 +21,15 @@
 #   SKIP_VERIFY         Set to 1 to skip post-run evidence checks
 #   ENGINES             Space-separated: "topling" and/or "topling-dictzip10"
 #                       (default: both)
+#   L1_WRITER           dispatch level_writers[1]: fast|light_zip|zip|bb (default fast)
 #
 # Runtime yaml grafts (temp copy only; worker_cpu = nproc - db_cpu):
-#   max_level1_subcompactions  = min(7,  ceil(db_cpu))
+#   max_level1_subcompactions  = max(2, min(7, ceil(db_cpu)))
 #   max_background_flushes     = 1
 #   max_background_compactions = min(13, ceil(nproc - db_cpu))
 #   dcompact_min_level         = 2  (L0→L1 local: memtable_as_log_index WAL
 #                                    blob numbers must be allocated on DB)
+#   dispatch level_writers[1]  = $L1_WRITER  (first level_writers: line only)
 set -euo pipefail
 
 PREFIX="${PREFIX:?PREFIX (Topling install root) required}"
@@ -35,6 +37,7 @@ YAML="${YAML:-$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_ci.yaml}"
 NUM="${NUM:-1000000}"
 LOGDIR_BASE="${LOGDIR_BASE:-logs}"
 CPU_QUOTA="${CPU_QUOTA:-25%}"
+L1_WRITER="${L1_WRITER:-fast}"
 # DB path must match yaml databases.*.path. hoster_root=/dev/shm — NEVER rm -rf hoster.
 DB_PATH="${DB_PATH:-/dev/shm/db_bench_enterprise}"
 WORKER_PORT="${WORKER_PORT:-8080}"
@@ -42,6 +45,11 @@ MAX_PARALLEL_COMPACTIONS="${MAX_PARALLEL_COMPACTIONS:-4}"
 WORKER_DB_ROOT="${WORKER_DB_ROOT:-/tmp/dcompact-worker}"
 NFS_MOUNT_ROOT="${NFS_MOUNT_ROOT:-/dev}"
 ENGINES="${ENGINES:-topling topling-dictzip10}"
+
+case "$L1_WRITER" in
+  fast|light_zip|zip|bb) ;;
+  *) echo "FAIL: L1_WRITER must be fast|light_zip|zip|bb, got $L1_WRITER" >&2; exit 1 ;;
+esac
 
 test -x "$PREFIX/bin/db_bench"
 test -x "$PREFIX/bin/dcompact_worker.exe" || test -x "$PREFIX/bin/dcompact_worker"
@@ -115,7 +123,7 @@ make_yaml_for_engine() {
   # Keep yaml http_workers in sync with WORKER_PORT (CI yaml defaults to 8080).
   sed -i "s|http://127\\.0\\.0\\.1:[0-9]\\+|http://127.0.0.1:${WORKER_PORT}|g" "$out"
   # stderr only — this function's stdout is the yaml path.
-  python3 "$SCRIPT_DIR/graft_yaml_cpu_knobs.py" "$out" "$CPU_QUOTA" "$(nproc)"
+  python3 "$SCRIPT_DIR/graft_yaml_cpu_knobs.py" "$out" "$CPU_QUOTA" "$(nproc)" "$L1_WRITER"
   if [[ "$eng" == "topling-dictzip10" ]]; then
     sed -i 's/^\([[:space:]]*minDictZipValueSize:[[:space:]]*\)3000/\110/' "$out"
     grep -E 'minDictZipValueSize:[[:space:]]*10$' "$out" >/dev/null

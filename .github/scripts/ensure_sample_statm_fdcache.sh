@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build .github/scripts/sample_statm_fdcache from sample_statm_fdcache.cpp if missing or stale.
 # Prints the absolute path of the binary on stdout.
-# Also runs parse/SVG unit checks for the four-line fd_cache series.
+# Also runs parse/SVG unit checks for the RSS series (incl. pagecache / anony+pc).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="${SCRIPT_DIR}/sample_statm_fdcache.cpp"

@@ -1,12 +1,12 @@
 /*
  * sample_statm_fdcache <series_file> <time_file> <command> [args...]
  *
- * Copied from sample_statm.c; adds last column fd_cache.
+ * Copied from sample_statm.c; adds last column pagecache.
  *
  * Run command; once per second append to series_file:
- *   <epoch> <statm fields...> <fd_cache>
+ *   <epoch> <statm fields...> <pagecache>
  * where <statm fields...> is the full /proc/<pid>/statm line
- * (size resident shared text lib data dt), in pages, and <fd_cache>
+ * (size resident shared text lib data dt), in pages, and <pagecache>
  * is page-cache residency (pages) of unique regular files the child
  * currently has open (by /proc/<pid>/fd, deduped by dev:ino; not
  * distinguishing whether those pages are mmap'd).
@@ -23,6 +23,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/mman.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -39,29 +40,9 @@
 #include <unordered_set>
 #include <utility>
 
-/* Prefer uapi; 451 is cachestat on current asm-generic (x86_64/aarch64/...). */
-#if !defined(__NR_cachestat)
-#if defined(__x86_64__) || defined(__aarch64__) || defined(__riscv) || \
-    defined(__powerpc64__)
-#define __NR_cachestat 451
-#else
-#error "unknown __NR_cachestat for this architecture; check asm/unistd.h"
+#ifndef __NR_cachestat
+#error "cachestat(__NR_cachestat) missing from system headers"
 #endif
-#endif
-
-/* Same ABI as used by util-linux fincore(1) via cachestat(2). */
-struct cachestat_range {
-  uint64_t off;
-  uint64_t len;
-};
-
-struct cachestat {
-  uint64_t nr_cache;
-  uint64_t nr_dirty;
-  uint64_t nr_writeback;
-  uint64_t nr_evicted;
-  uint64_t nr_recently_evicted;
-};
 
 static int g_series_fd = -1;
 static int g_statm_fd = -1;
@@ -189,14 +170,14 @@ static void sample_once(void) {
   }
   buf[n] = '\0';
 
-  long fd_cache = fd_page_cache_pages(g_child);
+  long pagecache = fd_page_cache_pages(g_child);
 
   if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
     return;
   }
 
   int len = snprintf(out, sizeof(out), "%ld.%06ld %s %ld\n", (long)ts.tv_sec,
-                     ts.tv_nsec / 1000L, buf, fd_cache);
+                     ts.tv_nsec / 1000L, buf, pagecache);
   if (len > 0 && len < (int)sizeof(out)) {
     ssize_t nw = write(g_series_fd, out, (size_t)len);
     (void)nw;
@@ -287,7 +268,7 @@ int main(int argc, char **argv) {
     int header_len = snprintf(
         header, sizeof(header),
         "# start_epoch=%ld.%06ld  page_size=%ld  cachestat=%s  "
-        "fields=size,resident,shared,text,lib,data,dt,fd_cache\n",
+        "fields=size,resident,shared,text,lib,data,dt,pagecache\n",
         (long)ts0.tv_sec, ts0.tv_nsec / 1000L, g_page_size, cachestat_st);
     if (header_len < 0 || header_len >= (int)sizeof(header) ||
         write(g_series_fd, header, (size_t)header_len) != (ssize_t)header_len) {

@@ -313,10 +313,10 @@ def parse_db_bench(text: str) -> List[Dict[str, str]]:
 def parse_rss_series(
     text: str,
 ) -> Tuple[float, int, List[Tuple[float, int, int, int]]]:
-    """Parse statm/rss series -> (start_epoch, page_size, [(epoch, rss, shared, fd_cache)...]).
+    """Parse statm/rss series -> (start_epoch, page_size, [(epoch, rss, shared, pagecache)...]).
 
-    New format: <epoch> <size> <resident> <shared> <text> <lib> <data> <dt> [<fd_cache>]
-    Legacy:     <epoch> <resident>  (shared/fd_cache treated as 0)
+    New format: <epoch> <size> <resident> <shared> <text> <lib> <data> <dt> [<pagecache>]
+    Legacy:     <epoch> <resident>  (shared/pagecache treated as 0)
     Pages are converted by the caller; anony = rss - shared.
     """
     start_epoch = 0.0
@@ -335,10 +335,10 @@ def parse_rss_series(
             continue
         parts = line.split()
         if len(parts) >= 4:
-            # full statm: resident=parts[2], shared=parts[3], optional fd_cache=parts[8]
-            fd_cache = int(parts[8]) if len(parts) >= 9 else 0
+            # full statm: resident=parts[2], shared=parts[3], optional pagecache=parts[8]
+            pagecache = int(parts[8]) if len(parts) >= 9 else 0
             samples.append(
-                (float(parts[0]), int(parts[2]), int(parts[3]), fd_cache)
+                (float(parts[0]), int(parts[2]), int(parts[3]), pagecache)
             )
         elif len(parts) == 3:
             # epoch size resident (shared missing)
@@ -457,7 +457,7 @@ def build_rss_svg(
     segments: List[Tuple[str, float, float, bool]],
     title: str,
 ) -> str:
-    """SVG: rss/shared/anony/fd_cache over time with benchmark segment bands."""
+    """SVG: rss/shared/anony/pagecache/anony+pc over time with segment bands."""
     if not samples:
         return ""
 
@@ -466,10 +466,15 @@ def build_rss_svg(
     ys_rss = [res * mib for _, res, _, _ in samples]
     ys_shared = [shr * mib for _, _, shr, _ in samples]
     ys_anony = [max(0, res - shr) * mib for _, res, shr, _ in samples]
-    ys_fd_cache = [fdc * mib for _, _, _, fdc in samples]
+    ys_pagecache = [fdc * mib for _, _, _, fdc in samples]
+    ys_anony_pc = [a + f for a, f in zip(ys_anony, ys_pagecache)]
 
     x_data = max(xs) if xs else 1.0
-    y_data = max(ys_rss + ys_shared + ys_anony + ys_fd_cache) if samples else 1.0
+    y_data = (
+        max(ys_rss + ys_shared + ys_anony + ys_pagecache + ys_anony_pc)
+        if samples
+        else 1.0
+    )
     if x_data <= 0:
         x_data = 1.0
     if y_data <= 0:
@@ -600,12 +605,13 @@ def build_rss_svg(
         f'text-anchor="middle" font-size="11">Time (s)</text>'
     )
 
-    # shared / fd_cache last so they are not buried under rss/anony near the axis.
+    # Draw sum last so anony+pc stays visible above other series.
     series = (
         ("anony", ys_anony, "#c11618"),
         ("rss", ys_rss, "#1558a8"),
         ("shared", ys_shared, "#258825"),
-        ("fd_cache", ys_fd_cache, "#a05a00"),
+        ("pagecache", ys_pagecache, "#a05a00"),
+        ("anony+pc", ys_anony_pc, "#6b21a8"),
     )
     for label, ys, color in series:
         points = " ".join(f"{tx(x):.1f},{ty(y):.1f}" for x, y in zip(xs, ys))
@@ -618,19 +624,20 @@ def build_rss_svg(
         ("rss", "#1558a8"),
         ("shared", "#258825"),
         ("anony", "#c11618"),
-        ("fd_cache", "#a05a00"),
+        ("pagecache", "#a05a00"),
+        ("anony+pc", "#6b21a8"),
     )
-    item_w = 78
+    item_w = 64
     lx = margin_l + chart_w - item_w * len(legend)
     ly = 30
     for i, (label, color) in enumerate(legend):
         x = lx + i * item_w
         parts.append(
-            f'<line x1="{x}" y1="{ly}" x2="{x + 18}" y2="{ly}" '
+            f'<line x1="{x}" y1="{ly}" x2="{x + 14}" y2="{ly}" '
             f'stroke="{color}" stroke-width="2"/>'
         )
         parts.append(
-            f'<text x="{x + 22}" y="{ly + 3}" font-size="10" fill="#333">'
+            f'<text x="{x + 18}" y="{ly + 3}" font-size="9" fill="#333">'
             f'{label}</text>'
         )
 
@@ -651,7 +658,8 @@ def build_rss_svg(
         "rss": ys_rss,
         "shared": ys_shared,
         "anony": ys_anony,
-        "fd_cache": ys_fd_cache,
+        "pagecache": ys_pagecache,
+        "anony+pc": ys_anony_pc,
     }
     chart_data = {
         "xs": [round(v, 3) for v in xs],
@@ -1424,8 +1432,9 @@ def emit(args: argparse.Namespace) -> None:
             'rss=resident, '
             '<span style="color:#258825;font-weight:600">shared</span>, '
             '<span style="color:#c11618;font-weight:600">anony</span>=rss−shared, '
-            '<span style="color:#a05a00;font-weight:600">fd_cache</span>=page cache of open files '
-            '(cachestat; includes buffered I/O and mmap; may overlap RSS/shared). '
+            '<span style="color:#a05a00;font-weight:600">pagecache</span>=page cache of open files '
+            '(cachestat; includes buffered I/O and mmap; may overlap RSS/shared), '
+            '<span style="color:#6b21a8;font-weight:600">anony+pc</span>=anony+pagecache. '
             '<span style="color:#258825;font-weight:600">Shared</span> is mostly read-only '
             '(cheap; OS prefers reclaiming these, no swap needed); '
             '<span style="color:#c11618;font-weight:600">anony</span> is mostly read-write '

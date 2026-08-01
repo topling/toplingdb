@@ -69,8 +69,8 @@ jobs:
             libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
             libbz2-dev libcurl4-openssl-dev liburing-dev \
             libsnappy-dev liblz4-dev libzstd-dev curl
-          chmod +x .github/scripts/ensure_sample_statm.sh
-          .github/scripts/ensure_sample_statm.sh
+          chmod +x .github/scripts/ensure_sample_statm_fdcache.sh
+          .github/scripts/ensure_sample_statm_fdcache.sh
 
       - name: Download build artifact
         uses: actions/download-artifact@v4

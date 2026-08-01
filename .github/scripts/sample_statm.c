@@ -1,6 +1,9 @@
 /*
  * sample_statm <series_file> <time_file> <command> [args...]
  *
+ * Lightweight /proc/<pid>/statm sampler (no open-file page-cache column).
+ * CI benches use sample_statm_fdcache; keep this for local/debug without fd_cache.
+ *
  * Run command; once per second append to series_file:
  *   <epoch> <statm fields...>
  * where <statm fields...> is the full /proc/<pid>/statm line

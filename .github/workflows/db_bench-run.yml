@@ -64,8 +64,8 @@ jobs:
             libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
             libbz2-dev libcurl4-openssl-dev liburing-dev \
             libsnappy-dev liblz4-dev libzstd-dev
-          chmod +x .github/scripts/ensure_sample_statm.sh
-          .github/scripts/ensure_sample_statm.sh
+          chmod +x .github/scripts/ensure_sample_statm_fdcache.sh
+          .github/scripts/ensure_sample_statm_fdcache.sh
 
       - name: Download build artifact
         uses: actions/download-artifact@v4
@@ -185,7 +185,7 @@ jobs:
                 -progress_reports=false
                 -report_bench_start_time
             )
-            .github/scripts/sample_statm "${logdir}/statm_series-fillrandom.txt" "${logdir}/time-fillrandom.txt" \
+            .github/scripts/sample_statm_fdcache "${logdir}/statm_series-fillrandom.txt" "${logdir}/time-fillrandom.txt" \
               "$TOPLING/bin/db_bench" "${args_fr[@]}" \
               >"${logdir}/db_bench-fillrandom.log" 2>&1
             cat "${logdir}/db_bench-fillrandom.log"
@@ -224,7 +224,7 @@ jobs:
                 -progress_reports=false
                 -report_bench_start_time
             )
-            .github/scripts/sample_statm "${logdir}/statm_series-fillseq.txt" "${logdir}/time-fillseq.txt" \
+            .github/scripts/sample_statm_fdcache "${logdir}/statm_series-fillseq.txt" "${logdir}/time-fillseq.txt" \
               "$TOPLING/bin/db_bench" "${args[@]}" \
               >"${logdir}/db_bench.log" 2>&1
             cat "${logdir}/db_bench.log"
@@ -333,7 +333,7 @@ jobs:
               -progress_reports=false
               -report_bench_start_time
           )
-          .github/scripts/sample_statm "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
+          .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
             "$ENG/bin/db_bench" "${args_fr[@]}" \
             >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
           cat "${LOGDIR}/db_bench-fillrandom.log"
@@ -357,7 +357,7 @@ jobs:
               -progress_reports=false
               -report_bench_start_time
           )
-          .github/scripts/sample_statm "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
+          .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
             "$ENG/bin/db_bench" "${args[@]}" \
             >"${LOGDIR}/db_bench.log" 2>&1
           cat "${LOGDIR}/db_bench.log"
@@ -431,7 +431,7 @@ jobs:
               -progress_reports=false
               -report_bench_start_time
           )
-          .github/scripts/sample_statm "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
+          .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
             "$ENG/bin/db_bench" "${args_fr[@]}" \
             >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
           cat "${LOGDIR}/db_bench-fillrandom.log"
@@ -453,7 +453,7 @@ jobs:
               -progress_reports=false
               -report_bench_start_time
           )
-          .github/scripts/sample_statm "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
+          .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
             "$ENG/bin/db_bench" "${args[@]}" \
             >"${LOGDIR}/db_bench.log" 2>&1
           cat "${LOGDIR}/db_bench.log"

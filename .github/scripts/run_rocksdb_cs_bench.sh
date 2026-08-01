@@ -29,7 +29,7 @@ test -x "$PREFIX/bin/remote_compact_broker"
 test -x "$PREFIX/bin/remote_compact_worker"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SAMPLE_STATM="$("$SCRIPT_DIR/ensure_sample_statm.sh")"
+SAMPLE_STATM="$("$SCRIPT_DIR/ensure_sample_statm_fdcache.sh")"
 mkdir -p "$LOGDIR"
 export LD_LIBRARY_PATH="$PREFIX/lib:${LD_LIBRARY_PATH:-}"
 
@@ -87,7 +87,7 @@ run_under_cpu_quota() {
   log="$(realpath -m "$log")"
   time_file="$(realpath -m "$time_file")"
   mkdir -p "$(dirname "$series")" "$(dirname "$log")" "$(dirname "$time_file")"
-  # sample_statm inside the scope so its child is db_bench; stdbuf line-buffers log.
+  # sample_statm_fdcache inside the scope so its child is db_bench; stdbuf line-buffers log.
   if [[ "${CI:-0}" == "1" ]]; then
     sudo systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
       "$SAMPLE_STATM" "$series" "$time_file" \

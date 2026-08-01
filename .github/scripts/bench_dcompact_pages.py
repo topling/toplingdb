@@ -600,11 +600,12 @@ def build_rss_svg(
         ("pagecache", "#a05a00"),
         ("anony+pc", "#6b21a8"),
     )
-    item_w = 64
-    lx = margin_l + chart_w - item_w * len(legend)
+    # Per-label width: swatch+gap (18) + ~7px/char at size 9 + trailing pad.
+    # Generous vs system-ui so "pagecache" / "anony+pc" do not collide.
+    item_widths = [18 + 7 * len(label) + 14 for label, _ in legend]
+    x = margin_l + chart_w - sum(item_widths)
     ly = 30
-    for i, (label, color) in enumerate(legend):
-        x = lx + i * item_w
+    for (label, color), w in zip(legend, item_widths):
         parts.append(
             f'<line x1="{x}" y1="{ly}" x2="{x + 14}" y2="{ly}" '
             f'stroke="{color}" stroke-width="2"/>'
@@ -613,6 +614,7 @@ def build_rss_svg(
             f'<text x="{x + 18}" y="{ly + 3}" font-size="9" fill="#333">'
             f'{label}</text>'
         )
+        x += w
 
     parts.append(
         f'<g class="rss-crosshair" style="display:none">'
@@ -1148,18 +1150,28 @@ def emit(args: argparse.Namespace) -> None:
     if rss_svg_parts:
         rss_svg_section = (
             '<h2>RSS over time</h2>\n'
-            '<p class="meta">statm sampled once per second (/proc/statm + open-file page cache): '
-            'rss=resident, '
-            '<span style="color:#258825;font-weight:600">shared</span>, '
-            '<span style="color:#c11618;font-weight:600">anony</span>=rss−shared, '
-            '<span style="color:#a05a00;font-weight:600">pagecache</span>=page cache of open files '
-            '(cachestat; includes buffered I/O and mmap; may overlap RSS/shared), '
-            '<span style="color:#6b21a8;font-weight:600">anony+pc</span>=anony+pagecache. '
-            '<span style="color:#258825;font-weight:600">Shared</span> is mostly read-only '
-            '(cheap; OS prefers reclaiming these, no swap needed); '
-            '<span style="color:#c11618;font-weight:600">anony</span> is mostly read-write '
-            '(costly, needs swap). '
+            '<p class="meta">Sampled once per second from /proc/statm plus open-file page cache. '
             'Colored bands show benchmark segments (start time from db_bench output).</p>\n'
+            '<ul class="meta">\n'
+            '<li><span style="color:#1558a8;font-weight:600">rss</span>: '
+            'resident set size (pages currently in RAM for the process); '
+            'rss = shared + anony.</li>\n'
+            '<li><span style="color:#258825;font-weight:600">shared</span>: '
+            'shared resident pages; mostly readonly (cheap; OS prefers reclaiming these, '
+            'no swap needed).</li>\n'
+            '<li><span style="color:#c11618;font-weight:600">anony</span>: '
+            'rss - shared; '
+            'mostly readwrite anonymous pages (costly, needs swap).</li>\n'
+            '<li><span style="color:#a05a00;font-weight:600">pagecache</span>: '
+            'kernel file page cache for regular files the process currently has open '
+            '(cachestat(2) on /proc/pid/fd, deduped by inode; covers buffered readwrite '
+            "and mmap). Pages brought in only via buffered I/O are not charged to process RSS; "
+            "mmap'd file pages can appear in both pagecache and RSS/shared, so series may "
+            'overlap.</li>\n'
+            '<li><span style="color:#6b21a8;font-weight:600">anony+pc</span>: '
+            'anony+pagecache (sum of process anonymous RSS and open-file page cache; '
+            'not a disjoint partition).</li>\n'
+            '</ul>\n'
             + "\n".join(rss_svg_parts)
         )
 

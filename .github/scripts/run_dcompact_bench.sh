@@ -12,6 +12,7 @@
 #   PREFIX              Topling install prefix (bin/, lib/, toplingdb-conf/)
 #   YAML                Path to dcompact CI yaml (default: PREFIX/toplingdb-conf/...)
 #   NUM                 db_bench -num (default 1000000 local; CI overrides)
+#   VALUE_SIZE          db_bench -value_size (default 50)
 #   WRITE_BUFFER_SIZE   bytes; if set, rewrite yaml temp copy write_buffer_size
 #   LOGDIR_BASE         Parent of per-engine log dirs (default: logs)
 #   CPU_QUOTA           write-side db_bench systemd CPUQuota (default 50%)
@@ -35,6 +36,7 @@ set -euo pipefail
 PREFIX="${PREFIX:?PREFIX (Topling install root) required}"
 YAML="${YAML:-$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_ci.yaml}"
 NUM="${NUM:-1000000}"
+VALUE_SIZE="${VALUE_SIZE:-50}"
 LOGDIR_BASE="${LOGDIR_BASE:-logs}"
 CPU_QUOTA="${CPU_QUOTA:-50%}"
 L1_WRITER="${L1_WRITER:-simple}"
@@ -267,7 +269,7 @@ run_engine_suite() {
     -json "$yaml"
     -num="$NUM"
     -key_size=8
-    -value_size=15
+    -value_size="$VALUE_SIZE"
     -batch_size=1000
     -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
     -enable_zero_copy
@@ -290,7 +292,7 @@ run_engine_suite() {
     -json "$yaml"
     -num="$NUM"
     -key_size=8
-    -value_size=15
+    -value_size="$VALUE_SIZE"
     -batch_size=1000
     -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
     -enable_zero_copy
@@ -327,4 +329,4 @@ for eng in $ENGINES; do
   run_engine_suite "$eng"
 done
 
-echo "run_dcompact_bench.sh OK (NUM=${NUM} CPU_QUOTA=${CPU_QUOTA} ENGINES=${ENGINES})"
+echo "run_dcompact_bench.sh OK (NUM=${NUM} VALUE_SIZE=${VALUE_SIZE} CPU_QUOTA=${CPU_QUOTA} ENGINES=${ENGINES})"

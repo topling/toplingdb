@@ -16,6 +16,7 @@
 #
 # Env:
 #   NUM=20000000          key count (CI uses 100000000; local shm often needs smaller)
+#   VALUE_SIZE=50         db_bench -value_size (align with db_bench-run.yml)
 #   RUN_MEMTABLE=0|1      run memtablerep_bench after topling suite (default 0)
 #   RUN_ID=local-simpletop
 # Sampler: sample_statm_fdcache (same as CI db_bench-run).
@@ -30,6 +31,7 @@ DB_PATH=/dev/shm/db_bench_enterprise
 PAGES_EMIT="$LOCAL/_pages"
 PAGES_SITE="$LOCAL/site_pages"
 NUM="${NUM:-20000000}"
+VALUE_SIZE="${VALUE_SIZE:-50}"
 RUN_MEMTABLE="${RUN_MEMTABLE:-0}"
 RUN_ID="${RUN_ID:-local-simpletop}"
 
@@ -57,7 +59,7 @@ prepare_yaml() {
   }
   mkdir -p "$(dirname "$YAML_DZ10")"
   cp -a "$YAML_BASE" "$YAML_DZ10"
-  # Align with db_bench-run.yml: enable DictZip for value_size=15.
+  # Align with db_bench-run.yml: enable DictZip for small CI values (default 50).
   sed -i 's/^\([[:space:]]*minDictZipValueSize:[[:space:]]*\)3000/\110/' "$YAML_DZ10"
   grep -E 'minDictZipValueSize:[[:space:]]*10$' "$YAML_DZ10"
   grep -E 'class: SimpleTopTable' "$YAML_BASE"
@@ -149,7 +151,7 @@ run_topling_suite() {
     -json "$yaml"
     -num="$NUM"
     -key_size=8
-    -value_size=15
+    -value_size="$VALUE_SIZE"
     -batch_size=1000
     -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
     -enable_zero_copy
@@ -167,7 +169,7 @@ run_topling_suite() {
     -json "$yaml"
     -num="$NUM"
     -key_size=8
-    -value_size=15
+    -value_size="$VALUE_SIZE"
     -batch_size=1000
     -benchmarks=nextwithkey,nextwithkey,nextwithkey,readseq,readseq,readseq
     -scan_omit_key -scan_omit_value
@@ -189,7 +191,7 @@ run_topling_suite() {
     -json "$yaml"
     -num="$NUM"
     -key_size=8
-    -value_size=15
+    -value_size="$VALUE_SIZE"
     -batch_size=1000
     -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
     -enable_zero_copy

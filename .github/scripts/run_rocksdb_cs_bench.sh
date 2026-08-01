@@ -6,6 +6,7 @@
 #   PREFIX       rocksdb engine prefix (bin/, lib/)
 #   LOGDIR       log directory
 #   NUM          db_bench -num
+#   VALUE_SIZE   db_bench -value_size (default 50)
 #   CPU_QUOTA    systemd CPUQuota (default 50%)
 #   CACHE_SIZE   -cache_size bytes
 #   WRITE_BUFFER_SIZE  bytes (default 67108864)
@@ -18,6 +19,7 @@ set -euo pipefail
 PREFIX="${PREFIX:?PREFIX required}"
 LOGDIR="${LOGDIR:?LOGDIR required}"
 NUM="${NUM:?NUM required}"
+VALUE_SIZE="${VALUE_SIZE:-50}"
 CPU_QUOTA="${CPU_QUOTA:-50%}"
 CACHE_SIZE="${CACHE_SIZE:?CACHE_SIZE required}"
 WRITE_BUFFER_SIZE="${WRITE_BUFFER_SIZE:-67108864}"
@@ -137,7 +139,7 @@ run_suite() {
   rm -rf "$DB_PATH"
   mkdir -p "$DB_PATH"
   local args=(
-    -db="$DB_PATH" -num="$NUM" -key_size=8 -value_size=15 -batch_size=1000
+    -db="$DB_PATH" -num="$NUM" -key_size=8 -value_size="$VALUE_SIZE" -batch_size=1000
     -cache_size="$CACHE_SIZE"
     -write_buffer_size="$WRITE_BUFFER_SIZE"
     -compaction_spool_dir="$SPOOL_DIR"

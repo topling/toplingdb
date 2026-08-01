@@ -34,6 +34,11 @@ on:
           - light_zip
           - zip
           - bb
+      value_size:
+        description: db_bench -value_size bytes (default 50)
+        required: false
+        default: "50"
+        type: string
 
 # Must match plain run — serialize gh-pages pushes.
 concurrency:
@@ -55,6 +60,7 @@ jobs:
       NUM: ${{ inputs.num }}
       CPU_QUOTA: ${{ inputs.cpu_quota }}
       L1_WRITER: ${{ inputs.l1_writer }}
+      VALUE_SIZE: ${{ inputs.value_size || '50' }}
     steps:
       - name: Checkout build commit
         uses: actions/checkout@v4

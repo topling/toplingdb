@@ -28,6 +28,11 @@ on:
           - light_zip
           - zip
           - bb
+      value_size:
+        description: db_bench -value_size bytes (default 50)
+        required: false
+        default: "50"
+        type: string
 
 concurrency:
   group: pages-deploy
@@ -49,6 +54,7 @@ jobs:
       # workflow_run has no inputs; defaults match dcompact-run.
       CPU_QUOTA: ${{ inputs.cpu_quota || '50%' }}
       L1_WRITER: ${{ inputs.l1_writer || 'simple' }}
+      VALUE_SIZE: ${{ inputs.value_size || '50' }}
     steps:
       - name: Checkout build commit
         uses: actions/checkout@v4
@@ -126,7 +132,8 @@ jobs:
             echo "FAIL: plain yaml still has compaction_executor_factory" >&2
             exit 1
           fi
-          # Parallel config: enable DictZip for value_size=15 (default yaml is 3000).
+          # Parallel config: enable DictZip for small values (default yaml is 3000;
+          # CI -value_size defaults to 50, so minDictZipValueSize=10 applies).
           YAML_DZ10="$TOPLING/toplingdb-conf/db_bench_enterprise_dictzip10.yaml"
           cp -a "$YAML_BASE" "$YAML_DZ10"
           sed -i 's/^\([[:space:]]*minDictZipValueSize:[[:space:]]*\)3000/\110/' "$YAML_DZ10"
@@ -178,7 +185,7 @@ jobs:
                 -json "$yaml"
                 -num=100000000
                 -key_size=8
-                -value_size=15
+                -value_size="${VALUE_SIZE}"
                 -batch_size=1000
                 -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
                 -enable_zero_copy
@@ -194,7 +201,7 @@ jobs:
                 -json "$yaml"
                 -num=100000000
                 -key_size=8
-                -value_size=15
+                -value_size="${VALUE_SIZE}"
                 -batch_size=1000
                 -benchmarks=nextwithkey,nextwithkey,nextwithkey,readseq,readseq,readseq
                 -scan_omit_key -scan_omit_value
@@ -217,7 +224,7 @@ jobs:
                 -json "$yaml"
                 -num=100000000
                 -key_size=8
-                -value_size=15
+                -value_size="${VALUE_SIZE}"
                 -batch_size=1000
                 -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
                 -enable_zero_copy
@@ -326,7 +333,7 @@ jobs:
               -db="$DB_PATH"
               -num=100000000
               -key_size=8
-              -value_size=15
+              -value_size="${VALUE_SIZE}"
               -batch_size=1000
               -cache_size="$ROCKSDB_CACHE_SIZE"
               -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
@@ -350,7 +357,7 @@ jobs:
               -db="$DB_PATH"
               -num=100000000
               -key_size=8
-              -value_size=15
+              -value_size="${VALUE_SIZE}"
               -batch_size=1000
               -cache_size="$ROCKSDB_CACHE_SIZE"
               -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
@@ -424,7 +431,7 @@ jobs:
               -db="$DB_PATH"
               -num=100000000
               -key_size=8
-              -value_size=15
+              -value_size="${VALUE_SIZE}"
               -batch_size=1000
               -cache_size="$ROCKSDB_CACHE_SIZE"
               -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
@@ -446,7 +453,7 @@ jobs:
               -db="$DB_PATH"
               -num=100000000
               -key_size=8
-              -value_size=15
+              -value_size="${VALUE_SIZE}"
               -batch_size=1000
               -cache_size="$ROCKSDB_CACHE_SIZE"
               -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom

@@ -12,11 +12,6 @@ on:
         description: Build workflow run id whose artifact to download
         required: true
         type: string
-      cpu_quota:
-        description: Write-side CPUQuota for graft_bench_yaml plain-ci (default 50%, same as dcompact-run)
-        required: false
-        default: "50%"
-        type: string
       l1_writer:
         description: DispatcherTable L1 level_writers (default simple)
         required: false
@@ -51,8 +46,6 @@ jobs:
     env:
       VARIANT: plain
       ARTIFACT_NAME: db_bench-bin-plain
-      # workflow_run has no inputs; defaults match dcompact-run.
-      CPU_QUOTA: ${{ inputs.cpu_quota || '50%' }}
       L1_WRITER: ${{ inputs.l1_writer || 'simple' }}
       VALUE_SIZE: ${{ inputs.value_size || '50' }}
     steps:
@@ -120,7 +113,7 @@ jobs:
           esac
           python3 .github/scripts/graft_bench_yaml.py \
             --profile plain-ci \
-            --cpu-quota "$CPU_QUOTA" \
+            --cpu-quota 50% \
             --nproc "$(nproc)" \
             --l1-writer "$L1_WRITER" \
             --dictzip10-out "$YAML_DZ10" \
@@ -278,7 +271,6 @@ jobs:
             echo "cpu_count=$(nproc)"
             echo "mem_total_bytes=$MEM_TOTAL_BYTES"
             echo "shm_size_bytes=$(df -B1 /dev/shm | awk 'NR==2{print $2}')"
-            echo "cpu_quota_write=$CPU_QUOTA"
             echo "l1_writer=$L1_WRITER"
           } | tee logs/runner_env.txt
 

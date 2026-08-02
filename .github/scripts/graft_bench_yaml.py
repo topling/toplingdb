@@ -2,14 +2,14 @@
 """Unified runtime graft for ToplingDB bench yaml (CI/local; never edit rockside).
 
 Profiles:
-  plain-ci   db_bench-run.yml: write_buffer 128M, target_file_size 16M,
+  plain-ci   db_bench-run.yml: write_buffer 128M, target_file_size 32M,
              target_file_size_multiplier 1.5, cpu knobs,
              strip compaction_executor_factory, dcompact_min_level 20
-  avx512-ci  db_bench-avx512-run.yml: write_buffer 512M, target_file_size 16M,
+  avx512-ci  db_bench-avx512-run.yml: write_buffer 512M, target_file_size 32M,
              target_file_size_multiplier 1.5
-  local      run_local_simple_top_pages.sh: target_file_size 16M,
+  local      run_local_simple_top_pages.sh: target_file_size 32M,
              target_file_size_multiplier 1.5
-  dcompact   run_dcompact_bench.sh temp yaml: target_file_size 16M,
+  dcompact   run_dcompact_bench.sh temp yaml: target_file_size 32M,
              target_file_size_multiplier 1.5, cpu knobs,
              optional write_buffer / worker_port / minDictZipValueSize
 
@@ -31,7 +31,7 @@ _L1_WRITERS = ("fast", "simple", "light_zip", "zip", "bb")
 _PROFILE_DEFAULTS: dict[str, dict] = {
     "plain-ci": {
         "write_buffer_size": "128M",
-        "target_file_size_base": "16M",
+        "target_file_size_base": "32M",
         "target_file_size_multiplier": 1.5,
         "level0_slowdown_writes_trigger": 4,
         "cpu_knobs": True,
@@ -40,17 +40,17 @@ _PROFILE_DEFAULTS: dict[str, dict] = {
     },
     "avx512-ci": {
         "write_buffer_size": "512M",
-        "target_file_size_base": "16M",
+        "target_file_size_base": "32M",
         "target_file_size_multiplier": 1.5,
         "level0_slowdown_writes_trigger": 4,
     },
     "local": {
-        "target_file_size_base": "16M",
+        "target_file_size_base": "32M",
         "target_file_size_multiplier": 1.5,
         "level0_slowdown_writes_trigger": 4,
     },
     "dcompact": {
-        "target_file_size_base": "16M",
+        "target_file_size_base": "32M",
         "target_file_size_multiplier": 1.5,
         "level0_slowdown_writes_trigger": 4,
         "cpu_knobs": True,

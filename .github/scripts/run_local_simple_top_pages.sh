@@ -57,13 +57,10 @@ prepare_yaml() {
     echo "missing $YAML_BASE" >&2
     exit 1
   }
-  mkdir -p "$(dirname "$YAML_DZ10")"
-  cp -a "$YAML_BASE" "$YAML_DZ10"
-  # Align with db_bench-run.yml: enable DictZip for small CI values (default 50).
-  sed -i 's/^\([[:space:]]*minDictZipValueSize:[[:space:]]*\)3000/\110/' "$YAML_DZ10"
-  grep -E 'minDictZipValueSize:[[:space:]]*10$' "$YAML_DZ10"
-  grep -E 'class: SimpleTopTable' "$YAML_BASE"
-  grep -E 'level_writers: \[fast,' "$YAML_BASE" | head -1
+  python3 "$ROOT/.github/scripts/graft_bench_yaml.py" \
+    --profile local \
+    --dictzip10-out "$YAML_DZ10" \
+    "$YAML_BASE"
   echo "prepared $YAML_DZ10"
 }
 
@@ -144,6 +141,7 @@ run_topling_suite() {
   mkdir -p "$logdir"
   require_db_bench
   test -f "$yaml"
+  cp -a "$yaml" "${logdir}/db_bench.yaml"
 
   # Pass 1: fillrandom + omit
   prepare_db
@@ -157,6 +155,7 @@ run_topling_suite() {
     -enable_zero_copy
     -progress_reports=false
     -report_bench_start_time
+    -compact_target_level=6
   )
   "$ROOT/.github/scripts/ensure_sample_statm_fdcache.sh" >/dev/null
   "$ROOT/.github/scripts/sample_statm_fdcache" \
@@ -197,6 +196,7 @@ run_topling_suite() {
     -enable_zero_copy
     -progress_reports=false
     -report_bench_start_time
+    -compact_target_level=6
   )
   "$ROOT/.github/scripts/sample_statm_fdcache" \
     "${logdir}/statm_series-fillseq.txt" "${logdir}/time-fillseq.txt" \

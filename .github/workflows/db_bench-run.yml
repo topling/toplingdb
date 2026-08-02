@@ -13,7 +13,7 @@ on:
         required: true
         type: string
       cpu_quota:
-        description: Write-side CPUQuota for graft_yaml_cpu_knobs (default 50%, same as dcompact-run)
+        description: Write-side CPUQuota for graft_bench_yaml plain-ci (default 50%, same as dcompact-run)
         required: false
         default: "50%"
         type: string
@@ -113,31 +113,18 @@ jobs:
           export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
           DB_PATH=/dev/shm/db_bench_enterprise
           YAML_BASE="$TOPLING/toplingdb-conf/db_bench_enterprise.yaml"
-          # CI-only: shrink write_buffer without touching rockside submodule.
-          sed -i 's/^\([[:space:]]*write_buffer_size:[[:space:]]*\)[0-9]\+[MmGgKk]\?/\1128M/' "$YAML_BASE"
-          grep -E 'write_buffer_size:[[:space:]]*128M' "$YAML_BASE"
+          YAML_DZ10="$TOPLING/toplingdb-conf/db_bench_enterprise_dictzip10.yaml"
           case "$L1_WRITER" in
             fast|simple|light_zip|zip|bb) ;;
             *) echo "FAIL: L1_WRITER must be fast|simple|light_zip|zip|bb, got $L1_WRITER" >&2; exit 1 ;;
           esac
-          # Same CPUQuota→yaml knob graft as dcompact-run (no systemd cgroup on plain).
-          python3 .github/scripts/graft_yaml_cpu_knobs.py \
-            "$YAML_BASE" "$CPU_QUOTA" "$(nproc)" "$L1_WRITER"
-          grep -E 'level_writers: \[fast,' "$YAML_BASE" | head -1
-          grep -E 'forceNeedCompact:[[:space:]]*true' "$YAML_BASE"
-          # plain must not enable dcompact (sample has none; belt-and-suspenders).
-          sed -i '/^[[:space:]]*compaction_executor_factory:[[:space:]]*/d' "$YAML_BASE"
-          sed -i 's/^\([[:space:]]*dcompact_min_level:[[:space:]]*\)-\?[0-9]\+/\120/' "$YAML_BASE"
-          if grep -E '^[[:space:]]*compaction_executor_factory:' "$YAML_BASE"; then
-            echo "FAIL: plain yaml still has compaction_executor_factory" >&2
-            exit 1
-          fi
-          # Parallel config: enable DictZip for small values (default yaml is 3000;
-          # CI -value_size defaults to 50, so minDictZipValueSize=10 applies).
-          YAML_DZ10="$TOPLING/toplingdb-conf/db_bench_enterprise_dictzip10.yaml"
-          cp -a "$YAML_BASE" "$YAML_DZ10"
-          sed -i 's/^\([[:space:]]*minDictZipValueSize:[[:space:]]*\)3000/\110/' "$YAML_DZ10"
-          grep -E 'minDictZipValueSize:[[:space:]]*10$' "$YAML_DZ10"
+          python3 .github/scripts/graft_bench_yaml.py \
+            --profile plain-ci \
+            --cpu-quota "$CPU_QUOTA" \
+            --nproc "$(nproc)" \
+            --l1-writer "$L1_WRITER" \
+            --dictzip10-out "$YAML_DZ10" \
+            "$YAML_BASE"
 
           prepare_db() {
             rm -rf "$DB_PATH"
@@ -154,6 +141,8 @@ jobs:
             local run_memtable="$3"
             local logdir="logs/${eng_id}"
             mkdir -p "$logdir"
+            test -f "$yaml"
+            cp -a "$yaml" "${logdir}/db_bench.yaml"
             record_shm() {
               local label="$1"
               {
@@ -191,6 +180,7 @@ jobs:
                 -enable_zero_copy
                 -progress_reports=false
                 -report_bench_start_time
+                -compact_target_level=6
             )
             .github/scripts/sample_statm_fdcache "${logdir}/statm_series-fillrandom.txt" "${logdir}/time-fillrandom.txt" \
               "$TOPLING/bin/db_bench" "${args_fr[@]}" \
@@ -230,6 +220,7 @@ jobs:
                 -enable_zero_copy
                 -progress_reports=false
                 -report_bench_start_time
+                -compact_target_level=6
             )
             .github/scripts/sample_statm_fdcache "${logdir}/statm_series-fillseq.txt" "${logdir}/time-fillseq.txt" \
               "$TOPLING/bin/db_bench" "${args[@]}" \
@@ -339,6 +330,7 @@ jobs:
               -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
               -report_bench_start_time
+              -compact_target_level=6
           )
           .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
             "$ENG/bin/db_bench" "${args_fr[@]}" \
@@ -363,6 +355,7 @@ jobs:
               -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
               -report_bench_start_time
+              -compact_target_level=6
           )
           .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
             "$ENG/bin/db_bench" "${args[@]}" \
@@ -437,6 +430,7 @@ jobs:
               -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
               -report_bench_start_time
+              -compact_target_level=6
           )
           .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
             "$ENG/bin/db_bench" "${args_fr[@]}" \
@@ -459,6 +453,7 @@ jobs:
               -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
               -report_bench_start_time
+              -compact_target_level=6
           )
           .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
             "$ENG/bin/db_bench" "${args[@]}" \

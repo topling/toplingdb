@@ -117,19 +117,20 @@ make_yaml_for_engine() {
   local eng="$1"
   local out="$TMP_YAML_DIR/${eng}.yaml"
   cp -a "$YAML" "$out"
+  local graft_args=(
+    --profile dcompact
+    --cpu-quota "$CPU_QUOTA"
+    --nproc "$(nproc)"
+    --l1-writer "$L1_WRITER"
+    --worker-port "$WORKER_PORT"
+  )
   if [[ -n "${WRITE_BUFFER_SIZE:-}" ]]; then
-    # Convert bytes to M for yaml (e.g. 33554432 -> 32M).
-    local wbs_m=$(( WRITE_BUFFER_SIZE / 1024 / 1024 ))
-    sed -i "s/^\\([[:space:]]*write_buffer_size:[[:space:]]*\\)[0-9]\\+[MmGgKk]\\?/\\1${wbs_m}M/" "$out"
+    graft_args+=(--write-buffer-size-bytes "$WRITE_BUFFER_SIZE")
   fi
-  # Keep yaml http_workers in sync with WORKER_PORT (CI yaml defaults to 8080).
-  sed -i "s|http://127\\.0\\.0\\.1:[0-9]\\+|http://127.0.0.1:${WORKER_PORT}|g" "$out"
-  # stderr only — this function's stdout is the yaml path.
-  python3 "$SCRIPT_DIR/graft_yaml_cpu_knobs.py" "$out" "$CPU_QUOTA" "$(nproc)" "$L1_WRITER"
   if [[ "$eng" == "topling-dictzip10" ]]; then
-    sed -i 's/^\([[:space:]]*minDictZipValueSize:[[:space:]]*\)3000/\110/' "$out"
-    grep -E 'minDictZipValueSize:[[:space:]]*10$' "$out" >/dev/null
+    graft_args+=(--min-dict-zip-value-size 10)
   fi
+  python3 "$SCRIPT_DIR/graft_bench_yaml.py" "${graft_args[@]}" "$out"
   echo "$out"
 }
 
@@ -259,6 +260,7 @@ run_engine_suite() {
   yaml="$(make_yaml_for_engine "$eng")"
   local logdir="${LOGDIR_BASE}/${eng}"
   mkdir -p "$logdir"
+  cp -a "$yaml" "${logdir}/db_bench.yaml"
   # Share one worker log pointer for evidence; also keep a per-engine copy link.
   ln -sfn "$(realpath "$WORKER_LOG")" "${logdir}/dcompact_worker.log" 2>/dev/null || true
 
@@ -275,6 +277,7 @@ run_engine_suite() {
     -enable_zero_copy
     -progress_reports=false
     -report_bench_start_time
+    -compact_target_level=6
   )
   run_under_cpu_quota \
     "${logdir}/statm_series-fillrandom.txt" \
@@ -298,6 +301,7 @@ run_engine_suite() {
     -enable_zero_copy
     -progress_reports=false
     -report_bench_start_time
+    -compact_target_level=6
   )
   run_under_cpu_quota \
     "${logdir}/statm_series-fillseq.txt" \

@@ -91,15 +91,11 @@ jobs:
           export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
           DB_PATH=/dev/shm/db_bench_enterprise
           YAML_BASE="$TOPLING/toplingdb-conf/db_bench_enterprise.yaml"
-          # CI-only: shrink write_buffer without touching rockside submodule.
-          sed -i 's/^\([[:space:]]*write_buffer_size:[[:space:]]*\)2G/\1512M/' "$YAML_BASE"
-          grep -E 'write_buffer_size:[[:space:]]*512M' "$YAML_BASE"
-          # Parallel config: enable DictZip for small values (default yaml is 3000;
-          # CI -value_size defaults to 50, so minDictZipValueSize=10 applies).
           YAML_DZ10="$TOPLING/toplingdb-conf/db_bench_enterprise_dictzip10.yaml"
-          cp -a "$YAML_BASE" "$YAML_DZ10"
-          sed -i 's/^\([[:space:]]*minDictZipValueSize:[[:space:]]*\)3000/\110/' "$YAML_DZ10"
-          grep -E 'minDictZipValueSize:[[:space:]]*10$' "$YAML_DZ10"
+          python3 .github/scripts/graft_bench_yaml.py \
+            --profile avx512-ci \
+            --dictzip10-out "$YAML_DZ10" \
+            "$YAML_BASE"
 
           prepare_db() {
             rm -rf "$DB_PATH"
@@ -116,6 +112,8 @@ jobs:
             local run_memtable="$3"
             local logdir="logs/${eng_id}"
             mkdir -p "$logdir"
+            test -f "$yaml"
+            cp -a "$yaml" "${logdir}/db_bench.yaml"
             record_shm() {
               local label="$1"
               {
@@ -147,6 +145,7 @@ jobs:
                 -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
                 -enable_zero_copy
                 -progress_reports=false
+                -compact_target_level=6
             )
             /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillrandom.txt" -- \
               "$TOPLING/bin/db_bench" "${args_fr[@]}" >"${logdir}/db_bench-fillrandom.log" 2>&1
@@ -182,6 +181,7 @@ jobs:
                 -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
                 -enable_zero_copy
                 -progress_reports=false
+                -compact_target_level=6
             )
             /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillseq.txt" -- \
               "$TOPLING/bin/db_bench" "${args[@]}" >"${logdir}/db_bench.log" 2>&1
@@ -280,6 +280,7 @@ jobs:
               -cache_size="$ROCKSDB_CACHE_SIZE"
               -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
+              -compact_target_level=6
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillrandom.txt" -- \
             "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
@@ -300,6 +301,7 @@ jobs:
               -cache_size="$ROCKSDB_CACHE_SIZE"
               -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
+              -compact_target_level=6
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillseq.txt" -- \
             "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log" 2>&1
@@ -365,6 +367,7 @@ jobs:
               -cache_size="$ROCKSDB_CACHE_SIZE"
               -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
+              -compact_target_level=6
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillrandom.txt" -- \
             "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
@@ -384,6 +387,7 @@ jobs:
               -cache_size="$ROCKSDB_CACHE_SIZE"
               -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
+              -compact_target_level=6
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillseq.txt" -- \
             "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log" 2>&1

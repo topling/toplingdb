@@ -107,8 +107,21 @@ static long fd_page_cache_pages(pid_t pid) {
     return 0;
   }
 
-  DIR *dir = opendir(dirpath);
+  int proc_fd = open(dirpath, O_RDONLY | O_DIRECTORY);
+  if (proc_fd < 0) {
+    return 0;
+  }
+
+  int list_fd = dup(proc_fd);
+  if (list_fd < 0) {
+    close(proc_fd);
+    return 0;
+  }
+
+  DIR *dir = fdopendir(list_fd);
   if (!dir) {
+    close(list_fd);
+    close(proc_fd);
     return 0;
   }
 
@@ -121,14 +134,8 @@ static long fd_page_cache_pages(pid_t pid) {
       continue;
     }
 
-    char path[96];
-    n = snprintf(path, sizeof(path), "/proc/%d/fd/%s", (int)pid, ent->d_name);
-    if (n < 0 || n >= (int)sizeof(path)) {
-      continue;
-    }
-
-    /* Open the live fd node so a close races to open-fail, not stale path. */
-    int fd = open(path, O_RDONLY);
+    /* Open via proc_fd/ slot (openat) instead of reconstructing full path. */
+    int fd = openat(proc_fd, ent->d_name, O_RDONLY);
     if (fd < 0) {
       continue;
     }
@@ -149,6 +156,7 @@ static long fd_page_cache_pages(pid_t pid) {
   }
 
   closedir(dir);
+  close(proc_fd);
   return total;
 }
 

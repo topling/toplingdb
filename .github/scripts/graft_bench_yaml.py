@@ -33,6 +33,7 @@ _PROFILE_DEFAULTS: dict[str, dict] = {
         "write_buffer_size": "128M",
         "target_file_size_base": "16M",
         "target_file_size_multiplier": 1.5,
+        "level0_slowdown_writes_trigger": 4,
         "cpu_knobs": True,
         "strip_compaction_executor_factory": True,
         "dcompact_min_level": 20,
@@ -41,14 +42,17 @@ _PROFILE_DEFAULTS: dict[str, dict] = {
         "write_buffer_size": "512M",
         "target_file_size_base": "16M",
         "target_file_size_multiplier": 1.5,
+        "level0_slowdown_writes_trigger": 4,
     },
     "local": {
         "target_file_size_base": "16M",
         "target_file_size_multiplier": 1.5,
+        "level0_slowdown_writes_trigger": 4,
     },
     "dcompact": {
         "target_file_size_base": "16M",
         "target_file_size_multiplier": 1.5,
+        "level0_slowdown_writes_trigger": 4,
         "cpu_knobs": True,
     },
 }
@@ -184,6 +188,7 @@ def _verify_graft(
     write_buffer_size: str | None,
     target_file_size_base: str | None,
     target_file_size_multiplier: float | str | None,
+    level0_slowdown_writes_trigger: int | None,
     dictzip10_out: Path | None,
     min_dict_zip_value_size: int | None,
 ) -> None:
@@ -221,6 +226,19 @@ def _verify_graft(
                 f"want {want!r}"
             )
         checks.append(f"target_file_size_multiplier={want}")
+
+    expected_l0 = level0_slowdown_writes_trigger if level0_slowdown_writes_trigger is not None else cfg.get(
+        "level0_slowdown_writes_trigger"
+    )
+    if expected_l0 is not None:
+        got = _scalar_value(text, "level0_slowdown_writes_trigger")
+        want = str(expected_l0)
+        if got != want:
+            sys.exit(
+                f"FAIL verify {path}: level0_slowdown_writes_trigger={got!r} "
+                f"want {want!r}"
+            )
+        checks.append(f"level0_slowdown_writes_trigger={want}")
 
     if cfg.get("cpu_knobs"):
         if not re.search(
@@ -282,6 +300,14 @@ def _verify_graft(
                     f"FAIL verify {dictzip10_out}: "
                     f"target_file_size_multiplier={got!r} want {want!r}"
                 )
+        if expected_l0 is not None:
+            got = _scalar_value(dz, "level0_slowdown_writes_trigger")
+            want = str(expected_l0)
+            if got != want:
+                sys.exit(
+                    f"FAIL verify {dictzip10_out}: "
+                    f"level0_slowdown_writes_trigger={got!r} want {want!r}"
+                )
         checks.append("dictzip10_out ok")
 
     print(
@@ -301,6 +327,7 @@ def _graft_file(
     write_buffer_size: str | None,
     target_file_size_base: str | None,
     target_file_size_multiplier: float | str | None,
+    level0_slowdown_writes_trigger: int | None,
     min_dict_zip_value_size: int | None,
     worker_port: int | None,
     dcompact_min_level: int | None,
@@ -326,6 +353,13 @@ def _graft_file(
     if tfm is not None:
         text = _replace_scalar(text, "target_file_size_multiplier", tfm)
         actions.append(f"target_file_size_multiplier={tfm}")
+
+    l0 = level0_slowdown_writes_trigger if level0_slowdown_writes_trigger is not None else cfg.get(
+        "level0_slowdown_writes_trigger"
+    )
+    if l0 is not None:
+        text = _replace_scalar(text, "level0_slowdown_writes_trigger", l0)
+        actions.append(f"level0_slowdown_writes_trigger={l0}")
 
     if worker_port is not None:
         text = _sync_worker_port(text, worker_port)
@@ -387,6 +421,11 @@ def main() -> None:
         type=float,
         help="override profile default (CI default: 1.5)",
     )
+    parser.add_argument(
+        "--level0-slowdown-writes-trigger",
+        type=int,
+        help="override profile default (CI default: 4)",
+    )
     parser.add_argument("--min-dict-zip-value-size", type=int)
     parser.add_argument(
         "--dictzip10-out",
@@ -424,6 +463,7 @@ def main() -> None:
         write_buffer_size=wbs,
         target_file_size_base=args.target_file_size_base,
         target_file_size_multiplier=args.target_file_size_multiplier,
+        level0_slowdown_writes_trigger=args.level0_slowdown_writes_trigger,
         min_dict_zip_value_size=args.min_dict_zip_value_size,
         worker_port=args.worker_port,
         dcompact_min_level=args.dcompact_min_level,
@@ -449,6 +489,7 @@ def main() -> None:
             write_buffer_size=wbs,
             target_file_size_base=args.target_file_size_base,
             target_file_size_multiplier=args.target_file_size_multiplier,
+            level0_slowdown_writes_trigger=args.level0_slowdown_writes_trigger,
             dictzip10_out=args.dictzip10_out,
             min_dict_zip_value_size=args.min_dict_zip_value_size,
         )

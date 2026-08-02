@@ -80,6 +80,7 @@ export PORTABLE="${PORTABLE:-haswell}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SRC_DIR"
 python3 "$SCRIPT_DIR/patch_db_bench_time.py" "$SRC_DIR/tools/db_bench_tool.cc"
+python3 "$SCRIPT_DIR/patch_db_bench_compact_target_level.py" "$SRC_DIR/tools/db_bench_tool.cc"
 BUILD_TARGETS=(db_bench memtablerep_bench)
 if [[ "${PATCH_COMPACTION_SERVICE:-0}" == "1" ]]; then
   python3 "$SCRIPT_DIR/patch_db_bench_compaction_service.py" "$SRC_DIR" "$REF"

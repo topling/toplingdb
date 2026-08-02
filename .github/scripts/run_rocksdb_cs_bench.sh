@@ -145,6 +145,7 @@ run_suite() {
     -compaction_spool_dir="$SPOOL_DIR"
     -benchmarks="${suite},flush,compact,readseq,readseq,readseq,readrandom"
     -progress_reports=false -report_bench_start_time
+    -compact_target_level=6
   )
   echo "=== starting suite=${suite} NUM=${NUM} ==="
   set +e

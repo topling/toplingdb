@@ -527,6 +527,11 @@ DEFINE_uint64(subcompactions, 1,
 static const bool FLAGS_subcompactions_dummy __attribute__((__unused__)) =
     RegisterFlagValidator(&FLAGS_subcompactions, &ValidateUint32Range);
 
+DEFINE_int32(compact_target_level, -1,
+             "For CompactRange in compact benchmarks, set "
+             "CompactRangeOptions::target_level (requires change_level). "
+             "-1 keeps the default behavior.");
+
 DEFINE_int32(max_background_flushes,
              ROCKSDB_NAMESPACE::Options().max_background_flushes,
              "The maximum number of concurrent background flushes"
@@ -5824,6 +5829,10 @@ class Benchmark {
       auto compactionOptions = CompactRangeOptions();
       compactionOptions.max_subcompactions =
           static_cast<uint32_t>(FLAGS_subcompactions);
+      if (FLAGS_compact_target_level >= 0) {
+        compactionOptions.change_level = true;
+        compactionOptions.target_level = FLAGS_compact_target_level;
+      }
       db->CompactRange(compactionOptions, nullptr, nullptr);
     } else {
       fprintf(stdout,
@@ -8470,12 +8479,20 @@ class Benchmark {
     cro.bottommost_level_compaction =
         BottommostLevelCompaction::kForceOptimized;
     cro.max_subcompactions = static_cast<uint32_t>(FLAGS_subcompactions);
+    if (FLAGS_compact_target_level >= 0) {
+      cro.change_level = true;
+      cro.target_level = FLAGS_compact_target_level;
+    }
     db->CompactRange(cro, nullptr, nullptr);
   }
 
   void CompactAll() {
     CompactRangeOptions cro;
     cro.max_subcompactions = static_cast<uint32_t>(FLAGS_subcompactions);
+    if (FLAGS_compact_target_level >= 0) {
+      cro.change_level = true;
+      cro.target_level = FLAGS_compact_target_level;
+    }
     if (db_.db != nullptr) {
       db_.db->CompactRange(cro, nullptr, nullptr);
     }

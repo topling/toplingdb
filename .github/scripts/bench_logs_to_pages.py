@@ -1461,11 +1461,12 @@ def emit(args: argparse.Namespace) -> None:
             'rss - shared; '
             'mostly readwrite anonymous pages (costly, needs swap).</li>\n'
             '<li><span style="color:#a05a00;font-weight:600">pagecache</span>: '
-            'kernel file page cache for regular files the process currently has open '
-            '(cachestat(2) on /proc/pid/fd, deduped by inode; covers buffered readwrite '
+            'kernel file page cache for regular files this process currently has open '
+            '(cachestat(2) on /proc/pid/fd, deduped by inode; covers buffered read/write '
             "and mmap). Pages brought in only via buffered I/O are not charged to process RSS; "
-            "mmap'd file pages can appear in both pagecache and RSS/shared, so series may "
-            'overlap.</li>\n'
+            "mmap'd file pages may appear in both pagecache and RSS/shared, so the series can "
+            'overlap. When reads hit this cache, they avoid disk I/O, and the DB '
+            'benefits in its own way.</li>\n'
             '<li><span style="color:#6b21a8;font-weight:600">anony+pc</span>: '
             'anony+pagecache (sum of process anonymous RSS and open-file page cache; '
             'not a disjoint partition).</li>\n'

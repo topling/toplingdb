@@ -35,6 +35,7 @@ METRIC_RE = re.compile(
 ENGINES = ("topling", "topling-dictzip10", "rocksdb-v8.10", "rocksdb-master")
 TOPLING_ENGINES = ("topling", "topling-dictzip10")
 ROCKSDB_ENGINES = ("rocksdb-v8.10", "rocksdb-master")
+YAML_RAW_NAME = "db_bench.yaml"
 ENGINE_LABELS = {
     "topling": "ToplingDB",
     "topling-dictzip10": "ToplingDB minDictZip=10",
@@ -1266,6 +1267,22 @@ def _build_runner_section(
     return section
 
 
+def _build_yaml_config_links(raw_dir: Path) -> str:
+    parts: List[str] = []
+    for eng in TOPLING_ENGINES:
+        if (raw_dir / eng / YAML_RAW_NAME).is_file():
+            label = html.escape(ENGINE_LABELS[eng])
+            parts.append(f'<a href="raw/{eng}/{YAML_RAW_NAME}">{label} yaml</a>')
+    if not parts:
+        return ""
+    return (
+        '<p class="meta"><strong>ToplingDB bench yaml</strong> '
+        "(runtime graft): "
+        + " | ".join(parts)
+        + "</p>"
+    )
+
+
 def emit(args: argparse.Namespace) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -1308,6 +1325,7 @@ def emit(args: argparse.Namespace) -> None:
             "time-fillrandom-omit.txt",
             "time-fillseq-omit.txt",
             "bench_settings.txt",
+            YAML_RAW_NAME,
             "engine-meta.json",
         ):
             p = src / name
@@ -1558,6 +1576,7 @@ def emit(args: argparse.Namespace) -> None:
             "refusing to emit pages without an external link (LOGs must not go into gh-pages)"
         )
     raw_links = " | ".join(raw_link_parts)
+    yaml_links = _build_yaml_config_links(raw_dir)
 
     runner_html = _build_runner_section(runner_env, cache_size_bytes, dataset_bytes, dataset_estimated)
 
@@ -1569,6 +1588,7 @@ def emit(args: argparse.Namespace) -> None:
   </p>
   <p class="meta">generated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
   <p>{raw_links}</p>
+  {yaml_links}
   {runner_html}
   <h2>/dev/shm usage (space; after db_bench + omit/scan, before delete)</h2>
   <p class="meta">Allocated disk usage (IEC blocks). RocksDB uses default Snappy compression. Space ratio = engine / v8.10; {_hl('<1 = less space than RocksDB', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>

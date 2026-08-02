@@ -48,6 +48,7 @@ RATIO_OTHER_LABELS = {
 
 SHM_WORKLOADS = ("fillrandom", "fillseq")
 RSS_WORKLOADS = ("fillrandom", "fillseq")
+YAML_RAW_NAME = "db_bench.yaml"
 
 _SEGMENT_COLORS = [
     "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
@@ -1022,6 +1023,22 @@ def _build_dcompact_bench_notes(runner_env: Dict[str, str]) -> str:
   </p>"""
 
 
+def _build_yaml_config_links(raw_dir: Path) -> str:
+    parts: List[str] = []
+    for eng in TOPLING_ENGINES:
+        if (raw_dir / eng / YAML_RAW_NAME).is_file():
+            label = html.escape(ENGINE_LABELS[eng])
+            parts.append(f'<a href="raw/{eng}/{YAML_RAW_NAME}">{label} yaml</a>')
+    if not parts:
+        return ""
+    return (
+        '<p class="meta"><strong>ToplingDB bench yaml</strong> '
+        "(runtime graft): "
+        + " | ".join(parts)
+        + "</p>"
+    )
+
+
 def emit(args: argparse.Namespace) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -1055,6 +1072,7 @@ def emit(args: argparse.Namespace) -> None:
             "time-fillrandom.txt",
             "time-fillseq.txt",
             "bench_settings.txt",
+            YAML_RAW_NAME,
             "engine-meta.json",
         ):
             p = src / name
@@ -1236,6 +1254,7 @@ def emit(args: argparse.Namespace) -> None:
             "refusing to emit pages without an external link (LOGs must not go into gh-pages)"
         )
     raw_links = " | ".join(raw_link_parts)
+    yaml_links = _build_yaml_config_links(raw_dir)
 
     runner_html = _build_runner_section(runner_env, cache_size_bytes, dataset_bytes, dataset_estimated)
     dcompact_notes = _build_dcompact_bench_notes(runner_env)
@@ -1248,6 +1267,7 @@ def emit(args: argparse.Namespace) -> None:
   </p>
   <p class="meta">generated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
   <p>{raw_links}</p>
+  {yaml_links}
   {dcompact_notes}
   {runner_html}
   <h2>/dev/shm usage (space; after db_bench, before delete)</h2>

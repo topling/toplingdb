@@ -2,11 +2,15 @@
 """Unified runtime graft for ToplingDB bench yaml (CI/local; never edit rockside).
 
 Profiles:
-  plain-ci   db_bench-run.yml: write_buffer 128M, target_file_size 16M, cpu knobs,
+  plain-ci   db_bench-run.yml: write_buffer 128M, target_file_size 16M,
+             target_file_size_multiplier 1.5, cpu knobs,
              strip compaction_executor_factory, dcompact_min_level 20
-  avx512-ci  db_bench-avx512-run.yml: write_buffer 512M, target_file_size 16M
-  local      run_local_simple_top_pages.sh: target_file_size 16M only
-  dcompact   run_dcompact_bench.sh temp yaml: target_file_size 16M, cpu knobs,
+  avx512-ci  db_bench-avx512-run.yml: write_buffer 512M, target_file_size 16M,
+             target_file_size_multiplier 1.5
+  local      run_local_simple_top_pages.sh: target_file_size 16M,
+             target_file_size_multiplier 1.5
+  dcompact   run_dcompact_bench.sh temp yaml: target_file_size 16M,
+             target_file_size_multiplier 1.5, cpu knobs,
              optional write_buffer / worker_port / minDictZipValueSize
 
 Usage:
@@ -28,6 +32,7 @@ _PROFILE_DEFAULTS: dict[str, dict] = {
     "plain-ci": {
         "write_buffer_size": "128M",
         "target_file_size_base": "16M",
+        "target_file_size_multiplier": 1.5,
         "cpu_knobs": True,
         "strip_compaction_executor_factory": True,
         "dcompact_min_level": 20,
@@ -35,12 +40,15 @@ _PROFILE_DEFAULTS: dict[str, dict] = {
     "avx512-ci": {
         "write_buffer_size": "512M",
         "target_file_size_base": "16M",
+        "target_file_size_multiplier": 1.5,
     },
     "local": {
         "target_file_size_base": "16M",
+        "target_file_size_multiplier": 1.5,
     },
     "dcompact": {
         "target_file_size_base": "16M",
+        "target_file_size_multiplier": 1.5,
         "cpu_knobs": True,
     },
 }
@@ -175,6 +183,7 @@ def _verify_graft(
     l1_writer: str,
     write_buffer_size: str | None,
     target_file_size_base: str | None,
+    target_file_size_multiplier: float | str | None,
     dictzip10_out: Path | None,
     min_dict_zip_value_size: int | None,
 ) -> None:
@@ -199,6 +208,19 @@ def _verify_graft(
                 f"FAIL verify {path}: target_file_size_base={got!r} want {expected_tfs!r}"
             )
         checks.append(f"target_file_size_base={expected_tfs}")
+
+    expected_tfm = target_file_size_multiplier or cfg.get(
+        "target_file_size_multiplier"
+    )
+    if expected_tfm is not None:
+        got = _scalar_value(text, "target_file_size_multiplier")
+        want = str(expected_tfm)
+        if got != want:
+            sys.exit(
+                f"FAIL verify {path}: target_file_size_multiplier={got!r} "
+                f"want {want!r}"
+            )
+        checks.append(f"target_file_size_multiplier={want}")
 
     if cfg.get("cpu_knobs"):
         if not re.search(
@@ -252,7 +274,15 @@ def _verify_graft(
             sys.exit(
                 f"FAIL verify {dictzip10_out}: minDictZipValueSize=10 not found"
             )
-        checks.append(f"dictzip10_out ok")
+        if expected_tfm is not None:
+            got = _scalar_value(dz, "target_file_size_multiplier")
+            want = str(expected_tfm)
+            if got != want:
+                sys.exit(
+                    f"FAIL verify {dictzip10_out}: "
+                    f"target_file_size_multiplier={got!r} want {want!r}"
+                )
+        checks.append("dictzip10_out ok")
 
     print(
         f"graft_bench_yaml verify: {path} profile={profile} "
@@ -270,6 +300,7 @@ def _graft_file(
     l1_writer: str,
     write_buffer_size: str | None,
     target_file_size_base: str | None,
+    target_file_size_multiplier: float | str | None,
     min_dict_zip_value_size: int | None,
     worker_port: int | None,
     dcompact_min_level: int | None,
@@ -288,6 +319,13 @@ def _graft_file(
     if tfs:
         text = _replace_scalar(text, "target_file_size_base", tfs)
         actions.append(f"target_file_size_base={tfs}")
+
+    tfm = target_file_size_multiplier if target_file_size_multiplier is not None else cfg.get(
+        "target_file_size_multiplier"
+    )
+    if tfm is not None:
+        text = _replace_scalar(text, "target_file_size_multiplier", tfm)
+        actions.append(f"target_file_size_multiplier={tfm}")
 
     if worker_port is not None:
         text = _sync_worker_port(text, worker_port)
@@ -344,6 +382,11 @@ def main() -> None:
         help="convert bytes to M for write_buffer_size (dcompact env)",
     )
     parser.add_argument("--target-file-size-base")
+    parser.add_argument(
+        "--target-file-size-multiplier",
+        type=float,
+        help="override profile default (CI default: 1.5)",
+    )
     parser.add_argument("--min-dict-zip-value-size", type=int)
     parser.add_argument(
         "--dictzip10-out",
@@ -380,6 +423,7 @@ def main() -> None:
         l1_writer=args.l1_writer,
         write_buffer_size=wbs,
         target_file_size_base=args.target_file_size_base,
+        target_file_size_multiplier=args.target_file_size_multiplier,
         min_dict_zip_value_size=args.min_dict_zip_value_size,
         worker_port=args.worker_port,
         dcompact_min_level=args.dcompact_min_level,
@@ -404,6 +448,7 @@ def main() -> None:
             l1_writer=args.l1_writer,
             write_buffer_size=wbs,
             target_file_size_base=args.target_file_size_base,
+            target_file_size_multiplier=args.target_file_size_multiplier,
             dictzip10_out=args.dictzip10_out,
             min_dict_zip_value_size=args.min_dict_zip_value_size,
         )

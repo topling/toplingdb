@@ -3,14 +3,14 @@
 
 Profiles:
   plain-ci   db_bench-run.yml: write_buffer 128M, target_file_size 32M,
-             target_file_size_multiplier 1.5, cpu knobs,
+             target_file_size_multiplier 1.5, level_writers CI ladder, cpu knobs,
              strip compaction_executor_factory, dcompact_min_level 20
   avx512-ci  db_bench-avx512-run.yml: write_buffer 512M, target_file_size 32M,
-             target_file_size_multiplier 1.5
+             target_file_size_multiplier 1.5, level_writers CI ladder
   local      run_local_simple_top_pages.sh: target_file_size 32M,
-             target_file_size_multiplier 1.5
+             target_file_size_multiplier 1.5, level_writers CI ladder
   dcompact   run_dcompact_bench.sh temp yaml: target_file_size 32M,
-             target_file_size_multiplier 1.5, cpu knobs,
+             target_file_size_multiplier 1.5, level_writers CI ladder, cpu knobs,
              optional write_buffer / worker_port / minDictZipValueSize
 
 Usage:
@@ -28,12 +28,23 @@ from pathlib import Path
 
 _L1_WRITERS = ("fast", "simple", "light_zip", "zip", "bb")
 
+_CI_LEVEL_WRITERS = (
+    "simple",
+    "simple",
+    "simple",
+    "light_zip",
+    "light_zip",
+    "light_zip",
+    "zip",
+)
+
 _PROFILE_DEFAULTS: dict[str, dict] = {
     "plain-ci": {
         "write_buffer_size": "128M",
         "target_file_size_base": "32M",
         "target_file_size_multiplier": 1.5,
         "level0_slowdown_writes_trigger": 4,
+        "level_writers": _CI_LEVEL_WRITERS,
         "cpu_knobs": True,
         "strip_compaction_executor_factory": True,
         "dcompact_min_level": 20,
@@ -43,16 +54,19 @@ _PROFILE_DEFAULTS: dict[str, dict] = {
         "target_file_size_base": "32M",
         "target_file_size_multiplier": 1.5,
         "level0_slowdown_writes_trigger": 4,
+        "level_writers": _CI_LEVEL_WRITERS,
     },
     "local": {
         "target_file_size_base": "32M",
         "target_file_size_multiplier": 1.5,
         "level0_slowdown_writes_trigger": 4,
+        "level_writers": _CI_LEVEL_WRITERS,
     },
     "dcompact": {
         "target_file_size_base": "32M",
         "target_file_size_multiplier": 1.5,
         "level0_slowdown_writes_trigger": 4,
+        "level_writers": _CI_LEVEL_WRITERS,
         "cpu_knobs": True,
     },
 }
@@ -90,6 +104,33 @@ def _replace_scalar(
     return text
 
 
+def _format_level_writers(writers: tuple[str, ...]) -> str:
+    return "[" + ", ".join(writers) + "]"
+
+
+def _replace_first_level_writers(text: str, writers: tuple[str, ...]) -> str:
+    formatted = _format_level_writers(writers)
+    pat = re.compile(
+        r"^([ \t]*level_writers:[ \t]*)\[[^\]]*\](.*)$",
+        re.MULTILINE,
+    )
+    text, n = pat.subn(rf"\g<1>{formatted}\g<2>", text, count=1)
+    if n != 1:
+        sys.exit(f"FAIL: expected exactly one level_writers: to rewrite, got {n}")
+    return text
+
+
+def _first_level_writers(text: str) -> list[str] | None:
+    m = re.search(
+        r"^[ \t]*level_writers:[ \t]*\[(.*?)\]",
+        text,
+        re.MULTILINE,
+    )
+    if not m:
+        return None
+    return [part.strip() for part in m.group(1).split(",") if part.strip()]
+
+
 def _apply_cpu_knobs(text: str, db_q: str, nproc: int, l1_writer: str) -> str:
     if l1_writer not in _L1_WRITERS:
         sys.exit(
@@ -121,16 +162,6 @@ def _apply_cpu_knobs(text: str, db_q: str, nproc: int, l1_writer: str) -> str:
             continue
         if n != 1:
             sys.exit(f"FAIL: expected exactly one {key}:, got {n}")
-
-    lw_pat = re.compile(
-        r"^([ \t]*level_writers:[ \t]*\[[ \t]*[^,\]]+[ \t]*,[ \t]*)([^,\]]+)(.*)$",
-        re.MULTILINE,
-    )
-    text, n = lw_pat.subn(rf"\g<1>{l1_writer}\g<3>", text, count=1)
-    if n != 1:
-        sys.exit(
-            f"FAIL: expected to rewrite L1 of first level_writers:, got {n}"
-        )
 
     text, n = re.subn(
         r"^([ \t]*forceNeedCompact:[ \t]*)\S+",
@@ -240,22 +271,22 @@ def _verify_graft(
             )
         checks.append(f"level0_slowdown_writes_trigger={want}")
 
+    expected_lw = cfg.get("level_writers")
+    if expected_lw is not None:
+        got = _first_level_writers(text)
+        want = list(expected_lw)
+        if got != want:
+            sys.exit(
+                f"FAIL verify {path}: level_writers={got!r} want {want!r}"
+            )
+        checks.append(f"level_writers={_format_level_writers(expected_lw)}")
+
     if cfg.get("cpu_knobs"):
         if not re.search(
             r"^[ \t]*forceNeedCompact:[ \t]*true\b", text, re.MULTILINE
         ):
             sys.exit(f"FAIL verify {path}: forceNeedCompact: true not found")
-        lw = re.search(
-            r"^[ \t]*level_writers:[ \t]*\[[ \t]*[^,\]]+[ \t]*,[ \t]*([^,\]]+)",
-            text,
-            re.MULTILINE,
-        )
-        if not lw or lw.group(1).strip() != l1_writer:
-            got = lw.group(1).strip() if lw else None
-            sys.exit(
-                f"FAIL verify {path}: level_writers L1={got!r} want {l1_writer!r}"
-            )
-        checks.append(f"l1_writer={l1_writer}")
+        checks.append("forceNeedCompact=true")
 
     if cfg.get("strip_compaction_executor_factory"):
         if re.search(r"^[ \t]*compaction_executor_factory:", text, re.MULTILINE):
@@ -267,11 +298,7 @@ def _verify_graft(
     if profile == "local":
         if "SimpleTopTable" not in text:
             sys.exit(f"FAIL verify {path}: SimpleTopTable not found")
-        if not re.search(
-            r"^[ \t]*level_writers:[ \t]*\[fast,", text, re.MULTILINE
-        ):
-            sys.exit(f"FAIL verify {path}: level_writers L0 fast not found")
-        checks.append("sanity SimpleTopTable/level_writers")
+        checks.append("sanity SimpleTopTable")
 
     if min_dict_zip_value_size is not None:
         if not re.search(
@@ -360,6 +387,11 @@ def _graft_file(
     if l0 is not None:
         text = _replace_scalar(text, "level0_slowdown_writes_trigger", l0)
         actions.append(f"level0_slowdown_writes_trigger={l0}")
+
+    expected_lw = cfg.get("level_writers")
+    if expected_lw is not None:
+        text = _replace_first_level_writers(text, expected_lw)
+        actions.append(f"level_writers={_format_level_writers(expected_lw)}")
 
     if worker_port is not None:
         text = _sync_worker_port(text, worker_port)

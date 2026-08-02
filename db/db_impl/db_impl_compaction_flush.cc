@@ -1401,6 +1401,9 @@ Status DBImpl::CompactFiles(const CompactionOptions& compact_options,
           const_cast<std::atomic<int>*>(&manual_compaction_paused_)));
   {
     InstrumentedMutexLock l(&mutex_);
+    if (manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
+      return Status::Incomplete(Status::SubCode::kManualCompactionPaused);
+    }
     auto* current = cfd->current();
     current->Ref();
 
@@ -1450,9 +1453,6 @@ Status DBImpl::CompactFilesImpl(
 
   if (shutting_down_.load(std::memory_order_acquire)) {
     return Status::ShutdownInProgress();
-  }
-  if (manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
-    return Status::Incomplete(Status::SubCode::kManualCompactionPaused);
   }
 
   std::unordered_set<uint64_t> input_set;
@@ -1792,6 +1792,10 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
     if (to_level > level) {
       if (level == 0) {
         refitting_level_ = false;
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                       "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                       cfd->GetName().c_str(), level, to_level,
+                       "Cannot change from level 0 to other levels.");
         return Status::NotSupported(
             "Cannot change from level 0 to other levels.");
       }
@@ -1799,6 +1803,10 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
       for (int l = level + 1; l <= to_level; l++) {
         if (vstorage->NumLevelFiles(l) > 0) {
           refitting_level_ = false;
+          ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                         "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                         cfd->GetName().c_str(), level, to_level,
+                         "Levels between source and target are not empty for a move.");
           return Status::NotSupported(
               "Levels between source and target are not empty for a move.");
         }
@@ -1806,6 +1814,11 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                                             refit_level_largest.user_key(),
                                             l)) {
           refitting_level_ = false;
+          ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                         "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                         cfd->GetName().c_str(), level, to_level,
+                         "Levels between source and target will have some "
+                         "ongoing compaction's output.");
           return Status::NotSupported(
               "Levels between source and target "
               "will have some ongoing compaction's output.");
@@ -1817,6 +1830,11 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
       for (int l = to_level; l < level; l++) {
         if (vstorage->NumLevelFiles(l) > 0) {
           refitting_level_ = false;
+          ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                         "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                         cfd->GetName().c_str(), level, to_level,
+                         "Levels between source and target are not empty for a "
+                         "move.");
           return Status::NotSupported(
               "Levels between source and target are not empty for a move.");
         }
@@ -1824,6 +1842,11 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                                             refit_level_largest.user_key(),
                                             l)) {
           refitting_level_ = false;
+          ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                         "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                         cfd->GetName().c_str(), level, to_level,
+                         "Levels between source and target will have some "
+                         "ongoing compaction's output.");
           return Status::NotSupported(
               "Levels between source and target "
               "will have some ongoing compaction's output.");
@@ -1834,6 +1857,15 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                     "[%s] Before refitting:\n%s", cfd->GetName().c_str(),
                     cfd->current()->DebugString().data());
 
+    int base_level = 1;
+    if (cfd->ioptions()->compaction_style == kCompactionStyleLevel) {
+      base_level = vstorage->base_level();
+    }
+    const CompressionType output_compression = GetCompressionType(
+        vstorage, mutable_cf_options, to_level, base_level);
+    const CompressionOptions output_compression_opts =
+        GetCompressionOptions(mutable_cf_options, vstorage, to_level);
+
     std::unique_ptr<Compaction> c(new Compaction(
         vstorage, *cfd->ioptions(), mutable_cf_options, mutable_db_options_,
         {input}, to_level,
@@ -1843,14 +1875,23 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                 ->compaction_style) /* output file size limit, not applicable */
         ,
         LLONG_MAX /* max compaction bytes, not applicable */,
-        0 /* output path ID, not applicable */, mutable_cf_options.compression,
-        mutable_cf_options.compression_opts, Temperature::kUnknown,
+        0 /* output path ID, not applicable */, output_compression,
+        output_compression_opts, Temperature::kUnknown,
         0 /* max_subcompactions, not applicable */,
         {} /* grandparents, not applicable */, false /* is manual */,
         "" /* trim_ts */, -1 /* score, not applicable */,
         false /* is deletion compaction, not applicable */,
         false /* l0_files_might_overlap, not applicable */,
         CompactionReason::kRefitLevel));
+    c->FinalizeInputInfo(cfd->current());
+    const bool is_trivial_move = c->IsTrivialMove();
+
+    std::unordered_set<uint64_t> refit_file_numbers;
+    refit_file_numbers.reserve(input[0].files.size());
+    for (const auto& f : input[0].files) {
+      refit_file_numbers.insert(f->fd.GetNumber());
+    }
+
     cfd->compaction_picker()->RegisterCompaction(c.get());
     TEST_SYNC_POINT("DBImpl::ReFitLevel:PostRegisterCompaction");
     VersionEdit edit;
@@ -1883,10 +1924,61 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
     ROCKS_LOG_DEBUG(immutable_db_options_.info_log, "[%s] LogAndApply: %s\n",
                     cfd->GetName().c_str(), status.ToString().data());
 
+    if (status.ok() && !is_trivial_move) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "[%s] [ReFitLevel] compact %zu files at L%d after refit",
+                     cfd->GetName().c_str(), refit_file_numbers.size(),
+                     to_level);
+      CompactionOptions compact_options;
+      Version* version = cfd->current();
+      VersionStorageInfo* vstorage_after = version->storage_info();
+      int base_level = 1;
+      if (cfd->ioptions()->compaction_style == kCompactionStyleLevel) {
+        base_level = vstorage_after->base_level();
+      }
+      compact_options.compression = GetCompressionType(
+          vstorage_after, mutable_cf_options, to_level, base_level);
+      std::vector<std::string> input_file_names;
+      input_file_names.reserve(refit_file_numbers.size());
+      for (uint64_t file_number : refit_file_numbers) {
+        input_file_names.push_back(MakeTableFileName(file_number));
+      }
+
+      version->Ref();
+      JobContext job_context(next_job_id_.fetch_add(1), true);
+      LogBuffer log_buffer(InfoLogLevel::INFO_LEVEL,
+                           immutable_db_options_.info_log.get());
+      status = CompactFilesImpl(compact_options, cfd, version, input_file_names,
+                                /*output_file_names=*/nullptr, to_level,
+                                /*output_path_id=*/0, &job_context,
+                                &log_buffer,
+                                /*compaction_job_info=*/nullptr);
+      version->Unref();
+
+      FindObsoleteFiles(&job_context, !status.ok());
+      {
+        InstrumentedMutexUnlock unlock_guard(&mutex_);
+        log_buffer.FlushBufferToLog();
+        if (job_context.HaveSomethingToDelete()) {
+          PurgeObsoleteFiles(job_context);
+        }
+        job_context.Clean();
+      }
+    }
+
     if (status.ok()) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "[%s] [ReFitLevel] moved %zu files from L%d to L%d",
+                     cfd->GetName().c_str(), input[0].files.size(), level,
+                     to_level);
       ROCKS_LOG_DEBUG(immutable_db_options_.info_log,
                       "[%s] After refitting:\n%s", cfd->GetName().c_str(),
                       cfd->current()->DebugString().data());
+    } else {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                     cfd->GetName().c_str(), level, to_level,
+                     status.ToString().c_str());
     }
     sv_context.Clean();
     refitting_level_ = false;

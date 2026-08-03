@@ -117,9 +117,10 @@ jobs:
             fast|simple|light_zip|zip|bb) ;;
             *) echo "FAIL: L1_WRITER must be fast|simple|light_zip|zip|bb, got $L1_WRITER" >&2; exit 1 ;;
           esac
+          CPU_QUOTA="$(awk -v n="$(nproc)" 'BEGIN {printf "%g%%", n/2*100}')"
           python3 .github/scripts/graft_bench_yaml.py \
             --profile plain-ci \
-            --cpu-quota 50% \
+            --cpu-quota "$CPU_QUOTA" \
             --nproc "$(nproc)" \
             --l1-writer "$L1_WRITER" \
             --dictzip10-out "$YAML_DZ10" \

@@ -1886,12 +1886,6 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
     c->FinalizeInputInfo(cfd->current());
     const bool is_trivial_move = c->IsTrivialMove();
 
-    std::unordered_set<uint64_t> refit_file_numbers;
-    refit_file_numbers.reserve(input[0].files.size());
-    for (const auto& f : input[0].files) {
-      refit_file_numbers.insert(f->fd.GetNumber());
-    }
-
     cfd->compaction_picker()->RegisterCompaction(c.get());
     TEST_SYNC_POINT("DBImpl::ReFitLevel:PostRegisterCompaction");
     VersionEdit edit;
@@ -1927,7 +1921,7 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
     if (status.ok() && !is_trivial_move) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
                      "[%s] [ReFitLevel] compact %zu files at L%d after refit",
-                     cfd->GetName().c_str(), refit_file_numbers.size(),
+                     cfd->GetName().c_str(), input[0].files.size(),
                      to_level);
       CompactionOptions compact_options;
       Version* version = cfd->current();
@@ -1939,9 +1933,9 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
       compact_options.compression = GetCompressionType(
           vstorage_after, mutable_cf_options, to_level, base_level);
       std::vector<std::string> input_file_names;
-      input_file_names.reserve(refit_file_numbers.size());
-      for (uint64_t file_number : refit_file_numbers) {
-        input_file_names.push_back(MakeTableFileName(file_number));
+      input_file_names.reserve(input[0].files.size());
+      for (const auto& f : input[0].files) {
+        input_file_names.push_back(MakeTableFileName(f->fd.GetNumber()));
       }
 
       version->Ref();

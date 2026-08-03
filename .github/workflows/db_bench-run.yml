@@ -165,7 +165,7 @@ jobs:
             prepare_db
             args_fr=(
                 -json "$yaml"
-                -num=100000000
+                -num=50000000
                 -key_size=8
                 -value_size="${VALUE_SIZE}"
                 -batch_size=1000
@@ -182,7 +182,7 @@ jobs:
             save_db_log fillrandom
             args_omit=(
                 -json "$yaml"
-                -num=100000000
+                -num=50000000
                 -key_size=8
                 -value_size="${VALUE_SIZE}"
                 -batch_size=1000
@@ -205,7 +205,7 @@ jobs:
             prepare_db
             args=(
                 -json "$yaml"
-                -num=100000000
+                -num=50000000
                 -key_size=8
                 -value_size="${VALUE_SIZE}"
                 -batch_size=1000
@@ -314,7 +314,7 @@ jobs:
           mkdir -p "$DB_PATH"
           args_fr=(
               -db="$DB_PATH"
-              -num=100000000
+              -num=50000000
               -key_size=8
               -value_size="${VALUE_SIZE}"
               -batch_size=1000
@@ -339,7 +339,7 @@ jobs:
           mkdir -p "$DB_PATH"
           args=(
               -db="$DB_PATH"
-              -num=100000000
+              -num=50000000
               -key_size=8
               -value_size="${VALUE_SIZE}"
               -batch_size=1000
@@ -414,7 +414,7 @@ jobs:
           mkdir -p "$DB_PATH"
           args_fr=(
               -db="$DB_PATH"
-              -num=100000000
+              -num=50000000
               -key_size=8
               -value_size="${VALUE_SIZE}"
               -batch_size=1000
@@ -437,7 +437,7 @@ jobs:
           mkdir -p "$DB_PATH"
           args=(
               -db="$DB_PATH"
-              -num=100000000
+              -num=50000000
               -key_size=8
               -value_size="${VALUE_SIZE}"
               -batch_size=1000

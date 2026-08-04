@@ -25,6 +25,8 @@
 #include "util/concurrent_task_limiter_impl.h"
 #include "util/udt_util.h"
 
+#include "db/compaction/compaction.h"
+
 namespace ROCKSDB_NAMESPACE {
 
 bool DBImpl::EnoughRoomForCompaction(
@@ -1919,10 +1921,15 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                     cfd->GetName().c_str(), status.ToString().data());
 
     if (status.ok() && !is_trivial_move) {
+      const size_t num_refitted_files = input[0].files.size();
+      const uint64_t max_compaction_bytes =
+          mutable_cf_options.max_compaction_bytes;
+      const int num_levels = cfd->NumberLevels();
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                     "[%s] [ReFitLevel] compact %zu files at L%d after refit",
-                     cfd->GetName().c_str(), input[0].files.size(),
-                     to_level);
+                     "[%s] [ReFitLevel] compact %zu files at L%d after refit "
+                     "(batched by max_compaction_bytes=%" PRIu64 ")",
+                     cfd->GetName().c_str(), num_refitted_files, to_level,
+                     max_compaction_bytes);
       CompactionOptions compact_options;
       Version* version = cfd->current();
       VersionStorageInfo* vstorage_after = version->storage_info();
@@ -1932,31 +1939,83 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
       }
       compact_options.compression = GetCompressionType(
           vstorage_after, mutable_cf_options, to_level, base_level);
-      std::vector<std::string> input_file_names;
-      input_file_names.reserve(input[0].files.size());
+
+      std::unordered_set<uint64_t> pending_refitted_files;
+      pending_refitted_files.reserve(num_refitted_files);
       for (const auto& f : input[0].files) {
-        input_file_names.push_back(MakeTableFileName(f->fd.GetNumber()));
+        pending_refitted_files.insert(f->fd.GetNumber());
       }
 
-      version->Ref();
-      JobContext job_context(next_job_id_.fetch_add(1), true);
-      LogBuffer log_buffer(InfoLogLevel::INFO_LEVEL,
-                           immutable_db_options_.info_log.get());
-      status = CompactFilesImpl(compact_options, cfd, version, input_file_names,
-                                /*output_file_names=*/nullptr, to_level,
-                                /*output_path_id=*/0, &job_context,
-                                &log_buffer,
-                                /*compaction_job_info=*/nullptr);
-      version->Unref();
+      size_t batch_num = 0;
+      while (status.ok() && !pending_refitted_files.empty()) {
+        version = cfd->current();
+        vstorage_after = version->storage_info();
 
-      FindObsoleteFiles(&job_context, !status.ok());
-      {
-        InstrumentedMutexUnlock unlock_guard(&mutex_);
-        log_buffer.FlushBufferToLog();
-        if (job_context.HaveSomethingToDelete()) {
-          PurgeObsoleteFiles(job_context);
+        std::vector<std::string> batch_file_names;
+        uint64_t batch_bytes = 0;
+        for (const auto& f : vstorage_after->LevelFiles(to_level)) {
+          if (pending_refitted_files.find(f->fd.GetNumber()) ==
+              pending_refitted_files.end()) {
+            continue;
+          }
+          uint64_t file_bytes = f->fd.GetFileSize();
+          if (to_level + 1 < num_levels) {
+            std::vector<FileMetaData*> grandparents;
+            vstorage_after->GetOverlappingInputs(
+                to_level + 1, &f->smallest, &f->largest, &grandparents);
+            file_bytes += TotalFileSize(grandparents);
+          }
+          if (!batch_file_names.empty() &&
+              batch_bytes + file_bytes > max_compaction_bytes) {
+            break;
+          }
+          batch_file_names.push_back(MakeTableFileName(f->fd.GetNumber()));
+          batch_bytes += file_bytes;
         }
-        job_context.Clean();
+
+        if (batch_file_names.empty()) {
+          status = Status::Corruption(
+              "ReFitLevel post-refit compact: pending input files missing from "
+              "L" +
+              std::to_string(to_level));
+          break;
+        }
+
+        ROCKS_LOG_INFO(
+            immutable_db_options_.info_log,
+            "[%s] [ReFitLevel] post-refit compact batch %zu: %zu files, "
+            "%zu still pending",
+            cfd->GetName().c_str(), batch_num, batch_file_names.size(),
+            pending_refitted_files.size());
+
+        version->Ref();
+        JobContext job_context(next_job_id_.fetch_add(1), true);
+        LogBuffer log_buffer(InfoLogLevel::INFO_LEVEL,
+                             immutable_db_options_.info_log.get());
+        status = CompactFilesImpl(compact_options, cfd, version,
+                                  batch_file_names,
+                                  /*output_file_names=*/nullptr, to_level,
+                                  /*output_path_id=*/0, &job_context,
+                                  &log_buffer,
+                                  /*compaction_job_info=*/nullptr);
+        version->Unref();
+
+        FindObsoleteFiles(&job_context, !status.ok());
+        {
+          InstrumentedMutexUnlock unlock_guard(&mutex_);
+          log_buffer.FlushBufferToLog();
+          if (job_context.HaveSomethingToDelete()) {
+            PurgeObsoleteFiles(job_context);
+          }
+          job_context.Clean();
+        }
+
+        if (status.ok()) {
+          for (const auto& name : batch_file_names) {
+            pending_refitted_files.erase(TableFileNameToNumber(name));
+          }
+        }
+        ++batch_num;
       }
     }
 

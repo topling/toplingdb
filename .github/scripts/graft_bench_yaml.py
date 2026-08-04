@@ -31,7 +31,7 @@ _L1_WRITERS = ("fast", "simple", "light_zip", "zip", "bb")
 _CI_LEVEL_WRITERS = (
     "simple",
     "simple",
-    "simple",
+    "light_zip",
     "light_zip",
     "light_zip",
     "light_zip",

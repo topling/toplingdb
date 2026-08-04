@@ -25,9 +25,9 @@
 #   L1_WRITER           dispatch level_writers[1]: fast|simple|light_zip|zip|bb (default simple)
 #
 # Runtime yaml grafts (temp copy only; worker_cpu = nproc - db_cpu):
-#   max_level1_subcompactions  = max(2, min(7, ceil(db_cpu)))
+#   max_level1_subcompactions  = 2
 #   max_background_flushes     = 1
-#   max_background_compactions = min(13, ceil(nproc - db_cpu))
+#   max_background_compactions = max(1, min(13, ceil(nproc - db_cpu)))
 #   dcompact_min_level         = 2  (L0→L1 local: memtable_as_log_index WAL
 #                                    blob numbers must be allocated on DB)
 #   dispatch level_writers[1]  = $L1_WRITER  (first level_writers: line only)

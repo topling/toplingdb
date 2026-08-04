@@ -33,6 +33,12 @@ on:
         required: false
         default: "50000000"
         type: string
+      max_background_compactions:
+        description: >-
+          max_background_compactions via graft --cpu-quota (auto = ceil(nproc/2)).
+        required: false
+        default: auto
+        type: string
 
 concurrency:
   group: pages-deploy
@@ -54,6 +60,7 @@ jobs:
       L1_WRITER: ${{ inputs.l1_writer || 'simple' }}
       VALUE_SIZE: ${{ inputs.value_size || '50' }}
       NUM: ${{ inputs.num || '50000000' }}
+      MAX_BACKGROUND_COMPACTIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_background_compactions || 'auto' }}
     steps:
       - name: Checkout build commit
         uses: actions/checkout@v4
@@ -117,11 +124,30 @@ jobs:
             fast|simple|light_zip|zip|bb) ;;
             *) echo "FAIL: L1_WRITER must be fast|simple|light_zip|zip|bb, got $L1_WRITER" >&2; exit 1 ;;
           esac
-          CPU_QUOTA="$(awk -v n="$(nproc)" 'BEGIN {printf "%g%%", n/2*100}')"
+          NPROC="$(nproc)"
+          if [ -z "${MAX_BACKGROUND_COMPACTIONS:-}" ] || [ "$MAX_BACKGROUND_COMPACTIONS" = auto ]; then
+            CPU_QUOTA="$(awk -v n="$NPROC" 'BEGIN {printf "%g%%", n/2*100}')"
+          else
+            MBC="$MAX_BACKGROUND_COMPACTIONS"
+            case "$MBC" in
+              *[!0-9]*|'') echo "FAIL: max_background_compactions must be a positive integer or auto, got $MBC" >&2; exit 1 ;;
+            esac
+            REQ_MBC="$MBC"
+            if [ "$MBC" -lt 1 ]; then MBC=1; fi
+            if [ "$MBC" -gt 13 ]; then MBC=13; fi
+            if [ "$MBC" -gt "$NPROC" ]; then MBC="$NPROC"; fi
+            DB_CPU=$((NPROC - MBC))
+            if [ "$DB_CPU" -lt 0 ]; then DB_CPU=0; fi
+            CPU_QUOTA="$(awk -v d="$DB_CPU" 'BEGIN {printf "%g%%", d*100}')"
+            if [ "$REQ_MBC" != "$MBC" ]; then
+              echo "max_background_compactions clamped ${REQ_MBC} -> ${MBC} (nproc=${NPROC}, max=13)"
+            fi
+          fi
+          echo "graft cpu split: nproc=${NPROC} cpu_quota=${CPU_QUOTA} max_background_compactions=${MBC:-auto} max_level1_subcompactions=2"
           python3 .github/scripts/graft_bench_yaml.py \
             --profile plain-ci \
             --cpu-quota "$CPU_QUOTA" \
-            --nproc "$(nproc)" \
+            --nproc "$NPROC" \
             --l1-writer "$L1_WRITER" \
             --dictzip10-out "$YAML_DZ10" \
             "$YAML_BASE"

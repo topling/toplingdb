@@ -147,9 +147,9 @@ def _apply_cpu_knobs(text: str, db_q: str, nproc: int, l1_writer: str) -> str:
 
     worker_cpu = nproc - db_cpu
     knobs = {
-        "max_level1_subcompactions": max(2, min(7, math.ceil(db_cpu))),
+        "max_level1_subcompactions": 2,
         "max_background_flushes": 1,
-        "max_background_compactions": min(13, math.ceil(worker_cpu)),
+        "max_background_compactions": max(1, min(13, math.ceil(worker_cpu))),
         "dcompact_min_level": 2,
     }
     for key, val in knobs.items():

@@ -17,7 +17,11 @@
 # Env:
 #   NUM=20000000          key count (CI uses 100000000; local shm often needs smaller)
 #   VALUE_SIZE=50         db_bench -value_size (align with db_bench-run.yml)
+#   L1_WRITER=simple      plain-ci graft level_writers[1] (align with db_bench-run.yml)
+#   MAX_BACKGROUND_COMPACTIONS=auto  graft via --cpu-quota (align with db_bench-run.yml)
 #   RUN_MEMTABLE=0|1      run memtablerep_bench after topling suite (default 0)
+#   EMIT_HTML=1           after run-topling / run-dictzip10, generate score pages (default 1)
+#   EMIT_REQUIRE_DICTZIP10=0  emit with topling only; skip dictzip10 requirement (default 0)
 #   RUN_ID=local-simpletop
 # Sampler: sample_statm_fdcache (same as CI db_bench-run).
 set -euo pipefail
@@ -32,7 +36,11 @@ PAGES_EMIT="$LOCAL/_pages"
 PAGES_SITE="$LOCAL/site_pages"
 NUM="${NUM:-20000000}"
 VALUE_SIZE="${VALUE_SIZE:-50}"
+L1_WRITER="${L1_WRITER:-simple}"
+MAX_BACKGROUND_COMPACTIONS="${MAX_BACKGROUND_COMPACTIONS:-auto}"
 RUN_MEMTABLE="${RUN_MEMTABLE:-0}"
+EMIT_HTML="${EMIT_HTML:-1}"
+EMIT_REQUIRE_DICTZIP10="${EMIT_REQUIRE_DICTZIP10:-0}"
 RUN_ID="${RUN_ID:-local-simpletop}"
 
 export LD_LIBRARY_PATH="$ROOT:${LD_LIBRARY_PATH:-}"
@@ -57,15 +65,68 @@ prepare_yaml() {
     echo "missing $YAML_BASE" >&2
     exit 1
   }
+  case "$L1_WRITER" in
+    fast|simple|light_zip|zip|bb) ;;
+    *) echo "FAIL: L1_WRITER must be fast|simple|light_zip|zip|bb, got $L1_WRITER" >&2; exit 1 ;;
+  esac
+  local NPROC
+  NPROC="$(nproc)"
+  local CPU_QUOTA MBC REQ_MBC DB_CPU
+  if [ -z "${MAX_BACKGROUND_COMPACTIONS}" ] || [ "$MAX_BACKGROUND_COMPACTIONS" = auto ]; then
+    CPU_QUOTA="$(awk -v n="$NPROC" 'BEGIN {printf "%g%%", n/2*100}')"
+  else
+    MBC="$MAX_BACKGROUND_COMPACTIONS"
+    case "$MBC" in
+      *[!0-9]*|'') echo "FAIL: max_background_compactions must be a positive integer or auto, got $MBC" >&2; exit 1 ;;
+    esac
+    REQ_MBC="$MBC"
+    if [ "$MBC" -lt 1 ]; then MBC=1; fi
+    if [ "$MBC" -gt 13 ]; then MBC=13; fi
+    if [ "$MBC" -gt "$NPROC" ]; then MBC="$NPROC"; fi
+    DB_CPU=$((NPROC - MBC))
+    if [ "$DB_CPU" -lt 0 ]; then DB_CPU=0; fi
+    CPU_QUOTA="$(awk -v d="$DB_CPU" 'BEGIN {printf "%g%%", d*100}')"
+    if [ "$REQ_MBC" != "$MBC" ]; then
+      echo "max_background_compactions clamped ${REQ_MBC} -> ${MBC} (nproc=${NPROC}, max=13)"
+    fi
+  fi
+  echo "graft cpu split: nproc=${NPROC} cpu_quota=${CPU_QUOTA} max_background_compactions=${MBC:-auto} max_level1_subcompactions=2"
+  mkdir -p "$LOGROOT"
+  {
+    echo "num=${NUM}"
+    echo "value_size=${VALUE_SIZE}"
+    echo "l1_writer=${L1_WRITER}"
+    echo "max_background_compactions=${MAX_BACKGROUND_COMPACTIONS}"
+    echo "cpu_quota=${CPU_QUOTA}"
+    echo "nproc=${NPROC}"
+  } >"$LOGROOT/bench_settings.txt"
   python3 "$ROOT/.github/scripts/graft_bench_yaml.py" \
-    --profile local \
+    --profile plain-ci \
+    --cpu-quota "$CPU_QUOTA" \
+    --nproc "$NPROC" \
+    --l1-writer "$L1_WRITER" \
     --dictzip10-out "$YAML_DZ10" \
     "$YAML_BASE"
   echo "prepared $YAML_DZ10"
 }
 
+clean_bench_shm() {
+  local p
+  for p in \
+    /dev/shm/db_bench_enterprise \
+    /dev/shm/db_bench_rocksdb_v810 \
+    /dev/shm/db_bench_rocksdb_master \
+    /dev/shm/Topling-* \
+    /dev/shm/rocksdb.*
+  do
+    # shellcheck disable=SC2086
+    rm -rf $p 2>/dev/null || true
+  done
+  df -h /dev/shm
+}
+
 prepare_db() {
-  rm -rf "$DB_PATH"
+  clean_bench_shm
   mkdir -p "$DB_PATH"
   if [ -d "$LOCAL/site" ]; then
     cp -a "$LOCAL/site/." "$DB_PATH/"
@@ -162,6 +223,10 @@ run_topling_suite() {
     "${logdir}/statm_series-fillrandom.txt" "${logdir}/time-fillrandom.txt" \
     "$ROOT/db_bench" "${args_fr[@]}" \
     >"${logdir}/db_bench-fillrandom.log" 2>&1
+  grep -Eiq 'Received signal|No space left on device|Aborted' "${logdir}/db_bench-fillrandom.log" && {
+    echo "FAIL: db_bench-fillrandom crashed; see ${logdir}/db_bench-fillrandom.log" >&2
+    exit 1
+  }
   save_db_log "$logdir" fillrandom
 
   local args_omit=(
@@ -182,7 +247,7 @@ run_topling_suite() {
   record_rss "$logdir" fillrandom
   record_rss "$logdir" fillrandom-omit
   record_shm "$logdir" fillrandom
-  rm -rf "$DB_PATH"
+  clean_bench_shm
 
   # Pass 2: fillseq + omit  (workflow names this db_bench.log)
   prepare_db
@@ -202,6 +267,10 @@ run_topling_suite() {
     "${logdir}/statm_series-fillseq.txt" "${logdir}/time-fillseq.txt" \
     "$ROOT/db_bench" "${args_fs[@]}" \
     >"${logdir}/db_bench.log" 2>&1
+  grep -Eiq 'Received signal|No space left on device|Aborted' "${logdir}/db_bench.log" && {
+    echo "FAIL: fillseq suite crashed; see ${logdir}/db_bench.log" >&2
+    exit 1
+  }
   # Keep an explicit alias for humans.
   cp -f "${logdir}/db_bench.log" "${logdir}/db_bench-fillseq.log"
   save_db_log "$logdir" fillseq
@@ -215,7 +284,7 @@ run_topling_suite() {
   if [ "$want_memtable" = "1" ]; then
     run_memtablerep_if_requested "$logdir"
   fi
-  rm -rf "$DB_PATH"
+  clean_bench_shm
 
   local f
   for f in \
@@ -272,10 +341,14 @@ emit_pages() {
     echo "missing $LOGROOT/topling/db_bench.log (fillseq suite)" >&2
     exit 1
   }
-  test -f "$LOGROOT/topling-dictzip10/db_bench.log" || {
-    echo "missing $LOGROOT/topling-dictzip10/db_bench.log; run: $0 run-dictzip10" >&2
-    exit 1
-  }
+  if [ "$EMIT_REQUIRE_DICTZIP10" = "1" ]; then
+    test -f "$LOGROOT/topling-dictzip10/db_bench.log" || {
+      echo "missing $LOGROOT/topling-dictzip10/db_bench.log; run: $0 run-dictzip10" >&2
+      exit 1
+    }
+  elif [ ! -f "$LOGROOT/topling-dictzip10/db_bench.log" ]; then
+    echo "emit: topling-dictzip10 logs missing; plain page will show Topling only"
+  fi
 
   rm -rf "$PAGES_EMIT"
   mkdir -p "$PAGES_EMIT"
@@ -306,6 +379,14 @@ PY
   echo "SCORE_PAGE_RUN=$run_html"
 }
 
+maybe_emit_pages() {
+  if [ "$EMIT_HTML" = "1" ]; then
+    emit_pages
+  else
+    echo "skip emit (EMIT_HTML=$EMIT_HTML)"
+  fi
+}
+
 mode="${1:-}"
 case "$mode" in
   prepare-yaml)
@@ -313,20 +394,23 @@ case "$mode" in
     ;;
   run-topling)
     prepare_yaml
-    run_topling_suite topling "$YAML_BASE" 1
+    run_topling_suite topling "$YAML_BASE" "$RUN_MEMTABLE"
+    maybe_emit_pages
     ;;
   run-dictzip10)
     prepare_yaml
     run_topling_suite topling-dictzip10 "$YAML_DZ10" 0
+    maybe_emit_pages
     ;;
   emit)
     emit_pages
     ;;
   all)
+    EMIT_HTML=0
     prepare_yaml
-    run_topling_suite topling "$YAML_BASE" 1
+    run_topling_suite topling "$YAML_BASE" "$RUN_MEMTABLE"
     run_topling_suite topling-dictzip10 "$YAML_DZ10" 0
-    emit_pages
+    EMIT_REQUIRE_DICTZIP10=1 emit_pages
     ;;
   ""|-h|--help|help)
     usage

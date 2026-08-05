@@ -296,8 +296,14 @@ run_engine_suite() {
   rm -rf "$DB_PATH"
 
   prepare_db
+  # fillseq: replace every simple in level_writers with light_zip.
+  local yaml_fs="${logdir}/db_bench-fillseq.yaml"
+  python3 "$SCRIPT_DIR/graft_bench_yaml.py" \
+    --rewrite-level-writer simple light_zip \
+    --out "$yaml_fs" \
+    "$yaml"
   local args_fs=(
-    -json "$yaml"
+    -json "$yaml_fs"
     -num="$NUM"
     -key_size=8
     -value_size="$VALUE_SIZE"

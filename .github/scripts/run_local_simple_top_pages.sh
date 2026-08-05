@@ -250,9 +250,15 @@ run_topling_suite() {
   clean_bench_shm
 
   # Pass 2: fillseq + omit  (workflow names this db_bench.log)
+  # fillseq: replace every simple in level_writers with light_zip.
   prepare_db
+  local yaml_fs="${logdir}/db_bench-fillseq.yaml"
+  python3 "$ROOT/.github/scripts/graft_bench_yaml.py" \
+    --rewrite-level-writer simple light_zip \
+    --out "$yaml_fs" \
+    "$yaml"
   local args_fs=(
-    -json "$yaml"
+    -json "$yaml_fs"
     -num="$NUM"
     -key_size=8
     -value_size="$VALUE_SIZE"
@@ -274,8 +280,20 @@ run_topling_suite() {
   # Keep an explicit alias for humans.
   cp -f "${logdir}/db_bench.log" "${logdir}/db_bench-fillseq.log"
   save_db_log "$logdir" fillseq
+  local args_omit_fs=(
+    -json "$yaml_fs"
+    -num="$NUM"
+    -key_size=8
+    -value_size="$VALUE_SIZE"
+    -batch_size=1000
+    -benchmarks=nextwithkey,nextwithkey,nextwithkey,readseq,readseq,readseq
+    -scan_omit_key -scan_omit_value
+    -use_existing_db=1
+    -enable_zero_copy
+    -progress_reports=false
+  )
   /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillseq-omit.txt" -- \
-    "$ROOT/db_bench" "${args_omit[@]}" >"${logdir}/db_bench-fillseq-omit.log" 2>&1
+    "$ROOT/db_bench" "${args_omit_fs[@]}" >"${logdir}/db_bench-fillseq-omit.log" 2>&1
   save_db_log "$logdir" fillseq-omit
   record_rss "$logdir" fillseq
   record_rss "$logdir" fillseq-omit

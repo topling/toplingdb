@@ -120,6 +120,15 @@ def _replace_first_level_writers(text: str, writers: tuple[str, ...]) -> str:
     return text
 
 
+def _map_first_level_writers(text: str, mapping: dict[str, str]) -> str:
+    """Rewrite tokens in the first level_writers: [...] list via mapping."""
+    writers = _first_level_writers(text)
+    if writers is None:
+        sys.exit("FAIL: no level_writers: list found to map")
+    mapped = tuple(mapping.get(w, w) for w in writers)
+    return _replace_first_level_writers(text, mapped)
+
+
 def _first_level_writers(text: str) -> list[str] | None:
     m = re.search(
         r"^[ \t]*level_writers:[ \t]*\[(.*?)\]",
@@ -434,8 +443,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--profile",
-        required=True,
         choices=sorted(_PROFILE_DEFAULTS),
+        help="Graft profile (required unless --rewrite-level-writer)",
     )
     parser.add_argument("yaml", type=Path)
     parser.add_argument("--cpu-quota")
@@ -476,11 +485,41 @@ def main() -> None:
         default=True,
         help="After graft, assert profile expectations (default: on)",
     )
+    parser.add_argument(
+        "--rewrite-level-writer",
+        nargs=2,
+        metavar=("FROM", "TO"),
+        help=(
+            "Only rewrite the first level_writers list: replace every FROM "
+            "token with TO; write to --out (default: overwrite yaml)"
+        ),
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        help="Output path for --rewrite-level-writer (default: overwrite yaml)",
+    )
     args = parser.parse_args()
 
     yaml_path = args.yaml
     if not yaml_path.is_file():
         sys.exit(f"FAIL: yaml not found: {yaml_path}")
+
+    if args.rewrite_level_writer is not None:
+        fro, to = args.rewrite_level_writer
+        text = _map_first_level_writers(_read(yaml_path), {fro: to})
+        out = args.out if args.out is not None else yaml_path
+        out.parent.mkdir(parents=True, exist_ok=True)
+        _write(out, text)
+        print(
+            f"graft_bench_yaml: {out} level_writers map {fro!r}->{to!r} "
+            f"{_format_level_writers(tuple(_first_level_writers(text) or ()))}",
+            file=sys.stderr,
+        )
+        return
+
+    if args.profile is None:
+        sys.exit("FAIL: --profile is required unless --rewrite-level-writer is set")
 
     wbs = args.write_buffer_size
     if args.write_buffer_size_bytes is not None:

@@ -91,7 +91,9 @@ if [[ ! -x "$WORKER_BIN" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SAMPLE_STATM="$("$SCRIPT_DIR/ensure_sample_statm_fdcache.sh")"
+"$SCRIPT_DIR/ensure_sample_statm_fdcache.sh" >/dev/null
+SAMPLE_STATM="$SCRIPT_DIR/run_sample_statm_fdcache.sh"
+chmod +x "$SAMPLE_STATM"
 TMP_YAML_DIR="$(mktemp -d)"
 WORKER_PID=""
 WORKER_LOG="${LOGDIR_BASE}/dcompact_worker.log"
@@ -181,9 +183,12 @@ run_under_cpu_quota() {
   log="$(realpath -m "$log")"
   time_file="$(realpath -m "$time_file")"
   mkdir -p "$(dirname "$series")" "$(dirname "$log")" "$(dirname "$time_file")"
-  # sample_statm_fdcache inside the scope so its child is db_bench (no time/wrapper hop).
+  # run_sample_statm_fdcache inside the scope so its child is db_bench
+  # (no time/wrapper hop). Preserve CACHED_PAGES_USE_SYS for optional
+  # drop_caches + SYS_CACHED_OF_EMPTY path.
   if [[ "${CI:-0}" == "1" ]]; then
-    sudo systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
+    sudo --preserve-env=CACHED_PAGES_USE_SYS \
+      systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
       "$SAMPLE_STATM" "$series" "$time_file" "$@" \
       >"$log" 2>&1
   else

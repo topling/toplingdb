@@ -25,6 +25,13 @@ def check(mod) -> None:
         "101.0 1000 900 250 1 0 50 0 1024\n"
         "102.0 1000 850 220 1 0 50 0 2048\n"
     )
+    assert mod.parse_pagecache_src(text) == "cachestat"
+    meminfo_hdr = (
+        "# start_epoch=100.0  page_size=4096  pagecache_src=meminfo  "
+        "sys_cached_of_empty_kb=100  "
+        "fields=size,resident,shared,text,lib,data,dt,pagecache\n"
+    )
+    assert mod.parse_pagecache_src(meminfo_hdr) == "meminfo"
     start, page_size, samples = mod.parse_rss_series(text)
     assert start == 100.0, start
     assert page_size == 4096, page_size

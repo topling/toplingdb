@@ -39,6 +39,14 @@ on:
         required: false
         default: auto
         type: string
+      cached_pages_use_sys:
+        description: >-
+          If true, drop page cache before each sampled bench and set
+          SYS_CACHED_OF_EMPTY from /proc/meminfo Cached so pagecache is
+          system-wide Cached growth (pages). Default: per-fd cachestat.
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: pages-deploy
@@ -61,6 +69,7 @@ jobs:
       VALUE_SIZE: ${{ inputs.value_size || '50' }}
       NUM: ${{ inputs.num || '50000000' }}
       MAX_BACKGROUND_COMPACTIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_background_compactions || 'auto' }}
+      CACHED_PAGES_USE_SYS: ${{ github.event_name == 'workflow_dispatch' && inputs.cached_pages_use_sys || false }}
     steps:
       - name: Checkout build commit
         uses: actions/checkout@v4
@@ -76,7 +85,8 @@ jobs:
             libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
             libbz2-dev libcurl4-openssl-dev liburing-dev \
             libsnappy-dev liblz4-dev libzstd-dev
-          chmod +x .github/scripts/ensure_sample_statm_fdcache.sh
+          chmod +x .github/scripts/ensure_sample_statm_fdcache.sh \
+            .github/scripts/run_sample_statm_fdcache.sh
           .github/scripts/ensure_sample_statm_fdcache.sh
 
       - name: Download build artifact
@@ -208,7 +218,7 @@ jobs:
                 -report_bench_start_time
                 -compact_target_level=6
             )
-            .github/scripts/sample_statm_fdcache "${logdir}/statm_series-fillrandom.txt" "${logdir}/time-fillrandom.txt" \
+            .github/scripts/run_sample_statm_fdcache.sh "${logdir}/statm_series-fillrandom.txt" "${logdir}/time-fillrandom.txt" \
               "$TOPLING/bin/db_bench" "${args_fr[@]}" \
               >"${logdir}/db_bench-fillrandom.log" 2>&1
             cat "${logdir}/db_bench-fillrandom.log"
@@ -248,7 +258,7 @@ jobs:
                 -report_bench_start_time
                 -compact_target_level=6
             )
-            .github/scripts/sample_statm_fdcache "${logdir}/statm_series-fillseq.txt" "${logdir}/time-fillseq.txt" \
+            .github/scripts/run_sample_statm_fdcache.sh "${logdir}/statm_series-fillseq.txt" "${logdir}/time-fillseq.txt" \
               "$TOPLING/bin/db_bench" "${args[@]}" \
               >"${logdir}/db_bench.log" 2>&1
             cat "${logdir}/db_bench.log"
@@ -357,7 +367,7 @@ jobs:
               -report_bench_start_time
               -compact_target_level=6
           )
-          .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
+          .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
             "$ENG/bin/db_bench" "${args_fr[@]}" \
             >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
           cat "${LOGDIR}/db_bench-fillrandom.log"
@@ -382,7 +392,7 @@ jobs:
               -report_bench_start_time
               -compact_target_level=6
           )
-          .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
+          .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
             "$ENG/bin/db_bench" "${args[@]}" \
             >"${LOGDIR}/db_bench.log" 2>&1
           cat "${LOGDIR}/db_bench.log"
@@ -457,7 +467,7 @@ jobs:
               -report_bench_start_time
               -compact_target_level=6
           )
-          .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
+          .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
             "$ENG/bin/db_bench" "${args_fr[@]}" \
             >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
           cat "${LOGDIR}/db_bench-fillrandom.log"
@@ -480,7 +490,7 @@ jobs:
               -report_bench_start_time
               -compact_target_level=6
           )
-          .github/scripts/sample_statm_fdcache "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
+          .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
             "$ENG/bin/db_bench" "${args[@]}" \
             >"${LOGDIR}/db_bench.log" 2>&1
           cat "${LOGDIR}/db_bench.log"

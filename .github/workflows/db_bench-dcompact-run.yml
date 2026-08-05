@@ -39,6 +39,14 @@ on:
         required: false
         default: "50"
         type: string
+      cached_pages_use_sys:
+        description: >-
+          If true, drop page cache before each sampled bench and set
+          SYS_CACHED_OF_EMPTY from /proc/meminfo Cached so pagecache is
+          system-wide Cached growth (pages). Default: per-fd cachestat.
+        required: false
+        default: false
+        type: boolean
 
 # Must match plain run — serialize gh-pages pushes.
 concurrency:
@@ -61,6 +69,7 @@ jobs:
       CPU_QUOTA: ${{ inputs.cpu_quota }}
       L1_WRITER: ${{ inputs.l1_writer }}
       VALUE_SIZE: ${{ inputs.value_size || '50' }}
+      CACHED_PAGES_USE_SYS: ${{ inputs.cached_pages_use_sys || false }}
     steps:
       - name: Checkout build commit
         uses: actions/checkout@v4
@@ -75,7 +84,8 @@ jobs:
             libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
             libbz2-dev libcurl4-openssl-dev liburing-dev \
             libsnappy-dev liblz4-dev libzstd-dev curl
-          chmod +x .github/scripts/ensure_sample_statm_fdcache.sh
+          chmod +x .github/scripts/ensure_sample_statm_fdcache.sh \
+            .github/scripts/run_sample_statm_fdcache.sh
           .github/scripts/ensure_sample_statm_fdcache.sh
 
       - name: Download build artifact

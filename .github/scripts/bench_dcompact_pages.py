@@ -298,6 +298,21 @@ def parse_db_bench(text: str) -> List[Dict[str, str]]:
     return rows
 
 
+def parse_pagecache_src(text: str) -> str:
+    """Return pagecache source from series header: 'meminfo', 'cachestat', or ''."""
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("#"):
+            continue
+        for part in line[1:].split():
+            if part.startswith("pagecache_src="):
+                return part.split("=", 1)[1]
+            if part.startswith("cachestat="):
+                return "cachestat"
+        break
+    return ""
+
+
 def parse_rss_series(
     text: str,
 ) -> Tuple[float, int, List[Tuple[float, int, int, int]]]:
@@ -1139,6 +1154,7 @@ def emit(args: argparse.Namespace) -> None:
     shm_table = build_shm_usage_table(shm_usages)
 
     rss_svg_parts: List[str] = []
+    pagecache_src = ""
     for eng in ENGINES:
         eng_dir = log_root / eng
         for suite, log_name, bench_key in [
@@ -1148,9 +1164,10 @@ def emit(args: argparse.Namespace) -> None:
             series_path = eng_dir / f"statm_series-{suite}.txt"
             if not series_path.is_file():
                 continue
-            start_epoch, page_size, samples = parse_rss_series(
-                series_path.read_text(encoding="utf-8", errors="replace")
-            )
+            series_text = series_path.read_text(encoding="utf-8", errors="replace")
+            if not pagecache_src:
+                pagecache_src = parse_pagecache_src(series_text)
+            start_epoch, page_size, samples = parse_rss_series(series_text)
             if not samples:
                 continue
             bench_rows = engines_data.get(eng, {}).get(bench_key, [])
@@ -1166,9 +1183,42 @@ def emit(args: argparse.Namespace) -> None:
                 rss_svg_parts.append(svg)
     rss_svg_section = ""
     if rss_svg_parts:
+        if pagecache_src == "meminfo":
+            pagecache_meta = (
+                "Sampled once per second from /proc/statm plus system Cached "
+                "(/proc/meminfo) growth since drop_caches baseline "
+                "(workflow cached_pages_use_sys / SYS_CACHED_OF_EMPTY). "
+            )
+            pagecache_li = (
+                '<li><span style="color:#a05a00;font-weight:600">pagecache</span>: '
+                "system-wide /proc/meminfo Cached minus the post-drop_caches baseline "
+                "(excluding the inherent consumption of an empty system).</li>\n"
+            )
+            anony_pc_li = (
+                '<li><span style="color:#6b21a8;font-weight:600">anony+pc</span>: '
+                "anony+pagecache (sum of process anonymous RSS and system Cached growth; "
+                "not a disjoint partition).</li>\n"
+            )
+        else:
+            pagecache_meta = (
+                "Sampled once per second from /proc/statm plus open-file page cache. "
+            )
+            pagecache_li = (
+                '<li><span style="color:#a05a00;font-weight:600">pagecache</span>: '
+                "kernel file page cache for regular files the process currently has open "
+                "(cachestat(2) on /proc/pid/fd, deduped by inode; covers buffered readwrite "
+                "and mmap). Pages brought in only via buffered I/O are not charged to process RSS; "
+                "mmap'd file pages can appear in both pagecache and RSS/shared, so series may "
+                "overlap.</li>\n"
+            )
+            anony_pc_li = (
+                '<li><span style="color:#6b21a8;font-weight:600">anony+pc</span>: '
+                "anony+pagecache (sum of process anonymous RSS and open-file page cache; "
+                "not a disjoint partition).</li>\n"
+            )
         rss_svg_section = (
             '<h2>RSS over time</h2>\n'
-            '<p class="meta">Sampled once per second from /proc/statm plus open-file page cache. '
+            f'<p class="meta">{pagecache_meta}'
             'Colored bands show benchmark segments (start time from db_bench output).</p>\n'
             '<ul class="meta">\n'
             '<li><span style="color:#1558a8;font-weight:600">rss</span>: '
@@ -1180,16 +1230,9 @@ def emit(args: argparse.Namespace) -> None:
             '<li><span style="color:#c11618;font-weight:600">anony</span>: '
             'rss - shared; '
             'mostly readwrite anonymous pages (costly, needs swap).</li>\n'
-            '<li><span style="color:#a05a00;font-weight:600">pagecache</span>: '
-            'kernel file page cache for regular files the process currently has open '
-            '(cachestat(2) on /proc/pid/fd, deduped by inode; covers buffered readwrite '
-            "and mmap). Pages brought in only via buffered I/O are not charged to process RSS; "
-            "mmap'd file pages can appear in both pagecache and RSS/shared, so series may "
-            'overlap.</li>\n'
-            '<li><span style="color:#6b21a8;font-weight:600">anony+pc</span>: '
-            'anony+pagecache (sum of process anonymous RSS and open-file page cache; '
-            'not a disjoint partition).</li>\n'
-            '</ul>\n'
+            + pagecache_li
+            + anony_pc_li
+            + '</ul>\n'
             + "\n".join(rss_svg_parts)
         )
 

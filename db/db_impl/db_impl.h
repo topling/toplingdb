@@ -2218,7 +2218,11 @@ class DBImpl : public DB {
   // Move the files in the input level to the target level.
   // If target_level < 0, automatically calculate the minimum level that could
   // hold the data set.
-  Status ReFitLevel(ColumnFamilyData* cfd, int level, int target_level = -1);
+  // On successful move, writes *is_trivial_move and *actual_to_level.
+  // On failure / no move, leaves *is_trivial_move unchanged (caller should
+  // preset true so post-refit rewrite is skipped).
+  Status ReFitLevel(ColumnFamilyData* cfd, int level, int target_level,
+                    bool* is_trivial_move, int* actual_to_level);
 
   // helper functions for adding and removing from flush & compaction queues
   void AddToCompactionQueue(ColumnFamilyData* cfd);

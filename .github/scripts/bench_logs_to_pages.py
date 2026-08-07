@@ -1245,6 +1245,7 @@ def _build_runner_section(
     cache_size_bytes: Optional[int],
     dataset_bytes: Optional[int],
     dataset_estimated: bool,
+    dcompact_href: str = "dcompact/index.html",
 ) -> str:
     if not runner_env:
         return "<h2>Runner hardware/software</h2><p><em>n/a</em></p>"
@@ -1288,7 +1289,13 @@ def _build_runner_section(
         ds_iec = format_iec(dataset_bytes)
         est_note = " (estimated)" if dataset_estimated else ""
         if cache_size_bytes >= dataset_bytes:
-            section += f'\n<p class="meta"><strong>On-disk DB size{est_note} ({ds_iec}) ≤ block cache ({cache_iec})</strong> — cache can hold the entire dataset.</p>'
+            section += (
+                f'\n<p class="meta"><strong>On-disk DB size{est_note} ({ds_iec}) ≤ block cache ({cache_iec})</strong>'
+                f" — cache can hold the entire dataset."
+                f" So this benchmark mainly shows CPU and memory cost."
+                f' With <a href="{html.escape(dcompact_href)}">ToplingDB dcompact</a>,'
+                f" most of that CPU and memory cost can be offloaded.</p>"
+            )
         else:
             section += f'\n<p class="meta" style="color:#a30d0d"><strong>On-disk DB size{est_note} ({ds_iec}) &gt; block cache ({cache_iec})</strong> — cache cannot hold the entire dataset.</p>'
     return section
@@ -1649,7 +1656,13 @@ def emit(args: argparse.Namespace) -> None:
     raw_links = " | ".join(raw_link_parts)
     yaml_links = _build_yaml_config_links(raw_dir)
 
-    runner_html = _build_runner_section(runner_env, cache_size_bytes, dataset_bytes, dataset_estimated)
+    runner_html = _build_runner_section(
+        runner_env,
+        cache_size_bytes,
+        dataset_bytes,
+        dataset_estimated,
+        dcompact_href="../../dcompact/index.html",
+    )
 
     body = f"""
   <h1>Bench run: {html.escape(args.variant)} / {html.escape(str(args.run_id))}</h1>

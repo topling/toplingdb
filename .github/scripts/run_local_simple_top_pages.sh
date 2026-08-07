@@ -97,6 +97,7 @@ prepare_yaml() {
         "$LOCAL/toplingdb-conf/db_bench_enterprise.yaml"
   {
     echo "num=${NUM}"
+    echo "key_size=8"
     echo "value_size=${VALUE_SIZE}"
     echo "max_background_compactions=${MBC}"
     echo "nproc=${NPROC}"

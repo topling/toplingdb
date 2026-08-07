@@ -86,6 +86,12 @@ jobs:
       - name: Run ToplingDB benches
         run: |
           set -xeo pipefail
+          mkdir -p logs
+          {
+            echo "num=100000000"
+            echo "key_size=8"
+            echo "value_size=${VALUE_SIZE}"
+          } > logs/bench_settings.txt
           TOPLING="$RUN_PREFIX/topling"
           export LD_LIBRARY_PATH="$TOPLING/lib:${LD_LIBRARY_PATH:-}"
           ldd "$TOPLING/bin/db_bench"

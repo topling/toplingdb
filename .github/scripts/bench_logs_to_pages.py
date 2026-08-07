@@ -1278,6 +1278,11 @@ def _build_runner_section(
 {trs}
 </tbody>
 </table>"""
+    section += (
+        f'\n<p class="meta">num={html.escape(runner_env["num"])} | '
+        f'key_size={html.escape(runner_env["key_size"])} | '
+        f'value_size={html.escape(runner_env["value_size"])}</p>'
+    )
     if cache_size_bytes is not None and dataset_bytes is not None:
         cache_iec = format_iec(cache_size_bytes)
         ds_iec = format_iec(dataset_bytes)
@@ -1371,6 +1376,14 @@ def emit(args: argparse.Namespace) -> None:
         shutil.copy2(runner_env_src, raw_dir / "runner_env.txt")
 
     runner_env = load_runner_env(log_root)
+    bs = load_bench_settings(log_root)
+    for k in ("num", "key_size", "value_size"):
+        v = bs.get(k)
+        if not v:
+            raise SystemExit(
+                f"missing required {k}= in {log_root / 'bench_settings.txt'}"
+            )
+        runner_env[k] = v
 
     rss_data: Dict[str, Dict[str, Optional[int]]] = {
         e: engines_data.get(e, {}).get("rss_usage") or {} for e in ENGINES

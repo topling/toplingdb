@@ -6,6 +6,7 @@ machine- or per-pass fields:
 
   --set-max-background-compactions N
   --worker-port / --write-buffer-size(--bytes)
+  --target-file-size-base / --target-file-size-multiplier
   --prefix-level-writers / --fill-level-writers / --rewrite-level-writer
 """
 from __future__ import annotations
@@ -128,6 +129,14 @@ def main() -> None:
         type=int,
         help="convert bytes to M for write_buffer_size",
     )
+    parser.add_argument(
+        "--target-file-size-base",
+        help="e.g. 128M",
+    )
+    parser.add_argument(
+        "--target-file-size-multiplier",
+        help="e.g. 1 or 1.5",
+    )
     parser.add_argument("--worker-port", type=int)
     parser.add_argument(
         "--rewrite-level-writer",
@@ -169,6 +178,8 @@ def main() -> None:
         args.set_max_background_compactions is not None
         or args.write_buffer_size is not None
         or args.write_buffer_size_bytes is not None
+        or args.target_file_size_base is not None
+        or args.target_file_size_multiplier is not None
         or args.worker_port is not None
     )
     lw_ops = (
@@ -180,6 +191,7 @@ def main() -> None:
         sys.exit(
             "FAIL: specify at least one of --set-max-background-compactions, "
             "--worker-port, --write-buffer-size[--bytes], "
+            "--target-file-size-base, --target-file-size-multiplier, "
             "--prefix-level-writers, --fill-level-writers, "
             "--rewrite-level-writer"
         )
@@ -201,6 +213,22 @@ def main() -> None:
     if wbs is not None:
         text = _replace_scalar(text, "write_buffer_size", wbs)
         actions.append(f"write_buffer_size={wbs}")
+
+    if args.target_file_size_base is not None:
+        text = _replace_scalar(
+            text, "target_file_size_base", args.target_file_size_base
+        )
+        actions.append(f"target_file_size_base={args.target_file_size_base}")
+
+    if args.target_file_size_multiplier is not None:
+        text = _replace_scalar(
+            text,
+            "target_file_size_multiplier",
+            args.target_file_size_multiplier,
+        )
+        actions.append(
+            f"target_file_size_multiplier={args.target_file_size_multiplier}"
+        )
 
     if args.worker_port is not None:
         text = _sync_worker_port(text, args.worker_port)

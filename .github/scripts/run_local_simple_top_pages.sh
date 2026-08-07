@@ -262,6 +262,8 @@ run_topling_suite() {
   local yaml_fs="${logdir}/db_bench-fillseq.yaml"
   python3 "$ROOT/.github/scripts/graft_bench_yaml.py" \
     --prefix-level-writers 6 zipkeyonly \
+    --target-file-size-base 128M \
+    --target-file-size-multiplier 1 \
     --out "$yaml_fs" \
     "$yaml"
   local args_fs=(

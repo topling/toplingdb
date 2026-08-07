@@ -70,8 +70,8 @@ jobs:
           test -d "$RUN_PREFIX/rocksdb-v8.10"
           test -d "$RUN_PREFIX/rocksdb-master"
           test -x "$RUN_PREFIX/topling/bin/db_bench"
-          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_avx512_zipkeyonly.yaml"
-          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_avx512_zipkeyvalue.yaml"
+          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_zipkeyonly.yaml"
+          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_zipkeyvalue.yaml"
           test -x "$RUN_PREFIX/rocksdb-v8.10/bin/db_bench"
           test -x "$RUN_PREFIX/rocksdb-master/bin/db_bench"
           echo "RUN_PREFIX=$RUN_PREFIX" >> "$GITHUB_ENV"
@@ -92,8 +92,8 @@ jobs:
           export TOPLINGDB_GetContext_sampling=kNone
           export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
           DB_PATH=/dev/shm/db_bench_enterprise
-          YAML_ZKO="$TOPLING/toplingdb-conf/db_bench_enterprise_avx512_zipkeyonly.yaml"
-          YAML_ZKV="$TOPLING/toplingdb-conf/db_bench_enterprise_avx512_zipkeyvalue.yaml"
+          YAML_ZKO="$TOPLING/toplingdb-conf/db_bench_enterprise_zipkeyonly.yaml"
+          YAML_ZKV="$TOPLING/toplingdb-conf/db_bench_enterprise_zipkeyvalue.yaml"
           test -f "$YAML_ZKO"
           test -f "$YAML_ZKV"
           NPROC="$(nproc)"

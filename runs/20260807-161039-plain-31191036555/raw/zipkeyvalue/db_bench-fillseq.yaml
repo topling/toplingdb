@@ -1,0 +1,253 @@
+http:
+  # normally parent path of db path
+  document_root: /dev/shm/db_bench_enterprise
+  listening_ports: '2011'
+  auto_start_http: true
+setenv:
+  DictZipBlobStore_zipThreads: 32
+  StrSimpleEnvNameNotOverwrite: StringValue
+  IntSimpleEnvNameNotOverwrite: 16384
+  OverwriteThisEnv:
+    #comment: overwrite is default to false
+    overwrite: true
+    value: force overwrite this env by overwrite true
+AnyPlugin:
+  pretty_user_key_coder:
+    class: PrettyHexUserKeyCoder
+    params:
+      prefix_len: 0
+Cache:
+  lru_cache:
+    class: LRUCache
+    params:
+      capacity: 16G
+      #num_shard_bits: -1 # max is 6, mostly is 6
+      #strict_capacity_limit: false
+      #high_pri_pool_ratio: 0.5 # default is 0
+      #use_adaptive_mutex: false
+      #metadata_charge_policy: kFullChargeCacheMetadata
+permissions:
+  web_compact: true
+Statistics:
+  stat:
+    class: default
+    params:
+      discard_tickers:
+      #comment: 可以仅指定前缀，必须是以 . 为边界的前缀，例如下面两个必须分别指定
+      - rocksdb.block.cache
+      - rocksdb.block.cachecompressed
+      # comment: 上面两个也可以用下面这一个概括
+      - rocksdb.block
+      # 精确指定
+      - rocksdb.memtable.payload.bytes.at.flush
+      - rocksdb.memtable.garbage.bytes.at.flush
+      # pika 未使用 txn
+      - rocksdb.txn
+      - rocksdb.blobdb
+      - rocksdb.row.cache
+      - rocksdb.number.block
+      - rocksdb.bloom.filter
+      - rocksdb.persistent
+      - rocksdb.sim.block.cache
+      discard_histograms:
+      # comment: ....
+      - rocksdb.blobdb
+      - rocksdb.bytes.compressed
+      - rocksdb.bytes.decompressed
+      - rocksdb.num.index.and.filter.blocks.read.per.level
+      - rocksdb.num.data.blocks.read.per.level
+      - rocksdb.compression.times.nanos
+      - rocksdb.decompression.times.nanos
+      - rocksdb.read.block.get.micros
+      - rocksdb.write.raw.block.micros
+      # comment end of array
+      #stats_level: kAll
+      stats_level: kDisableAll
+MemTableRepFactory:
+  cspp:
+    #class: CSPPMemTab # canonical class name
+    class: cspp # "cspp" is simplified class name
+    params:
+      mem_cap: 3G  # just reserve virtual address space
+      cspp_debug_level: 1
+      # vm_explicit_commit: true # default false
+      # vm_background_commit: false # default false
+      chunk_size: 256K # default 2M
+      use_vm: true # default is true
+      # use_hugepage: false # equivalent to kNone, default
+      # use_hugepage: true  # equivalent to kMmap
+      # use_hugepage: kNone # default, dont use hugepage
+      # use_hugepage: kMmap # mmap(MAP_HUGETLB)
+      # use_hugepage: kTransparent # mmap(normal) + madvise(MADV_HUGEPAGE)
+      token_use_idle: true
+      read_by_writer_token: true
+      # convert_to_sst: kDontConvert
+      # convert_to_sst: kDumpMem
+      convert_to_sst: kFileMmap
+      sync_sst_file: false
+  skiplist:
+    class: SkipList
+    params:
+      lookahead: 0
+FilterPolicy:
+  bloom:
+    class: BloomFilter
+    params:
+      bits_per_key: 10
+      use_block_based_builder: false
+TableFactory:
+  fast:
+    class: SingleFastTable
+    params:
+      indexType: MainPatricia
+      keyPrefixLen: 0
+  zipkeyonly:
+    class: ToplingZipTable
+    params:
+      localTempDir: /dev/shm
+      indexNestLevel: 1
+      enableStatistics: false
+      warmupLevel: kIndex
+      acceptCompressionRatio: 0.8
+      offsetArrayBlockUnits: 128
+      minDictZipValueSize: "10M"
+      minPreadLen: -1
+      sampleRatio: 0.01
+      checksumLevel: 0
+      debugLevel: 0
+  simple:
+    class: SimpleTopTable
+    params:
+      writeMethod: kToplingFileWrite
+      fileWriteBufferSize: 8192
+      collectProperties: true
+      forceNeedCompact: true
+      debugLevel: 0
+  zipkeyvalue:
+    class: ToplingZipTable
+    params:
+      indexType: Mixed_XL_256_32_FL
+      #indexType: Mixed_SE_512_32_FL
+      #keyPrefixLen: 0
+      localTempDir: /dev/shm
+      indexNestLevel: 1
+      enableStatistics: false
+      warmupLevel: kIndex
+      acceptCompressionRatio: 0.8
+      offsetArrayBlockUnits: 128
+      sampleRatio: 0.01
+      checksumLevel: 0
+      debugLevel: 0
+      #enableEntropyStore: true
+      #acceptEntropyStoreZipRatio: 2.0 # always accept
+      minDictZipValueSize: 10
+      minPreadLen: -1
+  bb:
+    class: BlockBasedTable
+    params:
+      #checksum: kCRC32c
+      #checksum: kXXH3 # default
+      block_size: 4K
+      block_restart_interval: 16
+      #block_size: 512  # small, makes block_cache nearly a row cache
+      #block_restart_interval: 1  # fit for small block_size
+      index_block_restart_interval: 1
+      metadata_block_size: 4K
+      #enable_index_compression: true
+      block_cache: "${lru_cache}"
+      block_cache_compressed:
+      persistent_cache:
+      filter_policy: bloom # use ~20% of raw ukey size in db_bench key_size=8
+  cspp_memtab_sst:
+    class: CSPPMemTabTable
+    params: # empty params
+  dispatch:
+    class: DispatcherTable
+    params:
+      default: fast
+      readers:
+        SingleFastTable: fast
+        SimpleTopTable: simple
+        ToplingZipTable: zipkeyvalue
+        BlockBasedTable: bb
+        CSPPMemTabTable: cspp_memtab_sst
+      level_writers: [zipkeyonly, zipkeyonly, zipkeyonly, zipkeyonly, zipkeyonly, zipkeyonly, zipkeyvalue]
+WriteBufferManager:
+  wbm:
+    class: WriteBufferManager
+    params:
+      buffer_size: 4G
+SstPartitionerFactory:
+  fixed-prefix:
+    class: SstPartitionerFixedPrefix
+    params:
+      prefix_len: 1
+CFOptions:
+  default:
+    #enable_blob_files: true
+    #min_blob_size: 200
+    enable_blob_garbage_collection: true
+    html_user_key_coder: ${pretty_user_key_coder} # when db_bench -wkey_file=...
+    sst_partitioner_factory: ${fixed-prefix}
+    max_write_buffer_number: 3
+    #disable_auto_compactions: true
+    #memtable_factory: "${skiplist}"
+    memtable_factory: "${cspp}"
+    write_buffer_size: 128M  # 64m, rocksdb recommend small, toplingdb recommend large
+    target_file_size_base: 32M
+    target_file_size_multiplier: 1.5
+    table_factory: dispatch
+    #max_bytes_for_level_base: 512M # default = max(256M, write_buffer_size)
+    max_bytes_for_level_multiplier: 10
+    ########
+    # For ToplingDB distributed compaction, this should set to false
+    level_compaction_dynamic_level_bytes: false # rocksdb-8.04 default true
+    #level_compaction_dynamic_level_bytes: true # rocksdb-8.04 default true
+    level0_slowdown_writes_trigger: 4
+    level0_stop_writes_trigger: 36
+    level0_file_num_compaction_trigger: 4
+    compression: kSnappyCompression
+    compression_per_level:
+    - kNoCompression
+    - kSnappyCompression
+    - kSnappyCompression
+    - kSnappyCompression
+    - kSnappyCompression
+    - kSnappyCompression
+    - kZSTD
+DBOptions:
+  default:
+    memtable_as_log_index: true
+    max_total_wal_size: 4G
+    allow_fallocate: false # default true
+    allow_fdatasync: false # default true
+    create_if_missing: true
+    create_missing_column_families: true
+    #enable_pipelined_write: true # must be false if unordered_write is true
+    #unordered_write: true
+    #info_log_level: DEBUG_LEVEL
+    max_background_flushes: 1 # default is -1
+    max_background_compactions: 2 # default is -1
+    max_subcompactions: 1 # default is 1
+    max_level1_subcompactions: 2 # default 0 to use max_subcompactions
+    inplace_update_support: false # default is false
+    write_buffer_manager: "${wbm}"
+    WAL_size_limit_MB: 0
+    #statistics: "${stat}" # if defined, it incurs some overhead
+databases:
+  db_bench_enterprise:
+    method: DB::Open
+    params:
+      db_options: "$default"
+      cf_options: "$default" # for single cf db
+      column_families:       # for multi  cf db
+        default: "$default"
+      dyna_cf_opt: "$default"
+      #path is optional, if not defined, use name as path
+      #last part of path must be same as name(here is 'db_bench_enterprise')
+      path: /dev/shm/db_bench_enterprise
+  db_test:
+    method: DB::Open
+    params:
+      db_options: "$default"
+open: db_bench_enterprise

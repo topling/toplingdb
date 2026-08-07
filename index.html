@@ -1,1 +1,208 @@
-<!DOCTYPE html><html><body><h1>ToplingDB vs RocksDB</h1><p>empty</p></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ToplingDB vs RocksDB bench results</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.45; }
+    table { border-collapse: collapse; margin: 1rem 0 2rem; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }
+    th { background: #f4f4f4; }
+    h1, h2, h3 { margin-top: 1.5rem; }
+    a { color: #0645ad; }
+    .meta { color: #555; font-size: 0.9rem; }
+    .faster { color: #0a7a28; font-weight: 600; }
+    .slower { color: #a30d0d; }
+    .rss-chart-wrap { margin: 0.75rem 0 1.25rem; }
+  </style>
+</head>
+<body>
+
+  <h1>ToplingDB vs RocksDB bench results</h1>
+  <p class="meta">
+    <a href="dcompact/index.html">dcompact bench →</a>
+  </p>
+  <p class="meta">Updated (UTC): 2026-08-07T16:10:40.174696+00:00</p>
+  
+  <h2>Latest: plain</h2>
+  <p class="meta">run_id=31191036555 |
+     <a href="runs/20260807-161039-plain-31191036555/index.html">full report</a> |
+     2026-08-07T16:10:39.258402+00:00</p>
+  <h2>Runner hardware/software</h2>
+<table>
+<tbody>
+<tr><td><strong>OS</strong></td><td>Ubuntu 24.04.4 LTS</td></tr>
+<tr><td><strong>Kernel</strong></td><td>6.17.0-1020-azure</td></tr>
+<tr><td><strong>CPU</strong></td><td>AMD EPYC 9V74 80-Core Processor</td></tr>
+<tr><td><strong>Logical CPUs</strong></td><td>4</td></tr>
+<tr><td><strong>Memory</strong></td><td>15.6GiB</td></tr>
+<tr><td><strong>/dev/shm</strong></td><td>7.8GiB</td></tr>
+<tr><td><strong>RocksDB block cache</strong></td><td>7.8GiB</td></tr>
+</tbody>
+</table>
+<p class="meta"><strong>On-disk DB size (1.9GiB) ≤ block cache (7.8GiB)</strong> — cache can hold the entire dataset.</p>
+  <h3>/dev/shm usage (disk; ratio vs RocksDB v8.10)</h3>
+  <p class="meta">RocksDB uses default Snappy compression. Ratio = engine / v8.10; <span class="faster">&lt;1 = less space</span>, <span class="slower">&gt;1 = larger</span>.</p>
+  <table>
+<thead><tr><th>workload</th><th>ToplingDB zipkeyonly</th><th>ToplingDB zipkeyvalue</th><th>RocksDB v8.10</th><th>RocksDB master (5fe22535)</th><th>Topling / v8.10 (space)</th><th>zipkeyvalue / v8.10 (space)</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>1.6GiB</td><td>316.5MiB</td><td>1.9GiB</td><td>1.9GiB</td><td><span class="faster">0.83x</span></td><td><span class="faster">0.17x</span></td></tr>
+<tr><td>fillseq</td><td>2.4GiB</td><td>467.8MiB</td><td>1.6GiB</td><td>1.6GiB</td><td><span class="slower">1.51x</span></td><td><span class="faster">0.28x</span></td></tr>
+</tbody>
+</table>
+  <h3>Peak RSS (memory; ratio vs RocksDB v8.10)</h3>
+  <p class="meta">RocksDB block cache = half physical memory (7.8GiB). Ratio = engine / v8.10; <span class="faster">&lt;1 = less memory</span>, <span class="slower">&gt;1 = more memory</span>. RocksDB omit columns are <span class="slower">derived-from-main</span> (no separate omit pass).</p>
+  <table>
+<thead><tr><th>workload</th><th>ToplingDB zipkeyonly</th><th>ToplingDB zipkeyvalue</th><th>RocksDB v8.10 (derived-from-main)</th><th>RocksDB master (5fe22535)</th><th>Topling / v8.10 (RSS)</th><th>zipkeyvalue / v8.10 (RSS)</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>1.4GiB</td><td>1.6GiB</td><td>2.1GiB</td><td>2.1GiB</td><td><span class="faster">0.67x</span></td><td><span class="faster">0.75x</span></td></tr>
+<tr><td>fillrandom-omit</td><td>132.0MiB</td><td>146.0MiB</td><td>2.1GiB</td><td>n/a</td><td><span class="faster">0.06x</span></td><td><span class="faster">0.07x</span></td></tr>
+<tr><td>fillseq</td><td>940.0MiB</td><td>820.3MiB</td><td>3.2GiB</td><td>3.3GiB</td><td><span class="faster">0.28x</span></td><td><span class="faster">0.25x</span></td></tr>
+<tr><td>fillseq-omit</td><td>124.0MiB</td><td>151.0MiB</td><td>3.2GiB</td><td>n/a</td><td><span class="faster">0.04x</span></td><td><span class="faster">0.05x</span></td></tr>
+</tbody>
+</table>
+  <h3>db_bench fillrandom suite (time ratio = rocksdb / zipkey*)</h3>
+  <p class="meta">compact row shows operations/seconds. RocksDB uses default Snappy compression.</p>
+  <table>
+<thead><tr><th>benchmark</th><th>ToplingDB zipkeyonly ops/sec</th><th>ToplingDB zipkeyvalue ops/sec</th><th>RocksDB v8.10 ops/sec</th><th>RocksDB master (5fe22535) ops/sec</th><th>zipkeyvalue time / zipkeyonly</th><th>v8.10 time / zipkeyonly</th><th>master (5fe22535) time / zipkeyonly</th><th>v8.10 time / zipkeyvalue</th><th>master (5fe22535) time / zipkeyvalue</th></tr></thead>
+<tbody>
+<tr><td>compact</td><td>1/23.0s</td><td>1/44.4s</td><td>1/24.8s</td><td>1/22.6s</td><td><span class="slower">1.93x</span></td><td><span class="faster">1.08x</span></td><td><span class="slower">0.98x</span></td><td><span class="slower">0.56x</span></td><td><span class="slower">0.51x</span></td></tr>
+<tr><td>fillrandom</td><td>1188858</td><td>1159282</td><td>706861</td><td>660160</td><td><span class="slower">1.03x</span></td><td><span class="faster">1.68x</span></td><td><span class="faster">1.80x</span></td><td><span class="faster">1.64x</span></td><td><span class="faster">1.76x</span></td></tr>
+<tr><td>readrandom</td><td>4425517</td><td>1716680</td><td>351474</td><td>348523</td><td><span class="slower">2.58x</span></td><td><span class="faster">12.59x</span></td><td><span class="faster">12.70x</span></td><td><span class="faster">4.88x</span></td><td><span class="faster">4.93x</span></td></tr>
+<tr><td>readseq</td><td>24008162</td><td>17195491</td><td>9992911</td><td>8445618</td><td><span class="slower">1.40x</span></td><td><span class="faster">1.52x</span></td><td><span class="faster">1.80x</span></td><td><span class="faster">1.09x</span></td><td><span class="faster">1.29x</span></td></tr>
+</tbody>
+</table>
+  <h3>db_bench fillseq suite</h3>
+  <table>
+<thead><tr><th>benchmark</th><th>ToplingDB zipkeyonly ops/sec</th><th>ToplingDB zipkeyvalue ops/sec</th><th>RocksDB v8.10 ops/sec</th><th>RocksDB master (5fe22535) ops/sec</th><th>zipkeyvalue time / zipkeyonly</th><th>v8.10 time / zipkeyonly</th><th>master (5fe22535) time / zipkeyonly</th><th>v8.10 time / zipkeyvalue</th><th>master (5fe22535) time / zipkeyvalue</th></tr></thead>
+<tbody>
+<tr><td>compact</td><td>1/37.8s</td><td>1/51.6s</td><td>1/17.9s</td><td>1/17.7s</td><td><span class="slower">1.36x</span></td><td><span class="slower">0.47x</span></td><td><span class="slower">0.47x</span></td><td><span class="slower">0.35x</span></td><td><span class="slower">0.34x</span></td></tr>
+<tr><td>fillseq</td><td>2847252</td><td>2836759</td><td>4045780</td><td>3770157</td><td><span class="slower">1.00x</span></td><td><span class="slower">0.70x</span></td><td><span class="slower">0.76x</span></td><td><span class="slower">0.70x</span></td><td><span class="slower">0.75x</span></td></tr>
+<tr><td>readrandom</td><td>6968681</td><td>1454297</td><td>338887</td><td>315220</td><td><span class="slower">4.79x</span></td><td><span class="faster">20.56x</span></td><td><span class="faster">22.11x</span></td><td><span class="faster">4.29x</span></td><td><span class="faster">4.61x</span></td></tr>
+<tr><td>readseq</td><td>30310709</td><td>20701045</td><td>9961072</td><td>8445301</td><td><span class="slower">1.46x</span></td><td><span class="faster">3.04x</span></td><td><span class="faster">3.59x</span></td><td><span class="faster">2.08x</span></td><td><span class="faster">2.45x</span></td></tr>
+</tbody>
+</table>
+  <h3>Lazy load: fillrandom-omit (scan; v8.10 baseline)</h3>
+  <table>
+<thead><tr><th>benchmark</th><th>ToplingDB zipkeyonly ops/sec</th><th>ToplingDB zipkeyvalue ops/sec</th><th>RocksDB v8.10 ops/sec</th><th>v8.10 time / Topling</th><th>v8.10 time / zipkeyvalue</th></tr></thead>
+<tbody>
+<tr><td>nextwithkey</td><td>38752149</td><td>38937595</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>readseq</td><td>36871932</td><td>37117843</td><td>9992911</td><td><span class="faster">2.33x</span></td><td><span class="faster">2.35x</span></td></tr>
+</tbody>
+</table>
+  <h3>Lazy load: fillseq-omit (scan; v8.10 baseline)</h3>
+  <table>
+<thead><tr><th>benchmark</th><th>ToplingDB zipkeyonly ops/sec</th><th>ToplingDB zipkeyvalue ops/sec</th><th>RocksDB v8.10 ops/sec</th><th>v8.10 time / Topling</th><th>v8.10 time / zipkeyvalue</th></tr></thead>
+<tbody>
+<tr><td>nextwithkey</td><td>51849631</td><td>51867166</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>readseq</td><td>50166150</td><td>50225159</td><td>9961072</td><td><span class="faster">5.04x</span></td><td><span class="faster">5.04x</span></td></tr>
+</tbody>
+</table>
+  <h3>memtablerep: CSPPMemTable vs skiplist (v8.10 baseline)</h3>
+  <table>
+<thead><tr><th>benchmark</th><th>metric</th><th>CSPP (ToplingDB)</th><th>skiplist (ToplingDB)</th><th>skiplist (RocksDB v8.10)</th><th>CSPP / v8.10</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>Elapsed time</td><td>38336471 us</td><td>363217985 us</td><td>343100186 us</td><td><span class="faster">0.11x</span></td></tr>
+<tr><td>fillrandom</td><td>Write throughput</td><td>42.2899 MiB/s</td><td>4.46356 MiB/s</td><td>4.72529 MiB/s</td><td><span class="faster">8.95x</span></td></tr>
+<tr><td>fillrandom</td><td>write us/op</td><td>0.383365</td><td>3.63218</td><td>3.431</td><td><span class="faster">0.11x</span></td></tr>
+<tr><td>readrandom</td><td>Elapsed time</td><td>53108435 us</td><td>392214148 us</td><td>399765994 us</td><td><span class="faster">0.13x</span></td></tr>
+<tr><td>readrandom</td><td>Read throughput</td><td>30.5271 MiB/s</td><td>4.13357 MiB/s</td><td>4.05549 MiB/s</td><td><span class="faster">7.53x</span></td></tr>
+<tr><td>readrandom</td><td>read us/op</td><td>0.531084</td><td>3.92214</td><td>3.99766</td><td><span class="faster">0.13x</span></td></tr>
+</tbody>
+</table>
+
+  <h2>History</h2>
+  <ul>
+<li>2026-08-07T16:10:39.258402+00:00 — <strong>plain</strong> run_id=31191036555 — <a href="runs/20260807-161039-plain-31191036555/index.html">report</a></li>
+</ul>
+
+
+<script>
+(function () {
+  function nearestIdx(xs, x) {
+    var lo = 0, hi = xs.length - 1;
+    if (x <= xs[0]) return 0;
+    if (x >= xs[hi]) return hi;
+    while (lo < hi - 1) {
+      var mid = (lo + hi) >> 1;
+      if (xs[mid] <= x) lo = mid; else hi = mid;
+    }
+    return (x - xs[lo] <= xs[hi] - x) ? lo : hi;
+  }
+  function initWrap(wrap) {
+    var svg = wrap.querySelector("svg.rss-chart");
+    var dataEl = wrap.querySelector(".rss-chart-data");
+    if (!svg || !dataEl) return;
+    var data = JSON.parse(dataEl.textContent);
+    var xs = data.xs, series = data.series, L = data.layout;
+    var hit = svg.querySelector(".rss-hit");
+    var ch = svg.querySelector(".rss-crosshair");
+    var vline = svg.querySelector(".rss-vline");
+    var marks = svg.querySelector(".rss-marks");
+    if (!hit || !ch || !vline || !marks) return;
+    function hide() { ch.style.display = "none"; }
+    function show(ev) {
+      var ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      var pt = svg.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      var p = pt.matrixTransform(ctm.inverse());
+      if (p.x < L.ml || p.x > L.ml + L.cw || p.y < L.mt || p.y > L.mt + L.ch) {
+        hide(); return;
+      }
+      var xVal = L.xMax ? ((p.x - L.ml) / L.cw) * L.xMax : 0;
+      var i = nearestIdx(xs, xVal);
+      var xp = L.xMax ? L.ml + (xs[i] / L.xMax) * L.cw : L.ml;
+      vline.setAttribute("x1", xp.toFixed(1));
+      vline.setAttribute("x2", xp.toFixed(1));
+      while (marks.firstChild) marks.removeChild(marks.firstChild);
+      var NS = "http://www.w3.org/2000/svg";
+      series.forEach(function (s, si) {
+        var y = s.ys[i];
+        var padT = L.padT || 0, padB = L.padB || 0;
+        var usable = L.ch - padT - padB;
+        var yp = L.mt + padT + usable * (1 - y / L.yMax);
+        var dot = document.createElementNS(NS, "circle");
+        dot.setAttribute("cx", xp.toFixed(1));
+        dot.setAttribute("cy", yp.toFixed(1));
+        dot.setAttribute("r", "3.5");
+        dot.setAttribute("fill", s.color);
+        marks.appendChild(dot);
+        var tip = s.name + " (" + xs[i].toFixed(1) + "s, " + y.toFixed(1) + ")";
+        var tipW = Math.max(72, 6.4 * tip.length + 10);
+        var tipH = 16;
+        var tipX = Math.min(Math.max(xp + 8, L.ml), L.ml + L.cw - tipW);
+        var tipY = yp - tipH - 6 - si * (tipH + 2);
+        if (tipY < L.mt) tipY = yp + 8 + si * (tipH + 2);
+        var rect = document.createElementNS(NS, "rect");
+        rect.setAttribute("x", tipX.toFixed(1));
+        rect.setAttribute("y", tipY.toFixed(1));
+        rect.setAttribute("width", tipW.toFixed(1));
+        rect.setAttribute("height", tipH.toFixed(1));
+        rect.setAttribute("rx", "3");
+        rect.setAttribute("fill", "#fff");
+        rect.setAttribute("stroke", s.color);
+        rect.setAttribute("stroke-width", "1");
+        rect.setAttribute("opacity", "0.95");
+        marks.appendChild(rect);
+        var text = document.createElementNS(NS, "text");
+        text.setAttribute("x", (tipX + tipW / 2).toFixed(1));
+        text.setAttribute("y", (tipY + 12).toFixed(1));
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("font-size", "10");
+        text.setAttribute("fill", "#222");
+        text.textContent = tip;
+        marks.appendChild(text);
+      });
+      ch.style.display = "";
+    }
+    hit.addEventListener("mousemove", show);
+    hit.addEventListener("mouseleave", hide);
+  }
+  document.querySelectorAll(".rss-chart-wrap").forEach(initWrap);
+})();
+</script>
+
+</body>
+</html>

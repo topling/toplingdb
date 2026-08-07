@@ -1371,6 +1371,7 @@ Status DBImpl::CompactRangeInternal(const CompactRangeOptions& options,
                      "[%s] post-refit rewrite at L%d (kForce-equivalent)",
                      cfd->GetName().c_str(), refit_to_level);
       CompactRangeOptions force_opts = options;
+      force_opts.change_level = false;
       force_opts.bottommost_level_compaction = BottommostLevelCompaction::kForce;
       s = RunManualCompaction(
           cfd, refit_to_level, refit_to_level, force_opts, begin, end, exclusive,

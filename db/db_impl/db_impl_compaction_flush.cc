@@ -1418,9 +1418,6 @@ Status DBImpl::CompactFiles(const CompactionOptions& compact_options,
           const_cast<std::atomic<int>*>(&manual_compaction_paused_)));
   {
     InstrumentedMutexLock l(&mutex_);
-    if (manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
-      return Status::Incomplete(Status::SubCode::kManualCompactionPaused);
-    }
     auto* current = cfd->current();
     current->Ref();
 
@@ -1470,6 +1467,9 @@ Status DBImpl::CompactFilesImpl(
 
   if (shutting_down_.load(std::memory_order_acquire)) {
     return Status::ShutdownInProgress();
+  }
+  if (manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
+    return Status::Incomplete(Status::SubCode::kManualCompactionPaused);
   }
 
   std::unordered_set<uint64_t> input_set;

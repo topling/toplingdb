@@ -80,7 +80,7 @@ Topling 扩展语义（非上游 RocksDB 默认行为）：
 上游 RocksDB 源码：`build_upstream_rocksdb.sh` 有 `facebook` remote 时 worktree，否则 clone。
 
 联调脚本：
-- `.github/scripts/run_dcompact_bench.sh`（Topling 四引擎中的 topling + dictzip10）
+- `.github/scripts/run_dcompact_bench.sh`（Topling 引擎 zipkeyonly + zipkeyvalue）
 - `.github/scripts/run_rocksdb_cs_bench.sh`（RocksDB CompactionService spool）
 
 ## 3. cgroup

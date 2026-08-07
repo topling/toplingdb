@@ -92,6 +92,9 @@ prepare_yaml() {
   fi
   echo "graft mbc: nproc=${NPROC} max_background_compactions=${MBC}"
   mkdir -p "$LOGROOT" "$LOCAL/toplingdb-conf"
+  # Drop pre-rename local yaml names (not used by prepare/run paths).
+  rm -f "$LOCAL/toplingdb-conf/db_bench_enterprise_dictzip10.yaml" \
+        "$LOCAL/toplingdb-conf/db_bench_enterprise.yaml"
   {
     echo "num=${NUM}"
     echo "value_size=${VALUE_SIZE}"
@@ -419,7 +422,7 @@ case "$mode" in
     run_topling_suite zipkeyonly "$YAML_ZKO" "$RUN_MEMTABLE"
     maybe_emit_pages
     ;;
-  run-zipkeyvalue|run-dictzip10)
+  run-zipkeyvalue)
     prepare_yaml
     run_topling_suite zipkeyvalue "$YAML_ZKV" 0
     maybe_emit_pages

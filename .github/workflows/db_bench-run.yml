@@ -12,17 +12,6 @@ on:
         description: Build workflow run id whose artifact to download
         required: true
         type: string
-      l1_writer:
-        description: DispatcherTable L1 level_writers (default simple)
-        required: false
-        default: simple
-        type: choice
-        options:
-          - fast
-          - simple
-          - light_zip
-          - zip
-          - bb
       value_size:
         description: db_bench -value_size bytes (default 50)
         required: false
@@ -35,7 +24,7 @@ on:
         type: string
       max_background_compactions:
         description: >-
-          max_background_compactions via graft --cpu-quota (auto = ceil(nproc/2)).
+          max_background_compactions (auto = max(1,min(13,ceil(nproc/2)))).
         required: false
         default: auto
         type: string
@@ -65,7 +54,6 @@ jobs:
     env:
       VARIANT: plain
       ARTIFACT_NAME: db_bench-bin-plain
-      L1_WRITER: ${{ inputs.l1_writer || 'simple' }}
       VALUE_SIZE: ${{ inputs.value_size || '50' }}
       NUM: ${{ inputs.num || '50000000' }}
       MAX_BACKGROUND_COMPACTIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_background_compactions || 'auto' }}
@@ -108,6 +96,8 @@ jobs:
           test -d "$RUN_PREFIX/rocksdb-v8.10"
           test -d "$RUN_PREFIX/rocksdb-master"
           test -x "$RUN_PREFIX/topling/bin/db_bench"
+          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_zipkeyonly.yaml"
+          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_zipkeyvalue.yaml"
           test -x "$RUN_PREFIX/rocksdb-v8.10/bin/db_bench"
           test -x "$RUN_PREFIX/rocksdb-master/bin/db_bench"
           echo "RUN_PREFIX=$RUN_PREFIX" >> "$GITHUB_ENV"
@@ -128,15 +118,16 @@ jobs:
           export TOPLINGDB_GetContext_sampling=kNone
           export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
           DB_PATH=/dev/shm/db_bench_enterprise
-          YAML_BASE="$TOPLING/toplingdb-conf/db_bench_enterprise.yaml"
-          YAML_DZ10="$TOPLING/toplingdb-conf/db_bench_enterprise_dictzip10.yaml"
-          case "$L1_WRITER" in
-            fast|simple|light_zip|zip|bb) ;;
-            *) echo "FAIL: L1_WRITER must be fast|simple|light_zip|zip|bb, got $L1_WRITER" >&2; exit 1 ;;
-          esac
+          YAML_ZKO="$TOPLING/toplingdb-conf/db_bench_enterprise_zipkeyonly.yaml"
+          YAML_ZKV="$TOPLING/toplingdb-conf/db_bench_enterprise_zipkeyvalue.yaml"
+          test -f "$YAML_ZKO"
+          test -f "$YAML_ZKV"
           NPROC="$(nproc)"
           if [ -z "${MAX_BACKGROUND_COMPACTIONS:-}" ] || [ "$MAX_BACKGROUND_COMPACTIONS" = auto ]; then
-            CPU_QUOTA="$(awk -v n="$NPROC" 'BEGIN {printf "%g%%", n/2*100}')"
+            MBC="$(awk -v n="$NPROC" 'BEGIN {
+              w = n - n/2; m = int(w); if (m < w) m++;
+              if (m < 1) m = 1; if (m > 13) m = 13; print m
+            }')"
           else
             MBC="$MAX_BACKGROUND_COMPACTIONS"
             case "$MBC" in
@@ -146,21 +137,21 @@ jobs:
             if [ "$MBC" -lt 1 ]; then MBC=1; fi
             if [ "$MBC" -gt 13 ]; then MBC=13; fi
             if [ "$MBC" -gt "$NPROC" ]; then MBC="$NPROC"; fi
-            DB_CPU=$((NPROC - MBC))
-            if [ "$DB_CPU" -lt 0 ]; then DB_CPU=0; fi
-            CPU_QUOTA="$(awk -v d="$DB_CPU" 'BEGIN {printf "%g%%", d*100}')"
             if [ "$REQ_MBC" != "$MBC" ]; then
               echo "max_background_compactions clamped ${REQ_MBC} -> ${MBC} (nproc=${NPROC}, max=13)"
             fi
           fi
-          echo "graft cpu split: nproc=${NPROC} cpu_quota=${CPU_QUOTA} max_background_compactions=${MBC:-auto} max_level1_subcompactions=2"
+          echo "graft mbc: nproc=${NPROC} max_background_compactions=${MBC}"
+          WORK_ZKO="$(mktemp)"
+          WORK_ZKV="$(mktemp)"
           python3 .github/scripts/graft_bench_yaml.py \
-            --profile plain-ci \
-            --cpu-quota "$CPU_QUOTA" \
-            --nproc "$NPROC" \
-            --l1-writer "$L1_WRITER" \
-            --dictzip10-out "$YAML_DZ10" \
-            "$YAML_BASE"
+            --set-max-background-compactions "$MBC" \
+            --out "$WORK_ZKO" \
+            "$YAML_ZKO"
+          python3 .github/scripts/graft_bench_yaml.py \
+            --set-max-background-compactions "$MBC" \
+            --out "$WORK_ZKV" \
+            "$YAML_ZKV"
 
           prepare_db() {
             rm -rf "$DB_PATH"
@@ -178,7 +169,6 @@ jobs:
             local logdir="logs/${eng_id}"
             mkdir -p "$logdir"
             test -f "$yaml"
-            cp -a "$yaml" "${logdir}/db_bench.yaml"
             record_shm() {
               local label="$1"
               {
@@ -204,10 +194,15 @@ jobs:
               cp -f "$DB_PATH/LOG" "${logdir}/LOG-${label}"
             }
 
-            # Pass 1: fillrandom suite, then omit lazy-load demo.
+            # Pass 1: fillrandom — prefix 3 simple (keep L3..L6 from prebake).
             prepare_db
+            yaml_fr="${logdir}/db_bench-fillrandom.yaml"
+            python3 .github/scripts/graft_bench_yaml.py \
+              --prefix-level-writers 3 simple \
+              --out "$yaml_fr" \
+              "$yaml"
             args_fr=(
-                -json "$yaml"
+                -json "$yaml_fr"
                 -num="${NUM}"
                 -key_size=8
                 -value_size="${VALUE_SIZE}"
@@ -224,7 +219,7 @@ jobs:
             cat "${logdir}/db_bench-fillrandom.log"
             save_db_log fillrandom
             args_omit=(
-                -json "$yaml"
+                -json "$yaml_fr"
                 -num="${NUM}"
                 -key_size=8
                 -value_size="${VALUE_SIZE}"
@@ -244,12 +239,11 @@ jobs:
             record_shm fillrandom
             rm -rf "$DB_PATH"
 
-            # Pass 2: fillseq suite, then omit lazy-load demo.
-            # fillseq: replace every simple in level_writers with light_zip.
+            # Pass 2: fillseq — prefix 6 zipkeyonly (keep L6 from prebake).
             prepare_db
             yaml_fs="${logdir}/db_bench-fillseq.yaml"
             python3 .github/scripts/graft_bench_yaml.py \
-              --rewrite-level-writer simple light_zip \
+              --prefix-level-writers 6 zipkeyonly \
               --out "$yaml_fs" \
               "$yaml"
             args=(
@@ -304,10 +298,11 @@ jobs:
             rm -rf "$DB_PATH"
           }
 
-          run_topling_suite topling "$YAML_BASE" 1
-          run_topling_suite topling-dictzip10 "$YAML_DZ10" 0
-          for f in logs/topling/db_bench*.log logs/topling/memtablerep_bench*.log \
-                   logs/topling-dictzip10/db_bench*.log; do
+          run_topling_suite zipkeyonly "$WORK_ZKO" 1
+          run_topling_suite zipkeyvalue "$WORK_ZKV" 0
+          rm -f "$WORK_ZKO" "$WORK_ZKV"
+          for f in logs/zipkeyonly/db_bench*.log logs/zipkeyonly/memtablerep_bench*.log \
+                   logs/zipkeyvalue/db_bench*.log; do
             test -s "$f" || { echo "empty bench log: $f" >&2; exit 1; }
             grep -Eiq 'ops/sec|us/op|micros/op|Elapsed time' "$f" \
               || { echo "bench log lacks metrics: $f" >&2; exit 1; }
@@ -332,7 +327,6 @@ jobs:
             echo "cpu_count=$(nproc)"
             echo "mem_total_bytes=$MEM_TOTAL_BYTES"
             echo "shm_size_bytes=$(df -B1 /dev/shm | awk 'NR==2{print $2}')"
-            echo "l1_writer=$L1_WRITER"
           } | tee logs/runner_env.txt
 
       - name: Run RocksDB v8.10 benches
@@ -531,11 +525,13 @@ jobs:
           done
           rm -rf "$DB_PATH"
 
-      - name: Upload DB INFO LOGs (Actions artifact)
+      - name: Upload DB INFO LOGs and bench yamls (Actions artifact)
         uses: actions/upload-artifact@v4
         with:
           name: db-info-logs-${{ env.VARIANT }}
-          path: logs/*/LOG-*
+          path: |
+            logs/*/LOG-*
+            logs/*/db_bench*.yaml
           if-no-files-found: error
           retention-days: 90
 

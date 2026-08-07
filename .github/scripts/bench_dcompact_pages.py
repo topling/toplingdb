@@ -28,18 +28,18 @@ DB_BENCH_RE = re.compile(
     r"(?P<extra>.*)$"
 )
 
-ENGINES = ("topling", "topling-dictzip10", "rocksdb-v8.10", "rocksdb-master")
-TOPLING_ENGINES = ("topling", "topling-dictzip10")
+ENGINES = ("zipkeyonly", "zipkeyvalue", "rocksdb-v8.10", "rocksdb-master")
+TOPLING_ENGINES = ("zipkeyonly", "zipkeyvalue")
 ROCKSDB_ENGINES = ("rocksdb-v8.10", "rocksdb-master")
 ENGINE_LABELS = {
-    "topling": "ToplingDB",
-    "topling-dictzip10": "ToplingDB minDictZip=10",
+    "zipkeyonly": "ToplingDB zipkeyonly",
+    "zipkeyvalue": "ToplingDB zipkeyvalue",
     "rocksdb-v8.10": "RocksDB v8.10",
     "rocksdb-master": "RocksDB master",
 }
 RATIO_BASE_LABELS = {
-    "topling": "Topling",
-    "topling-dictzip10": "dictzip10",
+    "zipkeyonly": "zipkeyonly",
+    "zipkeyvalue": "zipkeyvalue",
 }
 RATIO_OTHER_LABELS = {
     "rocksdb-v8.10": "v8.10",
@@ -202,7 +202,7 @@ def build_shm_usage_table(
     for e in ENGINES:
         headers.append(ENGINE_LABELS[e])
     headers.append("Topling / v8.10 (space)")
-    headers.append("dictzip10 / v8.10 (space)")
+    headers.append("zipkeyvalue / v8.10 (space)")
 
     rows_html = []
     for wl in SHM_WORKLOADS:
@@ -213,10 +213,10 @@ def build_shm_usage_table(
                 f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
             )
         cells.append(
-            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('topling', wl, 'allocated_bytes'))}</td>"
+            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('zipkeyonly', wl, 'allocated_bytes'))}</td>"
         )
         cells.append(
-            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('topling-dictzip10', wl, 'allocated_bytes'))}</td>"
+            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('zipkeyvalue', wl, 'allocated_bytes'))}</td>"
         )
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     if not rows_html:
@@ -241,7 +241,7 @@ def build_rss_usage_table(
     for e in ENGINES:
         headers.append(ENGINE_LABELS[e])
     headers.append("Topling / v8.10 (RSS)")
-    headers.append("dictzip10 / v8.10 (RSS)")
+    headers.append("zipkeyvalue / v8.10 (RSS)")
 
     workloads = sorted(
         {wl for eng_data in rss_data.values() for wl in eng_data if eng_data.get(wl) is not None}
@@ -258,8 +258,8 @@ def build_rss_usage_table(
                 f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
             )
         v810_bytes = (rss_data.get("rocksdb-v8.10") or {}).get(wl)
-        topling_bytes = (rss_data.get("topling") or {}).get(wl)
-        dz10_bytes = (rss_data.get("topling-dictzip10") or {}).get(wl)
+        topling_bytes = (rss_data.get("zipkeyonly") or {}).get(wl)
+        dz10_bytes = (rss_data.get("zipkeyvalue") or {}).get(wl)
         cells.append(f"<td>{_size_ratio_cell(v810_bytes, topling_bytes)}</td>")
         cells.append(f"<td>{_size_ratio_cell(v810_bytes, dz10_bytes)}</td>")
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
@@ -864,7 +864,7 @@ def _time_ratio_cell(topling_s: Optional[float], other_s: Optional[float]) -> st
 def _subject_time_ratio_cell(
     baseline_s: Optional[float], subject_s: Optional[float]
 ) -> str:
-    """ratio = subject / baseline; color is about the subject (dictzip10)."""
+    """ratio = subject / baseline; color is about the subject (zipkeyvalue)."""
     if baseline_s is None or subject_s is None or baseline_s <= 0:
         return "—"
     ratio = subject_s / baseline_s
@@ -889,7 +889,7 @@ def _ratio_pairs() -> List[Tuple[str, str]]:
 def build_db_bench_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
-    """Wide comparison: ops/sec + dictzip10/Topling time + rocksdb/topling* time."""
+    """Wide comparison: ops/sec + zipkeyvalue/zipkeyonly time + rocksdb/zipkey* time."""
     ops_by = {e: _ops_by_benchmark(engines.get(e, [])) for e in ENGINES}
     sec_by = {e: _seconds_by_benchmark(engines.get(e, [])) for e in ENGINES}
     operations_by = {e: _operations_by_benchmark(engines.get(e, [])) for e in ENGINES}
@@ -899,7 +899,7 @@ def build_db_bench_compare(
     headers = ["benchmark"] + [
         f"{ENGINE_LABELS[e]} ops/sec" for e in ENGINES
     ]
-    headers.append("dictzip10 time / Topling")
+    headers.append("zipkeyvalue time / zipkeyonly")
     for base, other in ratio_pairs:
         headers.append(
             f"{RATIO_OTHER_LABELS[other]} time / {RATIO_BASE_LABELS[base]}"
@@ -920,7 +920,7 @@ def build_db_bench_compare(
                 v = ops_by[e].get(name)
                 cells.append(f"<td>{v if v is not None else '—'}</td>")
         cells.append(
-            f"<td>{_subject_time_ratio_cell(sec_by['topling'].get(name), sec_by['topling-dictzip10'].get(name))}</td>"
+            f"<td>{_subject_time_ratio_cell(sec_by['zipkeyonly'].get(name), sec_by['zipkeyvalue'].get(name))}</td>"
         )
         for base, other in ratio_pairs:
             cells.append(
@@ -1363,7 +1363,7 @@ def emit(args: argparse.Namespace) -> None:
             }
             for eng in ENGINES
         },
-        "db_bench": engines_data.get("topling", {}).get("db_bench", []),
+        "db_bench": engines_data.get("zipkeyonly", {}).get("db_bench", []),
     }
     (out / "run-meta.json").write_text(
         json.dumps(meta, indent=2) + "\n", encoding="utf-8"
@@ -1386,7 +1386,7 @@ def _render_dcompact_section(
     else:
         set_rocksdb_master_label(None)
     engines = entry.get("engines") or {
-        "topling": {
+        "zipkeyonly": {
             "db_bench": entry.get("db_bench", []),
         }
     }
@@ -1447,7 +1447,7 @@ def _render_dcompact_section(
   <h3>Peak RSS (memory; ratio vs RocksDB v8.10)</h3>
   <p class="meta">RocksDB block cache = half physical memory ({html.escape(cache_iec)}). Ratio = engine / v8.10; {_hl('<1 = less memory', 'faster')}, {_hl('>1 = more memory', 'slower')}.</p>
   {rss_table}
-  <h3>db_bench fillrandom suite (time ratio = rocksdb / topling*)</h3>
+  <h3>db_bench fillrandom suite (time ratio = rocksdb / zipkey*)</h3>
   <p class="meta">compact row shows operations/seconds. RocksDB uses default Snappy compression.</p>
   {fr_compare}
   <h3>db_bench fillseq suite</h3>
@@ -1570,7 +1570,7 @@ def main() -> None:
     p_emit.add_argument(
         "--log-root",
         required=True,
-        help="Directory with topling/, topling-dictzip10/, rocksdb-*/ log subdirs",
+        help="Directory with zipkeyonly/, zipkeyvalue/, rocksdb-*/ log subdirs",
     )
     p_emit.add_argument(
         "--engine-meta-root",

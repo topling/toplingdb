@@ -66,17 +66,16 @@ jobs:
           make install DESTDIR="$STAGE" PREFIX="$PREFIX" DEBUG_LEVEL=0 UPDATE_REPO=0
           mkdir -p "$STAGE$PREFIX/bin" "$STAGE$PREFIX/toplingdb-conf" "$STAGE$PREFIX/site"
           cp -a db_bench memtablerep_bench "$STAGE$PREFIX/bin/"
-          cp -a sideplugin/rockside/sample-conf/db_bench_enterprise.yaml \
+          # Prebaked avx512 CI yaml (do not edit rockside submodule).
+          cp -a .github/bench-conf/db_bench_enterprise_avx512_zipkeyonly.yaml \
+                .github/bench-conf/db_bench_enterprise_avx512_zipkeyvalue.yaml \
                 "$STAGE$PREFIX/toplingdb-conf/"
-          # CI-only override in staged copy (do not edit rockside submodule).
-          sed -i 's/^\([[:space:]]*write_buffer_size:[[:space:]]*\)2G/\1512M/' \
-            "$STAGE$PREFIX/toplingdb-conf/db_bench_enterprise.yaml"
-          grep -E 'write_buffer_size:[[:space:]]*512M' \
-            "$STAGE$PREFIX/toplingdb-conf/db_bench_enterprise.yaml"
           cp -a sideplugin/rockside/src/topling/web/index.html \
                 sideplugin/rockside/src/topling/web/style.css \
                 "$STAGE$PREFIX/site/"
           test -x "$STAGE$PREFIX/bin/db_bench"
+          test -f "$STAGE$PREFIX/toplingdb-conf/db_bench_enterprise_avx512_zipkeyonly.yaml"
+          test -f "$STAGE$PREFIX/toplingdb-conf/db_bench_enterprise_avx512_zipkeyvalue.yaml"
           mv "$STAGE$PREFIX" "$BUNDLE/topling"
           rm -rf "$STAGE"
           echo "BUNDLE=$BUNDLE" >> "$GITHUB_ENV"

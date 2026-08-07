@@ -7,8 +7,8 @@
 #
 # Usage (from repo root):
 #   NUM=20000000 .github/scripts/run_local_simple_top_pages.sh prepare-yaml
-#   NUM=20000000 .github/scripts/run_local_simple_top_pages.sh run-topling
-#   NUM=20000000 .github/scripts/run_local_simple_top_pages.sh run-dictzip10
+#   NUM=20000000 .github/scripts/run_local_simple_top_pages.sh run-zipkeyonly
+#   NUM=20000000 .github/scripts/run_local_simple_top_pages.sh run-zipkeyvalue
 #   .github/scripts/run_local_simple_top_pages.sh emit
 #   NUM=20000000 .github/scripts/run_local_simple_top_pages.sh all
 #
@@ -17,11 +17,10 @@
 # Env:
 #   NUM=20000000          key count (CI uses 100000000; local shm often needs smaller)
 #   VALUE_SIZE=50         db_bench -value_size (align with db_bench-run.yml)
-#   L1_WRITER=simple      plain-ci graft level_writers[1] (align with db_bench-run.yml)
-#   MAX_BACKGROUND_COMPACTIONS=auto  graft via --cpu-quota (align with db_bench-run.yml)
-#   RUN_MEMTABLE=0|1      run memtablerep_bench after topling suite (default 0)
-#   EMIT_HTML=1           after run-topling / run-dictzip10, generate score pages (default 1)
-#   EMIT_REQUIRE_DICTZIP10=0  emit with topling only; skip dictzip10 requirement (default 0)
+#   MAX_BACKGROUND_COMPACTIONS=auto  shell-computed MBC then --set-max-background-compactions
+#   RUN_MEMTABLE=0|1      run memtablerep_bench after zipkeyonly suite (default 0)
+#   EMIT_HTML=1           after run-zipkeyonly / run-zipkeyvalue, generate score pages (default 1)
+#   EMIT_REQUIRE_ZIPKEYVALUE=0  emit with zipkeyonly only; skip zipkeyvalue requirement (default 0)
 #   RUN_ID=local-simpletop
 # Sampler: sample_statm_fdcache (same as CI db_bench-run).
 set -euo pipefail
@@ -29,18 +28,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 LOCAL="$ROOT/_local_simple_top"
 LOGROOT="$LOCAL/logs"
-YAML_BASE="$LOCAL/toplingdb-conf/db_bench_enterprise.yaml"
-YAML_DZ10="$LOCAL/toplingdb-conf/db_bench_enterprise_dictzip10.yaml"
+YAML_SRC_ZKO="$ROOT/.github/bench-conf/db_bench_enterprise_zipkeyonly.yaml"
+YAML_SRC_ZKV="$ROOT/.github/bench-conf/db_bench_enterprise_zipkeyvalue.yaml"
+YAML_ZKO="$LOCAL/toplingdb-conf/db_bench_enterprise_zipkeyonly.yaml"
+YAML_ZKV="$LOCAL/toplingdb-conf/db_bench_enterprise_zipkeyvalue.yaml"
 DB_PATH=/dev/shm/db_bench_enterprise
 PAGES_EMIT="$LOCAL/_pages"
 PAGES_SITE="$LOCAL/site_pages"
 NUM="${NUM:-20000000}"
 VALUE_SIZE="${VALUE_SIZE:-50}"
-L1_WRITER="${L1_WRITER:-simple}"
 MAX_BACKGROUND_COMPACTIONS="${MAX_BACKGROUND_COMPACTIONS:-auto}"
 RUN_MEMTABLE="${RUN_MEMTABLE:-0}"
 EMIT_HTML="${EMIT_HTML:-1}"
-EMIT_REQUIRE_DICTZIP10="${EMIT_REQUIRE_DICTZIP10:-0}"
+EMIT_REQUIRE_ZIPKEYVALUE="${EMIT_REQUIRE_ZIPKEYVALUE:-0}"
 RUN_ID="${RUN_ID:-local-simpletop}"
 
 export LD_LIBRARY_PATH="$ROOT:${LD_LIBRARY_PATH:-}"
@@ -49,7 +49,7 @@ export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
 
 usage() {
   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
-  echo "usage: $0 {prepare-yaml|run-topling|run-dictzip10|emit|all}" >&2
+  echo "usage: $0 {prepare-yaml|run-zipkeyonly|run-zipkeyvalue|emit|all}" >&2
 }
 
 require_db_bench() {
@@ -61,19 +61,22 @@ require_db_bench() {
 }
 
 prepare_yaml() {
-  test -f "$YAML_BASE" || {
-    echo "missing $YAML_BASE" >&2
+  test -f "$YAML_SRC_ZKO" || {
+    echo "missing $YAML_SRC_ZKO" >&2
     exit 1
   }
-  case "$L1_WRITER" in
-    fast|simple|light_zip|zip|bb) ;;
-    *) echo "FAIL: L1_WRITER must be fast|simple|light_zip|zip|bb, got $L1_WRITER" >&2; exit 1 ;;
-  esac
+  test -f "$YAML_SRC_ZKV" || {
+    echo "missing $YAML_SRC_ZKV" >&2
+    exit 1
+  }
   local NPROC
   NPROC="$(nproc)"
-  local CPU_QUOTA MBC REQ_MBC DB_CPU
+  local MBC REQ_MBC
   if [ -z "${MAX_BACKGROUND_COMPACTIONS}" ] || [ "$MAX_BACKGROUND_COMPACTIONS" = auto ]; then
-    CPU_QUOTA="$(awk -v n="$NPROC" 'BEGIN {printf "%g%%", n/2*100}')"
+    MBC="$(awk -v n="$NPROC" 'BEGIN {
+      w = n - n/2; m = int(w); if (m < w) m++;
+      if (m < 1) m = 1; if (m > 13) m = 13; print m
+    }')"
   else
     MBC="$MAX_BACKGROUND_COMPACTIONS"
     case "$MBC" in
@@ -83,31 +86,28 @@ prepare_yaml() {
     if [ "$MBC" -lt 1 ]; then MBC=1; fi
     if [ "$MBC" -gt 13 ]; then MBC=13; fi
     if [ "$MBC" -gt "$NPROC" ]; then MBC="$NPROC"; fi
-    DB_CPU=$((NPROC - MBC))
-    if [ "$DB_CPU" -lt 0 ]; then DB_CPU=0; fi
-    CPU_QUOTA="$(awk -v d="$DB_CPU" 'BEGIN {printf "%g%%", d*100}')"
     if [ "$REQ_MBC" != "$MBC" ]; then
       echo "max_background_compactions clamped ${REQ_MBC} -> ${MBC} (nproc=${NPROC}, max=13)"
     fi
   fi
-  echo "graft cpu split: nproc=${NPROC} cpu_quota=${CPU_QUOTA} max_background_compactions=${MBC:-auto} max_level1_subcompactions=2"
-  mkdir -p "$LOGROOT"
+  echo "graft mbc: nproc=${NPROC} max_background_compactions=${MBC}"
+  mkdir -p "$LOGROOT" "$LOCAL/toplingdb-conf"
   {
     echo "num=${NUM}"
     echo "value_size=${VALUE_SIZE}"
-    echo "l1_writer=${L1_WRITER}"
-    echo "max_background_compactions=${MAX_BACKGROUND_COMPACTIONS}"
-    echo "cpu_quota=${CPU_QUOTA}"
+    echo "max_background_compactions=${MBC}"
     echo "nproc=${NPROC}"
   } >"$LOGROOT/bench_settings.txt"
   python3 "$ROOT/.github/scripts/graft_bench_yaml.py" \
-    --profile plain-ci \
-    --cpu-quota "$CPU_QUOTA" \
-    --nproc "$NPROC" \
-    --l1-writer "$L1_WRITER" \
-    --dictzip10-out "$YAML_DZ10" \
-    "$YAML_BASE"
-  echo "prepared $YAML_DZ10"
+    --set-max-background-compactions "$MBC" \
+    --out "$YAML_ZKO" \
+    "$YAML_SRC_ZKO"
+  python3 "$ROOT/.github/scripts/graft_bench_yaml.py" \
+    --set-max-background-compactions "$MBC" \
+    --out "$YAML_ZKV" \
+    "$YAML_SRC_ZKV"
+  echo "prepared $YAML_ZKO"
+  echo "prepared $YAML_ZKV"
 }
 
 clean_bench_shm() {
@@ -204,10 +204,15 @@ run_topling_suite() {
   test -f "$yaml"
   cp -a "$yaml" "${logdir}/db_bench.yaml"
 
-  # Pass 1: fillrandom + omit
+  # Pass 1: fillrandom — prefix 3 simple
   prepare_db
+  local yaml_fr="${logdir}/db_bench-fillrandom.yaml"
+  python3 "$ROOT/.github/scripts/graft_bench_yaml.py" \
+    --prefix-level-writers 3 simple \
+    --out "$yaml_fr" \
+    "$yaml"
   local args_fr=(
-    -json "$yaml"
+    -json "$yaml_fr"
     -num="$NUM"
     -key_size=8
     -value_size="$VALUE_SIZE"
@@ -230,7 +235,7 @@ run_topling_suite() {
   save_db_log "$logdir" fillrandom
 
   local args_omit=(
-    -json "$yaml"
+    -json "$yaml_fr"
     -num="$NUM"
     -key_size=8
     -value_size="$VALUE_SIZE"
@@ -249,12 +254,11 @@ run_topling_suite() {
   record_shm "$logdir" fillrandom
   clean_bench_shm
 
-  # Pass 2: fillseq + omit  (workflow names this db_bench.log)
-  # fillseq: replace every simple in level_writers with light_zip.
+  # Pass 2: fillseq — prefix 6 zipkeyonly (keep L6)
   prepare_db
   local yaml_fs="${logdir}/db_bench-fillseq.yaml"
   python3 "$ROOT/.github/scripts/graft_bench_yaml.py" \
-    --rewrite-level-writer simple light_zip \
+    --prefix-level-writers 6 zipkeyonly \
     --out "$yaml_fs" \
     "$yaml"
   local args_fs=(
@@ -341,7 +345,7 @@ write_runner_env() {
 
 normalize_logs_for_emit() {
   local eng
-  for eng in topling topling-dictzip10; do
+  for eng in zipkeyonly zipkeyvalue; do
     local logdir="$LOGROOT/$eng"
     mkdir -p "$logdir"
     if [ -f "$logdir/db_bench-fillseq.log" ] && [ ! -f "$logdir/db_bench.log" ]; then
@@ -355,17 +359,17 @@ emit_pages() {
   normalize_logs_for_emit
   write_runner_env
 
-  test -f "$LOGROOT/topling/db_bench.log" || {
-    echo "missing $LOGROOT/topling/db_bench.log (fillseq suite)" >&2
+  test -f "$LOGROOT/zipkeyonly/db_bench.log" || {
+    echo "missing $LOGROOT/zipkeyonly/db_bench.log (fillseq suite)" >&2
     exit 1
   }
-  if [ "$EMIT_REQUIRE_DICTZIP10" = "1" ]; then
-    test -f "$LOGROOT/topling-dictzip10/db_bench.log" || {
-      echo "missing $LOGROOT/topling-dictzip10/db_bench.log; run: $0 run-dictzip10" >&2
+  if [ "$EMIT_REQUIRE_ZIPKEYVALUE" = "1" ]; then
+    test -f "$LOGROOT/zipkeyvalue/db_bench.log" || {
+      echo "missing $LOGROOT/zipkeyvalue/db_bench.log; run: $0 run-zipkeyvalue" >&2
       exit 1
     }
-  elif [ ! -f "$LOGROOT/topling-dictzip10/db_bench.log" ]; then
-    echo "emit: topling-dictzip10 logs missing; plain page will show Topling only"
+  elif [ ! -f "$LOGROOT/zipkeyvalue/db_bench.log" ]; then
+    echo "emit: zipkeyvalue logs missing; plain page will show zipkeyonly only"
   fi
 
   rm -rf "$PAGES_EMIT"
@@ -410,14 +414,14 @@ case "$mode" in
   prepare-yaml)
     prepare_yaml
     ;;
-  run-topling)
+  run-zipkeyonly|run-topling)
     prepare_yaml
-    run_topling_suite topling "$YAML_BASE" "$RUN_MEMTABLE"
+    run_topling_suite zipkeyonly "$YAML_ZKO" "$RUN_MEMTABLE"
     maybe_emit_pages
     ;;
-  run-dictzip10)
+  run-zipkeyvalue|run-dictzip10)
     prepare_yaml
-    run_topling_suite topling-dictzip10 "$YAML_DZ10" 0
+    run_topling_suite zipkeyvalue "$YAML_ZKV" 0
     maybe_emit_pages
     ;;
   emit)
@@ -426,9 +430,9 @@ case "$mode" in
   all)
     EMIT_HTML=0
     prepare_yaml
-    run_topling_suite topling "$YAML_BASE" "$RUN_MEMTABLE"
-    run_topling_suite topling-dictzip10 "$YAML_DZ10" 0
-    EMIT_REQUIRE_DICTZIP10=1 emit_pages
+    run_topling_suite zipkeyonly "$YAML_ZKO" "$RUN_MEMTABLE"
+    run_topling_suite zipkeyvalue "$YAML_ZKV" 0
+    EMIT_REQUIRE_ZIPKEYVALUE=1 emit_pages
     ;;
   ""|-h|--help|help)
     usage

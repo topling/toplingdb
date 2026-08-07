@@ -70,6 +70,8 @@ jobs:
           test -d "$RUN_PREFIX/rocksdb-v8.10"
           test -d "$RUN_PREFIX/rocksdb-master"
           test -x "$RUN_PREFIX/topling/bin/db_bench"
+          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_avx512_zipkeyonly.yaml"
+          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_avx512_zipkeyvalue.yaml"
           test -x "$RUN_PREFIX/rocksdb-v8.10/bin/db_bench"
           test -x "$RUN_PREFIX/rocksdb-master/bin/db_bench"
           echo "RUN_PREFIX=$RUN_PREFIX" >> "$GITHUB_ENV"
@@ -90,12 +92,26 @@ jobs:
           export TOPLINGDB_GetContext_sampling=kNone
           export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
           DB_PATH=/dev/shm/db_bench_enterprise
-          YAML_BASE="$TOPLING/toplingdb-conf/db_bench_enterprise.yaml"
-          YAML_DZ10="$TOPLING/toplingdb-conf/db_bench_enterprise_dictzip10.yaml"
+          YAML_ZKO="$TOPLING/toplingdb-conf/db_bench_enterprise_avx512_zipkeyonly.yaml"
+          YAML_ZKV="$TOPLING/toplingdb-conf/db_bench_enterprise_avx512_zipkeyvalue.yaml"
+          test -f "$YAML_ZKO"
+          test -f "$YAML_ZKV"
+          NPROC="$(nproc)"
+          MBC="$(awk -v n="$NPROC" 'BEGIN {
+            w = n - n/2; m = int(w); if (m < w) m++;
+            if (m < 1) m = 1; if (m > 13) m = 13; print m
+          }')"
+          echo "graft mbc: nproc=${NPROC} max_background_compactions=${MBC}"
+          WORK_ZKO="$(mktemp)"
+          WORK_ZKV="$(mktemp)"
           python3 .github/scripts/graft_bench_yaml.py \
-            --profile avx512-ci \
-            --dictzip10-out "$YAML_DZ10" \
-            "$YAML_BASE"
+            --set-max-background-compactions "$MBC" \
+            --out "$WORK_ZKO" \
+            "$YAML_ZKO"
+          python3 .github/scripts/graft_bench_yaml.py \
+            --set-max-background-compactions "$MBC" \
+            --out "$WORK_ZKV" \
+            "$YAML_ZKV"
 
           prepare_db() {
             rm -rf "$DB_PATH"
@@ -134,10 +150,15 @@ jobs:
               fi
             }
 
-            # Pass 1: fillrandom suite, then omit lazy-load demo.
+            # Pass 1: fillrandom — prefix 3 simple (keep L3..L6 from prebake).
             prepare_db
+            yaml_fr="${logdir}/db_bench-fillrandom.yaml"
+            python3 .github/scripts/graft_bench_yaml.py \
+              --prefix-level-writers 3 simple \
+              --out "$yaml_fr" \
+              "$yaml"
             args_fr=(
-                -json "$yaml"
+                -json "$yaml_fr"
                 -num=100000000
                 -key_size=8
                 -value_size="${VALUE_SIZE}"
@@ -151,7 +172,7 @@ jobs:
               "$TOPLING/bin/db_bench" "${args_fr[@]}" >"${logdir}/db_bench-fillrandom.log" 2>&1
             cat "${logdir}/db_bench-fillrandom.log"
             args_omit=(
-                -json "$yaml"
+                -json "$yaml_fr"
                 -num=100000000
                 -key_size=8
                 -value_size="${VALUE_SIZE}"
@@ -170,12 +191,11 @@ jobs:
             record_shm fillrandom
             rm -rf "$DB_PATH"
 
-            # Pass 2: fillseq suite, then omit lazy-load demo.
-            # fillseq: replace every simple in level_writers with light_zip.
+            # Pass 2: fillseq — prefix 6 zipkeyonly (keep L6 from prebake).
             prepare_db
             yaml_fs="${logdir}/db_bench-fillseq.yaml"
             python3 .github/scripts/graft_bench_yaml.py \
-              --rewrite-level-writer simple light_zip \
+              --prefix-level-writers 6 zipkeyonly \
               --out "$yaml_fs" \
               "$yaml"
             args=(
@@ -226,10 +246,11 @@ jobs:
             rm -rf "$DB_PATH"
           }
 
-          run_topling_suite topling "$YAML_BASE" 1
-          run_topling_suite topling-dictzip10 "$YAML_DZ10" 0
-          for f in logs/topling/db_bench*.log logs/topling/memtablerep_bench*.log \
-                   logs/topling-dictzip10/db_bench*.log; do
+          run_topling_suite zipkeyonly "$WORK_ZKO" 1
+          run_topling_suite zipkeyvalue "$WORK_ZKV" 0
+          rm -f "$WORK_ZKO" "$WORK_ZKV"
+          for f in logs/zipkeyonly/db_bench*.log logs/zipkeyonly/memtablerep_bench*.log \
+                   logs/zipkeyvalue/db_bench*.log; do
             test -s "$f" || { echo "empty bench log: $f" >&2; exit 1; }
             grep -Eiq 'ops/sec|us/op|micros/op|Elapsed time' "$f" \
               || { echo "bench log lacks metrics: $f" >&2; exit 1; }

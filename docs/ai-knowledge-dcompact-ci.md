@@ -16,7 +16,7 @@
 - worker 检查 `output_root` 必须以 `hoster_root` 开头，否则 HTTP 412。
 - `NFS_DYNAMIC_MOUNT=0` 时不 mount，直接按替换后路径访问。
 
-已落地 CI 模板（`.github/bench-conf/db_bench_enterprise_dcompact_ci.yaml`）：
+已落地 CI 模板（`.github/bench-conf/db_bench_enterprise_dcompact_zipkeyonly.yaml`）：
 
 | 项 | 值 |
 |---|---|

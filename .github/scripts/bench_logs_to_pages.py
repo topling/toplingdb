@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Parse db_bench / memtablerep_bench logs and maintain GitHub Pages site trees.
 
-Supports multi-engine comparison (topling / topling-dictzip10 / rocksdb-*).
+Supports multi-engine comparison (zipkeyonly / zipkeyvalue / rocksdb-*).
 """
 
 from __future__ import annotations
@@ -32,20 +32,27 @@ METRIC_RE = re.compile(
     r"Number of threads)\s*:\s*(?P<value>.+)$"
 )
 
-ENGINES = ("topling", "topling-dictzip10", "rocksdb-v8.10", "rocksdb-master")
-TOPLING_ENGINES = ("topling", "topling-dictzip10")
+ENGINES = ("zipkeyonly", "zipkeyvalue", "rocksdb-v8.10", "rocksdb-master")
+TOPLING_ENGINES = ("zipkeyonly", "zipkeyvalue")
 ROCKSDB_ENGINES = ("rocksdb-v8.10", "rocksdb-master")
 YAML_RAW_NAME = "db_bench.yaml"
+# Per-pass yamls from db_bench-run; YAML_RAW_NAME is legacy (avx512/local/dcompact
+# still copy db_bench.yaml — db_bench-run no longer writes it).
+YAML_USED_NAMES = (
+    "db_bench-fillrandom.yaml",
+    "db_bench-fillseq.yaml",
+    YAML_RAW_NAME,
+)
 ENGINE_LABELS = {
-    "topling": "ToplingDB",
-    "topling-dictzip10": "ToplingDB minDictZip=10",
+    "zipkeyonly": "ToplingDB zipkeyonly",
+    "zipkeyvalue": "ToplingDB zipkeyvalue",
     "rocksdb-v8.10": "RocksDB v8.10",
     "rocksdb-master": "RocksDB master",
 }
 # Short labels for ratio column headers.
 RATIO_BASE_LABELS = {
-    "topling": "Topling",
-    "topling-dictzip10": "dictzip10",
+    "zipkeyonly": "zipkeyonly",
+    "zipkeyvalue": "zipkeyvalue",
 }
 RATIO_OTHER_LABELS = {
     "rocksdb-v8.10": "v8.10",
@@ -208,7 +215,7 @@ def build_shm_usage_table(
     for e in ENGINES:
         headers.append(ENGINE_LABELS[e])
     headers.append("Topling / v8.10 (space)")
-    headers.append("dictzip10 / v8.10 (space)")
+    headers.append("zipkeyvalue / v8.10 (space)")
 
     rows_html = []
     for wl in SHM_WORKLOADS:
@@ -219,10 +226,10 @@ def build_shm_usage_table(
                 f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
             )
         cells.append(
-            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('topling', wl, 'allocated_bytes'))}</td>"
+            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('zipkeyonly', wl, 'allocated_bytes'))}</td>"
         )
         cells.append(
-            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('topling-dictzip10', wl, 'allocated_bytes'))}</td>"
+            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('zipkeyvalue', wl, 'allocated_bytes'))}</td>"
         )
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     if not rows_html:
@@ -254,7 +261,7 @@ def build_rss_usage_table(
             label += " (derived-from-main)"
         headers.append(label)
     headers.append("Topling / v8.10 (RSS)")
-    headers.append("dictzip10 / v8.10 (RSS)")
+    headers.append("zipkeyvalue / v8.10 (RSS)")
 
     workloads = sorted(
         {wl for eng_data in rss_data.values() for wl in eng_data if eng_data.get(wl) is not None}
@@ -271,8 +278,8 @@ def build_rss_usage_table(
                 f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
             )
         v810_bytes = (rss_data.get("rocksdb-v8.10") or {}).get(wl)
-        topling_bytes = (rss_data.get("topling") or {}).get(wl)
-        dz10_bytes = (rss_data.get("topling-dictzip10") or {}).get(wl)
+        topling_bytes = (rss_data.get("zipkeyonly") or {}).get(wl)
+        dz10_bytes = (rss_data.get("zipkeyvalue") or {}).get(wl)
         cells.append(f"<td>{_size_ratio_cell(v810_bytes, topling_bytes)}</td>")
         cells.append(f"<td>{_size_ratio_cell(v810_bytes, dz10_bytes)}</td>")
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
@@ -921,7 +928,7 @@ def _time_ratio_cell(topling_s: Optional[float], other_s: Optional[float]) -> st
 def _subject_time_ratio_cell(
     baseline_s: Optional[float], subject_s: Optional[float]
 ) -> str:
-    """ratio = subject / baseline; color is about the subject (dictzip10).
+    """ratio = subject / baseline; color is about the subject (zipkeyvalue).
 
     >1 → subject slower (red); <1 → subject faster (green).
     """
@@ -949,7 +956,7 @@ def _ratio_pairs() -> List[Tuple[str, str]]:
 def build_db_bench_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
-    """Wide comparison: ops/sec + dictzip10/Topling time + rocksdb/topling* time.
+    """Wide comparison: ops/sec + zipkeyvalue/zipkeyonly time + rocksdb/zipkey* time.
 
     compact rows display operations/seconds instead of ops/sec.
     """
@@ -962,7 +969,7 @@ def build_db_bench_compare(
     headers = ["benchmark"] + [
         f"{ENGINE_LABELS[e]} ops/sec" for e in ENGINES
     ]
-    headers.append("dictzip10 time / Topling")
+    headers.append("zipkeyvalue time / zipkeyonly")
     for base, other in ratio_pairs:
         headers.append(
             f"{RATIO_OTHER_LABELS[other]} time / {RATIO_BASE_LABELS[base]}"
@@ -983,7 +990,7 @@ def build_db_bench_compare(
                 v = ops_by[e].get(name)
                 cells.append(f"<td>{v if v is not None else '—'}</td>")
         cells.append(
-            f"<td>{_subject_time_ratio_cell(sec_by['topling'].get(name), sec_by['topling-dictzip10'].get(name))}</td>"
+            f"<td>{_subject_time_ratio_cell(sec_by['zipkeyonly'].get(name), sec_by['zipkeyvalue'].get(name))}</td>"
         )
         for base, other in ratio_pairs:
             cells.append(
@@ -1004,7 +1011,7 @@ def build_db_bench_compare(
     )
 
 
-LAZY_ENGINES = ("topling", "topling-dictzip10", "rocksdb-v8.10")
+LAZY_ENGINES = ("zipkeyonly", "zipkeyvalue", "rocksdb-v8.10")
 
 
 def _hl(text: str, kind: str) -> str:
@@ -1026,7 +1033,7 @@ def build_lazy_load_compare(
     headers.extend(
         [
             "v8.10 time / Topling",
-            "v8.10 time / dictzip10",
+            "v8.10 time / zipkeyvalue",
         ]
     )
     rows_html = []
@@ -1037,10 +1044,10 @@ def build_lazy_load_compare(
             cells.append(f"<td>{v if v is not None else '—'}</td>")
         # Baseline = v8.10; green when Topling* is faster (ratio >= 1).
         cells.append(
-            f"<td>{_time_ratio_cell(sec_by['topling'].get(name), sec_by['rocksdb-v8.10'].get(name))}</td>"
+            f"<td>{_time_ratio_cell(sec_by['zipkeyonly'].get(name), sec_by['rocksdb-v8.10'].get(name))}</td>"
         )
         cells.append(
-            f"<td>{_time_ratio_cell(sec_by['topling-dictzip10'].get(name), sec_by['rocksdb-v8.10'].get(name))}</td>"
+            f"<td>{_time_ratio_cell(sec_by['zipkeyvalue'].get(name), sec_by['rocksdb-v8.10'].get(name))}</td>"
         )
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     if not rows_html:
@@ -1285,9 +1292,11 @@ def _build_runner_section(
 def _build_yaml_config_links(raw_dir: Path) -> str:
     parts: List[str] = []
     for eng in TOPLING_ENGINES:
-        if (raw_dir / eng / YAML_RAW_NAME).is_file():
-            label = html.escape(ENGINE_LABELS[eng])
-            parts.append(f'<a href="raw/{eng}/{YAML_RAW_NAME}">{label} yaml</a>')
+        eng_dir = raw_dir / eng
+        label = html.escape(ENGINE_LABELS[eng])
+        for name in YAML_USED_NAMES:
+            if (eng_dir / name).is_file():
+                parts.append(f'<a href="raw/{eng}/{name}">{label} {name}</a>')
     if not parts:
         return ""
     return (
@@ -1340,7 +1349,7 @@ def emit(args: argparse.Namespace) -> None:
             "time-fillrandom-omit.txt",
             "time-fillseq-omit.txt",
             "bench_settings.txt",
-            YAML_RAW_NAME,
+            *YAML_USED_NAMES,
             "engine-meta.json",
         ):
             p = src / name
@@ -1407,7 +1416,7 @@ def emit(args: argparse.Namespace) -> None:
             for e in ENGINES
         }
     )
-    topling = engines_data.get("topling") or {}
+    topling = engines_data.get("zipkeyonly") or {}
     v810 = engines_data.get("rocksdb-v8.10") or {}
     cspp_compare = build_cspp_memtable_compare(
         topling.get("memtablerep_cspp") or [],
@@ -1600,20 +1609,26 @@ def emit(args: argparse.Namespace) -> None:
                 f'<a href="raw/{eng}/db_bench.log">{label} db_bench</a>'
             )
     actions_run_url = getattr(args, "actions_run_url", None) or ""
-    log_artifact_names: List[str] = []
+    artifact_names: List[str] = []
+    has_info_logs = False
     for eng in ENGINES:
         label = ENGINE_LABELS[eng]
-        for p in sorted((log_root / eng).glob("LOG-*")):
+        eng_logs = log_root / eng
+        for p in sorted(eng_logs.glob("LOG-*")):
             if p.is_file():
-                log_artifact_names.append(f"{label} {p.name}")
-    if log_artifact_names and actions_run_url:
-        names = ", ".join(html.escape(n) for n in log_artifact_names)
+                has_info_logs = True
+                artifact_names.append(f"{label} {p.name}")
+        for p in sorted(eng_logs.glob("db_bench*.yaml")):
+            if p.is_file():
+                artifact_names.append(f"{label} {p.name}")
+    if has_info_logs and actions_run_url:
+        names = ", ".join(html.escape(n) for n in artifact_names)
         raw_link_parts.append(
             f'<a href="{html.escape(actions_run_url)}#artifacts">'
-            f"DB INFO LOGs (Actions artifact)</a>"
+            f"DB INFO LOGs + bench yamls (Actions artifact)</a>"
             f'<span class="meta"> — {names}</span>'
         )
-    elif log_artifact_names and not actions_run_url:
+    elif has_info_logs and not actions_run_url:
         raise SystemExit(
             "LOG-* present under --log-root but --actions-run-url was not provided; "
             "refusing to emit pages without an external link (LOGs must not go into gh-pages)"
@@ -1704,11 +1719,11 @@ def emit(args: argparse.Namespace) -> None:
             }
             for eng in ENGINES
         },
-        "db_bench": engines_data.get("topling", {}).get("db_bench", []),
-        "memtablerep_skiplist": engines_data.get("topling", {}).get(
+        "db_bench": engines_data.get("zipkeyonly", {}).get("db_bench", []),
+        "memtablerep_skiplist": engines_data.get("zipkeyonly", {}).get(
             "memtablerep_skiplist", []
         ),
-        "memtablerep_cspp": engines_data.get("topling", {}).get(
+        "memtablerep_cspp": engines_data.get("zipkeyonly", {}).get(
             "memtablerep_cspp", []
         ),
     }
@@ -1734,7 +1749,7 @@ def _render_latest_section(
     else:
         set_rocksdb_master_label(None)
     engines = entry.get("engines") or {
-        "topling": {
+        "zipkeyonly": {
             "db_bench": entry.get("db_bench", []),
             "memtablerep_skiplist": entry.get("memtablerep_skiplist", []),
             "memtablerep_cspp": entry.get("memtablerep_cspp", []),
@@ -1786,7 +1801,7 @@ def _render_latest_section(
         {e: engines.get(e, {}).get("db_bench_omit_fillseq") or [] for e in LAZY_ENGINES}
     )
 
-    t_eng = engines.get("topling") or {}
+    t_eng = engines.get("zipkeyonly") or {}
     r_eng = engines.get("rocksdb-v8.10") or {}
     cspp_compare = build_cspp_memtable_compare(
         t_eng.get("memtablerep_cspp") or [],
@@ -1808,7 +1823,7 @@ def _render_latest_section(
   <h3>Peak RSS (memory; ratio vs RocksDB v8.10)</h3>
   <p class="meta">RocksDB block cache = half physical memory ({html.escape(cache_iec)}). Ratio = engine / v8.10; {_hl('<1 = less memory', 'faster')}, {_hl('>1 = more memory', 'slower')}. RocksDB omit columns are {_hl('derived-from-main', 'slower')} (no separate omit pass).</p>
   {rss_table}
-  <h3>db_bench fillrandom suite (time ratio = rocksdb / topling*)</h3>
+  <h3>db_bench fillrandom suite (time ratio = rocksdb / zipkey*)</h3>
   <p class="meta">compact row shows operations/seconds. RocksDB uses default Snappy compression.</p>
   {fr_compare}
   <h3>db_bench fillseq suite</h3>
@@ -1924,7 +1939,7 @@ def main() -> None:
     p_emit.add_argument(
         "--log-root",
         required=True,
-        help="Directory with topling/, topling-dictzip10/, rocksdb-*/ log subdirs",
+        help="Directory with zipkeyonly/, zipkeyvalue/, rocksdb-*/ log subdirs",
     )
     p_emit.add_argument(
         "--engine-meta-root",

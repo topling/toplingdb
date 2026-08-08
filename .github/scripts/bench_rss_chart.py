@@ -336,7 +336,7 @@ def build_rss_svg(
         )
         parts.append(
             f'<text x="{x + swatch_len + swatch_text_gap:.1f}" y="{header_y}" '
-            f'text-anchor="start" font-size="13.5" fill="#333">{label}</text>'
+            f'text-anchor="start" font-size="13.5" fill="#000">{label}</text>'
         )
         x += w
 
@@ -501,7 +501,7 @@ RSS_CHART_JS = r"""
         text.setAttribute("text-anchor", "middle");
         text.setAttribute("dominant-baseline", "middle");
         text.setAttribute("font-size", "15");
-        text.setAttribute("fill", "#222");
+        text.setAttribute("fill", "#000");
         text.textContent = t.tip;
         marks.appendChild(text);
       });

@@ -202,12 +202,16 @@ def load_runner_env(log_root: Path) -> Dict[str, str]:
 def _size_ratio_cell(
     base_bytes: Optional[int], other_bytes: Optional[int]
 ) -> str:
-    """ratio = other / base; &lt;1 means other uses less space (better compression)."""
+    """ratio = other / base; &lt;1 less (green), &gt;1 more (red), equal neutral."""
     if base_bytes is None or other_bytes is None or base_bytes <= 0:
         return "—"
     ratio = other_bytes / base_bytes
-    cls = "faster" if ratio < 1.0 else "slower"
-    return f'<span class="{cls}">{ratio:.2f}x</span>'
+    text = f"{ratio:.2f}x"
+    if other_bytes < base_bytes:
+        return f'<span class="faster">{text}</span>'
+    if other_bytes > base_bytes:
+        return f'<span class="slower">{text}</span>'
+    return text
 
 
 def build_shm_usage_table(
@@ -446,7 +450,7 @@ def _page(title: str, body: str) -> str:
     th {{ background: #f4f4f4; }}
     h1, h2, h3 {{ margin-top: 1.5rem; }}
     a {{ color: #0645ad; }}
-    .meta {{ color: #555; font-size: 0.9rem; }}
+    .meta {{ color: #000; font-size: 0.9rem; }}
     .faster {{ color: #0a7a28; font-weight: 600; }}
     .slower {{ color: #a30d0d; }}
     .rss-chart-wrap {{ margin: 0.75rem 0 1.25rem; }}
@@ -504,12 +508,16 @@ def _metric_map(rows: List[Dict[str, str]]) -> Dict[str, str]:
 
 
 def _time_ratio_cell(topling_s: Optional[float], other_s: Optional[float]) -> str:
-    """ratio = other_seconds / topling_seconds; >=1 means ToplingDB faster."""
+    """ratio = other_seconds / topling_seconds; >1 Topling faster, <1 slower, equal neutral."""
     if topling_s is None or other_s is None or topling_s <= 0:
         return "—"
     ratio = other_s / topling_s
-    cls = "faster" if ratio >= 1.0 else "slower"
-    return f'<span class="{cls}">{ratio:.2f}x</span>'
+    text = f"{ratio:.2f}x"
+    if other_s > topling_s:
+        return f'<span class="faster">{text}</span>'
+    if other_s < topling_s:
+        return f'<span class="slower">{text}</span>'
+    return text
 
 
 def _subject_time_ratio_cell(
@@ -629,7 +637,7 @@ def build_lazy_load_compare(
         for e in LAZY_ENGINES:
             v = ops_by[e].get(name)
             cells.append(f"<td>{v if v is not None else '—'}</td>")
-        # Baseline = v8.10; green when zipkey* is faster (ratio >= 1).
+        # Baseline = v8.10; green when zipkey* is faster (ratio > 1).
         cells.append(
             f"<td>{_time_ratio_cell(sec_by['zipkeyonly'].get(name), sec_by['rocksdb-v8.10'].get(name))}</td>"
         )
@@ -1113,7 +1121,7 @@ def emit(args: argparse.Namespace) -> None:
                 "not a disjoint partition).</li>\n"
             )
         rss_svg_section = (
-            '<h2>RSS over time</h2>\n'
+            '<h2>RAM usage over time</h2>\n'
             f'<p class="meta">Sampled once per second from /proc/statm {pagecache_how}. '
             'Colored bands show benchmark segments (start time from db_bench output).</p>\n'
             '<ul class="meta">\n'
@@ -1250,6 +1258,11 @@ def emit(args: argparse.Namespace) -> None:
         dataset_estimated,
         dcompact_href="../../dcompact/index.html",
     )
+    cache_meta = (
+        f"RocksDB block cache = half physical memory ({html.escape(format_iec(cache_size_bytes))})."
+        if cache_size_bytes
+        else "RocksDB block cache size: n/a."
+    )
 
     body = f"""
   <h1>Bench run: {html.escape(args.variant)} / {html.escape(str(args.run_id))}</h1>
@@ -1261,11 +1274,11 @@ def emit(args: argparse.Namespace) -> None:
   <p>{raw_links}</p>
   {yaml_links}
   {runner_html}
-  <h2>/dev/shm usage (space; after db_bench + omit/scan, before delete)</h2>
+  <h2>/dev/shm usage (disk space; after db_bench + omit/scan)</h2>
   <p class="meta">Allocated disk usage (IEC blocks). RocksDB uses default Snappy compression. Space ratio = engine / v8.10; {_hl('<1 = less space than RocksDB', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
   {shm_table}
-  <h2>Peak RSS (memory; during db_bench)</h2>
-  <p class="meta">Peak resident set size. RocksDB block cache = half physical memory ({html.escape(format_iec(cache_size_bytes) if cache_size_bytes else 'n/a')}). Ratio = engine / v8.10; {_hl('<1 = less memory', 'faster')}, {_hl('>1 = more memory', 'slower')}. RocksDB omit columns are {_hl('derived-from-main', 'slower')} (no separate omit pass).</p>
+  <h2>Peak RSS (RAM; during db_bench)</h2>
+  <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10; {_hl('<1 = less RSS', 'faster')}, {_hl('>1 = more RSS', 'slower')}. RocksDB omit columns are derived-from-main (no separate omit pass).</p>
   {rss_table}
   {rss_svg_section}
   <h2>Comparison: db_bench fillrandom suite (perf)</h2>
@@ -1422,7 +1435,11 @@ def _render_latest_section(
         r_eng.get("memtablerep_skiplist") or [],
     )
 
-    cache_iec = format_iec(cache_size_bytes) if cache_size_bytes else "n/a"
+    cache_meta = (
+        f"RocksDB block cache = half physical memory ({html.escape(format_iec(cache_size_bytes))})."
+        if cache_size_bytes
+        else "RocksDB block cache size: n/a."
+    )
 
     return f"""
   <h2>Latest: {html.escape(variant)}</h2>
@@ -1430,11 +1447,11 @@ def _render_latest_section(
      <a href="runs/{html.escape(run_dir)}/index.html">full report</a> |
      {html.escape(str(entry.get('timestamp', '')))}</p>
   {runner_html}
-  <h3>/dev/shm usage (disk; ratio vs RocksDB v8.10)</h3>
+  <h3>/dev/shm usage (disk space; ratio vs RocksDB v8.10)</h3>
   <p class="meta">RocksDB uses default Snappy compression. Ratio = engine / v8.10; {_hl('<1 = less space', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
   {shm_table}
-  <h3>Peak RSS (memory; ratio vs RocksDB v8.10)</h3>
-  <p class="meta">RocksDB block cache = half physical memory ({html.escape(cache_iec)}). Ratio = engine / v8.10; {_hl('<1 = less memory', 'faster')}, {_hl('>1 = more memory', 'slower')}. RocksDB omit columns are {_hl('derived-from-main', 'slower')} (no separate omit pass).</p>
+  <h3>Peak RSS (RAM; ratio vs RocksDB v8.10)</h3>
+  <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10; {_hl('<1 = less RSS', 'faster')}, {_hl('>1 = more RSS', 'slower')}. RocksDB omit columns are derived-from-main (no separate omit pass).</p>
   {rss_table}
   <h3>db_bench fillrandom suite (time ratio = rocksdb / zipkey*)</h3>
   <p class="meta">compact row shows operations/seconds. RocksDB uses default Snappy compression.</p>

@@ -224,7 +224,7 @@ def build_shm_usage_table(
     headers = ["workload"]
     for e in ENGINES:
         headers.append(ENGINE_LABELS[e])
-    headers.append("Topling / v8.10 (space)")
+    headers.append("zipkeyonly / v8.10 (space)")
     headers.append("zipkeyvalue / v8.10 (space)")
 
     rows_html = []
@@ -270,7 +270,7 @@ def build_rss_usage_table(
         if e in derived_engines:
             label += " (derived-from-main)"
         headers.append(label)
-    headers.append("Topling / v8.10 (RSS)")
+    headers.append("zipkeyonly / v8.10 (RSS)")
     headers.append("zipkeyvalue / v8.10 (RSS)")
 
     workloads = sorted(
@@ -619,7 +619,7 @@ def build_lazy_load_compare(
     ]
     headers.extend(
         [
-            "v8.10 time / Topling",
+            "v8.10 time / zipkeyonly",
             "v8.10 time / zipkeyvalue",
         ]
     )
@@ -629,7 +629,7 @@ def build_lazy_load_compare(
         for e in LAZY_ENGINES:
             v = ops_by[e].get(name)
             cells.append(f"<td>{v if v is not None else '—'}</td>")
-        # Baseline = v8.10; green when Topling* is faster (ratio >= 1).
+        # Baseline = v8.10; green when zipkey* is faster (ratio >= 1).
         cells.append(
             f"<td>{_time_ratio_cell(sec_by['zipkeyonly'].get(name), sec_by['rocksdb-v8.10'].get(name))}</td>"
         )
@@ -1269,13 +1269,13 @@ def emit(args: argparse.Namespace) -> None:
   {rss_table}
   {rss_svg_section}
   <h2>Comparison: db_bench fillrandom suite (perf)</h2>
-  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / Topling*: {_hl('>1 = that Topling variant faster', 'faster')}. Values show ops/sec.</p>
+  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / zipkey*: {_hl('>1 = that zipkey* engine faster', 'faster')}. Values show ops/sec.</p>
   {fr_compare}
   <h2>Comparison: db_bench fillseq suite (perf)</h2>
   <p class="meta">Same as fillrandom. Watch {_hl('compact / readseq / readrandom', 'slower')} cost for minDictZip=10 vs {_hl('space savings', 'faster')} above.</p>
   {db_compare}
   <h2>Lazy load demo (scan; RocksDB v8.10 baseline)</h2>
-  <p class="meta">Topling needs an extra omit pass: scan_omit_key/value enables lazy value load (no real value load). RocksDB has no omit API, so the baseline is readseq×3 already present in the main fill* suite (no extra pass). master omitted here (v8.10 is the stronger RocksDB baseline). Time ratio = v8.10 / Topling*: {_hl('>1 = Topling* faster', 'faster')}, {_hl('<1 = Topling* slower', 'slower')}. nextwithkey is Topling-only.</p>
+  <p class="meta">zipkey* needs an extra omit pass: scan_omit_key/value enables lazy value load (no real value load). RocksDB has no omit API, so the baseline is readseq×3 already present in the main fill* suite (no extra pass). master omitted here (v8.10 is the stronger RocksDB baseline). Time ratio = v8.10 / zipkey*: {_hl('>1 = zipkey* faster', 'faster')}, {_hl('<1 = zipkey* slower', 'slower')}. nextwithkey is ToplingDB-only.</p>
   <h3>fillrandom-omit / scan</h3>
   {omit_fr_table}
   <h3>fillseq-omit / scan</h3>

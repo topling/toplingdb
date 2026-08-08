@@ -1,6 +1,1189 @@
 [
   {
     "variant": "plain",
+    "run_id": "31234948599",
+    "run_dir": "20260808-034331-plain-31234948599",
+    "timestamp": "2026-08-08T03:43:31.693759+00:00",
+    "rocksdb_master_git_sha": "5fe225357ae3e8a1c4f85cf77f14d7011bc956b7",
+    "runner_env": {
+      "os_pretty_name": "Ubuntu 24.04.4 LTS",
+      "kernel": "6.17.0-1020-azure",
+      "cpu_model": "AMD EPYC 7763 64-Core Processor",
+      "cpu_count": "4",
+      "mem_total_bytes": "16766423040",
+      "shm_size_bytes": "8383209472",
+      "num": "100000000",
+      "key_size": "8",
+      "value_size": "50",
+      "cache_size_bytes": 8383211520,
+      "dataset_bytes": 3995312128,
+      "dataset_estimated": false
+    },
+    "engines": {
+      "zipkeyonly": {
+        "db_bench": [
+          {
+            "benchmark": "fillseq",
+            "micros/op": "0.447948",
+            "ops/sec": "2232398",
+            "seconds": "44.795",
+            "operations": "100000000",
+            "extra": "123.5 MB/s",
+            "ts": "2026-08-08T02:30:25.671329Z"
+          },
+          {
+            "benchmark": "compact",
+            "micros/op": "39193047.000000",
+            "ops/sec": "0",
+            "seconds": "39.193",
+            "operations": "1",
+            "extra": "",
+            "ts": "2026-08-08T02:31:10.472314Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.037866",
+            "ops/sec": "26408713",
+            "seconds": "3.787",
+            "operations": "100000000",
+            "extra": "1460.7 MB/s",
+            "ts": "2026-08-08T02:31:49.665592Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.037967",
+            "ops/sec": "26338426",
+            "seconds": "3.797",
+            "operations": "100000000",
+            "extra": "1456.9 MB/s",
+            "ts": "2026-08-08T02:31:53.452399Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.037891",
+            "ops/sec": "26391136",
+            "seconds": "3.789",
+            "operations": "100000000",
+            "extra": "1459.8 MB/s",
+            "ts": "2026-08-08T02:31:57.249370Z"
+          },
+          {
+            "benchmark": "readrandom",
+            "micros/op": "0.147002",
+            "ops/sec": "6802599",
+            "seconds": "14.700",
+            "operations": "100000000",
+            "extra": "376.3 MB/s (100000000 of 100000000 found)",
+            "ts": "2026-08-08T02:32:01.038737Z"
+          }
+        ],
+        "memtablerep_skiplist": [
+          {
+            "benchmark": "fillrandom",
+            "metric": "Number of threads",
+            "value": "1"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Elapsed time",
+            "value": "254472131 us"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Total bytes written",
+            "value": "1621.25 MiB"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Write throughput",
+            "value": "6.37102 MiB/s"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "write us/op",
+            "value": "2.54472"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Number of threads",
+            "value": "1"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Elapsed time",
+            "value": "326108791 us"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Total bytes read",
+            "value": "1621.25 MiB"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Read throughput",
+            "value": "4.97149 MiB/s"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "read us/op",
+            "value": "3.26109"
+          }
+        ],
+        "memtablerep_cspp": [
+          {
+            "benchmark": "fillrandom",
+            "metric": "Number of threads",
+            "value": "1"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Elapsed time",
+            "value": "32710072 us"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Total bytes written",
+            "value": "1621.25 MiB"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Write throughput",
+            "value": "49.5641 MiB/s"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "write us/op",
+            "value": "0.327101"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Number of threads",
+            "value": "1"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Elapsed time",
+            "value": "43023290 us"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Total bytes read",
+            "value": "1621.25 MiB"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Read throughput",
+            "value": "37.683 MiB/s"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "read us/op",
+            "value": "0.430233"
+          }
+        ],
+        "db_bench_fillrandom": [
+          {
+            "benchmark": "fillrandom",
+            "micros/op": "0.979951",
+            "ops/sec": "1020458",
+            "seconds": "97.995",
+            "operations": "100000000",
+            "extra": "56.4 MB/s",
+            "ts": "2026-08-08T02:27:26.858218Z"
+          },
+          {
+            "benchmark": "compact",
+            "micros/op": "27180394.000000",
+            "ops/sec": "0",
+            "seconds": "27.180",
+            "operations": "1",
+            "extra": "",
+            "ts": "2026-08-08T02:29:04.859905Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.044679",
+            "ops/sec": "22381634",
+            "seconds": "4.468",
+            "operations": "100000000",
+            "extra": "1238.0 MB/s",
+            "ts": "2026-08-08T02:29:32.040505Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.045629",
+            "ops/sec": "21915939",
+            "seconds": "4.563",
+            "operations": "100000000",
+            "extra": "1212.2 MB/s",
+            "ts": "2026-08-08T02:29:36.508657Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.045263",
+            "ops/sec": "22093022",
+            "seconds": "4.526",
+            "operations": "100000000",
+            "extra": "1222.0 MB/s",
+            "ts": "2026-08-08T02:29:41.071742Z"
+          },
+          {
+            "benchmark": "readrandom",
+            "micros/op": "0.204088",
+            "ops/sec": "4899836",
+            "seconds": "20.409",
+            "operations": "100000000",
+            "extra": "171.3 MB/s (63208569 of 100000000 found)",
+            "ts": "2026-08-08T02:29:45.598307Z"
+          }
+        ],
+        "db_bench_omit_fillrandom": [
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.025685",
+            "ops/sec": "38932123",
+            "seconds": "2.569",
+            "operations": "100000000",
+            "extra": "297.0 MB/s"
+          },
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.025559",
+            "ops/sec": "39124824",
+            "seconds": "2.556",
+            "operations": "100000000",
+            "extra": "298.5 MB/s"
+          },
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.025485",
+            "ops/sec": "39237967",
+            "seconds": "2.549",
+            "operations": "100000000",
+            "extra": "299.4 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.026152",
+            "ops/sec": "38236852",
+            "seconds": "2.615",
+            "operations": "100000000",
+            "extra": "291.7 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.026048",
+            "ops/sec": "38389779",
+            "seconds": "2.605",
+            "operations": "100000000",
+            "extra": "292.9 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.026182",
+            "ops/sec": "38194281",
+            "seconds": "2.618",
+            "operations": "100000000",
+            "extra": "291.4 MB/s"
+          }
+        ],
+        "db_bench_omit_fillseq": [
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.019535",
+            "ops/sec": "51188861",
+            "seconds": "1.954",
+            "operations": "100000000",
+            "extra": "390.5 MB/s"
+          },
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.019386",
+            "ops/sec": "51582579",
+            "seconds": "1.939",
+            "operations": "100000000",
+            "extra": "393.5 MB/s"
+          },
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.019392",
+            "ops/sec": "51565077",
+            "seconds": "1.939",
+            "operations": "100000000",
+            "extra": "393.4 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.019826",
+            "ops/sec": "50436833",
+            "seconds": "1.983",
+            "operations": "100000000",
+            "extra": "384.8 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.019836",
+            "ops/sec": "50411864",
+            "seconds": "1.984",
+            "operations": "100000000",
+            "extra": "384.6 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.019825",
+            "ops/sec": "50440929",
+            "seconds": "1.983",
+            "operations": "100000000",
+            "extra": "384.8 MB/s"
+          }
+        ],
+        "shm_usage": {
+          "fillrandom": {
+            "apparent_bytes": 3271788483,
+            "allocated_bytes": 3272011776
+          },
+          "fillseq": {
+            "apparent_bytes": 5121583976,
+            "allocated_bytes": 5121691648
+          }
+        },
+        "rss_usage": {
+          "fillrandom": 2225647616,
+          "fillseq": 2034896896,
+          "fillrandom-omit": 149225472,
+          "fillseq-omit": 135467008
+        },
+        "bench_settings": {}
+      },
+      "zipkeyvalue": {
+        "db_bench": [
+          {
+            "benchmark": "fillseq",
+            "micros/op": "0.451400",
+            "ops/sec": "2215326",
+            "seconds": "45.140",
+            "operations": "100000000",
+            "extra": "122.5 MB/s",
+            "ts": "2026-08-08T02:48:12.297286Z"
+          },
+          {
+            "benchmark": "compact",
+            "micros/op": "122975854.000000",
+            "ops/sec": "0",
+            "seconds": "122.976",
+            "operations": "1",
+            "extra": "",
+            "ts": "2026-08-08T02:48:57.444313Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.049051",
+            "ops/sec": "20386960",
+            "seconds": "4.905",
+            "operations": "100000000",
+            "extra": "1127.7 MB/s",
+            "ts": "2026-08-08T02:51:00.420439Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.048275",
+            "ops/sec": "20714591",
+            "seconds": "4.828",
+            "operations": "100000000",
+            "extra": "1145.8 MB/s",
+            "ts": "2026-08-08T02:51:05.325804Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.049057",
+            "ops/sec": "20384180",
+            "seconds": "4.906",
+            "operations": "100000000",
+            "extra": "1127.5 MB/s",
+            "ts": "2026-08-08T02:51:10.153529Z"
+          },
+          {
+            "benchmark": "readrandom",
+            "micros/op": "0.741118",
+            "ops/sec": "1349312",
+            "seconds": "74.112",
+            "operations": "100000000",
+            "extra": "74.6 MB/s (100000000 of 100000000 found)",
+            "ts": "2026-08-08T02:51:15.059516Z"
+          }
+        ],
+        "memtablerep_skiplist": [],
+        "memtablerep_cspp": [],
+        "db_bench_fillrandom": [
+          {
+            "benchmark": "fillrandom",
+            "micros/op": "1.015530",
+            "ops/sec": "984707",
+            "seconds": "101.553",
+            "operations": "100000000",
+            "extra": "54.5 MB/s",
+            "ts": "2026-08-08T02:43:33.681266Z"
+          },
+          {
+            "benchmark": "compact",
+            "micros/op": "83714533.000000",
+            "ops/sec": "0",
+            "seconds": "83.715",
+            "operations": "1",
+            "extra": "",
+            "ts": "2026-08-08T02:45:15.236095Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.059945",
+            "ops/sec": "16681969",
+            "seconds": "5.994",
+            "operations": "100000000",
+            "extra": "922.7 MB/s",
+            "ts": "2026-08-08T02:46:38.950845Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.059449",
+            "ops/sec": "16820826",
+            "seconds": "5.945",
+            "operations": "100000000",
+            "extra": "930.4 MB/s",
+            "ts": "2026-08-08T02:46:44.945667Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.059761",
+            "ops/sec": "16733181",
+            "seconds": "5.976",
+            "operations": "100000000",
+            "extra": "925.6 MB/s",
+            "ts": "2026-08-08T02:46:50.890909Z"
+          },
+          {
+            "benchmark": "readrandom",
+            "micros/op": "0.560400",
+            "ops/sec": "1784437",
+            "seconds": "56.040",
+            "operations": "100000000",
+            "extra": "62.4 MB/s (63209218 of 100000000 found)",
+            "ts": "2026-08-08T02:46:56.867302Z"
+          }
+        ],
+        "db_bench_omit_fillrandom": [
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.025483",
+            "ops/sec": "39240584",
+            "seconds": "2.548",
+            "operations": "100000000",
+            "extra": "299.4 MB/s"
+          },
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.025238",
+            "ops/sec": "39621692",
+            "seconds": "2.524",
+            "operations": "100000000",
+            "extra": "302.3 MB/s"
+          },
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.025322",
+            "ops/sec": "39489838",
+            "seconds": "2.532",
+            "operations": "100000000",
+            "extra": "301.3 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.025945",
+            "ops/sec": "38543042",
+            "seconds": "2.595",
+            "operations": "100000000",
+            "extra": "294.1 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.025773",
+            "ops/sec": "38800023",
+            "seconds": "2.577",
+            "operations": "100000000",
+            "extra": "296.0 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.025803",
+            "ops/sec": "38753936",
+            "seconds": "2.580",
+            "operations": "100000000",
+            "extra": "295.7 MB/s"
+          }
+        ],
+        "db_bench_omit_fillseq": [
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.019366",
+            "ops/sec": "51634809",
+            "seconds": "1.937",
+            "operations": "100000000",
+            "extra": "393.9 MB/s"
+          },
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.019374",
+            "ops/sec": "51613436",
+            "seconds": "1.937",
+            "operations": "100000000",
+            "extra": "393.8 MB/s"
+          },
+          {
+            "benchmark": "nextwithkey",
+            "micros/op": "0.019335",
+            "ops/sec": "51716844",
+            "seconds": "1.934",
+            "operations": "100000000",
+            "extra": "394.6 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.019962",
+            "ops/sec": "50095431",
+            "seconds": "1.996",
+            "operations": "100000000",
+            "extra": "382.2 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.019855",
+            "ops/sec": "50363244",
+            "seconds": "1.986",
+            "operations": "100000000",
+            "extra": "384.2 MB/s"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.019861",
+            "ops/sec": "50348892",
+            "seconds": "1.986",
+            "operations": "100000000",
+            "extra": "384.1 MB/s"
+          }
+        ],
+        "shm_usage": {
+          "fillrandom": {
+            "apparent_bytes": 611003147,
+            "allocated_bytes": 611074048
+          },
+          "fillseq": {
+            "apparent_bytes": 1306110549,
+            "allocated_bytes": 1306202112
+          }
+        },
+        "rss_usage": {
+          "fillrandom": 2267185152,
+          "fillseq": 2042200064,
+          "fillrandom-omit": 189378560,
+          "fillseq-omit": 202498048
+        },
+        "bench_settings": {}
+      },
+      "rocksdb-v8.10": {
+        "db_bench": [
+          {
+            "benchmark": "fillseq",
+            "micros/op": "0.265",
+            "ops/sec": "3772755",
+            "seconds": "26.506",
+            "operations": "100000000",
+            "extra": "208.7 MB/s",
+            "ts": "2026-08-08T03:01:34.508212Z"
+          },
+          {
+            "benchmark": "compact",
+            "micros/op": "37490075.000",
+            "ops/sec": "0",
+            "seconds": "37.490",
+            "operations": "1",
+            "extra": "",
+            "ts": "2026-08-08T03:02:01.237042Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.158",
+            "ops/sec": "6329229",
+            "seconds": "15.800",
+            "operations": "100000000",
+            "extra": "350.1 MB/s",
+            "ts": "2026-08-08T03:02:38.727430Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.093",
+            "ops/sec": "10803415",
+            "seconds": "9.256",
+            "operations": "100000000",
+            "extra": "597.6 MB/s",
+            "ts": "2026-08-08T03:02:54.527463Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.092",
+            "ops/sec": "10847031",
+            "seconds": "9.219",
+            "operations": "100000000",
+            "extra": "600.0 MB/s",
+            "ts": "2026-08-08T03:03:03.784037Z"
+          },
+          {
+            "benchmark": "readrandom",
+            "micros/op": "2.994",
+            "ops/sec": "334013",
+            "seconds": "299.389",
+            "operations": "100000000",
+            "extra": "18.5 MB/s (100000000 of 100000000 found)",
+            "ts": "2026-08-08T03:03:13.003401Z"
+          }
+        ],
+        "memtablerep_skiplist": [
+          {
+            "benchmark": "fillrandom",
+            "metric": "Number of threads",
+            "value": "1"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Elapsed time",
+            "value": "269265613 us"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Total bytes written",
+            "value": "1621.25 MiB"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Write throughput",
+            "value": "6.02099 MiB/s"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "write us/op",
+            "value": "2.69266"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Number of threads",
+            "value": "1"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Elapsed time",
+            "value": "324103709 us"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Total bytes read",
+            "value": "1621.25 MiB"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Read throughput",
+            "value": "5.00225 MiB/s"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "read us/op",
+            "value": "3.24104"
+          }
+        ],
+        "memtablerep_cspp": [],
+        "db_bench_fillrandom": [
+          {
+            "benchmark": "fillrandom",
+            "micros/op": "1.478",
+            "ops/sec": "676549",
+            "seconds": "147.809",
+            "operations": "100000000",
+            "extra": "37.4 MB/s",
+            "ts": "2026-08-08T02:52:43.109393Z"
+          },
+          {
+            "benchmark": "compact",
+            "micros/op": "66926606.000",
+            "ops/sec": "0",
+            "seconds": "66.927",
+            "operations": "1",
+            "extra": "",
+            "ts": "2026-08-08T02:55:11.229961Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.133",
+            "ops/sec": "7516410",
+            "seconds": "8.410",
+            "operations": "63213545",
+            "extra": "415.8 MB/s",
+            "ts": "2026-08-08T02:56:18.156778Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.094",
+            "ops/sec": "10629545",
+            "seconds": "5.947",
+            "operations": "63213545",
+            "extra": "588.0 MB/s",
+            "ts": "2026-08-08T02:56:26.567057Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.094",
+            "ops/sec": "10631529",
+            "seconds": "5.946",
+            "operations": "63213545",
+            "extra": "588.1 MB/s",
+            "ts": "2026-08-08T02:56:32.514320Z"
+          },
+          {
+            "benchmark": "readrandom",
+            "micros/op": "2.954",
+            "ops/sec": "338481",
+            "seconds": "295.437",
+            "operations": "100000000",
+            "extra": "11.8 MB/s (63213971 of 100000000 found)",
+            "ts": "2026-08-08T02:56:38.460442Z"
+          }
+        ],
+        "db_bench_omit_fillrandom": [
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.133",
+            "ops/sec": "7516410",
+            "seconds": "8.410",
+            "operations": "63213545",
+            "extra": "415.8 MB/s",
+            "ts": "2026-08-08T02:56:18.156778Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.094",
+            "ops/sec": "10629545",
+            "seconds": "5.947",
+            "operations": "63213545",
+            "extra": "588.0 MB/s",
+            "ts": "2026-08-08T02:56:26.567057Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.094",
+            "ops/sec": "10631529",
+            "seconds": "5.946",
+            "operations": "63213545",
+            "extra": "588.1 MB/s",
+            "ts": "2026-08-08T02:56:32.514320Z"
+          }
+        ],
+        "db_bench_omit_fillseq": [
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.158",
+            "ops/sec": "6329229",
+            "seconds": "15.800",
+            "operations": "100000000",
+            "extra": "350.1 MB/s",
+            "ts": "2026-08-08T03:02:38.727430Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.093",
+            "ops/sec": "10803415",
+            "seconds": "9.256",
+            "operations": "100000000",
+            "extra": "597.6 MB/s",
+            "ts": "2026-08-08T03:02:54.527463Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.092",
+            "ops/sec": "10847031",
+            "seconds": "9.219",
+            "operations": "100000000",
+            "extra": "600.0 MB/s",
+            "ts": "2026-08-08T03:03:03.784037Z"
+          }
+        ],
+        "shm_usage": {
+          "fillrandom": {
+            "apparent_bytes": 3995184448,
+            "allocated_bytes": 3995312128
+          },
+          "fillseq": {
+            "apparent_bytes": 3461800293,
+            "allocated_bytes": 3461902336
+          }
+        },
+        "rss_usage": {
+          "fillrandom": 4391858176,
+          "fillseq": 6917324800,
+          "fillrandom-omit": 4391858176,
+          "fillseq-omit": 6917324800
+        },
+        "bench_settings": {
+          "cache_size_bytes": "8383211520"
+        }
+      },
+      "rocksdb-master": {
+        "db_bench": [
+          {
+            "benchmark": "fillseq",
+            "micros/op": "0.271",
+            "ops/sec": "3694348",
+            "seconds": "27.068",
+            "operations": "100000000",
+            "extra": "204.3 MB/s",
+            "ts": "2026-08-08T03:26:59.827002Z"
+          },
+          {
+            "benchmark": "compact",
+            "micros/op": "40662594.000",
+            "ops/sec": "0",
+            "seconds": "40.663",
+            "operations": "1",
+            "extra": "",
+            "ts": "2026-08-08T03:27:27.099747Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.193",
+            "ops/sec": "5194666",
+            "seconds": "19.251",
+            "operations": "100000000",
+            "extra": "287.3 MB/s",
+            "ts": "2026-08-08T03:28:07.762612Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.122",
+            "ops/sec": "8195044",
+            "seconds": "12.202",
+            "operations": "100000000",
+            "extra": "453.3 MB/s",
+            "ts": "2026-08-08T03:28:27.013416Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.122",
+            "ops/sec": "8180861",
+            "seconds": "12.224",
+            "operations": "100000000",
+            "extra": "452.5 MB/s",
+            "ts": "2026-08-08T03:28:39.216141Z"
+          },
+          {
+            "benchmark": "readrandom",
+            "micros/op": "2.910",
+            "ops/sec": "343667",
+            "seconds": "290.979",
+            "operations": "100000000",
+            "extra": "19.0 MB/s (100000000 of 100000000 found)",
+            "ts": "2026-08-08T03:28:51.440068Z"
+          }
+        ],
+        "memtablerep_skiplist": [
+          {
+            "benchmark": "fillrandom",
+            "metric": "Number of threads",
+            "value": "1"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Elapsed time",
+            "value": "263881271 us"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Total bytes written",
+            "value": "1621.25 MiB"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "Write throughput",
+            "value": "6.14385 MiB/s"
+          },
+          {
+            "benchmark": "fillrandom",
+            "metric": "write us/op",
+            "value": "2.63881"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Number of threads",
+            "value": "1"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Elapsed time",
+            "value": "319378405 us"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Total bytes read",
+            "value": "1621.25 MiB"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "Read throughput",
+            "value": "5.07626 MiB/s"
+          },
+          {
+            "benchmark": "readrandom",
+            "metric": "read us/op",
+            "value": "3.19378"
+          }
+        ],
+        "memtablerep_cspp": [],
+        "db_bench_fillrandom": [
+          {
+            "benchmark": "fillrandom",
+            "micros/op": "1.581",
+            "ops/sec": "632686",
+            "seconds": "158.056",
+            "operations": "100000000",
+            "extra": "35.0 MB/s",
+            "ts": "2026-08-08T03:18:10.118705Z"
+          },
+          {
+            "benchmark": "compact",
+            "micros/op": "50771898.000",
+            "ops/sec": "0",
+            "seconds": "50.772",
+            "operations": "1",
+            "extra": "",
+            "ts": "2026-08-08T03:20:55.055076Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.169",
+            "ops/sec": "5928874",
+            "seconds": "10.661",
+            "operations": "63209873",
+            "extra": "327.9 MB/s",
+            "ts": "2026-08-08T03:21:45.827287Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.122",
+            "ops/sec": "8169284",
+            "seconds": "7.738",
+            "operations": "63209873",
+            "extra": "451.9 MB/s",
+            "ts": "2026-08-08T03:21:56.488872Z"
+          },
+          {
+            "benchmark": "readseq",
+            "micros/op": "0.122",
+            "ops/sec": "8195692",
+            "seconds": "7.713",
+            "operations": "63209873",
+            "extra": "453.3 MB/s",
+            "ts": "2026-08-08T03:22:04.226673Z"
+          },
+          {
+            "benchmark": "readrandom",
+            "micros/op": "2.873",
+            "ops/sec": "348085",
+            "seconds": "287.286",
+            "operations": "100000000",
+            "extra": "12.2 MB/s (63212867 of 100000000 found)",
+            "ts": "2026-08-08T03:22:11.939456Z"
+          }
+        ],
+        "db_bench_omit_fillrandom": [],
+        "db_bench_omit_fillseq": [],
+        "shm_usage": {
+          "fillrandom": {
+            "apparent_bytes": 3995083901,
+            "allocated_bytes": 3995226112
+          },
+          "fillseq": {
+            "apparent_bytes": 3461873407,
+            "allocated_bytes": 3461967872
+          }
+        },
+        "rss_usage": {
+          "fillrandom": 4497817600,
+          "fillseq": 7026753536,
+          "fillrandom-omit": null,
+          "fillseq-omit": null
+        },
+        "bench_settings": {
+          "cache_size_bytes": "8383211520"
+        }
+      }
+    },
+    "db_bench": [
+      {
+        "benchmark": "fillseq",
+        "micros/op": "0.447948",
+        "ops/sec": "2232398",
+        "seconds": "44.795",
+        "operations": "100000000",
+        "extra": "123.5 MB/s",
+        "ts": "2026-08-08T02:30:25.671329Z"
+      },
+      {
+        "benchmark": "compact",
+        "micros/op": "39193047.000000",
+        "ops/sec": "0",
+        "seconds": "39.193",
+        "operations": "1",
+        "extra": "",
+        "ts": "2026-08-08T02:31:10.472314Z"
+      },
+      {
+        "benchmark": "readseq",
+        "micros/op": "0.037866",
+        "ops/sec": "26408713",
+        "seconds": "3.787",
+        "operations": "100000000",
+        "extra": "1460.7 MB/s",
+        "ts": "2026-08-08T02:31:49.665592Z"
+      },
+      {
+        "benchmark": "readseq",
+        "micros/op": "0.037967",
+        "ops/sec": "26338426",
+        "seconds": "3.797",
+        "operations": "100000000",
+        "extra": "1456.9 MB/s",
+        "ts": "2026-08-08T02:31:53.452399Z"
+      },
+      {
+        "benchmark": "readseq",
+        "micros/op": "0.037891",
+        "ops/sec": "26391136",
+        "seconds": "3.789",
+        "operations": "100000000",
+        "extra": "1459.8 MB/s",
+        "ts": "2026-08-08T02:31:57.249370Z"
+      },
+      {
+        "benchmark": "readrandom",
+        "micros/op": "0.147002",
+        "ops/sec": "6802599",
+        "seconds": "14.700",
+        "operations": "100000000",
+        "extra": "376.3 MB/s (100000000 of 100000000 found)",
+        "ts": "2026-08-08T02:32:01.038737Z"
+      }
+    ],
+    "memtablerep_skiplist": [
+      {
+        "benchmark": "fillrandom",
+        "metric": "Number of threads",
+        "value": "1"
+      },
+      {
+        "benchmark": "fillrandom",
+        "metric": "Elapsed time",
+        "value": "254472131 us"
+      },
+      {
+        "benchmark": "fillrandom",
+        "metric": "Total bytes written",
+        "value": "1621.25 MiB"
+      },
+      {
+        "benchmark": "fillrandom",
+        "metric": "Write throughput",
+        "value": "6.37102 MiB/s"
+      },
+      {
+        "benchmark": "fillrandom",
+        "metric": "write us/op",
+        "value": "2.54472"
+      },
+      {
+        "benchmark": "readrandom",
+        "metric": "Number of threads",
+        "value": "1"
+      },
+      {
+        "benchmark": "readrandom",
+        "metric": "Elapsed time",
+        "value": "326108791 us"
+      },
+      {
+        "benchmark": "readrandom",
+        "metric": "Total bytes read",
+        "value": "1621.25 MiB"
+      },
+      {
+        "benchmark": "readrandom",
+        "metric": "Read throughput",
+        "value": "4.97149 MiB/s"
+      },
+      {
+        "benchmark": "readrandom",
+        "metric": "read us/op",
+        "value": "3.26109"
+      }
+    ],
+    "memtablerep_cspp": [
+      {
+        "benchmark": "fillrandom",
+        "metric": "Number of threads",
+        "value": "1"
+      },
+      {
+        "benchmark": "fillrandom",
+        "metric": "Elapsed time",
+        "value": "32710072 us"
+      },
+      {
+        "benchmark": "fillrandom",
+        "metric": "Total bytes written",
+        "value": "1621.25 MiB"
+      },
+      {
+        "benchmark": "fillrandom",
+        "metric": "Write throughput",
+        "value": "49.5641 MiB/s"
+      },
+      {
+        "benchmark": "fillrandom",
+        "metric": "write us/op",
+        "value": "0.327101"
+      },
+      {
+        "benchmark": "readrandom",
+        "metric": "Number of threads",
+        "value": "1"
+      },
+      {
+        "benchmark": "readrandom",
+        "metric": "Elapsed time",
+        "value": "43023290 us"
+      },
+      {
+        "benchmark": "readrandom",
+        "metric": "Total bytes read",
+        "value": "1621.25 MiB"
+      },
+      {
+        "benchmark": "readrandom",
+        "metric": "Read throughput",
+        "value": "37.683 MiB/s"
+      },
+      {
+        "benchmark": "readrandom",
+        "metric": "read us/op",
+        "value": "0.430233"
+      }
+    ]
+  },
+  {
+    "variant": "plain",
     "run_id": "31220758079",
     "run_dir": "20260807-234224-plain-31220758079",
     "timestamp": "2026-08-07T23:42:24.340259+00:00",

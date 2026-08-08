@@ -11,12 +11,24 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import math
 import re
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+_RSS_SCRIPTS = Path(__file__).resolve().parent
+if str(_RSS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_RSS_SCRIPTS))
+from bench_rss_chart import (  # noqa: E402
+    RSS_CHART_JS as _RSS_CHART_JS,
+    RSS_LINE_COLORS,
+    build_rss_svg,
+    parse_pagecache_src,
+    parse_rss_series,
+)
+
 
 DB_BENCH_RE = re.compile(
     r"^(?:(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+)?"
@@ -45,321 +57,9 @@ RATIO_OTHER_LABELS = {
     "rocksdb-v8.10": "v8.10",
     "rocksdb-master": "master",
 }
-
 SHM_WORKLOADS = ("fillrandom", "fillseq")
 RSS_WORKLOADS = ("fillrandom", "fillseq")
 YAML_RAW_NAME = "db_bench.yaml"
-
-_SEGMENT_COLORS = [
-    "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
-    "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
-]
-
-
-def set_rocksdb_master_label(sha: Optional[str]) -> None:
-    """Set RocksDB master display labels; include short git SHA when known."""
-    if sha:
-        short = str(sha).strip()[:8]
-        if short:
-            ENGINE_LABELS["rocksdb-master"] = f"RocksDB master ({short})"
-            RATIO_OTHER_LABELS["rocksdb-master"] = f"master ({short})"
-            return
-    ENGINE_LABELS["rocksdb-master"] = "RocksDB master"
-    RATIO_OTHER_LABELS["rocksdb-master"] = "master"
-
-
-def apply_engine_meta(meta_roots: List[Path]) -> Optional[str]:
-    """Annotate RocksDB master label with short git SHA from engine-meta.json."""
-    for root in meta_roots:
-        path = root / "rocksdb-master" / "engine-meta.json"
-        if not path.is_file():
-            continue
-        try:
-            meta = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        sha = str(meta.get("git_sha") or "").strip()
-        if not sha:
-            continue
-        set_rocksdb_master_label(sha)
-        return sha
-    set_rocksdb_master_label(None)
-    return None
-
-
-def parse_shm_usage(text: str) -> Optional[Dict[str, int]]:
-    apparent: Optional[int] = None
-    allocated: Optional[int] = None
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("apparent_bytes="):
-            apparent = int(line.split("=", 1)[1])
-        elif line.startswith("allocated_bytes="):
-            allocated = int(line.split("=", 1)[1])
-    if apparent is None or allocated is None:
-        return None
-    return {"apparent_bytes": apparent, "allocated_bytes": allocated}
-
-
-def format_iec(num_bytes: int) -> str:
-    """IEC human-readable (1024), one decimal place, e.g. 850.0MiB / 1.2GiB."""
-    n = float(num_bytes)
-    units = ("B", "KiB", "MiB", "GiB", "TiB")
-    idx = 0
-    while n >= 1024.0 and idx < len(units) - 1:
-        n /= 1024.0
-        idx += 1
-    if idx == 0:
-        return f"{int(num_bytes)}B"
-    return f"{n:.1f}{units[idx]}"
-
-
-def load_shm_usages(eng_dir: Path) -> Dict[str, Optional[Dict[str, int]]]:
-    """Load per-workload shm usage; legacy shm_usage.txt maps to fillseq."""
-    out: Dict[str, Optional[Dict[str, int]]] = {}
-    for wl in SHM_WORKLOADS:
-        path = eng_dir / f"shm_usage-{wl}.txt"
-        if path.is_file():
-            out[wl] = parse_shm_usage(
-                path.read_text(encoding="utf-8", errors="replace")
-            )
-        else:
-            out[wl] = None
-    legacy = eng_dir / "shm_usage.txt"
-    if out.get("fillseq") is None and legacy.is_file():
-        out["fillseq"] = parse_shm_usage(
-            legacy.read_text(encoding="utf-8", errors="replace")
-        )
-    return out
-
-
-def parse_rss_usage(text: str) -> Optional[int]:
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("max_rss_bytes="):
-            return int(line.split("=", 1)[1])
-    return None
-
-
-def load_rss_usages(eng_dir: Path) -> Dict[str, Optional[int]]:
-    out: Dict[str, Optional[int]] = {}
-    for wl in RSS_WORKLOADS:
-        path = eng_dir / f"rss_usage-{wl}.txt"
-        if path.is_file():
-            out[wl] = parse_rss_usage(
-                path.read_text(encoding="utf-8", errors="replace")
-            )
-        else:
-            out[wl] = None
-    return out
-
-
-def load_bench_settings(eng_dir: Path) -> Dict[str, str]:
-    path = eng_dir / "bench_settings.txt"
-    out: Dict[str, str] = {}
-    if path.is_file():
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if "=" in line:
-                k, v = line.split("=", 1)
-                out[k.strip()] = v.strip()
-    return out
-
-
-def load_runner_env(log_root: Path) -> Dict[str, str]:
-    path = log_root / "runner_env.txt"
-    out: Dict[str, str] = {}
-    if path.is_file():
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if "=" in line:
-                k, v = line.split("=", 1)
-                out[k.strip()] = v.strip()
-    return out
-
-
-def _size_ratio_cell(
-    base_bytes: Optional[int], other_bytes: Optional[int]
-) -> str:
-    """ratio = other / base; <1 means other uses less space (better compression)."""
-    if base_bytes is None or other_bytes is None or base_bytes <= 0:
-        return "—"
-    ratio = other_bytes / base_bytes
-    cls = "faster" if ratio < 1.0 else "slower"
-    return f'<span class="{cls}">{ratio:.2f}x</span>'
-
-
-def build_shm_usage_table(
-    usages: Dict[str, Dict[str, Optional[Dict[str, int]]]],
-) -> str:
-    """Wide space compare: allocated bytes per engine + ratios vs RocksDB v8.10."""
-
-    def _bytes(eng: str, wl: str, key: str) -> Optional[int]:
-        u = (usages.get(eng) or {}).get(wl)
-        if not u:
-            return None
-        return u.get(key)
-
-    headers = ["workload"]
-    for e in ENGINES:
-        headers.append(ENGINE_LABELS[e])
-    headers.append("Topling / v8.10 (space)")
-    headers.append("zipkeyvalue / v8.10 (space)")
-
-    rows_html = []
-    for wl in SHM_WORKLOADS:
-        cells = [f"<td>{html.escape(wl)}</td>"]
-        for e in ENGINES:
-            b = _bytes(e, wl, "allocated_bytes")
-            cells.append(
-                f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
-            )
-        cells.append(
-            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('zipkeyonly', wl, 'allocated_bytes'))}</td>"
-        )
-        cells.append(
-            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('zipkeyvalue', wl, 'allocated_bytes'))}</td>"
-        )
-        rows_html.append("<tr>" + "".join(cells) + "</tr>")
-    if not rows_html:
-        rows_html.append(
-            f'<tr><td colspan="{len(headers)}"><em>no rows</em></td></tr>'
-        )
-    th = "".join(f"<th>{html.escape(h)}</th>" for h in headers)
-    return (
-        "<table>\n<thead><tr>"
-        + th
-        + "</tr></thead>\n<tbody>\n"
-        + "\n".join(rows_html)
-        + "\n</tbody>\n</table>"
-    )
-
-
-def build_rss_usage_table(
-    rss_data: Dict[str, Dict[str, Optional[int]]],
-) -> str:
-    """Peak RSS compare: absolute + ratio vs RocksDB v8.10."""
-    headers = ["workload"]
-    for e in ENGINES:
-        headers.append(ENGINE_LABELS[e])
-    headers.append("Topling / v8.10 (RSS)")
-    headers.append("zipkeyvalue / v8.10 (RSS)")
-
-    workloads = sorted(
-        {wl for eng_data in rss_data.values() for wl in eng_data if eng_data.get(wl) is not None}
-    )
-    if not workloads:
-        workloads = list(RSS_WORKLOADS)
-
-    rows_html = []
-    for wl in workloads:
-        cells = [f"<td>{html.escape(wl)}</td>"]
-        for e in ENGINES:
-            b = (rss_data.get(e) or {}).get(wl)
-            cells.append(
-                f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
-            )
-        v810_bytes = (rss_data.get("rocksdb-v8.10") or {}).get(wl)
-        topling_bytes = (rss_data.get("zipkeyonly") or {}).get(wl)
-        dz10_bytes = (rss_data.get("zipkeyvalue") or {}).get(wl)
-        cells.append(f"<td>{_size_ratio_cell(v810_bytes, topling_bytes)}</td>")
-        cells.append(f"<td>{_size_ratio_cell(v810_bytes, dz10_bytes)}</td>")
-        rows_html.append("<tr>" + "".join(cells) + "</tr>")
-    if not rows_html:
-        rows_html.append(
-            f'<tr><td colspan="{len(headers)}"><em>no rows</em></td></tr>'
-        )
-    th = "".join(f"<th>{html.escape(h)}</th>" for h in headers)
-    return (
-        "<table>\n<thead><tr>"
-        + th
-        + "</tr></thead>\n<tbody>\n"
-        + "\n".join(rows_html)
-        + "\n</tbody>\n</table>"
-    )
-
-
-def parse_db_bench(text: str) -> List[Dict[str, str]]:
-    rows: List[Dict[str, str]] = []
-    for line in text.splitlines():
-        m = DB_BENCH_RE.match(line.strip())
-        if not m:
-            continue
-        row = {
-            "benchmark": m.group("name"),
-            "micros/op": m.group("micros"),
-            "ops/sec": m.group("ops"),
-            "seconds": m.group("seconds"),
-            "operations": m.group("operations"),
-            "extra": m.group("extra").strip(),
-        }
-        ts = m.group("ts")
-        if ts:
-            row["ts"] = ts
-        rows.append(row)
-    return rows
-
-
-def parse_pagecache_src(text: str) -> str:
-    """Return pagecache source from series header: 'meminfo', 'cachestat', or ''."""
-    for line in text.splitlines():
-        line = line.strip()
-        if not line.startswith("#"):
-            continue
-        for part in line[1:].split():
-            if part.startswith("pagecache_src="):
-                return part.split("=", 1)[1]
-            if part.startswith("cachestat="):
-                return "cachestat"
-        break
-    return ""
-
-
-def parse_rss_series(
-    text: str,
-) -> Tuple[float, int, List[Tuple[float, int, int, int]]]:
-    """Parse statm/rss series -> (start_epoch, page_size, [(epoch, rss, shared, pagecache)...]).
-
-    New format: <epoch> <size> <resident> <shared> <text> <lib> <data> <dt> [<pagecache>]
-    Legacy:     <epoch> <resident>  (shared/pagecache treated as 0)
-    Pages are converted by the caller; anony = rss - shared.
-    """
-    start_epoch = 0.0
-    page_size = 4096
-    samples: List[Tuple[float, int, int, int]] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("#"):
-            for part in line[1:].split():
-                if part.startswith("start_epoch="):
-                    start_epoch = float(part.split("=", 1)[1])
-                elif part.startswith("page_size="):
-                    page_size = int(part.split("=", 1)[1])
-            continue
-        if not line:
-            continue
-        parts = line.split()
-        if len(parts) >= 4:
-            pagecache = int(parts[8]) if len(parts) >= 9 else 0
-            samples.append(
-                (float(parts[0]), int(parts[2]), int(parts[3]), pagecache)
-            )
-        elif len(parts) == 3:
-            # epoch size resident (shared missing)
-            samples.append((float(parts[0]), int(parts[2]), 0, 0))
-        elif len(parts) >= 2:
-            # legacy: epoch resident
-            samples.append((float(parts[0]), int(parts[1]), 0, 0))
-    return start_epoch, page_size, samples
-
-
-def _iso_to_epoch(ts: str) -> float:
-    """Parse ISO 8601 UTC timestamp to epoch seconds."""
-    ts = ts.rstrip("Z")
-    if "." in ts:
-        dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%f")
-    else:
-        dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S")
-    return dt.replace(tzinfo=timezone.utc).timestamp()
-
 
 def compute_bench_segments(
     bench_rows: List[Dict[str, str]],
@@ -409,282 +109,6 @@ def compute_bench_segments(
     return segments
 
 
-def _pow10_tick_step(data_max: float, target_ticks: float = 5.0) -> float:
-    """Nice axis-extent unit: 1, 10, 100, 1000, ... (grid/labels use half of this)."""
-    if data_max <= 0:
-        return 1.0
-    rough = data_max / target_ticks
-    exp = math.floor(math.log10(max(rough, 1e-12)))
-    step = 10.0 ** exp
-    # Prefer fewer coarse ticks over many 100-unit labels (e.g. 1888 → 1000).
-    while data_max / step > 8:
-        step *= 10.0
-    return step
-
-
-def _ceil_to_step(value: float, step: float) -> float:
-    if step <= 0:
-        return max(value, 1.0)
-    return max(step, math.ceil(value / step - 1e-12) * step)
-
-
-def _axis_multiples(step: float, axis_max: float, include_zero: bool) -> List[float]:
-    vals: List[float] = []
-    k = 0 if include_zero else 1
-    while True:
-        v = k * step
-        if v > axis_max + 1e-9:
-            break
-        vals.append(v)
-        k += 1
-    return vals
-
-
-def build_rss_svg(
-    samples: List[Tuple[float, int, int, int]],
-    page_size: int,
-    start_epoch: float,
-    segments: List[Tuple[str, float, float, bool]],
-    title: str,
-) -> str:
-    """SVG: rss/shared/anony/pagecache/anony+pc over time with segment bands."""
-    if not samples:
-        return ""
-
-    mib = page_size / (1024 * 1024)
-    xs = [t - start_epoch for t, _, _, _ in samples]
-    ys_rss = [res * mib for _, res, _, _ in samples]
-    ys_shared = [shr * mib for _, _, shr, _ in samples]
-    ys_anony = [max(0, res - shr) * mib for _, res, shr, _ in samples]
-    ys_pagecache = [fdc * mib for _, _, _, fdc in samples]
-    ys_anony_pc = [a + f for a, f in zip(ys_anony, ys_pagecache)]
-
-    x_data = max(xs) if xs else 1.0
-    y_data = (
-        max(ys_rss + ys_shared + ys_anony + ys_pagecache + ys_anony_pc)
-        if samples
-        else 1.0
-    )
-    if x_data <= 0:
-        x_data = 1.0
-    if y_data <= 0:
-        y_data = 1.0
-    # Axis extent from 10^n units; grid + labels at half-step (5/50/500...).
-    x_unit = _pow10_tick_step(x_data)
-    y_unit = _pow10_tick_step(y_data)
-    x_max = _ceil_to_step(x_data, x_unit)
-    y_max = _ceil_to_step(y_data, y_unit)
-    x_grid = x_unit / 2.0
-    y_grid = y_unit / 2.0
-
-    # Layout + fonts at 1.5× the original SVG sizes.
-    margin_l, margin_r, margin_t, margin_b = 105, 30, 60, 75
-    chart_w, chart_h = 1200, 450
-    svg_w = margin_l + chart_w + margin_r
-    svg_h = margin_t + chart_h + margin_b
-
-    def tx(v: float) -> float:
-        return margin_l + (v / x_max) * chart_w if x_max else margin_l
-
-    # Inset the plotable y-range so a series at data peak (common once block
-    # cache fills) is not glued to the top edge — that reads as "no line" on
-    # long flat plateaus (e.g. RocksDB fillseq readrandom). Same for tiny shared.
-    _pad_top, _pad_bot = 12.0, 6.0
-    _y_usable = chart_h - _pad_top - _pad_bot
-
-    def ty(v: float) -> float:
-        return margin_t + _pad_top + _y_usable * (1.0 - v / y_max)
-
-    parts: List[str] = []
-    parts.append('<div class="rss-chart-wrap">')
-    parts.append(
-        f'<svg class="rss-chart" xmlns="http://www.w3.org/2000/svg" '
-        f'viewBox="0 0 {svg_w} {svg_h}" overflow="visible" '
-        f'style="max-width:{svg_w}px;width:100%;height:auto;'
-        f'font-family:system-ui,sans-serif;font-size:16.5px;cursor:crosshair">'
-    )
-    parts.append(f'<text x="{svg_w // 2}" y="27" text-anchor="middle" '
-                 f'font-size="19.5" font-weight="600">{html.escape(title)}</text>')
-
-    for idx, (name, s_start, s_end, est) in enumerate(segments):
-        color = _SEGMENT_COLORS[idx % len(_SEGMENT_COLORS)]
-        sx1 = tx(max(s_start, 0))
-        sx2 = tx(min(s_end, x_max))
-        if sx2 <= sx1:
-            continue
-        parts.append(
-            f'<rect x="{sx1:.1f}" y="{margin_t}" width="{sx2 - sx1:.1f}" '
-            f'height="{chart_h}" fill="{color}" opacity="0.15"/>'
-        )
-        label = name
-        if est:
-            label += " (est.)"
-        mid_x = (sx1 + sx2) / 2
-        parts.append(
-            f'<text x="{mid_x:.1f}" y="{margin_t + chart_h + 21}" '
-            f'text-anchor="middle" font-size="13.5" fill="{color}" '
-            f'transform="rotate(-30 {mid_x:.1f} {margin_t + chart_h + 21})">'
-            f'{html.escape(label)}</text>'
-        )
-
-    # Axes (full plot frame so series never looks like the chart border)
-    parts.append(
-        f'<line x1="{margin_l}" y1="{margin_t}" x2="{margin_l}" '
-        f'y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
-    )
-    parts.append(
-        f'<line x1="{margin_l + chart_w}" y1="{margin_t}" '
-        f'x2="{margin_l + chart_w}" y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
-    )
-    parts.append(
-        f'<line x1="{margin_l}" y1="{margin_t}" '
-        f'x2="{margin_l + chart_w}" y2="{margin_t}" stroke="#666" stroke-width="1"/>'
-    )
-    parts.append(
-        f'<line x1="{margin_l}" y1="{margin_t + chart_h}" '
-        f'x2="{margin_l + chart_w}" y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
-    )
-
-    # Grid at 5/50/500.... Skip x==x_max so the light grid does not paint over
-    # the right frame; y==y_max is inset by padT so it stays inside the plot.
-    for val in _axis_multiples(y_grid, y_max, include_zero=True):
-        yp = ty(val)
-        parts.append(
-            f'<line x1="{margin_l}" y1="{yp:.1f}" '
-            f'x2="{margin_l + chart_w}" y2="{yp:.1f}" '
-            f'stroke="#e6e6e6" stroke-width="1"/>'
-        )
-    for val in _axis_multiples(x_grid, x_max, include_zero=False):
-        if val >= x_max - 1e-9:
-            continue
-        xp = tx(val)
-        parts.append(
-            f'<line x1="{xp:.1f}" y1="{margin_t}" '
-            f'x2="{xp:.1f}" y2="{margin_t + chart_h}" '
-            f'stroke="#e6e6e6" stroke-width="1"/>'
-        )
-
-    # Label every grid line (5/50/500...), including 0 and axis max.
-    for val in _axis_multiples(y_grid, y_max, include_zero=True):
-        yp = ty(val)
-        parts.append(
-            f'<line x1="{margin_l - 6}" y1="{yp:.1f}" '
-            f'x2="{margin_l}" y2="{yp:.1f}" stroke="#666"/>'
-        )
-        parts.append(
-            f'<text x="{margin_l - 9}" y="{yp + 4.5:.1f}" '
-            f'text-anchor="end" font-size="15">{val:.0f}</text>'
-        )
-    parts.append(
-        f'<text x="21" y="{margin_t + chart_h // 2}" '
-        f'text-anchor="middle" font-size="16.5" '
-        f'transform="rotate(-90 21 {margin_t + chart_h // 2})">MiB</text>'
-    )
-    for val in _axis_multiples(x_grid, x_max, include_zero=True):
-        xp = tx(val)
-        parts.append(
-            f'<line x1="{xp:.1f}" y1="{margin_t + chart_h}" '
-            f'x2="{xp:.1f}" y2="{margin_t + chart_h + 6}" stroke="#666"/>'
-        )
-        parts.append(
-            f'<text x="{xp:.1f}" y="{margin_t + chart_h + 57}" '
-            f'text-anchor="middle" font-size="15">{val:.0f}</text>'
-        )
-    parts.append(
-        f'<text x="{margin_l + chart_w // 2}" y="{svg_h - 3}" '
-        f'text-anchor="middle" font-size="16.5">Time (s)</text>'
-    )
-
-    # Draw sum last so anony+pc stays visible above other series.
-    # anony stroke-width 3; other series at 1.
-    series = (
-        ("anony", ys_anony, "#c11618"),
-        ("rss", ys_rss, "#1558a8"),
-        ("shared", ys_shared, "#258825"),
-        ("pagecache", ys_pagecache, "#a05a00"),
-        ("anony+pc", ys_anony_pc, "#6b21a8"),
-    )
-    for label, ys, color in series:
-        points = " ".join(f"{tx(x):.1f},{ty(y):.1f}" for x, y in zip(xs, ys))
-        sw = "3" if label == "anony" else "1"
-        parts.append(
-            f'<polyline points="{points}" fill="none" stroke="{color}" '
-            f'stroke-width="{sw}"/>'
-        )
-    # Legend above the plot (under title) so it never overlaps series at y_max.
-    legend = (
-        ("rss", "#1558a8"),
-        ("shared", "#258825"),
-        ("anony", "#c11618"),
-        ("pagecache", "#a05a00"),
-        ("anony+pc", "#6b21a8"),
-    )
-    # Per-label width: swatch+gap (27) + ~10.5px/char at size 13.5 + trailing pad.
-    # Generous vs system-ui so "pagecache" / "anony+pc" do not collide.
-    item_widths = [27 + int(10.5 * len(label)) + 21 for label, _ in legend]
-    x = margin_l + chart_w - sum(item_widths)
-    ly = 45
-    for (label, color), w in zip(legend, item_widths):
-        sw = "3" if label == "anony" else "1"
-        parts.append(
-            f'<line x1="{x}" y1="{ly}" x2="{x + 21}" y2="{ly}" '
-            f'stroke="{color}" stroke-width="{sw}"/>'
-        )
-        parts.append(
-            f'<text x="{x + 27}" y="{ly + 4.5}" font-size="13.5" fill="#333">'
-            f'{label}</text>'
-        )
-        x += w
-
-    parts.append(
-        f'<g class="rss-crosshair" style="display:none">'
-        f'<line class="rss-vline" y1="{margin_t}" y2="{margin_t + chart_h}" '
-        f'stroke="#555" stroke-width="1" stroke-dasharray="6 4.5"/>'
-        f'<g class="rss-marks"></g>'
-        f"</g>"
-    )
-    parts.append(
-        f'<rect class="rss-hit" x="{margin_l}" y="{margin_t}" '
-        f'width="{chart_w}" height="{chart_h}" fill="transparent"/>'
-    )
-    parts.append("</svg>")
-    ys_by_name = {
-        "rss": ys_rss,
-        "shared": ys_shared,
-        "anony": ys_anony,
-        "pagecache": ys_pagecache,
-        "anony+pc": ys_anony_pc,
-    }
-    chart_data = {
-        "xs": [round(v, 3) for v in xs],
-        "series": [
-            {
-                "name": label,
-                "ys": [round(v, 2) for v in ys_by_name[label]],
-                "color": color,
-            }
-            for label, color in legend
-        ],
-        "layout": {
-            "ml": margin_l,
-            "mt": margin_t,
-            "cw": chart_w,
-            "ch": chart_h,
-            "xMax": round(x_max, 3),
-            "yMax": round(y_max, 3),
-            "padT": _pad_top,
-            "padB": _pad_bot,
-        },
-    }
-    parts.append(
-        '<script type="application/json" class="rss-chart-data">'
-        + json.dumps(chart_data, separators=(",", ":"))
-        + "</script>"
-    )
-    parts.append("</div>")
-    return "\n".join(parts)
-
-
 def _table(headers: List[str], rows: List[Dict[str, str]], keys: List[str]) -> str:
     th = "".join(f"<th>{html.escape(h)}</th>" for h in headers)
     body_parts = []
@@ -702,95 +126,6 @@ def _table(headers: List[str], rows: List[Dict[str, str]], keys: List[str]) -> s
         + "\n".join(body_parts)
         + "\n</tbody>\n</table>"
     )
-
-
-_RSS_CHART_JS = r"""
-<script>
-(function () {
-  function nearestIdx(xs, x) {
-    var lo = 0, hi = xs.length - 1;
-    if (x <= xs[0]) return 0;
-    if (x >= xs[hi]) return hi;
-    while (lo < hi - 1) {
-      var mid = (lo + hi) >> 1;
-      if (xs[mid] <= x) lo = mid; else hi = mid;
-    }
-    return (x - xs[lo] <= xs[hi] - x) ? lo : hi;
-  }
-  function initWrap(wrap) {
-    var svg = wrap.querySelector("svg.rss-chart");
-    var dataEl = wrap.querySelector(".rss-chart-data");
-    if (!svg || !dataEl) return;
-    var data = JSON.parse(dataEl.textContent);
-    var xs = data.xs, series = data.series, L = data.layout;
-    var hit = svg.querySelector(".rss-hit");
-    var ch = svg.querySelector(".rss-crosshair");
-    var vline = svg.querySelector(".rss-vline");
-    var marks = svg.querySelector(".rss-marks");
-    if (!hit || !ch || !vline || !marks) return;
-    function hide() { ch.style.display = "none"; }
-    function show(ev) {
-      var ctm = svg.getScreenCTM();
-      if (!ctm) return;
-      var pt = svg.createSVGPoint();
-      pt.x = ev.clientX; pt.y = ev.clientY;
-      var p = pt.matrixTransform(ctm.inverse());
-      if (p.x < L.ml || p.x > L.ml + L.cw || p.y < L.mt || p.y > L.mt + L.ch) {
-        hide(); return;
-      }
-      var xVal = L.xMax ? ((p.x - L.ml) / L.cw) * L.xMax : 0;
-      var i = nearestIdx(xs, xVal);
-      var xp = L.xMax ? L.ml + (xs[i] / L.xMax) * L.cw : L.ml;
-      vline.setAttribute("x1", xp.toFixed(1));
-      vline.setAttribute("x2", xp.toFixed(1));
-      while (marks.firstChild) marks.removeChild(marks.firstChild);
-      var NS = "http://www.w3.org/2000/svg";
-      series.forEach(function (s, si) {
-        var y = s.ys[i];
-        var padT = L.padT || 0, padB = L.padB || 0;
-        var usable = L.ch - padT - padB;
-        var yp = L.mt + padT + usable * (1 - y / L.yMax);
-        var dot = document.createElementNS(NS, "circle");
-        dot.setAttribute("cx", xp.toFixed(1));
-        dot.setAttribute("cy", yp.toFixed(1));
-        dot.setAttribute("r", "5.25");
-        dot.setAttribute("fill", s.color);
-        marks.appendChild(dot);
-        var tip = s.name + " (" + xs[i].toFixed(1) + "s, " + y.toFixed(1) + ")";
-        var tipW = Math.max(108, 9.6 * tip.length + 15);
-        var tipH = 24;
-        var tipX = Math.min(Math.max(xp + 12, L.ml), L.ml + L.cw - tipW);
-        var tipY = yp - tipH - 9 - si * (tipH + 3);
-        if (tipY < L.mt) tipY = yp + 12 + si * (tipH + 3);
-        var rect = document.createElementNS(NS, "rect");
-        rect.setAttribute("x", tipX.toFixed(1));
-        rect.setAttribute("y", tipY.toFixed(1));
-        rect.setAttribute("width", tipW.toFixed(1));
-        rect.setAttribute("height", tipH.toFixed(1));
-        rect.setAttribute("rx", "4.5");
-        rect.setAttribute("fill", "#fff");
-        rect.setAttribute("stroke", s.color);
-        rect.setAttribute("stroke-width", "1");
-        rect.setAttribute("opacity", "0.95");
-        marks.appendChild(rect);
-        var text = document.createElementNS(NS, "text");
-        text.setAttribute("x", (tipX + tipW / 2).toFixed(1));
-        text.setAttribute("y", (tipY + 18).toFixed(1));
-        text.setAttribute("text-anchor", "middle");
-        text.setAttribute("font-size", "15");
-        text.setAttribute("fill", "#222");
-        text.textContent = tip;
-        marks.appendChild(text);
-      });
-      ch.style.display = "";
-    }
-    hit.addEventListener("mousemove", show);
-    hit.addEventListener("mouseleave", hide);
-  }
-  document.querySelectorAll(".rss-chart-wrap").forEach(initWrap);
-})();
-</script>
-"""
 
 
 def _page(title: str, body: str) -> str:
@@ -975,59 +310,6 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
     return result
 
 
-def _build_runner_section(
-    runner_env: Dict[str, Any],
-    cache_size_bytes: Optional[int],
-    dataset_bytes: Optional[int],
-    dataset_estimated: bool,
-) -> str:
-    if not runner_env:
-        return "<h2>Runner hardware/software</h2><p><em>n/a</em></p>"
-    rows = [
-        ("OS", runner_env.get("os_pretty_name", "n/a")),
-        ("Kernel", runner_env.get("kernel", "n/a")),
-        ("CPU", runner_env.get("cpu_model", "n/a")),
-        ("Logical CPUs", runner_env.get("cpu_count", "n/a")),
-    ]
-    mem_str = runner_env.get("mem_total_bytes")
-    if mem_str:
-        try:
-            rows.append(("Memory", format_iec(int(mem_str))))
-        except (ValueError, TypeError):
-            rows.append(("Memory", str(mem_str)))
-    shm_str = runner_env.get("shm_size_bytes")
-    if shm_str:
-        try:
-            rows.append(("/dev/shm", format_iec(int(shm_str))))
-        except (ValueError, TypeError):
-            rows.append(("/dev/shm", str(shm_str)))
-    if cache_size_bytes is not None:
-        rows.append(("RocksDB block cache", format_iec(cache_size_bytes)))
-    trs = "\n".join(
-        f"<tr><td><strong>{html.escape(str(k))}</strong></td><td>{html.escape(str(v))}</td></tr>"
-        for k, v in rows
-    )
-    section = f"""<h2>Runner hardware/software</h2>
-<table>
-<tbody>
-{trs}
-</tbody>
-</table>"""
-    if cache_size_bytes is not None and dataset_bytes is not None:
-        cache_iec = format_iec(cache_size_bytes)
-        ds_iec = format_iec(dataset_bytes)
-        est_note = " (estimated)" if dataset_estimated else ""
-        if cache_size_bytes >= dataset_bytes:
-            section += (
-                f'\n<p class="meta"><strong>On-disk DB size{est_note} ({ds_iec}) ≤ block cache ({cache_iec})</strong>'
-                f" — cache can hold the entire dataset."
-                f" So this benchmark mainly shows CPU and memory cost.</p>"
-            )
-        else:
-            section += f'\n<p class="meta" style="color:#a30d0d"><strong>On-disk DB size{est_note} ({ds_iec}) &gt; block cache ({cache_iec})</strong> — cache cannot hold the entire dataset.</p>'
-    return section
-
-
 def _build_dcompact_bench_notes(runner_env: Dict[str, str]) -> str:
     """Page header notes for dcompact CPU quota and compaction modes."""
     cpu_quota = runner_env.get("cpu_quota_write", "n/a")
@@ -1185,7 +467,7 @@ def emit(args: argparse.Namespace) -> None:
                 segments.insert(0, ("startup", 0, segments[0][1], False))
             svg = build_rss_svg(
                 samples, page_size, start_epoch, segments,
-                f"{ENGINE_LABELS[eng]} — {suite} suite RSS",
+                f"{ENGINE_LABELS[eng]} — {suite} suite RAM",
             )
             if svg:
                 rss_svg_parts.append(svg)
@@ -1198,12 +480,12 @@ def emit(args: argparse.Namespace) -> None:
                 "(workflow cached_pages_use_sys / SYS_CACHED_OF_EMPTY). "
             )
             pagecache_li = (
-                '<li><span style="color:#a05a00;font-weight:600">pagecache</span>: '
+                f'<li><span style="color:{RSS_LINE_COLORS["pagecache"]};font-weight:600">pagecache</span>: '
                 "system-wide /proc/meminfo Cached minus the post-drop_caches baseline "
                 "(excluding the inherent consumption of an empty system).</li>\n"
             )
             anony_pc_li = (
-                '<li><span style="color:#6b21a8;font-weight:600">anony+pc</span>: '
+                f'<li><span style="color:{RSS_LINE_COLORS["anony+pc"]};font-weight:600">anony+pc</span>: '
                 "anony+pagecache (sum of process anonymous RSS and system Cached growth; "
                 "not a disjoint partition).</li>\n"
             )
@@ -1212,7 +494,7 @@ def emit(args: argparse.Namespace) -> None:
                 "Sampled once per second from /proc/statm plus open-file page cache. "
             )
             pagecache_li = (
-                '<li><span style="color:#a05a00;font-weight:600">pagecache</span>: '
+                f'<li><span style="color:{RSS_LINE_COLORS["pagecache"]};font-weight:600">pagecache</span>: '
                 "kernel file page cache for regular files the process currently has open "
                 "(cachestat(2) on /proc/pid/fd, deduped by inode; covers buffered readwrite "
                 "and mmap). Pages brought in only via buffered I/O are not charged to process RSS; "
@@ -1220,7 +502,7 @@ def emit(args: argparse.Namespace) -> None:
                 "overlap.</li>\n"
             )
             anony_pc_li = (
-                '<li><span style="color:#6b21a8;font-weight:600">anony+pc</span>: '
+                f'<li><span style="color:{RSS_LINE_COLORS["anony+pc"]};font-weight:600">anony+pc</span>: '
                 "anony+pagecache (sum of process anonymous RSS and open-file page cache; "
                 "not a disjoint partition).</li>\n"
             )
@@ -1229,13 +511,13 @@ def emit(args: argparse.Namespace) -> None:
             f'<p class="meta">{pagecache_meta}'
             'Colored bands show benchmark segments (start time from db_bench output).</p>\n'
             '<ul class="meta">\n'
-            '<li><span style="color:#1558a8;font-weight:600">rss</span>: '
+            f'<li><span style="color:{RSS_LINE_COLORS["rss"]};font-weight:600">rss</span>: '
             'resident set size (pages currently in RAM for the process); '
             'rss = shared + anony.</li>\n'
-            '<li><span style="color:#258825;font-weight:600">shared</span>: '
+            f'<li><span style="color:{RSS_LINE_COLORS["shared"]};font-weight:600">shared</span>: '
             'shared resident pages; mostly readonly (cheap; OS prefers reclaiming these, '
             'no swap needed).</li>\n'
-            '<li><span style="color:#c11618;font-weight:600">anony</span>: '
+            f'<li><span style="color:{RSS_LINE_COLORS["anony"]};font-weight:600">anony</span>: '
             'rss - shared; '
             'mostly readwrite anonymous pages (costly, needs swap).</li>\n'
             + pagecache_li

@@ -47,34 +47,56 @@ def check(mod) -> None:
     )
     assert "pagecache" in svg
     assert "anony+pc" in svg
-    assert "#a05a00" in svg
-    assert "#6b21a8" in svg
+    assert mod.RSS_LINE_COLORS["pagecache"] in svg
+    assert mod.RSS_LINE_COLORS["anony+pc"] in svg
     assert svg.count("<polyline") == 5
 
-    # Legend text x at 1.5x fonts: each label's slot covers prior label length
-    # so long names (pagecache → anony+pc) stay separated.
     legend_order = ("rss", "shared", "anony", "pagecache", "anony+pc")
-    xs_by_label = {
-        m.group(2): float(m.group(1))
-        for m in re.finditer(
-            r'<text x="([\d.]+)" y="49\.5" font-size="13\.5"[^>]*>([^<]+)</text>',
+    header_y = mod.RSS_HEADER_Y
+    gap = mod.RSS_SWATCH_TEXT_GAP
+    # Every swatch→label gap must be identical (fixed start-anchor offset).
+    gaps = []
+    for label in legend_order:
+        lm = re.search(
+            rf'<line x1="([\d.]+)" y1="[\d.]+" x2="([\d.]+)" y2="[\d.]+" '
+            rf'stroke="[^"]+" stroke-width="3"/>\s*'
+            rf'<text x="([\d.]+)" y="{header_y}" text-anchor="start" '
+            rf'font-size="13\.5"[^>]*>'
+            rf'{re.escape(label)}</text>',
             svg,
         )
-    }
-    assert all(name in xs_by_label for name in legend_order), xs_by_label
-    for prev, cur in zip(legend_order, legend_order[1:]):
-        # text starts at swatch+6; next item is at least 27+10.5*len(prev)+21 later
-        # from the same item origin → text-to-text gap >= 10.5*len(prev)+21.
-        min_gap = 10.5 * len(prev) + 21
-        gap = xs_by_label[cur] - xs_by_label[prev]
-        assert gap >= min_gap, (prev, cur, gap, min_gap)
+        assert lm, label
+        x2, tx = float(lm.group(2)), float(lm.group(3))
+        gaps.append(tx - x2)
+    assert len(set(round(g, 3) for g in gaps)) == 1, gaps
+    assert abs(gaps[0] - float(gap)) < 1e-6, gaps[0]
+
+    # Packed block ends at plot frame right (margin_l + chart_w).
+    plot_right = float(mod.RSS_MARGIN_L + mod.RSS_CHART_W)
+    last_w = float(mod.RSS_LEGEND_TEXT_W["anony+pc"])
+    last = re.search(
+        rf'<line x1="([\d.]+)"[^/]*/>\s*'
+        rf'<text x="([\d.]+)" y="{header_y}" text-anchor="start"[^>]*>'
+        rf'anony\+pc</text>',
+        svg,
+    )
+    assert last
+    assert abs(float(last.group(2)) + last_w - plot_right) < 1e-6
 
 
 def main() -> int:
     here = Path(__file__).resolve().parent
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    chart = load("bench_rss_chart", here / "bench_rss_chart.py")
+    check(chart)
+    print("OK bench_rss_chart")
     for name in ("bench_logs_to_pages", "bench_dcompact_pages"):
-        check(load(name, here / f"{name}.py"))
-        print(f"OK {name}")
+        mod = load(name, here / f"{name}.py")
+        # Pages import the shared module (importlib may load a second copy).
+        assert mod.build_rss_svg.__module__ == "bench_rss_chart"
+        assert mod.RSS_LINE_COLORS == chart.RSS_LINE_COLORS
+        print(f"OK {name} (imports shared chart)")
     return 0
 
 

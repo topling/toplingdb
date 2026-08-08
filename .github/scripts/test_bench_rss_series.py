@@ -51,20 +51,21 @@ def check(mod) -> None:
     assert "#6b21a8" in svg
     assert svg.count("<polyline") == 5
 
-    # Legend text x: each label's slot covers prior label length so long names
-    # (pagecache → anony+pc) stay separated.
+    # Legend text x at 1.5x fonts: each label's slot covers prior label length
+    # so long names (pagecache → anony+pc) stay separated.
     legend_order = ("rss", "shared", "anony", "pagecache", "anony+pc")
     xs_by_label = {
         m.group(2): float(m.group(1))
         for m in re.finditer(
-            r'<text x="([\d.]+)" y="33" font-size="9"[^>]*>([^<]+)</text>', svg
+            r'<text x="([\d.]+)" y="49\.5" font-size="13\.5"[^>]*>([^<]+)</text>',
+            svg,
         )
     }
     assert all(name in xs_by_label for name in legend_order), xs_by_label
     for prev, cur in zip(legend_order, legend_order[1:]):
-        # text starts at swatch+4; next item is at least 18+7*len(prev)+14 later
-        # from the same item origin → text-to-text gap >= 7*len(prev)+14.
-        min_gap = 7 * len(prev) + 14
+        # text starts at swatch+6; next item is at least 27+10.5*len(prev)+21 later
+        # from the same item origin → text-to-text gap >= 10.5*len(prev)+21.
+        min_gap = 10.5 * len(prev) + 21
         gap = xs_by_label[cur] - xs_by_label[prev]
         assert gap >= min_gap, (prev, cur, gap, min_gap)
 

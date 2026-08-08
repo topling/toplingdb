@@ -477,8 +477,9 @@ def build_rss_svg(
     x_grid = x_unit / 2.0
     y_grid = y_unit / 2.0
 
-    margin_l, margin_r, margin_t, margin_b = 70, 20, 40, 50
-    chart_w, chart_h = 800, 300
+    # Layout + fonts at 1.5× the original SVG sizes.
+    margin_l, margin_r, margin_t, margin_b = 105, 30, 60, 75
+    chart_w, chart_h = 1200, 450
     svg_w = margin_l + chart_w + margin_r
     svg_h = margin_t + chart_h + margin_b
 
@@ -488,7 +489,7 @@ def build_rss_svg(
     # Inset the plotable y-range so a series at data peak (common once block
     # cache fills) is not glued to the top edge — that reads as "no line" on
     # long flat plateaus (e.g. RocksDB fillseq readrandom). Same for tiny shared.
-    _pad_top, _pad_bot = 8.0, 4.0
+    _pad_top, _pad_bot = 12.0, 6.0
     _y_usable = chart_h - _pad_top - _pad_bot
 
     def ty(v: float) -> float:
@@ -500,10 +501,10 @@ def build_rss_svg(
         f'<svg class="rss-chart" xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 0 {svg_w} {svg_h}" overflow="visible" '
         f'style="max-width:{svg_w}px;width:100%;height:auto;'
-        f'font-family:system-ui,sans-serif;font-size:11px;cursor:crosshair">'
+        f'font-family:system-ui,sans-serif;font-size:16.5px;cursor:crosshair">'
     )
-    parts.append(f'<text x="{svg_w // 2}" y="18" text-anchor="middle" '
-                 f'font-size="13" font-weight="600">{html.escape(title)}</text>')
+    parts.append(f'<text x="{svg_w // 2}" y="27" text-anchor="middle" '
+                 f'font-size="19.5" font-weight="600">{html.escape(title)}</text>')
 
     for idx, (name, s_start, s_end, est) in enumerate(segments):
         color = _SEGMENT_COLORS[idx % len(_SEGMENT_COLORS)]
@@ -520,9 +521,9 @@ def build_rss_svg(
             label += " (est.)"
         mid_x = (sx1 + sx2) / 2
         parts.append(
-            f'<text x="{mid_x:.1f}" y="{margin_t + chart_h + 14}" '
-            f'text-anchor="middle" font-size="9" fill="{color}" '
-            f'transform="rotate(-30 {mid_x:.1f} {margin_t + chart_h + 14})">'
+            f'<text x="{mid_x:.1f}" y="{margin_t + chart_h + 21}" '
+            f'text-anchor="middle" font-size="13.5" fill="{color}" '
+            f'transform="rotate(-30 {mid_x:.1f} {margin_t + chart_h + 21})">'
             f'{html.escape(label)}</text>'
         )
 
@@ -567,34 +568,35 @@ def build_rss_svg(
     for val in _axis_multiples(y_grid, y_max, include_zero=True):
         yp = ty(val)
         parts.append(
-            f'<line x1="{margin_l - 4}" y1="{yp:.1f}" '
+            f'<line x1="{margin_l - 6}" y1="{yp:.1f}" '
             f'x2="{margin_l}" y2="{yp:.1f}" stroke="#666"/>'
         )
         parts.append(
-            f'<text x="{margin_l - 6}" y="{yp + 3:.1f}" '
-            f'text-anchor="end" font-size="10">{val:.0f}</text>'
+            f'<text x="{margin_l - 9}" y="{yp + 4.5:.1f}" '
+            f'text-anchor="end" font-size="15">{val:.0f}</text>'
         )
     parts.append(
-        f'<text x="14" y="{margin_t + chart_h // 2}" '
-        f'text-anchor="middle" font-size="11" '
-        f'transform="rotate(-90 14 {margin_t + chart_h // 2})">MiB</text>'
+        f'<text x="21" y="{margin_t + chart_h // 2}" '
+        f'text-anchor="middle" font-size="16.5" '
+        f'transform="rotate(-90 21 {margin_t + chart_h // 2})">MiB</text>'
     )
     for val in _axis_multiples(x_grid, x_max, include_zero=True):
         xp = tx(val)
         parts.append(
             f'<line x1="{xp:.1f}" y1="{margin_t + chart_h}" '
-            f'x2="{xp:.1f}" y2="{margin_t + chart_h + 4}" stroke="#666"/>'
+            f'x2="{xp:.1f}" y2="{margin_t + chart_h + 6}" stroke="#666"/>'
         )
         parts.append(
-            f'<text x="{xp:.1f}" y="{margin_t + chart_h + 38}" '
-            f'text-anchor="middle" font-size="10">{val:.0f}</text>'
+            f'<text x="{xp:.1f}" y="{margin_t + chart_h + 57}" '
+            f'text-anchor="middle" font-size="15">{val:.0f}</text>'
         )
     parts.append(
-        f'<text x="{margin_l + chart_w // 2}" y="{svg_h - 2}" '
-        f'text-anchor="middle" font-size="11">Time (s)</text>'
+        f'<text x="{margin_l + chart_w // 2}" y="{svg_h - 3}" '
+        f'text-anchor="middle" font-size="16.5">Time (s)</text>'
     )
 
     # Draw sum last so anony+pc stays visible above other series.
+    # anony stroke-width 3; other series at 1.
     series = (
         ("anony", ys_anony, "#c11618"),
         ("rss", ys_rss, "#1558a8"),
@@ -604,9 +606,10 @@ def build_rss_svg(
     )
     for label, ys, color in series:
         points = " ".join(f"{tx(x):.1f},{ty(y):.1f}" for x, y in zip(xs, ys))
+        sw = "3" if label == "anony" else "1"
         parts.append(
             f'<polyline points="{points}" fill="none" stroke="{color}" '
-            f'stroke-width="2"/>'
+            f'stroke-width="{sw}"/>'
         )
     # Legend above the plot (under title) so it never overlaps series at y_max.
     legend = (
@@ -616,18 +619,19 @@ def build_rss_svg(
         ("pagecache", "#a05a00"),
         ("anony+pc", "#6b21a8"),
     )
-    # Per-label width: swatch+gap (18) + ~7px/char at size 9 + trailing pad.
+    # Per-label width: swatch+gap (27) + ~10.5px/char at size 13.5 + trailing pad.
     # Generous vs system-ui so "pagecache" / "anony+pc" do not collide.
-    item_widths = [18 + 7 * len(label) + 14 for label, _ in legend]
+    item_widths = [27 + int(10.5 * len(label)) + 21 for label, _ in legend]
     x = margin_l + chart_w - sum(item_widths)
-    ly = 30
+    ly = 45
     for (label, color), w in zip(legend, item_widths):
+        sw = "3" if label == "anony" else "1"
         parts.append(
-            f'<line x1="{x}" y1="{ly}" x2="{x + 14}" y2="{ly}" '
-            f'stroke="{color}" stroke-width="2"/>'
+            f'<line x1="{x}" y1="{ly}" x2="{x + 21}" y2="{ly}" '
+            f'stroke="{color}" stroke-width="{sw}"/>'
         )
         parts.append(
-            f'<text x="{x + 18}" y="{ly + 3}" font-size="9" fill="#333">'
+            f'<text x="{x + 27}" y="{ly + 4.5}" font-size="13.5" fill="#333">'
             f'{label}</text>'
         )
         x += w
@@ -635,7 +639,7 @@ def build_rss_svg(
     parts.append(
         f'<g class="rss-crosshair" style="display:none">'
         f'<line class="rss-vline" y1="{margin_t}" y2="{margin_t + chart_h}" '
-        f'stroke="#555" stroke-width="1" stroke-dasharray="4 3"/>'
+        f'stroke="#555" stroke-width="1" stroke-dasharray="6 4.5"/>'
         f'<g class="rss-marks"></g>'
         f"</g>"
     )
@@ -749,21 +753,21 @@ _RSS_CHART_JS = r"""
         var dot = document.createElementNS(NS, "circle");
         dot.setAttribute("cx", xp.toFixed(1));
         dot.setAttribute("cy", yp.toFixed(1));
-        dot.setAttribute("r", "3.5");
+        dot.setAttribute("r", "5.25");
         dot.setAttribute("fill", s.color);
         marks.appendChild(dot);
         var tip = s.name + " (" + xs[i].toFixed(1) + "s, " + y.toFixed(1) + ")";
-        var tipW = Math.max(72, 6.4 * tip.length + 10);
-        var tipH = 16;
-        var tipX = Math.min(Math.max(xp + 8, L.ml), L.ml + L.cw - tipW);
-        var tipY = yp - tipH - 6 - si * (tipH + 2);
-        if (tipY < L.mt) tipY = yp + 8 + si * (tipH + 2);
+        var tipW = Math.max(108, 9.6 * tip.length + 15);
+        var tipH = 24;
+        var tipX = Math.min(Math.max(xp + 12, L.ml), L.ml + L.cw - tipW);
+        var tipY = yp - tipH - 9 - si * (tipH + 3);
+        if (tipY < L.mt) tipY = yp + 12 + si * (tipH + 3);
         var rect = document.createElementNS(NS, "rect");
         rect.setAttribute("x", tipX.toFixed(1));
         rect.setAttribute("y", tipY.toFixed(1));
         rect.setAttribute("width", tipW.toFixed(1));
         rect.setAttribute("height", tipH.toFixed(1));
-        rect.setAttribute("rx", "3");
+        rect.setAttribute("rx", "4.5");
         rect.setAttribute("fill", "#fff");
         rect.setAttribute("stroke", s.color);
         rect.setAttribute("stroke-width", "1");
@@ -771,9 +775,9 @@ _RSS_CHART_JS = r"""
         marks.appendChild(rect);
         var text = document.createElementNS(NS, "text");
         text.setAttribute("x", (tipX + tipW / 2).toFixed(1));
-        text.setAttribute("y", (tipY + 12).toFixed(1));
+        text.setAttribute("y", (tipY + 18).toFixed(1));
         text.setAttribute("text-anchor", "middle");
-        text.setAttribute("font-size", "10");
+        text.setAttribute("font-size", "15");
         text.setAttribute("fill", "#222");
         text.textContent = tip;
         marks.appendChild(text);

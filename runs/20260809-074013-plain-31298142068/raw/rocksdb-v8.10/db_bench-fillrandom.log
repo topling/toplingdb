@@ -1,0 +1,40 @@
+RocksDB:    version 8.10.2
+Date:       Sun Aug  9 06:37:43 2026
+CPU:        4 * AMD EPYC 9V74 80-Core Processor
+CPUCache:   1024 KB
+sample_statm_fdcache: cachestat failed: Operation not permitted
+Set seed to 1786257463918369 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: SkipListFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-09T06:37:43.931060Z fillrandom   :       1.623 micros/op 616100 ops/sec 162.311 seconds 100000000 operations;   34.1 MB/s
+flush memtable
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-09T06:40:26.562902Z compact      : 54179357.000 micros/op 0 ops/sec 54.179 seconds 1 operations;
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-09T06:41:20.742476Z readseq      :       0.149 micros/op 6727364 ops/sec 9.396 seconds 63212999 operations;  372.1 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-09T06:41:30.139115Z readseq      :       0.103 micros/op 9728932 ops/sec 6.497 seconds 63212999 operations;  538.1 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-09T06:41:36.637028Z readseq      :       0.103 micros/op 9751304 ops/sec 6.483 seconds 63212999 operations;  539.4 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-09T06:41:43.119782Z readrandom   :       3.357 micros/op 297872 ops/sec 335.714 seconds 100000000 operations;   10.4 MB/s (63211909 of 100000000 found)
+

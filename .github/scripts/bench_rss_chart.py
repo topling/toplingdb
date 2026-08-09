@@ -20,9 +20,35 @@ RSS_LINE_COLORS = {
 
 
 # Layout + fonts at 1.5× the original SVG sizes.
-RSS_MARGIN_L, RSS_MARGIN_R, RSS_MARGIN_T, RSS_MARGIN_B = 105, 30, 44, 75
+# Top margin is title/legend only; stage-duration strip sits below the plot.
+RSS_MARGIN_L, RSS_MARGIN_R, RSS_MARGIN_T, RSS_MARGIN_B = 105, 30, 44, 72
 RSS_CHART_W, RSS_CHART_H = 1200, 450
 RSS_HEADER_Y = 30
+RSS_STRIP_H = 34
+# Extra bottom room only when a leader-line label is actually drawn.
+RSS_OVERFLOW_H = 28
+# Minimum gap between neighboring in-strip labels (overflow into a
+# neighbor cell is OK; overlapping names is not).
+RSS_STRIP_TEXT_PAD = 4
+
+# Segoe UI 12px advance widths (Windows system-ui / Pages viewing font),
+# from segoeui.ttf hmtx. Scale by font_size/12.
+_SEGOE_ADV_12 = {
+    "a": 6.11, "b": 7.05, "c": 5.54, "d": 7.07, "e": 6.28, "f": 3.76,
+    "g": 7.07, "h": 6.79, "i": 2.91, "j": 2.91, "k": 5.96, "l": 2.91,
+    "m": 10.34, "n": 6.79, "o": 7.03, "p": 7.05, "q": 7.07, "r": 4.17,
+    "s": 5.09, "t": 4.07, "u": 6.79, "v": 5.75, "w": 8.67, "x": 5.51,
+    "y": 5.81, "z": 5.43,
+    "A": 7.74, "B": 6.88, "C": 7.43, "D": 8.41, "E": 6.07, "F": 5.86,
+    "G": 8.23, "H": 8.52, "I": 3.19, "J": 4.28, "K": 6.96, "L": 5.65,
+    "M": 10.78, "N": 8.98, "O": 9.05, "P": 6.72, "Q": 9.05, "R": 7.18,
+    "S": 6.38, "T": 6.29, "U": 8.24, "V": 7.45, "W": 11.21, "X": 7.08,
+    "Y": 6.63, "Z": 6.84,
+    "0": 6.47, "1": 6.47, "2": 6.47, "3": 6.47, "4": 6.47, "5": 6.47,
+    "6": 6.47, "7": 6.47, "8": 6.47, "9": 6.47,
+    " ": 3.29, ".": 2.60, "×": 8.21, "(": 3.62, ")": 3.62, "-": 4.80,
+    "+": 8.21, "*": 5.00,
+}
 RSS_SWATCH_LEN, RSS_SWATCH_TEXT_GAP, RSS_LEGEND_ITEM_PAD = 28, 3, 16
 # system-ui 13.5px packing widths (includes ~1ch slack so the block flushes
 # to the plot frame's right edge without a separate inset).
@@ -126,6 +152,74 @@ def _axis_multiples(step: float, axis_max: float, include_zero: bool) -> List[fl
     return vals
 
 
+def _format_dur(sec: float) -> str:
+    if sec >= 10:
+        return f"{sec:.0f}"
+    return f"{sec:.1f}"
+
+
+def _strip_name(name: str, count: int, est: bool) -> str:
+    label = f"{name}×{count}" if count > 1 else name
+    if est:
+        label += " (est.)"
+    return label
+
+
+def _text_w(text: str, font_size: float) -> float:
+    """Measured Segoe UI advance width (the Pages system-ui on Windows)."""
+    scale = font_size / 12.0
+    return scale * sum(_SEGOE_ADV_12.get(ch, 7.2) for ch in text)
+
+
+def _label_overlap(
+    mid_a: float, w_a: float, mid_b: float, w_b: float, gap: float
+) -> bool:
+    return (mid_a + w_a / 2 + gap) > (mid_b - w_b / 2) and (
+        mid_b + w_b / 2 + gap
+    ) > (mid_a - w_a / 2)
+
+
+def _place_overflow(
+    items: List[Tuple[float, str, str]],
+    font_size: float = 11.0,
+) -> List[Tuple[float, str, str, int]]:
+    """(mid_x, text, color) -> add row 0/1 when same-row boxes overlap."""
+    placed: List[Tuple[float, str, str, int]] = []
+    for mid, text, color in sorted(items, key=lambda it: it[0]):
+        w = _text_w(text, font_size)
+        row = 0
+        for pmid, ptext, _, prow in placed:
+            if prow != 0:
+                continue
+            pw = _text_w(ptext, font_size)
+            if abs(mid - pmid) < (w + pw) / 2 + 8:
+                row = 1
+                break
+        placed.append((mid, text, color, row))
+    return placed
+
+
+def _annotate_segments(
+    segments: List[Tuple[str, float, float, bool]],
+) -> List[Tuple[str, float, float, bool, int, str]]:
+    """Merge consecutive same-name stages: (name, start, end, est, count, color)."""
+    if not segments:
+        return []
+    groups: List[List[Tuple[str, float, float, bool]]] = []
+    for seg in segments:
+        if groups and groups[-1][0][0] == seg[0]:
+            groups[-1].append(seg)
+        else:
+            groups.append([seg])
+    merged: List[Tuple[str, float, float, bool, int, str]] = []
+    for gi, group in enumerate(groups):
+        color = _SEGMENT_COLORS[gi % len(_SEGMENT_COLORS)]
+        name = group[0][0]
+        est = any(s[3] for s in group)
+        merged.append((name, group[0][1], group[-1][2], est, len(group), color))
+    return merged
+
+
 def build_rss_svg(
     samples: List[Tuple[float, int, int, int]],
     page_size: int,
@@ -133,7 +227,7 @@ def build_rss_svg(
     segments: List[Tuple[str, float, float, bool]],
     title: str,
 ) -> str:
-    """SVG: rss/shared/anony/pagecache/anony+pc over time with segment bands."""
+    """SVG: rss/shared/anony/pagecache/anony+pc over time with a stage-duration strip."""
     if not samples:
         return ""
 
@@ -164,12 +258,11 @@ def build_rss_svg(
     y_grid = y_unit / 2.0
 
     # Layout + fonts at 1.5× the original SVG sizes.
-    margin_l, margin_r, margin_t, margin_b = (
-        RSS_MARGIN_L, RSS_MARGIN_R, RSS_MARGIN_T, RSS_MARGIN_B
+    margin_l, margin_r, margin_t = (
+        RSS_MARGIN_L, RSS_MARGIN_R, RSS_MARGIN_T
     )
     chart_w, chart_h = RSS_CHART_W, RSS_CHART_H
     svg_w = margin_l + chart_w + margin_r
-    svg_h = margin_t + chart_h + margin_b
 
     def tx(v: float) -> float:
         return margin_l + (v / x_max) * chart_w if x_max else margin_l
@@ -183,6 +276,60 @@ def build_rss_svg(
     def ty(v: float) -> float:
         return margin_t + _pad_top + _y_usable * (1.0 - v / y_max)
 
+    merged = _annotate_segments(segments)
+    strip_h = RSS_STRIP_H
+    strip_y = margin_t + chart_h
+    strip_cells: List[dict] = []
+
+    # Collect cells first so bottom margin can shrink when no leader labels.
+    for name, s_start, s_end, est, count, color in merged:
+        sx1 = tx(max(s_start, 0))
+        sx2 = tx(min(s_end, x_max))
+        if sx2 <= sx1:
+            continue
+        width = sx2 - sx1
+        label = _strip_name(name, count, est)
+        dur = _format_dur(s_end - s_start)
+        strip_cells.append(
+            {
+                "sx1": sx1,
+                "width": width,
+                "mid": (sx1 + sx2) / 2,
+                "label": label,
+                "dur": dur,
+                "name_w": _text_w(label, 12.0),
+                "dur_w": _text_w(dur, 12.0),
+                "color": color,
+            }
+        )
+
+    in_strip = [True] * len(strip_cells)
+    gap = float(RSS_STRIP_TEXT_PAD)
+    for i, a in enumerate(strip_cells):
+        for j in range(i + 1, len(strip_cells)):
+            if not in_strip[i] or not in_strip[j]:
+                continue
+            b = strip_cells[j]
+            if not (
+                _label_overlap(a["mid"], a["name_w"], b["mid"], b["name_w"], gap)
+                or _label_overlap(a["mid"], a["dur_w"], b["mid"], b["dur_w"], gap)
+            ):
+                continue
+            if a["width"] <= b["width"]:
+                in_strip[i] = False
+            else:
+                in_strip[j] = False
+
+    overflow_items: List[Tuple[float, str, str]] = []
+    for keep, cell in zip(in_strip, strip_cells):
+        if not keep:
+            overflow_items.append(
+                (cell["mid"], f'{cell["label"]} {cell["dur"]}', cell["color"])
+            )
+    overflow_h = RSS_OVERFLOW_H if overflow_items else 0
+    margin_b = RSS_MARGIN_B + overflow_h
+    svg_h = margin_t + chart_h + margin_b
+
     parts: List[str] = []
     parts.append('<div class="rss-chart-wrap">')
     parts.append(
@@ -192,26 +339,42 @@ def build_rss_svg(
         f'font-family:system-ui,sans-serif;font-size:16.5px;cursor:crosshair">'
     )
 
-    # Segment bands
-    for idx, (name, s_start, s_end, est) in enumerate(segments):
-        color = _SEGMENT_COLORS[idx % len(_SEGMENT_COLORS)]
-        sx1 = tx(max(s_start, 0))
-        sx2 = tx(min(s_end, x_max))
-        if sx2 <= sx1:
-            continue
+    for cell in strip_cells:
         parts.append(
-            f'<rect x="{sx1:.1f}" y="{margin_t}" width="{sx2 - sx1:.1f}" '
-            f'height="{chart_h}" fill="{color}" opacity="0.15"/>'
+            f'<rect x="{cell["sx1"]:.1f}" y="{margin_t}" '
+            f'width="{cell["width"]:.1f}" height="{chart_h}" '
+            f'fill="{cell["color"]}" opacity="0.15"/>'
         )
-        label = name
-        if est:
-            label += " (est.)"
-        mid_x = (sx1 + sx2) / 2
         parts.append(
-            f'<text x="{mid_x:.1f}" y="{margin_t + chart_h + 21}" '
-            f'text-anchor="middle" font-size="13.5" fill="{color}" '
-            f'transform="rotate(-30 {mid_x:.1f} {margin_t + chart_h + 21})">'
-            f'{html.escape(label)}</text>'
+            f'<rect x="{cell["sx1"]:.1f}" y="{strip_y:.1f}" '
+            f'width="{cell["width"]:.1f}" height="{strip_h}" '
+            f'fill="{cell["color"]}" opacity="0.45"/>'
+        )
+    for keep, cell in zip(in_strip, strip_cells):
+        if not keep:
+            continue
+        mid_x = cell["mid"]
+        parts.append(
+            f'<text x="{mid_x:.1f}" y="{strip_y + 14:.1f}" '
+            f'text-anchor="middle" font-size="12" fill="#222">'
+            f'{html.escape(cell["label"])}</text>'
+        )
+        parts.append(
+            f'<text x="{mid_x:.1f}" y="{strip_y + 28:.1f}" '
+            f'text-anchor="middle" font-size="12" font-weight="600" fill="#111">'
+            f'{html.escape(cell["dur"])}</text>'
+        )
+
+    for mid_x, text, color, row in _place_overflow(overflow_items):
+        text_y = strip_y + strip_h + 12 + row * 12
+        parts.append(
+            f'<line x1="{mid_x:.1f}" y1="{strip_y + strip_h:.1f}" '
+            f'x2="{mid_x:.1f}" y2="{text_y - 3:.1f}" '
+            f'stroke="{color}" stroke-width="1"/>'
+        )
+        parts.append(
+            f'<text x="{mid_x:.1f}" y="{text_y:.1f}" text-anchor="middle" '
+            f'font-size="11" fill="{color}">{html.escape(text)}</text>'
         )
 
     # Axes (full plot frame so series never looks like the chart border)
@@ -270,11 +433,11 @@ def build_rss_svg(
     for val in _axis_multiples(x_grid, x_max, include_zero=True):
         xp = tx(val)
         parts.append(
-            f'<line x1="{xp:.1f}" y1="{margin_t + chart_h}" '
-            f'x2="{xp:.1f}" y2="{margin_t + chart_h + 6}" stroke="#666"/>'
+            f'<line x1="{xp:.1f}" y1="{strip_y + strip_h + overflow_h}" '
+            f'x2="{xp:.1f}" y2="{strip_y + strip_h + overflow_h + 6}" stroke="#666"/>'
         )
         parts.append(
-            f'<text x="{xp:.1f}" y="{margin_t + chart_h + 57}" '
+            f'<text x="{xp:.1f}" y="{strip_y + strip_h + overflow_h + 16}" '
             f'text-anchor="middle" font-size="15">{val:.0f}</text>'
         )
     parts.append(
@@ -343,14 +506,14 @@ def build_rss_svg(
     # Crosshair (dashed vline + intersection tips); hit rect on top for mouse
     parts.append(
         f'<g class="rss-crosshair" style="display:none">'
-        f'<line class="rss-vline" y1="{margin_t}" y2="{margin_t + chart_h}" '
+        f'<line class="rss-vline" y1="{margin_t}" y2="{strip_y + strip_h}" '
         f'stroke="#555" stroke-width="1" stroke-dasharray="6 4.5"/>'
         f'<g class="rss-marks"></g>'
         f"</g>"
     )
     parts.append(
         f'<rect class="rss-hit" x="{margin_l}" y="{margin_t}" '
-        f'width="{chart_w}" height="{chart_h}" fill="transparent"/>'
+        f'width="{chart_w}" height="{chart_h + strip_h}" fill="transparent"/>'
     )
     parts.append("</svg>")
     ys_by_name = {
@@ -379,6 +542,8 @@ def build_rss_svg(
             "yMax": round(y_max, 3),
             "padT": _pad_top,
             "padB": _pad_bot,
+            "stripY": strip_y,
+            "stripH": strip_h,
         },
     }
     parts.append(
@@ -421,7 +586,8 @@ RSS_CHART_JS = r"""
       var pt = svg.createSVGPoint();
       pt.x = ev.clientX; pt.y = ev.clientY;
       var p = pt.matrixTransform(ctm.inverse());
-      if (p.x < L.ml || p.x > L.ml + L.cw || p.y < L.mt || p.y > L.mt + L.ch) {
+      var stripBottom = (L.stripY != null) ? L.stripY + L.stripH : L.mt + L.ch;
+      if (p.x < L.ml || p.x > L.ml + L.cw || p.y < L.mt || p.y > stripBottom) {
         hide(); return;
       }
       var xVal = L.xMax ? ((p.x - L.ml) / L.cw) * L.xMax : 0;
@@ -429,6 +595,7 @@ RSS_CHART_JS = r"""
       var xp = L.xMax ? L.ml + (xs[i] / L.xMax) * L.cw : L.ml;
       vline.setAttribute("x1", xp.toFixed(1));
       vline.setAttribute("x2", xp.toFixed(1));
+      vline.setAttribute("y2", stripBottom.toFixed(1));
       while (marks.firstChild) marks.removeChild(marks.firstChild);
       var NS = "http://www.w3.org/2000/svg";
       var tipGap = 5;

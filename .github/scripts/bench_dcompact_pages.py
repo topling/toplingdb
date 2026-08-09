@@ -827,7 +827,11 @@ def emit(args: argparse.Namespace) -> None:
         rss_svg_section = (
             '<h2>RAM usage over time</h2>\n'
             f'<p class="meta">{pagecache_meta}'
-            'Colored bands show benchmark segments (start time from db_bench output).</p>\n'
+            'The bar below each plot shows stage name + duration '
+            '(consecutive repeats merge, e.g. readseq×3); '
+            'colored bands mark the same intervals. '
+            'Stage names may overflow into a neighbor cell; a label under the bar '
+            'is used only when names would overlap.</p>\n'
             '<ul class="meta">\n'
             f'<li><span style="color:{RSS_LINE_COLORS["rss"]};font-weight:600">rss</span>: '
             'resident set size (pages currently in RAM for the process); '

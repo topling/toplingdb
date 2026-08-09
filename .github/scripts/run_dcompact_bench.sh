@@ -21,7 +21,7 @@
 #   MAX_PARALLEL_COMPACTIONS  (default 4)
 #   MULTI_PROCESS       ToplingZipTable: fork per compact (default 1)
 #   ZIP_SERVER_OPTIONS  ZipServer civet opts when MULTI_PROCESS=1
-#                       (default listening_ports=8090:num_threads=32)
+#                       (default listening_ports=8090:num_threads=8)
 #   ToplingZipTable_localTempDir  (default /dev/shm)
 #   CI                  Set to 1 for GitHub Actions (sudo systemd-run --uid=...)
 #   SKIP_VERIFY         Set to 1 to skip post-run evidence checks
@@ -45,13 +45,15 @@ CPU_QUOTA="${CPU_QUOTA:-50%}"
 # DB path must match yaml databases.*.path. hoster_root=/dev/shm — NEVER rm -rf hoster.
 DB_PATH="${DB_PATH:-/dev/shm/db_bench_enterprise}"
 WORKER_PORT="${WORKER_PORT:-8080}"
-MAX_PARALLEL_COMPACTIONS="${MAX_PARALLEL_COMPACTIONS:-4}"
-MULTI_PROCESS="${MULTI_PROCESS:-1}"
-ZIP_SERVER_OPTIONS="${ZIP_SERVER_OPTIONS:-listening_ports=8090:num_threads=8}"
-ToplingZipTable_localTempDir="${ToplingZipTable_localTempDir:-/dev/shm}"
-WORKER_DB_ROOT="${WORKER_DB_ROOT:-/dev/shm/dcompact-worker}"
-NFS_MOUNT_ROOT="${NFS_MOUNT_ROOT:-/dev}"
 ENGINES="${ENGINES:-zipkeyonly zipkeyvalue}"
+export NFS_DYNAMIC_MOUNT=0
+export NFS_MOUNT_ROOT="${NFS_MOUNT_ROOT:-/dev}"
+export WORKER_DB_ROOT="${WORKER_DB_ROOT:-/dev/shm/dcompact-worker}"
+export MAX_PARALLEL_COMPACTIONS="${MAX_PARALLEL_COMPACTIONS:-4}"
+export ToplingZipTable_localTempDir="${ToplingZipTable_localTempDir:-/dev/shm}"
+export DictZipBlobStore_zipThreads="${DictZipBlobStore_zipThreads:-4}"
+export MULTI_PROCESS="${MULTI_PROCESS:-1}"
+export ZIP_SERVER_OPTIONS="${ZIP_SERVER_OPTIONS:-listening_ports=8090:num_threads=8}"
 
 test -x "$PREFIX/bin/db_bench"
 test -x "$PREFIX/bin/dcompact_worker.exe" || test -x "$PREFIX/bin/dcompact_worker"
@@ -157,15 +159,6 @@ make_yaml_for_engine() {
 start_worker() {
   # Same-host identity: hoster_root=/dev/shm, NFS_MOUNT_ROOT=/dev, instance=shm
   # => worker prefix == /dev/shm. NFS_DYNAMIC_MOUNT=0: no mount.
-  export NFS_DYNAMIC_MOUNT=0
-  export NFS_MOUNT_ROOT
-  export WORKER_DB_ROOT
-  export MAX_PARALLEL_COMPACTIONS
-  export MULTI_PROCESS
-  export ZIP_SERVER_OPTIONS
-  export ToplingZipTable_localTempDir
-  export DictZipBlobStore_zipThreads="${DictZipBlobStore_zipThreads:-4}"
-
   mkdir -p "$(dirname "$WORKER_LOG")"
   : >"$WORKER_LOG"
   "$WORKER_BIN" -D "listening_ports=${WORKER_PORT}" \

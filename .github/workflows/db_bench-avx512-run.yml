@@ -135,7 +135,6 @@ jobs:
             local logdir="logs/${eng_id}"
             mkdir -p "$logdir"
             test -f "$yaml"
-            cp -a "$yaml" "${logdir}/db_bench.yaml"
             record_shm() {
               local label="$1"
               {

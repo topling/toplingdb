@@ -47,13 +47,10 @@ METRIC_RE = re.compile(
 ENGINES = ("zipkeyonly", "zipkeyvalue", "rocksdb-v8.10", "rocksdb-master")
 TOPLING_ENGINES = ("zipkeyonly", "zipkeyvalue")
 ROCKSDB_ENGINES = ("rocksdb-v8.10", "rocksdb-master")
-YAML_RAW_NAME = "db_bench.yaml"
-# Per-pass yamls from db_bench-run; YAML_RAW_NAME is legacy (avx512/local/dcompact
-# still copy db_bench.yaml — db_bench-run no longer writes it).
+# Per-pass runtime yamls only (no baseline db_bench.yaml).
 YAML_USED_NAMES = (
     "db_bench-fillrandom.yaml",
     "db_bench-fillseq.yaml",
-    YAML_RAW_NAME,
 )
 ENGINE_LABELS = {
     "zipkeyonly": "ToplingDB zipkeyonly",

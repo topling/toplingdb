@@ -59,7 +59,10 @@ RATIO_OTHER_LABELS = {
 }
 SHM_WORKLOADS = ("fillrandom", "fillseq")
 RSS_WORKLOADS = ("fillrandom", "fillseq")
-YAML_RAW_NAME = "db_bench.yaml"
+YAML_USED_NAMES = (
+    "db_bench-fillrandom.yaml",
+    "db_bench-fillseq.yaml",
+)
 
 def set_rocksdb_master_label(sha: Optional[str]) -> None:
     """Set RocksDB master display labels; include short git SHA when known."""
@@ -591,9 +594,11 @@ def _build_dcompact_bench_notes(runner_env: Dict[str, str]) -> str:
 def _build_yaml_config_links(raw_dir: Path) -> str:
     parts: List[str] = []
     for eng in TOPLING_ENGINES:
-        if (raw_dir / eng / YAML_RAW_NAME).is_file():
-            label = html.escape(ENGINE_LABELS[eng])
-            parts.append(f'<a href="raw/{eng}/{YAML_RAW_NAME}">{label} yaml</a>')
+        eng_dir = raw_dir / eng
+        label = html.escape(ENGINE_LABELS[eng])
+        for name in YAML_USED_NAMES:
+            if (eng_dir / name).is_file():
+                parts.append(f'<a href="raw/{eng}/{name}">{label} {name}</a>')
     if not parts:
         return ""
     return (
@@ -690,7 +695,7 @@ def emit(args: argparse.Namespace) -> None:
             "time-fillrandom.txt",
             "time-fillseq.txt",
             "bench_settings.txt",
-            YAML_RAW_NAME,
+            *YAML_USED_NAMES,
             "engine-meta.json",
         ):
             p = src / name

@@ -276,7 +276,6 @@ run_engine_suite() {
   yaml="$(make_yaml_for_engine "$eng")"
   local logdir="${LOGDIR_BASE}/${eng}"
   mkdir -p "$logdir"
-  cp -a "$yaml" "${logdir}/db_bench.yaml"
   # Share one worker log pointer for evidence; also keep a per-engine copy link.
   ln -sfn "$(realpath "$WORKER_LOG")" "${logdir}/dcompact_worker.log" 2>/dev/null || true
 

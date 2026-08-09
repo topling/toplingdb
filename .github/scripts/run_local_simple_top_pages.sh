@@ -206,7 +206,6 @@ run_topling_suite() {
   mkdir -p "$logdir"
   require_db_bench
   test -f "$yaml"
-  cp -a "$yaml" "${logdir}/db_bench.yaml"
 
   # Pass 1: fillrandom — prefix 3 simple
   prepare_db

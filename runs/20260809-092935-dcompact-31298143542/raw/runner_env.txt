@@ -1,0 +1,10 @@
+os_pretty_name=Ubuntu 24.04.4 LTS
+kernel=6.17.0-1020-azure
+cpu_model=AMD EPYC 9V74 80-Core Processor
+cpu_count=4
+mem_total_bytes=16766423040
+shm_size_bytes=8383209472
+cpu_quota_write=50%
+compact_mode_topling=dcompact_worker
+compact_mode_rocksdb=compaction_service_spool
+num=100000000

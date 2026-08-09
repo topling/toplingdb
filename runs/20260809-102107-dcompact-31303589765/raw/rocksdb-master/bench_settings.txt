@@ -1,0 +1,5 @@
+cache_size_bytes=8383211520
+cpu_quota=150%
+compact_mode=compaction_service_spool
+write_buffer_size=67108864
+spool_dir=/dev/shm/rocksdb-cs-spool-master

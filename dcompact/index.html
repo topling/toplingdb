@@ -23,15 +23,15 @@
   <p class="meta">
     <a href="../index.html">← plain home</a>
   </p>
-  <p class="meta">Updated (UTC): 2026-08-09T09:29:36.675831+00:00</p>
+  <p class="meta">Updated (UTC): 2026-08-09T10:21:08.603139+00:00</p>
   
   <h2>Latest dcompact run</h2>
-  <p class="meta">run_id=31298143542 |
-     <a href="../runs/20260809-092935-dcompact-31298143542/index.html">full report</a> |
-     2026-08-09T09:29:35.569950+00:00</p>
+  <p class="meta">run_id=31303589765 |
+     <a href="../runs/20260809-102107-dcompact-31303589765/index.html">full report</a> |
+     2026-08-09T10:21:07.497986+00:00</p>
   <h2>Bench configuration (dcompact)</h2>
   <p class="meta">
-    Write-side db_bench CPU quota: <strong>50%</strong>
+    Write-side db_bench CPU quota: <strong>150%</strong>
     (from <code>runner_env.txt</code> <code>cpu_quota_write</code>).
     Topling compact: <strong>dcompact_worker</strong> —
     <code>dcompact_worker</code> runs outside the write cgroup and uses remaining CPU cores.
@@ -43,7 +43,7 @@
 <tbody>
 <tr><td><strong>OS</strong></td><td>Ubuntu 24.04.4 LTS</td></tr>
 <tr><td><strong>Kernel</strong></td><td>6.17.0-1020-azure</td></tr>
-<tr><td><strong>CPU</strong></td><td>AMD EPYC 9V74 80-Core Processor</td></tr>
+<tr><td><strong>CPU</strong></td><td>AMD EPYC 7763 64-Core Processor</td></tr>
 <tr><td><strong>Logical CPUs</strong></td><td>4</td></tr>
 <tr><td><strong>Memory</strong></td><td>15.6GiB</td></tr>
 <tr><td><strong>/dev/shm</strong></td><td>7.8GiB</td></tr>
@@ -56,8 +56,8 @@
   <table>
 <thead><tr><th>workload</th><th>ToplingDB zipkeyonly</th><th>ToplingDB zipkeyvalue</th><th>RocksDB v8.10</th><th>RocksDB master (5fe22535)</th><th>zipkeyonly / v8.10 (space)</th><th>zipkeyvalue / v8.10 (space)</th></tr></thead>
 <tbody>
-<tr><td>fillrandom</td><td>3.0GiB</td><td>494.2MiB</td><td>3.7GiB</td><td>3.7GiB</td><td><span class="faster">0.81x</span></td><td><span class="faster">0.13x</span></td></tr>
-<tr><td>fillseq</td><td>4.7GiB</td><td>1.1GiB</td><td>3.2GiB</td><td>3.2GiB</td><td><span class="slower">1.45x</span></td><td><span class="faster">0.35x</span></td></tr>
+<tr><td>fillrandom</td><td>3.0GiB</td><td>493.2MiB</td><td>3.7GiB</td><td>3.7GiB</td><td><span class="faster">0.81x</span></td><td><span class="faster">0.13x</span></td></tr>
+<tr><td>fillseq</td><td>4.7GiB</td><td>1.2GiB</td><td>3.2GiB</td><td>3.2GiB</td><td><span class="slower">1.46x</span></td><td><span class="faster">0.36x</span></td></tr>
 </tbody>
 </table>
   <h3>Peak RSS (RAM; ratio vs RocksDB v8.10)</h3>
@@ -65,8 +65,8 @@
   <table>
 <thead><tr><th>workload</th><th>ToplingDB zipkeyonly</th><th>ToplingDB zipkeyvalue</th><th>RocksDB v8.10</th><th>RocksDB master (5fe22535)</th><th>zipkeyonly / v8.10 (RSS)</th><th>zipkeyvalue / v8.10 (RSS)</th></tr></thead>
 <tbody>
-<tr><td>fillrandom</td><td>788.9MiB</td><td>852.2MiB</td><td>4.1GiB</td><td>4.2GiB</td><td><span class="faster">0.19x</span></td><td><span class="faster">0.20x</span></td></tr>
-<tr><td>fillseq</td><td>513.3MiB</td><td>1.2GiB</td><td>6.4GiB</td><td>6.5GiB</td><td><span class="faster">0.08x</span></td><td><span class="faster">0.19x</span></td></tr>
+<tr><td>fillrandom</td><td>858.6MiB</td><td>827.1MiB</td><td>4.1GiB</td><td>4.2GiB</td><td><span class="faster">0.21x</span></td><td><span class="faster">0.20x</span></td></tr>
+<tr><td>fillseq</td><td>511.3MiB</td><td>1.2GiB</td><td>6.4GiB</td><td>6.5GiB</td><td><span class="faster">0.08x</span></td><td><span class="faster">0.19x</span></td></tr>
 </tbody>
 </table>
   <h3>db_bench fillrandom suite (time ratio = rocksdb / zipkey*)</h3>
@@ -74,25 +74,26 @@
   <table>
 <thead><tr><th>benchmark</th><th>ToplingDB zipkeyonly ops/sec</th><th>ToplingDB zipkeyvalue ops/sec</th><th>RocksDB v8.10 ops/sec</th><th>RocksDB master (5fe22535) ops/sec</th><th>zipkeyvalue time / zipkeyonly</th><th>v8.10 time / zipkeyonly</th><th>master (5fe22535) time / zipkeyonly</th><th>v8.10 time / zipkeyvalue</th><th>master (5fe22535) time / zipkeyvalue</th></tr></thead>
 <tbody>
-<tr><td>compact</td><td>1/53.2s</td><td>1/79.4s</td><td>1/49.8s</td><td>1/42.3s</td><td><span class="slower">1.49x</span></td><td><span class="slower">0.94x</span></td><td><span class="slower">0.80x</span></td><td><span class="slower">0.63x</span></td><td><span class="slower">0.53x</span></td></tr>
-<tr><td>fillrandom</td><td>243251</td><td>242659</td><td>218511</td><td>215282</td><td><span class="slower">1.00x</span></td><td><span class="faster">1.11x</span></td><td><span class="faster">1.13x</span></td><td><span class="faster">1.11x</span></td><td><span class="faster">1.13x</span></td></tr>
-<tr><td>readrandom</td><td>1805200</td><td>732967</td><td>146945</td><td>138751</td><td><span class="slower">2.46x</span></td><td><span class="faster">12.28x</span></td><td><span class="faster">13.01x</span></td><td><span class="faster">4.99x</span></td><td><span class="faster">5.28x</span></td></tr>
-<tr><td>readseq</td><td>11375101</td><td>8347565</td><td>4509772</td><td>3793923</td><td><span class="slower">1.36x</span></td><td><span class="faster">1.59x</span></td><td><span class="faster">1.90x</span></td><td><span class="faster">1.17x</span></td><td><span class="faster">1.39x</span></td></tr>
+<tr><td>compact</td><td>1/50.5s</td><td>1/81.6s</td><td>1/59.5s</td><td>1/61.9s</td><td><span class="slower">1.62x</span></td><td><span class="faster">1.18x</span></td><td><span class="faster">1.22x</span></td><td><span class="slower">0.73x</span></td><td><span class="slower">0.76x</span></td></tr>
+<tr><td>fillrandom</td><td>622466</td><td>631838</td><td>488920</td><td>553818</td><td><span class="faster">0.99x</span></td><td><span class="faster">1.27x</span></td><td><span class="faster">1.12x</span></td><td><span class="faster">1.29x</span></td><td><span class="faster">1.14x</span></td></tr>
+<tr><td>readrandom</td><td>3788691</td><td>1610986</td><td>329753</td><td>328572</td><td><span class="slower">2.35x</span></td><td><span class="faster">11.49x</span></td><td><span class="faster">11.53x</span></td><td><span class="faster">4.89x</span></td><td><span class="faster">4.90x</span></td></tr>
+<tr><td>readseq</td><td>22386604</td><td>16622249</td><td>10692768</td><td>8033999</td><td><span class="slower">1.35x</span></td><td><span class="faster">1.32x</span></td><td><span class="faster">1.76x</span></td><td><span class="slower">0.98x</span></td><td><span class="faster">1.31x</span></td></tr>
 </tbody>
 </table>
   <h3>db_bench fillseq suite</h3>
   <table>
 <thead><tr><th>benchmark</th><th>ToplingDB zipkeyonly ops/sec</th><th>ToplingDB zipkeyvalue ops/sec</th><th>RocksDB v8.10 ops/sec</th><th>RocksDB master (5fe22535) ops/sec</th><th>zipkeyvalue time / zipkeyonly</th><th>v8.10 time / zipkeyonly</th><th>master (5fe22535) time / zipkeyonly</th><th>v8.10 time / zipkeyvalue</th><th>master (5fe22535) time / zipkeyvalue</th></tr></thead>
 <tbody>
-<tr><td>compact</td><td>1/83.7s</td><td>1/133.7s</td><td>1/39.8s</td><td>1/37.1s</td><td><span class="slower">1.60x</span></td><td><span class="slower">0.48x</span></td><td><span class="slower">0.44x</span></td><td><span class="slower">0.30x</span></td><td><span class="slower">0.28x</span></td></tr>
-<tr><td>fillseq</td><td>581853</td><td>574490</td><td>954671</td><td>922932</td><td><span class="slower">1.01x</span></td><td><span class="slower">0.61x</span></td><td><span class="slower">0.63x</span></td><td><span class="slower">0.60x</span></td><td><span class="slower">0.62x</span></td></tr>
-<tr><td>readrandom</td><td>2795221</td><td>581669</td><td>140829</td><td>136930</td><td><span class="slower">4.81x</span></td><td><span class="faster">19.85x</span></td><td><span class="faster">20.41x</span></td><td><span class="faster">4.13x</span></td><td><span class="faster">4.25x</span></td></tr>
-<tr><td>readseq</td><td>13153138</td><td>9932354</td><td>4568946</td><td>3873774</td><td><span class="slower">1.32x</span></td><td><span class="faster">2.88x</span></td><td><span class="faster">3.40x</span></td><td><span class="faster">2.17x</span></td><td><span class="faster">2.56x</span></td></tr>
+<tr><td>compact</td><td>1/88.5s</td><td>1/130.5s</td><td>1/40.5s</td><td>1/41.0s</td><td><span class="slower">1.47x</span></td><td><span class="slower">0.46x</span></td><td><span class="slower">0.46x</span></td><td><span class="slower">0.31x</span></td><td><span class="slower">0.31x</span></td></tr>
+<tr><td>fillseq</td><td>1765245</td><td>1773186</td><td>2888375</td><td>2735159</td><td><span class="faster">1.00x</span></td><td><span class="slower">0.61x</span></td><td><span class="slower">0.65x</span></td><td><span class="slower">0.61x</span></td><td><span class="slower">0.65x</span></td></tr>
+<tr><td>readrandom</td><td>6603202</td><td>1351010</td><td>321635</td><td>353332</td><td><span class="slower">4.89x</span></td><td><span class="faster">20.53x</span></td><td><span class="faster">18.69x</span></td><td><span class="faster">4.20x</span></td><td><span class="faster">3.82x</span></td></tr>
+<tr><td>readseq</td><td>25695592</td><td>20736270</td><td>10750388</td><td>8022683</td><td><span class="slower">1.24x</span></td><td><span class="faster">2.39x</span></td><td><span class="faster">3.20x</span></td><td><span class="faster">1.93x</span></td><td><span class="faster">2.59x</span></td></tr>
 </tbody>
 </table>
 
   <h2>History</h2>
   <ul>
+<li>2026-08-09T10:21:07.497986+00:00 — run_id=31303589765 — <a href="../runs/20260809-102107-dcompact-31303589765/index.html">report</a></li>
 <li>2026-08-09T09:29:35.569950+00:00 — run_id=31298143542 — <a href="../runs/20260809-092935-dcompact-31298143542/index.html">report</a></li>
 <li>2026-08-08T11:48:09.808158+00:00 — run_id=31251963803 — <a href="../runs/20260808-114809-dcompact-31251963803/index.html">report</a></li>
 </ul>

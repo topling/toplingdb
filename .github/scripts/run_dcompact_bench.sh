@@ -19,6 +19,10 @@
 #   CPU_QUOTA           write-side db_bench systemd CPUQuota (default 50%)
 #   WORKER_PORT         dcompact_worker listen port (default 8080)
 #   MAX_PARALLEL_COMPACTIONS  (default 4)
+#   MULTI_PROCESS       ToplingZipTable: fork per compact (default 1)
+#   ZIP_SERVER_OPTIONS  ZipServer civet opts when MULTI_PROCESS=1
+#                       (default listening_ports=8090:num_threads=32)
+#   ToplingZipTable_localTempDir  (default /dev/shm)
 #   CI                  Set to 1 for GitHub Actions (sudo systemd-run --uid=...)
 #   SKIP_VERIFY         Set to 1 to skip post-run evidence checks
 #   ENGINES             Space-separated: "zipkeyonly" and/or "zipkeyvalue"
@@ -42,7 +46,10 @@ CPU_QUOTA="${CPU_QUOTA:-50%}"
 DB_PATH="${DB_PATH:-/dev/shm/db_bench_enterprise}"
 WORKER_PORT="${WORKER_PORT:-8080}"
 MAX_PARALLEL_COMPACTIONS="${MAX_PARALLEL_COMPACTIONS:-4}"
-WORKER_DB_ROOT="${WORKER_DB_ROOT:-/tmp/dcompact-worker}"
+MULTI_PROCESS="${MULTI_PROCESS:-1}"
+ZIP_SERVER_OPTIONS="${ZIP_SERVER_OPTIONS:-listening_ports=8090:num_threads=8}"
+ToplingZipTable_localTempDir="${ToplingZipTable_localTempDir:-/dev/shm}"
+WORKER_DB_ROOT="${WORKER_DB_ROOT:-/dev/shm/dcompact-worker}"
 NFS_MOUNT_ROOT="${NFS_MOUNT_ROOT:-/dev}"
 ENGINES="${ENGINES:-zipkeyonly zipkeyvalue}"
 
@@ -154,6 +161,9 @@ start_worker() {
   export NFS_MOUNT_ROOT
   export WORKER_DB_ROOT
   export MAX_PARALLEL_COMPACTIONS
+  export MULTI_PROCESS
+  export ZIP_SERVER_OPTIONS
+  export ToplingZipTable_localTempDir
   export DictZipBlobStore_zipThreads="${DictZipBlobStore_zipThreads:-4}"
 
   mkdir -p "$(dirname "$WORKER_LOG")"

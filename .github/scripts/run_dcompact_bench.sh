@@ -52,8 +52,11 @@ export WORKER_DB_ROOT="${WORKER_DB_ROOT:-/dev/shm/dcompact-worker}"
 export MAX_PARALLEL_COMPACTIONS="${MAX_PARALLEL_COMPACTIONS:-4}"
 export ToplingZipTable_localTempDir="${ToplingZipTable_localTempDir:-/dev/shm}"
 export DictZipBlobStore_zipThreads="${DictZipBlobStore_zipThreads:-4}"
-export MULTI_PROCESS="${MULTI_PROCESS:-1}"
-export ZIP_SERVER_OPTIONS="${ZIP_SERVER_OPTIONS:-listening_ports=8090:num_threads=8}"
+# Disabled: MULTI_PROCESS forks each compact and ZipServer uses
+# process_vm_readv on the child; Yama/ptrace_scope on GHA runners and WSL
+# returns EPERM -> ZipServer /index 412 -> child SIGABRT -> hoster MaxRetry DIE.
+# export MULTI_PROCESS="${MULTI_PROCESS:-1}"
+# export ZIP_SERVER_OPTIONS="${ZIP_SERVER_OPTIONS:-listening_ports=8090:num_threads=8}"
 
 test -x "$PREFIX/bin/db_bench"
 test -x "$PREFIX/bin/dcompact_worker.exe" || test -x "$PREFIX/bin/dcompact_worker"

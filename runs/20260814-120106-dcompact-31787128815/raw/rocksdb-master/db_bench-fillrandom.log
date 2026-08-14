@@ -1,0 +1,42 @@
+Running as unit: run-rafbff95944254e53a8a6c3fb123da42e.scope; invocation ID: 3cf0a31071e341a9a66c54dec99d2df1
+Set seed to 1786706786555457 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+CompactionService spool: /dev/shm/rocksdb-cs-spool-master
+RocksDB:    version 11.9.0
+Date:       Fri Aug 14 11:26:26 2026
+CPU:        4 * AMD EPYC 7763 64-Core Processor
+CPUCache:   512 KB
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: SkipListFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+CompactionService spool: /dev/shm/rocksdb-cs-spool-master
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T11:26:26.569616Z fillrandom   :       4.324 micros/op 231267 ops/sec 432.400 seconds 100000000 operations;   12.8 MB/s
+flush memtable
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T11:33:39.642595Z compact      : 46528857.000 micros/op 0 ops/sec 46.529 seconds 1 operations;
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T11:34:26.171637Z readseq      :       0.374 micros/op 2676966 ops/sec 23.613 seconds 63210338 operations;  148.1 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T11:34:49.784586Z readseq      :       0.272 micros/op 3680466 ops/sec 17.175 seconds 63210338 operations;  203.6 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T11:35:06.959368Z readseq      :       0.272 micros/op 3670077 ops/sec 17.223 seconds 63210338 operations;  203.0 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T11:35:24.182767Z readrandom   :       6.399 micros/op 156279 ops/sec 639.880 seconds 100000000 operations;    5.5 MB/s (63214509 of 100000000 found)
+

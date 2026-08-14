@@ -1,0 +1,40 @@
+Running as unit: run-r6367adb403f44a668edad6a7fef3340a.scope; invocation ID: 16ea4c2d60654a3ea5c834f8418d2bc2
+RocksDB:    version 8.10.2
+Date:       Fri Aug 14 14:11:51 2026
+CPU:        4 * AMD EPYC 7763 64-Core Processor
+CPUCache:   512 KB
+Set seed to 1786716711572036 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: CSPPMemTabFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-14T14:11:53.601169Z fillseq      :    1.793534 micros/op 557558 ops/sec 179.353 seconds 100000000 operations;   30.8 MB/s
+flush memtable
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-14T14:14:53.045191Z compact      : 91226177.000000 micros/op 0 ops/sec 91.226 seconds 1 operations;
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-14T14:16:24.271617Z readseq      :    0.085810 micros/op 11653616 ops/sec 8.581 seconds 100000000 operations;  644.6 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-14T14:16:32.852911Z readseq      :    0.084241 micros/op 11870573 ops/sec 8.424 seconds 100000000 operations;  656.6 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-14T14:16:41.277383Z readseq      :    0.084979 micros/op 11767595 ops/sec 8.498 seconds 100000000 operations;  650.9 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-14T14:16:49.775506Z readrandom   :    0.344963 micros/op 2898861 ops/sec 34.496 seconds 100000000 operations;  160.3 MB/s (100000000 of 100000000 found)
+

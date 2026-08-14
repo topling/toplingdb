@@ -1,0 +1,39 @@
+RocksDB:    version 11.9.0
+Date:       Fri Aug 14 09:59:28 2026
+CPU:        4 * AMD EPYC 7763 64-Core Processor
+CPUCache:   512 KB
+Set seed to 1786701568818059 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    50000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    2765.7 MB (estimated)
+FileSize:   1573.6 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: SkipListFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T09:59:28.831882Z fillseq      :       0.272 micros/op 3680910 ops/sec 13.584 seconds 50000000 operations;  203.6 MB/s
+flush memtable
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T09:59:42.651329Z compact      : 20560036.000 micros/op 0 ops/sec 20.560 seconds 1 operations;
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T10:00:03.211642Z readseq      :       0.195 micros/op 5120717 ops/sec 9.764 seconds 50000000 operations;  283.2 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T10:00:12.976109Z readseq      :       0.127 micros/op 7894180 ops/sec 6.334 seconds 50000000 operations;  436.7 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T10:00:19.310126Z readseq      :       0.124 micros/op 8053952 ops/sec 6.208 seconds 50000000 operations;  445.5 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-14T10:00:25.518548Z readrandom   :       3.227 micros/op 309920 ops/sec 161.332 seconds 50000000 operations;   17.1 MB/s (50000000 of 50000000 found)
+

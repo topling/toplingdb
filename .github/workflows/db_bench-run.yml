@@ -386,13 +386,14 @@ jobs:
               -progress_reports=false
               -report_bench_start_time
               -compact_target_level=6
+              -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
           .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
             "$ENG/bin/db_bench" "${args_fr[@]}" \
             >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
           cat "${LOGDIR}/db_bench-fillrandom.log"
           record_rss fillrandom
-          # RocksDB has no omit API; derive omit RSS from main pass
+          # RocksDB has no lazy load; derive omit RSS from main pass
           cp "${LOGDIR}/rss_usage-fillrandom.txt" "${LOGDIR}/rss_usage-fillrandom-omit.txt" 2>/dev/null || true
           record_shm fillrandom
           save_db_log fillrandom
@@ -411,13 +412,14 @@ jobs:
               -progress_reports=false
               -report_bench_start_time
               -compact_target_level=6
+              -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
           .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
             "$ENG/bin/db_bench" "${args[@]}" \
             >"${LOGDIR}/db_bench.log" 2>&1
           cat "${LOGDIR}/db_bench.log"
           record_rss fillseq
-          # RocksDB has no omit API; derive omit RSS from main pass
+          # RocksDB has no lazy load; derive omit RSS from main pass
           cp "${LOGDIR}/rss_usage-fillseq.txt" "${LOGDIR}/rss_usage-fillseq-omit.txt" 2>/dev/null || true
           record_shm fillseq
           save_db_log fillseq
@@ -486,13 +488,14 @@ jobs:
               -progress_reports=false
               -report_bench_start_time
               -compact_target_level=6
+              -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
           .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
             "$ENG/bin/db_bench" "${args_fr[@]}" \
             >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
           cat "${LOGDIR}/db_bench-fillrandom.log"
           record_rss fillrandom
-          # RocksDB has no omit API; omit RSS is the same scan as readseq.
+          # RocksDB has no lazy load; omit RSS is the same scan as readseq.
           cp "${LOGDIR}/rss_usage-fillrandom.txt" "${LOGDIR}/rss_usage-fillrandom-omit.txt" 2>/dev/null || true
           record_shm fillrandom
           save_db_log fillrandom
@@ -511,13 +514,14 @@ jobs:
               -progress_reports=false
               -report_bench_start_time
               -compact_target_level=6
+              -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
           .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
             "$ENG/bin/db_bench" "${args[@]}" \
             >"${LOGDIR}/db_bench.log" 2>&1
           cat "${LOGDIR}/db_bench.log"
           record_rss fillseq
-          # RocksDB has no omit API; omit RSS is the same scan as readseq.
+          # RocksDB has no lazy load; omit RSS is the same scan as readseq.
           cp "${LOGDIR}/rss_usage-fillseq.txt" "${LOGDIR}/rss_usage-fillseq-omit.txt" 2>/dev/null || true
           record_shm fillseq
           save_db_log fillseq

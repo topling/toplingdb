@@ -143,14 +143,24 @@ run_suite() {
   local log_name="$2"
   rm -rf "$DB_PATH"
   mkdir -p "$DB_PATH"
+  local options_ini="$SCRIPT_DIR/../bench-conf/rocksdb_db_bench.ini"
+  test -f "$options_ini"
+  local options_used="${LOGDIR}/rocksdb_db_bench.ini"
+  awk -v write_buffer_size="$WRITE_BUFFER_SIZE" '
+    /^\[TableOptions\/BlockBasedTable "default"\]$/ {
+      print "  write_buffer_size=" write_buffer_size
+    }
+    { print }
+  ' "$options_ini" >"$options_used"
+  grep -qx "  write_buffer_size=${WRITE_BUFFER_SIZE}" "$options_used"
   local args=(
     -db="$DB_PATH" -num="$NUM" -key_size=8 -value_size="$VALUE_SIZE" -batch_size=1000
     -cache_size="$CACHE_SIZE"
-    -write_buffer_size="$WRITE_BUFFER_SIZE"
     -compaction_spool_dir="$SPOOL_DIR"
     -benchmarks="${suite},flush,compact,readseq,readseq,readseq,readrandom"
     -progress_reports=false -report_bench_start_time
     -compact_target_level=6
+    -options_file="$options_used"
   )
   echo "=== starting suite=${suite} NUM=${NUM} ==="
   set +e

@@ -492,7 +492,7 @@ def _bench_row_names(names: set) -> List[str]:
 def build_db_bench_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
-    """Wide comparison: ops/sec plus normalized time-per-op ratios."""
+    """Wide comparison: ops/sec plus speed ratios (ops/sec, or 1/seconds for compact)."""
     ops_by = {e: _ops_by_benchmark(engines.get(e, [])) for e in ENGINES}
     sec_by = {e: _seconds_by_benchmark(engines.get(e, [])) for e in ENGINES}
     operations_by = {e: _operations_by_benchmark(engines.get(e, [])) for e in ENGINES}
@@ -502,10 +502,10 @@ def build_db_bench_compare(
     headers = ["benchmark"] + [
         f"{ENGINE_LABELS[e]} ops/sec" for e in ENGINES
     ]
-    headers.append("zipkeyvalue time / zipkeyonly")
+    headers.append("zipkeyonly / zipkeyvalue")
     for base, other in ratio_pairs:
         headers.append(
-            f"{RATIO_OTHER_LABELS[other]} time/op / {RATIO_BASE_LABELS[base]} time/op"
+            f"{RATIO_BASE_LABELS[base]} / {RATIO_OTHER_LABELS[other]}"
         )
     rows_html = []
     for name in names:
@@ -522,9 +522,14 @@ def build_db_bench_compare(
             else:
                 v = ops_by[e].get(name)
                 cells.append(f"<td>{v if v is not None else '—'}</td>")
-        subject_ratio = _subject_time_ratio_cell(
-            sec_by["zipkeyonly"].get(name), sec_by["zipkeyvalue"].get(name)
-        )
+        if is_compact:
+            subject_ratio = _subject_time_ratio_cell(
+                sec_by["zipkeyonly"].get(name), sec_by["zipkeyvalue"].get(name)
+            )
+        else:
+            subject_ratio = _subject_time_ratio_cell(
+                ops_by["zipkeyvalue"].get(name), ops_by["zipkeyonly"].get(name)
+            )
         cells.append(f"<td>{subject_ratio}</td>")
         for base, other in ratio_pairs:
             ratio = (
@@ -973,17 +978,17 @@ def _render_dcompact_section(
   {dcompact_notes}
   {runner_html}
   <h3>/dev/shm usage (disk space; after db_bench)</h3>
-  <p class="meta">Allocated disk usage (IEC blocks). zipkeyonly does not compress values (speed-optimized). RocksDB uses default Snappy compression. Space ratio = engine / v8.10. {_color_sign()}.</p>
+  <p class="meta">Allocated disk usage (IEC blocks). zipkeyonly does not compress values (speed-optimized). RocksDB uses per-level compression (L0 none, L1-L5 Snappy, L6 Zstd), corresponding to the ToplingDB zipkeyvalue variant's level_writers (lightweight upper levels, heavyweight L6). Space ratio = engine / v8.10. {_color_sign()}.</p>
   {shm_table}
   <h3>Peak RSS (RAM; during db_bench)</h3>
   <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10. {_color_sign()}.</p>
   {rss_table}
   {rss_svg_section}
   <h3>Comparison: db_bench fillrandom suite (perf)</h3>
-  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/time. {_color_sign()}.</p>
+  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses per-level compression (L0 none, L1-L5 Snappy, L6 Zstd), corresponding to the ToplingDB zipkeyvalue variant's level_writers (lightweight upper levels, heavyweight L6). compact row shows operations/time. {_color_sign()}.</p>
   {fr_compare}
   <h3>Comparison: db_bench fillseq suite (perf)</h3>
-  <p class="meta">Same as fillrandom. RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd: faster, larger size. Seqno-zeroing compact still runs.</p>
+  <p class="meta">Same as fillrandom. RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd on L6: faster, larger size. Seqno-zeroing compact still runs.</p>
   {db_compare_fs}
 """
 

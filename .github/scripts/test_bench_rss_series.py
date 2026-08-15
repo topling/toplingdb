@@ -245,12 +245,24 @@ def check_ratio_normalization(mod) -> None:
         "rocksdb-master": [row(8339629, 3.790, 31604185)],
     }
     table = mod.build_db_bench_compare(engines)
-    assert "v8.10 time/op / zipkeyonly time/op" in table
+    assert "zipkeyonly / v8.10" in table
+    assert "zipkeyonly / zipkeyvalue" in table
     assert '<span class="faster">2.36x</span>' in table
     assert '<span class="faster">2.81x</span>' in table
     assert '<span class="faster">1.70x</span>' in table
     assert '<span class="faster">2.02x</span>' in table
+    assert "<td>1.39x</td>" in table
     assert "1.49x" not in table
+
+    unequal_ops = {
+        "zipkeyonly": [row(20000000, 1.0, 20000000)],
+        "zipkeyvalue": [row(10000000, 4.0, 40000000)],
+        "rocksdb-v8.10": [row(5000000, 2.0, 10000000)],
+        "rocksdb-master": [row(4000000, 2.0, 8000000)],
+    }
+    unequal_table = mod.build_db_bench_compare(unequal_ops)
+    assert "<td>2.00x</td>" in unequal_table
+    assert "<td>4.00x</td>" not in unequal_table
 
     if hasattr(mod, "build_lazy_load_compare"):
         lazy = mod.build_lazy_load_compare(
@@ -260,6 +272,8 @@ def check_ratio_normalization(mod) -> None:
                 "rocksdb-v8.10": [row(9910866, 3.189, 31608738)],
             }
         )
+        assert "zipkeyonly / v8.10" in lazy
+        assert "zipkeyvalue / v8.10" in lazy
         assert '<span class="faster">3.69x</span>' in lazy
         assert '<span class="faster">3.75x</span>' in lazy
         assert "2.33x" not in lazy

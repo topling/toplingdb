@@ -327,6 +327,7 @@ jobs:
               -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
               -compact_target_level=6
+              -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillrandom.txt" -- \
             "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
@@ -348,6 +349,7 @@ jobs:
               -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
               -compact_target_level=6
+              -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillseq.txt" -- \
             "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log" 2>&1
@@ -414,6 +416,7 @@ jobs:
               -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
               -compact_target_level=6
+              -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillrandom.txt" -- \
             "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
@@ -435,6 +438,7 @@ jobs:
               -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom
               -progress_reports=false
               -compact_target_level=6
+              -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillseq.txt" -- \
             "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log" 2>&1

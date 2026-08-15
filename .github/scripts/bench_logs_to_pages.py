@@ -562,7 +562,7 @@ def _bench_row_names(names: set) -> List[str]:
 def build_db_bench_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
-    """Wide comparison: ops/sec + normalized time-per-op ratios.
+    """Wide comparison: ops/sec plus speed ratios (ops/sec, or 1/seconds for compact).
 
     compact rows display operations/seconds instead of ops/sec.
     """
@@ -575,10 +575,10 @@ def build_db_bench_compare(
     headers = ["benchmark"] + [
         f"{ENGINE_LABELS[e]} ops/sec" for e in ENGINES
     ]
-    headers.append("zipkeyvalue time / zipkeyonly")
+    headers.append("zipkeyonly / zipkeyvalue")
     for base, other in ratio_pairs:
         headers.append(
-            f"{RATIO_OTHER_LABELS[other]} time/op / {RATIO_BASE_LABELS[base]} time/op"
+            f"{RATIO_BASE_LABELS[base]} / {RATIO_OTHER_LABELS[other]}"
         )
     rows_html = []
     for name in names:
@@ -595,9 +595,14 @@ def build_db_bench_compare(
             else:
                 v = ops_by[e].get(name)
                 cells.append(f"<td>{v if v is not None else '—'}</td>")
-        subject_ratio = _subject_time_ratio_cell(
-            sec_by["zipkeyonly"].get(name), sec_by["zipkeyvalue"].get(name)
-        )
+        if is_compact:
+            subject_ratio = _subject_time_ratio_cell(
+                sec_by["zipkeyonly"].get(name), sec_by["zipkeyvalue"].get(name)
+            )
+        else:
+            subject_ratio = _subject_time_ratio_cell(
+                ops_by["zipkeyvalue"].get(name), ops_by["zipkeyonly"].get(name)
+            )
         cells.append(f"<td>{subject_ratio}</td>")
         for base, other in ratio_pairs:
             ratio = (
@@ -656,8 +661,8 @@ def build_lazy_load_compare(
     ]
     headers.extend(
         [
-            "v8.10 time/op / zipkeyonly time/op",
-            "v8.10 time/op / zipkeyvalue time/op",
+            "zipkeyonly / v8.10",
+            "zipkeyvalue / v8.10",
         ]
     )
     def _lazy_ops(eng: str, bench: str) -> Tuple[Optional[int], bool]:
@@ -1366,20 +1371,20 @@ def _render_latest_section(
   {source_links}
   {runner_html}
   <h3>/dev/shm usage (disk space; after db_bench)</h3>
-  <p class="meta">Allocated disk usage (IEC blocks). zipkeyonly does not compress values (speed-optimized). RocksDB uses default Snappy compression. Space ratio = engine / v8.10. {_color_sign()}.</p>
+  <p class="meta">Allocated disk usage (IEC blocks). zipkeyonly does not compress values (speed-optimized). RocksDB uses per-level compression (L0 none, L1-L5 Snappy, L6 Zstd), corresponding to the ToplingDB zipkeyvalue variant's level_writers (lightweight upper levels, heavyweight L6). Space ratio = engine / v8.10. {_color_sign()}.</p>
   {shm_table}
   <h3>Peak RSS (RAM; during db_bench)</h3>
-  <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10. {_color_sign()}. RocksDB omit cells are =readseq (same scan; no omit API). scan-omit-value: restart process, reuse fill* data, scan without access value, benefited by lazy load value (ToplingDB feature).</p>
+  <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10. {_color_sign()}. RocksDB omit cells are =readseq (same scan; no omit). scan-omit-value: restart process, reuse fill* data, scan without access value, benefited by lazy load value (ToplingDB feature).</p>
   {rss_table}
   {rss_svg_section}
   <h3>Comparison: db_bench fillrandom suite (perf)</h3>
-  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/time. {_color_sign()}.</p>
+  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses per-level compression (L0 none, L1-L5 Snappy, L6 Zstd), corresponding to the ToplingDB zipkeyvalue variant's level_writers (lightweight upper levels, heavyweight L6). compact row shows operations/time. {_color_sign()}.</p>
   {fr_compare}
   <h3>Comparison: db_bench fillseq suite (perf)</h3>
-  <p class="meta">Same as fillrandom. RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd: faster, larger size. Seqno-zeroing compact still runs.</p>
+  <p class="meta">Same as fillrandom. RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd on L6: faster, larger size. Seqno-zeroing compact still runs.</p>
   {db_compare_fs}
   <h3>Lazy load demo (scan; RocksDB v8.10 baseline)</h3>
-  <p class="meta">zipkey* needs an extra omit pass: scan_omit_key/value enables lazy value load (no real value load). RocksDB has no omit API, so the baseline is readseq×3 already present in the main fill* suite (no extra pass). RocksDB nextwithkey cells are =readseq. master omitted here (v8.10 is the stronger RocksDB baseline). {_color_sign()}.</p>
+  <p class="meta">zipkey* needs an extra omit pass: scan_omit_key/value enables lazy value load (no real value load). RocksDB has no lazy load, so the baseline is readseq×3 already present in the main fill* suite (no extra pass). RocksDB nextwithkey cells are =readseq. master omitted here (v8.10 is the stronger RocksDB baseline). {_color_sign()}.</p>
   <h4>scan-omit-value on data from fillrandom</h4>
   {omit_fr_table}
   <h4>scan-omit-value on data from fillseq</h4>

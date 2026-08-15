@@ -152,6 +152,22 @@ def load_shm_usages(eng_dir: Path) -> Dict[str, Optional[Dict[str, int]]]:
 
 
 RSS_WORKLOADS = ("fillrandom", "fillseq", "fillrandom-omit", "fillseq-omit")
+RSS_WORKLOAD_LABELS = {
+    "fillrandom": "fillrandom",
+    "fillseq": "fillseq",
+    "fillrandom-omit": "fillrandom scan-omit-value",
+    "fillseq-omit": "fillseq scan-omit-value",
+}
+RSS_WORKLOAD_TIPS = {
+    "fillrandom-omit": (
+        "restart process with reuse db data of fillrandom, "
+        "scan without access value, benefited by lazy load value (ToplingDB feature)"
+    ),
+    "fillseq-omit": (
+        "restart process with reuse db data of fillseq, "
+        "scan without access value, benefited by lazy load value (ToplingDB feature)"
+    ),
+}
 
 
 def parse_rss_usage(text: str) -> Optional[int]:
@@ -262,16 +278,13 @@ def build_rss_usage_table(
     rss_data: Dict[str, Dict[str, Optional[int]]],
     derived_engines: Optional[set] = None,
 ) -> str:
-    """Peak RSS compare: absolute + ratio vs RocksDB v8.10. derived_engines marks omit-from-main."""
+    """Peak RSS compare: absolute + ratio vs RocksDB v8.10. derived_engines marks omit cells."""
     if derived_engines is None:
         derived_engines = set()
 
     headers = ["workload"]
     for e in ENGINES:
-        label = ENGINE_LABELS[e]
-        if e in derived_engines:
-            label += " (derived-from-main)"
-        headers.append(label)
+        headers.append(ENGINE_LABELS[e])
     headers.append("zipkeyonly / v8.10 (RSS)")
     headers.append("zipkeyvalue / v8.10 (RSS)")
 
@@ -283,12 +296,23 @@ def build_rss_usage_table(
 
     rows_html = []
     for wl in workloads:
-        cells = [f"<td>{html.escape(wl)}</td>"]
+        label = html.escape(RSS_WORKLOAD_LABELS.get(wl, wl))
+        tip = RSS_WORKLOAD_TIPS.get(wl)
+        if tip:
+            cells = [
+                f'<td><abbr title="{html.escape(tip, quote=True)}">{label}</abbr></td>'
+            ]
+        else:
+            cells = [f"<td>{label}</td>"]
         for e in ENGINES:
             b = (rss_data.get(e) or {}).get(wl)
-            cells.append(
-                f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
-            )
+            if b is None:
+                text = "n/a"
+            else:
+                text = format_iec(b)
+                if e in derived_engines and wl.endswith("-omit"):
+                    text += " (=readseq)"
+            cells.append(f"<td>{html.escape(text)}</td>")
         v810_bytes = (rss_data.get("rocksdb-v8.10") or {}).get(wl)
         topling_bytes = (rss_data.get("zipkeyonly") or {}).get(wl)
         dz10_bytes = (rss_data.get("zipkeyvalue") or {}).get(wl)
@@ -493,20 +517,10 @@ def _time_ratio_cell(topling_s: Optional[float], other_s: Optional[float]) -> st
 def _subject_time_ratio_cell(
     baseline_s: Optional[float], subject_s: Optional[float]
 ) -> str:
-    """ratio = subject / baseline; color is about the subject (zipkeyvalue).
-
-    >1 → subject slower (red); <1 → subject faster (green).
-    """
+    """ratio = subject / baseline; zipkey* vs zipkey* stays neutral black."""
     if baseline_s is None or subject_s is None or baseline_s <= 0:
         return "—"
-    ratio = subject_s / baseline_s
-    if ratio > 1.0:
-        cls = "slower"
-    elif ratio < 1.0:
-        cls = "faster"
-    else:
-        return f"{ratio:.2f}x"
-    return f'<span class="{cls}">{ratio:.2f}x</span>'
+    return f"{subject_s / baseline_s:.2f}x"
 
 
 def _ratio_pairs() -> List[Tuple[str, str]]:
@@ -516,6 +530,21 @@ def _ratio_pairs() -> List[Tuple[str, str]]:
         for other in ROCKSDB_ENGINES:
             pairs.append((base, other))
     return pairs
+
+
+_BENCH_ROW_ORDER = (
+    "fillrandom",
+    "fillseq",
+    "flush",
+    "compact",
+    "readseq",
+    "readrandom",
+)
+
+
+def _bench_row_names(names: set) -> List[str]:
+    rank = {n: i for i, n in enumerate(_BENCH_ROW_ORDER)}
+    return sorted(names, key=lambda n: (rank.get(n, len(_BENCH_ROW_ORDER)), n))
 
 
 def build_db_bench_compare(
@@ -529,7 +558,7 @@ def build_db_bench_compare(
     sec_by = {e: _seconds_by_benchmark(engines.get(e, [])) for e in ENGINES}
     operations_by = {e: _operations_by_benchmark(engines.get(e, [])) for e in ENGINES}
     key_sets = [set(m.keys()) for m in ops_by.values() if m]
-    names = sorted(set().union(*key_sets)) if key_sets else []
+    names = _bench_row_names(set().union(*key_sets)) if key_sets else []
     ratio_pairs = _ratio_pairs()
     headers = ["benchmark"] + [
         f"{ENGINE_LABELS[e]} ops/sec" for e in ENGINES
@@ -584,6 +613,14 @@ def _hl(text: str, kind: str) -> str:
     return f'<span class="{kind}">{html.escape(text)}</span>'
 
 
+def _color_sign() -> str:
+    return (
+        'color sign: '
+        '<span class="faster"><strong>ToplingDB</strong></span> is '
+        '<span class="faster"><strong>Better</strong></span>/<span class="slower"><strong>Worse</strong></span>'
+    )
+
+
 def build_lazy_load_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
@@ -591,7 +628,14 @@ def build_lazy_load_compare(
     ops_by = {e: _ops_by_benchmark(engines.get(e, [])) for e in LAZY_ENGINES}
     sec_by = {e: _seconds_by_benchmark(engines.get(e, [])) for e in LAZY_ENGINES}
     key_sets = [set(m.keys()) for m in ops_by.values() if m]
-    names = sorted(set().union(*key_sets)) if key_sets else []
+    names = []
+    if key_sets:
+        found = set().union(*key_sets)
+        for preferred in ("readseq", "nextwithkey"):
+            if preferred in found:
+                names.append(preferred)
+                found.remove(preferred)
+        names.extend(sorted(found))
     headers = ["benchmark"] + [
         f"{ENGINE_LABELS[e]} ops/sec" for e in LAZY_ENGINES
     ]
@@ -601,18 +645,36 @@ def build_lazy_load_compare(
             "v8.10 time / zipkeyvalue",
         ]
     )
+    def _lazy_ops(eng: str, bench: str) -> Tuple[Optional[int], bool]:
+        v = ops_by[eng].get(bench)
+        if v is None and eng in ROCKSDB_ENGINES and bench == "nextwithkey":
+            v = ops_by[eng].get("readseq")
+            return v, v is not None
+        return v, False
+
+    def _lazy_sec(eng: str, bench: str) -> Optional[float]:
+        s = sec_by[eng].get(bench)
+        if s is None and eng in ROCKSDB_ENGINES and bench == "nextwithkey":
+            return sec_by[eng].get("readseq")
+        return s
+
     rows_html = []
     for name in names:
         cells = [f"<td>{html.escape(name)}</td>"]
         for e in LAZY_ENGINES:
-            v = ops_by[e].get(name)
-            cells.append(f"<td>{v if v is not None else '—'}</td>")
+            v, derived = _lazy_ops(e, name)
+            if v is None:
+                cells.append("<td>—</td>")
+            elif derived:
+                cells.append(f"<td>{html.escape(str(v))} (=readseq)</td>")
+            else:
+                cells.append(f"<td>{v}</td>")
         # Baseline = v8.10; green when zipkey* is faster (ratio > 1).
         cells.append(
-            f"<td>{_time_ratio_cell(sec_by['zipkeyonly'].get(name), sec_by['rocksdb-v8.10'].get(name))}</td>"
+            f"<td>{_time_ratio_cell(_lazy_sec('zipkeyonly', name), _lazy_sec('rocksdb-v8.10', name))}</td>"
         )
         cells.append(
-            f"<td>{_time_ratio_cell(sec_by['zipkeyvalue'].get(name), sec_by['rocksdb-v8.10'].get(name))}</td>"
+            f"<td>{_time_ratio_cell(_lazy_sec('zipkeyvalue', name), _lazy_sec('rocksdb-v8.10', name))}</td>"
         )
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     if not rows_html:
@@ -1233,7 +1295,13 @@ def _render_latest_section(
         eng_rss_raw = engines.get(e, {}).get("rss_usage") or {}
         rss_data[e] = {wl: v for wl, v in eng_rss_raw.items()}
         if e in ROCKSDB_ENGINES:
-            if eng_rss_raw.get("fillrandom-omit") is not None or eng_rss_raw.get("fillseq-omit") is not None:
+            for src, dst in (("fillrandom", "fillrandom-omit"), ("fillseq", "fillseq-omit")):
+                if rss_data[e].get(dst) is None and rss_data[e].get(src) is not None:
+                    rss_data[e][dst] = rss_data[e][src]
+            if (
+                rss_data[e].get("fillrandom-omit") is not None
+                or rss_data[e].get("fillseq-omit") is not None
+            ):
                 rss_derived_engines.add(e)
     rss_table = build_rss_usage_table(rss_data, rss_derived_engines)
 
@@ -1285,27 +1353,27 @@ def _render_latest_section(
      {html.escape(_fmt_utc(entry.get('timestamp', '')))}</p>
   {source_links}
   {runner_html}
-  <h3>/dev/shm usage (disk space; after db_bench + omit/scan)</h3>
-  <p class="meta">Allocated disk usage (IEC blocks). RocksDB uses default Snappy compression. Space ratio = engine / v8.10; {_hl('<1 = less space than RocksDB', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
+  <h3>/dev/shm usage (disk space; after db_bench)</h3>
+  <p class="meta">Allocated disk usage (IEC blocks). zipkeyonly does not compress values (speed-optimized). RocksDB uses default Snappy compression. Space ratio = engine / v8.10. {_color_sign()}.</p>
   {shm_table}
   <h3>Peak RSS (RAM; during db_bench)</h3>
-  <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10; {_hl('<1 = less RSS', 'faster')}, {_hl('>1 = more RSS', 'slower')}. RocksDB omit columns are derived-from-main (no separate omit pass).</p>
+  <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10. {_color_sign()}. RocksDB omit cells are =readseq (same scan; no omit API). scan-omit-value: restart process, reuse fill* data, scan without access value, benefited by lazy load value (ToplingDB feature).</p>
   {rss_table}
   {rss_svg_section}
   <h3>Comparison: db_bench fillrandom suite (perf)</h3>
-  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / zipkey*: {_hl('>1 = that zipkey* engine faster', 'faster')}. Values show ops/sec.</p>
+  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/time. {_color_sign()}.</p>
   {fr_compare}
   <h3>Comparison: db_bench fillseq suite (perf)</h3>
-  <p class="meta">Same as fillrandom. Watch {_hl('compact / readseq / readrandom', 'slower')} cost for minDictZip=10 vs {_hl('space savings', 'faster')} above.</p>
+  <p class="meta">Same as fillrandom. RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd: faster, larger size. Seqno-zeroing compact still runs.</p>
   {db_compare_fs}
   <h3>Lazy load demo (scan; RocksDB v8.10 baseline)</h3>
-  <p class="meta">zipkey* needs an extra omit pass: scan_omit_key/value enables lazy value load (no real value load). RocksDB has no omit API, so the baseline is readseq×3 already present in the main fill* suite (no extra pass). master omitted here (v8.10 is the stronger RocksDB baseline). Time ratio = v8.10 / zipkey*: {_hl('>1 = zipkey* faster', 'faster')}, {_hl('<1 = zipkey* slower', 'slower')}. nextwithkey is ToplingDB-only.</p>
-  <h4>fillrandom-omit / scan</h4>
+  <p class="meta">zipkey* needs an extra omit pass: scan_omit_key/value enables lazy value load (no real value load). RocksDB has no omit API, so the baseline is readseq×3 already present in the main fill* suite (no extra pass). RocksDB nextwithkey cells are =readseq. master omitted here (v8.10 is the stronger RocksDB baseline). {_color_sign()}.</p>
+  <h4>scan-omit-value on data from fillrandom</h4>
   {omit_fr_table}
-  <h4>fillseq-omit / scan</h4>
+  <h4>scan-omit-value on data from fillseq</h4>
   {omit_fs_table}
   <h3>memtablerep_bench: CSPPMemTable advantage</h3>
-  <p class="meta">Focus: {_hl('CSPP (ToplingDB)', 'faster')} vs skiplist. Baseline = RocksDB v8.10 skiplist. Column &quot;CSPP / v8.10&quot;: for throughput {_hl('>1 = CSPP faster', 'faster')}; for us/op and elapsed {_hl('<1 = CSPP cheaper', 'faster')}.</p>
+  <p class="meta">Focus: {_hl('CSPP (ToplingDB)', 'faster')} vs skiplist. Baseline = RocksDB v8.10 skiplist. {_color_sign()}.</p>
   {cspp_compare}
 """
 

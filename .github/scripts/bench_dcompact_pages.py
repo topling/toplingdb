@@ -393,6 +393,14 @@ def _hl(text: str, kind: str) -> str:
     return f'<span class="{kind}">{html.escape(text)}</span>'
 
 
+def _color_sign() -> str:
+    return (
+        'color sign: '
+        '<span class="faster"><strong>ToplingDB</strong></span> is '
+        '<span class="faster"><strong>Better</strong></span>/<span class="slower"><strong>Worse</strong></span>'
+    )
+
+
 def _ops_by_benchmark(rows: List[Dict[str, str]]) -> Dict[str, int]:
     out: Dict[str, int] = {}
     for row in rows:
@@ -439,17 +447,10 @@ def _time_ratio_cell(topling_s: Optional[float], other_s: Optional[float]) -> st
 def _subject_time_ratio_cell(
     baseline_s: Optional[float], subject_s: Optional[float]
 ) -> str:
-    """ratio = subject / baseline; color is about the subject (zipkeyvalue)."""
+    """ratio = subject / baseline; zipkey* vs zipkey* stays neutral black."""
     if baseline_s is None or subject_s is None or baseline_s <= 0:
         return "—"
-    ratio = subject_s / baseline_s
-    if ratio > 1.0:
-        cls = "slower"
-    elif ratio < 1.0:
-        cls = "faster"
-    else:
-        return f"{ratio:.2f}x"
-    return f'<span class="{cls}">{ratio:.2f}x</span>'
+    return f"{subject_s / baseline_s:.2f}x"
 
 
 def _ratio_pairs() -> List[Tuple[str, str]]:
@@ -461,6 +462,21 @@ def _ratio_pairs() -> List[Tuple[str, str]]:
     return pairs
 
 
+_BENCH_ROW_ORDER = (
+    "fillrandom",
+    "fillseq",
+    "flush",
+    "compact",
+    "readseq",
+    "readrandom",
+)
+
+
+def _bench_row_names(names: set) -> List[str]:
+    rank = {n: i for i, n in enumerate(_BENCH_ROW_ORDER)}
+    return sorted(names, key=lambda n: (rank.get(n, len(_BENCH_ROW_ORDER)), n))
+
+
 def build_db_bench_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
@@ -469,7 +485,7 @@ def build_db_bench_compare(
     sec_by = {e: _seconds_by_benchmark(engines.get(e, [])) for e in ENGINES}
     operations_by = {e: _operations_by_benchmark(engines.get(e, [])) for e in ENGINES}
     key_sets = [set(m.keys()) for m in ops_by.values() if m]
-    names = sorted(set().union(*key_sets)) if key_sets else []
+    names = _bench_row_names(set().union(*key_sets)) if key_sets else []
     ratio_pairs = _ratio_pairs()
     headers = ["benchmark"] + [
         f"{ENGINE_LABELS[e]} ops/sec" for e in ENGINES
@@ -941,17 +957,17 @@ def _render_dcompact_section(
   {dcompact_notes}
   {runner_html}
   <h3>/dev/shm usage (disk space; after db_bench)</h3>
-  <p class="meta">Allocated disk usage (IEC blocks). RocksDB uses default Snappy compression. Space ratio = engine / v8.10; {_hl('<1 = less space than RocksDB', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
+  <p class="meta">Allocated disk usage (IEC blocks). zipkeyonly does not compress values (speed-optimized). RocksDB uses default Snappy compression. Space ratio = engine / v8.10. {_color_sign()}.</p>
   {shm_table}
   <h3>Peak RSS (RAM; during db_bench)</h3>
-  <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10; {_hl('<1 = less RSS', 'faster')}, {_hl('>1 = more RSS', 'slower')}.</p>
+  <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10. {_color_sign()}.</p>
   {rss_table}
   {rss_svg_section}
   <h3>Comparison: db_bench fillrandom suite (perf)</h3>
-  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / zipkey*: {_hl('>1 = that zipkey* engine faster', 'faster')}. Values show ops/sec.</p>
+  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/time. {_color_sign()}.</p>
   {fr_compare}
   <h3>Comparison: db_bench fillseq suite (perf)</h3>
-  <p class="meta">Same as fillrandom. Watch {_hl('compact / readseq / readrandom', 'slower')} cost for minDictZip=10 vs {_hl('space savings', 'faster')} above.</p>
+  <p class="meta">Same as fillrandom. RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd: faster, larger size. Seqno-zeroing compact still runs.</p>
   {db_compare_fs}
 """
 

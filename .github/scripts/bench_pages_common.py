@@ -69,7 +69,7 @@ def page(title: str, body: str, include_chart_js: bool = True) -> str:
     a {{ color: #0645ad; }}
     .meta {{ color: #000; font-size: 0.9rem; }}
     .faster {{ color: #0a7a28; font-weight: 600; }}
-    .slower {{ color: #a30d0d; }}
+    .slower {{ color: #a30d0d; font-weight: 600; }}
     .rss-chart-wrap {{ margin: 0.75rem 0 1.25rem; }}
   </style>
 </head>

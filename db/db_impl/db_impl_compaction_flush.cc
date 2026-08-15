@@ -25,6 +25,8 @@
 #include "util/concurrent_task_limiter_impl.h"
 #include "util/udt_util.h"
 
+#include "db/compaction/compaction.h"
+
 namespace ROCKSDB_NAMESPACE {
 
 bool DBImpl::EnoughRoomForCompaction(
@@ -1348,11 +1350,14 @@ Status DBImpl::CompactRangeInternal(const CompactRangeOptions& options,
     // conflicts with other activities (e.g, compaction, flush) that are
     // currently avoided by `Enable/DisableManualCompaction` and
     // `Continue/PauseBackgroundWork`.
+    bool is_trivial_move = true;
+    int refit_to_level = options.target_level;
     DisableManualCompaction();
     s = PauseBackgroundWork();
     if (s.ok()) {
       TEST_SYNC_POINT("DBImpl::CompactRange:PreRefitLevel");
-      s = ReFitLevel(cfd, final_output_level, options.target_level);
+      s = ReFitLevel(cfd, final_output_level, options.target_level,
+                     &is_trivial_move, &refit_to_level);
       TEST_SYNC_POINT("DBImpl::CompactRange:PostRefitLevel");
       // ContinueBackgroundWork always return Status::OK().
       Status temp_s = ContinueBackgroundWork();
@@ -1361,6 +1366,19 @@ Status DBImpl::CompactRangeInternal(const CompactRangeOptions& options,
     EnableManualCompaction();
     TEST_SYNC_POINT(
         "DBImpl::CompactRange:PostRefitLevel:ManualCompactionEnabled");
+    if (s.ok() && !is_trivial_move) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "[%s] post-refit rewrite at L%d (kForce-equivalent)",
+                     cfd->GetName().c_str(), refit_to_level);
+      CompactRangeOptions force_opts = options;
+      force_opts.change_level = false;
+      force_opts.bottommost_level_compaction = BottommostLevelCompaction::kForce;
+      s = RunManualCompaction(
+          cfd, refit_to_level, refit_to_level, force_opts, begin, end, exclusive,
+          true /* disallow_trivial_move */,
+          std::numeric_limits<uint64_t>::max() /* max_file_num_to_ignore */,
+          trim_ts);
+    }
   }
   LogFlush(immutable_db_options_.info_log);
 
@@ -1748,7 +1766,10 @@ void DBImpl::NotifyOnCompactionCompleted(
 
 // REQUIREMENT: block all background work by calling PauseBackgroundWork()
 // before calling this function
-Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
+Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level,
+                          bool* is_trivial_move, int* actual_to_level) {
+  assert(is_trivial_move != nullptr);
+  assert(actual_to_level != nullptr);
   assert(level < cfd->NumberLevels());
   if (target_level >= cfd->NumberLevels()) {
     return Status::InvalidArgument("Target level exceeds number of levels");
@@ -1792,6 +1813,10 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
     if (to_level > level) {
       if (level == 0) {
         refitting_level_ = false;
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                       "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                       cfd->GetName().c_str(), level, to_level,
+                       "Cannot change from level 0 to other levels.");
         return Status::NotSupported(
             "Cannot change from level 0 to other levels.");
       }
@@ -1799,6 +1824,10 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
       for (int l = level + 1; l <= to_level; l++) {
         if (vstorage->NumLevelFiles(l) > 0) {
           refitting_level_ = false;
+          ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                         "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                         cfd->GetName().c_str(), level, to_level,
+                         "Levels between source and target are not empty for a move.");
           return Status::NotSupported(
               "Levels between source and target are not empty for a move.");
         }
@@ -1806,6 +1835,11 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                                             refit_level_largest.user_key(),
                                             l)) {
           refitting_level_ = false;
+          ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                         "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                         cfd->GetName().c_str(), level, to_level,
+                         "Levels between source and target will have some "
+                         "ongoing compaction's output.");
           return Status::NotSupported(
               "Levels between source and target "
               "will have some ongoing compaction's output.");
@@ -1817,6 +1851,11 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
       for (int l = to_level; l < level; l++) {
         if (vstorage->NumLevelFiles(l) > 0) {
           refitting_level_ = false;
+          ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                         "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                         cfd->GetName().c_str(), level, to_level,
+                         "Levels between source and target are not empty for a "
+                         "move.");
           return Status::NotSupported(
               "Levels between source and target are not empty for a move.");
         }
@@ -1824,6 +1863,11 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                                             refit_level_largest.user_key(),
                                             l)) {
           refitting_level_ = false;
+          ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                         "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                         cfd->GetName().c_str(), level, to_level,
+                         "Levels between source and target will have some "
+                         "ongoing compaction's output.");
           return Status::NotSupported(
               "Levels between source and target "
               "will have some ongoing compaction's output.");
@@ -1834,6 +1878,15 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                     "[%s] Before refitting:\n%s", cfd->GetName().c_str(),
                     cfd->current()->DebugString().data());
 
+    int base_level = 1;
+    if (cfd->ioptions()->compaction_style == kCompactionStyleLevel) {
+      base_level = vstorage->base_level();
+    }
+    const CompressionType output_compression = GetCompressionType(
+        vstorage, mutable_cf_options, to_level, base_level);
+    const CompressionOptions output_compression_opts =
+        GetCompressionOptions(mutable_cf_options, vstorage, to_level);
+
     std::unique_ptr<Compaction> c(new Compaction(
         vstorage, *cfd->ioptions(), mutable_cf_options, mutable_db_options_,
         {input}, to_level,
@@ -1843,14 +1896,17 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                 ->compaction_style) /* output file size limit, not applicable */
         ,
         LLONG_MAX /* max compaction bytes, not applicable */,
-        0 /* output path ID, not applicable */, mutable_cf_options.compression,
-        mutable_cf_options.compression_opts, Temperature::kUnknown,
+        0 /* output path ID, not applicable */, output_compression,
+        output_compression_opts, Temperature::kUnknown,
         0 /* max_subcompactions, not applicable */,
         {} /* grandparents, not applicable */, false /* is manual */,
         "" /* trim_ts */, -1 /* score, not applicable */,
         false /* is deletion compaction, not applicable */,
         false /* l0_files_might_overlap, not applicable */,
         CompactionReason::kRefitLevel));
+    c->FinalizeInputInfo(cfd->current());
+    const bool trivial_move = c->IsTrivialMove();
+
     cfd->compaction_picker()->RegisterCompaction(c.get());
     TEST_SYNC_POINT("DBImpl::ReFitLevel:PostRegisterCompaction");
     VersionEdit edit;
@@ -1884,9 +1940,20 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                     cfd->GetName().c_str(), status.ToString().data());
 
     if (status.ok()) {
+      *is_trivial_move = trivial_move;
+      *actual_to_level = to_level;
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "[%s] [ReFitLevel] moved %zu files from L%d to L%d",
+                     cfd->GetName().c_str(), input[0].files.size(), level,
+                     to_level);
       ROCKS_LOG_DEBUG(immutable_db_options_.info_log,
                       "[%s] After refitting:\n%s", cfd->GetName().c_str(),
                       cfd->current()->DebugString().data());
+    } else {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "[%s] [ReFitLevel] failed from L%d to L%d: %s",
+                     cfd->GetName().c_str(), level, to_level,
+                     status.ToString().c_str());
     }
     sv_context.Clean();
     refitting_level_ = false;

@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -154,6 +156,79 @@ def check(mod) -> None:
     assert abs(float(last.group(2)) + last_w - plot_right) < 1e-6
 
 
+_DB_BENCH_LINE = (
+    "fillseq : 1.0 micros/op 1000 ops/sec 1.0 seconds 1000 operations; x\n"
+)
+_STATM_SERIES = (
+    "# start_epoch=100.0  page_size=4096  cachestat=ok  "
+    "fields=size,resident,shared,text,lib,data,dt,pagecache\n"
+    "100.0 1000 800 200 1 0 50 0 512\n"
+    "101.0 1000 900 250 1 0 50 0 1024\n"
+)
+
+
+def _write_min_logs(log_root: Path) -> None:
+    log_root.mkdir(parents=True, exist_ok=True)
+    (log_root / "bench_settings.txt").write_text(
+        "num=1000\nkey_size=8\nvalue_size=16\n", encoding="utf-8"
+    )
+    (log_root / "runner_env.txt").write_text(
+        "os_pretty_name=TestOS\nkernel=1.0\ncpu_model=TestCPU\ncpu_count=2\n",
+        encoding="utf-8",
+    )
+    for eng in ("zipkeyonly", "zipkeyvalue"):
+        eng_dir = log_root / eng
+        eng_dir.mkdir(parents=True, exist_ok=True)
+        (eng_dir / "db_bench.log").write_text(_DB_BENCH_LINE, encoding="utf-8")
+        (eng_dir / "statm_series-fillseq.txt").write_text(
+            _STATM_SERIES, encoding="utf-8"
+        )
+
+
+def check_pages_contract(mod, variant: str) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        log_root = tmp_path / "logs"
+        emit_out = tmp_path / "emit"
+        site = tmp_path / "site"
+        _write_min_logs(log_root)
+        emit_args = argparse.Namespace(
+            variant=variant,
+            run_id="id with space",
+            log_root=str(log_root),
+            engine_meta_root=None,
+            actions_run_url="",
+            out=str(emit_out),
+        )
+        mod.emit(emit_args)
+        run_dirs = list((emit_out / "runs").iterdir())
+        assert len(run_dirs) == 1, run_dirs
+        result_html = (run_dirs[0] / "index.html").read_text(encoding="utf-8")
+        assert "initWrap" not in result_html
+        assert "Comparison:" not in result_html
+        assert "Result table:" in result_html
+
+        merge_kw = {
+            "merge_into": str(site),
+            "from_dir": str(emit_out),
+        }
+        if variant != "dcompact":
+            merge_kw["variant"] = variant
+        mod.merge(argparse.Namespace(**merge_kw))
+        if variant == "dcompact":
+            home = (site / "dcompact" / "index.html").read_text(encoding="utf-8")
+            result_href = "../runs/"
+        else:
+            home = (site / "index.html").read_text(encoding="utf-8")
+            result_href = "runs/"
+        assert "initWrap" in home
+        assert "Comparison:" in home
+        assert "RAM usage over time" in home
+        assert "result table" in home
+        assert f"{result_href}" in home
+        assert "id%20with%20space/index.html" in home
+
+
 def main() -> int:
     here = Path(__file__).resolve().parent
     if str(here) not in sys.path:
@@ -161,29 +236,59 @@ def main() -> int:
     chart = load("bench_rss_chart", here / "bench_rss_chart.py")
     check(chart)
     print("OK bench_rss_chart")
-    for name in ("bench_logs_to_pages", "bench_dcompact_pages"):
+    common = load("bench_pages_common", here / "bench_pages_common.py")
+    assert common.build_rss_svg.__module__ == "bench_rss_chart"
+    assert common.RSS_LINE_COLORS == chart.RSS_LINE_COLORS
+    assert (
+        common.fmt_utc("2026-08-14T13:15:15.583652+00:00")
+        == "2026-08-14 13:15:15+00:00"
+    )
+    assert common.fmt_utc("2026-08-14 13:15:15+00:00") == "2026-08-14 13:15:15+00:00"
+    assert common.fmt_utc("") == ""
+    assert common.href("raw", "zipkeyonly", "db_bench.log") == "raw/zipkeyonly/db_bench.log"
+    assert (
+        common.href("../runs/a b/raw", "zipkeyonly", "x.yaml")
+        == "../runs/a%20b/raw/zipkeyonly/x.yaml"
+    )
+    assert not common.artifact_log_link("https://example/run", False)
+    assert "artifacts" in common.artifact_log_link("https://example/run", True)
+    bare = common.page("t", "<p>x</p>", include_chart_js=False)
+    assert "initWrap" not in bare
+    full = common.page("t", "<p>x</p>", include_chart_js=True)
+    assert "initWrap" in full
+    with tempfile.TemporaryDirectory() as tmp:
+        log_root = Path(tmp)
+        eng_dir = log_root / "zipkeyonly"
+        eng_dir.mkdir()
+        (eng_dir / "statm_series-fillseq.txt").write_text(
+            _STATM_SERIES, encoding="utf-8"
+        )
+        bad = common.build_rss_svg_section(
+            log_root,
+            {"zipkeyonly": {"db_bench": [], "db_bench_fillrandom": []}},
+            ("zipkeyonly",),
+            {"zipkeyonly": "Z"},
+            lambda *_a, **_k: [],
+            heading="<script>",
+        )
+        assert "<h3>RAM usage over time</h3>" in bad
+        assert "<script>" not in bad
+    print("OK bench_pages_common")
+    for name, variant in (
+        ("bench_logs_to_pages", "plain"),
+        ("bench_dcompact_pages", "dcompact"),
+    ):
         mod = load(name, here / f"{name}.py")
-        # Pages import the shared module (importlib may load a second copy).
-        assert mod.build_rss_svg.__module__ == "bench_rss_chart"
-        assert mod.RSS_LINE_COLORS == chart.RSS_LINE_COLORS
-        assert (
-            mod._fmt_utc("2026-08-14T13:15:15.583652+00:00")
-            == "2026-08-14 13:15:15+00:00"
-        )
-        assert mod._fmt_utc("2026-08-14 13:15:15+00:00") == "2026-08-14 13:15:15+00:00"
-        assert mod._fmt_utc("") == ""
-        assert mod._href("raw", "zipkeyonly", "db_bench.log") == "raw/zipkeyonly/db_bench.log"
-        assert (
-            mod._href("../runs/a b/raw", "zipkeyonly", "x.yaml")
-            == "../runs/a%20b/raw/zipkeyonly/x.yaml"
-        )
-        assert not mod._artifact_log_link("https://example/run", False)
-        assert "artifacts" in mod._artifact_log_link("https://example/run", True)
-        bare = mod._page("t", "<p>x</p>", include_chart_js=False)
-        assert "initWrap" not in bare
-        full = mod._page("t", "<p>x</p>", include_chart_js=True)
-        assert "initWrap" in full
-        print(f"OK {name} (imports shared chart)")
+        assert mod._fmt_utc.__module__ == "bench_pages_common"
+        assert mod._page.__module__ == "bench_pages_common"
+        if name == "bench_logs_to_pages":
+            html = mod._build_runner_section(
+                {"os_pretty_name": "TestOS"}, None, None, False
+            )
+            assert "num=" not in html
+            assert "TestOS" in html
+        check_pages_contract(mod, variant)
+        print(f"OK {name} (imports shared pages chrome; emit/merge contract)")
     return 0
 
 

@@ -16,7 +16,7 @@
 - worker 检查 `output_root` 必须以 `hoster_root` 开头，否则 HTTP 412。
 - `NFS_DYNAMIC_MOUNT=0` 时不 mount，直接按替换后路径访问。
 
-已落地 CI 模板（`.github/bench-conf/db_bench_enterprise_dcompact_ci.yaml`）：
+已落地 CI 模板（`.github/bench-conf/db_bench_enterprise_dcompact_zipkeyonly.yaml`）：
 
 | 项 | 值 |
 |---|---|
@@ -80,7 +80,7 @@ Topling 扩展语义（非上游 RocksDB 默认行为）：
 上游 RocksDB 源码：`build_upstream_rocksdb.sh` 有 `facebook` remote 时 worktree，否则 clone。
 
 联调脚本：
-- `.github/scripts/run_dcompact_bench.sh`（Topling 四引擎中的 topling + dictzip10）
+- `.github/scripts/run_dcompact_bench.sh`（Topling 引擎 zipkeyonly + zipkeyvalue）
 - `.github/scripts/run_rocksdb_cs_bench.sh`（RocksDB CompactionService spool）
 
 ## 3. cgroup

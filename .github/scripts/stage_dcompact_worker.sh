@@ -8,10 +8,12 @@ set -euo pipefail
 
 PREFIX="${1:?topling prefix required (contains bin/ lib/)}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-YAML_SRC="$REPO_ROOT/.github/bench-conf/db_bench_enterprise_dcompact_ci.yaml"
+YAML_SRC_ZKO="$REPO_ROOT/.github/bench-conf/db_bench_enterprise_dcompact_zipkeyonly.yaml"
+YAML_SRC_ZKV="$REPO_ROOT/.github/bench-conf/db_bench_enterprise_dcompact_zipkeyvalue.yaml"
 
 test -d "$PREFIX/bin"
-test -f "$YAML_SRC"
+test -f "$YAML_SRC_ZKO"
+test -f "$YAML_SRC_ZKV"
 
 # Locate worker built by `make dcompact_worker` (Makefile copies to OBJ_DIR and
 # builds under sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/).
@@ -42,7 +44,9 @@ fi
 
 cp -a "$WORKER_SRC" "$PREFIX/bin/dcompact_worker.exe"
 chmod +x "$PREFIX/bin/dcompact_worker.exe"
-cp -a "$YAML_SRC" "$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_ci.yaml"
+cp -a "$YAML_SRC_ZKO" "$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_zipkeyonly.yaml"
+cp -a "$YAML_SRC_ZKV" \
+  "$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_zipkeyvalue.yaml"
 
 export LD_LIBRARY_PATH="$PREFIX/lib:${LD_LIBRARY_PATH:-}"
 missing="$(ldd "$PREFIX/bin/dcompact_worker.exe" | grep 'not found' || true)"
@@ -53,5 +57,5 @@ if [[ -n "$missing" ]]; then
   exit 1
 fi
 
-echo "staged dcompact_worker + CI yaml -> ${PREFIX}"
+echo "staged dcompact_worker + CI yamls (zipkeyonly/zipkeyvalue) -> ${PREFIX}"
 ldd "$PREFIX/bin/dcompact_worker.exe" || true

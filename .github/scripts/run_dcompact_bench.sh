@@ -2,7 +2,7 @@
 # Run ToplingDB db_bench under CPUQuota cgroup with a same-host dcompact_worker
 # on remaining cores. Shared by local full-pipeline runs and CI (dcompact variant).
 #
-# Engines: topling + topling-dictzip10 (runtime yaml graft of minDictZipValueSize).
+# Engines: zipkeyonly + zipkeyvalue (prebaked yaml; L6 differs).
 #
 # Usage:
 #   PREFIX=/path/to/topling/install NUM=1000000 WRITE_BUFFER_SIZE=33554432 \
@@ -10,7 +10,8 @@
 #
 # Env:
 #   PREFIX              Topling install prefix (bin/, lib/, toplingdb-conf/)
-#   YAML                Path to dcompact CI yaml (default: PREFIX/toplingdb-conf/...)
+#   YAML_ZIPKEYONLY     Prebaked zipkeyonly yaml (default: PREFIX/.../dcompact_zipkeyonly.yaml)
+#   YAML_ZIPKEYVALUE    Prebaked zipkeyvalue yaml (.../dcompact_zipkeyvalue.yaml)
 #   NUM                 db_bench -num (default 1000000 local; CI overrides)
 #   VALUE_SIZE          db_bench -value_size (default 50)
 #   WRITE_BUFFER_SIZE   bytes; if set, rewrite yaml temp copy write_buffer_size
@@ -18,47 +19,52 @@
 #   CPU_QUOTA           write-side db_bench systemd CPUQuota (default 50%)
 #   WORKER_PORT         dcompact_worker listen port (default 8080)
 #   MAX_PARALLEL_COMPACTIONS  (default 4)
+#   MULTI_PROCESS       ToplingZipTable: fork per compact (default 1)
+#   ZIP_SERVER_OPTIONS  ZipServer civet opts when MULTI_PROCESS=1
+#                       (default listening_ports=8090:num_threads=8)
+#   ToplingZipTable_localTempDir  (default /dev/shm)
 #   CI                  Set to 1 for GitHub Actions (sudo systemd-run --uid=...)
 #   SKIP_VERIFY         Set to 1 to skip post-run evidence checks
-#   ENGINES             Space-separated: "topling" and/or "topling-dictzip10"
+#   ENGINES             Space-separated: "zipkeyonly" and/or "zipkeyvalue"
 #                       (default: both)
-#   L1_WRITER           dispatch level_writers[1]: fast|simple|light_zip|zip|bb (default simple)
 #
-# Runtime yaml grafts (temp copy only; worker_cpu = nproc - db_cpu):
-#   max_level1_subcompactions  = max(2, min(7, ceil(db_cpu)))
-#   max_background_flushes     = 1
-#   max_background_compactions = min(13, ceil(nproc - db_cpu))
-#   dcompact_min_level         = 2  (L0→L1 local: memtable_as_log_index WAL
-#                                    blob numbers must be allocated on DB)
-#   dispatch level_writers[1]  = $L1_WRITER  (first level_writers: line only)
+# Runtime yaml grafts (temp copy only):
+#   max_background_compactions = max(1, min(13, ceil(nproc - db_cpu)))
+#   worker_port / optional write_buffer_size
+#   fillrandom: --prefix-level-writers 3 simple
+#   fillseq:    --prefix-level-writers 6 zipkeyonly  (keeps L6)
 set -euo pipefail
 
 PREFIX="${PREFIX:?PREFIX (Topling install root) required}"
-YAML="${YAML:-$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_ci.yaml}"
+YAML_ZIPKEYONLY="${YAML_ZIPKEYONLY:-$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_zipkeyonly.yaml}"
+YAML_ZIPKEYVALUE="${YAML_ZIPKEYVALUE:-$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_zipkeyvalue.yaml}"
 NUM="${NUM:-1000000}"
 VALUE_SIZE="${VALUE_SIZE:-50}"
 LOGDIR_BASE="${LOGDIR_BASE:-logs}"
 CPU_QUOTA="${CPU_QUOTA:-50%}"
-L1_WRITER="${L1_WRITER:-simple}"
 # DB path must match yaml databases.*.path. hoster_root=/dev/shm — NEVER rm -rf hoster.
 DB_PATH="${DB_PATH:-/dev/shm/db_bench_enterprise}"
 WORKER_PORT="${WORKER_PORT:-8080}"
-MAX_PARALLEL_COMPACTIONS="${MAX_PARALLEL_COMPACTIONS:-4}"
-WORKER_DB_ROOT="${WORKER_DB_ROOT:-/tmp/dcompact-worker}"
-NFS_MOUNT_ROOT="${NFS_MOUNT_ROOT:-/dev}"
-ENGINES="${ENGINES:-topling topling-dictzip10}"
-
-case "$L1_WRITER" in
-  fast|simple|light_zip|zip|bb) ;;
-  *) echo "FAIL: L1_WRITER must be fast|simple|light_zip|zip|bb, got $L1_WRITER" >&2; exit 1 ;;
-esac
+ENGINES="${ENGINES:-zipkeyonly zipkeyvalue}"
+export NFS_DYNAMIC_MOUNT=0
+export NFS_MOUNT_ROOT="${NFS_MOUNT_ROOT:-/dev}"
+export WORKER_DB_ROOT="${WORKER_DB_ROOT:-/dev/shm/dcompact-worker}"
+export MAX_PARALLEL_COMPACTIONS="${MAX_PARALLEL_COMPACTIONS:-4}"
+export ToplingZipTable_localTempDir="${ToplingZipTable_localTempDir:-/dev/shm}"
+export DictZipBlobStore_zipThreads="${DictZipBlobStore_zipThreads:-4}"
+# Disabled: MULTI_PROCESS forks each compact and ZipServer uses
+# process_vm_readv on the child; Yama/ptrace_scope on GHA runners and WSL
+# returns EPERM -> ZipServer /index 412 -> child SIGABRT -> hoster MaxRetry DIE.
+# export MULTI_PROCESS="${MULTI_PROCESS:-1}"
+# export ZIP_SERVER_OPTIONS="${ZIP_SERVER_OPTIONS:-listening_ports=8090:num_threads=8}"
 
 test -x "$PREFIX/bin/db_bench"
 test -x "$PREFIX/bin/dcompact_worker.exe" || test -x "$PREFIX/bin/dcompact_worker"
-test -f "$YAML"
+test -f "$YAML_ZIPKEYONLY"
+test -f "$YAML_ZIPKEYVALUE"
 
-# Path invariants (fail fast before starting worker).
-python3 - "$YAML" "$DB_PATH" "$NFS_MOUNT_ROOT" <<'PY'
+# Path invariants (fail fast before starting worker); check zipkeyonly yaml.
+python3 - "$YAML_ZIPKEYONLY" "$DB_PATH" "$NFS_MOUNT_ROOT" <<'PY'
 import sys
 from pathlib import Path
 yaml_path, db_path, nfs_root = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -91,11 +97,31 @@ if [[ ! -x "$WORKER_BIN" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SAMPLE_STATM="$("$SCRIPT_DIR/ensure_sample_statm_fdcache.sh")"
+"$SCRIPT_DIR/ensure_sample_statm_fdcache.sh" >/dev/null
+SAMPLE_STATM="$SCRIPT_DIR/run_sample_statm_fdcache.sh"
+chmod +x "$SAMPLE_STATM"
 TMP_YAML_DIR="$(mktemp -d)"
 WORKER_PID=""
 WORKER_LOG="${LOGDIR_BASE}/dcompact_worker.log"
 mkdir -p "$LOGDIR_BASE" "$WORKER_DB_ROOT"
+
+NPROC="$(nproc)"
+# db_cpu from CPU_QUOTA percent; MBC = max(1, min(13, ceil(nproc - db_cpu)))
+MBC="$(python3 - "$CPU_QUOTA" "$NPROC" <<'PY'
+import math, re, sys
+q, nproc = sys.argv[1], int(sys.argv[2])
+m = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)%", q.strip())
+if not m:
+    sys.exit(f"FAIL: CPUQuota must look like 50%, got {q!r}")
+db_cpu = float(m.group(1)) / 100.0
+if nproc <= 0:
+    sys.exit(f"FAIL: nproc must be > 0, got {nproc}")
+if db_cpu >= nproc:
+    sys.exit(f"FAIL: db_cpu={db_cpu} >= nproc={nproc}")
+print(max(1, min(13, math.ceil(nproc - db_cpu))))
+PY
+)"
+echo "graft mbc: nproc=${NPROC} cpu_quota=${CPU_QUOTA} max_background_compactions=${MBC}"
 
 cleanup() {
   if [[ -n "${WORKER_PID}" ]] && kill -0 "$WORKER_PID" 2>/dev/null; then
@@ -115,34 +141,27 @@ export ROCKSDB_KICK_OUT_OPTIONS_FILE="${ROCKSDB_KICK_OUT_OPTIONS_FILE:-1}"
 
 make_yaml_for_engine() {
   local eng="$1"
+  local src
+  case "$eng" in
+    zipkeyonly) src="$YAML_ZIPKEYONLY" ;;
+    zipkeyvalue) src="$YAML_ZIPKEYVALUE" ;;
+    *) echo "FAIL: unknown engine $eng (want zipkeyonly|zipkeyvalue)" >&2; exit 1 ;;
+  esac
   local out="$TMP_YAML_DIR/${eng}.yaml"
-  cp -a "$YAML" "$out"
   local graft_args=(
-    --profile dcompact
-    --cpu-quota "$CPU_QUOTA"
-    --nproc "$(nproc)"
-    --l1-writer "$L1_WRITER"
+    --set-max-background-compactions "$MBC"
     --worker-port "$WORKER_PORT"
   )
   if [[ -n "${WRITE_BUFFER_SIZE:-}" ]]; then
     graft_args+=(--write-buffer-size-bytes "$WRITE_BUFFER_SIZE")
   fi
-  if [[ "$eng" == "topling-dictzip10" ]]; then
-    graft_args+=(--min-dict-zip-value-size 10)
-  fi
-  python3 "$SCRIPT_DIR/graft_bench_yaml.py" "${graft_args[@]}" "$out"
+  python3 "$SCRIPT_DIR/graft_bench_yaml.py" "${graft_args[@]}" --out "$out" "$src"
   echo "$out"
 }
 
 start_worker() {
   # Same-host identity: hoster_root=/dev/shm, NFS_MOUNT_ROOT=/dev, instance=shm
   # => worker prefix == /dev/shm. NFS_DYNAMIC_MOUNT=0: no mount.
-  export NFS_DYNAMIC_MOUNT=0
-  export NFS_MOUNT_ROOT
-  export WORKER_DB_ROOT
-  export MAX_PARALLEL_COMPACTIONS
-  export DictZipBlobStore_zipThreads="${DictZipBlobStore_zipThreads:-4}"
-
   mkdir -p "$(dirname "$WORKER_LOG")"
   : >"$WORKER_LOG"
   "$WORKER_BIN" -D "listening_ports=${WORKER_PORT}" \
@@ -181,9 +200,12 @@ run_under_cpu_quota() {
   log="$(realpath -m "$log")"
   time_file="$(realpath -m "$time_file")"
   mkdir -p "$(dirname "$series")" "$(dirname "$log")" "$(dirname "$time_file")"
-  # sample_statm_fdcache inside the scope so its child is db_bench (no time/wrapper hop).
+  # run_sample_statm_fdcache inside the scope so its child is db_bench
+  # (no time/wrapper hop). Preserve CACHED_PAGES_USE_SYS for optional
+  # drop_caches + SYS_CACHED_OF_EMPTY path.
   if [[ "${CI:-0}" == "1" ]]; then
-    sudo systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
+    sudo --preserve-env=CACHED_PAGES_USE_SYS \
+      systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
       "$SAMPLE_STATM" "$series" "$time_file" "$@" \
       >"$log" 2>&1
   else
@@ -260,15 +282,19 @@ run_engine_suite() {
   yaml="$(make_yaml_for_engine "$eng")"
   local logdir="${LOGDIR_BASE}/${eng}"
   mkdir -p "$logdir"
-  cp -a "$yaml" "${logdir}/db_bench.yaml"
   # Share one worker log pointer for evidence; also keep a per-engine copy link.
   ln -sfn "$(realpath "$WORKER_LOG")" "${logdir}/dcompact_worker.log" 2>/dev/null || true
 
   echo "=== engine=${eng} NUM=${NUM} CPU_QUOTA=${CPU_QUOTA} yaml=${yaml} ==="
 
   prepare_db
+  local yaml_fr="${logdir}/db_bench-fillrandom.yaml"
+  python3 "$SCRIPT_DIR/graft_bench_yaml.py" \
+    --prefix-level-writers 3 simple \
+    --out "$yaml_fr" \
+    "$yaml"
   local args_fr=(
-    -json "$yaml"
+    -json "$yaml_fr"
     -num="$NUM"
     -key_size=8
     -value_size="$VALUE_SIZE"
@@ -291,8 +317,15 @@ run_engine_suite() {
   rm -rf "$DB_PATH"
 
   prepare_db
+  local yaml_fs="${logdir}/db_bench-fillseq.yaml"
+  python3 "$SCRIPT_DIR/graft_bench_yaml.py" \
+    --prefix-level-writers 6 zipkeyonly \
+    --target-file-size-base 128M \
+    --target-file-size-multiplier 1 \
+    --out "$yaml_fs" \
+    "$yaml"
   local args_fs=(
-    -json "$yaml"
+    -json "$yaml_fs"
     -num="$NUM"
     -key_size=8
     -value_size="$VALUE_SIZE"

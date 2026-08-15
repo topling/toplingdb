@@ -11,12 +11,25 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import math
 import re
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+_RSS_SCRIPTS = Path(__file__).resolve().parent
+if str(_RSS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_RSS_SCRIPTS))
+from bench_pages_common import (  # noqa: E402
+    build_rss_svg_section as _common_rss_svg_section,
+    build_source_links as _common_source_links,
+    entry_has_info_logs as _entry_has_info_logs,
+    fmt_utc as _fmt_utc,
+    href as _href,
+    page as _page,
+)
+
 
 DB_BENCH_RE = re.compile(
     r"^(?:(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+)?"
@@ -28,33 +41,29 @@ DB_BENCH_RE = re.compile(
     r"(?P<extra>.*)$"
 )
 
-ENGINES = ("topling", "topling-dictzip10", "rocksdb-v8.10", "rocksdb-master")
-TOPLING_ENGINES = ("topling", "topling-dictzip10")
+ENGINES = ("zipkeyonly", "zipkeyvalue", "rocksdb-v8.10", "rocksdb-master")
+TOPLING_ENGINES = ("zipkeyonly", "zipkeyvalue")
 ROCKSDB_ENGINES = ("rocksdb-v8.10", "rocksdb-master")
 ENGINE_LABELS = {
-    "topling": "ToplingDB",
-    "topling-dictzip10": "ToplingDB minDictZip=10",
+    "zipkeyonly": "ToplingDB zipkeyonly",
+    "zipkeyvalue": "ToplingDB zipkeyvalue",
     "rocksdb-v8.10": "RocksDB v8.10",
     "rocksdb-master": "RocksDB master",
 }
 RATIO_BASE_LABELS = {
-    "topling": "Topling",
-    "topling-dictzip10": "dictzip10",
+    "zipkeyonly": "zipkeyonly",
+    "zipkeyvalue": "zipkeyvalue",
 }
 RATIO_OTHER_LABELS = {
     "rocksdb-v8.10": "v8.10",
     "rocksdb-master": "master",
 }
-
 SHM_WORKLOADS = ("fillrandom", "fillseq")
 RSS_WORKLOADS = ("fillrandom", "fillseq")
-YAML_RAW_NAME = "db_bench.yaml"
-
-_SEGMENT_COLORS = [
-    "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
-    "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
-]
-
+YAML_USED_NAMES = (
+    "db_bench-fillrandom.yaml",
+    "db_bench-fillseq.yaml",
+)
 
 def set_rocksdb_master_label(sha: Optional[str]) -> None:
     """Set RocksDB master display labels; include short git SHA when known."""
@@ -179,12 +188,16 @@ def load_runner_env(log_root: Path) -> Dict[str, str]:
 def _size_ratio_cell(
     base_bytes: Optional[int], other_bytes: Optional[int]
 ) -> str:
-    """ratio = other / base; <1 means other uses less space (better compression)."""
+    """ratio = other / base; <1 less (green), >1 more (red), equal neutral."""
     if base_bytes is None or other_bytes is None or base_bytes <= 0:
         return "—"
     ratio = other_bytes / base_bytes
-    cls = "faster" if ratio < 1.0 else "slower"
-    return f'<span class="{cls}">{ratio:.2f}x</span>'
+    text = f"{ratio:.2f}x"
+    if other_bytes < base_bytes:
+        return f'<span class="faster">{text}</span>'
+    if other_bytes > base_bytes:
+        return f'<span class="slower">{text}</span>'
+    return text
 
 
 def build_shm_usage_table(
@@ -201,8 +214,8 @@ def build_shm_usage_table(
     headers = ["workload"]
     for e in ENGINES:
         headers.append(ENGINE_LABELS[e])
-    headers.append("Topling / v8.10 (space)")
-    headers.append("dictzip10 / v8.10 (space)")
+    headers.append("zipkeyonly / v8.10 (space)")
+    headers.append("zipkeyvalue / v8.10 (space)")
 
     rows_html = []
     for wl in SHM_WORKLOADS:
@@ -213,10 +226,10 @@ def build_shm_usage_table(
                 f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
             )
         cells.append(
-            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('topling', wl, 'allocated_bytes'))}</td>"
+            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('zipkeyonly', wl, 'allocated_bytes'))}</td>"
         )
         cells.append(
-            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('topling-dictzip10', wl, 'allocated_bytes'))}</td>"
+            f"<td>{_size_ratio_cell(_bytes('rocksdb-v8.10', wl, 'allocated_bytes'), _bytes('zipkeyvalue', wl, 'allocated_bytes'))}</td>"
         )
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     if not rows_html:
@@ -240,8 +253,8 @@ def build_rss_usage_table(
     headers = ["workload"]
     for e in ENGINES:
         headers.append(ENGINE_LABELS[e])
-    headers.append("Topling / v8.10 (RSS)")
-    headers.append("dictzip10 / v8.10 (RSS)")
+    headers.append("zipkeyonly / v8.10 (RSS)")
+    headers.append("zipkeyvalue / v8.10 (RSS)")
 
     workloads = sorted(
         {wl for eng_data in rss_data.values() for wl in eng_data if eng_data.get(wl) is not None}
@@ -258,8 +271,8 @@ def build_rss_usage_table(
                 f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
             )
         v810_bytes = (rss_data.get("rocksdb-v8.10") or {}).get(wl)
-        topling_bytes = (rss_data.get("topling") or {}).get(wl)
-        dz10_bytes = (rss_data.get("topling-dictzip10") or {}).get(wl)
+        topling_bytes = (rss_data.get("zipkeyonly") or {}).get(wl)
+        dz10_bytes = (rss_data.get("zipkeyvalue") or {}).get(wl)
         cells.append(f"<td>{_size_ratio_cell(v810_bytes, topling_bytes)}</td>")
         cells.append(f"<td>{_size_ratio_cell(v810_bytes, dz10_bytes)}</td>")
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
@@ -296,44 +309,6 @@ def parse_db_bench(text: str) -> List[Dict[str, str]]:
             row["ts"] = ts
         rows.append(row)
     return rows
-
-
-def parse_rss_series(
-    text: str,
-) -> Tuple[float, int, List[Tuple[float, int, int, int]]]:
-    """Parse statm/rss series -> (start_epoch, page_size, [(epoch, rss, shared, pagecache)...]).
-
-    New format: <epoch> <size> <resident> <shared> <text> <lib> <data> <dt> [<pagecache>]
-    Legacy:     <epoch> <resident>  (shared/pagecache treated as 0)
-    Pages are converted by the caller; anony = rss - shared.
-    """
-    start_epoch = 0.0
-    page_size = 4096
-    samples: List[Tuple[float, int, int, int]] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("#"):
-            for part in line[1:].split():
-                if part.startswith("start_epoch="):
-                    start_epoch = float(part.split("=", 1)[1])
-                elif part.startswith("page_size="):
-                    page_size = int(part.split("=", 1)[1])
-            continue
-        if not line:
-            continue
-        parts = line.split()
-        if len(parts) >= 4:
-            pagecache = int(parts[8]) if len(parts) >= 9 else 0
-            samples.append(
-                (float(parts[0]), int(parts[2]), int(parts[3]), pagecache)
-            )
-        elif len(parts) == 3:
-            # epoch size resident (shared missing)
-            samples.append((float(parts[0]), int(parts[2]), 0, 0))
-        elif len(parts) >= 2:
-            # legacy: epoch resident
-            samples.append((float(parts[0]), int(parts[1]), 0, 0))
-    return start_epoch, page_size, samples
 
 
 def _iso_to_epoch(ts: str) -> float:
@@ -394,278 +369,6 @@ def compute_bench_segments(
     return segments
 
 
-def _pow10_tick_step(data_max: float, target_ticks: float = 5.0) -> float:
-    """Nice axis-extent unit: 1, 10, 100, 1000, ... (grid/labels use half of this)."""
-    if data_max <= 0:
-        return 1.0
-    rough = data_max / target_ticks
-    exp = math.floor(math.log10(max(rough, 1e-12)))
-    step = 10.0 ** exp
-    # Prefer fewer coarse ticks over many 100-unit labels (e.g. 1888 → 1000).
-    while data_max / step > 8:
-        step *= 10.0
-    return step
-
-
-def _ceil_to_step(value: float, step: float) -> float:
-    if step <= 0:
-        return max(value, 1.0)
-    return max(step, math.ceil(value / step - 1e-12) * step)
-
-
-def _axis_multiples(step: float, axis_max: float, include_zero: bool) -> List[float]:
-    vals: List[float] = []
-    k = 0 if include_zero else 1
-    while True:
-        v = k * step
-        if v > axis_max + 1e-9:
-            break
-        vals.append(v)
-        k += 1
-    return vals
-
-
-def build_rss_svg(
-    samples: List[Tuple[float, int, int, int]],
-    page_size: int,
-    start_epoch: float,
-    segments: List[Tuple[str, float, float, bool]],
-    title: str,
-) -> str:
-    """SVG: rss/shared/anony/pagecache/anony+pc over time with segment bands."""
-    if not samples:
-        return ""
-
-    mib = page_size / (1024 * 1024)
-    xs = [t - start_epoch for t, _, _, _ in samples]
-    ys_rss = [res * mib for _, res, _, _ in samples]
-    ys_shared = [shr * mib for _, _, shr, _ in samples]
-    ys_anony = [max(0, res - shr) * mib for _, res, shr, _ in samples]
-    ys_pagecache = [fdc * mib for _, _, _, fdc in samples]
-    ys_anony_pc = [a + f for a, f in zip(ys_anony, ys_pagecache)]
-
-    x_data = max(xs) if xs else 1.0
-    y_data = (
-        max(ys_rss + ys_shared + ys_anony + ys_pagecache + ys_anony_pc)
-        if samples
-        else 1.0
-    )
-    if x_data <= 0:
-        x_data = 1.0
-    if y_data <= 0:
-        y_data = 1.0
-    # Axis extent from 10^n units; grid + labels at half-step (5/50/500...).
-    x_unit = _pow10_tick_step(x_data)
-    y_unit = _pow10_tick_step(y_data)
-    x_max = _ceil_to_step(x_data, x_unit)
-    y_max = _ceil_to_step(y_data, y_unit)
-    x_grid = x_unit / 2.0
-    y_grid = y_unit / 2.0
-
-    margin_l, margin_r, margin_t, margin_b = 70, 20, 40, 50
-    chart_w, chart_h = 800, 300
-    svg_w = margin_l + chart_w + margin_r
-    svg_h = margin_t + chart_h + margin_b
-
-    def tx(v: float) -> float:
-        return margin_l + (v / x_max) * chart_w if x_max else margin_l
-
-    # Inset the plotable y-range so a series at data peak (common once block
-    # cache fills) is not glued to the top edge — that reads as "no line" on
-    # long flat plateaus (e.g. RocksDB fillseq readrandom). Same for tiny shared.
-    _pad_top, _pad_bot = 8.0, 4.0
-    _y_usable = chart_h - _pad_top - _pad_bot
-
-    def ty(v: float) -> float:
-        return margin_t + _pad_top + _y_usable * (1.0 - v / y_max)
-
-    parts: List[str] = []
-    parts.append('<div class="rss-chart-wrap">')
-    parts.append(
-        f'<svg class="rss-chart" xmlns="http://www.w3.org/2000/svg" '
-        f'viewBox="0 0 {svg_w} {svg_h}" overflow="visible" '
-        f'style="max-width:{svg_w}px;width:100%;height:auto;'
-        f'font-family:system-ui,sans-serif;font-size:11px;cursor:crosshair">'
-    )
-    parts.append(f'<text x="{svg_w // 2}" y="18" text-anchor="middle" '
-                 f'font-size="13" font-weight="600">{html.escape(title)}</text>')
-
-    for idx, (name, s_start, s_end, est) in enumerate(segments):
-        color = _SEGMENT_COLORS[idx % len(_SEGMENT_COLORS)]
-        sx1 = tx(max(s_start, 0))
-        sx2 = tx(min(s_end, x_max))
-        if sx2 <= sx1:
-            continue
-        parts.append(
-            f'<rect x="{sx1:.1f}" y="{margin_t}" width="{sx2 - sx1:.1f}" '
-            f'height="{chart_h}" fill="{color}" opacity="0.15"/>'
-        )
-        label = name
-        if est:
-            label += " (est.)"
-        mid_x = (sx1 + sx2) / 2
-        parts.append(
-            f'<text x="{mid_x:.1f}" y="{margin_t + chart_h + 14}" '
-            f'text-anchor="middle" font-size="9" fill="{color}" '
-            f'transform="rotate(-30 {mid_x:.1f} {margin_t + chart_h + 14})">'
-            f'{html.escape(label)}</text>'
-        )
-
-    # Axes (full plot frame so series never looks like the chart border)
-    parts.append(
-        f'<line x1="{margin_l}" y1="{margin_t}" x2="{margin_l}" '
-        f'y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
-    )
-    parts.append(
-        f'<line x1="{margin_l + chart_w}" y1="{margin_t}" '
-        f'x2="{margin_l + chart_w}" y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
-    )
-    parts.append(
-        f'<line x1="{margin_l}" y1="{margin_t}" '
-        f'x2="{margin_l + chart_w}" y2="{margin_t}" stroke="#666" stroke-width="1"/>'
-    )
-    parts.append(
-        f'<line x1="{margin_l}" y1="{margin_t + chart_h}" '
-        f'x2="{margin_l + chart_w}" y2="{margin_t + chart_h}" stroke="#666" stroke-width="1"/>'
-    )
-
-    # Grid at 5/50/500.... Skip x==x_max so the light grid does not paint over
-    # the right frame; y==y_max is inset by padT so it stays inside the plot.
-    for val in _axis_multiples(y_grid, y_max, include_zero=True):
-        yp = ty(val)
-        parts.append(
-            f'<line x1="{margin_l}" y1="{yp:.1f}" '
-            f'x2="{margin_l + chart_w}" y2="{yp:.1f}" '
-            f'stroke="#e6e6e6" stroke-width="1"/>'
-        )
-    for val in _axis_multiples(x_grid, x_max, include_zero=False):
-        if val >= x_max - 1e-9:
-            continue
-        xp = tx(val)
-        parts.append(
-            f'<line x1="{xp:.1f}" y1="{margin_t}" '
-            f'x2="{xp:.1f}" y2="{margin_t + chart_h}" '
-            f'stroke="#e6e6e6" stroke-width="1"/>'
-        )
-
-    # Label every grid line (5/50/500...), including 0 and axis max.
-    for val in _axis_multiples(y_grid, y_max, include_zero=True):
-        yp = ty(val)
-        parts.append(
-            f'<line x1="{margin_l - 4}" y1="{yp:.1f}" '
-            f'x2="{margin_l}" y2="{yp:.1f}" stroke="#666"/>'
-        )
-        parts.append(
-            f'<text x="{margin_l - 6}" y="{yp + 3:.1f}" '
-            f'text-anchor="end" font-size="10">{val:.0f}</text>'
-        )
-    parts.append(
-        f'<text x="14" y="{margin_t + chart_h // 2}" '
-        f'text-anchor="middle" font-size="11" '
-        f'transform="rotate(-90 14 {margin_t + chart_h // 2})">MiB</text>'
-    )
-    for val in _axis_multiples(x_grid, x_max, include_zero=True):
-        xp = tx(val)
-        parts.append(
-            f'<line x1="{xp:.1f}" y1="{margin_t + chart_h}" '
-            f'x2="{xp:.1f}" y2="{margin_t + chart_h + 4}" stroke="#666"/>'
-        )
-        parts.append(
-            f'<text x="{xp:.1f}" y="{margin_t + chart_h + 38}" '
-            f'text-anchor="middle" font-size="10">{val:.0f}</text>'
-        )
-    parts.append(
-        f'<text x="{margin_l + chart_w // 2}" y="{svg_h - 2}" '
-        f'text-anchor="middle" font-size="11">Time (s)</text>'
-    )
-
-    # Draw sum last so anony+pc stays visible above other series.
-    series = (
-        ("anony", ys_anony, "#c11618"),
-        ("rss", ys_rss, "#1558a8"),
-        ("shared", ys_shared, "#258825"),
-        ("pagecache", ys_pagecache, "#a05a00"),
-        ("anony+pc", ys_anony_pc, "#6b21a8"),
-    )
-    for label, ys, color in series:
-        points = " ".join(f"{tx(x):.1f},{ty(y):.1f}" for x, y in zip(xs, ys))
-        parts.append(
-            f'<polyline points="{points}" fill="none" stroke="{color}" '
-            f'stroke-width="2"/>'
-        )
-    # Legend above the plot (under title) so it never overlaps series at y_max.
-    legend = (
-        ("rss", "#1558a8"),
-        ("shared", "#258825"),
-        ("anony", "#c11618"),
-        ("pagecache", "#a05a00"),
-        ("anony+pc", "#6b21a8"),
-    )
-    # Per-label width: swatch+gap (18) + ~7px/char at size 9 + trailing pad.
-    # Generous vs system-ui so "pagecache" / "anony+pc" do not collide.
-    item_widths = [18 + 7 * len(label) + 14 for label, _ in legend]
-    x = margin_l + chart_w - sum(item_widths)
-    ly = 30
-    for (label, color), w in zip(legend, item_widths):
-        parts.append(
-            f'<line x1="{x}" y1="{ly}" x2="{x + 14}" y2="{ly}" '
-            f'stroke="{color}" stroke-width="2"/>'
-        )
-        parts.append(
-            f'<text x="{x + 18}" y="{ly + 3}" font-size="9" fill="#333">'
-            f'{label}</text>'
-        )
-        x += w
-
-    parts.append(
-        f'<g class="rss-crosshair" style="display:none">'
-        f'<line class="rss-vline" y1="{margin_t}" y2="{margin_t + chart_h}" '
-        f'stroke="#555" stroke-width="1" stroke-dasharray="4 3"/>'
-        f'<g class="rss-marks"></g>'
-        f"</g>"
-    )
-    parts.append(
-        f'<rect class="rss-hit" x="{margin_l}" y="{margin_t}" '
-        f'width="{chart_w}" height="{chart_h}" fill="transparent"/>'
-    )
-    parts.append("</svg>")
-    ys_by_name = {
-        "rss": ys_rss,
-        "shared": ys_shared,
-        "anony": ys_anony,
-        "pagecache": ys_pagecache,
-        "anony+pc": ys_anony_pc,
-    }
-    chart_data = {
-        "xs": [round(v, 3) for v in xs],
-        "series": [
-            {
-                "name": label,
-                "ys": [round(v, 2) for v in ys_by_name[label]],
-                "color": color,
-            }
-            for label, color in legend
-        ],
-        "layout": {
-            "ml": margin_l,
-            "mt": margin_t,
-            "cw": chart_w,
-            "ch": chart_h,
-            "xMax": round(x_max, 3),
-            "yMax": round(y_max, 3),
-            "padT": _pad_top,
-            "padB": _pad_bot,
-        },
-    }
-    parts.append(
-        '<script type="application/json" class="rss-chart-data">'
-        + json.dumps(chart_data, separators=(",", ":"))
-        + "</script>"
-    )
-    parts.append("</div>")
-    return "\n".join(parts)
-
-
 def _table(headers: List[str], rows: List[Dict[str, str]], keys: List[str]) -> str:
     th = "".join(f"<th>{html.escape(h)}</th>" for h in headers)
     body_parts = []
@@ -683,123 +386,6 @@ def _table(headers: List[str], rows: List[Dict[str, str]], keys: List[str]) -> s
         + "\n".join(body_parts)
         + "\n</tbody>\n</table>"
     )
-
-
-_RSS_CHART_JS = r"""
-<script>
-(function () {
-  function nearestIdx(xs, x) {
-    var lo = 0, hi = xs.length - 1;
-    if (x <= xs[0]) return 0;
-    if (x >= xs[hi]) return hi;
-    while (lo < hi - 1) {
-      var mid = (lo + hi) >> 1;
-      if (xs[mid] <= x) lo = mid; else hi = mid;
-    }
-    return (x - xs[lo] <= xs[hi] - x) ? lo : hi;
-  }
-  function initWrap(wrap) {
-    var svg = wrap.querySelector("svg.rss-chart");
-    var dataEl = wrap.querySelector(".rss-chart-data");
-    if (!svg || !dataEl) return;
-    var data = JSON.parse(dataEl.textContent);
-    var xs = data.xs, series = data.series, L = data.layout;
-    var hit = svg.querySelector(".rss-hit");
-    var ch = svg.querySelector(".rss-crosshair");
-    var vline = svg.querySelector(".rss-vline");
-    var marks = svg.querySelector(".rss-marks");
-    if (!hit || !ch || !vline || !marks) return;
-    function hide() { ch.style.display = "none"; }
-    function show(ev) {
-      var ctm = svg.getScreenCTM();
-      if (!ctm) return;
-      var pt = svg.createSVGPoint();
-      pt.x = ev.clientX; pt.y = ev.clientY;
-      var p = pt.matrixTransform(ctm.inverse());
-      if (p.x < L.ml || p.x > L.ml + L.cw || p.y < L.mt || p.y > L.mt + L.ch) {
-        hide(); return;
-      }
-      var xVal = L.xMax ? ((p.x - L.ml) / L.cw) * L.xMax : 0;
-      var i = nearestIdx(xs, xVal);
-      var xp = L.xMax ? L.ml + (xs[i] / L.xMax) * L.cw : L.ml;
-      vline.setAttribute("x1", xp.toFixed(1));
-      vline.setAttribute("x2", xp.toFixed(1));
-      while (marks.firstChild) marks.removeChild(marks.firstChild);
-      var NS = "http://www.w3.org/2000/svg";
-      series.forEach(function (s, si) {
-        var y = s.ys[i];
-        var padT = L.padT || 0, padB = L.padB || 0;
-        var usable = L.ch - padT - padB;
-        var yp = L.mt + padT + usable * (1 - y / L.yMax);
-        var dot = document.createElementNS(NS, "circle");
-        dot.setAttribute("cx", xp.toFixed(1));
-        dot.setAttribute("cy", yp.toFixed(1));
-        dot.setAttribute("r", "3.5");
-        dot.setAttribute("fill", s.color);
-        marks.appendChild(dot);
-        var tip = s.name + " (" + xs[i].toFixed(1) + "s, " + y.toFixed(1) + ")";
-        var tipW = Math.max(72, 6.4 * tip.length + 10);
-        var tipH = 16;
-        var tipX = Math.min(Math.max(xp + 8, L.ml), L.ml + L.cw - tipW);
-        var tipY = yp - tipH - 6 - si * (tipH + 2);
-        if (tipY < L.mt) tipY = yp + 8 + si * (tipH + 2);
-        var rect = document.createElementNS(NS, "rect");
-        rect.setAttribute("x", tipX.toFixed(1));
-        rect.setAttribute("y", tipY.toFixed(1));
-        rect.setAttribute("width", tipW.toFixed(1));
-        rect.setAttribute("height", tipH.toFixed(1));
-        rect.setAttribute("rx", "3");
-        rect.setAttribute("fill", "#fff");
-        rect.setAttribute("stroke", s.color);
-        rect.setAttribute("stroke-width", "1");
-        rect.setAttribute("opacity", "0.95");
-        marks.appendChild(rect);
-        var text = document.createElementNS(NS, "text");
-        text.setAttribute("x", (tipX + tipW / 2).toFixed(1));
-        text.setAttribute("y", (tipY + 12).toFixed(1));
-        text.setAttribute("text-anchor", "middle");
-        text.setAttribute("font-size", "10");
-        text.setAttribute("fill", "#222");
-        text.textContent = tip;
-        marks.appendChild(text);
-      });
-      ch.style.display = "";
-    }
-    hit.addEventListener("mousemove", show);
-    hit.addEventListener("mouseleave", hide);
-  }
-  document.querySelectorAll(".rss-chart-wrap").forEach(initWrap);
-})();
-</script>
-"""
-
-
-def _page(title: str, body: str) -> str:
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>{html.escape(title)}</title>
-  <style>
-    body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.45; }}
-    table {{ border-collapse: collapse; margin: 1rem 0 2rem; width: 100%; }}
-    th, td {{ border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }}
-    th {{ background: #f4f4f4; }}
-    h1, h2, h3 {{ margin-top: 1.5rem; }}
-    a {{ color: #0645ad; }}
-    .meta {{ color: #555; font-size: 0.9rem; }}
-    .faster {{ color: #0a7a28; font-weight: 600; }}
-    .slower {{ color: #a30d0d; }}
-    .rss-chart-wrap {{ margin: 0.75rem 0 1.25rem; }}
-  </style>
-</head>
-<body>
-{body}
-{_RSS_CHART_JS}
-</body>
-</html>
-"""
 
 
 def _hl(text: str, kind: str) -> str:
@@ -838,18 +424,22 @@ def _operations_by_benchmark(rows: List[Dict[str, str]]) -> Dict[str, int]:
 
 
 def _time_ratio_cell(topling_s: Optional[float], other_s: Optional[float]) -> str:
-    """ratio = other_seconds / topling_seconds; >=1 means ToplingDB faster."""
+    """ratio = other_seconds / topling_seconds; >1 Topling faster, <1 slower, equal neutral."""
     if topling_s is None or other_s is None or topling_s <= 0:
         return "—"
     ratio = other_s / topling_s
-    cls = "faster" if ratio >= 1.0 else "slower"
-    return f'<span class="{cls}">{ratio:.2f}x</span>'
+    text = f"{ratio:.2f}x"
+    if other_s > topling_s:
+        return f'<span class="faster">{text}</span>'
+    if other_s < topling_s:
+        return f'<span class="slower">{text}</span>'
+    return text
 
 
 def _subject_time_ratio_cell(
     baseline_s: Optional[float], subject_s: Optional[float]
 ) -> str:
-    """ratio = subject / baseline; color is about the subject (dictzip10)."""
+    """ratio = subject / baseline; color is about the subject (zipkeyvalue)."""
     if baseline_s is None or subject_s is None or baseline_s <= 0:
         return "—"
     ratio = subject_s / baseline_s
@@ -874,7 +464,7 @@ def _ratio_pairs() -> List[Tuple[str, str]]:
 def build_db_bench_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
-    """Wide comparison: ops/sec + dictzip10/Topling time + rocksdb/topling* time."""
+    """Wide comparison: ops/sec + zipkeyvalue/zipkeyonly time + rocksdb/zipkey* time."""
     ops_by = {e: _ops_by_benchmark(engines.get(e, [])) for e in ENGINES}
     sec_by = {e: _seconds_by_benchmark(engines.get(e, [])) for e in ENGINES}
     operations_by = {e: _operations_by_benchmark(engines.get(e, [])) for e in ENGINES}
@@ -884,7 +474,7 @@ def build_db_bench_compare(
     headers = ["benchmark"] + [
         f"{ENGINE_LABELS[e]} ops/sec" for e in ENGINES
     ]
-    headers.append("dictzip10 time / Topling")
+    headers.append("zipkeyvalue time / zipkeyonly")
     for base, other in ratio_pairs:
         headers.append(
             f"{RATIO_OTHER_LABELS[other]} time / {RATIO_BASE_LABELS[base]}"
@@ -905,7 +495,7 @@ def build_db_bench_compare(
                 v = ops_by[e].get(name)
                 cells.append(f"<td>{v if v is not None else '—'}</td>")
         cells.append(
-            f"<td>{_subject_time_ratio_cell(sec_by['topling'].get(name), sec_by['topling-dictzip10'].get(name))}</td>"
+            f"<td>{_subject_time_ratio_cell(sec_by['zipkeyonly'].get(name), sec_by['zipkeyvalue'].get(name))}</td>"
         )
         for base, other in ratio_pairs:
             cells.append(
@@ -956,6 +546,95 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
     return result
 
 
+def _build_dcompact_bench_notes(runner_env: Dict[str, str]) -> str:
+    """Page header notes for dcompact CPU quota and compaction modes."""
+    cpu_quota = runner_env.get("cpu_quota_write", "n/a")
+    topling_mode = runner_env.get("compact_mode_topling", "dcompact_worker")
+    rocksdb_mode = runner_env.get(
+        "compact_mode_rocksdb", "compaction_service_spool"
+    )
+    return f"""<h2>Bench configuration (dcompact)</h2>
+  <p class="meta">
+    Write-side db_bench CPU quota: <strong>{html.escape(cpu_quota)}</strong>
+    (from <code>runner_env.txt</code> <code>cpu_quota_write</code>).
+    Topling compact: <strong>{html.escape(topling_mode)}</strong> —
+    <code>dcompact_worker</code> runs outside the write cgroup and uses remaining CPU cores.
+    RocksDB compact: <strong>{html.escape(rocksdb_mode)}</strong> —
+    CompactionService spool + out-of-cgroup broker/worker on remaining cores.
+  </p>"""
+
+
+
+def _build_source_links(
+    raw_dir: Path,
+    href_prefix: str,
+    actions_run_url: str = "",
+    has_info_logs: bool = False,
+) -> str:
+    return _common_source_links(
+        raw_dir,
+        href_prefix,
+        ENGINES,
+        ENGINE_LABELS,
+        TOPLING_ENGINES,
+        YAML_USED_NAMES,
+        actions_run_url=actions_run_url,
+        has_info_logs=has_info_logs,
+        artifact_label="DB INFO LOGs (Actions artifact)",
+    )
+
+
+def _build_rss_svg_section(
+    log_root: Path,
+    engines_data: Dict[str, Any],
+    heading: str = "h3",
+) -> str:
+    return _common_rss_svg_section(
+        log_root,
+        engines_data,
+        ENGINES,
+        ENGINE_LABELS,
+        compute_bench_segments,
+        heading=heading,
+    )
+
+
+def _build_per_engine_details(engines_data: Dict[str, Any]) -> str:
+    db_bench_detail_keys = [
+        "benchmark",
+        "micros/op",
+        "ops/sec",
+        "seconds",
+        "operations",
+        "extra",
+    ]
+    detail_parts: List[str] = []
+    for eng in ENGINES:
+        data = engines_data.get(eng)
+        if not data:
+            detail_parts.append(
+                f"<h3>{html.escape(ENGINE_LABELS[eng])}</h3><p><em>no logs</em></p>"
+            )
+            continue
+        detail_parts.append(f"<h3>{html.escape(ENGINE_LABELS[eng])}</h3>")
+        if data.get("db_bench_fillrandom"):
+            detail_parts.append(
+                "<h4>db_bench (fillrandom+compact+readseq/readrandom)</h4>"
+            )
+            detail_parts.append(
+                _table(
+                    db_bench_detail_keys,
+                    data["db_bench_fillrandom"],
+                    db_bench_detail_keys,
+                )
+            )
+        detail_parts.append("<h4>db_bench (fillseq suite)</h4>")
+        detail_parts.append(
+            _table(db_bench_detail_keys, data["db_bench"], db_bench_detail_keys)
+        )
+    return "".join(detail_parts)
+
+
 def _build_runner_section(
     runner_env: Dict[str, Any],
     cache_size_bytes: Optional[int],
@@ -999,44 +678,14 @@ def _build_runner_section(
         ds_iec = format_iec(dataset_bytes)
         est_note = " (estimated)" if dataset_estimated else ""
         if cache_size_bytes >= dataset_bytes:
-            section += f'\n<p class="meta"><strong>On-disk DB size{est_note} ({ds_iec}) ≤ block cache ({cache_iec})</strong> — cache can hold the entire dataset.</p>'
+            section += (
+                f'\n<p class="meta"><strong>On-disk DB size{est_note} ({ds_iec}) ≤ block cache ({cache_iec})</strong>'
+                f" — cache can hold the entire dataset."
+                f" So this benchmark mainly shows CPU and memory cost.</p>"
+            )
         else:
             section += f'\n<p class="meta" style="color:#a30d0d"><strong>On-disk DB size{est_note} ({ds_iec}) &gt; block cache ({cache_iec})</strong> — cache cannot hold the entire dataset.</p>'
     return section
-
-
-def _build_dcompact_bench_notes(runner_env: Dict[str, str]) -> str:
-    """Page header notes for dcompact CPU quota and compaction modes."""
-    cpu_quota = runner_env.get("cpu_quota_write", "n/a")
-    topling_mode = runner_env.get("compact_mode_topling", "dcompact_worker")
-    rocksdb_mode = runner_env.get(
-        "compact_mode_rocksdb", "compaction_service_spool"
-    )
-    return f"""<h2>Bench configuration (dcompact)</h2>
-  <p class="meta">
-    Write-side db_bench CPU quota: <strong>{html.escape(cpu_quota)}</strong>
-    (from <code>runner_env.txt</code> <code>cpu_quota_write</code>).
-    Topling compact: <strong>{html.escape(topling_mode)}</strong> —
-    <code>dcompact_worker</code> runs outside the write cgroup and uses remaining CPU cores.
-    RocksDB compact: <strong>{html.escape(rocksdb_mode)}</strong> —
-    CompactionService spool + out-of-cgroup broker/worker on remaining cores.
-  </p>"""
-
-
-def _build_yaml_config_links(raw_dir: Path) -> str:
-    parts: List[str] = []
-    for eng in TOPLING_ENGINES:
-        if (raw_dir / eng / YAML_RAW_NAME).is_file():
-            label = html.escape(ENGINE_LABELS[eng])
-            parts.append(f'<a href="raw/{eng}/{YAML_RAW_NAME}">{label} yaml</a>')
-    if not parts:
-        return ""
-    return (
-        '<p class="meta"><strong>ToplingDB bench yaml</strong> '
-        "(runtime graft): "
-        + " | ".join(parts)
-        + "</p>"
-    )
 
 
 def emit(args: argparse.Namespace) -> None:
@@ -1072,7 +721,7 @@ def emit(args: argparse.Namespace) -> None:
             "time-fillrandom.txt",
             "time-fillseq.txt",
             "bench_settings.txt",
-            YAML_RAW_NAME,
+            *YAML_USED_NAMES,
             "engine-meta.json",
         ):
             p = src / name
@@ -1093,11 +742,6 @@ def emit(args: argparse.Namespace) -> None:
         shutil.copy2(runner_env_src, raw_dir / "runner_env.txt")
 
     runner_env = load_runner_env(log_root)
-
-    rss_data: Dict[str, Dict[str, Optional[int]]] = {
-        e: engines_data.get(e, {}).get("rss_usage") or {} for e in ENGINES
-    }
-    rss_table = build_rss_usage_table(rss_data)
 
     bench_settings: Dict[str, Dict[str, str]] = {
         e: engines_data.get(e, {}).get("bench_settings") or {} for e in ENGINES
@@ -1124,170 +768,48 @@ def emit(args: argparse.Namespace) -> None:
         except ValueError:
             pass
 
-    db_compare = build_db_bench_compare(
-        {e: engines_data.get(e, {}).get("db_bench", []) for e in ENGINES}
-    )
-    fr_compare = build_db_bench_compare(
-        {
-            e: engines_data.get(e, {}).get("db_bench_fillrandom", [])
-            for e in ENGINES
-        }
-    )
-    shm_usages = {
-        e: engines_data.get(e, {}).get("shm_usage") or {} for e in ENGINES
-    }
-    shm_table = build_shm_usage_table(shm_usages)
-
-    rss_svg_parts: List[str] = []
-    for eng in ENGINES:
-        eng_dir = log_root / eng
-        for suite, log_name, bench_key in [
-            ("fillrandom", "db_bench-fillrandom.log", "db_bench_fillrandom"),
-            ("fillseq", "db_bench.log", "db_bench"),
-        ]:
-            series_path = eng_dir / f"statm_series-{suite}.txt"
-            if not series_path.is_file():
-                continue
-            start_epoch, page_size, samples = parse_rss_series(
-                series_path.read_text(encoding="utf-8", errors="replace")
-            )
-            if not samples:
-                continue
-            bench_rows = engines_data.get(eng, {}).get(bench_key, [])
-            total_dur = (samples[-1][0] - start_epoch) if samples else 0
-            segments = compute_bench_segments(bench_rows, start_epoch, total_dur)
-            if segments and segments[0][1] > 0.5:
-                segments.insert(0, ("startup", 0, segments[0][1], False))
-            svg = build_rss_svg(
-                samples, page_size, start_epoch, segments,
-                f"{ENGINE_LABELS[eng]} — {suite} suite RSS",
-            )
-            if svg:
-                rss_svg_parts.append(svg)
-    rss_svg_section = ""
-    if rss_svg_parts:
-        rss_svg_section = (
-            '<h2>RSS over time</h2>\n'
-            '<p class="meta">Sampled once per second from /proc/statm plus open-file page cache. '
-            'Colored bands show benchmark segments (start time from db_bench output).</p>\n'
-            '<ul class="meta">\n'
-            '<li><span style="color:#1558a8;font-weight:600">rss</span>: '
-            'resident set size (pages currently in RAM for the process); '
-            'rss = shared + anony.</li>\n'
-            '<li><span style="color:#258825;font-weight:600">shared</span>: '
-            'shared resident pages; mostly readonly (cheap; OS prefers reclaiming these, '
-            'no swap needed).</li>\n'
-            '<li><span style="color:#c11618;font-weight:600">anony</span>: '
-            'rss - shared; '
-            'mostly readwrite anonymous pages (costly, needs swap).</li>\n'
-            '<li><span style="color:#a05a00;font-weight:600">pagecache</span>: '
-            'kernel file page cache for regular files the process currently has open '
-            '(cachestat(2) on /proc/pid/fd, deduped by inode; covers buffered readwrite '
-            "and mmap). Pages brought in only via buffered I/O are not charged to process RSS; "
-            "mmap'd file pages can appear in both pagecache and RSS/shared, so series may "
-            'overlap.</li>\n'
-            '<li><span style="color:#6b21a8;font-weight:600">anony+pc</span>: '
-            'anony+pagecache (sum of process anonymous RSS and open-file page cache; '
-            'not a disjoint partition).</li>\n'
-            '</ul>\n'
-            + "\n".join(rss_svg_parts)
-        )
-
-    db_bench_detail_keys = [
-        "benchmark",
-        "micros/op",
-        "ops/sec",
-        "seconds",
-        "operations",
-        "extra",
-    ]
-
-    detail_parts = []
-    for eng in ENGINES:
-        data = engines_data.get(eng)
-        if not data:
-            detail_parts.append(
-                f"<h3>{html.escape(ENGINE_LABELS[eng])}</h3><p><em>no logs</em></p>"
-            )
-            continue
-        detail_parts.append(f"<h3>{html.escape(ENGINE_LABELS[eng])}</h3>")
-        if data.get("db_bench_fillrandom"):
-            detail_parts.append(
-                "<h4>db_bench (fillrandom+compact+readseq/readrandom)</h4>"
-            )
-            detail_parts.append(
-                _table(
-                    db_bench_detail_keys,
-                    data["db_bench_fillrandom"],
-                    db_bench_detail_keys,
-                )
-            )
-        detail_parts.append("<h4>db_bench (fillseq suite)</h4>")
-        detail_parts.append(
-            _table(db_bench_detail_keys, data["db_bench"], db_bench_detail_keys)
-        )
-
-    raw_link_parts: List[str] = []
-    for eng in ENGINES:
-        label = html.escape(ENGINE_LABELS[eng])
-        if (raw_dir / eng / "db_bench.log").is_file():
-            raw_link_parts.append(
-                f'<a href="raw/{eng}/db_bench.log">{label} db_bench</a>'
-            )
     actions_run_url = getattr(args, "actions_run_url", None) or ""
-    log_artifact_names: List[str] = []
+    has_info_logs = False
     for eng in ENGINES:
-        label = ENGINE_LABELS[eng]
-        for p in sorted((log_root / eng).glob("LOG-*")):
+        for p in (log_root / eng).glob("LOG-*"):
             if p.is_file():
-                log_artifact_names.append(f"{label} {p.name}")
-    if log_artifact_names and actions_run_url:
-        names = ", ".join(html.escape(n) for n in log_artifact_names)
-        raw_link_parts.append(
-            f'<a href="{html.escape(actions_run_url)}#artifacts">'
-            f"DB INFO LOGs (Actions artifact)</a>"
-            f'<span class="meta"> — {names}</span>'
-        )
-    elif log_artifact_names and not actions_run_url:
+                has_info_logs = True
+                break
+        if has_info_logs:
+            break
+    if has_info_logs and not actions_run_url:
         raise SystemExit(
             "LOG-* present under --log-root but --actions-run-url was not provided; "
             "refusing to emit pages without an external link (LOGs must not go into gh-pages)"
         )
-    raw_links = " | ".join(raw_link_parts)
-    yaml_links = _build_yaml_config_links(raw_dir)
 
-    runner_html = _build_runner_section(runner_env, cache_size_bytes, dataset_bytes, dataset_estimated)
+    source_links = _build_source_links(
+        raw_dir, "raw", actions_run_url, has_info_logs
+    )
     dcompact_notes = _build_dcompact_bench_notes(runner_env)
+    runner_html = _build_runner_section(
+        runner_env, cache_size_bytes, dataset_bytes, dataset_estimated
+    )
 
     body = f"""
-  <h1>Bench run: {html.escape(args.variant)} / {html.escape(str(args.run_id))}</h1>
+  <h1>Result table: {html.escape(args.variant)} / {html.escape(str(args.run_id))}</h1>
   <p class="meta">
     <a href="../../index.html">← plain home</a> |
     <a href="../../dcompact/index.html">← dcompact</a>
   </p>
-  <p class="meta">generated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
-  <p>{raw_links}</p>
-  {yaml_links}
+  <p class="meta">generated (UTC): {html.escape(_fmt_utc())}</p>
+  {source_links}
   {dcompact_notes}
   {runner_html}
-  <h2>/dev/shm usage (space; after db_bench, before delete)</h2>
-  <p class="meta">Allocated disk usage (IEC blocks). RocksDB uses default Snappy compression. Space ratio = engine / v8.10; {_hl('<1 = less space than RocksDB', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
-  {shm_table}
-  <h2>Peak RSS (memory; during db_bench)</h2>
-  <p class="meta">Peak resident set size. RocksDB block cache = half physical memory ({html.escape(format_iec(cache_size_bytes) if cache_size_bytes else 'n/a')}). Ratio = engine / v8.10; {_hl('<1 = less memory', 'faster')}, {_hl('>1 = more memory', 'slower')}.</p>
-  {rss_table}
-  {rss_svg_section}
-  <h2>Comparison: db_bench fillrandom suite (perf)</h2>
-  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / Topling*: {_hl('>1 = that Topling variant faster', 'faster')}. Values show ops/sec.</p>
-  {fr_compare}
-  <h2>Comparison: db_bench fillseq suite (perf)</h2>
-  <p class="meta">Same as fillrandom. Watch {_hl('compact / readseq / readrandom', 'slower')} cost for minDictZip=10 vs {_hl('space savings', 'faster')} above.</p>
-  {db_compare}
-  <h2>Per-engine details</h2>
-  {"".join(detail_parts)}
+  {_build_per_engine_details(engines_data)}
 """
     (run_dir / "index.html").write_text(
-        _page(f"Bench {args.variant} {args.run_id}", body), encoding="utf-8"
+        _page(
+            f"Result table {args.variant} {args.run_id}",
+            body,
+            include_chart_js=False,
+        ),
+        encoding="utf-8",
     )
 
     runner_env_meta = {
@@ -1303,6 +825,8 @@ def emit(args: argparse.Namespace) -> None:
         "run_dir": run_dir_name,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "rocksdb_master_git_sha": master_sha,
+        "actions_run_url": actions_run_url,
+        "has_info_logs": has_info_logs,
         "runner_env": runner_env_meta,
         "engines": {
             eng: {
@@ -1320,7 +844,7 @@ def emit(args: argparse.Namespace) -> None:
             }
             for eng in ENGINES
         },
-        "db_bench": engines_data.get("topling", {}).get("db_bench", []),
+        "db_bench": engines_data.get("zipkeyonly", {}).get("db_bench", []),
     }
     (out / "run-meta.json").write_text(
         json.dumps(meta, indent=2) + "\n", encoding="utf-8"
@@ -1343,7 +867,7 @@ def _render_dcompact_section(
     else:
         set_rocksdb_master_label(None)
     engines = entry.get("engines") or {
-        "topling": {
+        "zipkeyonly": {
             "db_bench": entry.get("db_bench", []),
         }
     }
@@ -1389,25 +913,45 @@ def _render_dcompact_section(
         {e: engines.get(e, {}).get("db_bench_fillrandom", []) for e in ENGINES}
     )
 
-    cache_iec = format_iec(cache_size_bytes) if cache_size_bytes else "n/a"
+    cache_meta = (
+        f"RocksDB block cache = half physical memory ({html.escape(format_iec(cache_size_bytes))})."
+        if cache_size_bytes
+        else "RocksDB block cache size: n/a."
+    )
+
+    source_links = ""
+    rss_svg_section = ""
+    if pages_root is not None:
+        raw_dir = pages_root / "runs" / run_dir / "raw"
+        href_prefix = f"../runs/{run_dir}/raw"
+        source_links = _build_source_links(
+            raw_dir,
+            href_prefix,
+            str(entry.get("actions_run_url") or ""),
+            _entry_has_info_logs(entry),
+        )
+        rss_svg_section = _build_rss_svg_section(raw_dir, engines)
 
     return f"""
   <h2>Latest dcompact run</h2>
   <p class="meta">run_id={html.escape(str(entry.get('run_id', '')))} |
-     <a href="../runs/{html.escape(run_dir)}/index.html">full report</a> |
-     {html.escape(str(entry.get('timestamp', '')))}</p>
+     <a href="{_href("..", "runs", run_dir, "index.html")}">result table</a> |
+     {html.escape(_fmt_utc(entry.get('timestamp', '')))}</p>
+  {source_links}
   {dcompact_notes}
   {runner_html}
-  <h3>/dev/shm usage (disk; ratio vs RocksDB v8.10)</h3>
-  <p class="meta">RocksDB uses default Snappy compression. Ratio = engine / v8.10; {_hl('<1 = less space', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
+  <h3>/dev/shm usage (disk space; after db_bench)</h3>
+  <p class="meta">Allocated disk usage (IEC blocks). RocksDB uses default Snappy compression. Space ratio = engine / v8.10; {_hl('<1 = less space than RocksDB', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
   {shm_table}
-  <h3>Peak RSS (memory; ratio vs RocksDB v8.10)</h3>
-  <p class="meta">RocksDB block cache = half physical memory ({html.escape(cache_iec)}). Ratio = engine / v8.10; {_hl('<1 = less memory', 'faster')}, {_hl('>1 = more memory', 'slower')}.</p>
+  <h3>Peak RSS (RAM; during db_bench)</h3>
+  <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10; {_hl('<1 = less RSS', 'faster')}, {_hl('>1 = more RSS', 'slower')}.</p>
   {rss_table}
-  <h3>db_bench fillrandom suite (time ratio = rocksdb / topling*)</h3>
-  <p class="meta">compact row shows operations/seconds. RocksDB uses default Snappy compression.</p>
+  {rss_svg_section}
+  <h3>Comparison: db_bench fillrandom suite (perf)</h3>
+  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / zipkey*: {_hl('>1 = that zipkey* engine faster', 'faster')}. Values show ops/sec.</p>
   {fr_compare}
-  <h3>db_bench fillseq suite</h3>
+  <h3>Comparison: db_bench fillseq suite (perf)</h3>
+  <p class="meta">Same as fillrandom. Watch {_hl('compact / readseq / readrandom', 'slower')} cost for minDictZip=10 vs {_hl('space savings', 'faster')} above.</p>
   {db_compare_fs}
 """
 
@@ -1421,9 +965,9 @@ def _render_dcompact_history(history: List[Dict[str, Any]]) -> str:
         run_dir = entry.get("run_dir", "")
         items.append(
             "<li>"
-            f'{html.escape(str(entry.get("timestamp", "")))} — '
+            f'{html.escape(_fmt_utc(entry.get("timestamp", "")))} — '
             f'run_id={html.escape(str(entry.get("run_id", "")))} — '
-            f'<a href="../runs/{html.escape(run_dir)}/index.html">report</a>'
+            f'<a href="{_href("..", "runs", run_dir, "index.html")}">result table</a>'
             "</li>"
         )
     return "<ul>\n" + "\n".join(items) + "\n</ul>"
@@ -1486,6 +1030,8 @@ def merge(args: argparse.Namespace) -> None:
         "timestamp": meta.get("timestamp")
         or datetime.now(timezone.utc).isoformat(),
         "rocksdb_master_git_sha": meta.get("rocksdb_master_git_sha"),
+        "actions_run_url": meta.get("actions_run_url") or "",
+        "has_info_logs": _entry_has_info_logs(meta),
         "runner_env": meta.get("runner_env"),
         "engines": meta.get("engines", {}),
         "db_bench": meta.get("db_bench", []),
@@ -1504,7 +1050,7 @@ def merge(args: argparse.Namespace) -> None:
   <p class="meta">
     <a href="../index.html">← plain home</a>
   </p>
-  <p class="meta">Updated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
+  <p class="meta">Updated (UTC): {html.escape(_fmt_utc())}</p>
   {dcompact_section}
   <h2>History</h2>
   {_render_dcompact_history(history)}
@@ -1527,7 +1073,7 @@ def main() -> None:
     p_emit.add_argument(
         "--log-root",
         required=True,
-        help="Directory with topling/, topling-dictzip10/, rocksdb-*/ log subdirs",
+        help="Directory with zipkeyonly/, zipkeyvalue/, rocksdb-*/ log subdirs",
     )
     p_emit.add_argument(
         "--engine-meta-root",

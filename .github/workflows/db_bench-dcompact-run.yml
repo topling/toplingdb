@@ -23,22 +23,19 @@ on:
         required: false
         default: "50%"
         type: string
-      l1_writer:
-        description: DispatcherTable L1 level_writers (default simple)
-        required: false
-        default: simple
-        type: choice
-        options:
-          - fast
-          - simple
-          - light_zip
-          - zip
-          - bb
       value_size:
         description: db_bench -value_size bytes (default 50)
         required: false
         default: "50"
         type: string
+      cached_pages_use_sys:
+        description: >-
+          If true, drop page cache before each sampled bench and set
+          SYS_CACHED_OF_EMPTY from /proc/meminfo Cached so pagecache is
+          system-wide Cached growth (pages). Default: per-fd cachestat.
+        required: false
+        default: false
+        type: boolean
 
 # Must match plain run — serialize gh-pages pushes.
 concurrency:
@@ -59,8 +56,8 @@ jobs:
       ARTIFACT_NAME: db_bench-bin-plain
       NUM: ${{ inputs.num }}
       CPU_QUOTA: ${{ inputs.cpu_quota }}
-      L1_WRITER: ${{ inputs.l1_writer }}
       VALUE_SIZE: ${{ inputs.value_size || '50' }}
+      CACHED_PAGES_USE_SYS: ${{ inputs.cached_pages_use_sys || false }}
     steps:
       - name: Checkout build commit
         uses: actions/checkout@v4
@@ -75,7 +72,8 @@ jobs:
             libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
             libbz2-dev libcurl4-openssl-dev liburing-dev \
             libsnappy-dev liblz4-dev libzstd-dev curl
-          chmod +x .github/scripts/ensure_sample_statm_fdcache.sh
+          chmod +x .github/scripts/ensure_sample_statm_fdcache.sh \
+            .github/scripts/run_sample_statm_fdcache.sh
           .github/scripts/ensure_sample_statm_fdcache.sh
 
       - name: Download build artifact
@@ -98,7 +96,8 @@ jobs:
           test -d "$RUN_PREFIX/rocksdb-master"
           test -x "$RUN_PREFIX/topling/bin/db_bench"
           test -x "$RUN_PREFIX/topling/bin/dcompact_worker.exe"
-          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_dcompact_ci.yaml"
+          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_dcompact_zipkeyonly.yaml"
+          test -f "$RUN_PREFIX/topling/toplingdb-conf/db_bench_enterprise_dcompact_zipkeyvalue.yaml"
           test -x "$RUN_PREFIX/rocksdb-v8.10/bin/db_bench"
           test -x "$RUN_PREFIX/rocksdb-v8.10/bin/remote_compact_broker"
           test -x "$RUN_PREFIX/rocksdb-v8.10/bin/remote_compact_worker"
@@ -127,7 +126,6 @@ jobs:
             echo "mem_total_bytes=$MEM_TOTAL_BYTES"
             echo "shm_size_bytes=$(df -B1 /dev/shm | awk 'NR==2{print $2}')"
             echo "cpu_quota_write=$CPU_QUOTA"
-            echo "l1_writer=$L1_WRITER"
             echo "compact_mode_topling=dcompact_worker"
             echo "compact_mode_rocksdb=compaction_service_spool"
             echo "num=$NUM"
@@ -139,11 +137,9 @@ jobs:
           chmod +x .github/scripts/run_dcompact_bench.sh
           export CI=1
           export PREFIX="$RUN_PREFIX/topling"
-          export YAML="$PREFIX/toplingdb-conf/db_bench_enterprise_dcompact_ci.yaml"
           export LOGDIR_BASE=logs
           export NUM
           export CPU_QUOTA
-          export L1_WRITER
           .github/scripts/run_dcompact_bench.sh
 
       - name: Run RocksDB v8.10 (write @ CPU_QUOTA + CompactionService worker)

@@ -15,6 +15,7 @@ import re
 import shutil
 import sys
 from datetime import datetime, timezone
+from urllib.parse import quote
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -387,7 +388,36 @@ def _table(headers: List[str], rows: List[Dict[str, str]], keys: List[str]) -> s
     )
 
 
-def _page(title: str, body: str) -> str:
+def _fmt_utc(value: Any = None) -> str:
+    """UTC for humans: date time to the second, space instead of T."""
+    if value is None:
+        dt = datetime.now(timezone.utc)
+    else:
+        text = str(value).strip()
+        if not text:
+            return ""
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return text.replace("T", " ", 1)
+    return dt.replace(microsecond=0).isoformat().replace("T", " ", 1)
+
+
+def _href(*parts: str) -> str:
+    segs: List[str] = []
+    for part in parts:
+        for seg in str(part).replace("\\", "/").split("/"):
+            if not seg:
+                continue
+            if seg in (".", ".."):
+                segs.append(seg)
+            else:
+                segs.append(quote(seg, safe="-_.~"))
+    return html.escape("/".join(segs), quote=True)
+
+
+def _page(title: str, body: str, include_chart_js: bool = True) -> str:
+    chart_js = _RSS_CHART_JS if include_chart_js else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -409,7 +439,7 @@ def _page(title: str, body: str) -> str:
 </head>
 <body>
 {body}
-{_RSS_CHART_JS}
+{chart_js}
 </body>
 </html>
 """
@@ -591,22 +621,202 @@ def _build_dcompact_bench_notes(runner_env: Dict[str, str]) -> str:
   </p>"""
 
 
-def _build_yaml_config_links(raw_dir: Path) -> str:
+def _build_yaml_config_links(raw_dir: Path, href_prefix: str = "raw") -> str:
     parts: List[str] = []
+    prefix = href_prefix.rstrip("/")
     for eng in TOPLING_ENGINES:
         eng_dir = raw_dir / eng
-        label = html.escape(ENGINE_LABELS[eng])
         for name in YAML_USED_NAMES:
             if (eng_dir / name).is_file():
-                parts.append(f'<a href="raw/{eng}/{name}">{label} {name}</a>')
+                parts.append(
+                    f'<a href="{_href(prefix, eng, name)}">{html.escape(eng)} {name}</a>'
+                )
     if not parts:
         return ""
     return (
-        '<p class="meta"><strong>ToplingDB bench yaml</strong> '
-        "(runtime graft): "
+        '<p class="meta"><strong>ToplingDB bench yaml</strong>: '
         + " | ".join(parts)
         + "</p>"
     )
+
+
+def _raw_db_bench_link_parts(raw_dir: Path, href_prefix: str = "raw") -> List[str]:
+    parts: List[str] = []
+    prefix = href_prefix.rstrip("/")
+    for eng in ENGINES:
+        if (raw_dir / eng / "db_bench.log").is_file():
+            label = html.escape(ENGINE_LABELS[eng])
+            parts.append(
+                f'<a href="{_href(prefix, eng, "db_bench.log")}">{label}</a>'
+            )
+    return parts
+
+
+def _artifact_log_link(actions_run_url: str, has_info_logs: bool) -> str:
+    if not has_info_logs or not actions_run_url:
+        return ""
+    return (
+        f'<a href="{html.escape(actions_run_url, quote=True)}#artifacts">'
+        f"DB INFO LOGs (Actions artifact)</a>"
+    )
+
+
+def _entry_has_info_logs(entry: Dict[str, Any]) -> bool:
+    if "has_info_logs" in entry:
+        return bool(entry.get("has_info_logs"))
+    return bool(entry.get("artifact_names"))
+
+
+def _build_source_links(
+    raw_dir: Path,
+    href_prefix: str,
+    actions_run_url: str = "",
+    has_info_logs: bool = False,
+) -> str:
+    raw_parts = _raw_db_bench_link_parts(raw_dir, href_prefix)
+    artifact = _artifact_log_link(actions_run_url, has_info_logs)
+    if artifact:
+        raw_parts.append(artifact)
+    chunks: List[str] = []
+    if raw_parts:
+        chunks.append(
+            '<p class="meta"><strong>raw logs</strong>: '
+            + " | ".join(raw_parts)
+            + "</p>"
+        )
+    yaml_links = _build_yaml_config_links(raw_dir, href_prefix)
+    if yaml_links:
+        chunks.append(yaml_links)
+    return "\n  ".join(chunks)
+
+
+def _build_rss_svg_section(
+    log_root: Path,
+    engines_data: Dict[str, Any],
+    heading: str = "h3",
+) -> str:
+    rss_svg_parts: List[str] = []
+    pagecache_src = ""
+    for eng in ENGINES:
+        eng_dir = log_root / eng
+        for suite, bench_key in [
+            ("fillrandom", "db_bench_fillrandom"),
+            ("fillseq", "db_bench"),
+        ]:
+            series_path = eng_dir / f"statm_series-{suite}.txt"
+            if not series_path.is_file():
+                continue
+            series_text = series_path.read_text(encoding="utf-8", errors="replace")
+            if not pagecache_src:
+                pagecache_src = parse_pagecache_src(series_text)
+            start_epoch, page_size, samples = parse_rss_series(series_text)
+            if not samples:
+                continue
+            bench_rows = engines_data.get(eng, {}).get(bench_key, [])
+            total_dur = (samples[-1][0] - start_epoch) if samples else 0
+            segments = compute_bench_segments(bench_rows, start_epoch, total_dur)
+            if segments and segments[0][1] > 0.5:
+                segments.insert(0, ("startup", 0, segments[0][1], False))
+            svg = build_rss_svg(
+                samples, page_size, start_epoch, segments,
+                f"{ENGINE_LABELS[eng]} — {suite} suite RAM",
+            )
+            if svg:
+                rss_svg_parts.append(svg)
+    if not rss_svg_parts:
+        return ""
+    if pagecache_src == "meminfo":
+        pagecache_meta = (
+            "Sampled once per second from /proc/statm plus system Cached "
+            "(/proc/meminfo) growth since drop_caches baseline "
+            "(workflow cached_pages_use_sys / SYS_CACHED_OF_EMPTY). "
+        )
+        pagecache_li = (
+            f'<li><span style="color:{RSS_LINE_COLORS["pagecache"]};font-weight:600">pagecache</span>: '
+            "system-wide /proc/meminfo Cached minus the post-drop_caches baseline "
+            "(excluding the inherent consumption of an empty system).</li>\n"
+        )
+        anony_pc_li = (
+            f'<li><span style="color:{RSS_LINE_COLORS["anony+pc"]};font-weight:600">anony+pc</span>: '
+            "anony+pagecache (sum of process anonymous RSS and system Cached growth; "
+            "not a disjoint partition).</li>\n"
+        )
+    else:
+        pagecache_meta = (
+            "Sampled once per second from /proc/statm plus open-file page cache. "
+        )
+        pagecache_li = (
+            f'<li><span style="color:{RSS_LINE_COLORS["pagecache"]};font-weight:600">pagecache</span>: '
+            "kernel file page cache for regular files the process currently has open "
+            "(cachestat(2) on /proc/pid/fd, deduped by inode; covers buffered readwrite "
+            "and mmap). Pages brought in only via buffered I/O are not charged to process RSS; "
+            "mmap'd file pages can appear in both pagecache and RSS/shared, so series may "
+            "overlap.</li>\n"
+        )
+        anony_pc_li = (
+            f'<li><span style="color:{RSS_LINE_COLORS["anony+pc"]};font-weight:600">anony+pc</span>: '
+            "anony+pagecache (sum of process anonymous RSS and open-file page cache; "
+            "not a disjoint partition).</li>\n"
+        )
+    return (
+        f"<{heading}>RAM usage over time</{heading}>\n"
+        f'<p class="meta">{pagecache_meta}'
+        "The bar below each plot shows stage name + duration "
+        "(consecutive repeats merge, e.g. readseq×3); "
+        "colored bands mark the same intervals. "
+        "Stage names may overflow into a neighbor cell; a label under the bar "
+        "is used only when names would overlap.</p>\n"
+        '<ul class="meta">\n'
+        f'<li><span style="color:{RSS_LINE_COLORS["rss"]};font-weight:600">rss</span>: '
+        "resident set size (pages currently in RAM for the process); "
+        "rss = shared + anony.</li>\n"
+        f'<li><span style="color:{RSS_LINE_COLORS["shared"]};font-weight:600">shared</span>: '
+        "shared resident pages; mostly readonly (cheap; OS prefers reclaiming these, "
+        "no swap needed).</li>\n"
+        f'<li><span style="color:{RSS_LINE_COLORS["anony"]};font-weight:600">anony</span>: '
+        "rss - shared; "
+        "mostly readwrite anonymous pages (costly, needs swap).</li>\n"
+        + pagecache_li
+        + anony_pc_li
+        + "</ul>\n"
+        + "\n".join(rss_svg_parts)
+    )
+
+
+def _build_per_engine_details(engines_data: Dict[str, Any]) -> str:
+    db_bench_detail_keys = [
+        "benchmark",
+        "micros/op",
+        "ops/sec",
+        "seconds",
+        "operations",
+        "extra",
+    ]
+    detail_parts: List[str] = []
+    for eng in ENGINES:
+        data = engines_data.get(eng)
+        if not data:
+            detail_parts.append(
+                f"<h3>{html.escape(ENGINE_LABELS[eng])}</h3><p><em>no logs</em></p>"
+            )
+            continue
+        detail_parts.append(f"<h3>{html.escape(ENGINE_LABELS[eng])}</h3>")
+        if data.get("db_bench_fillrandom"):
+            detail_parts.append(
+                "<h4>db_bench (fillrandom+compact+readseq/readrandom)</h4>"
+            )
+            detail_parts.append(
+                _table(
+                    db_bench_detail_keys,
+                    data["db_bench_fillrandom"],
+                    db_bench_detail_keys,
+                )
+            )
+        detail_parts.append("<h4>db_bench (fillseq suite)</h4>")
+        detail_parts.append(
+            _table(db_bench_detail_keys, data["db_bench"], db_bench_detail_keys)
+        )
+    return "".join(detail_parts)
 
 
 def _build_runner_section(
@@ -717,11 +927,6 @@ def emit(args: argparse.Namespace) -> None:
 
     runner_env = load_runner_env(log_root)
 
-    rss_data: Dict[str, Dict[str, Optional[int]]] = {
-        e: engines_data.get(e, {}).get("rss_usage") or {} for e in ENGINES
-    }
-    rss_table = build_rss_usage_table(rss_data)
-
     bench_settings: Dict[str, Dict[str, str]] = {
         e: engines_data.get(e, {}).get("bench_settings") or {} for e in ENGINES
     }
@@ -747,207 +952,48 @@ def emit(args: argparse.Namespace) -> None:
         except ValueError:
             pass
 
-    db_compare = build_db_bench_compare(
-        {e: engines_data.get(e, {}).get("db_bench", []) for e in ENGINES}
-    )
-    fr_compare = build_db_bench_compare(
-        {
-            e: engines_data.get(e, {}).get("db_bench_fillrandom", [])
-            for e in ENGINES
-        }
-    )
-    shm_usages = {
-        e: engines_data.get(e, {}).get("shm_usage") or {} for e in ENGINES
-    }
-    shm_table = build_shm_usage_table(shm_usages)
-
-    rss_svg_parts: List[str] = []
-    pagecache_src = ""
-    for eng in ENGINES:
-        eng_dir = log_root / eng
-        for suite, log_name, bench_key in [
-            ("fillrandom", "db_bench-fillrandom.log", "db_bench_fillrandom"),
-            ("fillseq", "db_bench.log", "db_bench"),
-        ]:
-            series_path = eng_dir / f"statm_series-{suite}.txt"
-            if not series_path.is_file():
-                continue
-            series_text = series_path.read_text(encoding="utf-8", errors="replace")
-            if not pagecache_src:
-                pagecache_src = parse_pagecache_src(series_text)
-            start_epoch, page_size, samples = parse_rss_series(series_text)
-            if not samples:
-                continue
-            bench_rows = engines_data.get(eng, {}).get(bench_key, [])
-            total_dur = (samples[-1][0] - start_epoch) if samples else 0
-            segments = compute_bench_segments(bench_rows, start_epoch, total_dur)
-            if segments and segments[0][1] > 0.5:
-                segments.insert(0, ("startup", 0, segments[0][1], False))
-            svg = build_rss_svg(
-                samples, page_size, start_epoch, segments,
-                f"{ENGINE_LABELS[eng]} — {suite} suite RAM",
-            )
-            if svg:
-                rss_svg_parts.append(svg)
-    rss_svg_section = ""
-    if rss_svg_parts:
-        if pagecache_src == "meminfo":
-            pagecache_meta = (
-                "Sampled once per second from /proc/statm plus system Cached "
-                "(/proc/meminfo) growth since drop_caches baseline "
-                "(workflow cached_pages_use_sys / SYS_CACHED_OF_EMPTY). "
-            )
-            pagecache_li = (
-                f'<li><span style="color:{RSS_LINE_COLORS["pagecache"]};font-weight:600">pagecache</span>: '
-                "system-wide /proc/meminfo Cached minus the post-drop_caches baseline "
-                "(excluding the inherent consumption of an empty system).</li>\n"
-            )
-            anony_pc_li = (
-                f'<li><span style="color:{RSS_LINE_COLORS["anony+pc"]};font-weight:600">anony+pc</span>: '
-                "anony+pagecache (sum of process anonymous RSS and system Cached growth; "
-                "not a disjoint partition).</li>\n"
-            )
-        else:
-            pagecache_meta = (
-                "Sampled once per second from /proc/statm plus open-file page cache. "
-            )
-            pagecache_li = (
-                f'<li><span style="color:{RSS_LINE_COLORS["pagecache"]};font-weight:600">pagecache</span>: '
-                "kernel file page cache for regular files the process currently has open "
-                "(cachestat(2) on /proc/pid/fd, deduped by inode; covers buffered readwrite "
-                "and mmap). Pages brought in only via buffered I/O are not charged to process RSS; "
-                "mmap'd file pages can appear in both pagecache and RSS/shared, so series may "
-                "overlap.</li>\n"
-            )
-            anony_pc_li = (
-                f'<li><span style="color:{RSS_LINE_COLORS["anony+pc"]};font-weight:600">anony+pc</span>: '
-                "anony+pagecache (sum of process anonymous RSS and open-file page cache; "
-                "not a disjoint partition).</li>\n"
-            )
-        rss_svg_section = (
-            '<h2>RAM usage over time</h2>\n'
-            f'<p class="meta">{pagecache_meta}'
-            'The bar below each plot shows stage name + duration '
-            '(consecutive repeats merge, e.g. readseq×3); '
-            'colored bands mark the same intervals. '
-            'Stage names may overflow into a neighbor cell; a label under the bar '
-            'is used only when names would overlap.</p>\n'
-            '<ul class="meta">\n'
-            f'<li><span style="color:{RSS_LINE_COLORS["rss"]};font-weight:600">rss</span>: '
-            'resident set size (pages currently in RAM for the process); '
-            'rss = shared + anony.</li>\n'
-            f'<li><span style="color:{RSS_LINE_COLORS["shared"]};font-weight:600">shared</span>: '
-            'shared resident pages; mostly readonly (cheap; OS prefers reclaiming these, '
-            'no swap needed).</li>\n'
-            f'<li><span style="color:{RSS_LINE_COLORS["anony"]};font-weight:600">anony</span>: '
-            'rss - shared; '
-            'mostly readwrite anonymous pages (costly, needs swap).</li>\n'
-            + pagecache_li
-            + anony_pc_li
-            + '</ul>\n'
-            + "\n".join(rss_svg_parts)
-        )
-
-    db_bench_detail_keys = [
-        "benchmark",
-        "micros/op",
-        "ops/sec",
-        "seconds",
-        "operations",
-        "extra",
-    ]
-
-    detail_parts = []
-    for eng in ENGINES:
-        data = engines_data.get(eng)
-        if not data:
-            detail_parts.append(
-                f"<h3>{html.escape(ENGINE_LABELS[eng])}</h3><p><em>no logs</em></p>"
-            )
-            continue
-        detail_parts.append(f"<h3>{html.escape(ENGINE_LABELS[eng])}</h3>")
-        if data.get("db_bench_fillrandom"):
-            detail_parts.append(
-                "<h4>db_bench (fillrandom+compact+readseq/readrandom)</h4>"
-            )
-            detail_parts.append(
-                _table(
-                    db_bench_detail_keys,
-                    data["db_bench_fillrandom"],
-                    db_bench_detail_keys,
-                )
-            )
-        detail_parts.append("<h4>db_bench (fillseq suite)</h4>")
-        detail_parts.append(
-            _table(db_bench_detail_keys, data["db_bench"], db_bench_detail_keys)
-        )
-
-    raw_link_parts: List[str] = []
-    for eng in ENGINES:
-        label = html.escape(ENGINE_LABELS[eng])
-        if (raw_dir / eng / "db_bench.log").is_file():
-            raw_link_parts.append(
-                f'<a href="raw/{eng}/db_bench.log">{label} db_bench</a>'
-            )
     actions_run_url = getattr(args, "actions_run_url", None) or ""
-    log_artifact_names: List[str] = []
+    has_info_logs = False
     for eng in ENGINES:
-        label = ENGINE_LABELS[eng]
-        for p in sorted((log_root / eng).glob("LOG-*")):
+        for p in (log_root / eng).glob("LOG-*"):
             if p.is_file():
-                log_artifact_names.append(f"{label} {p.name}")
-    if log_artifact_names and actions_run_url:
-        names = ", ".join(html.escape(n) for n in log_artifact_names)
-        raw_link_parts.append(
-            f'<a href="{html.escape(actions_run_url)}#artifacts">'
-            f"DB INFO LOGs (Actions artifact)</a>"
-            f'<span class="meta"> — {names}</span>'
-        )
-    elif log_artifact_names and not actions_run_url:
+                has_info_logs = True
+                break
+        if has_info_logs:
+            break
+    if has_info_logs and not actions_run_url:
         raise SystemExit(
             "LOG-* present under --log-root but --actions-run-url was not provided; "
             "refusing to emit pages without an external link (LOGs must not go into gh-pages)"
         )
-    raw_links = " | ".join(raw_link_parts)
-    yaml_links = _build_yaml_config_links(raw_dir)
 
-    runner_html = _build_runner_section(runner_env, cache_size_bytes, dataset_bytes, dataset_estimated)
+    source_links = _build_source_links(
+        raw_dir, "raw", actions_run_url, has_info_logs
+    )
     dcompact_notes = _build_dcompact_bench_notes(runner_env)
-    cache_meta = (
-        f"RocksDB block cache = half physical memory ({html.escape(format_iec(cache_size_bytes))})."
-        if cache_size_bytes
-        else "RocksDB block cache size: n/a."
+    runner_html = _build_runner_section(
+        runner_env, cache_size_bytes, dataset_bytes, dataset_estimated
     )
 
     body = f"""
-  <h1>Bench run: {html.escape(args.variant)} / {html.escape(str(args.run_id))}</h1>
+  <h1>Result table: {html.escape(args.variant)} / {html.escape(str(args.run_id))}</h1>
   <p class="meta">
     <a href="../../index.html">← plain home</a> |
     <a href="../../dcompact/index.html">← dcompact</a>
   </p>
-  <p class="meta">generated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
-  <p>{raw_links}</p>
-  {yaml_links}
+  <p class="meta">generated (UTC): {html.escape(_fmt_utc())}</p>
+  {source_links}
   {dcompact_notes}
   {runner_html}
-  <h2>/dev/shm usage (disk space; after db_bench)</h2>
-  <p class="meta">Allocated disk usage (IEC blocks). RocksDB uses default Snappy compression. Space ratio = engine / v8.10; {_hl('<1 = less space than RocksDB', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
-  {shm_table}
-  <h2>Peak RSS (RAM; during db_bench)</h2>
-  <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10; {_hl('<1 = less RSS', 'faster')}, {_hl('>1 = more RSS', 'slower')}.</p>
-  {rss_table}
-  {rss_svg_section}
-  <h2>Comparison: db_bench fillrandom suite (perf)</h2>
-  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / zipkey*: {_hl('>1 = that zipkey* engine faster', 'faster')}. Values show ops/sec.</p>
-  {fr_compare}
-  <h2>Comparison: db_bench fillseq suite (perf)</h2>
-  <p class="meta">Same as fillrandom. Watch {_hl('compact / readseq / readrandom', 'slower')} cost for minDictZip=10 vs {_hl('space savings', 'faster')} above.</p>
-  {db_compare}
-  <h2>Per-engine details</h2>
-  {"".join(detail_parts)}
+  {_build_per_engine_details(engines_data)}
 """
     (run_dir / "index.html").write_text(
-        _page(f"Bench {args.variant} {args.run_id}", body), encoding="utf-8"
+        _page(
+            f"Result table {args.variant} {args.run_id}",
+            body,
+            include_chart_js=False,
+        ),
+        encoding="utf-8",
     )
 
     runner_env_meta = {
@@ -963,6 +1009,8 @@ def emit(args: argparse.Namespace) -> None:
         "run_dir": run_dir_name,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "rocksdb_master_git_sha": master_sha,
+        "actions_run_url": actions_run_url,
+        "has_info_logs": has_info_logs,
         "runner_env": runner_env_meta,
         "engines": {
             eng: {
@@ -1055,23 +1103,39 @@ def _render_dcompact_section(
         else "RocksDB block cache size: n/a."
     )
 
+    source_links = ""
+    rss_svg_section = ""
+    if pages_root is not None:
+        raw_dir = pages_root / "runs" / run_dir / "raw"
+        href_prefix = f"../runs/{run_dir}/raw"
+        source_links = _build_source_links(
+            raw_dir,
+            href_prefix,
+            str(entry.get("actions_run_url") or ""),
+            _entry_has_info_logs(entry),
+        )
+        rss_svg_section = _build_rss_svg_section(raw_dir, engines)
+
     return f"""
   <h2>Latest dcompact run</h2>
   <p class="meta">run_id={html.escape(str(entry.get('run_id', '')))} |
-     <a href="../runs/{html.escape(run_dir)}/index.html">full report</a> |
-     {html.escape(str(entry.get('timestamp', '')))}</p>
+     <a href="../runs/{html.escape(run_dir)}/index.html">result table</a> |
+     {html.escape(_fmt_utc(entry.get('timestamp', '')))}</p>
+  {source_links}
   {dcompact_notes}
   {runner_html}
-  <h3>/dev/shm usage (disk space; ratio vs RocksDB v8.10)</h3>
-  <p class="meta">RocksDB uses default Snappy compression. Ratio = engine / v8.10; {_hl('<1 = less space', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
+  <h3>/dev/shm usage (disk space; after db_bench)</h3>
+  <p class="meta">Allocated disk usage (IEC blocks). RocksDB uses default Snappy compression. Space ratio = engine / v8.10; {_hl('<1 = less space than RocksDB', 'faster')}, {_hl('>1 = larger', 'slower')}.</p>
   {shm_table}
-  <h3>Peak RSS (RAM; ratio vs RocksDB v8.10)</h3>
+  <h3>Peak RSS (RAM; during db_bench)</h3>
   <p class="meta">RSS is <strong>R</strong>esident <strong>S</strong>et <strong>S</strong>ize. {cache_meta} Ratio = engine / v8.10; {_hl('<1 = less RSS', 'faster')}, {_hl('>1 = more RSS', 'slower')}.</p>
   {rss_table}
-  <h3>db_bench fillrandom suite (time ratio = rocksdb / zipkey*)</h3>
-  <p class="meta">compact row shows operations/seconds. RocksDB uses default Snappy compression.</p>
+  {rss_svg_section}
+  <h3>Comparison: db_bench fillrandom suite (perf)</h3>
+  <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses default Snappy compression. compact row shows operations/seconds. RocksDB time / zipkey*: {_hl('>1 = that zipkey* engine faster', 'faster')}. Values show ops/sec.</p>
   {fr_compare}
-  <h3>db_bench fillseq suite</h3>
+  <h3>Comparison: db_bench fillseq suite (perf)</h3>
+  <p class="meta">Same as fillrandom. Watch {_hl('compact / readseq / readrandom', 'slower')} cost for minDictZip=10 vs {_hl('space savings', 'faster')} above.</p>
   {db_compare_fs}
 """
 
@@ -1085,9 +1149,9 @@ def _render_dcompact_history(history: List[Dict[str, Any]]) -> str:
         run_dir = entry.get("run_dir", "")
         items.append(
             "<li>"
-            f'{html.escape(str(entry.get("timestamp", "")))} — '
+            f'{html.escape(_fmt_utc(entry.get("timestamp", "")))} — '
             f'run_id={html.escape(str(entry.get("run_id", "")))} — '
-            f'<a href="../runs/{html.escape(run_dir)}/index.html">report</a>'
+            f'<a href="../runs/{html.escape(run_dir)}/index.html">result table</a>'
             "</li>"
         )
     return "<ul>\n" + "\n".join(items) + "\n</ul>"
@@ -1150,6 +1214,8 @@ def merge(args: argparse.Namespace) -> None:
         "timestamp": meta.get("timestamp")
         or datetime.now(timezone.utc).isoformat(),
         "rocksdb_master_git_sha": meta.get("rocksdb_master_git_sha"),
+        "actions_run_url": meta.get("actions_run_url") or "",
+        "has_info_logs": _entry_has_info_logs(meta),
         "runner_env": meta.get("runner_env"),
         "engines": meta.get("engines", {}),
         "db_bench": meta.get("db_bench", []),
@@ -1168,7 +1234,7 @@ def merge(args: argparse.Namespace) -> None:
   <p class="meta">
     <a href="../index.html">← plain home</a>
   </p>
-  <p class="meta">Updated (UTC): {html.escape(datetime.now(timezone.utc).isoformat())}</p>
+  <p class="meta">Updated (UTC): {html.escape(_fmt_utc())}</p>
   {dcompact_section}
   <h2>History</h2>
   {_render_dcompact_history(history)}

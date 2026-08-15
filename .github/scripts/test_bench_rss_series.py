@@ -166,6 +166,23 @@ def main() -> int:
         # Pages import the shared module (importlib may load a second copy).
         assert mod.build_rss_svg.__module__ == "bench_rss_chart"
         assert mod.RSS_LINE_COLORS == chart.RSS_LINE_COLORS
+        assert (
+            mod._fmt_utc("2026-08-14T13:15:15.583652+00:00")
+            == "2026-08-14 13:15:15+00:00"
+        )
+        assert mod._fmt_utc("2026-08-14 13:15:15+00:00") == "2026-08-14 13:15:15+00:00"
+        assert mod._fmt_utc("") == ""
+        assert mod._href("raw", "zipkeyonly", "db_bench.log") == "raw/zipkeyonly/db_bench.log"
+        assert (
+            mod._href("../runs/a b/raw", "zipkeyonly", "x.yaml")
+            == "../runs/a%20b/raw/zipkeyonly/x.yaml"
+        )
+        assert not mod._artifact_log_link("https://example/run", False)
+        assert "artifacts" in mod._artifact_log_link("https://example/run", True)
+        bare = mod._page("t", "<p>x</p>", include_chart_js=False)
+        assert "initWrap" not in bare
+        full = mod._page("t", "<p>x</p>", include_chart_js=True)
+        assert "initWrap" in full
         print(f"OK {name} (imports shared chart)")
     return 0
 

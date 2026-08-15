@@ -229,6 +229,42 @@ def check_pages_contract(mod, variant: str) -> None:
         assert "id%20with%20space/index.html" in home
 
 
+def check_ratio_normalization(mod) -> None:
+    def row(ops_per_sec: int, seconds: float, operations: int):
+        return {
+            "benchmark": "readseq",
+            "ops/sec": str(ops_per_sec),
+            "seconds": str(seconds),
+            "operations": str(operations),
+        }
+
+    engines = {
+        "zipkeyonly": [row(23399410, 2.137, 50000000)],
+        "zipkeyvalue": [row(16861410, 2.965, 50000000)],
+        "rocksdb-v8.10": [row(9910866, 3.189, 31608738)],
+        "rocksdb-master": [row(8339629, 3.790, 31604185)],
+    }
+    table = mod.build_db_bench_compare(engines)
+    assert "v8.10 time/op / zipkeyonly time/op" in table
+    assert '<span class="faster">2.36x</span>' in table
+    assert '<span class="faster">2.81x</span>' in table
+    assert '<span class="faster">1.70x</span>' in table
+    assert '<span class="faster">2.02x</span>' in table
+    assert "1.49x" not in table
+
+    if hasattr(mod, "build_lazy_load_compare"):
+        lazy = mod.build_lazy_load_compare(
+            {
+                "zipkeyonly": [row(36570960, 1.367, 50000000)],
+                "zipkeyvalue": [row(37165215, 1.345, 50000000)],
+                "rocksdb-v8.10": [row(9910866, 3.189, 31608738)],
+            }
+        )
+        assert '<span class="faster">3.69x</span>' in lazy
+        assert '<span class="faster">3.75x</span>' in lazy
+        assert "2.33x" not in lazy
+
+
 def main() -> int:
     here = Path(__file__).resolve().parent
     if str(here) not in sys.path:
@@ -287,6 +323,7 @@ def main() -> int:
             )
             assert "num=" not in html
             assert "TestOS" in html
+        check_ratio_normalization(mod)
         check_pages_contract(mod, variant)
         print(f"OK {name} (imports shared pages chrome; emit/merge contract)")
     return 0

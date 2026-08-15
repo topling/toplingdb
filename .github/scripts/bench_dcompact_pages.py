@@ -453,8 +453,20 @@ def _subject_time_ratio_cell(
     return f"{subject_s / baseline_s:.2f}x"
 
 
+def _ops_ratio_cell(topling_ops: Optional[int], other_ops: Optional[int]) -> str:
+    """ratio = Topling ops/sec / other ops/sec; >1 Topling faster."""
+    if (
+        topling_ops is None
+        or other_ops is None
+        or topling_ops <= 0
+        or other_ops <= 0
+    ):
+        return "—"
+    return _time_ratio_cell(1 / topling_ops, 1 / other_ops)
+
+
 def _ratio_pairs() -> List[Tuple[str, str]]:
-    """(base_topling_eng, rocksdb_eng) for time-ratio columns."""
+    """(base_topling_eng, rocksdb_eng) for performance-ratio columns."""
     pairs: List[Tuple[str, str]] = []
     for base in TOPLING_ENGINES:
         for other in ROCKSDB_ENGINES:
@@ -480,7 +492,7 @@ def _bench_row_names(names: set) -> List[str]:
 def build_db_bench_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
-    """Wide comparison: ops/sec + zipkeyvalue/zipkeyonly time + rocksdb/zipkey* time."""
+    """Wide comparison: ops/sec plus normalized time-per-op ratios."""
     ops_by = {e: _ops_by_benchmark(engines.get(e, [])) for e in ENGINES}
     sec_by = {e: _seconds_by_benchmark(engines.get(e, [])) for e in ENGINES}
     operations_by = {e: _operations_by_benchmark(engines.get(e, [])) for e in ENGINES}
@@ -493,7 +505,7 @@ def build_db_bench_compare(
     headers.append("zipkeyvalue time / zipkeyonly")
     for base, other in ratio_pairs:
         headers.append(
-            f"{RATIO_OTHER_LABELS[other]} time / {RATIO_BASE_LABELS[base]}"
+            f"{RATIO_OTHER_LABELS[other]} time/op / {RATIO_BASE_LABELS[base]} time/op"
         )
     rows_html = []
     for name in names:
@@ -510,13 +522,17 @@ def build_db_bench_compare(
             else:
                 v = ops_by[e].get(name)
                 cells.append(f"<td>{v if v is not None else '—'}</td>")
-        cells.append(
-            f"<td>{_subject_time_ratio_cell(sec_by['zipkeyonly'].get(name), sec_by['zipkeyvalue'].get(name))}</td>"
+        subject_ratio = _subject_time_ratio_cell(
+            sec_by["zipkeyonly"].get(name), sec_by["zipkeyvalue"].get(name)
         )
+        cells.append(f"<td>{subject_ratio}</td>")
         for base, other in ratio_pairs:
-            cells.append(
-                f"<td>{_time_ratio_cell(sec_by[base].get(name), sec_by[other].get(name))}</td>"
+            ratio = (
+                _time_ratio_cell(sec_by[base].get(name), sec_by[other].get(name))
+                if is_compact
+                else _ops_ratio_cell(ops_by[base].get(name), ops_by[other].get(name))
             )
+            cells.append(f"<td>{ratio}</td>")
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     if not rows_html:
         rows_html.append(

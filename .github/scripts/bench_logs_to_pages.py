@@ -523,8 +523,20 @@ def _subject_time_ratio_cell(
     return f"{subject_s / baseline_s:.2f}x"
 
 
+def _ops_ratio_cell(topling_ops: Optional[int], other_ops: Optional[int]) -> str:
+    """ratio = Topling ops/sec / other ops/sec; >1 Topling faster."""
+    if (
+        topling_ops is None
+        or other_ops is None
+        or topling_ops <= 0
+        or other_ops <= 0
+    ):
+        return "—"
+    return _time_ratio_cell(1 / topling_ops, 1 / other_ops)
+
+
 def _ratio_pairs() -> List[Tuple[str, str]]:
-    """(base_topling_eng, rocksdb_eng) for time-ratio columns."""
+    """(base_topling_eng, rocksdb_eng) for performance-ratio columns."""
     pairs: List[Tuple[str, str]] = []
     for base in TOPLING_ENGINES:
         for other in ROCKSDB_ENGINES:
@@ -550,7 +562,7 @@ def _bench_row_names(names: set) -> List[str]:
 def build_db_bench_compare(
     engines: Dict[str, List[Dict[str, str]]],
 ) -> str:
-    """Wide comparison: ops/sec + zipkeyvalue/zipkeyonly time + rocksdb/zipkey* time.
+    """Wide comparison: ops/sec + normalized time-per-op ratios.
 
     compact rows display operations/seconds instead of ops/sec.
     """
@@ -566,7 +578,7 @@ def build_db_bench_compare(
     headers.append("zipkeyvalue time / zipkeyonly")
     for base, other in ratio_pairs:
         headers.append(
-            f"{RATIO_OTHER_LABELS[other]} time / {RATIO_BASE_LABELS[base]}"
+            f"{RATIO_OTHER_LABELS[other]} time/op / {RATIO_BASE_LABELS[base]} time/op"
         )
     rows_html = []
     for name in names:
@@ -583,13 +595,17 @@ def build_db_bench_compare(
             else:
                 v = ops_by[e].get(name)
                 cells.append(f"<td>{v if v is not None else '—'}</td>")
-        cells.append(
-            f"<td>{_subject_time_ratio_cell(sec_by['zipkeyonly'].get(name), sec_by['zipkeyvalue'].get(name))}</td>"
+        subject_ratio = _subject_time_ratio_cell(
+            sec_by["zipkeyonly"].get(name), sec_by["zipkeyvalue"].get(name)
         )
+        cells.append(f"<td>{subject_ratio}</td>")
         for base, other in ratio_pairs:
-            cells.append(
-                f"<td>{_time_ratio_cell(sec_by[base].get(name), sec_by[other].get(name))}</td>"
+            ratio = (
+                _time_ratio_cell(sec_by[base].get(name), sec_by[other].get(name))
+                if is_compact
+                else _ops_ratio_cell(ops_by[base].get(name), ops_by[other].get(name))
             )
+            cells.append(f"<td>{ratio}</td>")
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     if not rows_html:
         rows_html.append(
@@ -626,7 +642,6 @@ def build_lazy_load_compare(
 ) -> str:
     """Lazy-load / scan compare; RocksDB v8.10 is the baseline."""
     ops_by = {e: _ops_by_benchmark(engines.get(e, [])) for e in LAZY_ENGINES}
-    sec_by = {e: _seconds_by_benchmark(engines.get(e, [])) for e in LAZY_ENGINES}
     key_sets = [set(m.keys()) for m in ops_by.values() if m]
     names = []
     if key_sets:
@@ -641,8 +656,8 @@ def build_lazy_load_compare(
     ]
     headers.extend(
         [
-            "v8.10 time / zipkeyonly",
-            "v8.10 time / zipkeyvalue",
+            "v8.10 time/op / zipkeyonly time/op",
+            "v8.10 time/op / zipkeyvalue time/op",
         ]
     )
     def _lazy_ops(eng: str, bench: str) -> Tuple[Optional[int], bool]:
@@ -651,12 +666,6 @@ def build_lazy_load_compare(
             v = ops_by[eng].get("readseq")
             return v, v is not None
         return v, False
-
-    def _lazy_sec(eng: str, bench: str) -> Optional[float]:
-        s = sec_by[eng].get(bench)
-        if s is None and eng in ROCKSDB_ENGINES and bench == "nextwithkey":
-            return sec_by[eng].get("readseq")
-        return s
 
     rows_html = []
     for name in names:
@@ -670,11 +679,14 @@ def build_lazy_load_compare(
             else:
                 cells.append(f"<td>{v}</td>")
         # Baseline = v8.10; green when zipkey* is faster (ratio > 1).
+        zipkeyonly_ops = _lazy_ops("zipkeyonly", name)[0]
+        zipkeyvalue_ops = _lazy_ops("zipkeyvalue", name)[0]
+        rocksdb_ops = _lazy_ops("rocksdb-v8.10", name)[0]
         cells.append(
-            f"<td>{_time_ratio_cell(_lazy_sec('zipkeyonly', name), _lazy_sec('rocksdb-v8.10', name))}</td>"
+            f"<td>{_ops_ratio_cell(zipkeyonly_ops, rocksdb_ops)}</td>"
         )
         cells.append(
-            f"<td>{_time_ratio_cell(_lazy_sec('zipkeyvalue', name), _lazy_sec('rocksdb-v8.10', name))}</td>"
+            f"<td>{_ops_ratio_cell(zipkeyvalue_ops, rocksdb_ops)}</td>"
         )
         rows_html.append("<tr>" + "".join(cells) + "</tr>")
     if not rows_html:

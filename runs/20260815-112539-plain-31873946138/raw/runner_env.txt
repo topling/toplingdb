@@ -1,0 +1,6 @@
+os_pretty_name=Ubuntu 24.04.4 LTS
+kernel=6.17.0-1022-azure
+cpu_model=AMD EPYC 7763 64-Core Processor
+cpu_count=4
+mem_total_bytes=16766406656
+shm_size_bytes=8383201280

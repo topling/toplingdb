@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Result table plain 31914256719</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.45; }
+    table { border-collapse: collapse; margin: 1rem 0 2rem; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }
+    th { background: #f4f4f4; }
+    h1, h2, h3 { margin-top: 1.5rem; }
+    a { color: #0645ad; }
+    .meta { color: #000; font-size: 0.9rem; }
+    .faster { color: #0a7a28; font-weight: 600; }
+    .slower { color: #a30d0d; font-weight: 600; }
+    .rss-chart-wrap { margin: 0.75rem 0 1.25rem; }
+  </style>
+</head>
+<body>
+
+  <h1>Result table: plain / 31914256719</h1>
+  <p class="meta">
+    <a href="../../index.html">← plain home</a> |
+    <a href="../../dcompact/index.html">dcompact →</a>
+  </p>
+  <p class="meta">generated (UTC): 2026-08-16 00:41:41+00:00</p>
+  <p class="meta"><strong>raw logs</strong>: <a href="raw/zipkeyonly/db_bench.log">ToplingDB zipkeyonly</a> | <a href="raw/zipkeyvalue/db_bench.log">ToplingDB zipkeyvalue</a> | <a href="raw/rocksdb-v8.10/db_bench.log">RocksDB v8.10</a> | <a href="raw/rocksdb-master/db_bench.log">RocksDB master (323d915d)</a> | <a href="https://github.com/topling/toplingdb/actions/runs/31914256719#artifacts">DB INFO LOGs + bench yamls (Actions artifact)</a></p>
+  <p class="meta"><strong>ToplingDB bench yaml</strong>: <a href="raw/zipkeyonly/db_bench-fillrandom.yaml">zipkeyonly db_bench-fillrandom.yaml</a> | <a href="raw/zipkeyonly/db_bench-fillseq.yaml">zipkeyonly db_bench-fillseq.yaml</a> | <a href="raw/zipkeyvalue/db_bench-fillrandom.yaml">zipkeyvalue db_bench-fillrandom.yaml</a> | <a href="raw/zipkeyvalue/db_bench-fillseq.yaml">zipkeyvalue db_bench-fillseq.yaml</a></p>
+  <h2>Runner hardware/software</h2>
+<table>
+<tbody>
+<tr><td><strong>OS</strong></td><td>Ubuntu 24.04.4 LTS</td></tr>
+<tr><td><strong>Kernel</strong></td><td>6.17.0-1022-azure</td></tr>
+<tr><td><strong>CPU</strong></td><td>AMD EPYC 9V74 80-Core Processor</td></tr>
+<tr><td><strong>Logical CPUs</strong></td><td>4</td></tr>
+<tr><td><strong>Memory</strong></td><td>15.6GiB</td></tr>
+<tr><td><strong>/dev/shm</strong></td><td>7.8GiB</td></tr>
+<tr><td><strong>RocksDB block cache</strong></td><td>7.8GiB</td></tr>
+</tbody>
+</table>
+<p class="meta">num=100000000 | key_size=8 | value_size=50</p>
+<p class="meta"><strong>On-disk DB size (3.7GiB) ≤ block cache (7.8GiB)</strong> — cache can hold the entire dataset. So this benchmark mainly shows CPU and memory cost. With <a href="../../dcompact/index.html">ToplingDB dcompact</a>, most of that CPU and memory cost can be offloaded.</p>
+  <h3>ToplingDB zipkeyonly</h3><h4>db_bench (fillrandom+compact+readseq/readrandom)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>0.988192</td><td>1011946</td><td>98.819</td><td>100000000</td><td>56.0 MB/s</td></tr>
+<tr><td>compact</td><td>33435740.000000</td><td>0</td><td>33.436</td><td>1</td><td></td></tr>
+<tr><td>readseq</td><td>0.041547</td><td>24069178</td><td>4.155</td><td>100000000</td><td>1331.3 MB/s</td></tr>
+<tr><td>readseq</td><td>0.041718</td><td>23970002</td><td>4.172</td><td>100000000</td><td>1325.9 MB/s</td></tr>
+<tr><td>readseq</td><td>0.042290</td><td>23646022</td><td>4.229</td><td>100000000</td><td>1307.9 MB/s</td></tr>
+<tr><td>readrandom</td><td>0.296151</td><td>3376653</td><td>29.615</td><td>100000000</td><td>118.1 MB/s (63218440 of 100000000 found)</td></tr>
+</tbody>
+</table><h4>db_bench (fillseq suite)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>fillseq</td><td>0.422295</td><td>2368009</td><td>42.230</td><td>100000000</td><td>131.0 MB/s</td></tr>
+<tr><td>compact</td><td>38771126.000000</td><td>0</td><td>38.771</td><td>1</td><td></td></tr>
+<tr><td>readseq</td><td>0.032527</td><td>30743292</td><td>3.253</td><td>100000000</td><td>1700.5 MB/s</td></tr>
+<tr><td>readseq</td><td>0.032727</td><td>30555212</td><td>3.273</td><td>100000000</td><td>1690.1 MB/s</td></tr>
+<tr><td>readseq</td><td>0.032544</td><td>30727413</td><td>3.254</td><td>100000000</td><td>1699.6 MB/s</td></tr>
+<tr><td>readrandom</td><td>0.155299</td><td>6439161</td><td>15.530</td><td>100000000</td><td>356.2 MB/s (100000000 of 100000000 found)</td></tr>
+</tbody>
+</table><h4>db_bench omit lazy-load (fillrandom DB)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>nextwithkey</td><td>0.026149</td><td>38241546</td><td>2.615</td><td>100000000</td><td>291.8 MB/s</td></tr>
+<tr><td>nextwithkey</td><td>0.026086</td><td>38333166</td><td>2.609</td><td>100000000</td><td>292.5 MB/s</td></tr>
+<tr><td>nextwithkey</td><td>0.026098</td><td>38315335</td><td>2.610</td><td>100000000</td><td>292.3 MB/s</td></tr>
+<tr><td>readseq</td><td>0.026927</td><td>37135887</td><td>2.693</td><td>100000000</td><td>283.3 MB/s</td></tr>
+<tr><td>readseq</td><td>0.026917</td><td>37150566</td><td>2.692</td><td>100000000</td><td>283.4 MB/s</td></tr>
+<tr><td>readseq</td><td>0.027238</td><td>36712889</td><td>2.724</td><td>100000000</td><td>280.1 MB/s</td></tr>
+</tbody>
+</table><h4>db_bench omit lazy-load (fillseq DB)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>nextwithkey</td><td>0.019146</td><td>52228675</td><td>1.915</td><td>100000000</td><td>398.5 MB/s</td></tr>
+<tr><td>nextwithkey</td><td>0.019131</td><td>52269980</td><td>1.913</td><td>100000000</td><td>398.8 MB/s</td></tr>
+<tr><td>nextwithkey</td><td>0.019122</td><td>52294362</td><td>1.912</td><td>100000000</td><td>399.0 MB/s</td></tr>
+<tr><td>readseq</td><td>0.020852</td><td>47954983</td><td>2.085</td><td>100000000</td><td>365.9 MB/s</td></tr>
+<tr><td>readseq</td><td>0.019987</td><td>50030593</td><td>1.999</td><td>100000000</td><td>381.7 MB/s</td></tr>
+<tr><td>readseq</td><td>0.020049</td><td>49875311</td><td>2.005</td><td>100000000</td><td>380.5 MB/s</td></tr>
+</tbody>
+</table><h4>memtablerep_bench (skiplist)</h4><table>
+<thead><tr><th>benchmark</th><th>metric</th><th>value</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>Number of threads</td><td>1</td></tr>
+<tr><td>fillrandom</td><td>Elapsed time</td><td>322190205 us</td></tr>
+<tr><td>fillrandom</td><td>Total bytes written</td><td>1621.25 MiB</td></tr>
+<tr><td>fillrandom</td><td>Write throughput</td><td>5.03195 MiB/s</td></tr>
+<tr><td>fillrandom</td><td>write us/op</td><td>3.2219</td></tr>
+<tr><td>readrandom</td><td>Number of threads</td><td>1</td></tr>
+<tr><td>readrandom</td><td>Elapsed time</td><td>370225763 us</td></tr>
+<tr><td>readrandom</td><td>Total bytes read</td><td>1621.25 MiB</td></tr>
+<tr><td>readrandom</td><td>Read throughput</td><td>4.37907 MiB/s</td></tr>
+<tr><td>readrandom</td><td>read us/op</td><td>3.70226</td></tr>
+</tbody>
+</table><h4>memtablerep_bench (cspp, ToplingDB only)</h4><table>
+<thead><tr><th>benchmark</th><th>metric</th><th>value</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>Number of threads</td><td>1</td></tr>
+<tr><td>fillrandom</td><td>Elapsed time</td><td>37168612 us</td></tr>
+<tr><td>fillrandom</td><td>Total bytes written</td><td>1621.25 MiB</td></tr>
+<tr><td>fillrandom</td><td>Write throughput</td><td>43.6187 MiB/s</td></tr>
+<tr><td>fillrandom</td><td>write us/op</td><td>0.371686</td></tr>
+<tr><td>readrandom</td><td>Number of threads</td><td>1</td></tr>
+<tr><td>readrandom</td><td>Elapsed time</td><td>55068405 us</td></tr>
+<tr><td>readrandom</td><td>Total bytes read</td><td>1621.25 MiB</td></tr>
+<tr><td>readrandom</td><td>Read throughput</td><td>29.4406 MiB/s</td></tr>
+<tr><td>readrandom</td><td>read us/op</td><td>0.550684</td></tr>
+</tbody>
+</table><h3>ToplingDB zipkeyvalue</h3><h4>db_bench (fillrandom+compact+readseq/readrandom)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>1.008056</td><td>991989</td><td>100.808</td><td>100000000</td><td>54.9 MB/s</td></tr>
+<tr><td>compact</td><td>79774587.000000</td><td>0</td><td>79.775</td><td>1</td><td></td></tr>
+<tr><td>readseq</td><td>0.059184</td><td>16896230</td><td>5.918</td><td>100000000</td><td>934.6 MB/s</td></tr>
+<tr><td>readseq</td><td>0.059179</td><td>16897689</td><td>5.918</td><td>100000000</td><td>934.7 MB/s</td></tr>
+<tr><td>readseq</td><td>0.058495</td><td>17095238</td><td>5.850</td><td>100000000</td><td>945.6 MB/s</td></tr>
+<tr><td>readrandom</td><td>0.726375</td><td>1376698</td><td>72.638</td><td>100000000</td><td>48.1 MB/s (63213680 of 100000000 found)</td></tr>
+</tbody>
+</table><h4>db_bench (fillseq suite)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>fillseq</td><td>0.422486</td><td>2366938</td><td>42.249</td><td>100000000</td><td>130.9 MB/s</td></tr>
+<tr><td>compact</td><td>123837426.000000</td><td>0</td><td>123.837</td><td>1</td><td></td></tr>
+<tr><td>readseq</td><td>0.049111</td><td>20361017</td><td>4.911</td><td>100000000</td><td>1126.2 MB/s</td></tr>
+<tr><td>readseq</td><td>0.048204</td><td>20744791</td><td>4.820</td><td>100000000</td><td>1147.5 MB/s</td></tr>
+<tr><td>readseq</td><td>0.048249</td><td>20725723</td><td>4.825</td><td>100000000</td><td>1146.4 MB/s</td></tr>
+<tr><td>readrandom</td><td>0.723015</td><td>1383096</td><td>72.302</td><td>100000000</td><td>76.5 MB/s (100000000 of 100000000 found)</td></tr>
+</tbody>
+</table><h4>db_bench omit lazy-load (fillrandom DB)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>nextwithkey</td><td>0.026179</td><td>38197403</td><td>2.618</td><td>100000000</td><td>291.4 MB/s</td></tr>
+<tr><td>nextwithkey</td><td>0.026099</td><td>38315291</td><td>2.610</td><td>100000000</td><td>292.3 MB/s</td></tr>
+<tr><td>nextwithkey</td><td>0.026106</td><td>38305164</td><td>2.611</td><td>100000000</td><td>292.2 MB/s</td></tr>
+<tr><td>readseq</td><td>0.026927</td><td>37136852</td><td>2.693</td><td>100000000</td><td>283.3 MB/s</td></tr>
+<tr><td>readseq</td><td>0.027228</td><td>36726129</td><td>2.723</td><td>100000000</td><td>280.2 MB/s</td></tr>
+<tr><td>readseq</td><td>0.027275</td><td>36663315</td><td>2.728</td><td>100000000</td><td>279.7 MB/s</td></tr>
+</tbody>
+</table><h4>db_bench omit lazy-load (fillseq DB)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>nextwithkey</td><td>0.019167</td><td>52172706</td><td>1.917</td><td>100000000</td><td>398.0 MB/s</td></tr>
+<tr><td>nextwithkey</td><td>0.019132</td><td>52263670</td><td>1.913</td><td>100000000</td><td>398.7 MB/s</td></tr>
+<tr><td>nextwithkey</td><td>0.019287</td><td>51847212</td><td>1.929</td><td>100000000</td><td>395.6 MB/s</td></tr>
+<tr><td>readseq</td><td>0.019890</td><td>50275661</td><td>1.989</td><td>100000000</td><td>383.6 MB/s</td></tr>
+<tr><td>readseq</td><td>0.019843</td><td>50394107</td><td>1.984</td><td>100000000</td><td>384.5 MB/s</td></tr>
+<tr><td>readseq</td><td>0.019841</td><td>50398958</td><td>1.984</td><td>100000000</td><td>384.5 MB/s</td></tr>
+</tbody>
+</table><h3>RocksDB v8.10</h3><h4>db_bench (fillrandom+compact+readseq/readrandom)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>1.466</td><td>681924</td><td>146.644</td><td>100000000</td><td>37.7 MB/s</td></tr>
+<tr><td>compact</td><td>43104883.000</td><td>0</td><td>43.105</td><td>1</td><td></td></tr>
+<tr><td>readseq</td><td>0.146</td><td>6857590</td><td>9.218</td><td>63210870</td><td>379.3 MB/s</td></tr>
+<tr><td>readseq</td><td>0.102</td><td>9797819</td><td>6.452</td><td>63210870</td><td>541.9 MB/s</td></tr>
+<tr><td>readseq</td><td>0.102</td><td>9763508</td><td>6.474</td><td>63210870</td><td>540.1 MB/s</td></tr>
+<tr><td>readrandom</td><td>3.031</td><td>329938</td><td>303.087</td><td>100000000</td><td>11.5 MB/s (63203491 of 100000000 found)</td></tr>
+</tbody>
+</table><h4>db_bench (fillseq suite)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>fillseq</td><td>0.363</td><td>2752397</td><td>36.332</td><td>100000000</td><td>152.2 MB/s</td></tr>
+<tr><td>compact</td><td>35791798.000</td><td>0</td><td>35.792</td><td>1</td><td></td></tr>
+<tr><td>readseq</td><td>0.172</td><td>5823924</td><td>17.171</td><td>100000000</td><td>322.1 MB/s</td></tr>
+<tr><td>readseq</td><td>0.102</td><td>9807283</td><td>10.197</td><td>100000000</td><td>542.5 MB/s</td></tr>
+<tr><td>readseq</td><td>0.102</td><td>9769041</td><td>10.236</td><td>100000000</td><td>540.4 MB/s</td></tr>
+<tr><td>readrandom</td><td>3.104</td><td>322166</td><td>310.399</td><td>100000000</td><td>17.8 MB/s (100000000 of 100000000 found)</td></tr>
+</tbody>
+</table><h4>memtablerep_bench (skiplist)</h4><table>
+<thead><tr><th>benchmark</th><th>metric</th><th>value</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>Number of threads</td><td>1</td></tr>
+<tr><td>fillrandom</td><td>Elapsed time</td><td>343088534 us</td></tr>
+<tr><td>fillrandom</td><td>Total bytes written</td><td>1621.25 MiB</td></tr>
+<tr><td>fillrandom</td><td>Write throughput</td><td>4.72545 MiB/s</td></tr>
+<tr><td>fillrandom</td><td>write us/op</td><td>3.43089</td></tr>
+<tr><td>readrandom</td><td>Number of threads</td><td>1</td></tr>
+<tr><td>readrandom</td><td>Elapsed time</td><td>375570017 us</td></tr>
+<tr><td>readrandom</td><td>Total bytes read</td><td>1621.25 MiB</td></tr>
+<tr><td>readrandom</td><td>Read throughput</td><td>4.31676 MiB/s</td></tr>
+<tr><td>readrandom</td><td>read us/op</td><td>3.7557</td></tr>
+</tbody>
+</table><h3>RocksDB master (323d915d)</h3><h4>db_bench (fillrandom+compact+readseq/readrandom)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>1.505</td><td>664561</td><td>150.475</td><td>100000000</td><td>36.8 MB/s</td></tr>
+<tr><td>compact</td><td>66415450.000</td><td>0</td><td>66.415</td><td>1</td><td></td></tr>
+<tr><td>readseq</td><td>0.176</td><td>5695627</td><td>11.099</td><td>63218220</td><td>315.0 MB/s</td></tr>
+<tr><td>readseq</td><td>0.122</td><td>8200842</td><td>7.709</td><td>63218220</td><td>453.6 MB/s</td></tr>
+<tr><td>readseq</td><td>0.122</td><td>8207602</td><td>7.702</td><td>63218220</td><td>454.0 MB/s</td></tr>
+<tr><td>readrandom</td><td>3.269</td><td>305865</td><td>326.941</td><td>100000000</td><td>10.7 MB/s (63216261 of 100000000 found)</td></tr>
+</tbody>
+</table><h4>db_bench (fillseq suite)</h4><table>
+<thead><tr><th>benchmark</th><th>micros/op</th><th>ops/sec</th><th>seconds</th><th>operations</th><th>extra</th></tr></thead>
+<tbody>
+<tr><td>fillseq</td><td>0.371</td><td>2694194</td><td>37.117</td><td>100000000</td><td>149.0 MB/s</td></tr>
+<tr><td>compact</td><td>37126253.000</td><td>0</td><td>37.126</td><td>1</td><td></td></tr>
+<tr><td>readseq</td><td>0.196</td><td>5114891</td><td>19.551</td><td>100000000</td><td>282.9 MB/s</td></tr>
+<tr><td>readseq</td><td>0.120</td><td>8311666</td><td>12.031</td><td>100000000</td><td>459.7 MB/s</td></tr>
+<tr><td>readseq</td><td>0.121</td><td>8292083</td><td>12.060</td><td>100000000</td><td>458.7 MB/s</td></tr>
+<tr><td>readrandom</td><td>3.351</td><td>298415</td><td>335.103</td><td>100000000</td><td>16.5 MB/s (100000000 of 100000000 found)</td></tr>
+</tbody>
+</table><h4>memtablerep_bench (skiplist)</h4><table>
+<thead><tr><th>benchmark</th><th>metric</th><th>value</th></tr></thead>
+<tbody>
+<tr><td>fillrandom</td><td>Number of threads</td><td>1</td></tr>
+<tr><td>fillrandom</td><td>Elapsed time</td><td>321518362 us</td></tr>
+<tr><td>fillrandom</td><td>Total bytes written</td><td>1621.25 MiB</td></tr>
+<tr><td>fillrandom</td><td>Write throughput</td><td>5.04247 MiB/s</td></tr>
+<tr><td>fillrandom</td><td>write us/op</td><td>3.21518</td></tr>
+<tr><td>readrandom</td><td>Number of threads</td><td>1</td></tr>
+<tr><td>readrandom</td><td>Elapsed time</td><td>370410331 us</td></tr>
+<tr><td>readrandom</td><td>Total bytes read</td><td>1621.25 MiB</td></tr>
+<tr><td>readrandom</td><td>Read throughput</td><td>4.37689 MiB/s</td></tr>
+<tr><td>readrandom</td><td>read us/op</td><td>3.7041</td></tr>
+</tbody>
+</table>
+
+
+</body>
+</html>

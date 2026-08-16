@@ -28,6 +28,7 @@ from bench_pages_common import (  # noqa: E402
     href as _href,
     page as _page,
 )
+from bench_rss_chart import parse_rss_series  # noqa: E402
 
 
 DB_BENCH_RE = re.compile(
@@ -885,12 +886,78 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
     return result
 
 
+def _stage_avg_rss_bytes(
+    series_path: Path,
+    bench_rows: List[Dict[str, str]],
+    stage: str,
+) -> Optional[int]:
+    """Average process RSS during `stage` (e.g. readrandom)."""
+    if not series_path.is_file() or not bench_rows:
+        return None
+    text = series_path.read_text(encoding="utf-8", errors="replace")
+    start_epoch, page_size, samples = parse_rss_series(text)
+    if not samples:
+        return None
+    total_dur = samples[-1][0] - start_epoch
+    windows = [
+        (t0, t1)
+        for name, t0, t1, _est in compute_bench_segments(
+            bench_rows, start_epoch, total_dur
+        )
+        if name == stage
+    ]
+    if not windows:
+        return None
+    t0, t1 = windows[-1]
+    rss_pages = [
+        rss
+        for epoch, rss, _shared, _pc in samples
+        if t0 <= (epoch - start_epoch) <= t1
+    ]
+    if not rss_pages:
+        return None
+    return int(sum(p * page_size for p in rss_pages) / len(rss_pages))
+
+
+def _readrandom_zkv_highlight(
+    engines: Dict[str, Any],
+    log_root: Path,
+) -> str:
+    """readrandom (fillrandom suite): zipkeyvalue RSS% and ops/sec vs RocksDB v8.10."""
+    zkv_rows = (engines.get("zipkeyvalue") or {}).get("db_bench_fillrandom") or []
+    rocks_rows = (engines.get("rocksdb-v8.10") or {}).get("db_bench_fillrandom") or []
+    zkv_ops = _ops_by_benchmark(zkv_rows).get("readrandom")
+    rocks_ops = _ops_by_benchmark(rocks_rows).get("readrandom")
+    if not zkv_ops or not rocks_ops:
+        return ""
+    zkv_rss = _stage_avg_rss_bytes(
+        log_root / "zipkeyvalue" / "statm_series-fillrandom.txt",
+        zkv_rows,
+        "readrandom",
+    )
+    rocks_rss = _stage_avg_rss_bytes(
+        log_root / "rocksdb-v8.10" / "statm_series-fillrandom.txt",
+        rocks_rows,
+        "readrandom",
+    )
+    if not zkv_rss or not rocks_rss:
+        return ""
+    mem_pct = round(100.0 * zkv_rss / rocks_rss)
+    perf_x = zkv_ops / rocks_ops
+    return (
+        " On readrandom (the fairest comparison), ToplingDB zipkeyvalue is"
+        f" <strong>{mem_pct}% memory / {perf_x:.2f}x speed</strong>"
+        " vs RocksDB v8.10."
+    )
+
+
 def _build_runner_section(
     runner_env: Dict[str, Any],
     cache_size_bytes: Optional[int],
     dataset_bytes: Optional[int],
     dataset_estimated: bool,
     dcompact_href: str = "dcompact/index.html",
+    readrandom_note: str = "",
 ) -> str:
     if not runner_env:
         return "<h2>Runner hardware/software</h2><p><em>n/a</em></p>"
@@ -938,12 +1005,23 @@ def _build_runner_section(
         ds_iec = format_iec(dataset_bytes)
         est_note = " (estimated)" if dataset_estimated else ""
         if cache_size_bytes >= dataset_bytes:
+            items = []
+            note = readrandom_note.strip()
+            if note:
+                items.append(note)
+            items.append(
+                "In production the working set typically does not fit, so cache misses dominate."
+                " The same RAM holds more ToplingDB data, which cuts I/O and widens the gap."
+            )
+            items.append(
+                f'<a href="{html.escape(dcompact_href)}">ToplingDB dcompact</a>'
+                " can offload most of that CPU and memory cost."
+            )
+            lis = "".join(f"<li>{it}</li>\n" for it in items)
             section += (
                 f'\n<p class="meta"><strong>On-disk DB size{est_note} ({ds_iec}) ≤ block cache ({cache_iec})</strong>'
-                f" — cache can hold the entire dataset."
-                f" So this benchmark mainly shows CPU and memory cost."
-                f' With <a href="{html.escape(dcompact_href)}">ToplingDB dcompact</a>,'
-                f" most of that CPU and memory cost can be offloaded.</p>"
+                " — the dataset fits in cache, so this bench is a CPU and memory comparison.</p>"
+                f'\n<ul class="meta">\n{lis}</ul>'
             )
         else:
             section += f'\n<p class="meta" style="color:#a30d0d"><strong>On-disk DB size{est_note} ({ds_iec}) &gt; block cache ({cache_iec})</strong> — cache cannot hold the entire dataset.</p>'
@@ -1184,6 +1262,7 @@ def emit(args: argparse.Namespace) -> None:
         dataset_bytes,
         dataset_estimated,
         dcompact_href="../../dcompact/index.html",
+        readrandom_note=_readrandom_zkv_highlight(engines_data, log_root),
     )
 
     body = f"""
@@ -1301,7 +1380,19 @@ def _render_latest_section(
         except (ValueError, TypeError):
             pass
         dataset_estimated = bool(runner_env_data.get("dataset_estimated"))
-    runner_html = _build_runner_section(runner_env_data, cache_size_bytes, dataset_bytes, dataset_estimated)
+    raw_for_note = (
+        pages_root / "runs" / run_dir / "raw" if pages_root is not None else None
+    )
+    readrandom_note = (
+        _readrandom_zkv_highlight(engines, raw_for_note) if raw_for_note else ""
+    )
+    runner_html = _build_runner_section(
+        runner_env_data,
+        cache_size_bytes,
+        dataset_bytes,
+        dataset_estimated,
+        readrandom_note=readrandom_note,
+    )
 
     shm_usages = {
         e: engines.get(e, {}).get("shm_usage") or {} for e in ENGINES
@@ -1480,6 +1571,7 @@ def merge(args: argparse.Namespace) -> None:
   <h1>ToplingDB vs RocksDB bench results</h1>
   <p class="meta">
     <a href="dcompact/index.html">dcompact bench →</a>
+    — offloads most CPU and memory cost.
   </p>
   <p class="meta">Updated (UTC): {html.escape(_fmt_utc())}</p>
   {plain_section}

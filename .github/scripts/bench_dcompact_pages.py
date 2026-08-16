@@ -1027,16 +1027,34 @@ def _latest_dcompact(history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     return None
 
 
+_DCOMPACT_NAV_NOTE = "— offloads most CPU and memory cost."
+_DCOMPACT_NAV_HREF = 'href="dcompact/index.html"'
+_DCOMPACT_NAV_LINK = (
+    '<a href="dcompact/index.html">dcompact bench →</a>'
+)
+
+
 def _ensure_home_dcompact_nav(home_path: Path) -> None:
-    """If plain home exists, ensure it links to dcompact/ (idempotent)."""
+    """If plain home exists, ensure dcompact link + short note (idempotent)."""
     if not home_path.is_file():
         return
     text = home_path.read_text(encoding="utf-8")
-    if 'href="dcompact/index.html"' in text:
+    if _DCOMPACT_NAV_NOTE in text:
+        return
+    if _DCOMPACT_NAV_HREF in text:
+        new, n = re.subn(
+            re.escape(_DCOMPACT_NAV_LINK),
+            _DCOMPACT_NAV_LINK + "\n    " + _DCOMPACT_NAV_NOTE,
+            text,
+            count=1,
+        )
+        if n == 1:
+            home_path.write_text(new, encoding="utf-8")
         return
     nav = (
         '\n  <p class="meta">\n'
-        '    <a href="dcompact/index.html">dcompact bench →</a>\n'
+        f"    {_DCOMPACT_NAV_LINK}\n"
+        f"    {_DCOMPACT_NAV_NOTE}\n"
         "  </p>"
     )
     new, n = re.subn(r"(<h1>[^<]*</h1>)", r"\1" + nav, text, count=1)

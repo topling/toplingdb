@@ -245,6 +245,88 @@ def check_pages_contract(mod, variant: str) -> None:
         assert "result table" in home
         assert f"{result_href}" in home
         assert "id%20with%20space/index.html" in home
+        if variant != "dcompact":
+            assert "dcompact bench →" in home
+            assert "offloads most CPU and memory cost" in home
+
+
+def check_dcompact_home_nav(mod) -> None:
+    """Old home with only the dcompact link still gets the short note."""
+    note = "— offloads most CPU and memory cost."
+    link = '<a href="dcompact/index.html">dcompact bench →</a>'
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp) / "index.html"
+        home.write_text(
+            f"<h1>ToplingDB vs RocksDB bench results</h1>\n"
+            f'<p class="meta">\n    {link}\n  </p>\n',
+            encoding="utf-8",
+        )
+        mod._ensure_home_dcompact_nav(home)
+        once = home.read_text(encoding="utf-8")
+        assert link in once
+        assert note in once
+        assert once.count(note) == 1
+        mod._ensure_home_dcompact_nav(home)
+        assert home.read_text(encoding="utf-8") == once
+
+
+def check_readrandom_highlight(mod) -> None:
+    """zipkeyvalue readrandom RSS% and ops/sec vs RocksDB v8.10, from logs."""
+    row = (
+        "readrandom : 1.0 micros/op {ops} ops/sec 2.0 seconds "
+        "800000 operations; x\n"
+    )
+    series = (
+        "# start_epoch=100.0  page_size=4096  cachestat=ok  "
+        "fields=size,resident,shared,text,lib,data,dt,pagecache\n"
+        "100.0 1000 {rss} 10 1 0 50 0 0\n"
+        "101.0 1000 {rss} 10 1 0 50 0 0\n"
+        "102.0 1000 {rss} 10 1 0 50 0 0\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        zkv = root / "zipkeyvalue"
+        rocks = root / "rocksdb-v8.10"
+        zkv.mkdir()
+        rocks.mkdir()
+        (zkv / "statm_series-fillrandom.txt").write_text(
+            series.format(rss=100), encoding="utf-8"
+        )
+        (rocks / "statm_series-fillrandom.txt").write_text(
+            series.format(rss=500), encoding="utf-8"
+        )
+        engines = {
+            "zipkeyvalue": {
+                "db_bench_fillrandom": mod.parse_db_bench(row.format(ops=400000))
+            },
+            "rocksdb-v8.10": {
+                "db_bench_fillrandom": mod.parse_db_bench(row.format(ops=100000))
+            },
+        }
+        note = mod._readrandom_zkv_highlight(engines, root)
+        assert "On readrandom (the fairest comparison)" in note
+        assert "<strong>20% memory / 4.00x speed</strong> vs RocksDB v8.10" in note
+        html = mod._build_runner_section(
+            {"os_pretty_name": "TestOS"},
+            8 * 1024**3,
+            2 * 1024**3,
+            False,
+            readrandom_note=note,
+        )
+        assert "the dataset fits in cache" in html
+        assert "<strong>20% memory / 4.00x speed</strong> vs RocksDB v8.10" in html
+        assert "typically does not fit" in html
+        assert "cache misses dominate" in html
+        assert "widens the gap" in html
+        assert '<p class="meta"><strong>On-disk DB size' in html
+        m = re.search(r'<ul class="meta">\s*(.*?)</ul>', html, re.S)
+        assert m, html
+        items = re.findall(r"<li>(.*?)</li>", m.group(1), re.S)
+        assert len(items) == 3, items
+        assert "On readrandom" in items[0]
+        assert "typically does not fit" in items[1]
+        assert "ToplingDB dcompact" in items[2]
+        assert mod._readrandom_zkv_highlight({}, root) == ""
 
 
 def check_ratio_normalization(mod) -> None:
@@ -376,6 +458,9 @@ def main() -> int:
             )
             assert "num=" not in html
             assert "TestOS" in html
+            check_readrandom_highlight(mod)
+        if name == "bench_dcompact_pages":
+            check_dcompact_home_nav(mod)
         check_ratio_normalization(mod)
         check_pages_contract(mod, variant)
         print(f"OK {name} (imports shared pages chrome; emit/merge contract)")

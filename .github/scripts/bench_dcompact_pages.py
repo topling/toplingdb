@@ -22,6 +22,11 @@ _RSS_SCRIPTS = Path(__file__).resolve().parent
 if str(_RSS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_RSS_SCRIPTS))
 from bench_pages_common import (  # noqa: E402
+    RSS_WORKLOAD_LABELS,
+    RSS_WORKLOAD_ORDER,
+    RSS_WORKLOAD_TIPS,
+    SHM_SUITE_LABELS,
+    attach_suite_readrandom_rss,
     build_rss_svg_section as _common_rss_svg_section,
     build_source_links as _common_source_links,
     combine_db_bench_logs as _combine_db_bench_logs,
@@ -29,6 +34,9 @@ from bench_pages_common import (  # noqa: E402
     fmt_utc as _fmt_utc,
     href as _href,
     page as _page,
+    format_engine_tip_abbr,
+    format_tip_abbr,
+    rss_engine_cell_tip,
 )
 
 
@@ -61,6 +69,7 @@ RATIO_OTHER_LABELS = {
 }
 SHM_WORKLOADS = ("fillrandom", "fillseq")
 RSS_WORKLOADS = ("fillrandom", "fillseq")
+SUITE_WORKLOAD_LABELS = SHM_SUITE_LABELS
 YAML_USED_NAMES = (
     "db_bench-fillrandom.yaml",
     "db_bench-fillseq.yaml",
@@ -220,7 +229,7 @@ def build_shm_usage_table(
 
     rows_html = []
     for wl in SHM_WORKLOADS:
-        cells = [f"<td>{html.escape(wl)}</td>"]
+        cells = [f"<td>{html.escape(SUITE_WORKLOAD_LABELS.get(wl, wl))}</td>"]
         for e in ENGINES:
             b = _bytes(e, wl, "allocated_bytes")
             cells.append(
@@ -257,20 +266,35 @@ def build_rss_usage_table(
     headers.append("zipkeyonly / v8.10 (RSS)")
     headers.append("zipkeyvalue / v8.10 (RSS)")
 
-    workloads = sorted(
-        {wl for eng_data in rss_data.values() for wl in eng_data if eng_data.get(wl) is not None}
-    )
+    present = {
+        wl
+        for eng_data in rss_data.values()
+        for wl in eng_data
+        if eng_data.get(wl) is not None
+    }
+    workloads = [wl for wl in RSS_WORKLOAD_ORDER if wl in present]
+    workloads.extend(sorted(wl for wl in present if wl not in RSS_WORKLOAD_ORDER))
     if not workloads:
         workloads = list(RSS_WORKLOADS)
 
     rows_html = []
     for wl in workloads:
-        cells = [f"<td>{html.escape(wl)}</td>"]
+        label = html.escape(RSS_WORKLOAD_LABELS.get(wl, wl))
+        tip = RSS_WORKLOAD_TIPS.get(wl)
+        if tip:
+            cells = [f"<td>{format_tip_abbr(label, tip)}</td>"]
+        else:
+            cells = [f"<td>{label}</td>"]
         for e in ENGINES:
             b = (rss_data.get(e) or {}).get(wl)
-            cells.append(
-                f"<td>{html.escape(format_iec(b)) if b is not None else 'n/a'}</td>"
-            )
+            text = format_iec(b) if b is not None else "n/a"
+            tip_e = rss_engine_cell_tip(wl, e)
+            if tip_e:
+                cells.append(
+                    f"<td>{format_engine_tip_abbr(html.escape(text), tip_e, e)}</td>"
+                )
+            else:
+                cells.append(f"<td>{html.escape(text)}</td>")
         v810_bytes = (rss_data.get("rocksdb-v8.10") or {}).get(wl)
         topling_bytes = (rss_data.get("zipkeyonly") or {}).get(wl)
         dz10_bytes = (rss_data.get("zipkeyvalue") or {}).get(wl)
@@ -735,6 +759,16 @@ def emit(args: argparse.Namespace) -> None:
         meta_roots.insert(0, Path(args.engine_meta_root))
     master_sha = apply_engine_meta(meta_roots)
     engines_data = _load_engine_logs(log_root)
+    rss_by_eng = {
+        e: dict((engines_data.get(e) or {}).get("rss_usage") or {})
+        for e in ENGINES
+    }
+    attach_suite_readrandom_rss(
+        rss_by_eng, engines_data, log_root, ENGINES, compute_bench_segments
+    )
+    for e, rss in rss_by_eng.items():
+        if e in engines_data:
+            engines_data[e]["rss_usage"] = rss
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     run_dir_name = f"{ts}-{args.variant}-{args.run_id}"
@@ -883,7 +917,8 @@ def emit(args: argparse.Namespace) -> None:
                 ),
                 "shm_usage": engines_data.get(eng, {}).get("shm_usage")
                 or {wl: None for wl in SHM_WORKLOADS},
-                "rss_usage": engines_data.get(eng, {}).get("rss_usage")
+                "rss_usage": rss_by_eng.get(eng)
+                or engines_data.get(eng, {}).get("rss_usage")
                 or {wl: None for wl in RSS_WORKLOADS},
                 "bench_settings": engines_data.get(eng, {}).get(
                     "bench_settings", {}
@@ -949,8 +984,16 @@ def _render_dcompact_section(
     shm_table = build_shm_usage_table(shm_usages)
 
     rss_data: Dict[str, Dict[str, Optional[int]]] = {
-        e: engines.get(e, {}).get("rss_usage") or {} for e in ENGINES
+        e: dict(engines.get(e, {}).get("rss_usage") or {}) for e in ENGINES
     }
+    if pages_root is not None:
+        attach_suite_readrandom_rss(
+            rss_data,
+            engines,
+            pages_root / "runs" / run_dir / "raw",
+            ENGINES,
+            compute_bench_segments,
+        )
     rss_table = build_rss_usage_table(rss_data)
 
     db_compare_fs = build_db_bench_compare(

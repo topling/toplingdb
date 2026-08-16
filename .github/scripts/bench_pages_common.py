@@ -7,7 +7,7 @@ import html
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 from urllib.parse import quote
 
 _SCRIPTS = Path(__file__).resolve().parent
@@ -22,6 +22,286 @@ from bench_rss_chart import (  # noqa: E402
 )
 
 SegmentFn = Callable[[List[Dict[str, str]], float, float], List[Any]]
+
+
+def stage_window_rss_bytes(
+    series_path: Path,
+    bench_rows: Sequence[Mapping[str, str]],
+    stage: str,
+    compute_segments: SegmentFn,
+    *,
+    how: str = "avg",
+) -> Optional[int]:
+    """RSS bytes in the last `stage` window; how is 'avg' or 'max'."""
+    if how not in ("avg", "max"):
+        raise ValueError(f"how must be avg or max, got {how!r}")
+    if not series_path.is_file() or not bench_rows:
+        return None
+    text = series_path.read_text(encoding="utf-8", errors="replace")
+    start_epoch, page_size, samples = parse_rss_series(text)
+    if not samples:
+        return None
+    total_dur = samples[-1][0] - start_epoch
+    windows = [
+        (t0, t1)
+        for name, t0, t1, *_rest in compute_segments(
+            list(bench_rows), start_epoch, total_dur
+        )
+        if name == stage
+    ]
+    if not windows:
+        return None
+    t0, t1 = windows[-1]
+    # Half-open [t0, t1) so a sample at the next stage's start is not
+    # attributed here. Fall back to closed if the window has no samples
+    # (short stage / 1Hz lands only on t1).
+    rss_pages = [
+        rss
+        for epoch, rss, *_rest in samples
+        if t0 <= (epoch - start_epoch) < t1
+    ]
+    if not rss_pages:
+        rss_pages = [
+            rss
+            for epoch, rss, *_rest in samples
+            if t0 <= (epoch - start_epoch) <= t1
+        ]
+    if not rss_pages:
+        return None
+    if how == "max":
+        return int(max(rss_pages) * page_size)
+    return int(sum(p * page_size for p in rss_pages) / len(rss_pages))
+
+
+SUITE_READRANDOM = (
+    ("fillrandom", "db_bench_fillrandom", "fillrandom-readrandom"),
+    ("fillseq", "db_bench", "fillseq-readrandom"),
+)
+
+
+def attach_suite_readrandom_rss(
+    rss_data: Dict[str, Dict[str, Optional[int]]],
+    engines: Mapping[str, Any],
+    raw_dir: Path,
+    engine_ids: Sequence[str],
+    compute_segments: SegmentFn,
+) -> None:
+    """Add per-suite readrandom peak RSS from statm series."""
+    for suite, bench_key, dest_key in SUITE_READRANDOM:
+        for e in engine_ids:
+            rows = (engines.get(e) or {}).get(bench_key) or []
+            peak = stage_window_rss_bytes(
+                raw_dir / e / f"statm_series-{suite}.txt",
+                rows,
+                "readrandom",
+                compute_segments,
+                how="max",
+            )
+            if peak is not None:
+                rss_data.setdefault(e, {})[dest_key] = peak
+
+
+SHM_SUITE_LABELS = {
+    "fillrandom": "fillrandom suite",
+    "fillseq": "fillseq suite",
+}
+RSS_WORKLOAD_ORDER = (
+    "fillrandom",
+    "fillrandom-readrandom",
+    "fillrandom-omit",
+    "fillseq",
+    "fillseq-readrandom",
+    "fillseq-omit",
+)
+RSS_WORKLOAD_LABELS = {
+    "fillrandom": "fillrandom suite peak",
+    "fillseq": "fillseq suite peak",
+    "fillrandom-readrandom": "fillrandom suite readrandom",
+    "fillseq-readrandom": "fillseq suite readrandom",
+    "fillrandom-omit": "fillrandom scan-omit-value",
+    "fillseq-omit": "fillseq scan-omit-value",
+}
+RSS_WORKLOAD_TIPS = {
+    "fillrandom-readrandom": (
+        "peak RSS during the readrandom stage of the fillrandom suite"
+    ),
+    "fillseq-readrandom": (
+        "peak RSS during the readrandom stage of the fillseq suite"
+    ),
+    "fillrandom-omit": (
+        "restart process with reuse db data of fillrandom, "
+        "scan without access value, benefited by lazy load value (ToplingDB feature)"
+    ),
+    "fillseq-omit": (
+        "restart process with reuse db data of fillseq, "
+        "scan without access value, benefited by lazy load value (ToplingDB feature)"
+    ),
+}
+
+
+def _center_at(text: str, mid: int) -> str:
+    return " " * (mid - len(text) // 2) + text
+
+
+def _overlay(width: int, *parts: tuple[str, int]) -> str:
+    buf = [" "] * width
+    for text, start in parts:
+        buf[start : start + len(text)] = text
+    return "".join(buf).rstrip()
+
+
+def _zipkeyonly_rss_tip() -> str:
+    lead = "Not include (value's) shared RSS — "
+    chain = "mmap slice as source → direct → user slice as target"
+    mmap_w, dir_w = len("mmap slice"), len("direct")
+    mmap_col = len(lead) + chain.index("mmap slice")
+    dir_col = len(lead) + chain.index("direct")
+    width = len(lead) + len(chain)
+    return "\n".join(
+        (
+            lead + chain,
+            _overlay(
+                width,
+                ("^" * mmap_w, mmap_col),
+                ("^" * dir_w, dir_col),
+            ),
+            _overlay(
+                width,
+                ("not zipped", mmap_col),
+                ("not touched", dir_col),
+            ),
+            _overlay(width, ("not bring to shared RSS", dir_col)),
+        )
+    )
+
+
+def _zipkeyvalue_rss_tip() -> str:
+    lead = "Include (value's) shared RSS — "
+    chain = "mmap slice as source → decompress → user slice as target"
+    mmap_w, dec_w = len("mmap slice"), len("decompress")
+    mmap_col = len(lead) + chain.index("mmap slice")
+    dec_col = len(lead) + chain.index("decompress")
+    dec_mid = dec_col + dec_w // 2
+    width = len(lead) + len(chain)
+    return "\n".join(
+        (
+            lead + chain,
+            _overlay(
+                width,
+                ("^" * mmap_w, mmap_col),
+                ("^" * dec_w, dec_col),
+            ),
+            _overlay(
+                width,
+                ("zipped", mmap_col),
+                ("read source", dec_mid - len("read source") // 2),
+            ),
+            _center_at("bring mmap to", dec_mid),
+            _center_at("shared RSS", dec_mid),
+        )
+    )
+
+
+_ROCKSDB_RSS_TIP = (
+    "mainly block cache;\n"
+    "file page cache is not counted in shared/RSS, "
+    "so actual RAM is larger, as the chart below shows"
+)
+RSS_READRANDOM_ENGINE_TIPS = {
+    "zipkeyonly": _zipkeyonly_rss_tip(),
+    "zipkeyvalue": _zipkeyvalue_rss_tip(),
+    "rocksdb-v8.10": _ROCKSDB_RSS_TIP,
+    "rocksdb-master": _ROCKSDB_RSS_TIP,
+}
+
+
+def rss_engine_cell_tip(wl: str, engine: str) -> Optional[str]:
+    """Engine value-cell tip on suite readrandom rows only."""
+    if not wl.endswith("-readrandom"):
+        return None
+    return RSS_READRANDOM_ENGINE_TIPS.get(engine)
+
+
+def _tip_aria_label(tip: str) -> str:
+    parts = []
+    for line in tip.split("\n"):
+        text = line.strip()
+        if not text or set(text) <= {"^", " "}:
+            continue
+        parts.append(text.rstrip(";"))
+    return "; ".join(p for p in parts if p)
+
+
+def format_tip_abbr(inner: str, tip: str) -> str:
+    """Shared CSS tip chrome (same border/cursor/direction as other table tips)."""
+    label = html.escape(_tip_aria_label(tip), quote=True)
+    return (
+        f'<abbr class="tip" tabindex="0" aria-label="{label}">{inner}'
+        f'<span class="tip-box" aria-hidden="true">{html.escape(tip)}</span>'
+        f"</abbr>"
+    )
+
+
+def format_engine_tip_abbr(inner: str, tip: str, engine: str) -> str:
+    """Same tip chrome for every engine; Topling diagram tips add mono + line-height."""
+    if engine not in ("zipkeyonly", "zipkeyvalue") or "^" not in tip:
+        return format_tip_abbr(inner, tip)
+    lines = tip.split("\n")
+    if len(lines) < 2:
+        return format_tip_abbr(inner, tip)
+    chain, mark, *rest = lines
+    parts = [
+        f'<span class="tip-pre-line">{html.escape(chain)}</span>',
+        f'<span class="tip-pre-mark">{html.escape(mark)}</span>',
+    ]
+    parts.extend(
+        f'<span class="tip-pre-line">{html.escape(row)}</span>' for row in rest
+    )
+    label = html.escape(_tip_aria_label(tip), quote=True)
+    return (
+        f'<abbr class="tip tip-pre" tabindex="0" aria-label="{label}">{inner}'
+        f'<span class="tip-box" aria-hidden="true">'
+        f"{''.join(parts)}"
+        f"</span></abbr>"
+    )
+
+
+TIP_SHIFT_JS = r"""
+<script>
+(function () {
+  var m = 8;
+  function placeTip(box) {
+    var vw = document.documentElement.clientWidth;
+    var limit = vw - 2 * m;
+    box.style.transform = "";
+    box.style.maxWidth = "";
+    if (box.getBoundingClientRect().width > limit) {
+      box.style.maxWidth = limit + "px";
+    }
+    var r = box.getBoundingClientRect();
+    var dx = 0;
+    if (r.right > vw - m) dx -= Math.ceil(r.right - (vw - m));
+    if (r.left + dx < m) dx += Math.ceil(m - (r.left + dx));
+    if (dx) box.style.transform = "translateX(" + dx + "px)";
+  }
+  function onTip(ev) {
+    var a = ev.target.closest && ev.target.closest("abbr.tip");
+    if (!a) return;
+    var box = a.querySelector(":scope > .tip-box");
+    if (box) placeTip(box);
+  }
+  function replaceOpen() {
+    document.querySelectorAll(
+      "abbr.tip:hover > .tip-box, abbr.tip:focus-within > .tip-box"
+    ).forEach(placeTip);
+  }
+  document.addEventListener("mouseenter", onTip, true);
+  document.addEventListener("focusin", onTip);
+  addEventListener("resize", replaceOpen);
+  document.addEventListener("scroll", replaceOpen, true);
+})();
+</script>
+"""
 
 
 def fmt_utc(value: Any = None) -> str:
@@ -71,10 +351,33 @@ def page(title: str, body: str, include_chart_js: bool = True) -> str:
     .faster {{ color: #0a7a28; font-weight: 600; }}
     .slower {{ color: #a30d0d; font-weight: 600; }}
     .rss-chart-wrap {{ margin: 0.75rem 0 1.25rem; }}
+    abbr.tip {{ position: relative; text-decoration: underline dotted; }}
+    abbr.tip .tip-box {{
+      visibility: hidden; position: absolute; left: 0; bottom: calc(100% + 0.5rem);
+      z-index: 8; padding: 0.4em 0.55em; background: InfoBackground; color: InfoText;
+      border: 1px solid #000; border-radius: 0.5em;
+      font-size: 0.75em; line-height: 1.15; white-space: pre-wrap;
+      pointer-events: none; box-sizing: border-box; width: max-content;
+      max-width: 36rem;
+    }}
+    abbr.tip .tip-box::after {{
+      content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 0.5rem;
+    }}
+    abbr.tip:hover .tip-box, abbr.tip:focus .tip-box, abbr.tip:focus-within .tip-box {{
+      visibility: visible; pointer-events: auto;
+    }}
+    abbr.tip-pre .tip-box {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre; max-width: none; overflow-x: auto;
+    }}
+    abbr.tip-pre .tip-pre-line {{ display: block; }}
+    abbr.tip-pre .tip-pre-line:first-child {{ padding-bottom: 0.45em; }}
+    abbr.tip-pre .tip-pre-mark {{ display: block; line-height: 0.55; }}
   </style>
 </head>
 <body>
 {body}
+{TIP_SHIFT_JS}
 {chart_js}
 </body>
 </html>

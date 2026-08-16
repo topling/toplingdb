@@ -20,6 +20,11 @@ _RSS_SCRIPTS = Path(__file__).resolve().parent
 if str(_RSS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_RSS_SCRIPTS))
 from bench_pages_common import (  # noqa: E402
+    RSS_WORKLOAD_LABELS,
+    RSS_WORKLOAD_ORDER,
+    RSS_WORKLOAD_TIPS,
+    SHM_SUITE_LABELS,
+    attach_suite_readrandom_rss,
     build_rss_svg_section as _common_rss_svg_section,
     build_source_links as _common_source_links,
     combine_db_bench_logs as _combine_db_bench_logs,
@@ -27,10 +32,11 @@ from bench_pages_common import (  # noqa: E402
     fmt_utc as _fmt_utc,
     href as _href,
     page as _page,
+    format_engine_tip_abbr,
+    format_tip_abbr,
+    rss_engine_cell_tip,
+    stage_window_rss_bytes,
 )
-from bench_rss_chart import parse_rss_series  # noqa: E402
-
-
 DB_BENCH_RE = re.compile(
     r"^(?:(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+)?"
     r"(?P<name>\S+)\s*:\s*"
@@ -132,6 +138,7 @@ def format_iec(num_bytes: int) -> str:
 
 
 SHM_WORKLOADS = ("fillrandom", "fillseq")
+SHM_WORKLOAD_LABELS = SHM_SUITE_LABELS
 
 
 def load_shm_usages(eng_dir: Path) -> Dict[str, Optional[Dict[str, int]]]:
@@ -154,22 +161,6 @@ def load_shm_usages(eng_dir: Path) -> Dict[str, Optional[Dict[str, int]]]:
 
 
 RSS_WORKLOADS = ("fillrandom", "fillseq", "fillrandom-omit", "fillseq-omit")
-RSS_WORKLOAD_LABELS = {
-    "fillrandom": "fillrandom",
-    "fillseq": "fillseq",
-    "fillrandom-omit": "fillrandom scan-omit-value",
-    "fillseq-omit": "fillseq scan-omit-value",
-}
-RSS_WORKLOAD_TIPS = {
-    "fillrandom-omit": (
-        "restart process with reuse db data of fillrandom, "
-        "scan without access value, benefited by lazy load value (ToplingDB feature)"
-    ),
-    "fillseq-omit": (
-        "restart process with reuse db data of fillseq, "
-        "scan without access value, benefited by lazy load value (ToplingDB feature)"
-    ),
-}
 
 
 def parse_rss_usage(text: str) -> Optional[int]:
@@ -249,7 +240,7 @@ def build_shm_usage_table(
 
     rows_html = []
     for wl in SHM_WORKLOADS:
-        cells = [f"<td>{html.escape(wl)}</td>"]
+        cells = [f"<td>{html.escape(SHM_WORKLOAD_LABELS.get(wl, wl))}</td>"]
         for e in ENGINES:
             b = _bytes(e, wl, "allocated_bytes")
             cells.append(
@@ -290,9 +281,14 @@ def build_rss_usage_table(
     headers.append("zipkeyonly / v8.10 (RSS)")
     headers.append("zipkeyvalue / v8.10 (RSS)")
 
-    workloads = sorted(
-        {wl for eng_data in rss_data.values() for wl in eng_data if eng_data.get(wl) is not None}
-    )
+    present = {
+        wl
+        for eng_data in rss_data.values()
+        for wl in eng_data
+        if eng_data.get(wl) is not None
+    }
+    workloads = [wl for wl in RSS_WORKLOAD_ORDER if wl in present]
+    workloads.extend(sorted(wl for wl in present if wl not in RSS_WORKLOAD_ORDER))
     if not workloads:
         workloads = list(RSS_WORKLOADS)
 
@@ -302,7 +298,7 @@ def build_rss_usage_table(
         tip = RSS_WORKLOAD_TIPS.get(wl)
         if tip:
             cells = [
-                f'<td><abbr title="{html.escape(tip, quote=True)}">{label}</abbr></td>'
+                f"<td>{format_tip_abbr(label, tip)}</td>"
             ]
         else:
             cells = [f"<td>{label}</td>"]
@@ -314,7 +310,13 @@ def build_rss_usage_table(
                 text = format_iec(b)
                 if e in derived_engines and wl.endswith("-omit"):
                     text += " (=readseq)"
-            cells.append(f"<td>{html.escape(text)}</td>")
+            tip_e = rss_engine_cell_tip(wl, e)
+            if tip_e:
+                cells.append(
+                    f"<td>{format_engine_tip_abbr(html.escape(text), tip_e, e)}</td>"
+                )
+            else:
+                cells.append(f"<td>{html.escape(text)}</td>")
         v810_bytes = (rss_data.get("rocksdb-v8.10") or {}).get(wl)
         topling_bytes = (rss_data.get("zipkeyonly") or {}).get(wl)
         dz10_bytes = (rss_data.get("zipkeyvalue") or {}).get(wl)
@@ -892,50 +894,50 @@ def _stage_avg_rss_bytes(
     stage: str,
 ) -> Optional[int]:
     """Average process RSS during `stage` (e.g. readrandom)."""
-    if not series_path.is_file() or not bench_rows:
-        return None
-    text = series_path.read_text(encoding="utf-8", errors="replace")
-    start_epoch, page_size, samples = parse_rss_series(text)
-    if not samples:
-        return None
-    total_dur = samples[-1][0] - start_epoch
-    windows = [
-        (t0, t1)
-        for name, t0, t1, _est in compute_bench_segments(
-            bench_rows, start_epoch, total_dur
-        )
-        if name == stage
-    ]
-    if not windows:
-        return None
-    t0, t1 = windows[-1]
-    rss_pages = [
-        rss
-        for epoch, rss, _shared, _pc in samples
-        if t0 <= (epoch - start_epoch) <= t1
-    ]
-    if not rss_pages:
-        return None
-    return int(sum(p * page_size for p in rss_pages) / len(rss_pages))
+    return stage_window_rss_bytes(
+        series_path, bench_rows, stage, compute_bench_segments, how="avg"
+    )
+
+
+def _stage_peak_rss_bytes(
+    series_path: Path,
+    bench_rows: List[Dict[str, str]],
+    stage: str,
+) -> Optional[int]:
+    """Peak process RSS during `stage` (e.g. readrandom)."""
+    return stage_window_rss_bytes(
+        series_path, bench_rows, stage, compute_bench_segments, how="max"
+    )
+
+
+def _attach_suite_readrandom_rss(
+    rss_data: Dict[str, Dict[str, Optional[int]]],
+    engines: Dict[str, Any],
+    raw_dir: Path,
+) -> None:
+    """Add per-suite readrandom peak RSS from statm series."""
+    attach_suite_readrandom_rss(
+        rss_data, engines, raw_dir, ENGINES, compute_bench_segments
+    )
 
 
 def _readrandom_zkv_highlight(
     engines: Dict[str, Any],
     log_root: Path,
 ) -> str:
-    """readrandom (fillrandom suite): zipkeyvalue RSS% and ops/sec vs RocksDB v8.10."""
+    """readrandom (fillrandom suite): zipkeyvalue peak RSS% and ops/sec vs RocksDB v8.10."""
     zkv_rows = (engines.get("zipkeyvalue") or {}).get("db_bench_fillrandom") or []
     rocks_rows = (engines.get("rocksdb-v8.10") or {}).get("db_bench_fillrandom") or []
     zkv_ops = _ops_by_benchmark(zkv_rows).get("readrandom")
     rocks_ops = _ops_by_benchmark(rocks_rows).get("readrandom")
     if not zkv_ops or not rocks_ops:
         return ""
-    zkv_rss = _stage_avg_rss_bytes(
+    zkv_rss = _stage_peak_rss_bytes(
         log_root / "zipkeyvalue" / "statm_series-fillrandom.txt",
         zkv_rows,
         "readrandom",
     )
-    rocks_rss = _stage_avg_rss_bytes(
+    rocks_rss = _stage_peak_rss_bytes(
         log_root / "rocksdb-v8.10" / "statm_series-fillrandom.txt",
         rocks_rows,
         "readrandom",
@@ -1148,6 +1150,16 @@ def emit(args: argparse.Namespace) -> None:
         meta_roots.insert(0, Path(args.engine_meta_root))
     master_sha = apply_engine_meta(meta_roots)
     engines_data = _load_engine_logs(log_root)
+    rss_by_eng = {
+        e: dict((engines_data.get(e) or {}).get("rss_usage") or {})
+        for e in ENGINES
+    }
+    attach_suite_readrandom_rss(
+        rss_by_eng, engines_data, log_root, ENGINES, compute_bench_segments
+    )
+    for e, rss in rss_by_eng.items():
+        if e in engines_data:
+            engines_data[e]["rss_usage"] = rss
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     run_dir_name = f"{ts}-{args.variant}-{args.run_id}"
@@ -1321,7 +1333,8 @@ def emit(args: argparse.Namespace) -> None:
                 ),
                 "shm_usage": engines_data.get(eng, {}).get("shm_usage")
                 or {wl: None for wl in SHM_WORKLOADS},
-                "rss_usage": engines_data.get(eng, {}).get("rss_usage")
+                "rss_usage": rss_by_eng.get(eng)
+                or engines_data.get(eng, {}).get("rss_usage")
                 or {wl: None for wl in RSS_WORKLOADS},
                 "bench_settings": engines_data.get(eng, {}).get(
                     "bench_settings", {}
@@ -1413,6 +1426,10 @@ def _render_latest_section(
                 or rss_data[e].get("fillseq-omit") is not None
             ):
                 rss_derived_engines.add(e)
+    if pages_root is not None:
+        _attach_suite_readrandom_rss(
+            rss_data, engines, pages_root / "runs" / run_dir / "raw"
+        )
     rss_table = build_rss_usage_table(rss_data, rss_derived_engines)
 
     db_compare_fs = build_db_bench_compare(

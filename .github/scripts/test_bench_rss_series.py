@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import re
 import sys
 import tempfile
@@ -17,6 +18,36 @@ def load(name: str, path: Path):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def _assert_tip_carets(tip: str, *words: str) -> None:
+    chain, mark = tip.split("\n")[:2]
+    mark_p = mark.ljust(len(chain))
+    for word in words:
+        i = chain.index(word)
+        got = mark_p[i : i + len(word)]
+        assert got == "^" * len(word), (word, i, got, mark)
+
+
+def _assert_tip_note_col(tip: str, word: str, note: str) -> None:
+    lines = tip.split("\n")
+    col = lines[0].index(word)
+    for row in lines[2:]:
+        if note in row:
+            assert row.index(note) == col, (word, note, col, row.index(note), row)
+            return
+    raise AssertionError((word, note, tip))
+
+
+def _assert_tip_centered(tip: str, word: str, note: str) -> None:
+    lines = tip.split("\n")
+    mid = lines[0].index(word) + len(word) // 2
+    for row in lines[2:]:
+        if note in row:
+            got = row.index(note) + len(note) // 2
+            assert got == mid, (word, note, mid, got, row)
+            return
+    raise AssertionError((word, note, tip))
 
 
 def check(mod) -> None:
@@ -55,6 +86,8 @@ def check(mod) -> None:
     assert "rotate(-30" not in svg
     assert ">fill</text>" in svg
     assert ">2.0</text>" in svg
+    assert ">Time (sec)</text>" in svg
+    assert "Time (s)</text>" not in svg
     # No leader labels: x-axis numbers sit just under the strip.
     axis_y = (
         mod.RSS_MARGIN_T + mod.RSS_CHART_H + mod.RSS_STRIP_H + 16
@@ -179,17 +212,25 @@ def _write_min_logs(log_root: Path) -> None:
     for eng in ("zipkeyonly", "zipkeyvalue"):
         eng_dir = log_root / eng
         eng_dir.mkdir(parents=True, exist_ok=True)
+        bench_body = (
+            _DB_BENCH_LINE
+            + "readrandom : 1.0 micros/op 1000 ops/sec 1.0 seconds "
+            "1000 operations; x\n"
+        )
         (eng_dir / "db_bench-fillrandom.log").write_text(
-            "$ fillrandom\n" + _DB_BENCH_LINE, encoding="utf-8"
+            "$ fillrandom\n" + bench_body, encoding="utf-8"
         )
         (eng_dir / "db_bench-fillrandom-omit.log").write_text(
             "$ fillrandom-omit\n", encoding="utf-8"
         )
         (eng_dir / "db_bench.log").write_text(
-            "$ fillseq\n" + _DB_BENCH_LINE, encoding="utf-8"
+            "$ fillseq\n" + bench_body, encoding="utf-8"
         )
         (eng_dir / "db_bench-fillseq-omit.log").write_text(
             "$ fillseq-omit\n", encoding="utf-8"
+        )
+        (eng_dir / "statm_series-fillrandom.txt").write_text(
+            _STATM_SERIES, encoding="utf-8"
         )
         (eng_dir / "statm_series-fillseq.txt").write_text(
             _STATM_SERIES, encoding="utf-8"
@@ -225,6 +266,10 @@ def check_pages_contract(mod, variant: str) -> None:
         assert combined.index("$ fillrandom\n") < combined.index("$ fillrandom-omit\n")
         assert combined.index("$ fillrandom-omit\n") < combined.index("$ fillseq\n")
         assert combined.index("$ fillseq\n") < combined.index("$ fillseq-omit\n")
+        meta = json.loads((emit_out / "run-meta.json").read_text(encoding="utf-8"))
+        zko_rss = meta["engines"]["zipkeyonly"]["rss_usage"]
+        assert zko_rss.get("fillrandom-readrandom") is not None
+        assert zko_rss.get("fillseq-readrandom") is not None
 
         merge_kw = {
             "merge_into": str(site),
@@ -276,12 +321,20 @@ def check_readrandom_highlight(mod) -> None:
         "readrandom : 1.0 micros/op {ops} ops/sec 2.0 seconds "
         "800000 operations; x\n"
     )
-    series = (
+    hdr = (
         "# start_epoch=100.0  page_size=4096  cachestat=ok  "
         "fields=size,resident,shared,text,lib,data,dt,pagecache\n"
-        "100.0 1000 {rss} 10 1 0 50 0 0\n"
-        "101.0 1000 {rss} 10 1 0 50 0 0\n"
-        "102.0 1000 {rss} 10 1 0 50 0 0\n"
+    )
+    # Peak 100 vs 500 → 20%; avg would be ~17% (77/450).
+    zkv_series = hdr + (
+        "100.0 1000 50 10 1 0 50 0 0\n"
+        "101.0 1000 100 10 1 0 50 0 0\n"
+        "102.0 1000 80 10 1 0 50 0 0\n"
+    )
+    rocks_series = hdr + (
+        "100.0 1000 400 10 1 0 50 0 0\n"
+        "101.0 1000 500 10 1 0 50 0 0\n"
+        "102.0 1000 450 10 1 0 50 0 0\n"
     )
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -290,10 +343,10 @@ def check_readrandom_highlight(mod) -> None:
         zkv.mkdir()
         rocks.mkdir()
         (zkv / "statm_series-fillrandom.txt").write_text(
-            series.format(rss=100), encoding="utf-8"
+            zkv_series, encoding="utf-8"
         )
         (rocks / "statm_series-fillrandom.txt").write_text(
-            series.format(rss=500), encoding="utf-8"
+            rocks_series, encoding="utf-8"
         )
         engines = {
             "zipkeyvalue": {
@@ -327,6 +380,127 @@ def check_readrandom_highlight(mod) -> None:
         assert "typically does not fit" in items[1]
         assert "ToplingDB dcompact" in items[2]
         assert mod._readrandom_zkv_highlight({}, root) == ""
+
+
+def check_suite_readrandom_peak(mod) -> None:
+    """Peak RSS table: suite peak labels + readrandom-stage max from series."""
+    rows = mod.parse_db_bench(
+        "fillrandom : 1.0 micros/op 1000 ops/sec 1.0 seconds 1000 operations; x\n"
+        "readrandom : 1.0 micros/op 1000 ops/sec 2.0 seconds 1000 operations; x\n"
+    )
+    hdr = (
+        "# start_epoch=100.0  page_size=4096  cachestat=ok  "
+        "fields=size,resident,shared,text,lib,data,dt,pagecache\n"
+    )
+    series_fr = hdr + (
+        "100.0 1000 100 10 1 0 50 0 0\n"
+        "101.0 1000 200 10 1 0 50 0 0\n"
+        "102.0 1000 400 10 1 0 50 0 0\n"
+        "103.0 1000 300 10 1 0 50 0 0\n"
+    )
+    series_fs = hdr + (
+        "100.0 1000 100 10 1 0 50 0 0\n"
+        "101.0 1000 200 10 1 0 50 0 0\n"
+        "102.0 1000 500 10 1 0 50 0 0\n"
+        "103.0 1000 300 10 1 0 50 0 0\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "statm.txt"
+        path.write_text(series_fr, encoding="utf-8")
+        assert mod._stage_peak_rss_bytes(path, rows, "readrandom") == 400 * 4096
+        assert mod._stage_avg_rss_bytes(path, rows, "readrandom") == (
+            (200 + 400) * 4096 // 2
+        )
+        series_fr_spike = hdr + (
+            "100.0 1000 100 10 1 0 50 0 0\n"
+            "101.0 1000 200 10 1 0 50 0 0\n"
+            "102.0 1000 400 10 1 0 50 0 0\n"
+            "103.0 1000 900 10 1 0 50 0 0\n"
+        )
+        path.write_text(series_fr_spike, encoding="utf-8")
+        assert mod._stage_peak_rss_bytes(path, rows, "readrandom") == 400 * 4096
+        raw = Path(tmp)
+        rss_data = {
+            "zipkeyonly": {
+                "fillrandom": 500 * 4096,
+                "fillseq": 600 * 4096,
+                "fillrandom-omit": 50 * 4096,
+            },
+            "zipkeyvalue": {"fillrandom": 510 * 4096},
+            "rocksdb-v8.10": {"fillrandom": 800 * 4096},
+            "rocksdb-master": {"fillrandom": 800 * 4096},
+        }
+        engines = {}
+        for eng in rss_data:
+            (raw / eng).mkdir()
+            (raw / eng / "statm_series-fillrandom.txt").write_text(
+                series_fr, encoding="utf-8"
+            )
+            (raw / eng / "statm_series-fillseq.txt").write_text(
+                series_fs, encoding="utf-8"
+            )
+            engines[eng] = {"db_bench_fillrandom": rows, "db_bench": rows}
+        mod._attach_suite_readrandom_rss(rss_data, engines, raw)
+        assert rss_data["zipkeyonly"]["fillrandom-readrandom"] == 400 * 4096
+        assert rss_data["zipkeyonly"]["fillseq-readrandom"] == 500 * 4096
+        table = mod.build_rss_usage_table(rss_data)
+        assert "fillrandom suite peak" in table
+        assert "fillrandom suite readrandom" in table
+        assert "fillseq suite peak" in table
+        assert "fillseq suite readrandom" in table
+        assert table.index("fillrandom suite peak") < table.index(
+            "fillrandom suite readrandom"
+        )
+        assert table.index("fillrandom suite readrandom") < table.index(
+            "fillrandom scan-omit-value"
+        )
+        assert table.index("fillseq suite peak") < table.index(
+            "fillseq suite readrandom"
+        )
+        assert table.count('class="tip') >= 8
+        assert table.count('class="tip tip-pre"') == 4
+        assert table.count("Not include (value") == 4
+        assert table.count("→ direct →") == 4
+        assert table.count("not zipped") == 4
+        assert table.count("not touched") == 4
+        assert table.count("not bring to shared RSS") == 4
+        assert table.count("mmap slice as source") == 8
+        assert table.count("user slice as target") == 8
+        assert table.count("zipped") == 8
+        assert table.count("read source") == 4
+        assert table.count("bring mmap to") == 4
+        assert "title=" not in table
+        assert table.count(
+            "mainly block cache;\n"
+            "file page cache is not counted in shared/RSS, "
+            "so actual RAM is larger, as the chart below shows"
+        ) == 4
+        kept = {"zipkeyonly": {"fillseq-readrandom": 123}}
+        mod._attach_suite_readrandom_rss(
+            kept, {"zipkeyonly": {}}, raw / "missing"
+        )
+        assert kept["zipkeyonly"]["fillseq-readrandom"] == 123
+
+
+def check_dcompact_rss_row_tips(mod) -> None:
+    """dcompact Peak RSS table uses the same workload-row tips as plain."""
+    table = mod.build_rss_usage_table(
+        {
+            "zipkeyonly": {
+                "fillrandom": 1,
+                "fillrandom-readrandom": 2,
+                "fillrandom-omit": 3,
+                "fillseq": 4,
+                "fillseq-readrandom": 5,
+                "fillseq-omit": 6,
+            }
+        }
+    )
+    assert "peak RSS during the readrandom stage of the fillrandom suite" in table
+    assert "peak RSS during the readrandom stage of the fillseq suite" in table
+    assert "benefited by lazy load value" in table
+    assert table.count('class="tip"') >= 4
+    assert "title=" not in table
 
 
 def check_ratio_normalization(mod) -> None:
@@ -444,6 +618,55 @@ def main() -> int:
         )
         assert "<h3>RAM usage over time</h3>" in bad
         assert "<script>" not in bad
+    zko_tip = common.RSS_READRANDOM_ENGINE_TIPS["zipkeyonly"]
+    zkv_tip = common.RSS_READRANDOM_ENGINE_TIPS["zipkeyvalue"]
+    _assert_tip_carets(zko_tip, "mmap slice", "direct")
+    _assert_tip_note_col(zko_tip, "mmap slice", "not zipped")
+    _assert_tip_note_col(zko_tip, "direct", "not touched")
+    _assert_tip_note_col(zko_tip, "direct", "not bring to shared RSS")
+    _assert_tip_carets(zkv_tip, "mmap slice", "decompress")
+    _assert_tip_note_col(zkv_tip, "mmap slice", "zipped")
+    _assert_tip_centered(zkv_tip, "decompress", "read source")
+    _assert_tip_centered(zkv_tip, "decompress", "bring mmap to")
+    _assert_tip_centered(zkv_tip, "decompress", "shared RSS")
+    zkv = common.format_engine_tip_abbr("1.0 MiB", zkv_tip, "zipkeyvalue")
+    assert 'class="tip tip-pre"' in zkv
+    assert 'tabindex="0"' in zkv
+    assert "aria-label=" in zkv
+    assert "^^^^" not in zkv.split("aria-label=", 1)[1].split(">", 1)[0]
+    assert "title=" not in zkv
+    zko = common.format_engine_tip_abbr("1.0 MiB", zko_tip, "zipkeyonly")
+    assert 'class="tip tip-pre"' in zko
+    assert 'tabindex="0"' in zko
+    assert "→ direct →" in zko
+    assert "not zipped" in zko
+    assert "not touched" in zko
+    assert "aria-label=" in zko
+    assert "title=" not in zko
+    rdb = common.format_engine_tip_abbr(
+        "1.0 MiB",
+        common.RSS_READRANDOM_ENGINE_TIPS["rocksdb-v8.10"],
+        "rocksdb-v8.10",
+    )
+    assert "tip-pre" not in rdb
+    assert 'tabindex="0"' in rdb
+    fallback = common.format_engine_tip_abbr("1.0 MiB", "one line", "zipkeyvalue")
+    assert "tip-pre" not in fallback
+    assert "aria-label=" in fallback
+    html_page = common.page("t", "")
+    assert "abbr.tip {" in html_page
+    assert "abbr.tip-pre" in html_page
+    assert "tip-end" not in html_page
+    assert "abbr.tip:focus-within" in html_page
+    assert "function placeTip" in html_page
+    assert "translateX(" in html_page
+    assert "clientWidth" in html_page
+    assert "box-sizing: border-box" in html_page
+    assert "border-radius: 0.5em" in html_page
+    assert "calc(100vw" not in html_page
+    assert 'addEventListener("scroll"' in html_page
+    assert 'addEventListener("resize"' in html_page
+    assert "pointer-events: auto" in html_page
     print("OK bench_pages_common")
     for name, variant in (
         ("bench_logs_to_pages", "plain"),
@@ -459,8 +682,10 @@ def main() -> int:
             assert "num=" not in html
             assert "TestOS" in html
             check_readrandom_highlight(mod)
+            check_suite_readrandom_peak(mod)
         if name == "bench_dcompact_pages":
             check_dcompact_home_nav(mod)
+            check_dcompact_rss_row_tips(mod)
         check_ratio_normalization(mod)
         check_pages_contract(mod, variant)
         print(f"OK {name} (imports shared pages chrome; emit/merge contract)")

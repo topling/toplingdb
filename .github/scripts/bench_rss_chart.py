@@ -442,7 +442,7 @@ def build_rss_svg(
         )
     parts.append(
         f'<text x="{margin_l + chart_w // 2}" y="{svg_h - 3}" '
-        f'text-anchor="middle" font-size="16.5">Time (s)</text>'
+        f'text-anchor="middle" font-size="16.5">Time (sec)</text>'
     )
 
     # Draw sum last so anony+pc stays visible above other series.

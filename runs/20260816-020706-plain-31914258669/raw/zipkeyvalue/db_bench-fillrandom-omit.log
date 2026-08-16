@@ -1,0 +1,34 @@
+RocksDB:    version 8.10.2
+Date:       Sun Aug 16 01:06:28 2026
+CPU:        4 * AMD EPYC 9V74 80-Core Processor
+CPUCache:   1024 KB
+Set seed to 1786842388367704 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: CSPPMemTabFactory
+Perf Level: 1
+------------------------------------------------
+DB path: [/dev/shm/db_bench_enterprise]
+nextwithkey  :    0.026146 micros/op 38245524 ops/sec 2.615 seconds 100000000 operations;  291.8 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+nextwithkey  :    0.026264 micros/op 38073568 ops/sec 2.626 seconds 100000000 operations;  290.5 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+nextwithkey  :    0.026169 micros/op 38213138 ops/sec 2.617 seconds 100000000 operations;  291.5 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+readseq      :    0.027184 micros/op 36785708 ops/sec 2.718 seconds 100000000 operations;  280.7 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+readseq      :    0.027396 micros/op 36500493 ops/sec 2.740 seconds 100000000 operations;  278.5 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+readseq      :    0.027270 micros/op 36669674 ops/sec 2.727 seconds 100000000 operations;  279.8 MB/s

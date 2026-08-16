@@ -1,0 +1,13 @@
+Running fillrandom
+Number of threads: 1
+Elapsed time: 264107570 us
+Total bytes written: 1621.25 MiB
+Write throughput: 6.13858 MiB/s
+write us/op: 2.64108
+Running readrandom
+Number of threads: 1
+read hit%: 100
+Elapsed time: 323430698 us
+Total bytes read: 1621.25 MiB
+Read throughput: 5.01265 MiB/s
+read us/op: 3.23431

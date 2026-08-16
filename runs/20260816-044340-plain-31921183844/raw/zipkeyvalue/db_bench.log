@@ -1,0 +1,50 @@
+$ /home/runner/work/toplingdb/toplingdb/_run_prefix/topling/bin/db_bench -json logs/zipkeyvalue/db_bench-fillseq.yaml -num=100000000 -key_size=8 -value_size=50 -batch_size=1000 -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom -enable_zero_copy -progress_reports=false -report_bench_start_time -compact_target_level=6
+RocksDB:    version 8.10.2
+Date:       Sun Aug 16 03:48:47 2026
+CPU:        4 * AMD EPYC 7763 64-Core Processor
+CPUCache:   512 KB
+Set seed to 1786852127016057 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: CSPPMemTabFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-16T03:48:49.035175Z fillseq      :    0.438711 micros/op 2279402 ops/sec 43.871 seconds 100000000 operations;  126.1 MB/s
+start step[ordinal=0, threadno=0, live_fibers=1]: ZipInputData
+start step[ordinal=0, threadno=1, live_fibers=1]: ZipInputData
+start step[ordinal=0, threadno=2, live_fibers=1]: ZipInputData
+start step[ordinal=0, threadno=3, live_fibers=1]: ZipInputData
+start step[ordinal=1, threadno=0, live_fibers=1]: WriteZipData
+flush memtable
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-16T03:49:32.913249Z compact      : 129105889.000000 micros/op 0 ops/sec 129.106 seconds 1 operations;
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-16T03:51:42.019439Z readseq      :    0.048092 micros/op 20793409 ops/sec 4.809 seconds 100000000 operations; 1150.1 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-16T03:51:46.828918Z readseq      :    0.047629 micros/op 20995501 ops/sec 4.763 seconds 100000000 operations; 1161.3 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-16T03:51:51.592230Z readseq      :    0.047348 micros/op 21119975 ops/sec 4.735 seconds 100000000 operations; 1168.2 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-08-16T03:51:56.327303Z readrandom   :    0.740153 micros/op 1351071 ops/sec 74.015 seconds 100000000 operations;   74.7 MB/s (100000000 of 100000000 found)
+
+ended step[ordinal=0, threadno=0, live_fibers=1]: ZipInputData
+ended step[ordinal=0, threadno=3, live_fibers=1]: ZipInputData
+ended step[ordinal=0, threadno=1, live_fibers=1]: ZipInputData
+ended step[ordinal=0, threadno=2, live_fibers=1]: ZipInputData
+ended step[ordinal=1, threadno=0, live_fibers=1]: WriteZipData

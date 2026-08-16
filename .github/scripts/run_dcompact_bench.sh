@@ -200,6 +200,7 @@ run_under_cpu_quota() {
   log="$(realpath -m "$log")"
   time_file="$(realpath -m "$time_file")"
   mkdir -p "$(dirname "$series")" "$(dirname "$log")" "$(dirname "$time_file")"
+  echo '$' "$@" >"$log"
   # run_sample_statm_fdcache inside the scope so its child is db_bench
   # (no time/wrapper hop). Preserve CACHED_PAGES_USE_SYS for optional
   # drop_caches + SYS_CACHED_OF_EMPTY path.
@@ -207,11 +208,11 @@ run_under_cpu_quota() {
     sudo --preserve-env=CACHED_PAGES_USE_SYS \
       systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
       "$SAMPLE_STATM" "$series" "$time_file" "$@" \
-      >"$log" 2>&1
+      >>"$log" 2>&1
   else
     systemd-run --user --scope -p "CPUQuota=${CPU_QUOTA}" -- \
       "$SAMPLE_STATM" "$series" "$time_file" "$@" \
-      >"$log" 2>&1
+      >>"$log" 2>&1
   fi
 }
 
@@ -314,6 +315,26 @@ run_engine_suite() {
   record_rss "$logdir" fillrandom
   record_shm "$logdir" fillrandom
   save_db_log "$logdir" fillrandom
+  local args_omit_fr=(
+    -json "$yaml_fr"
+    -num="$NUM"
+    -key_size=8
+    -value_size="$VALUE_SIZE"
+    -batch_size=1000
+    -benchmarks=nextwithkey,nextwithkey,nextwithkey,readseq,readseq,readseq
+    -scan_omit_key -scan_omit_value
+    -use_existing_db=1
+    -enable_zero_copy
+    -progress_reports=false
+  )
+  run_under_cpu_quota \
+    "${logdir}/statm_series-fillrandom-omit.txt" \
+    "${logdir}/db_bench-fillrandom-omit.log" \
+    "${logdir}/time-fillrandom-omit.txt" \
+    "$PREFIX/bin/db_bench" "${args_omit_fr[@]}"
+  cat "${logdir}/db_bench-fillrandom-omit.log"
+  record_rss "$logdir" fillrandom-omit
+  save_db_log "$logdir" fillrandom-omit
   rm -rf "$DB_PATH"
 
   prepare_db
@@ -345,6 +366,26 @@ run_engine_suite() {
   record_rss "$logdir" fillseq
   record_shm "$logdir" fillseq
   save_db_log "$logdir" fillseq
+  local args_omit_fs=(
+    -json "$yaml_fs"
+    -num="$NUM"
+    -key_size=8
+    -value_size="$VALUE_SIZE"
+    -batch_size=1000
+    -benchmarks=nextwithkey,nextwithkey,nextwithkey,readseq,readseq,readseq
+    -scan_omit_key -scan_omit_value
+    -use_existing_db=1
+    -enable_zero_copy
+    -progress_reports=false
+  )
+  run_under_cpu_quota \
+    "${logdir}/statm_series-fillseq-omit.txt" \
+    "${logdir}/db_bench-fillseq-omit.log" \
+    "${logdir}/time-fillseq-omit.txt" \
+    "$PREFIX/bin/db_bench" "${args_omit_fs[@]}"
+  cat "${logdir}/db_bench-fillseq-omit.log"
+  record_rss "$logdir" fillseq-omit
+  save_db_log "$logdir" fillseq-omit
 
   if [[ "${SKIP_VERIFY:-0}" != "1" ]]; then
     verify_dcompact_evidence "$logdir"

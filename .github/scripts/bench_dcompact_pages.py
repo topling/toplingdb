@@ -24,6 +24,7 @@ if str(_RSS_SCRIPTS) not in sys.path:
 from bench_pages_common import (  # noqa: E402
     build_rss_svg_section as _common_rss_svg_section,
     build_source_links as _common_source_links,
+    combine_db_bench_logs as _combine_db_bench_logs,
     entry_has_info_logs as _entry_has_info_logs,
     fmt_utc as _fmt_utc,
     href as _href,
@@ -748,15 +749,23 @@ def emit(args: argparse.Namespace) -> None:
         for name in (
             "db_bench.log",
             "db_bench-fillrandom.log",
+            "db_bench-fillrandom-omit.log",
+            "db_bench-fillseq-omit.log",
             "shm_usage.txt",
             "shm_usage-fillrandom.txt",
             "shm_usage-fillseq.txt",
             "rss_usage-fillrandom.txt",
             "rss_usage-fillseq.txt",
+            "rss_usage-fillrandom-omit.txt",
+            "rss_usage-fillseq-omit.txt",
             "statm_series-fillrandom.txt",
             "statm_series-fillseq.txt",
+            "statm_series-fillrandom-omit.txt",
+            "statm_series-fillseq-omit.txt",
             "time-fillrandom.txt",
             "time-fillseq.txt",
+            "time-fillrandom-omit.txt",
+            "time-fillseq-omit.txt",
             "bench_settings.txt",
             *YAML_USED_NAMES,
             "engine-meta.json",
@@ -773,6 +782,7 @@ def emit(args: argparse.Namespace) -> None:
             if src_meta.is_file() and not log_meta.is_file():
                 log_meta.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_meta, log_meta)
+        _combine_db_bench_logs(eng_raw)
 
     runner_env_src = log_root / "runner_env.txt"
     if runner_env_src.is_file():

@@ -91,6 +91,7 @@ run_under_cpu_quota() {
   log="$(realpath -m "$log")"
   time_file="$(realpath -m "$time_file")"
   mkdir -p "$(dirname "$series")" "$(dirname "$log")" "$(dirname "$time_file")"
+  echo '$' "$@" >"$log"
   # run_sample_statm_fdcache inside the scope so its child is db_bench;
   # stdbuf line-buffers log. Preserve CACHED_PAGES_USE_SYS for optional
   # drop_caches + SYS_CACHED_OF_EMPTY path.
@@ -99,12 +100,12 @@ run_under_cpu_quota() {
       systemd-run --scope --uid="$(id -u)" -p "CPUQuota=${CPU_QUOTA}" -- \
       "$SAMPLE_STATM" "$series" "$time_file" \
       stdbuf -oL -eL "$@" \
-      >"$log" 2>&1
+      >>"$log" 2>&1
   else
     systemd-run --user --scope -p "CPUQuota=${CPU_QUOTA}" -- \
       "$SAMPLE_STATM" "$series" "$time_file" \
       stdbuf -oL -eL "$@" \
-      >"$log" 2>&1
+      >>"$log" 2>&1
   fi
 }
 

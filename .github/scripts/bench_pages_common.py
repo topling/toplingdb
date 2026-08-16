@@ -133,10 +133,31 @@ def raw_db_bench_link_parts(
     parts: List[str] = []
     prefix = href_prefix.rstrip("/")
     for eng in engines:
-        if (raw_dir / eng / "db_bench.log").is_file():
+        eng_raw = raw_dir / eng
+        name = "db_bench-all.log"
+        if not (eng_raw / name).is_file():
+            name = "db_bench.log"
+        if (eng_raw / name).is_file():
             label = html.escape(engine_labels[eng])
-            parts.append(f'<a href="{href(prefix, eng, "db_bench.log")}">{label}</a>')
+            parts.append(f'<a href="{href(prefix, eng, name)}">{label}</a>')
     return parts
+
+
+def combine_db_bench_logs(engine_raw: Path) -> None:
+    """Combine the benchmark suites into the single raw log linked by Pages."""
+    sources = (
+        "db_bench-fillrandom.log",
+        "db_bench-fillrandom-omit.log",
+        "db_bench.log",
+        "db_bench-fillseq-omit.log",
+    )
+    chunks = [
+        (engine_raw / name).read_bytes().rstrip(b"\n")
+        for name in sources
+        if (engine_raw / name).is_file()
+    ]
+    if chunks:
+        (engine_raw / "db_bench-all.log").write_bytes(b"\n\n".join(chunks) + b"\n")
 
 
 def build_source_links(

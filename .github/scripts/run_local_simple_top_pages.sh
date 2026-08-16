@@ -227,10 +227,11 @@ run_topling_suite() {
     -compact_target_level=6
   )
   "$ROOT/.github/scripts/ensure_sample_statm_fdcache.sh" >/dev/null
+  echo '$' "$ROOT/db_bench" "${args_fr[@]}" >"${logdir}/db_bench-fillrandom.log"
   "$ROOT/.github/scripts/sample_statm_fdcache" \
     "${logdir}/statm_series-fillrandom.txt" "${logdir}/time-fillrandom.txt" \
     "$ROOT/db_bench" "${args_fr[@]}" \
-    >"${logdir}/db_bench-fillrandom.log" 2>&1
+    >>"${logdir}/db_bench-fillrandom.log" 2>&1
   grep -Eiq 'Received signal|No space left on device|Aborted' "${logdir}/db_bench-fillrandom.log" && {
     echo "FAIL: db_bench-fillrandom crashed; see ${logdir}/db_bench-fillrandom.log" >&2
     exit 1
@@ -249,8 +250,9 @@ run_topling_suite() {
     -enable_zero_copy
     -progress_reports=false
   )
+  echo '$' "$ROOT/db_bench" "${args_omit[@]}" >"${logdir}/db_bench-fillrandom-omit.log"
   /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillrandom-omit.txt" -- \
-    "$ROOT/db_bench" "${args_omit[@]}" >"${logdir}/db_bench-fillrandom-omit.log" 2>&1
+    "$ROOT/db_bench" "${args_omit[@]}" >>"${logdir}/db_bench-fillrandom-omit.log" 2>&1
   save_db_log "$logdir" fillrandom-omit
   record_rss "$logdir" fillrandom
   record_rss "$logdir" fillrandom-omit
@@ -278,10 +280,11 @@ run_topling_suite() {
     -report_bench_start_time
     -compact_target_level=6
   )
+  echo '$' "$ROOT/db_bench" "${args_fs[@]}" >"${logdir}/db_bench.log"
   "$ROOT/.github/scripts/sample_statm_fdcache" \
     "${logdir}/statm_series-fillseq.txt" "${logdir}/time-fillseq.txt" \
     "$ROOT/db_bench" "${args_fs[@]}" \
-    >"${logdir}/db_bench.log" 2>&1
+    >>"${logdir}/db_bench.log" 2>&1
   grep -Eiq 'Received signal|No space left on device|Aborted' "${logdir}/db_bench.log" && {
     echo "FAIL: fillseq suite crashed; see ${logdir}/db_bench.log" >&2
     exit 1
@@ -301,8 +304,9 @@ run_topling_suite() {
     -enable_zero_copy
     -progress_reports=false
   )
+  echo '$' "$ROOT/db_bench" "${args_omit_fs[@]}" >"${logdir}/db_bench-fillseq-omit.log"
   /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillseq-omit.txt" -- \
-    "$ROOT/db_bench" "${args_omit_fs[@]}" >"${logdir}/db_bench-fillseq-omit.log" 2>&1
+    "$ROOT/db_bench" "${args_omit_fs[@]}" >>"${logdir}/db_bench-fillseq-omit.log" 2>&1
   save_db_log "$logdir" fillseq-omit
   record_rss "$logdir" fillseq
   record_rss "$logdir" fillseq-omit

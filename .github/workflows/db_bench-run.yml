@@ -219,9 +219,10 @@ jobs:
                 -report_bench_start_time
                 -compact_target_level=6
             )
+            echo '$' "$TOPLING/bin/db_bench" "${args_fr[@]}" >"${logdir}/db_bench-fillrandom.log"
             .github/scripts/run_sample_statm_fdcache.sh "${logdir}/statm_series-fillrandom.txt" "${logdir}/time-fillrandom.txt" \
               "$TOPLING/bin/db_bench" "${args_fr[@]}" \
-              >"${logdir}/db_bench-fillrandom.log" 2>&1
+              >>"${logdir}/db_bench-fillrandom.log" 2>&1
             cat "${logdir}/db_bench-fillrandom.log"
             save_db_log fillrandom
             args_omit=(
@@ -236,8 +237,9 @@ jobs:
                 -enable_zero_copy
                 -progress_reports=false
             )
+            echo '$' "$TOPLING/bin/db_bench" "${args_omit[@]}" >"${logdir}/db_bench-fillrandom-omit.log"
             /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillrandom-omit.txt" -- \
-              "$TOPLING/bin/db_bench" "${args_omit[@]}" >"${logdir}/db_bench-fillrandom-omit.log" 2>&1
+              "$TOPLING/bin/db_bench" "${args_omit[@]}" >>"${logdir}/db_bench-fillrandom-omit.log" 2>&1
             cat "${logdir}/db_bench-fillrandom-omit.log"
             save_db_log fillrandom-omit
             record_rss fillrandom
@@ -266,9 +268,10 @@ jobs:
                 -report_bench_start_time
                 -compact_target_level=6
             )
+            echo '$' "$TOPLING/bin/db_bench" "${args[@]}" >"${logdir}/db_bench.log"
             .github/scripts/run_sample_statm_fdcache.sh "${logdir}/statm_series-fillseq.txt" "${logdir}/time-fillseq.txt" \
               "$TOPLING/bin/db_bench" "${args[@]}" \
-              >"${logdir}/db_bench.log" 2>&1
+              >>"${logdir}/db_bench.log" 2>&1
             cat "${logdir}/db_bench.log"
             save_db_log fillseq
             args_omit_fs=(
@@ -283,8 +286,9 @@ jobs:
                 -enable_zero_copy
                 -progress_reports=false
             )
+            echo '$' "$TOPLING/bin/db_bench" "${args_omit_fs[@]}" >"${logdir}/db_bench-fillseq-omit.log"
             /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillseq-omit.txt" -- \
-              "$TOPLING/bin/db_bench" "${args_omit_fs[@]}" >"${logdir}/db_bench-fillseq-omit.log" 2>&1
+              "$TOPLING/bin/db_bench" "${args_omit_fs[@]}" >>"${logdir}/db_bench-fillseq-omit.log" 2>&1
             cat "${logdir}/db_bench-fillseq-omit.log"
             save_db_log fillseq-omit
             record_rss fillseq
@@ -388,9 +392,10 @@ jobs:
               -compact_target_level=6
               -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
+          echo '$' "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log"
           .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
             "$ENG/bin/db_bench" "${args_fr[@]}" \
-            >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
+            >>"${LOGDIR}/db_bench-fillrandom.log" 2>&1
           cat "${LOGDIR}/db_bench-fillrandom.log"
           record_rss fillrandom
           # RocksDB has no lazy load; derive omit RSS from main pass
@@ -414,9 +419,10 @@ jobs:
               -compact_target_level=6
               -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
+          echo '$' "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log"
           .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
             "$ENG/bin/db_bench" "${args[@]}" \
-            >"${LOGDIR}/db_bench.log" 2>&1
+            >>"${LOGDIR}/db_bench.log" 2>&1
           cat "${LOGDIR}/db_bench.log"
           record_rss fillseq
           # RocksDB has no lazy load; derive omit RSS from main pass
@@ -490,9 +496,10 @@ jobs:
               -compact_target_level=6
               -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
+          echo '$' "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log"
           .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillrandom.txt" "${LOGDIR}/time-fillrandom.txt" \
             "$ENG/bin/db_bench" "${args_fr[@]}" \
-            >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
+            >>"${LOGDIR}/db_bench-fillrandom.log" 2>&1
           cat "${LOGDIR}/db_bench-fillrandom.log"
           record_rss fillrandom
           # RocksDB has no lazy load; omit RSS is the same scan as readseq.
@@ -516,9 +523,10 @@ jobs:
               -compact_target_level=6
               -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
+          echo '$' "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log"
           .github/scripts/run_sample_statm_fdcache.sh "${LOGDIR}/statm_series-fillseq.txt" "${LOGDIR}/time-fillseq.txt" \
             "$ENG/bin/db_bench" "${args[@]}" \
-            >"${LOGDIR}/db_bench.log" 2>&1
+            >>"${LOGDIR}/db_bench.log" 2>&1
           cat "${LOGDIR}/db_bench.log"
           record_rss fillseq
           # RocksDB has no lazy load; omit RSS is the same scan as readseq.

@@ -173,8 +173,9 @@ jobs:
                 -progress_reports=false
                 -compact_target_level=6
             )
+            echo '$' "$TOPLING/bin/db_bench" "${args_fr[@]}" >"${logdir}/db_bench-fillrandom.log"
             /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillrandom.txt" -- \
-              "$TOPLING/bin/db_bench" "${args_fr[@]}" >"${logdir}/db_bench-fillrandom.log" 2>&1
+              "$TOPLING/bin/db_bench" "${args_fr[@]}" >>"${logdir}/db_bench-fillrandom.log" 2>&1
             cat "${logdir}/db_bench-fillrandom.log"
             args_omit=(
                 -json "$yaml_fr"
@@ -188,8 +189,9 @@ jobs:
                 -enable_zero_copy
                 -progress_reports=false
             )
+            echo '$' "$TOPLING/bin/db_bench" "${args_omit[@]}" >"${logdir}/db_bench-fillrandom-omit.log"
             /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillrandom-omit.txt" -- \
-              "$TOPLING/bin/db_bench" "${args_omit[@]}" >"${logdir}/db_bench-fillrandom-omit.log" 2>&1
+              "$TOPLING/bin/db_bench" "${args_omit[@]}" >>"${logdir}/db_bench-fillrandom-omit.log" 2>&1
             cat "${logdir}/db_bench-fillrandom-omit.log"
             record_rss fillrandom
             record_rss fillrandom-omit
@@ -216,8 +218,9 @@ jobs:
                 -progress_reports=false
                 -compact_target_level=6
             )
+            echo '$' "$TOPLING/bin/db_bench" "${args[@]}" >"${logdir}/db_bench.log"
             /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillseq.txt" -- \
-              "$TOPLING/bin/db_bench" "${args[@]}" >"${logdir}/db_bench.log" 2>&1
+              "$TOPLING/bin/db_bench" "${args[@]}" >>"${logdir}/db_bench.log" 2>&1
             cat "${logdir}/db_bench.log"
             args_omit_fs=(
                 -json "$yaml_fs"
@@ -231,8 +234,9 @@ jobs:
                 -enable_zero_copy
                 -progress_reports=false
             )
+            echo '$' "$TOPLING/bin/db_bench" "${args_omit_fs[@]}" >"${logdir}/db_bench-fillseq-omit.log"
             /usr/bin/time -f 'max_rss_kb=%M' -o "${logdir}/time-fillseq-omit.txt" -- \
-              "$TOPLING/bin/db_bench" "${args_omit_fs[@]}" >"${logdir}/db_bench-fillseq-omit.log" 2>&1
+              "$TOPLING/bin/db_bench" "${args_omit_fs[@]}" >>"${logdir}/db_bench-fillseq-omit.log" 2>&1
             cat "${logdir}/db_bench-fillseq-omit.log"
             record_rss fillseq
             record_rss fillseq-omit
@@ -329,8 +333,9 @@ jobs:
               -compact_target_level=6
               -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
+          echo '$' "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log"
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillrandom.txt" -- \
-            "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
+            "$ENG/bin/db_bench" "${args_fr[@]}" >>"${LOGDIR}/db_bench-fillrandom.log" 2>&1
           cat "${LOGDIR}/db_bench-fillrandom.log"
           record_rss fillrandom
           cp "${LOGDIR}/rss_usage-fillrandom.txt" "${LOGDIR}/rss_usage-fillrandom-omit.txt" 2>/dev/null || true
@@ -351,8 +356,9 @@ jobs:
               -compact_target_level=6
               -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
+          echo '$' "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log"
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillseq.txt" -- \
-            "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log" 2>&1
+            "$ENG/bin/db_bench" "${args[@]}" >>"${LOGDIR}/db_bench.log" 2>&1
           cat "${LOGDIR}/db_bench.log"
           record_rss fillseq
           cp "${LOGDIR}/rss_usage-fillseq.txt" "${LOGDIR}/rss_usage-fillseq-omit.txt" 2>/dev/null || true
@@ -418,8 +424,9 @@ jobs:
               -compact_target_level=6
               -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
+          echo '$' "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log"
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillrandom.txt" -- \
-            "$ENG/bin/db_bench" "${args_fr[@]}" >"${LOGDIR}/db_bench-fillrandom.log" 2>&1
+            "$ENG/bin/db_bench" "${args_fr[@]}" >>"${LOGDIR}/db_bench-fillrandom.log" 2>&1
           cat "${LOGDIR}/db_bench-fillrandom.log"
           record_rss fillrandom
           cp "${LOGDIR}/rss_usage-fillrandom.txt" "${LOGDIR}/rss_usage-fillrandom-omit.txt" 2>/dev/null || true
@@ -440,8 +447,9 @@ jobs:
               -compact_target_level=6
               -options_file=.github/bench-conf/rocksdb_db_bench.ini
           )
+          echo '$' "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log"
           /usr/bin/time -f 'max_rss_kb=%M' -o "${LOGDIR}/time-fillseq.txt" -- \
-            "$ENG/bin/db_bench" "${args[@]}" >"${LOGDIR}/db_bench.log" 2>&1
+            "$ENG/bin/db_bench" "${args[@]}" >>"${LOGDIR}/db_bench.log" 2>&1
           cat "${LOGDIR}/db_bench.log"
           record_rss fillseq
           cp "${LOGDIR}/rss_usage-fillseq.txt" "${LOGDIR}/rss_usage-fillseq-omit.txt" 2>/dev/null || true

@@ -179,7 +179,18 @@ def _write_min_logs(log_root: Path) -> None:
     for eng in ("zipkeyonly", "zipkeyvalue"):
         eng_dir = log_root / eng
         eng_dir.mkdir(parents=True, exist_ok=True)
-        (eng_dir / "db_bench.log").write_text(_DB_BENCH_LINE, encoding="utf-8")
+        (eng_dir / "db_bench-fillrandom.log").write_text(
+            "$ fillrandom\n" + _DB_BENCH_LINE, encoding="utf-8"
+        )
+        (eng_dir / "db_bench-fillrandom-omit.log").write_text(
+            "$ fillrandom-omit\n", encoding="utf-8"
+        )
+        (eng_dir / "db_bench.log").write_text(
+            "$ fillseq\n" + _DB_BENCH_LINE, encoding="utf-8"
+        )
+        (eng_dir / "db_bench-fillseq-omit.log").write_text(
+            "$ fillseq-omit\n", encoding="utf-8"
+        )
         (eng_dir / "statm_series-fillseq.txt").write_text(
             _STATM_SERIES, encoding="utf-8"
         )
@@ -207,6 +218,13 @@ def check_pages_contract(mod, variant: str) -> None:
         assert "initWrap" not in result_html
         assert "Comparison:" not in result_html
         assert "Result table:" in result_html
+        assert "db_bench-all.log" in result_html
+        combined = (
+            run_dirs[0] / "raw" / "zipkeyonly" / "db_bench-all.log"
+        ).read_text(encoding="utf-8")
+        assert combined.index("$ fillrandom\n") < combined.index("$ fillrandom-omit\n")
+        assert combined.index("$ fillrandom-omit\n") < combined.index("$ fillseq\n")
+        assert combined.index("$ fillseq\n") < combined.index("$ fillseq-omit\n")
 
         merge_kw = {
             "merge_into": str(site),
@@ -306,6 +324,27 @@ def main() -> int:
     assert "initWrap" not in bare
     full = common.page("t", "<p>x</p>", include_chart_js=True)
     assert "initWrap" in full
+    with tempfile.TemporaryDirectory() as tmp:
+        eng_raw = Path(tmp) / "zipkeyonly"
+        eng_raw.mkdir()
+        source_logs = (
+            ("db_bench-fillrandom.log", "$ fillrandom\nfillrandom output\n"),
+            ("db_bench-fillrandom-omit.log", "$ fillrandom-omit\nomit output\n"),
+            ("db_bench.log", "$ fillseq\nfillseq output\n"),
+            ("db_bench-fillseq-omit.log", "$ fillseq-omit\nomit output\n"),
+        )
+        for name, content in source_logs:
+            (eng_raw / name).write_text(content, encoding="utf-8")
+        common.combine_db_bench_logs(eng_raw)
+        combined = (eng_raw / "db_bench-all.log").read_text(encoding="utf-8")
+        expected = "\n\n".join(
+            content.rstrip("\n") for _, content in source_logs
+        ) + "\n"
+        assert combined == expected
+        links = common.raw_db_bench_link_parts(
+            Path(tmp), "raw", ("zipkeyonly",), {"zipkeyonly": "ToplingDB"}
+        )
+        assert links == ['<a href="raw/zipkeyonly/db_bench-all.log">ToplingDB</a>']
     with tempfile.TemporaryDirectory() as tmp:
         log_root = Path(tmp)
         eng_dir = log_root / "zipkeyonly"

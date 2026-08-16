@@ -272,12 +272,7 @@ TIP_SHIFT_JS = r"""
   var m = 8;
   function placeTip(box) {
     var vw = document.documentElement.clientWidth;
-    var limit = vw - 2 * m;
     box.style.transform = "";
-    box.style.maxWidth = "";
-    if (box.getBoundingClientRect().width > limit) {
-      box.style.maxWidth = limit + "px";
-    }
     var r = box.getBoundingClientRect();
     var dx = 0;
     if (r.right > vw - m) dx -= Math.ceil(r.right - (vw - m));
@@ -360,15 +355,12 @@ def page(title: str, body: str, include_chart_js: bool = True) -> str:
       pointer-events: none; box-sizing: border-box; width: max-content;
       max-width: 36rem;
     }}
-    abbr.tip .tip-box::after {{
-      content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 0.5rem;
-    }}
     abbr.tip:hover .tip-box, abbr.tip:focus .tip-box, abbr.tip:focus-within .tip-box {{
-      visibility: visible; pointer-events: auto;
+      visibility: visible;
     }}
     abbr.tip-pre .tip-box {{
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      white-space: pre; max-width: none; overflow-x: auto;
+      white-space: pre; max-width: none;
     }}
     abbr.tip-pre .tip-pre-line {{ display: block; }}
     abbr.tip-pre .tip-pre-line:first-child {{ padding-bottom: 0.45em; }}

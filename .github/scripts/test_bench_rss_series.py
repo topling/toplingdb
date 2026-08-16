@@ -666,7 +666,8 @@ def main() -> int:
     assert "calc(100vw" not in html_page
     assert 'addEventListener("scroll"' in html_page
     assert 'addEventListener("resize"' in html_page
-    assert "pointer-events: auto" in html_page
+    assert "overflow-x" not in html_page
+    assert "pointer-events: auto" not in html_page
     print("OK bench_pages_common")
     for name, variant in (
         ("bench_logs_to_pages", "plain"),

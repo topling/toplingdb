@@ -1,0 +1,71 @@
+$ /home/runner/work/toplingdb/toplingdb/_run_prefix/rocksdb-master/bin/db_bench -db=/dev/shm/db_bench_rocksdb_master -num=100000000 -key_size=8 -value_size=50 -batch_size=1000 -cache_size=8383207424 -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom -progress_reports=false -report_bench_start_time -compact_target_level=6 -options_file=.github/bench-conf/rocksdb_db_bench.ini
+RocksDB:    version 11.9.0
+Date:       Tue Aug 18 15:24:50 2026
+CPU:        4 * AMD EPYC 7763 64-Core Processor
+CPUCache:   512 KB
+Set seed to 1787066690797514 because --seed was 0
+Initializing RocksDB Options from the specified file
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: SkipListFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:24:50.811724Z fillrandom   :       1.649 micros/op 606441 ops/sec 164.896 seconds 100000000 operations;   33.5 MB/s
+flush memtable
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:27:35.993700Z compact      : 73005458.000 micros/op 0 ops/sec 73.006 seconds 1 operations;
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:28:48.999473Z readseq      :       0.180 micros/op 5551874 ops/sec 11.386 seconds 63213451 operations;  307.1 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:29:00.385727Z readseq      :       0.134 micros/op 7466560 ops/sec 8.466 seconds 63213451 operations;  413.0 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:29:08.852134Z readseq      :       0.130 micros/op 7673937 ops/sec 8.237 seconds 63213451 operations;  424.5 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:29:17.089774Z readrandom   :       3.184 micros/op 314096 ops/sec 318.373 seconds 100000000 operations;   11.0 MB/s (63212583 of 100000000 found)
+
+$ /home/runner/work/toplingdb/toplingdb/_run_prefix/rocksdb-master/bin/db_bench -db=/dev/shm/db_bench_rocksdb_master -num=100000000 -key_size=8 -value_size=50 -batch_size=1000 -cache_size=8383207424 -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom -progress_reports=false -report_bench_start_time -compact_target_level=6 -options_file=.github/bench-conf/rocksdb_db_bench.ini
+RocksDB:    version 11.9.0
+Date:       Tue Aug 18 15:34:36 2026
+CPU:        4 * AMD EPYC 7763 64-Core Processor
+CPUCache:   512 KB
+Set seed to 1787067276067943 because --seed was 0
+Initializing RocksDB Options from the specified file
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: SkipListFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:34:36.081561Z fillseq      :       0.417 micros/op 2400493 ops/sec 41.658 seconds 100000000 operations;  132.8 MB/s
+flush memtable
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:35:17.911693Z compact      : 40083302.000 micros/op 0 ops/sec 40.083 seconds 1 operations;
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:35:57.995189Z readseq      :       0.204 micros/op 4895242 ops/sec 20.428 seconds 100000000 operations;  270.8 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:36:18.423475Z readseq      :       0.133 micros/op 7516581 ops/sec 13.304 seconds 100000000 operations;  415.8 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:36:31.727666Z readseq      :       0.133 micros/op 7507466 ops/sec 13.320 seconds 100000000 operations;  415.3 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-18T15:36:45.047984Z readrandom   :       3.299 micros/op 303165 ops/sec 329.853 seconds 100000000 operations;   16.8 MB/s (100000000 of 100000000 found)

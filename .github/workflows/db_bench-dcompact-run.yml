@@ -106,6 +106,8 @@ jobs:
           test -x "$RUN_PREFIX/rocksdb-master/bin/remote_compact_worker"
           echo "RUN_PREFIX=$RUN_PREFIX" >> "$GITHUB_ENV"
           df -h /dev/shm
+          sudo mount -o remount,size=75% /dev/shm
+          df -h /dev/shm
 
       - name: Compute RocksDB cache_size
         run: |

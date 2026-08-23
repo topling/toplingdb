@@ -76,11 +76,13 @@ jobs:
           test -x "$RUN_PREFIX/rocksdb-master/bin/db_bench"
           echo "RUN_PREFIX=$RUN_PREFIX" >> "$GITHUB_ENV"
 
-      - name: Probe /dev/shm
+      - name: Resize /dev/shm to 75% of physical memory
         run: |
           set -xe
           # Engines rotate exclusive use of /dev/shm (one DB at a time).
           # Do not pre-create all three DB dirs here.
+          df -h /dev/shm
+          sudo mount -o remount,size=75% /dev/shm
           df -h /dev/shm
 
       - name: Run ToplingDB benches

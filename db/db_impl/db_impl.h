@@ -466,6 +466,9 @@ class DBImpl : public DB {
 
   virtual Status GetDbSessionId(std::string& session_id) const override;
 
+  Status AllocateFileNumber(const std::string& db_session_id,
+                            uint64_t* file_number);
+
   ColumnFamilyHandle* DefaultColumnFamily() const override final;
 
   ColumnFamilyHandle* PersistentStatsColumnFamily() const;

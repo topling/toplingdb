@@ -18,6 +18,8 @@
 #   LOGDIR_BASE         Parent of per-engine log dirs (default: logs)
 #   CPU_QUOTA           write-side db_bench systemd CPUQuota (default 50%)
 #   WORKER_PORT         dcompact_worker listen port (default 8080)
+#   HOSTER_HTTP_URL     If set, allocate output file numbers from this DB host
+#                       DcompactEtcd endpoint and write SSTs directly to cf_path
 #   MAX_PARALLEL_COMPACTIONS  (default 4)
 #   MULTI_PROCESS       ToplingZipTable: fork per compact (default 1)
 #   ZIP_SERVER_OPTIONS  ZipServer civet opts when MULTI_PROCESS=1
@@ -45,6 +47,7 @@ CPU_QUOTA="${CPU_QUOTA:-50%}"
 # DB path must match yaml databases.*.path. hoster_root=/dev/shm — NEVER rm -rf hoster.
 DB_PATH="${DB_PATH:-/dev/shm/db_bench_enterprise}"
 WORKER_PORT="${WORKER_PORT:-8080}"
+HOSTER_HTTP_URL="${HOSTER_HTTP_URL:-}"
 ENGINES="${ENGINES:-zipkeyonly zipkeyvalue}"
 export NFS_DYNAMIC_MOUNT=0
 export NFS_MOUNT_ROOT="${NFS_MOUNT_ROOT:-/dev}"
@@ -154,6 +157,9 @@ make_yaml_for_engine() {
   )
   if [[ -n "${WRITE_BUFFER_SIZE:-}" ]]; then
     graft_args+=(--write-buffer-size-bytes "$WRITE_BUFFER_SIZE")
+  fi
+  if [[ -n "$HOSTER_HTTP_URL" ]]; then
+    graft_args+=(--hoster-http-url "$HOSTER_HTTP_URL")
   fi
   python3 "$SCRIPT_DIR/graft_bench_yaml.py" "${graft_args[@]}" --out "$out" "$src"
   echo "$out"
@@ -267,6 +273,28 @@ print(int(c.get("finished",0) or 0))
     fi
   fi
   echo "dcompact evidence OK (finished=${finished})"
+  if [[ -n "$HOSTER_HTTP_URL" ]]; then
+    local allocation_count
+    allocation_count=$(awk \
+      '/DcompactEtcd allocated file number/{n++} END{print n+0}' \
+      "${logdir}"/LOG-*)
+    if [[ "$allocation_count" -le 0 ]]; then
+      echo "FAIL: no DB-host file-number allocation in ${logdir}/LOG-*" >&2
+      return 1
+    fi
+    if ! grep -q '] Dcompacted ' "${logdir}"/LOG-*; then
+      echo "FAIL: no successfully installed direct dcompact output" >&2
+      return 1
+    fi
+    local attempt_dir
+    attempt_dir=$(find "$DB_PATH" -type d \
+      -path "$DB_PATH/job-*/att-*" -print -quit)
+    if [[ -n "$attempt_dir" ]]; then
+      echo "FAIL: direct output left host attempt directory: $attempt_dir" >&2
+      return 1
+    fi
+    echo "direct-output evidence OK (allocations=${allocation_count}, no host attempt dirs)"
+  fi
 }
 
 prepare_db() {

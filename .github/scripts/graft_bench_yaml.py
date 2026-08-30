@@ -5,7 +5,7 @@ Stable CI configs live in .github/bench-conf/*.yaml. This tool only applies
 machine- or per-pass fields:
 
   --set-max-background-compactions N
-  --worker-port / --write-buffer-size(--bytes)
+  --worker-port / --hoster-http-url / --write-buffer-size(--bytes)
   --target-file-size-base / --target-file-size-multiplier
   --prefix-level-writers / --fill-level-writers / --rewrite-level-writer
 """
@@ -114,6 +114,30 @@ def _sync_worker_port(text: str, port: int) -> str:
     )
 
 
+def _set_hoster_http_url(text: str, url: str) -> str:
+    if re.search(r"\s", url):
+        sys.exit("FAIL: hoster_http_url must not contain whitespace")
+    current = re.compile(
+        r"^([ \t]*hoster_http_url:[ \t]*)([^\s#]+)([ \t]*(?:#.*)?)?$",
+        re.MULTILINE,
+    )
+    text, n = current.subn(rf"\g<1>{url}\g<3>", text, count=1)
+    if n == 1:
+        return text
+    anchor = re.compile(r"^([ \t]*)hoster_root:[^\n]*$", re.MULTILINE)
+    text, n = anchor.subn(
+        lambda match: f"{match.group(0)}\n{match.group(1)}hoster_http_url: {url}",
+        text,
+        count=1,
+    )
+    if n != 1:
+        sys.exit(
+            "FAIL: expected exactly one hoster_root: to anchor "
+            f"hoster_http_url, got {n}"
+        )
+    return text
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("yaml", type=Path)
@@ -138,6 +162,7 @@ def main() -> None:
         help="e.g. 1 or 1.5",
     )
     parser.add_argument("--worker-port", type=int)
+    parser.add_argument("--hoster-http-url")
     parser.add_argument(
         "--rewrite-level-writer",
         nargs=2,
@@ -181,6 +206,7 @@ def main() -> None:
         or args.target_file_size_base is not None
         or args.target_file_size_multiplier is not None
         or args.worker_port is not None
+        or args.hoster_http_url is not None
     )
     lw_ops = (
         args.rewrite_level_writer is not None
@@ -190,7 +216,7 @@ def main() -> None:
     if not scalar_ops and not lw_ops:
         sys.exit(
             "FAIL: specify at least one of --set-max-background-compactions, "
-            "--worker-port, --write-buffer-size[--bytes], "
+            "--worker-port, --hoster-http-url, --write-buffer-size[--bytes], "
             "--target-file-size-base, --target-file-size-multiplier, "
             "--prefix-level-writers, --fill-level-writers, "
             "--rewrite-level-writer"
@@ -233,6 +259,10 @@ def main() -> None:
     if args.worker_port is not None:
         text = _sync_worker_port(text, args.worker_port)
         actions.append(f"worker_port={args.worker_port}")
+
+    if args.hoster_http_url is not None:
+        text = _set_hoster_http_url(text, args.hoster_http_url)
+        actions.append(f"hoster_http_url={args.hoster_http_url}")
 
     if args.rewrite_level_writer is not None:
         fro, to = args.rewrite_level_writer

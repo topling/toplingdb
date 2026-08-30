@@ -142,6 +142,7 @@ jobs:
           export LOGDIR_BASE=logs
           export NUM
           export CPU_QUOTA
+          export HOSTER_HTTP_URL=http://127.0.0.1:2011/CompactionExecutorFactory/dcompact
           .github/scripts/run_dcompact_bench.sh
 
       - name: Run RocksDB v8.10 (write @ CPU_QUOTA + CompactionService worker)

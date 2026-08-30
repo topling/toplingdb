@@ -170,6 +170,10 @@ CompactionJob::CompactionJob(
       file_options_for_read_(
           fs_->OptimizeForCompactionTableRead(file_options, db_options_)),
       versions_(versions),
+      file_number_generator_([versions](uint64_t* file_number) {
+        *file_number = versions->NewFileNumber();
+        return Status::OK();
+      }),
       shutting_down_(shutting_down),
       manual_compaction_canceled_(manual_compaction_canceled),
       db_directory_(db_directory),
@@ -1043,6 +1047,19 @@ try {
 
   TablePropertiesCollection tp_map;
   auto& cf_paths = imm_cfo->cf_paths;
+  const bool direct_output = rpc_results.output_dir.empty();
+  const uint32_t direct_output_path_id =
+      static_cast<uint32_t>(cf_paths.size() - 1);
+  if (direct_output) {
+    for (const auto& files : rpc_results.output_files) {
+      for (const auto& file : files) {
+        dcompact_output_files_.push_back(
+            TableFileName(cf_paths, file.file_number,
+                          direct_output_path_id));
+      }
+    }
+    dcompact_output_materialized_ = !dcompact_output_files_.empty();
+  }
   compact_->num_output_files = 0;
 
   if (rpc_results.output_files.size() != num_threads) {
@@ -1069,18 +1086,23 @@ try {
     auto& sub_state = compact_->sub_compact_states[i];
     for (const auto& min_meta : rpc_results.output_files[i]) {
       auto old_fnum = min_meta.file_number;
-      auto old_fname = MakeTableFileName(rpc_results.output_dir, old_fnum);
-      auto path_id = c->output_path_id();
-      uint64_t file_number = versions_->NewFileNumber();
+      auto path_id = direct_output ? direct_output_path_id
+                                   : c->output_path_id();
+      uint64_t file_number = direct_output ? old_fnum
+                                           : versions_->NewFileNumber();
       std::string new_fname = TableFileName(cf_paths, file_number, path_id);
-      Status st = exec->RenameFile(old_fname, new_fname, min_meta.file_size);
-      if (!st.ok()) {
-        ROCKS_LOG_ERROR(db_options_.info_log, "rename(%s, %s) = %s",
-            old_fname.c_str(), new_fname.c_str(), st.ToString().c_str());
-        compact_->status = st;
-        return st;
+      Status st;
+      if (!direct_output) {
+        auto old_fname = MakeTableFileName(rpc_results.output_dir, old_fnum);
+        st = exec->RenameFile(old_fname, new_fname, min_meta.file_size);
+        if (!st.ok()) {
+          ROCKS_LOG_ERROR(db_options_.info_log, "rename(%s, %s) = %s",
+              old_fname.c_str(), new_fname.c_str(), st.ToString().c_str());
+          compact_->status = st;
+          return st;
+        }
+        dcompact_output_materialized_ = true;
       }
-      dcompact_output_materialized_ = true;
       FileDescriptor fd(file_number, path_id, min_meta.file_size,
                         min_meta.smallest_seqno, min_meta.largest_seqno);
       FileMetaData meta;
@@ -1380,6 +1402,15 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options,
            << pl_stats.bytes_written_blob;
   }
 
+  if (!status.ok()) {
+    for (const auto& file : dcompact_output_files_) {
+      Status delete_status = env_->DeleteFile(file);
+      if (!delete_status.ok() && !delete_status.IsNotFound()) {
+        ROCKS_LOG_WARN(db_options_.info_log, "DeleteFile(%s) = %s",
+                       file.c_str(), delete_status.ToString().c_str());
+      }
+    }
+  }
   CleanupCompaction();
   return status;
 }
@@ -2268,8 +2299,11 @@ Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
                                                CompactionOutputs& outputs) {
   assert(sub_compact != nullptr);
 
-  // no need to lock because VersionSet::next_file_number_ is atomic
-  uint64_t file_number = versions_->NewFileNumber();
+  uint64_t file_number = 0;
+  Status s = file_number_generator_(&file_number);
+  if (!s.ok()) {
+    return s;
+  }
   std::string fname = GetTableFileName(file_number);
   // Fire events.
   ColumnFamilyData* cfd = sub_compact->compaction->column_family_data();
@@ -2297,7 +2331,6 @@ Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
   }
   fo_copy.temperature = temperature;
 
-  Status s;
   IOStatus io_s;
   if (IsCompactionWorker()) { // maybe s3/oss
     auto lazy = new LazyWritableFile(); // to avoid stat cache being stale

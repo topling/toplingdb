@@ -146,6 +146,8 @@ class SubcompactionState;
 
 class CompactionJob {
  public:
+  using FileNumberGenerator = std::function<Status(uint64_t*)>;
+
   CompactionJob(
       int job_id, Compaction* compaction, const ImmutableDBOptions& db_options,
       const MutableDBOptions& mutable_db_options,
@@ -183,6 +185,10 @@ class CompactionJob {
   // that, verify table is usable and finally do bookkeeping to unify
   // subcompaction results
   Status Run();
+
+  void SetFileNumberGenerator(FileNumberGenerator generator) {
+    file_number_generator_ = std::move(generator);
+  }
 
   // REQUIRED: mutex held
   // Add compaction input/output to the current version
@@ -315,6 +321,8 @@ class CompactionJob {
   // env_option optimized for compaction table reads
   FileOptions file_options_for_read_;
   VersionSet* versions_;
+  FileNumberGenerator file_number_generator_;
+  std::vector<std::string> dcompact_output_files_;
   bool dcompact_output_materialized_ = false;
   const std::atomic<bool>* shutting_down_;
   const std::atomic<bool>& manual_compaction_canceled_;

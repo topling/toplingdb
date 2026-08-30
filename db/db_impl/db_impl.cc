@@ -5764,6 +5764,18 @@ Status DBImpl::GetDbSessionId(std::string& session_id) const {
   return Status::OK();
 }
 
+Status DBImpl::AllocateFileNumber(const std::string& db_session_id,
+                                  uint64_t* file_number) {
+  if (file_number == nullptr) {
+    return Status::InvalidArgument("file_number is null");
+  }
+  if (db_session_id != db_session_id_) {
+    return Status::InvalidArgument("db_session_id mismatch");
+  }
+  *file_number = versions_->NewFileNumber();
+  return Status::OK();
+}
+
 namespace {
 SemiStructuredUniqueIdGen* DbSessionIdGen() {
   static SemiStructuredUniqueIdGen gen;

@@ -315,6 +315,7 @@ class CompactionJob {
   // env_option optimized for compaction table reads
   FileOptions file_options_for_read_;
   VersionSet* versions_;
+  bool dcompact_output_materialized_ = false;
   const std::atomic<bool>* shutting_down_;
   const std::atomic<bool>& manual_compaction_canceled_;
   FSDirectory* db_directory_;

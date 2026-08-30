@@ -653,8 +653,14 @@ Status CompactionJob::Run() {
   }
   Status s = RunRemote();
   if (!s.ok()) {
-    if (exec->AllowFallbackToLocal()) {
+    if (exec->AllowFallbackToLocal() &&
+        !dcompact_output_materialized_) {
       s = RunLocal();
+    } else if (exec->AllowFallbackToLocal()) {
+      ROCKS_LOG_WARN(db_options_.info_log,
+                     "[JOB %d] Skip local fallback after dcompact output "
+                     "materialized",
+                     job_id_);
     } else {
       // fatal, rocksdb does not handle compact errors properly
     }
@@ -1007,11 +1013,15 @@ try {
   auto exec = exec_factory->NewExecutor(c);
   std::unique_ptr<CompactionExecutor> exec_auto_del(exec);
   exec->SetParams(&rpc_params, c);
+  bool should_clean_files = false;
+  ROCKSDB_SCOPE_EXIT(
+      if (should_clean_files) { exec->CleanFiles(rpc_params, rpc_results); });
   Status s = exec->Execute(rpc_params, &rpc_results);
   if (!s.ok()) {
     compact_->status = s;
     return s;
   }
+  should_clean_files = true;
   if (!rpc_results.status.ok()) {
     compact_->status = rpc_results.status;
     return rpc_results.status;
@@ -1070,6 +1080,7 @@ try {
         compact_->status = st;
         return st;
       }
+      dcompact_output_materialized_ = true;
       FileDescriptor fd(file_number, path_id, min_meta.file_size,
                         min_meta.smallest_seqno, min_meta.largest_seqno);
       FileMetaData meta;
@@ -1177,8 +1188,6 @@ if (stats_) {
 
   LogFlush(db_options_.info_log);
   TEST_SYNC_POINT("CompactionJob::RunRemote():End");
-
-  exec->CleanFiles(rpc_params, rpc_results);
 
   compact_->status = Status::OK();
   return Status::OK();

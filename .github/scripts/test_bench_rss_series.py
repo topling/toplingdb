@@ -260,6 +260,10 @@ def check_pages_contract(mod, variant: str) -> None:
         assert "Comparison:" not in result_html
         assert "Result table:" in result_html
         assert "db_bench-all.log" in result_html
+        if variant == "dcompact":
+            assert "dcompact is not RocksDB CompactionService" in result_html
+            assert "CompactionExecutorFactory" in result_html
+            assert "RocksDB comparison baseline only" in result_html
         combined = (
             run_dirs[0] / "raw" / "zipkeyonly" / "db_bench-all.log"
         ).read_text(encoding="utf-8")
@@ -290,9 +294,13 @@ def check_pages_contract(mod, variant: str) -> None:
         assert "result table" in home
         assert f"{result_href}" in home
         assert "id%20with%20space/index.html" in home
-        if variant != "dcompact":
+        if variant == "dcompact":
+            assert "dcompact is not RocksDB CompactionService" in home
+            assert "does not implement, wrap, or call RocksDB" in home
+        else:
             assert "dcompact bench →" in home
             assert "offloads most CPU and memory cost" in home
+            assert "not RocksDB CompactionService" not in home
 
 
 def check_dcompact_home_nav(mod) -> None:

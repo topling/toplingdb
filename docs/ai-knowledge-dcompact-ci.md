@@ -4,6 +4,12 @@
 > `memtable_as_log_index` 分支），引用前如怀疑过时可按符号名 grep 复核。
 > 本文档由「CI 限核分布式 compact 对标」任务沉淀，随任务进展持续更新。
 
+> **概念红线：ToplingDB dcompact 不使用 RocksDB CompactionService。**
+> dcompact 实现 ToplingDB 扩展的 `CompactionExecutorFactory`，通过
+> `DcompactEtcd` SidePlugin 自有的 HTTP worker 协议调度 `dcompact_worker`。
+> 本文 CI 中的 RocksDB CompactionService 只属于 RocksDB 对照组，用于把其
+> compaction worker 同样移出写侧 CPU cgroup；它不是 dcompact 的实现、依赖或适配层。
+
 ## 1. dcompact 单机（同机 worker）核心机制
 
 ### 1.1 路径前缀替换（最重要，配错即 412 或崩溃）

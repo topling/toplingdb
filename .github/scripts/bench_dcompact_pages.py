@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Parse db_bench logs for dcompact bench variant and maintain GitHub Pages fragments.
 
-Topling write-side runs under a CPU cgroup quota; compaction offloads to
-dcompact_worker on remaining cores. RocksDB uses CompactionService spool +
-out-of-cgroup broker/worker on remaining cores.
+Topling write-side runs under a CPU cgroup quota; compaction offloads through
+ToplingDB's own CompactionExecutorFactory + dcompact_worker path. It does not
+use RocksDB CompactionService. The RocksDB comparison engines separately use a
+CompactionService spool + out-of-cgroup broker/worker on remaining cores.
 """
 
 from __future__ import annotations
@@ -608,6 +609,26 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
     return result
 
 
+def _build_dcompact_architecture_note() -> str:
+    """Explain the boundary between dcompact and the RocksDB CI baseline."""
+    return """<h2>Architecture boundary: dcompact is not RocksDB CompactionService</h2>
+  <p class="meta">
+    <strong>ToplingDB dcompact is ToplingDB's own distributed-compaction implementation.</strong>
+    It plugs into ToplingDB's <code>CompactionExecutorFactory</code>; the
+    <code>DcompactEtcd</code> SidePlugin submits jobs through ToplingDB's own HTTP
+    worker protocol to <code>dcompact_worker</code>, with files made available through
+    the configured shared-storage or copy path. The class name is historical; the
+    current HTTP path does not use etcd.
+  </p>
+  <p class="meta">
+    <strong>It does not implement, wrap, or call RocksDB <code>CompactionService</code>.</strong>
+    In this benchmark only, the RocksDB comparison engines are separately patched
+    to use RocksDB CompactionService so their compaction worker also runs outside
+    the write-side CPU cgroup. That is a baseline resource-placement choice, not
+    part of dcompact's architecture.
+  </p>"""
+
+
 def _build_dcompact_bench_notes(runner_env: Dict[str, str]) -> str:
     """Page header notes for dcompact CPU quota and compaction modes."""
     cpu_quota = runner_env.get("cpu_quota_write", "n/a")
@@ -615,14 +636,14 @@ def _build_dcompact_bench_notes(runner_env: Dict[str, str]) -> str:
     rocksdb_mode = runner_env.get(
         "compact_mode_rocksdb", "compaction_service_spool"
     )
-    return f"""<h2>Bench configuration (dcompact)</h2>
+    return f"""<h2>Bench configuration</h2>
   <p class="meta">
     Write-side db_bench CPU quota: <strong>{html.escape(cpu_quota)}</strong>
     (from <code>runner_env.txt</code> <code>cpu_quota_write</code>).
-    Topling compact: <strong>{html.escape(topling_mode)}</strong> —
+    ToplingDB dcompact path: <strong>{html.escape(topling_mode)}</strong> —
     <code>dcompact_worker</code> runs outside the write cgroup and uses remaining CPU cores.
-    RocksDB compact: <strong>{html.escape(rocksdb_mode)}</strong> —
-    CompactionService spool + out-of-cgroup broker/worker on remaining cores.
+    RocksDB comparison baseline only: <strong>{html.escape(rocksdb_mode)}</strong> —
+    a separate CompactionService spool + out-of-cgroup broker/worker runs on remaining cores.
   </p>"""
 
 
@@ -880,6 +901,7 @@ def emit(args: argparse.Namespace) -> None:
   </p>
   <p class="meta">generated (UTC): {html.escape(_fmt_utc())}</p>
   {source_links}
+  {_build_dcompact_architecture_note()}
   {dcompact_notes}
   {runner_html}
   {_build_per_engine_details(engines_data)}
@@ -1159,6 +1181,7 @@ def merge(args: argparse.Namespace) -> None:
     <a href="../index.html">← plain home</a>
   </p>
   <p class="meta">Updated (UTC): {html.escape(_fmt_utc())}</p>
+  {_build_dcompact_architecture_note()}
   {dcompact_section}
   <h2>History</h2>
   {_render_dcompact_history(history)}

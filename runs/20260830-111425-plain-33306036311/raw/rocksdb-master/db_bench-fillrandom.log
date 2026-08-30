@@ -1,0 +1,36 @@
+$ /home/runner/work/toplingdb/toplingdb/_run_prefix/rocksdb-master/bin/db_bench -db=/dev/shm/db_bench_rocksdb_master -num=50000000 -key_size=8 -value_size=50 -batch_size=1000 -cache_size=8383207424 -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom -progress_reports=false -report_bench_start_time -compact_target_level=6 -options_file=.github/bench-conf/rocksdb_db_bench.ini
+RocksDB:    version 11.10.0
+Date:       Sun Aug 30 10:55:01 2026
+CPU:        4 * AMD EPYC 7763 64-Core Processor
+CPUCache:   512 KB
+Set seed to 1788087301536010 because --seed was 0
+Initializing RocksDB Options from the specified file
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    50000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    2765.7 MB (estimated)
+FileSize:   1573.6 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: SkipListFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-30T10:55:01.549830Z fillrandom   :       1.512 micros/op 661321 ops/sec 75.606 seconds 50000000 operations;   36.6 MB/s
+flush memtable
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-30T10:56:17.424126Z compact      : 34895605.000 micros/op 0 ops/sec 34.896 seconds 1 operations;
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-30T10:56:52.319937Z readseq      :       0.176 micros/op 5671600 ops/sec 5.573 seconds 31606799 operations;  313.7 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-30T10:56:57.893009Z readseq      :       0.128 micros/op 7831991 ops/sec 4.036 seconds 31606799 operations;  433.2 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-30T10:57:01.928856Z readseq      :       0.127 micros/op 7846863 ops/sec 4.028 seconds 31606799 operations;  434.0 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_master]
+2026-08-30T10:57:05.957086Z readrandom   :       2.993 micros/op 334131 ops/sec 149.642 seconds 50000000 operations;   11.7 MB/s (31606064 of 50000000 found)
+

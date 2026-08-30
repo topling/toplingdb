@@ -1,0 +1,36 @@
+$ /home/runner/work/toplingdb/toplingdb/_run_prefix/rocksdb-v8.10/bin/db_bench -db=/dev/shm/db_bench_rocksdb_v810 -num=50000000 -key_size=8 -value_size=50 -batch_size=1000 -cache_size=8383207424 -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom -progress_reports=false -report_bench_start_time -compact_target_level=6 -options_file=.github/bench-conf/rocksdb_db_bench.ini
+RocksDB:    version 8.10.2
+Date:       Sun Aug 30 10:36:14 2026
+CPU:        4 * AMD EPYC 7763 64-Core Processor
+CPUCache:   512 KB
+Set seed to 1788086174884935 because --seed was 0
+Initializing RocksDB Options from the specified file
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    50000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    2765.7 MB (estimated)
+FileSize:   1573.6 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: SkipListFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-30T10:36:14.899315Z fillrandom   :       1.612 micros/op 620165 ops/sec 80.624 seconds 50000000 operations;   34.3 MB/s
+flush memtable
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-30T10:37:35.783734Z compact      : 28359509.000 micros/op 0 ops/sec 28.360 seconds 1 operations;
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-30T10:38:04.143484Z readseq      :       0.133 micros/op 7510027 ops/sec 4.208 seconds 31602625 operations;  415.4 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-30T10:38:08.351767Z readseq      :       0.093 micros/op 10699635 ops/sec 2.954 seconds 31602625 operations;  591.8 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-30T10:38:11.305597Z readseq      :       0.093 micros/op 10733931 ops/sec 2.944 seconds 31602625 operations;  593.7 MB/s
+DB path: [/dev/shm/db_bench_rocksdb_v810]
+2026-08-30T10:38:14.249970Z readrandom   :       2.816 micros/op 355109 ops/sec 140.802 seconds 50000000 operations;   12.4 MB/s (31600375 of 50000000 found)
+

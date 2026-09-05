@@ -17,7 +17,7 @@ sudo make install PREFIX=/some/path # default is /usr/local
 
 下载解压或者自行编译后，运行 [db_bench.sh](db_bench.sh)(需要[端口 2011](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4 "内嵌的 http web 服务使用端口 2011"))，然后使用 ToplingDB：[原生 C++](https://github.com/topling/rockside/wiki/101 "典型场景是从 rocksdb 迁移过来)")，也支持 [Java](https://github.com/topling/rockside/wiki/SidePlugin-Java-Binding "内置在本 github 仓库中") 和 [Rust](https://github.com/topling/rust-toplingdb "另外的专门的 github 仓库")。
 
-> 自己编译开源版时会自动下载预编译的试用版(90天) ToplingZipTable，如果下载失败，可以给 `make` 传递变量 `WITH_TOPLING_ROCKS=0` 禁用它(或[联系我们](mailto:contact@topling.cn))。
+> 自己编译开源版时可能会自动下载预编译的 ToplingZipTable（90 天试用版）。如果要禁用 ZipTable Builder 试用组件，可以给 `make` 同时传递 `WITH_TOPLING_ROCKS=0 WITH_CSPP_MEMTABLE=0`；Makefile 要求关闭 Topling Rocks 时同时关闭 CSPP（或[联系我们](mailto:contact@topling.cn)）。
 > CSPP-MemTable 也是以这种方式分发的。
 
 ## 简单介绍
@@ -52,11 +52,12 @@ toplingdb
  \__ sideplugin
       \__ rockside                 (submodule , sideplugin core and framework)
       \__ topling-zip              (auto clone, zip and core lib)
-      \__ cspp-memtab              (auto clone, sideplugin component)
+      \__ cspp-memtable            (auto clone, sideplugin component)
       \__ cspp-wbwi                (auto clone, sideplugin component)
       \__ topling-sst              (auto clone, sideplugin component)
       \__ topling-rocks            (auto clone, sideplugin component)
       \__ topling-zip_table_reader (auto clone, sideplugin component)
+      \__ toplingdb-fs             (auto clone when enabled, sideplugin component)
       \__ topling-dcompact         (auto clone, sideplugin component)
            \_ tools/dcompact       (dcompact-worker binary app)
 ```
@@ -69,9 +70,9 @@ toplingdb
 [topling-sst](https://github.com/topling/topling-sst) | public | 1. [SingleFastTable](https://github.com/topling/rockside/wiki/SingleFastTable)(主要用于 L0 和 L1)<br/> 2. VecAutoSortTable(主要用于 MyTopling bulk_load).<br/> 3. 已弃用：[ToplingFastTable](https://github.com/topling/rockside/wiki/ToplingFastTable), CSPPAutoSortTable
 [topling-dcompact](https://github.com/topling/topling-dcompact) | public | 分布式 Compact 与通用的 dcompact_worker 程序, 将 Compact 转移到弹性计算集群。<br/>相比 RocksDB 自身的 Remote Compaction，ToplingDB 的分布式 Compact 功能完备，使用便捷，对上层应用非常友好，参见 [dcompact db_bench 性能对比](https://topling.github.io/toplingdb/dcompact/)
 [topling-rocks](https://github.com/topling/topling-rocks) | **private** | 创建 [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)，基于 Topling 可检索内存压缩算法的 SST，压缩率更高，且内存占用更低，一般用于 L2 及更深层 SST
-[topling-zip_table_reader](https://github.com/topling/topling-zip_table_reader) | public | 让社区版用户可以读取 Topling**Zip**Table，但创建需要私有仓库 [topling-rocks](https://github.com/topling/topling-rocks)
+[topling-zip_table_reader](https://github.com/topling/topling-zip_table_reader) | public | 让社区版用户可以读取 Topling**Zip**Table，创建则需要 Builder（由私有仓库 [topling-rocks](https://github.com/topling/topling-rocks) 的源码构建，或使用预编译试用对象）
 
-为了简化编译流程，ToplingDB 在 Makefile 中会自动 clone 各个组件的 github 仓库，社区版用户可以成功 clone 公开的仓库，但克隆私有仓库（例如 topling-rocks）会失败，所以社区版用户编译出来的 ToplingDB 无法创建 Topling**Zip**Table，但可以读取 Topling**Zip**Table。
+为了简化编译流程，ToplingDB 的 Makefile 会自动 clone 各组件仓库。访问私有源码仓库需要授权；缺少 ToplingZipTable Builder 或 CSPP MemTable 源码时，Makefile 还可下载预编译试用对象。因此，私库 clone 失败不等于构建中一定没有该组件；试用组件的禁用开关见上方编译说明。
 
 ## 可配置的功能
 为了性能和简化，ToplingDB 默认禁用了一些 RocksDB 的功能：

@@ -5,7 +5,7 @@ ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). See 
 ## Quick Start
 ToplingDB requires C++17, gcc 8.3 or newer is recommended, clang also works.
 
-ToplingDB is forked form [RocksDB](https://github.com/facebook/rocksdb), much faster than RocksDB (see the [db_bench comparisons](https://topling.github.io/toplingdb/)), you can [download ToplingDB Enterprise](https://topling-tools.oss-cn-qingdao.aliyuncs.com/toplingdb-8.10-trail90.tgz) or compile it by yourself:
+ToplingDB is forked from [RocksDB](https://github.com/facebook/rocksdb), much faster than RocksDB (see the [db_bench comparisons](https://topling.github.io/toplingdb/)), you can [download ToplingDB Enterprise](https://topling-tools.oss-cn-qingdao.aliyuncs.com/toplingdb-8.10-trail90.tgz) or compile it yourself:
 ### Compile & run db_bench
 ```bash
 sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel libcurl-devel liburing-devel snappy-devel jemalloc-devel
@@ -18,7 +18,7 @@ sudo make install PREFIX=/some/path # default is /usr/local
 
 After download+uncompress or compile, you can run bundled [db_bench.sh](db_bench.sh)(need [port 2011](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4 "use port 2011 for embeded http server")), then use ToplingDB [in C++](https://github.com/topling/sideplugin-wiki-en/wiki/101 "maybe migrate from rocksdb"), or in [Java](https://github.com/topling/sideplugin-wiki-en/wiki/SidePlugin-Java-Binding "Bundled in this repo"), [Rust](https://github.com/topling/rust-toplingdb "A seperated repo").
 
-> During compiling, precompiled ToplingZipTable(90 days trial) will be auto downloaded, if download failed, you can pass `WITH_TOPLING_ROCKS=0` to `make` to disalbe it(or [contact us](mailto:contact@topling.cn)).
+> During compilation, a precompiled ToplingZipTable (90-day trial) may be downloaded automatically. If you need to disable the ZipTable Builder trial, pass `WITH_TOPLING_ROCKS=0 WITH_CSPP_MEMTABLE=0` to `make`; the Makefile requires CSPP to be disabled when Topling Rocks is disabled (or [contact us](mailto:contact@topling.cn)).
 > CSPPMemTable is also distributed this way.
 
 ## Introduction
@@ -55,11 +55,12 @@ toplingdb
  \__ sideplugin
       \__ rockside                 (submodule , sideplugin core and framework)
       \__ topling-zip              (auto clone, zip and core lib)
-      \__ cspp-memtab              (auto clone, sideplugin component)
+      \__ cspp-memtable            (auto clone, sideplugin component)
       \__ cspp-wbwi                (auto clone, sideplugin component)
       \__ topling-sst              (auto clone, sideplugin component)
       \__ topling-rocks            (auto clone, sideplugin component)
       \__ topling-zip_table_reader (auto clone, sideplugin component)
+      \__ toplingdb-fs             (auto clone when enabled, sideplugin component)
       \__ topling-dcompact         (auto clone, sideplugin component)
            \_ tools/dcompact       (dcompact-worker binary app)
 ```
@@ -75,7 +76,7 @@ toplingdb
 [topling-rocks](https://github.com/topling/topling-rocks) | **private** | For build [Topling**Zip**Table](https://github.com/topling/sideplugin-wiki-en/wiki/ToplingZipTable), an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which uses topling dedicated searchable in-memory data compression algorithms
 [topling-zip_table_reader](https://github.com/topling/topling-zip_table_reader) | public | For read Topling**Zip**Table by community users, builder of Topling**Zip**Table is in [topling-rocks](https://github.com/topling/topling-rocks)
 
-To simplify the compiling, repo**s** are auto cloned in ToplingDB's Makefile, community users will auto clone public repo successfully but fail to auto clone **private** repo, thus ToplingDB is built without **private** components, this is so called **community** version.
+To simplify compilation, ToplingDB's Makefile automatically clones component repositories. Access to private source repositories requires authorization; when the ToplingZipTable Builder or CSPP MemTable source is unavailable, the Makefile can download precompiled trial objects. A failed private clone therefore does not by itself mean that the component is absent from the build. See the trial-component switches in [Quick Start](#quick-start).
 
 ## Configurable features
 For performance and simplicity, ToplingDB disabled some RocksDB features by default:

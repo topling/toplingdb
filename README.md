@@ -13,7 +13,7 @@ sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel
 git clone https://github.com/topling/toplingdb
 cd toplingdb
 make -j`nproc` db_bench DEBUG_LEVEL=0
-sudo make install PREFIX=/some/path # default is /usr/local
+sudo make install-dev-shared DEBUG_LEVEL=0 PREFIX=/some/path # installs shared library and headers; install-shared alone installs only the library
 ```
 
 After download+uncompress or compile, you can run bundled [db_bench.sh](db_bench.sh)(need [port 2011](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4 "use port 2011 for embeded http server")), then use ToplingDB [in C++](https://github.com/topling/sideplugin-wiki-en/wiki/101 "maybe migrate from rocksdb"), or in [Java](https://github.com/topling/sideplugin-wiki-en/wiki/SidePlugin-Java-Binding "Bundled in this repo"), [Rust](https://github.com/topling/rust-toplingdb "A seperated repo").

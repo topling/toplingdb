@@ -12,7 +12,7 @@ sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel
 git clone https://github.com/topling/toplingdb
 cd toplingdb
 make -j`nproc` db_bench DEBUG_LEVEL=0
-sudo make install PREFIX=/some/path # default is /usr/local
+sudo make install-dev-shared DEBUG_LEVEL=0 PREFIX=/some/path # 安装动态库和头文件；install-shared 只安装动态库，默认路径为 /usr/local
 ```
 
 下载解压或者自行编译后，运行 [db_bench.sh](db_bench.sh)(需要[端口 2011](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4 "内嵌的 http web 服务使用端口 2011"))，然后使用 ToplingDB：[原生 C++](https://github.com/topling/rockside/wiki/101 "典型场景是从 rocksdb 迁移过来)")，也支持 [Java](https://github.com/topling/rockside/wiki/SidePlugin-Java-Binding "内置在本 github 仓库中") 和 [Rust](https://github.com/topling/rust-toplingdb "另外的专门的 github 仓库")。

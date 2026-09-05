@@ -1,3 +1,5 @@
+> Scope: this file retains the upstream RocksDB compilation and platform notes. For the current ToplingDB quick start and development installation, see the [ToplingDB README](README.md#quick-start) and the [中文编译安装指南](https://github.com/topling/rockside/wiki/Compile-And-Install) / [English guide](https://github.com/topling/sideplugin-wiki-en/wiki/Compile-And-Install). Use `sudo make install-dev-shared DEBUG_LEVEL=0 PREFIX=/some/path` for a shared-library development installation (headers plus the library); `install-shared` installs the library only.
+
 ## Compilation
 
 **Important**: If you plan to run RocksDB in production, don't compile using default

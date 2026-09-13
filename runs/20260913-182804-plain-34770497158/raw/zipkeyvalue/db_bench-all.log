@@ -1,0 +1,173 @@
+$ /home/runner/work/toplingdb/toplingdb/_run_prefix/topling/bin/db_bench -json logs/zipkeyvalue/db_bench-fillrandom.yaml -num=100000000 -key_size=8 -value_size=50 -batch_size=1000 -benchmarks=fillrandom,flush,compact,readseq,readseq,readseq,readrandom -enable_zero_copy -progress_reports=false -report_bench_start_time -compact_target_level=6
+RocksDB:    version 8.10.2
+Date:       Sun Sep 13 17:31:23 2026
+CPU:        4 * AMD EPYC 9V74 80-Core Processor
+CPUCache:   1024 KB
+Set seed to 1789320683340643 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: CSPPMemTabFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:31:25.362423Z fillrandom   :    0.569489 micros/op 1755959 ops/sec 56.949 seconds 100000000 operations;   97.1 MB/s
+start step[ordinal=0, threadno=0, live_fibers=1]: ZipInputData
+start step[ordinal=0, threadno=1, live_fibers=1]: ZipInputData
+start step[ordinal=0, threadno=2, live_fibers=1]: ZipInputData
+start step[ordinal=0, threadno=3, live_fibers=1]: ZipInputData
+start step[ordinal=1, threadno=0, live_fibers=1]: WriteZipData
+flush memtable
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:32:22.344844Z compact      : 53472325.000000 micros/op 0 ops/sec 53.472 seconds 1 operations;
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:33:15.817361Z readseq      :    0.045853 micros/op 21808842 ops/sec 4.585 seconds 100000000 operations; 1206.3 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:33:20.402927Z readseq      :    0.045419 micros/op 22017101 ops/sec 4.542 seconds 100000000 operations; 1217.8 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:33:24.945100Z readseq      :    0.045888 micros/op 21792104 ops/sec 4.589 seconds 100000000 operations; 1205.4 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:33:29.534167Z readrandom   :    0.563186 micros/op 1775610 ops/sec 56.319 seconds 100000000 operations;   62.1 MB/s (63204785 of 100000000 found)
+
+ended step[ordinal=0, threadno=0, live_fibers=1]: ZipInputData
+ended step[ordinal=0, threadno=2, live_fibers=1]: ZipInputData
+ended step[ordinal=0, threadno=3, live_fibers=1]: ZipInputData
+ended step[ordinal=0, threadno=1, live_fibers=1]: ZipInputData
+ended step[ordinal=1, threadno=0, live_fibers=1]: WriteZipData
+
+$ /home/runner/work/toplingdb/toplingdb/_run_prefix/topling/bin/db_bench -json logs/zipkeyvalue/db_bench-fillrandom.yaml -num=100000000 -key_size=8 -value_size=50 -batch_size=1000 -benchmarks=nextwithkey,nextwithkey,nextwithkey,readseq,readseq,readseq -scan_omit_key -scan_omit_value -use_existing_db=1 -enable_zero_copy -progress_reports=false
+RocksDB:    version 8.10.2
+Date:       Sun Sep 13 17:34:27 2026
+CPU:        4 * AMD EPYC 9V74 80-Core Processor
+CPUCache:   1024 KB
+Set seed to 1789320867632240 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: CSPPMemTabFactory
+Perf Level: 1
+------------------------------------------------
+DB path: [/dev/shm/db_bench_enterprise]
+nextwithkey  :    0.020153 micros/op 49620625 ops/sec 2.015 seconds 100000000 operations;  378.6 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+nextwithkey  :    0.019825 micros/op 50441260 ops/sec 1.983 seconds 100000000 operations;  384.8 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+nextwithkey  :    0.020827 micros/op 48012613 ops/sec 2.083 seconds 100000000 operations;  366.3 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+readseq      :    0.021093 micros/op 47407272 ops/sec 2.109 seconds 100000000 operations;  361.7 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+readseq      :    0.022454 micros/op 44534701 ops/sec 2.245 seconds 100000000 operations;  339.8 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+readseq      :    0.021236 micros/op 47089026 ops/sec 2.124 seconds 100000000 operations;  359.3 MB/s
+
+$ /home/runner/work/toplingdb/toplingdb/_run_prefix/topling/bin/db_bench -json logs/zipkeyvalue/db_bench-fillseq.yaml -num=100000000 -key_size=8 -value_size=50 -batch_size=1000 -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom -enable_zero_copy -progress_reports=false -report_bench_start_time -compact_target_level=6
+RocksDB:    version 8.10.2
+Date:       Sun Sep 13 17:34:41 2026
+CPU:        4 * AMD EPYC 9V74 80-Core Processor
+CPUCache:   1024 KB
+Set seed to 1789320881881011 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: OffsetSkipList
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:34:43.902233Z fillseq      :    0.257071 micros/op 3889939 ops/sec 25.707 seconds 100000000 operations;  215.2 MB/s
+start step[ordinal=0, threadno=0, live_fibers=1]: ZipInputData
+start step[ordinal=0, threadno=1, live_fibers=1]: ZipInputData
+start step[ordinal=0, threadno=2, live_fibers=1]: ZipInputData
+start step[ordinal=0, threadno=3, live_fibers=1]: ZipInputData
+start step[ordinal=1, threadno=0, live_fibers=1]: WriteZipData
+flush memtable
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:35:09.621431Z compact      : 106127976.000000 micros/op 0 ops/sec 106.128 seconds 1 operations;
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:36:55.749658Z readseq      :    0.038126 micros/op 26228586 ops/sec 3.813 seconds 100000000 operations; 1450.8 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:36:59.562510Z readseq      :    0.037427 micros/op 26718521 ops/sec 3.743 seconds 100000000 operations; 1477.9 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:37:03.305420Z readseq      :    0.037527 micros/op 26646876 ops/sec 3.753 seconds 100000000 operations; 1473.9 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-13T17:37:07.058412Z readrandom   :    0.741357 micros/op 1348877 ops/sec 74.136 seconds 100000000 operations;   74.6 MB/s (100000000 of 100000000 found)
+
+ended step[ordinal=0, threadno=2, live_fibers=1]: ZipInputData
+ended step[ordinal=0, threadno=0, live_fibers=1]: ZipInputData
+ended step[ordinal=0, threadno=1, live_fibers=1]: ZipInputData
+ended step[ordinal=0, threadno=3, live_fibers=1]: ZipInputData
+ended step[ordinal=1, threadno=0, live_fibers=1]: WriteZipData
+
+$ /home/runner/work/toplingdb/toplingdb/_run_prefix/topling/bin/db_bench -json logs/zipkeyvalue/db_bench-fillseq.yaml -num=100000000 -key_size=8 -value_size=50 -batch_size=1000 -benchmarks=nextwithkey,nextwithkey,nextwithkey,readseq,readseq,readseq -scan_omit_key -scan_omit_value -use_existing_db=1 -enable_zero_copy -progress_reports=false
+RocksDB:    version 8.10.2
+Date:       Sun Sep 13 17:38:22 2026
+CPU:        4 * AMD EPYC 9V74 80-Core Processor
+CPUCache:   1024 KB
+Set seed to 1789321102212157 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    100000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    5531.3 MB (estimated)
+FileSize:   3147.1 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: OffsetSkipList
+Perf Level: 1
+------------------------------------------------
+DB path: [/dev/shm/db_bench_enterprise]
+nextwithkey  :    0.015175 micros/op 65894254 ops/sec 1.518 seconds 100000000 operations;  502.7 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+nextwithkey  :    0.014993 micros/op 66694633 ops/sec 1.499 seconds 100000000 operations;  508.8 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+nextwithkey  :    0.014926 micros/op 66994627 ops/sec 1.493 seconds 100000000 operations;  511.1 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+readseq      :    0.015454 micros/op 64707370 ops/sec 1.545 seconds 100000000 operations;  493.7 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+readseq      :    0.015437 micros/op 64778418 ops/sec 1.544 seconds 100000000 operations;  494.2 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+readseq      :    0.015470 micros/op 64640071 ops/sec 1.547 seconds 100000000 operations;  493.2 MB/s

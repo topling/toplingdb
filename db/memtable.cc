@@ -784,11 +784,19 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
 
   size_t encoded_len = MemTableRep::EncodeKeyValueSize(key, real_value);
   if (!allow_concurrent) {
-    // Extract prefix for insert with hint.
     if (insert_with_hint_prefix_extractor_ != nullptr &&
+        needs_user_key_cmp_in_get_ && // disable per-prefix hint for Topling
         insert_with_hint_prefix_extractor_->InDomain(key)) {
       Slice prefix = insert_with_hint_prefix_extractor_->Transform(key);
       hint = &insert_hints_[prefix];  // overwrite hint?
+      bool res = table->InsertKeyValueWithHint(tag, key, value, hint);
+      if (UNLIKELY(!res)) {
+        return Status::TryAgain("key+seq exists");
+      }
+    } else if (hint && !needs_user_key_cmp_in_get_) {
+      // Borrow NeedsUserKeyCompareInGet: false on Topling (hint pins the
+      // writer token; pair with FinishHint), true on upstream RocksDB
+      // (ignore caller hint except the prefix-extractor path above).
       bool res = table->InsertKeyValueWithHint(tag, key, value, hint);
       if (UNLIKELY(!res)) {
         return Status::TryAgain("key+seq exists");

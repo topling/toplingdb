@@ -60,6 +60,7 @@ ROCKSDB_ENGINES = ("rocksdb-v8.10", "rocksdb-master")
 YAML_USED_NAMES = (
     "db_bench-fillrandom.yaml",
     "db_bench-fillseq.yaml",
+    "db_bench-fillseq-cspp.yaml",
 )
 ENGINE_LABELS = {
     "zipkeyonly": "ToplingDB zipkeyonly",
@@ -137,7 +138,7 @@ def format_iec(num_bytes: int) -> str:
     return f"{n:.1f}{units[idx]}"
 
 
-SHM_WORKLOADS = ("fillrandom", "fillseq")
+SHM_WORKLOADS = ("fillrandom", "fillseq", "fillseq-cspp")
 SHM_WORKLOAD_LABELS = SHM_SUITE_LABELS
 
 
@@ -160,7 +161,14 @@ def load_shm_usages(eng_dir: Path) -> Dict[str, Optional[Dict[str, int]]]:
     return out
 
 
-RSS_WORKLOADS = ("fillrandom", "fillseq", "fillrandom-omit", "fillseq-omit")
+RSS_WORKLOADS = (
+    "fillrandom",
+    "fillseq",
+    "fillrandom-omit",
+    "fillseq-omit",
+    "fillseq-cspp",
+    "fillseq-cspp-omit",
+)
 
 
 def parse_rss_usage(text: str) -> Optional[int]:
@@ -240,6 +248,10 @@ def build_shm_usage_table(
 
     rows_html = []
     for wl in SHM_WORKLOADS:
+        if wl == "fillseq-cspp" and all(
+            _bytes(e, wl, "allocated_bytes") is None for e in ENGINES
+        ):
+            continue
         cells = [f"<td>{html.escape(SHM_WORKLOAD_LABELS.get(wl, wl))}</td>"]
         for e in ENGINES:
             b = _bytes(e, wl, "allocated_bytes")
@@ -633,6 +645,26 @@ def build_db_bench_compare(
 LAZY_ENGINES = ("zipkeyonly", "zipkeyvalue", "rocksdb-v8.10")
 
 
+def _has_topling_fillseq_cspp(engines: Dict[str, Any]) -> bool:
+    return any(
+        bool((engines.get(e) or {}).get("db_bench_fillseq_cspp"))
+        for e in TOPLING_ENGINES
+    )
+
+
+def _db_bench_by_engine(
+    engines: Dict[str, Any],
+    *,
+    topling_key: str,
+    rocks_key: str = "db_bench",
+) -> Dict[str, List[Dict[str, str]]]:
+    out: Dict[str, List[Dict[str, str]]] = {}
+    for e in ENGINES:
+        key = topling_key if e in TOPLING_ENGINES else rocks_key
+        out[e] = (engines.get(e) or {}).get(key) or []
+    return out
+
+
 def _hl(text: str, kind: str) -> str:
     """Color a short phrase: kind is 'faster' (green) or 'slower' (red)."""
     return f'<span class="{kind}">{html.escape(text)}</span>'
@@ -860,13 +892,22 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
             )
         omit_fr_rows: List[Dict[str, str]] = []
         omit_fs_rows: List[Dict[str, str]] = []
+        omit_fs_cspp_rows: List[Dict[str, str]] = []
+        fs_cspp_path = eng_dir / "db_bench-fillseq-cspp.log"
+        fs_cspp_rows: List[Dict[str, str]] = []
+        if fs_cspp_path.is_file():
+            fs_cspp_rows = parse_db_bench(
+                fs_cspp_path.read_text(encoding="utf-8", errors="replace")
+            )
         if eng == "rocksdb-v8.10":
             # Reuse readseq×3 from the main fill* suites (no separate omit/scan pass).
             omit_fr_rows = _readseq_rows(fr_rows)
             omit_fs_rows = _readseq_rows(db_rows)
+            omit_fs_cspp_rows = omit_fs_rows
         else:
             omit_fr = eng_dir / "db_bench-fillrandom-omit.log"
             omit_fs = eng_dir / "db_bench-fillseq-omit.log"
+            omit_fs_cspp = eng_dir / "db_bench-fillseq-cspp-omit.log"
             if omit_fr.is_file():
                 omit_fr_rows = parse_db_bench(
                     omit_fr.read_text(encoding="utf-8", errors="replace")
@@ -874,6 +915,10 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
             if omit_fs.is_file():
                 omit_fs_rows = parse_db_bench(
                     omit_fs.read_text(encoding="utf-8", errors="replace")
+                )
+            if omit_fs_cspp.is_file():
+                omit_fs_cspp_rows = parse_db_bench(
+                    omit_fs_cspp.read_text(encoding="utf-8", errors="replace")
                 )
         skiplist_rows: List[Dict[str, str]] = []
         cspp_rows: List[Dict[str, str]] = []
@@ -893,8 +938,10 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
         result[eng] = {
             "db_bench": db_rows,
             "db_bench_fillrandom": fr_rows,
+            "db_bench_fillseq_cspp": fs_cspp_rows,
             "db_bench_omit_fillrandom": omit_fr_rows,
             "db_bench_omit_fillseq": omit_fs_rows,
+            "db_bench_omit_fillseq_cspp": omit_fs_cspp_rows,
             "memtablerep_skiplist": skiplist_rows,
             "memtablerep_cspp": cspp_rows,
             "memtablerep_OffsetSkipList": offset_skiplist_rows,
@@ -1117,6 +1164,15 @@ def _build_per_engine_details(engines_data: Dict[str, Any]) -> str:
         detail_parts.append(
             _table(db_bench_detail_keys, data["db_bench"], db_bench_detail_keys)
         )
+        if data.get("db_bench_fillseq_cspp"):
+            detail_parts.append("<h4>db_bench (fillseq suite, CSPP)</h4>")
+            detail_parts.append(
+                _table(
+                    db_bench_detail_keys,
+                    data["db_bench_fillseq_cspp"],
+                    db_bench_detail_keys,
+                )
+            )
         if eng in TOPLING_ENGINES:
             if data.get("db_bench_omit_fillrandom"):
                 detail_parts.append(
@@ -1137,6 +1193,17 @@ def _build_per_engine_details(engines_data: Dict[str, Any]) -> str:
                     _table(
                         db_bench_detail_keys,
                         data["db_bench_omit_fillseq"],
+                        db_bench_detail_keys,
+                    )
+                )
+            if data.get("db_bench_omit_fillseq_cspp"):
+                detail_parts.append(
+                    "<h4>db_bench omit lazy-load (fillseq CSPP DB)</h4>"
+                )
+                detail_parts.append(
+                    _table(
+                        db_bench_detail_keys,
+                        data["db_bench_omit_fillseq_cspp"],
                         db_bench_detail_keys,
                     )
                 )
@@ -1208,22 +1275,30 @@ def emit(args: argparse.Namespace) -> None:
             "db_bench-fillrandom.log",
             "db_bench-fillrandom-omit.log",
             "db_bench-fillseq-omit.log",
+            "db_bench-fillseq-cspp.log",
+            "db_bench-fillseq-cspp-omit.log",
             "memtablerep_bench-skiplist.log",
             "memtablerep_bench-cspp.log",
             "memtablerep_bench-OffsetSkipList.log",
             "shm_usage.txt",
             "shm_usage-fillrandom.txt",
             "shm_usage-fillseq.txt",
+            "shm_usage-fillseq-cspp.txt",
             "rss_usage-fillrandom.txt",
             "rss_usage-fillseq.txt",
             "rss_usage-fillrandom-omit.txt",
             "rss_usage-fillseq-omit.txt",
+            "rss_usage-fillseq-cspp.txt",
+            "rss_usage-fillseq-cspp-omit.txt",
             "statm_series-fillrandom.txt",
             "statm_series-fillseq.txt",
+            "statm_series-fillseq-cspp.txt",
             "time-fillrandom.txt",
             "time-fillseq.txt",
             "time-fillrandom-omit.txt",
             "time-fillseq-omit.txt",
+            "time-fillseq-cspp.txt",
+            "time-fillseq-cspp-omit.txt",
             "bench_settings.txt",
             *YAML_USED_NAMES,
             "engine-meta.json",
@@ -1360,11 +1435,17 @@ def emit(args: argparse.Namespace) -> None:
                 "db_bench_fillrandom": engines_data.get(eng, {}).get(
                     "db_bench_fillrandom", []
                 ),
+                "db_bench_fillseq_cspp": engines_data.get(eng, {}).get(
+                    "db_bench_fillseq_cspp", []
+                ),
                 "db_bench_omit_fillrandom": engines_data.get(eng, {}).get(
                     "db_bench_omit_fillrandom", []
                 ),
                 "db_bench_omit_fillseq": engines_data.get(eng, {}).get(
                     "db_bench_omit_fillseq", []
+                ),
+                "db_bench_omit_fillseq_cspp": engines_data.get(eng, {}).get(
+                    "db_bench_omit_fillseq_cspp", []
                 ),
                 "shm_usage": engines_data.get(eng, {}).get("shm_usage")
                 or {wl: None for wl in SHM_WORKLOADS},
@@ -1457,12 +1538,17 @@ def _render_latest_section(
         eng_rss_raw = engines.get(e, {}).get("rss_usage") or {}
         rss_data[e] = {wl: v for wl, v in eng_rss_raw.items()}
         if e in ROCKSDB_ENGINES:
-            for src, dst in (("fillrandom", "fillrandom-omit"), ("fillseq", "fillseq-omit")):
+            for src, dst in (
+                ("fillrandom", "fillrandom-omit"),
+                ("fillseq", "fillseq-omit"),
+                ("fillseq-cspp", "fillseq-cspp-omit"),
+            ):
                 if rss_data[e].get(dst) is None and rss_data[e].get(src) is not None:
                     rss_data[e][dst] = rss_data[e][src]
             if (
                 rss_data[e].get("fillrandom-omit") is not None
                 or rss_data[e].get("fillseq-omit") is not None
+                or rss_data[e].get("fillseq-cspp-omit") is not None
             ):
                 rss_derived_engines.add(e)
     if pages_root is not None:
@@ -1484,6 +1570,26 @@ def _render_latest_section(
     omit_fs_table = build_lazy_load_compare(
         {e: engines.get(e, {}).get("db_bench_omit_fillseq") or [] for e in LAZY_ENGINES}
     )
+    fs_cspp_compare = ""
+    omit_fs_cspp_block = ""
+    if _has_topling_fillseq_cspp(engines):
+        fs_cspp_compare = (
+            "<h3>Comparison: db_bench fillseq suite (CSPP) (perf)</h3>\n"
+            '<p class="meta">Same as fillrandom, except ToplingDB fillseq uses CSPP. '
+            "RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on "
+            "non-overlapping SSTs; <code>refit level</code> skips zstd on L6: faster, "
+            "larger size. Seqno-zeroing compact still runs.</p>\n"
+            f"{build_db_bench_compare(_db_bench_by_engine(engines, topling_key='db_bench_fillseq_cspp'))}"
+        )
+        omit_fs_cspp_block = (
+            "<h4>scan-omit-value on data from fillseq (CSPP)</h4>\n"
+            + build_lazy_load_compare(
+                {
+                    e: engines.get(e, {}).get("db_bench_omit_fillseq_cspp") or []
+                    for e in LAZY_ENGINES
+                }
+            )
+        )
 
     t_eng = engines.get("zipkeyonly") or {}
     r_eng = engines.get("rocksdb-v8.10") or {}
@@ -1533,12 +1639,14 @@ def _render_latest_section(
   <h3>Comparison: db_bench fillseq suite (perf)</h3>
   <p class="meta">Same as fillrandom, except ToplingDB fillseq uses OffsetSkipList (fillrandom still uses CSPP). RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd on L6: faster, larger size. Seqno-zeroing compact still runs.</p>
   {db_compare_fs}
+  {fs_cspp_compare}
   <h3>Lazy load demo (scan; RocksDB v8.10 baseline)</h3>
   <p class="meta">zipkey* needs an extra omit pass: scan_omit_key/value enables lazy value load (no real value load). RocksDB has no lazy load, so the baseline is readseq×3 already present in the main fill* suite (no extra pass). RocksDB nextwithkey cells are =readseq. master omitted here (v8.10 is the stronger RocksDB baseline). {_color_sign()}.</p>
   <h4>scan-omit-value on data from fillrandom</h4>
   {omit_fr_table}
   <h4>scan-omit-value on data from fillseq</h4>
   {omit_fs_table}
+  {omit_fs_cspp_block}
   <h3>memtablerep_bench: OffsetSkipList and CSPP vs skiplist</h3>
   <p class="meta">Focus: {_hl('OffsetSkipList / CSPP (ToplingDB)', 'faster')} vs skiplist. Baseline = RocksDB v8.10 skiplist. {_color_sign()}.</p>
   {memtablerep_compare}

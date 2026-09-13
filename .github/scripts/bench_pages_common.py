@@ -76,6 +76,7 @@ def stage_window_rss_bytes(
 SUITE_READRANDOM = (
     ("fillrandom", "db_bench_fillrandom", "fillrandom-readrandom"),
     ("fillseq", "db_bench", "fillseq-readrandom"),
+    ("fillseq-cspp", "db_bench_fillseq_cspp", "fillseq-cspp-readrandom"),
 )
 
 
@@ -104,6 +105,7 @@ def attach_suite_readrandom_rss(
 SHM_SUITE_LABELS = {
     "fillrandom": "fillrandom suite",
     "fillseq": "fillseq suite",
+    "fillseq-cspp": "fillseq suite (CSPP)",
 }
 RSS_WORKLOAD_ORDER = (
     "fillrandom",
@@ -112,6 +114,9 @@ RSS_WORKLOAD_ORDER = (
     "fillseq",
     "fillseq-readrandom",
     "fillseq-omit",
+    "fillseq-cspp",
+    "fillseq-cspp-readrandom",
+    "fillseq-cspp-omit",
 )
 RSS_WORKLOAD_LABELS = {
     "fillrandom": "fillrandom suite peak",
@@ -120,6 +125,9 @@ RSS_WORKLOAD_LABELS = {
     "fillseq-readrandom": "fillseq suite readrandom",
     "fillrandom-omit": "fillrandom scan-omit-value",
     "fillseq-omit": "fillseq scan-omit-value",
+    "fillseq-cspp": "fillseq suite (CSPP) peak",
+    "fillseq-cspp-readrandom": "fillseq suite (CSPP) readrandom",
+    "fillseq-cspp-omit": "fillseq scan-omit-value (CSPP)",
 }
 RSS_WORKLOAD_TIPS = {
     "fillrandom-readrandom": (
@@ -128,12 +136,19 @@ RSS_WORKLOAD_TIPS = {
     "fillseq-readrandom": (
         "peak RSS during the readrandom stage of the fillseq suite"
     ),
+    "fillseq-cspp-readrandom": (
+        "peak RSS during the readrandom stage of the fillseq suite (CSPP)"
+    ),
     "fillrandom-omit": (
         "restart process with reuse db data of fillrandom, "
         "scan without access value, benefited by lazy load value (ToplingDB feature)"
     ),
     "fillseq-omit": (
         "restart process with reuse db data of fillseq, "
+        "scan without access value, benefited by lazy load value (ToplingDB feature)"
+    ),
+    "fillseq-cspp-omit": (
+        "restart process with reuse db data of fillseq (CSPP), "
         "scan without access value, benefited by lazy load value (ToplingDB feature)"
     ),
 }
@@ -445,6 +460,8 @@ def combine_db_bench_logs(engine_raw: Path) -> None:
         "db_bench-fillrandom-omit.log",
         "db_bench.log",
         "db_bench-fillseq-omit.log",
+        "db_bench-fillseq-cspp.log",
+        "db_bench-fillseq-cspp-omit.log",
     )
     chunks = [
         (engine_raw / name).read_bytes().rstrip(b"\n")
@@ -504,6 +521,7 @@ def build_rss_svg_section(
         for suite, bench_key in [
             ("fillrandom", "db_bench_fillrandom"),
             ("fillseq", "db_bench"),
+            ("fillseq-cspp", "db_bench_fillseq_cspp"),
         ]:
             series_path = eng_dir / f"statm_series-{suite}.txt"
             if not series_path.is_file():

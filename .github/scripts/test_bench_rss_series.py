@@ -301,6 +301,97 @@ def check_pages_contract(mod, variant: str) -> None:
             assert "dcompact bench →" in home
             assert "offloads most CPU and memory cost" in home
             assert "not RocksDB CompactionService" not in home
+            assert "Comparison: db_bench fillseq suite (CSPP)" not in home
+            assert "fillseq suite (CSPP)" not in home
+            assert "db_bench (fillseq suite, CSPP)" not in result_html
+
+
+def check_fillseq_cspp_pages(mod) -> None:
+    """ToplingDB CSPP fillseq is a full twin of the OffsetSkipList fillseq suite."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        log_root = tmp_path / "logs"
+        emit_out = tmp_path / "emit"
+        site = tmp_path / "site"
+        _write_min_logs(log_root)
+        bench_body = (
+            _DB_BENCH_LINE
+            + "readrandom : 1.0 micros/op 1000 ops/sec 1.0 seconds "
+            "1000 operations; x\n"
+        )
+        for eng in ("zipkeyonly", "zipkeyvalue"):
+            eng_dir = log_root / eng
+            (eng_dir / "db_bench-fillseq-omit.log").write_text(
+                "$ fillseq-omit\n"
+                "nextwithkey : 1.0 micros/op 1000 ops/sec 1.0 seconds "
+                "1000 operations; x\n",
+                encoding="utf-8",
+            )
+            (eng_dir / "db_bench-fillseq-cspp.log").write_text(
+                "$ fillseq-cspp\n" + bench_body, encoding="utf-8"
+            )
+            (eng_dir / "db_bench-fillseq-cspp-omit.log").write_text(
+                "$ fillseq-cspp-omit\n"
+                "nextwithkey : 1.0 micros/op 1000 ops/sec 1.0 seconds "
+                "1000 operations; x\n",
+                encoding="utf-8",
+            )
+            (eng_dir / "statm_series-fillseq-cspp.txt").write_text(
+                _STATM_SERIES, encoding="utf-8"
+            )
+            (eng_dir / "shm_usage-fillseq-cspp.txt").write_text(
+                "apparent_bytes=1000\nallocated_bytes=2000\n", encoding="utf-8"
+            )
+            (eng_dir / "rss_usage-fillseq-cspp.txt").write_text(
+                "max_rss_bytes=4096\n", encoding="utf-8"
+            )
+            (eng_dir / "rss_usage-fillseq-cspp-omit.txt").write_text(
+                "max_rss_bytes=2048\n", encoding="utf-8"
+            )
+        emit_args = argparse.Namespace(
+            variant="plain",
+            run_id="cspp-fillseq",
+            log_root=str(log_root),
+            engine_meta_root=None,
+            actions_run_url="",
+            out=str(emit_out),
+        )
+        mod.emit(emit_args)
+        run_dirs = list((emit_out / "runs").iterdir())
+        assert len(run_dirs) == 1, run_dirs
+        result_html = (run_dirs[0] / "index.html").read_text(encoding="utf-8")
+        assert "db_bench (fillseq suite)" in result_html
+        assert "db_bench (fillseq suite, CSPP)" in result_html
+        assert "db_bench omit lazy-load (fillseq DB)" in result_html
+        assert "db_bench omit lazy-load (fillseq CSPP DB)" in result_html
+        combined = (
+            run_dirs[0] / "raw" / "zipkeyonly" / "db_bench-all.log"
+        ).read_text(encoding="utf-8")
+        assert combined.index("$ fillseq-omit\n") < combined.index("$ fillseq-cspp\n")
+        assert combined.index("$ fillseq-cspp\n") < combined.index(
+            "$ fillseq-cspp-omit\n"
+        )
+        meta = json.loads((emit_out / "run-meta.json").read_text(encoding="utf-8"))
+        zko_rss = meta["engines"]["zipkeyonly"]["rss_usage"]
+        assert zko_rss.get("fillseq-readrandom") is not None
+        assert zko_rss.get("fillseq-cspp-readrandom") is not None
+        assert zko_rss.get("fillseq-cspp") == 4096
+        assert zko_rss.get("fillseq-cspp-omit") == 2048
+        mod.merge(
+            argparse.Namespace(
+                merge_into=str(site),
+                from_dir=str(emit_out),
+                variant="plain",
+            )
+        )
+        home = (site / "index.html").read_text(encoding="utf-8")
+        assert "Comparison: db_bench fillseq suite (perf)" in home
+        assert "Comparison: db_bench fillseq suite (CSPP) (perf)" in home
+        assert "scan-omit-value on data from fillseq" in home
+        assert "scan-omit-value on data from fillseq (CSPP)" in home
+        assert "fillseq suite (CSPP) peak" in home
+        assert "fillseq suite (CSPP) readrandom" in home
+        assert "fillseq scan-omit-value (CSPP)" in home
 
 
 def check_dcompact_home_nav(mod) -> None:
@@ -596,6 +687,11 @@ def main() -> int:
             ("db_bench-fillrandom-omit.log", "$ fillrandom-omit\nomit output\n"),
             ("db_bench.log", "$ fillseq\nfillseq output\n"),
             ("db_bench-fillseq-omit.log", "$ fillseq-omit\nomit output\n"),
+            ("db_bench-fillseq-cspp.log", "$ fillseq-cspp\ncspp output\n"),
+            (
+                "db_bench-fillseq-cspp-omit.log",
+                "$ fillseq-cspp-omit\ncspp omit output\n",
+            ),
         )
         for name, content in source_logs:
             (eng_raw / name).write_text(content, encoding="utf-8")
@@ -692,6 +788,7 @@ def main() -> int:
             assert "TestOS" in html
             check_readrandom_highlight(mod)
             check_suite_readrandom_peak(mod)
+            check_fillseq_cspp_pages(mod)
         if name == "bench_dcompact_pages":
             check_dcompact_home_nav(mod)
             check_dcompact_rss_row_tips(mod)

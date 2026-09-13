@@ -94,6 +94,11 @@ DEFINE_bool(if_log_bucket_dist_when_flash, true,
 
 DEFINE_bool(enable_zero_copy, false, "enable zero copy");
 
+bool g_use_hint = false;
+DEFINE_bool(use_concurrent_insert, false,
+            "Use Insert*Concurrently / Insert*WithHintConcurrently "
+            "(independent of whether hint is used)");
+
 DEFINE_bool(reverse, false, "readseq/scan in reverse order");
 
 DEFINE_int32(
@@ -252,7 +257,17 @@ class FillBenchmarkThread : public BenchmarkThread {
       uint64_t tag = ++(*sequence_);
       Slice ukey(key_buf, sizeof(key_buf));
       Slice value = generator_.Generate(FLAGS_item_size);
-      table_->InsertKeyValueConcurrently(tag, ukey, value);
+      if (g_use_hint) {
+        if (FLAGS_use_concurrent_insert)
+          table_->InsertKeyValueWithHintConcurrently(tag, ukey, value, &hint_);
+        else
+          table_->InsertKeyValueWithHint(tag, ukey, value, &hint_);
+      } else {
+        if (FLAGS_use_concurrent_insert)
+          table_->InsertKeyValueConcurrently(tag, ukey, value);
+        else
+          table_->InsertKeyValue(tag, ukey, value);
+      }
       *bytes_written_ += internal_key_size + FLAGS_item_size + 1;
     }
     else {
@@ -276,7 +291,17 @@ class FillBenchmarkThread : public BenchmarkThread {
     memcpy(p, bytes.data(), FLAGS_item_size);
     p += FLAGS_item_size;
     assert(p == buf + encoded_len);
-    table_->Insert(handle);
+    if (g_use_hint) {
+      if (FLAGS_use_concurrent_insert)
+        table_->InsertWithHintConcurrently(handle, &hint_);
+      else
+        table_->InsertWithHint(handle, &hint_);
+    } else {
+      if (FLAGS_use_concurrent_insert)
+        table_->InsertConcurrently(handle);
+      else
+        table_->Insert(handle);
+    }
     *bytes_written_ += encoded_len;
   }
 
@@ -284,7 +309,18 @@ class FillBenchmarkThread : public BenchmarkThread {
     for (unsigned int i = 0; i < num_ops_; ++i) {
       FillOne();
     }
+    // SkipList sequential InsertWithHint stores an arena splice; the
+    // default FinishHint is delete[] and is only valid for heap splices
+    // (concurrent InsertWithHint) or Topling token parking.
+    if (hint_ != nullptr &&
+        (g_is_topling_memtab || FLAGS_use_concurrent_insert)) {
+      table_->FinishHint(hint_);
+    }
+    hint_ = nullptr;
   }
+
+ protected:
+  void* hint_ = nullptr;
 };
 
 class ConcurrentFillBenchmarkThread : public FillBenchmarkThread {
@@ -702,6 +738,7 @@ int main(int argc, char** argv) {
       name = ROCKSDB_NAMESPACE::Slice(benchmarks, sep - benchmarks);
       benchmarks = sep + 1;
     }
+    g_use_hint = false;
     std::unique_ptr<ROCKSDB_NAMESPACE::Benchmark> benchmark;
     if (name == ROCKSDB_NAMESPACE::Slice("fillseq")) {
       memtablerep.reset(createMemtableRep());
@@ -709,6 +746,7 @@ int main(int argc, char** argv) {
           &rng, ROCKSDB_NAMESPACE::SEQUENTIAL, FLAGS_num_operations));
       benchmark.reset(new ROCKSDB_NAMESPACE::FillBenchmark(
           memtablerep.get(), key_gen.get(), &sequence));
+      g_use_hint = true;
     } else if (name == ROCKSDB_NAMESPACE::Slice("fillrandom")) {
       memtablerep.reset(createMemtableRep());
       key_gen.reset(new ROCKSDB_NAMESPACE::KeyGenerator(

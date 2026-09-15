@@ -1,0 +1,40 @@
+$ /home/runner/work/toplingdb/toplingdb/_run_prefix/topling/bin/db_bench -json logs/zipkeyonly/db_bench-fillseq-cspp.yaml -num=50000000 -key_size=8 -value_size=50 -batch_size=1000 -benchmarks=fillseq,flush,compact,readseq,readseq,readseq,readrandom -enable_zero_copy -progress_reports=false -report_bench_start_time -compact_target_level=6
+RocksDB:    version 8.10.2
+Date:       Tue Sep 15 06:12:28 2026
+CPU:        4 * AMD EPYC 7763 64-Core Processor
+CPUCache:   512 KB
+Set seed to 1789452748492064 because --seed was 0
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+Keys:       8 bytes each (+ 0 bytes user-defined timestamp)
+Values:     50 bytes each (25 bytes after compression)
+Entries:    50000000
+Prefix:    0 bytes
+Keys per prefix:    0
+RawSize:    2765.7 MB (estimated)
+FileSize:   1573.6 MB (estimated)
+Write rate: 0 bytes/second
+Read rate: 0 ops/second
+Compression: Snappy
+Compression sampling rate: 0
+Memtablerep: CSPPMemTabFactory
+Perf Level: 1
+------------------------------------------------
+Initializing RocksDB Options from the specified file
+Initializing RocksDB Options from command-line flags
+Integrated BlobDB: blob cache disabled
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-15T06:12:30.520520Z fillseq      :    0.304540 micros/op 3283634 ops/sec 15.227 seconds 50000000 operations;  181.6 MB/s
+flush memtable
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-15T06:12:45.799729Z compact      : 20914120.000000 micros/op 0 ops/sec 20.914 seconds 1 operations;
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-15T06:13:06.714062Z readseq      :    0.033326 micros/op 30005142 ops/sec 1.666 seconds 50000000 operations; 1659.7 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-15T06:13:08.380664Z readseq      :    0.033278 micros/op 30049160 ops/sec 1.664 seconds 50000000 operations; 1662.1 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-15T06:13:10.044832Z readseq      :    0.033597 micros/op 29762436 ops/sec 1.680 seconds 50000000 operations; 1646.3 MB/s
+DB path: [/dev/shm/db_bench_enterprise]
+2026-09-15T06:13:11.725388Z readrandom   :    0.146687 micros/op 6817154 ops/sec 7.334 seconds 50000000 operations;  377.1 MB/s (50000000 of 50000000 found)
+

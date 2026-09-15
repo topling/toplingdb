@@ -1,0 +1,5 @@
+{
+  "engine": "rocksdb",
+  "ref": "master",
+  "git_sha": "db114777b1fc3bcb215606097a408c30069696b2"
+}

@@ -836,7 +836,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
       largest_seqno_.store(s, std::memory_order_relaxed);
     }
 
-    if (bloom_filter_) {
+    if (UNLIKELY(nullptr != bloom_filter_)) {
     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
       Slice key_without_ts = StripTimestampFromUserKey(key, ts_sz);
@@ -853,7 +853,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
 
     // The first sequence number inserted into the memtable
     assert(first_seqno_ == 0 || s >= first_seqno_);
-    if (first_seqno_ == 0) {
+    if (UNLIKELY(first_seqno_.load(std::memory_order_relaxed) == 0)) {
       first_seqno_.store(s, std::memory_order_relaxed);
 
       if (earliest_seqno_ == kMaxSequenceNumber) {
@@ -894,7 +894,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
         post_process_info->largest_seqno = s;
     }
 
-    if (bloom_filter_) {
+    if (UNLIKELY(nullptr != bloom_filter_)) {
     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
       Slice key_without_ts = StripTimestampFromUserKey(key, ts_sz);

@@ -361,6 +361,30 @@ TEST_F(DBMemTableTest, InsertWithHint) {
   ASSERT_EQ("vvv", Get("NotInPrefixDomain"));
 }
 
+TEST_F(DBMemTableTest, ShouldFlushNowWithoutRangeDel) {
+  Options options;
+  options.memtable_as_log_index = false;
+  options.write_buffer_size = 64 * 1024;
+  InternalKeyComparator cmp(BytewiseComparator());
+  auto factory = std::make_shared<SkipListFactory>();
+  options.memtable_factory = factory;
+  ImmutableOptions ioptions(options);
+  WriteBufferManager wb(options.db_write_buffer_size);
+  MemTable* mem = new MemTable(cmp, ioptions, MutableCFOptions(options), &wb,
+                               kMaxSequenceNumber, 0 /* column_family_id */);
+  std::string value(128, 'v');
+  int i = 0;
+  for (; i < 2000; ++i) {
+    ASSERT_OK(mem->Add(i + 1, kTypeValue, "k" + std::to_string(i), value,
+                       nullptr /* kv_prot_info */));
+    if (mem->ShouldFlushNow()) {
+      break;
+    }
+  }
+  ASSERT_LT(i, 2000);
+  delete mem;
+}
+
 TEST_F(DBMemTableTest, ColumnFamilyId) {
   // Verifies MemTableRepFactory is told the right column family id.
   Options options;

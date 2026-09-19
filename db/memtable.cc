@@ -214,8 +214,10 @@ bool MemTable::ShouldFlushNow() {
   // If arena still have room for new block allocation, we can safely say it
   // shouldn't flush.
   auto allocated_memory = table_->ApproximateMemoryUsage() +
-                          range_del_table_->ApproximateMemoryUsage() +
                           arena_.MemoryAllocatedBytes();
+  if (!is_range_del_table_empty_.load(std::memory_order_relaxed)) {
+    allocated_memory += range_del_table_->ApproximateMemoryUsage();
+  }
 
   approximate_memory_usage_.store(allocated_memory, std::memory_order_relaxed);
 

@@ -794,9 +794,49 @@ _CSPP_METRICS_HIGH = (
 )
 _CSPP_METRICS_LOW = (
     "Elapsed time",
-    "write us/op",
-    "read us/op",
 )
+
+
+def _memtablerep_elapsed_display(
+    mmap: Dict[str, str], bench: str, elapsed_raw: str
+) -> str:
+    """Append write/read us/op onto the Elapsed time cell."""
+    write_us = mmap.get(f"{bench}|write us/op")
+    read_us = mmap.get(f"{bench}|read us/op")
+    extras: List[str] = []
+    if write_us and read_us:
+        extras.append(f"write {write_us} us/op")
+        extras.append(f"read {read_us} us/op")
+    elif write_us:
+        extras.append(f"{write_us} us/op")
+    elif read_us:
+        extras.append(f"{read_us} us/op")
+    if not extras:
+        return elapsed_raw or "—"
+    base = elapsed_raw or "—"
+    return f"{base} ({', '.join(extras)})"
+
+
+def _fold_memtablerep_usop(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Drop standalone us/op rows; fold them into Elapsed time."""
+    mmap = _metric_map(rows)
+    out: List[Dict[str, str]] = []
+    for row in rows:
+        metric = row["metric"]
+        if metric in ("write us/op", "read us/op"):
+            continue
+        if metric == "Elapsed time":
+            out.append(
+                {
+                    **row,
+                    "value": _memtablerep_elapsed_display(
+                        mmap, row["benchmark"], row["value"]
+                    ),
+                }
+            )
+        else:
+            out.append(row)
+    return out
 
 
 def build_memtablerep_compare(
@@ -838,6 +878,11 @@ def build_memtablerep_compare(
             _metric_number(c_raw),
             _metric_number(r_raw),
         )
+        if metric == "Elapsed time":
+            o_raw = _memtablerep_elapsed_display(offset_skiplist, bench, o_raw)
+            c_raw = _memtablerep_elapsed_display(cspp, bench, c_raw)
+            t_raw = _memtablerep_elapsed_display(skip_t, bench, t_raw)
+            r_raw = _memtablerep_elapsed_display(skip_r, bench, r_raw)
         if metric in _CSPP_METRICS_HIGH:
             offset_skiplist_ratio = _throughput_ratio_cell(r_n, o_n)
             cspp_ratio = _throughput_ratio_cell(r_n, c_n)
@@ -1212,7 +1257,7 @@ def _build_per_engine_details(engines_data: Dict[str, Any]) -> str:
             detail_parts.append(
                 _table(
                     ["benchmark", "metric", "value"],
-                    data["memtablerep_skiplist"],
+                    _fold_memtablerep_usop(data["memtablerep_skiplist"]),
                     ["benchmark", "metric", "value"],
                 )
             )
@@ -1221,7 +1266,7 @@ def _build_per_engine_details(engines_data: Dict[str, Any]) -> str:
             detail_parts.append(
                 _table(
                     ["benchmark", "metric", "value"],
-                    data["memtablerep_cspp"],
+                    _fold_memtablerep_usop(data["memtablerep_cspp"]),
                     ["benchmark", "metric", "value"],
                 )
             )
@@ -1232,7 +1277,7 @@ def _build_per_engine_details(engines_data: Dict[str, Any]) -> str:
             detail_parts.append(
                 _table(
                     ["benchmark", "metric", "value"],
-                    data["memtablerep_OffsetSkipList"],
+                    _fold_memtablerep_usop(data["memtablerep_OffsetSkipList"]),
                     ["benchmark", "metric", "value"],
                 )
             )

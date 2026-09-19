@@ -866,7 +866,9 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
     // TODO(yuzhangyu): support updating newest UDT for when `allow_concurrent`
     // is true.
     MaybeUpdateNewestUDT(key); // user key
-    UpdateFlushState();
+    if (!hint || needs_user_key_cmp_in_get_) {
+      UpdateFlushState();
+    }
   } else {
     bool res =
         (hint == nullptr)

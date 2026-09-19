@@ -2319,10 +2319,13 @@ class MemTableInserter : public WriteBatch::Handler {
       reinterpret_cast<DuplicateDetector*>(&duplicate_detector_)
           ->~DuplicateDetector();
     }
-    GetHintMap().for_each([](auto& iter) {
+    GetHintMap().for_each([this](auto& iter) {
       // In base MemTableRep, FinishHint do delete [] (char*)(hint).
       // In ToplingDB CSPP PatriciaTrie, FinishHint idle/release token.
       iter.first->FinishHint(iter.second);
+      if (!concurrent_memtable_writes_) {
+        iter.first->UpdateFlushState();
+      }
     });
     delete rebuilding_trx_;
   }

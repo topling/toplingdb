@@ -235,6 +235,9 @@ class MemTable : public CacheAlignedNewDelete {
                                                 std::memory_order_relaxed);
   }
 
+  // Updates flush_state_ using ShouldFlushNow()
+  void UpdateFlushState();
+
   // Return an iterator that yields the contents of the memtable.
   //
   // The caller must ensure that the underlying MemTable remains live
@@ -737,9 +740,6 @@ class MemTable : public CacheAlignedNewDelete {
   // Otherwise, this field just contains an empty Slice.
   terark::minimal_sso<32> newest_udt_;
 #endif
-
-  // Updates flush_state_ using ShouldFlushNow()
-  void UpdateFlushState();
 
   void UpdateOldestKeyTime();
 

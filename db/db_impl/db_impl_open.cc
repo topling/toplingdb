@@ -25,6 +25,7 @@
 #include "rocksdb/wal_filter.h"
 #include "test_util/sync_point.h"
 #include "util/rate_limiter_impl.h"
+#include <terark/util/nolocks_localtime.hpp>
 #include "util/string_util.h"
 #include "util/udt_util.h"
 
@@ -47,9 +48,25 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     result.env = Env::Default();
   }
 
-  if (result.memtable_as_log_index) {
+  if (read_only && result.memtable_crash_safe_recover) {
+    result.memtable_crash_safe_recover = false;
+    const char* warning =
+        "memtable_crash_safe_recover is disabled for read-only Open; full WAL "
+        "replay may be very slow because using much larger MemTables than in "
+        "typical RocksDB configurations is encouraged in crash-safe mode";
+    if (result.info_log) {
+      ROCKS_LOG_WARN(result.info_log, "%s", warning);
+    } else {
+      fprintf(stderr, "%s WARNING: %s\n", terark::StrDateTimeNow(), warning);
+    }
+  }
+
+  if (result.memtable_as_log_index || result.memtable_crash_safe_recover) {
     result.recycle_log_file_num = 0;
     result.manual_wal_flush = false;
+    result.wal_compression = kNoCompression;
+  }
+  if (result.memtable_as_log_index) {
 #if !defined(ROCKSDB_UNIT_TEST)
     // avoid infrequent CFs reference too many WALs when frequent CFs
     // writing many data

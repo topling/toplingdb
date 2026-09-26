@@ -937,6 +937,10 @@ struct DBOptions {
   // and ConvertToSST to reduce WAL replay on the next open.
   // Only process crashes (kill -9 / _exit) are covered, not power loss.
   // Independent of memtable_as_log_index and Flush/Close ConvertToSST.
+  // Requires WAL: disableWAL is ignored; manual_wal_flush and WAL recycling
+  // are disabled, and wal_compression is forced to kNoCompression.
+  // Read-only Open disables this option and warns that full WAL replay may be
+  // very slow with the much larger MemTables encouraged in crash-safe mode.
   // Default: false. Not dynamically changeable through SetDBOptions().
   bool memtable_crash_safe_recover = false;
 

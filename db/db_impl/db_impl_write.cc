@@ -190,7 +190,8 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
          write_options.protection_bytes_per_key == 0 ||
          write_options.protection_bytes_per_key ==
              my_batch->GetProtectionBytesPerKey());
-  if (immutable_db_options_.memtable_as_log_index) {
+  if (immutable_db_options_.memtable_as_log_index ||
+      immutable_db_options_.memtable_crash_safe_recover) {
     const_cast<bool&>(write_options.disableWAL) = false;
   }
 

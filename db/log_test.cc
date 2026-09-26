@@ -278,6 +278,95 @@ class LogTest
   }
 };
 
+class LogSeekTest : public LogTest {};
+
+TEST_P(LogSeekTest, SeekToFileOffsetAtStart) {
+  Write("first");
+  ASSERT_OK(reader_->SeekToFileOffset(0));
+  ASSERT_EQ("first", Read());
+  ASSERT_EQ(reader_->LastRecordOffset(), 0U);
+  ASSERT_EQ(reader_->LastRecordEnd(), WrittenBytes());
+}
+
+TEST_P(LogSeekTest, SeekToFileOffsetAfterFragmentedRecord) {
+  Write(BigString("B", kBlockSize * 2 + 100));
+  const uint64_t tail_offset = WrittenBytes();
+  const std::string tail = BigString("tail", kBlockSize + 100);
+  Write(tail);
+  const uint64_t tail_end = WrittenBytes();
+  Write("last");
+  ASSERT_OK(reader_->SeekToFileOffset(tail_offset));
+  ASSERT_EQ(tail, Read());
+  ASSERT_EQ(reader_->LastRecordOffset(), tail_offset);
+  ASSERT_EQ(reader_->LastRecordEnd(), tail_end);
+  ASSERT_EQ("last", Read());
+  ASSERT_EQ(reader_->LastRecordOffset(), tail_end);
+  ASSERT_EQ(reader_->LastRecordEnd(), WrittenBytes());
+  ASSERT_EQ("EOF", Read());
+}
+
+TEST_P(LogSeekTest, SeekToFileOffsetAtBlockBoundary) {
+  Write(BigString("B", kBlockSize - kHeaderSize));
+  ASSERT_EQ(WrittenBytes(), kBlockSize);
+  Write("tail");
+  ASSERT_OK(reader_->SeekToFileOffset(kBlockSize));
+  ASSERT_EQ("tail", Read());
+  ASSERT_EQ(reader_->LastRecordOffset(), kBlockSize);
+  ASSERT_EQ(reader_->LastRecordEnd(), WrittenBytes());
+}
+
+TEST_P(LogSeekTest, SeekToFileOffsetAtEOF) {
+  Write("first");
+  ASSERT_OK(reader_->SeekToFileOffset(WrittenBytes()));
+  ASSERT_EQ("EOF", Read());
+  ASSERT_TRUE(IsEOF());
+  ASSERT_EQ(reader_->LastRecordEnd(), WrittenBytes());
+}
+
+TEST_P(LogSeekTest, SeekToFileOffsetReadError) {
+  Write("first");
+  ForceError(3);
+  ASSERT_TRUE(reader_->SeekToFileOffset(0).IsCorruption());
+}
+
+TEST_P(LogSeekTest, SeekToFileOffsetSkipError) {
+  Write("first");
+  ASSERT_TRUE(reader_->SeekToFileOffset(kBlockSize).IsNotFound());
+}
+
+INSTANTIATE_TEST_CASE_P(
+    Log, LogSeekTest,
+    ::testing::Combine(::testing::Values(0), ::testing::Bool(),
+                       ::testing::Values(CompressionType::kNoCompression)));
+
+TEST(LogReaderSeekTest, SeekToFileOffsetLogIndex) {
+  const auto fs = Env::Default()->GetFileSystem();
+  const std::string fname = test::PerThreadDBPath("log_seek_index");
+  {
+    std::unique_ptr<WritableFileWriter> dest;
+    ASSERT_OK(WritableFileWriter::Create(fs, fname, FileOptions(), &dest, nullptr));
+    Writer writer(std::move(dest), 1, false);
+    writer.InitReaderMmap(*fs, kBlockSize * 4);
+    ASSERT_OK(writer.AddRecord(BigString("B", kBlockSize * 2 + 100)));
+    const uint64_t tail_offset = writer.get_log_offset();
+    ASSERT_OK(writer.AddRecord("tail"));
+    std::unique_ptr<SequentialFileReader> file;
+    ASSERT_OK(SequentialFileReader::Create(fs, fname, FileOptions(), &file,
+                                         nullptr, nullptr));
+    Reader reader(nullptr, std::move(file), nullptr, true, 1);
+    reader.InitSetMemTableAsLogIndex(*fs);
+    ASSERT_OK(reader.SeekToFileOffset(tail_offset - sizeof(RawRecHeader)));
+    Slice record;
+    std::string scratch;
+    ASSERT_TRUE(reader.ReadRecord(&record, &scratch));
+    ASSERT_EQ(record.ToString(), "tail");
+    ASSERT_EQ(reader.LastRecordOffset(), tail_offset);
+    ASSERT_EQ(reader.LastRecordEnd(), writer.file()->GetFileSize());
+    ASSERT_FALSE(reader.ReadRecord(&record, &scratch));
+  }
+  ASSERT_OK(fs->DeleteFile(fname, IOOptions(), nullptr));
+}
+
 TEST_P(LogTest, Empty) { ASSERT_EQ("EOF", Read()); }
 
 TEST_P(LogTest, ReadWrite) {

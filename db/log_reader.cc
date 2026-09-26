@@ -69,6 +69,57 @@ void Reader::InitSetMemTableAsLogIndex(FileSystem& fs) {
   backing_store_ = nullptr;
 }
 
+IOStatus Reader::SeekToFileOffset(uint64_t file_offset) {
+  IOStatus io_s;
+  TEST_SYNC_POINT_CALLBACK("CrashSafeRecover::SeekToFileOffset:InjectStatus",
+                           &io_s);
+  if (!io_s.ok()) {
+    return io_s;
+  }
+  buffer_ = Slice();
+  eof_ = false;
+  read_error_ = false;
+  last_record_offset_ = 0;
+  eof_offset_ = 0;
+  if (memtable_as_log_index_) {
+    if (file_offset > 0) {
+      io_s = file_->Skip(file_offset);
+      if (!io_s.ok()) {
+        return io_s;
+      }
+    }
+    end_of_buffer_offset_ = file_offset;
+    return IOStatus::OK();
+  }
+  const uint64_t frame_start = file_offset - (file_offset % kBlockSize);
+  if (frame_start > 0) {
+    io_s = file_->Skip(frame_start);
+    if (!io_s.ok()) {
+      return io_s;
+    }
+  }
+  io_s = file_->Read(kBlockSize, &buffer_, backing_store_, Env::IO_TOTAL);
+  if (!io_s.ok()) {
+    buffer_.clear();
+    end_of_buffer_offset_ = frame_start;
+    return io_s;
+  }
+  end_of_buffer_offset_ = frame_start + buffer_.size();
+  const size_t skip_in_frame = static_cast<size_t>(file_offset - frame_start);
+  if (buffer_.size() < skip_in_frame) {
+    eof_ = true;
+    eof_offset_ = buffer_.size();
+    buffer_.clear();
+    return IOStatus::OK();
+  }
+  buffer_.remove_prefix(skip_in_frame);
+  if (end_of_buffer_offset_ - frame_start < kBlockSize) {
+    eof_ = true;
+    eof_offset_ = static_cast<size_t>(end_of_buffer_offset_ - frame_start);
+  }
+  return IOStatus::OK();
+}
+
 IOStatus Reader::IsMemTableAsLogIndexFile
 (FileSystem& fs, const std::string& fname, bool* result) {
   FileOptions fopt;

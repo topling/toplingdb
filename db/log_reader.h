@@ -89,9 +89,15 @@ class Reader {
   // Undefined before the first call to ReadRecord.
   uint64_t LastRecordOffset();
 
+  // Position a fresh reader whose file is still at offset 0. Only for
+  // uncompressed, non-recycled WALs with no required metadata in the skipped
+  // prefix. file_offset must be the physical start of a logical record or EOF.
+  // Subsequent record offsets remain absolute. Discard the reader on failure.
+  IOStatus SeekToFileOffset(uint64_t file_offset);
+
   // Returns the first physical offset after the last record returned by
-  // ReadRecord, or zero before first call to ReadRecord. This can also be
-  // thought of as the "current" position in processing the file bytes.
+  // ReadRecord. Before the first ReadRecord, returns the SeekToFileOffset
+  // position, or zero if not positioned. This is the current processing offset.
   uint64_t LastRecordEnd();
 
   // returns true if the reader has encountered an eof condition.

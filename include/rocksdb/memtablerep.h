@@ -312,6 +312,24 @@ class MemTableRep : public CacheAlignedNewDelete {
   virtual Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
 
  protected:
+  // Leftover / converted SST visibility: packed tag exists only when
+  // seq <= min(lookup_seq, max_visible_seq). Used by crash-safe MemTableRep.
+  static bool VisibleTag(uint64_t tag, uint64_t lookup_seq,
+                         uint64_t max_visible_seq) {
+    const uint64_t seq = tag >> 8;
+    const uint64_t effective_max =
+        lookup_seq < max_visible_seq ? lookup_seq : max_visible_seq;
+    return seq <= effective_max;
+  }
+
+  static uint64_t CapFindTag(uint64_t find_tag, uint64_t max_visible_seq) {
+    const uint64_t seq = find_tag >> 8;
+    if (seq <= max_visible_seq) {
+      return find_tag;
+    }
+    return (max_visible_seq << 8) | (find_tag & 0xff);
+  }
+
   // When *key is an internal key concatenated with the value, returns the
   // user key.
   virtual Slice UserKey(const char* key) const;
@@ -363,6 +381,34 @@ class MemTableRepFactory : public Customizable {
   // false when if the <key,seq> already exists.
   // Default: false
   virtual bool CanHandleDuplicatedKey() const { return false; }
+
+  // Return true if leftover mmap memtables created by this factory can be
+  // RO-loaded after a crash and ConvertToSST during Recover.
+  // Default: false
+  virtual bool SupportCrashSafe() const { return false; }
+
+  // Append leftover crash-safe mmap paths under cf_dir (plus factory chroot).
+  // Default: no leftovers.
+  virtual void ListCrashSafeLeftovers(const std::string& /*cf_dir*/,
+                                      std::vector<std::string>* /*leftovers*/) {
+  }
+
+  // Read-only leftover probe for Recover check. Must not truncate/rename.
+  // wal_dir is used to verify each WAL fileno can still be opened.
+  virtual Status ProbeCrashSafeLeftover(const std::string& /*path*/,
+                                        const std::string& /*wal_dir*/) const {
+    return Status::OK();
+  }
+
+  // Load leftover, cap visible entries, truncate, ConvertToSST. The caller
+  // supplies the visibility bound in meta->fd.largest_seqno; preserve it for
+  // subsequent table readers.
+  // Default: NotSupported.
+  virtual Status RecoverCrashSafeMemTableToSST(
+      const std::string& /*leftover_path*/, struct FileMetaData* /*meta*/,
+      const struct TableBuilderOptions&) {
+    return Status::NotSupported("RecoverCrashSafeMemTableToSST");
+  }
 };
 
 // This uses a skip list to store keys. It is the default.

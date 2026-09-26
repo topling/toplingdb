@@ -118,6 +118,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
       mutable_db_options.stats_persist_period_sec;
   options.persist_stats_to_disk = immutable_db_options.persist_stats_to_disk;
   options.memtable_as_log_index = immutable_db_options.memtable_as_log_index;
+  options.memtable_crash_safe_recover = immutable_db_options.memtable_crash_safe_recover;
   options.stats_history_buffer_size =
       mutable_db_options.stats_history_buffer_size;
   options.advise_random_on_open = immutable_db_options.advise_random_on_open;

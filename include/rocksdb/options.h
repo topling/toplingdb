@@ -933,6 +933,13 @@ struct DBOptions {
 
   bool memtable_as_log_index = false;
 
+  // Enable crash-safe recovery using mmap MemTables (CSPP / OffsetSkipList)
+  // and ConvertToSST to reduce WAL replay on the next open.
+  // Only process crashes (kill -9 / _exit) are covered, not power loss.
+  // Independent of memtable_as_log_index and Flush/Close ConvertToSST.
+  // Default: false. Not dynamically changeable through SetDBOptions().
+  bool memtable_crash_safe_recover = false;
+
   // If true, each WAL file is probed on DB open to auto-detect its on-disk
   // format, so recovery works even when memtable_as_log_index was changed
   // between runs.

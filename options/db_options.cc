@@ -328,6 +328,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct ImmutableDBOptions, memtable_as_log_index),
           OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kNone}},
+        {"memtable_crash_safe_recover",
+         {offsetof(struct ImmutableDBOptions, memtable_crash_safe_recover),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
+          OptionTypeFlags::kNone}},
         {"check_wal_format",
          {offsetof(struct ImmutableDBOptions, check_wal_format),
           OptionType::kBoolean, OptionVerificationType::kNormal,
@@ -768,6 +772,7 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       avoid_unnecessary_blocking_io(options.avoid_unnecessary_blocking_io),
       persist_stats_to_disk(options.persist_stats_to_disk),
       memtable_as_log_index(options.memtable_as_log_index),
+      memtable_crash_safe_recover(options.memtable_crash_safe_recover),
       check_wal_format(options.check_wal_format),
       write_dbid_to_manifest(options.write_dbid_to_manifest),
       log_readahead_size(options.log_readahead_size),
@@ -938,6 +943,8 @@ void ImmutableDBOptions::Dump(Logger* log) const {
                    persist_stats_to_disk);
   ROCKS_LOG_HEADER(log, "                Options.memtable_as_log_index: %u",
                    memtable_as_log_index);
+  ROCKS_LOG_HEADER(log, "          Options.memtable_crash_safe_recover: %u",
+                   memtable_crash_safe_recover);
   ROCKS_LOG_HEADER(log, "                     Options.check_wal_format: %u",
                    check_wal_format);
   ROCKS_LOG_HEADER(log, "                Options.write_dbid_to_manifest: %d",

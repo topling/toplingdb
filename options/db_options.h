@@ -90,6 +90,7 @@ struct ImmutableDBOptions {
   bool avoid_unnecessary_blocking_io;
   bool persist_stats_to_disk;
   bool memtable_as_log_index;
+  bool memtable_crash_safe_recover;
   bool check_wal_format;
   bool write_dbid_to_manifest;
   size_t log_readahead_size;

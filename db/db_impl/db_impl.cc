@@ -381,9 +381,10 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
 
   // Reserve ten files or so for other uses and give the rest to TableCache.
   // Give a large number for setting of "infinite" open files.
+  // Small limits must not turn the 10-file reserve into a huge cache capacity.
   const int table_cache_size = (mutable_db_options_.max_open_files == -1)
                                    ? TableCache::kInfiniteCapacity
-                                   : mutable_db_options_.max_open_files - 10;
+                                   : std::max(0, mutable_db_options_.max_open_files - 10);
   LRUCacheOptions co;
   co.capacity = table_cache_size;
   co.num_shard_bits = immutable_db_options_.table_cache_numshardbits;
@@ -1518,7 +1519,7 @@ Status DBImpl::SetDBOptions(
           new_options.delayed_write_rate);
       table_cache_.get()->SetCapacity(new_options.max_open_files == -1
                                           ? TableCache::kInfiniteCapacity
-                                          : new_options.max_open_files - 10);
+                                          : std::max(0, new_options.max_open_files - 10));
       wal_other_option_changed = mutable_db_options_.wal_bytes_per_sync !=
                                  new_options.wal_bytes_per_sync;
       wal_size_option_changed = mutable_db_options_.max_total_wal_size !=

@@ -63,7 +63,9 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     if (max_max_open_files == -1) {
       max_max_open_files = 0x400000;
     }
-    ClipToRange(&result.max_open_files, 20, max_max_open_files);
+    // Do not raise small limits: turning 0 into 20 would force SST preloading
+    // despite the caller's request for a cheap open.
+    terark::minimize(result.max_open_files, max_max_open_files);
     TEST_SYNC_POINT_CALLBACK("SanitizeOptions::AfterChangeMaxOpenFiles",
                              &result.max_open_files);
   }

@@ -625,6 +625,14 @@ struct DBOptions {
   // on target_file_size_base and target_file_size_multiplier for level-based
   // compaction. For universal-style compaction, you can usually set it to -1.
   //
+  // Value 0 disables SST reader caching and eager SST opening during DB::Open().
+  // Also set skip_stats_update_on_db_open=true to avoid opening SSTs for stats;
+  // reads still open SSTs on demand.
+  // Previously, values below 20 were silently raised to 20, so even 0 caused
+  // SSTs to be opened during DB::Open(). This defeated the user's intent to
+  // open without opening any SSTs and violated the principle of least surprise.
+  // Small nonnegative values are now honored instead of imposing that minimum.
+  //
   // A high value or -1 for this option can cause high memory usage.
   // See BlockBasedTableOptions::cache_usage_options to constrain
   // memory usage in case of block based table format.

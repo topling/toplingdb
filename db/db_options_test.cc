@@ -876,6 +876,39 @@ TEST_F(DBOptionsTest, MaxOpenFilesChange) {
   Close();
 }
 
+TEST_F(DBOptionsTest, SmallMaxOpenFiles) {
+  Options options = CurrentOptions();
+  options.table_cache_numshardbits = 0;
+  options.statistics = CreateDBStatistics();
+  options.disable_auto_compactions = true;
+  options.skip_stats_update_on_db_open = true;
+  Reopen(options);
+  ASSERT_OK(Put("k", "v"));
+  ASSERT_OK(Flush());
+  Close();
+  for (int max_open_files : {0, 1, 9, 10, 11}) {
+    SCOPED_TRACE(max_open_files);
+    options.max_open_files = max_open_files;
+    options.statistics->getAndResetTickerCount(NO_FILE_OPENS);
+    Reopen(options);
+    ASSERT_EQ(options.statistics->getTickerCount(NO_FILE_OPENS), 0);
+    Cache* tc = dbfull()->TEST_table_cache();
+    const size_t capacity = std::max(0, max_open_files - 10);
+    ASSERT_EQ(db_->GetDBOptions().max_open_files, max_open_files);
+    ASSERT_EQ(tc->GetCapacity(), capacity);
+    ASSERT_OK(db_->SetDBOptions({{"max_background_jobs", "4"}}));
+    ASSERT_EQ(tc->GetCapacity(), capacity);
+    ASSERT_OK(db_->SetDBOptions({{"max_open_files", "1024"}}));
+    ASSERT_EQ(tc->GetCapacity(), 1014U);
+    ASSERT_OK(db_->SetDBOptions(
+        {{"max_open_files", std::to_string(max_open_files)}}));
+    ASSERT_EQ(tc->GetCapacity(), capacity);
+    ASSERT_EQ(Get("k"), "v");
+    ASSERT_GT(options.statistics->getTickerCount(NO_FILE_OPENS), 0);
+    Close();
+  }
+}
+
 TEST_F(DBOptionsTest, SanitizeDelayedWriteRate) {
   Options options;
   options.env = CurrentOptions().env;

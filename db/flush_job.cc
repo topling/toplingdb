@@ -980,6 +980,7 @@ Status FlushJob::WriteLevel0Table() {
           blob_file_additions.push_back(std::move(b));
         };
         s = memtable->ConvertToSST(&meta_, tboptions);
+        TEST_SYNC_POINT_CALLBACK("FlushJob::ConvertToSST:Status", &s);
         if (!s.ok()) {
           ROCKS_LOG_BUFFER(log_buffer_,
                           "[%s] [JOB %d] Level-0 ConvertToSST #%" PRIu64 ": ApproximateMemoryUsage %" PRIu64
@@ -987,12 +988,16 @@ Status FlushJob::WriteLevel0Table() {
                           cfd_->GetName().c_str(), job_context_->job_id,
                           meta_.fd.GetNumber(), memtable->ApproximateMemoryUsage(),
                           s.ToString().c_str());
-          goto UseBuildTable;
+          // Do not turn a failed close conversion into a full table rebuild.
+          if (flush_reason_ != FlushReason::kShutDown) {
+            goto UseBuildTable;
+          }
+        } else {
+          meta_.fd.smallest_seqno = std::min(memtable->GetEarliestSequenceNumber(),
+                                             memtable->GetFirstSequenceNumber());
+          meta_.fd.largest_seqno = memtable->largest_seqno();
+          meta_.marked_for_compaction = true;
         }
-        meta_.fd.smallest_seqno = std::min(memtable->GetEarliestSequenceNumber(),
-                                           memtable->GetFirstSequenceNumber());
-        meta_.fd.largest_seqno = memtable->largest_seqno();
-        meta_.marked_for_compaction = true;
         for (auto* p_iter : memtables) { // memtables is vec of memtab iters
           std::destroy_at(p_iter); // Attention!!! must!
         }

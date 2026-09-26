@@ -1982,6 +1982,18 @@ int DBImpl::Level0StopWriteTrigger(ColumnFamilyHandle* column_family) {
       ->mutable_cf_options.level0_stop_writes_trigger;
 }
 
+bool DBImpl::AllMemtablesSupportConvertToSST() const {
+  mutex_.AssertHeld();
+  for (auto* cfd : *versions_->GetColumnFamilySet()) {
+    if (!cfd->IsDropped() &&
+        (cfd->mem() == nullptr || !cfd->mem()->SupportConvertToSST() ||
+         !cfd->imm()->UnflushedMemtablesSupportConvertToSST())) {
+      return false;
+    }
+  }
+  return true;
+}
+
 Status DBImpl::FlushAllColumnFamilies(const FlushOptions& flush_options,
                                       FlushReason flush_reason) {
   mutex_.AssertHeld();
@@ -3310,6 +3322,23 @@ Status DBImpl::BackgroundFlush(bool* made_progress, JobContext* job_context,
     }
 #endif /* !NDEBUG */
     *reason = bg_flush_args[0].flush_reason_;
+    if (status.ok() &&
+        (shutdown_initiated_ || *reason == FlushReason::kShutDown)) {
+      // Conversion picks one memtable at a time; finish the shutdown flush.
+      FlushRequest remaining{*reason, {}};
+      for (const auto& arg : bg_flush_args) {
+        auto* cfd = arg.cfd_;
+        if (!cfd->IsDropped() && cfd->imm()->NumNotFlushed() != 0 &&
+            cfd->imm()->GetEarliestMemTableID() <= arg.max_memtable_id_) {
+          cfd->imm()->FlushRequested();
+          if (cfd->imm()->IsFlushPending()) {
+            remaining.cfd_to_max_mem_id_to_persist.emplace(
+                cfd, arg.max_memtable_id_);
+          }
+        }
+      }
+      SchedulePendingFlush(remaining);
+    }
     for (auto& arg : bg_flush_args) {
       ColumnFamilyData* cfd = arg.cfd_;
       if (cfd->UnrefAndTryDelete()) {
@@ -4370,7 +4399,8 @@ Status DBImpl::WaitForCompact(
       return s;
     }
   } else if (wait_for_compact_options.close_db &&
-             has_unpersisted_data_.load(std::memory_order_relaxed) &&
+             (has_unpersisted_data_.load(std::memory_order_relaxed) ||
+              AllMemtablesSupportConvertToSST()) &&
              !mutable_db_options_.avoid_flush_during_shutdown) {
     Status s =
         DBImpl::FlushAllColumnFamilies(FlushOptions(), FlushReason::kShutDown);

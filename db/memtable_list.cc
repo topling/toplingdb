@@ -688,6 +688,15 @@ size_t MemTableList::ApproximateUnflushedMemTablesMemoryUsage() {
   return total_size;
 }
 
+bool MemTableList::UnflushedMemtablesSupportConvertToSST() const {
+  for (MemTable* m : current_->memlist_) {
+    if (!m->SupportConvertToSST()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 size_t MemTableList::ApproximateMemoryUsage() { return current_memory_usage_; }
 
 size_t MemTableList::MemoryAllocatedBytesExcludingLast() const {

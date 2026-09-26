@@ -619,7 +619,8 @@ void DBImpl::CancelAllBackgroundWork(bool wait) {
 
   InstrumentedMutexLock l(&mutex_);
   if (!shutting_down_.load(std::memory_order_acquire) &&
-      has_unpersisted_data_.load(std::memory_order_relaxed) &&
+      (has_unpersisted_data_.load(std::memory_order_relaxed) ||
+       AllMemtablesSupportConvertToSST()) &&
       !mutable_db_options_.avoid_flush_during_shutdown) {
     s = DBImpl::FlushAllColumnFamilies(FlushOptions(), FlushReason::kShutDown);
     s.PermitUncheckedError();  //**TODO: What to do on error?

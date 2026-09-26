@@ -1254,8 +1254,15 @@ struct DBOptions {
   bool avoid_flush_during_recovery = false;
 
   // By default RocksDB will flush all memtables on DB close if there are
-  // unpersisted data (i.e. with WAL disabled) The flush can be skip to speedup
-  // DB close. Unpersisted data WILL BE LOST.
+  // unpersisted data (i.e. with WAL disabled) or all memtables support ConvertToSST.
+  // Upstream RocksDB skips flushing WAL-backed memtables on close:
+  // BuildTable is expensive and can cause a long wait. ConvertToSST is much
+  // cheaper, so when all memtables support it, we also flush (convert) them on close
+  // without that long wait and avoid WAL replay on the next open.
+  // Setting this option to true unconditionally skips all flushes (including
+  // conversion) during DB close. Data is lost only if there is unpersisted data
+  // written with WAL disabled; WAL-backed data is recovered by replaying WAL
+  // on the next open. Skipping conversion does not add a data-loss risk.
   //
   // DEFAULT: false
   //

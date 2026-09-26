@@ -332,6 +332,8 @@ class MemTableList {
   // the unflushed mem-tables.
   size_t ApproximateUnflushedMemTablesMemoryUsage();
 
+  bool UnflushedMemtablesSupportConvertToSST() const;
+
   // Returns an estimate of the timestamp of the earliest key.
   uint64_t ApproximateOldestKeyTime() const;
 

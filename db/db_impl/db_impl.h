@@ -1466,6 +1466,8 @@ class DBImpl : public DB {
   void NotifyOnExternalFileIngested(
       ColumnFamilyData* cfd, const ExternalSstFileIngestionJob& ingestion_job);
 
+  bool AllMemtablesSupportConvertToSST() const;
+
   Status FlushAllColumnFamilies(const FlushOptions& flush_options,
                                 FlushReason flush_reason);
 

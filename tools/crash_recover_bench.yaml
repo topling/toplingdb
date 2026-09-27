@@ -1,0 +1,45 @@
+# Easy-migrate config for crash_recover_bench.
+# Point TOPLINGDB_EASY_MIGRATE_CONF at this file. Unset it for plain RocksDB.
+http:
+  auto_start_http: false
+setenv:
+  ROCKSDB_KICK_OUT_OPTIONS_FILE:
+    overwrite: true
+    value: "1"
+  TOPLINGDB_WARMUP_PROVIDER:
+    overwrite: true
+    value: "willneed"
+MemTableRepFactory:
+  cspp:
+    class: cspp
+    params:
+      mem_cap: 1G
+      convert_to_sst: kFileMmap
+      sync_sst_file: false
+TableFactory:
+  cspp_memtab_sst:
+    class: CSPPMemTabTable
+    params:
+      populate_read: false
+  dispatch:
+    class: DispatcherTable
+    params:
+      default: cspp_memtab_sst
+      readers:
+        CSPPMemTabTable: cspp_memtab_sst
+CFOptions:
+  default:
+    write_buffer_size: 2G
+    max_write_buffer_number: 4
+    memtable_factory: "${cspp}"
+    table_factory: dispatch
+    disable_auto_compactions: true
+    level0_file_num_compaction_trigger: 1048576
+DBOptions:
+  default:
+    create_if_missing: true
+    memtable_crash_safe_recover: true
+    memtable_as_log_index: true
+    avoid_flush_during_recovery: true
+    allow_fdatasync: false
+    max_background_jobs: 2

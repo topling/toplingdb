@@ -1889,6 +1889,9 @@ db_bench_rls: $(OBJ_DIR)/tools/db_bench.o $(BENCH_OBJECTS) $(TESTUTIL) $(LIBRARY
 	$(AM_LINK)
 endif
 
+crash_recover_bench: $(OBJ_DIR)/tools/crash_recover_bench.o $(LIBRARY)
+	$(AM_LINK)
+
 trace_analyzer: $(OBJ_DIR)/tools/trace_analyzer.o $(ANALYZE_OBJECTS) $(TOOLS_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 

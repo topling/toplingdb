@@ -39,6 +39,10 @@ ToplingDB has much more key features than RocksDB:
 1. Builtin Prometheus metrics support, this is based on [Embedded Http Server](https://github.com/topling/sideplugin-wiki-en/wiki/WebView)
 1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
 
+## Crash-safe recovery
+See the [Chinese crash-safe recovery guide](https://github.com/topling/rockside/wiki/Crash-Safe-Recovery) for the recovery mechanism, configuration, and limitations.
+`DB::Open` after an abnormal exit is timed in [crash_recover_bench.md](tools/crash_recover_bench.md).
+
 ## ToplingDB cloud native DB services
 1. [MyTopling](https://github.com/topling/mytopling)(MySQL on ToplingDB), [MyTopling on aliyun](https://market.aliyun.com/products?k=mytopling)
 1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB)

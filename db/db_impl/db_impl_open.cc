@@ -11,9 +11,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #endif
-// Clang splits _mm256_store_si256 into two vmovdqa xmm stores, which tears
-// the record across a process crash. Keep Clang on the non-AVX path.
-#if defined(__AVX__) && !defined(__clang__)
+#if defined(__AVX__)
 #include <immintrin.h>
 #endif
 
@@ -749,9 +747,7 @@ void DBImpl::PersistPublishedSequence(SequenceNumber seq, uint64_t wal_number,
   }
   // Recovery may leave an odd generation until the first new publication.
   const uint64_t g = pubseq_mmap_->generation | 1;
-  // Clang lowers _mm256_store_si256 to two vmovdqa xmm stores. A crash
-  // between them publishes a mixed record. GCC emits one vmovdqa ymm.
-#if defined(__AVX__) && !defined(__clang__)
+#if defined(__AVX__)
   // One aligned 32-byte store. A process crash falls between instructions,
   // so the record is all old or all new. Publish an even generation only
   // after this store, including when recovery left it odd. A host without it
@@ -764,7 +760,10 @@ void DBImpl::PersistPublishedSequence(SequenceNumber seq, uint64_t wal_number,
   // _mm256_store_si256((__m256i*)rec, _mm256_load_si256((const __m256i*)&next));
   // Lowest 64 bits are pubseq, matching PublishedSeqRecord field order.
   __m256i packed = _mm256_set_epi64x(0, wal_offset, wal_number, seq);
-  _mm256_store_si256((__m256i*)rec, packed);
+  // Clang/LLVM specifies that the backend must not split or merge target-legal
+  // volatile loads/stores. This keeps the AVX store a single 32-byte instruction.
+  // https://llvm.org/docs/LangRef.html#volatile-memory-accesses
+  *(volatile __m256i*)rec = packed;
 #else
   // Keep generation odd throughout the field stores, even if already odd.
   // Acquire keeps the field stores after this exchange; the release below

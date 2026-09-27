@@ -1320,7 +1320,7 @@ TEST_F(DBCsppCrashSafeTest, OddGenerationPublishesEvenAfterWalRecovery) {
     ASSERT_TRUE(SetPublishedSeqGeneration(dbname_, rec.generation | 1));
     ASSERT_OK(TryReopen(options));
     ASSERT_EQ(Get("before"), "recovery");
-#if !defined(__AVX__) || defined(__clang__)
+#if !defined(__AVX__)
     int odd = 0;
     SyncPoint::GetInstance()->SetCallBack(
         "DBImpl::PersistPublishedSequence:AfterOddGeneration", [&](void*) {
@@ -1332,7 +1332,7 @@ TEST_F(DBCsppCrashSafeTest, OddGenerationPublishesEvenAfterWalRecovery) {
     SyncPoint::GetInstance()->EnableProcessing();
 #endif
     ASSERT_OK(Put("after", "recovery"));
-#if !defined(__AVX__) || defined(__clang__)
+#if !defined(__AVX__)
     SyncPoint::GetInstance()->DisableProcessing();
     SyncPoint::GetInstance()->ClearAllCallBacks();
     ASSERT_EQ(odd, 1);
@@ -1426,9 +1426,8 @@ TEST_F(DBCsppCrashSafeTest, AfterCommitExitConvertsAndReopens) {
   ASSERT_TRUE(metadata.levels[0].files[0].marked_for_compaction);
 }
 
-// Clang is excluded from the AVX store and still publishes through the odd
-// generation, so it runs the same crash-injection tests as a non-AVX build.
-#if !defined(__AVX__) || defined(__clang__)
+// Non-AVX builds publish through the odd generation.
+#if !defined(__AVX__)
 TEST_F(CrashChild, DISABLED_AfterOddGenerationFallsBackToWal) {
   Options options = BaseCrashSafeOptions(dbname_, true, false);
   SyncPoint::GetInstance()->SetCallBack(
@@ -1449,7 +1448,7 @@ TEST_F(DBCsppCrashSafeTest, AfterOddGenerationFallsBackToWal) {
   ASSERT_OK(TryReopen(options));
   ASSERT_EQ(Get("odd"), "wal");
 }
-#endif  // !__AVX__ || __clang__
+#endif  // !__AVX__
 
 TEST_F(CrashChild, DISABLED_AfterWriteToWALBeforePublishKeepsWalTail) {
   Options options = BaseCrashSafeOptions(dbname_, true, false);
@@ -3462,8 +3461,8 @@ TEST_F(DBCsppCrashSafeTest, LeftoverLogRefUnbindFallsBackToWal) {
   ASSERT_EQ(Get("rb"), "ok");
 }
 
-// Clang is excluded from the AVX store and still hits AfterOddGeneration.
-#if !defined(__AVX__) || defined(__clang__)
+// Non-AVX builds hit AfterOddGeneration.
+#if !defined(__AVX__)
 TEST_F(DBCsppCrashSafeTest, CloseWaitsForStatsPublication) {
   Close();
   Options options = BaseCrashSafeOptions(dbname_, true, false);
@@ -3492,7 +3491,7 @@ TEST_F(DBCsppCrashSafeTest, CloseWaitsForStatsPublication) {
   SyncPoint::GetInstance()->LoadDependency({});
   Close();
 }
-#endif  // !__AVX__ || __clang__
+#endif  // !__AVX__
 
 TEST_F(DBCsppCrashSafeTest, InFlightFlushThenClose) {
   Close();

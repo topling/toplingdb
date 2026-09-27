@@ -2300,6 +2300,7 @@ class MemTableInserter : public WriteBatch::Handler {
         hint_per_batch_(hint_per_batch) {
     assert(cf_mems_);
     memtable_as_log_index_ = cf_mems->GetImmutableDBOptions()->memtable_as_log_index;
+    skip_memtable_data_ = cf_mems->skip_memtable_data_;
   }
   bool memtable_as_log_index() const { return memtable_as_log_index_; }
   void SetBeginPrepareNextPtr(const char* curr) final {
@@ -2313,6 +2314,7 @@ class MemTableInserter : public WriteBatch::Handler {
   }
   const WriteBatch* src_batch_ = nullptr;
   const char* prepare_content_begin_ = nullptr;
+  bool skip_memtable_data_ = false;
 
   ~MemTableInserter() override {
     if (dup_dectector_on_) {
@@ -2394,6 +2396,10 @@ class MemTableInserter : public WriteBatch::Handler {
       // column family already contains updates from this log. We can't apply
       // updates twice because of update-in-place or merge workloads -- ignore
       // the update
+      *s = Status::OK();
+      return false;
+    }
+    if (skip_memtable_data_) {
       *s = Status::OK();
       return false;
     }

@@ -41,6 +41,7 @@ class ColumnFamilyMemTables {
   virtual ColumnFamilyHandle* GetColumnFamilyHandle() = 0;
   virtual ColumnFamilyData* current() { return nullptr; }
   virtual const ImmutableDBOptions* GetImmutableDBOptions() = 0;
+  bool skip_memtable_data_ = false;
 };
 
 class ColumnFamilyMemTablesDefault : public ColumnFamilyMemTables {

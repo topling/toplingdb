@@ -39,6 +39,20 @@ class DBWriteTestUnparameterized : public DBTestBase {
       : DBTestBase("pipelined_write_test", /*env_do_fsync=*/false) {}
 };
 
+TEST_F(DBWriteTestUnparameterized, UnorderedWriteWithoutWALCanFlush) {
+  Options options = CurrentOptions();
+  options.unordered_write = true;
+  Reopen(options);
+  WriteOptions write;
+  for (bool disable_wal : {false, true}) {
+    write.disableWAL = disable_wal;
+    ASSERT_OK(db_->Put(write, "key", disable_wal ? "no-wal" : "wal"));
+    ASSERT_OK(Flush());
+  }
+  Reopen(options);
+  ASSERT_EQ(Get("key"), "no-wal");
+}
+
 // It is invalid to do sync write while disabling WAL.
 TEST_P(DBWriteTest, SyncAndDisableWAL) {
   if (GetOptions().memtable_as_log_index) {

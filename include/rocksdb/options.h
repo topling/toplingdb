@@ -933,9 +933,14 @@ struct DBOptions {
 
   bool memtable_as_log_index = false;
 
-  // Enable crash-safe recovery using mmap MemTables (CSPP / OffsetSkipList)
+  // Enable crash-safe recovery using file mmap MemTables (CSPP / OffsetSkipList)
   // and ConvertToSST to reduce WAL replay on the next open.
   // Only process crashes (kill -9 / _exit) are covered, not power loss.
+  // DeleteRange is not covered.
+  // Reuse leftover MemTable files up to the published sequence, then replay
+  // the WAL tail. All CFs must support crash-safe file mmap MemTables.
+  // Unusable leftovers or cursor metadata, wal_filter, best_efforts_recovery,
+  // and unsupported sequence publication modes fall back to full WAL replay.
   // Independent of memtable_as_log_index and Flush/Close ConvertToSST.
   // Requires WAL: disableWAL is ignored; manual_wal_flush and WAL recycling
   // are disabled, and wal_compression is forced to kNoCompression.

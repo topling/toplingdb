@@ -178,6 +178,10 @@ std::string CurrentFileName(const std::string& dbname) {
 
 std::string LockFileName(const std::string& dbname) { return dbname + "/LOCK"; }
 
+std::string CrashSafePubSeqFileName(const std::string& dbname) {
+  return dbname + "/CSPUBSEQ";
+}
+
 std::string TempFileName(const std::string& dbname, uint64_t number) {
   return MakeFileName(dbname, number, kTempFileNameSuffix.c_str());
 }

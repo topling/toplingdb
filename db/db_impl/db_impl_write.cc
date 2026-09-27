@@ -369,8 +369,16 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
         }
       }
       versions_->SetLastSequence(last_sequence);
+      MaybePersistPublishedSequence(last_sequence, *w.write_group);
+      if (pubseq_mmap_ != nullptr && two_write_queues_ &&
+          !immutable_db_options_.unordered_write) {
+        AccountPendingMemtableWrites(1);
+      }
       MemTableInsertStatusCheck(w.status);
       write_thread_.ExitAsBatchGroupFollower(&w);
+    } else if (pubseq_mmap_ != nullptr && two_write_queues_ &&
+               !immutable_db_options_.unordered_write) {
+      AccountPendingMemtableWrites(1);
     }
     assert(w.state == WriteThread::STATE_COMPLETED);
     // STATE_COMPLETED conditional below handles exit
@@ -427,6 +435,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
       write_thread_.EnterAsBatchGroupLeader(&w, &write_group);
 
   IOStatus io_s;
+  bool account_two_q_pending = false;
   Status pre_release_cb_status;
   if (status.ok()) {
     // Rules for when we can update the memtable concurrently
@@ -530,6 +539,9 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
         // wal_write_mutex_ to ensure ordered events in WAL
         io_s = ConcurrentWriteToWAL(write_group, log_used, &last_sequence,
                                     seq_inc);
+        account_two_q_pending =
+            io_s.ok() && pubseq_mmap_ != nullptr &&
+            !immutable_db_options_.unordered_write;
       } else {
         // Otherwise we inc seq number for memtable writes
         last_sequence = versions_->FetchAddLastAllocatedSequence(seq_inc);
@@ -672,9 +684,15 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
       // Note: if we are to resume after non-OK statuses we need to revisit how
       // we reacts to non-OK statuses here.
       versions_->SetLastSequence(last_sequence);
+      MaybePersistPublishedSequence(last_sequence, write_group);
+    }
+    if (account_two_q_pending) {
+      AccountPendingMemtableWrites(in_parallel_group ? 1 : write_group.size);
     }
     MemTableInsertStatusCheck(w.status);
     write_thread_.ExitAsBatchGroupLeader(write_group, status);
+  } else if (in_parallel_group && account_two_q_pending) {
+    AccountPendingMemtableWrites(1);
   }
 
   if (status.ok()) {
@@ -691,6 +709,7 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
   StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
   WriteContext write_context;
+  WriteThread::WriteGroup memtable_write_group;
 
   WriteThread::Writer w(write_options, my_batch, callback, log_ref,
                         disable_memtable, /*_batch_cnt=*/0,
@@ -807,14 +826,20 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
       const ReadOptions read_options;
       w.status = ApplyWALToManifest(read_options, &synced_wals);
     }
+    if (w.status.ok() && pubseq_mmap_ != nullptr) {
+      size_t memtable_write_cnt = 0;
+      for (auto* writer : wal_write_group) {
+        if (writer->ShouldWriteToMemtable()) {
+          memtable_write_cnt++;
+        }
+      }
+      StagePublishedWal(current_sequence + total_count - 1,
+                        wal_write_group.wal_number,
+                        wal_write_group.wal_offset);
+      pending_memtable_writes_ += memtable_write_cnt;
+    }
     write_thread_.ExitAsBatchGroupLeader(wal_write_group, w.status);
   }
-
-  // NOTE: the memtable_write_group is declared before the following
-  // `if` statement because its lifetime needs to be longer
-  // that the inner context  of the `if` as a reference to it
-  // may be used further below within the outer _write_thread
-  WriteThread::WriteGroup memtable_write_group;
 
   if (w.state == WriteThread::STATE_MEMTABLE_WRITER_LEADER) {
     PERF_TIMER_WITH_HISTOGRAM(write_memtable_time, MEMTAB_WRITE_KV_NANOS, stats_);
@@ -830,6 +855,9 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
           write_options.ignore_missing_column_families, 0 /*log_number*/, this,
           false /*concurrent_memtable_writes*/, seq_per_batch_, batch_per_txn_);
       versions_->SetLastSequence(memtable_write_group.last_sequence);
+      if (pubseq_mmap_ != nullptr) {
+        AccountPendingMemtableWrites(memtable_write_group.size);
+      }
       write_thread_.ExitAsMemTableWriter(&w, memtable_write_group);
     }
   } else {
@@ -848,6 +876,9 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
         0 /*log_number*/, this, true /*concurrent_memtable_writes*/,
         false /*seq_per_batch*/, 0 /*batch_cnt*/, true /*batch_per_txn*/,
         write_options.memtable_insert_hint_per_batch);
+    if (pubseq_mmap_ != nullptr) {
+      AccountPendingMemtableWrites(1);
+    }
     if (write_thread_.CompleteParallelMemTableWriter(&w)) {
       MemTableInsertStatusCheck(w.status);
       versions_->SetLastSequence(w.write_group->last_sequence);
@@ -893,15 +924,7 @@ Status DBImpl::UnorderedWriteMemtable(const WriteOptions& write_options,
     }
   }
 
-  size_t pending_cnt = pending_memtable_writes_.fetch_sub(1) - 1;
-  if (pending_cnt == 0) {
-    // switch_cv_ waits until pending_memtable_writes_ = 0. Locking its mutex
-    // before notify ensures that cv is in waiting state when it is notified
-    // thus not missing the update to pending_memtable_writes_ even though it is
-    // not modified under the mutex.
-    std::lock_guard<std::mutex> lck(switch_mutex_);
-    switch_cv_.notify_all();
-  }
+  AccountPendingMemtableWrites(1);
   WriteStatusCheck(w.status);
 
   if (!w.FinalStatus().ok()) {
@@ -1112,8 +1135,13 @@ Status DBImpl::WriteImplWALOnly(
     // Currently we only use kDoPublishLastSeq in unordered_write
     assert(immutable_db_options_.unordered_write);
   }
-  if (immutable_db_options_.unordered_write && status.ok()) {
+  if (immutable_db_options_.unordered_write && status.ok() &&
+      pubseq_mmap_ == nullptr) {
     pending_memtable_writes_ += memtable_write_cnt;
+  } else if (immutable_db_options_.unordered_write && !status.ok() &&
+             pubseq_mmap_ != nullptr) {
+    // ConcurrentWriteToWAL counted this group, but it will skip memtable writes.
+    AccountPendingMemtableWrites(memtable_write_cnt);
   }
   write_thread->ExitAsBatchGroupLeader(write_group, status);
   if (status.ok()) {
@@ -1489,6 +1517,12 @@ IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
   total_log_size_.fetch_add(log_size_sum, std::memory_order_relaxed);
   log_file_number_size.AddSize(log_size_sum);
   log_empty_ = false;
+  if (io_s.ok() && pubseq_mmap_ != nullptr) {
+    write_group.wal_number = logfile_number_;
+    write_group.wal_offset = immutable_db_options_.memtable_as_log_index
+                                 ? log_writer->get_log_offset()
+                                 : log_writer->file()->GetFileSize();
+  }
   return io_s;
 }
 
@@ -1626,6 +1660,37 @@ IOStatus DBImpl::ConcurrentWriteToWAL(
   if (to_be_cached_state) {
     cached_recoverable_state_ = *to_be_cached_state;
     cached_recoverable_state_empty_ = false;
+  }
+  if (io_s.ok() && pubseq_mmap_ != nullptr) {
+    const SequenceNumber pub_seq = *last_sequence + seq_inc;
+    if (write_group.leader->disable_memtable) {
+      StagePublishedWal(pub_seq, write_group.wal_number,
+                        write_group.wal_offset);
+      PersistStagedPublishedWal();
+    } else if (immutable_db_options_.unordered_write) {
+      StagePublishedWal(pub_seq, write_group.wal_number,
+                        write_group.wal_offset);
+    }
+  }
+  if (io_s.ok() && pubseq_mmap_ != nullptr &&
+      immutable_db_options_.unordered_write) {
+    size_t n = 0;
+    for (auto* writer : write_group) {
+      if (!writer->CallbackFailed() && !writer->disable_memtable) {
+        n++;
+      }
+    }
+    pending_memtable_writes_ += n;
+  } else if (io_s.ok() && pubseq_mmap_ != nullptr && two_write_queues_ &&
+             !immutable_db_options_.unordered_write &&
+             !write_group.leader->disable_memtable) {
+    size_t n = 0;
+    for (auto* writer : write_group) {
+      if (!writer->disable_memtable) {
+        n++;
+      }
+    }
+    pending_memtable_writes_ += n;
   }
   log_write_mutex_.Unlock();
 

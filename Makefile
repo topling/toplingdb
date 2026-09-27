@@ -2140,6 +2140,9 @@ db_universal_compaction_test: $(OBJ_DIR)/db/db_universal_compaction_test.o $(TES
 db_wal_test: $(OBJ_DIR)/db/db_wal_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
+db_cspp_crash_safe_test: $(OBJ_DIR)/db/db_cspp_crash_safe_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
 db_io_failure_test: $(OBJ_DIR)/db/db_io_failure_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 

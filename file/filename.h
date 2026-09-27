@@ -100,6 +100,9 @@ extern std::string CurrentFileName(const std::string& dbname);
 // "dbname".  The result will be prefixed with "dbname".
 extern std::string LockFileName(const std::string& dbname);
 
+// Crash-safe recover publish-seq mmap under dbname.
+extern std::string CrashSafePubSeqFileName(const std::string& dbname);
+
 // Return the name of a temporary file owned by the db named "dbname".
 // The result will be prefixed with "dbname".
 extern std::string TempFileName(const std::string& dbname, uint64_t number);

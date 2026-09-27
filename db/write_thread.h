@@ -83,6 +83,9 @@ class WriteThread {
     Status status;
     std::atomic<size_t> running;
     size_t size = 0;
+    // WAL cursor of this group after WriteToWAL (not log_file_number_size).
+    mutable uint64_t wal_number = 0;
+    mutable uint64_t wal_offset = 0;
 
     struct Iterator {
       Writer* writer;

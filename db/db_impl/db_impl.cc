@@ -668,6 +668,8 @@ Status DBImpl::CloseHelper() {
   // marker. After this we do a variant of the waiting and unschedule work
   // (to consider: moving all the waiting into CancelAllBackgroundWork(true))
   CancelAllBackgroundWork(false);
+  // Periodic PersistStats writes must finish before unmapping the cursor.
+  UnmapPublishedSeqFile();
 
   // Cancel manual compaction if there's any
   if (HasPendingManualCompaction()) {
@@ -5917,6 +5919,12 @@ Status DestroyDB(const std::string& dbname, const Options& options,
         if (!del.ok() && result.ok()) {
           result = del;
         }
+      }
+    }
+    env->DeleteFile(CrashSafePubSeqFileName(dbname)).PermitUncheckedError();
+    for (const auto& fname : filenames) {
+      if (fname.find(".memtab-") != std::string::npos) {
+        env->DeleteFile(dbname + "/" + fname).PermitUncheckedError();
       }
     }
 

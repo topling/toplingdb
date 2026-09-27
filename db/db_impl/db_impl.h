@@ -1077,7 +1077,16 @@ class DBImpl : public DB {
   static Status Open(const DBOptions& db_options, const std::string& name,
                      const std::vector<ColumnFamilyDescriptor>& column_families,
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
-                     const bool seq_per_batch, const bool batch_per_txn);
+                     const bool seq_per_batch, const bool batch_per_txn,
+                     bool options_already_updated = false);
+
+  // memtable_crash_safe_recover: if CSPUBSEQ's wal_offset_kind differs
+  // from memtable_as_log_index, open with the sidecar kind, flush, close and
+  // delete CSPUBSEQ. Call before Open() with the same seq/txn flags.
+  static Status PrepareCrashSafeKindForOpen(
+      const DBOptions& db_options, const std::string& name,
+      const std::vector<ColumnFamilyDescriptor>& column_families,
+      bool seq_per_batch, bool batch_per_txn);
 
   static IOStatus CreateAndNewDirectory(
       FileSystem* fs, const std::string& dirname,
@@ -1940,6 +1949,11 @@ class DBImpl : public DB {
                          SequenceNumber* next_sequence, bool read_only,
                          bool* corrupted_log_found,
                          RecoveryContext* recovery_ctx);
+
+  // Kind-prep first pass under allow_2pc: NotSupported if prepared
+  // transactions were recovered, else persist min_log_number_to_keep past
+  // the old-format WALs so the next Open does not replay them.
+  Status RetireWalsForKindPrep();
 
   // *probe_wal_below: WALs numbered below it have unknown format.
   Status MapPublishedSeqFile(uint64_t* probe_wal_below);

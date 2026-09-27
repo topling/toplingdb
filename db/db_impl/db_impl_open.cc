@@ -523,6 +523,28 @@ bool ReadPublishedSeqRecord(const PublishedSeqMmapHeader* hdr,
   }
 }
 
+bool PeekPublishedWalKind(const std::string& dbname, uint64_t* kind) {
+  const std::string path = CrashSafePubSeqFileName(dbname);
+  PublishedSeqMmapHeader hdr;
+  int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return false;
+  }
+  auto sz = ::pread(fd, &hdr, sizeof(hdr), 0);
+  ::close(fd);
+  if (sz != static_cast<ssize_t>(sizeof(hdr))) {
+    return false;
+  }
+  // wal_offset_kind is written only by Stamp, so an odd generation from a
+  // crash mid-publish does not make it stale.
+  // A Stamp from an unfinished Open has not established a WAL format yet.
+  bool ok = PublishedSeqHeaderValid(&hdr) && hdr.kind_since_wal != 0;
+  if (ok) {
+    *kind = hdr.wal_offset_kind;
+  }
+  return ok;
+}
+
 uint32_t ParseLeftoverCfId(const std::string& path) {
   const auto pos = path.rfind(".memtab-");
   if (pos == std::string::npos) {
@@ -537,7 +559,105 @@ uint32_t ParseLeftoverCfId(const std::string& path) {
   return static_cast<uint32_t>(id);
 }
 
+void DestroyKindPrepDb(DB* db, std::vector<ColumnFamilyHandle*>* handles) {
+  for (auto* h : *handles) {
+    delete h;
+  }
+  handles->clear();
+  if (db != nullptr) {
+    db->Close().PermitUncheckedError();
+    delete db;
+  }
+}
+
 }  // namespace
+
+Status DBImpl::PrepareCrashSafeKindForOpen(
+    const DBOptions& db_options, const std::string& dbname,
+    const std::vector<ColumnFamilyDescriptor>& column_families,
+    bool seq_per_batch, bool batch_per_txn) {
+  if (!db_options.memtable_crash_safe_recover) {
+    return Status::OK();
+  }
+  uint64_t sidecar_kind = 0;
+  if (!PeekPublishedWalKind(dbname, &sidecar_kind) || sidecar_kind == 0) {
+    return Status::OK();
+  }
+  const uint64_t opt_kind = db_options.memtable_as_log_index ? 2 : 1;
+  if (sidecar_kind == opt_kind) {
+    return Status::OK();
+  }
+  DBOptions cheap = db_options;
+  cheap.memtable_as_log_index = sidecar_kind == 2;  // kLogIndex
+  cheap.memtable_crash_safe_recover = true;
+  cheap.max_open_files = 0;
+  cheap.persist_stats_to_disk = false;
+  std::vector<ColumnFamilyDescriptor> cheap_cfs = column_families;
+  for (auto& cf : cheap_cfs) {
+    cf.options.disable_auto_compactions = true;
+  }
+  std::vector<ColumnFamilyHandle*> handles;
+  DB* db = nullptr;
+  Status s = DBImpl::Open(cheap, dbname, cheap_cfs, &handles, &db,
+                          seq_per_batch, batch_per_txn,
+                          true /* options_already_updated */);
+  if (!s.ok()) {
+    return s;
+  }
+  TEST_SYNC_POINT("DBImpl::Open::KindPrep:AfterOpenBeforeFlush");
+  FlushOptions fo;
+  fo.wait = true;
+  s = db->Flush(fo, handles);
+  if (s.ok() && cheap.allow_2pc) {
+    s = static_cast<DBImpl*>(db)->RetireWalsForKindPrep();
+  }
+  if (!s.ok()) {
+    DestroyKindPrepDb(db, &handles);
+    return s;
+  }
+  TEST_SYNC_POINT("DBImpl::Open::KindPrep:AfterFlushBeforeClose");
+  for (auto* h : handles) {
+    delete h;
+  }
+  handles.clear();
+  s = db->Close();
+  delete db;
+  db = nullptr;
+  if (!s.ok()) {
+    return s;
+  }
+  TEST_SYNC_POINT("DBImpl::Open::KindPrep:AfterCloseBeforeDeleteSidecar");
+  Env* env = db_options.env != nullptr ? db_options.env : Env::Default();
+  s = env->DeleteFile(CrashSafePubSeqFileName(dbname));
+  if (!s.ok() && !s.IsNotFound()) {
+    return s;
+  }
+  return Status::OK();
+}
+
+Status DBImpl::RetireWalsForKindPrep() {
+  InstrumentedMutexLock l(&mutex_);
+  if (!recovered_transactions_.empty()) {
+    return Status::NotSupported(
+        "memtable_as_log_index change with prepared transactions",
+        "reopen with the previous memtable_as_log_index, commit or roll back "
+        "them, then switch");
+  }
+  const uint64_t min_log = versions_->MinLogNumberWithUnflushedData();
+  if (min_log <= versions_->min_log_number_to_keep()) {
+    return Status::OK();
+  }
+  VersionEdit edit;
+  if (immutable_db_options_.track_and_verify_wals_in_manifest) {
+    edit.DeleteWalsBefore(min_log);
+  }
+  edit.SetMinLogNumberToKeep(min_log);
+  auto* cfd = versions_->GetColumnFamilySet()->GetDefault();
+  const ReadOptions read_options(Env::IOActivity::kDBOpen);
+  return versions_->LogAndApply(cfd, *cfd->GetLatestMutableCFOptions(),
+                                read_options, &edit, &mutex_,
+                                directories_.GetDbDir());
+}
 
 void PublishedSeqMmapHeader::Stamp(bool memtable_as_log_index) {
   magic = kPublishedSeqMagic;
@@ -579,6 +699,15 @@ Status DBImpl::MapPublishedSeqFile(uint64_t* probe_wal_below) {
     TEST_SYNC_POINT("DBImpl::MapPublishedSeqFile:AfterMmapBeforeStamp");
     pubseq_mmap_->Stamp(immutable_db_options_.memtable_as_log_index);
     return Status::OK();
+  }
+  const uint32_t opt_kind = immutable_db_options_.memtable_as_log_index
+                                ? uint32_t(PublishedWalOffsetKind::kLogIndex)
+                                : uint32_t(PublishedWalOffsetKind::kPhysical);
+  if (pubseq_mmap_->wal_offset_kind != opt_kind) {
+    // DB::Open / TransactionDB::Open switch kind before getting here.
+    UnmapPublishedSeqFile();
+    return Status::InvalidArgument(
+        path, "wal_offset_kind differs from memtable_as_log_index");
   }
   if (pubseq_mmap_->kind_since_wal != 0) {
     *probe_wal_below = pubseq_mmap_->kind_since_wal;
@@ -2501,12 +2630,23 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
 Status DB::Open(const DBOptions& db_options, const std::string& dbname,
                 const std::vector<ColumnFamilyDescriptor>& column_families,
                 std::vector<ColumnFamilyHandle*>* handles, DB** dbptr) {
+  *dbptr = nullptr;
+  MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
+      const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
+      dbname);
   const bool kSeqPerBatch = true;
   const bool kBatchPerTxn = true;
   ThreadStatusUtil::SetEnableTracking(db_options.enable_thread_tracking);
   ThreadStatusUtil::SetThreadOperation(ThreadStatus::OperationType::OP_DBOPEN);
+  Status s0 = DBImpl::PrepareCrashSafeKindForOpen(
+      db_options, dbname, column_families, !kSeqPerBatch, kBatchPerTxn);
+  if (!s0.ok()) {
+    ThreadStatusUtil::ResetThreadStatus();
+    return s0;
+  }
   Status s = DBImpl::Open(db_options, dbname, column_families, handles, dbptr,
-                          !kSeqPerBatch, kBatchPerTxn);
+                          !kSeqPerBatch, kBatchPerTxn,
+                          true /* options_already_updated */);
   ThreadStatusUtil::ResetThreadStatus();
   return s;
 }
@@ -2640,10 +2780,14 @@ IOStatus DBImpl::CreateWAL(uint64_t log_file_num, uint64_t recycle_log_number,
 Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
                     const std::vector<ColumnFamilyDescriptor>& column_families,
                     std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
-                    const bool seq_per_batch, const bool batch_per_txn) {
-  MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
-      const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
-      dbname);
+                    const bool seq_per_batch, const bool batch_per_txn,
+                    bool options_already_updated) {
+  // Kind-prep supplies the old WAL kind after applying the external config.
+  if (!options_already_updated) {
+    MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
+        const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
+        dbname);
+  }
   *dbptr = nullptr;
   ROCKSDB_SCOPE_EXIT(MaybeRetainDB(*dbptr, *handles));
 

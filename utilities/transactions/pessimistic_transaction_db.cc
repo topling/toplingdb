@@ -306,8 +306,16 @@ Status TransactionDB::Open(
   const bool use_batch_per_txn =
       txn_db_options.write_policy == WRITE_COMMITTED ||
       txn_db_options.write_policy == WRITE_PREPARED;
+  MaybeOptionsUpdateFrom(&db_options_2pc, &column_families_copy, dbname);
+  s = DBImpl::PrepareCrashSafeKindForOpen(db_options_2pc, dbname,
+                                          column_families_copy,
+                                          use_seq_per_batch, use_batch_per_txn);
+  if (!s.ok()) {
+    return s;
+  }
   s = DBImpl::Open(db_options_2pc, dbname, column_families_copy, handles, &db,
-                   use_seq_per_batch, use_batch_per_txn);
+                   use_seq_per_batch, use_batch_per_txn,
+                   true /* options_already_updated */);
   if (s.ok()) {
     ROCKS_LOG_WARN(db->GetDBOptions().info_log,
                    "Transaction write_policy is %s",

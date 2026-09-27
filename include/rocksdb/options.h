@@ -946,12 +946,17 @@ struct DBOptions {
   // are disabled, and wal_compression is forced to kNoCompression.
   // Read-only Open disables this option and warns that full WAL replay may be
   // very slow with the much larger MemTables encouraged in crash-safe mode.
+  // If a valid saved WAL kind differs from memtable_as_log_index, Open first
+  // recovers and flushes using the old kind, then opens in the requested kind.
+  // TransactionDB requires resolving recovered prepared transactions before
+  // switching kinds.
   // Default: false. Not dynamically changeable through SetDBOptions().
   bool memtable_crash_safe_recover = false;
 
   // If true, each WAL file is probed on DB open to auto-detect its on-disk
-  // format, so recovery works even when memtable_as_log_index was changed
-  // between runs.
+  // format. This selects the reader format, not the memtable format. Replaying
+  // a classic WAL directly into log-index memtables returns NotSupported;
+  // reopen with memtable_as_log_index=false and flush before switching.
   //
   // Defaults to false because the probe relies on CRC32 self-consistency
   // rather than a magic number to distinguish the two formats, which carries

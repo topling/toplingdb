@@ -208,6 +208,18 @@ class CrashChild : public ::testing::Test {
   const std::string arg_ = crash_child_arg ? crash_child_arg : "";
 };
 
+const int kKindPrepChildCrashed = 42;
+
+TEST_F(CrashChild, DISABLED_KindPrep) {
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  log_index.avoid_flush_during_shutdown = true;
+  SyncPoint::GetInstance()->SetCallBack(
+      arg_, [](void*) { ::_exit(kKindPrepChildCrashed); });
+  SyncPoint::GetInstance()->EnableProcessing();
+  DB* db = nullptr;
+  Status s = DB::Open(log_index, dbname_, &db);
+  ::_exit(s.ok() ? 1 : 2);
+}
 #endif
 
 }  // namespace
@@ -1185,8 +1197,8 @@ TEST_F(DBCsppCrashSafeTest, ClassicWalToLogIndexWithoutSidecarIsNotSupported) {
         ASSERT_EQ(rec.generation & 1, 1U);
       }
 
-      // Failed Open must not retain the unestablished log-index kind.
-      // Reopen in the original format without deleting the sidecar.
+      // Failed Open must not force KindPrep with the unestablished log-index
+      // kind. Reopen in the original format without deleting the sidecar.
       classic.memtable_crash_safe_recover = true;
       ASSERT_OK(TryReopen(classic));
       ASSERT_EQ(Get("large"), value);
@@ -1194,6 +1206,11 @@ TEST_F(DBCsppCrashSafeTest, ClassicWalToLogIndexWithoutSidecarIsNotSupported) {
       ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
       ASSERT_EQ(rec.wal_offset_kind, 1U);
       ASSERT_GT(rec.kind_since_wal, 0U);
+      Close();
+
+      // An established sidecar still permits the existing KindPrep switch.
+      ASSERT_OK(TryReopen(log_index));
+      ASSERT_EQ(Get("large"), value);
       Close();
     }
   }
@@ -1233,6 +1250,58 @@ TEST_F(DBCsppCrashSafeTest, RecoverOffDeletesStaleSidecar) {
   Options off = BaseCrashSafeOptions(dbname_, false, false);
   ASSERT_OK(TryReopen(off));
   ASSERT_TRUE(env_->FileExists(CrashSafePubSeqFileName(dbname_)).IsNotFound());
+  ASSERT_EQ(Get("k"), "v");
+}
+
+TEST_F(DBCsppCrashSafeTest, OddGenerationKindSwitchUsesKindPrep) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  ASSERT_OK(TryReopen(options));
+  ASSERT_OK(Put("k", "v"));
+  Close();
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_TRUE(SetPublishedSeqGeneration(dbname_, rec.generation | 1));
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  log_index.avoid_flush_during_shutdown = true;
+  int prep = 0;
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::Open::KindPrep:AfterOpenBeforeFlush",
+      [&prep](void*) { prep++; });
+  SyncPoint::GetInstance()->EnableProcessing();
+  ASSERT_OK(TryReopen(log_index));
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+  ASSERT_EQ(prep, 1);
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 2U);
+  ASSERT_EQ(Get("k"), "v");
+}
+
+TEST_F(DBCsppCrashSafeTest, DirectDBImplOpenKindMismatchFails) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  ASSERT_OK(TryReopen(options));
+  ASSERT_OK(Put("k", "v"));
+  Close();
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  std::vector<ColumnFamilyDescriptor> cfs = {
+      ColumnFamilyDescriptor(kDefaultColumnFamilyName, log_index)};
+  std::vector<ColumnFamilyHandle*> handles;
+  DB* db = nullptr;
+  const Status s = DBImpl::Open(DBOptions(log_index), dbname_, cfs, &handles,
+                                &db, false /*seq_per_batch*/,
+                                true /*batch_per_txn*/);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_EQ(db, nullptr);
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 1U);
+  ASSERT_OK(TryReopen(options));
   ASSERT_EQ(Get("k"), "v");
 }
 
@@ -2089,6 +2158,411 @@ TEST_F(DBCsppCrashSafeTest, PublishedSeqFieldsAfterPut) {
   ASSERT_GT(rec.wal_offset, 0U);
   ASSERT_EQ(rec.wal_offset_kind, 1U);  // Persist does not rewrite kind
 }
+
+TEST_F(DBCsppCrashSafeTest, ExistingPublishedSeqKindPrepLogIndexAfterClassic) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  ASSERT_OK(TryReopen(options));
+  ASSERT_OK(Put("k", "v"));
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 1U);
+  Close();
+  ASSERT_OK(env_->FileExists(CrashSafePubSeqFileName(dbname_)));
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  log_index.avoid_flush_during_shutdown = true;
+  ASSERT_OK(TryReopen(log_index));
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 2U);
+  ASSERT_EQ(Get("k"), "v");
+  ASSERT_GE(CountL0(db_), 1);
+}
+
+TEST_F(DBCsppCrashSafeTest, ExistingPublishedSeqKindPrepClassicAfterLogIndex) {
+  Close();
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  log_index.avoid_flush_during_shutdown = true;
+  Destroy(log_index);
+  ASSERT_OK(TryReopen(log_index));
+  ASSERT_OK(Put("k", "v"));
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 2U);
+  Close();
+  ASSERT_OK(env_->FileExists(CrashSafePubSeqFileName(dbname_)));
+  Options classic = BaseCrashSafeOptions(dbname_, true, false);
+  classic.avoid_flush_during_shutdown = true;
+  ASSERT_OK(TryReopen(classic));
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 1U);
+  ASSERT_EQ(Get("k"), "v");
+  ASSERT_GE(CountL0(db_), 1);
+}
+
+TEST_F(DBCsppCrashSafeTest, KindPrepSkippedWhenKindMatches) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  ASSERT_OK(TryReopen(options));
+  ASSERT_OK(Put("k", "v"));
+  Close();
+  int prep = 0;
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::Open::KindPrep:AfterOpenBeforeFlush",
+      [&](void*) { prep++; });
+  SyncPoint::GetInstance()->EnableProcessing();
+  ASSERT_OK(TryReopen(options));
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+  ASSERT_EQ(prep, 0);
+  ASSERT_EQ(Get("k"), "v");
+}
+
+TEST_F(DBCsppCrashSafeTest, KindPrepFailureClearsDbPointer) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  ASSERT_OK(TryReopen(options));
+  ASSERT_OK(Put("k", "v"));
+  Close();
+  options.memtable_as_log_index = true;
+  options.error_if_exists = true;
+  DB* db = reinterpret_cast<DB*>(uintptr_t(1));
+  Status s = DB::Open(options, dbname_, &db);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_EQ(db, nullptr);
+}
+
+#if !defined(OS_WIN)
+TEST_F(CrashChild, DISABLED_EasyMigrateKindPrep) {
+  ASSERT_EQ(arg_.size(), 3U);
+  const bool log_index = arg_[0] == '1';
+  const bool txn = arg_[1] == '1';
+  const bool recover = arg_[2] == '1';
+  // EasyMigrate caches its config, so load it only in this fresh exec child.
+  const std::string config = dbname_ + ".easy-migrate.json";
+  ASSERT_EQ(::setenv("TOPLINGDB_EASY_MIGRATE_CONF", config.c_str(), 1), 0);
+  Options options = BaseCrashSafeOptions(dbname_, recover, log_index);
+  int prep = 0;
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::Open::KindPrep:AfterOpenBeforeFlush", [&](void*) { ++prep; });
+  SyncPoint::GetInstance()->EnableProcessing();
+  DB* db = nullptr;
+  if (txn) {
+    TransactionDB* txn_db = nullptr;
+    ASSERT_OK(TransactionDB::Open(options, TransactionDBOptions(), dbname_,
+                                  &txn_db));
+    db = txn_db;
+  } else {
+    ASSERT_OK(DB::Open(options, dbname_, &db));
+  }
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+  ASSERT_EQ(prep, 1);
+  std::string value;
+  ASSERT_OK(db->Get(ReadOptions(), "k", &value));
+  ASSERT_EQ(value, "v");
+  ASSERT_OK(db->Put(WriteOptions(), "after", "switch"));
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, log_index ? 2U : 1U);
+  ASSERT_OK(db->Close());
+  delete db;
+  ::_exit(0);
+}
+
+TEST_F(DBCsppCrashSafeTest, EasyMigrateKindPrep) {
+  for (bool log_index : {false, true}) {
+    for (bool txn : {false, true}) {
+      for (bool recover : {false, true}) {
+        const std::string mode = {char('0' + log_index), char('0' + txn),
+                                  char('0' + recover)};
+        SCOPED_TRACE(mode);
+        Close();
+        Options options = BaseCrashSafeOptions(dbname_, true, !log_index);
+        options.avoid_flush_during_shutdown = true;
+        Destroy(options);
+        ASSERT_OK(TryReopen(options));
+        ASSERT_OK(Put("k", "v"));
+        // This convert-only table factory cannot BuildTable during 2PC replay.
+        ASSERT_OK(Flush());
+        Close();
+        const std::string config = dbname_ + ".easy-migrate.json";
+        const json conf = {
+            {"DBOptions", {{"default", {{"memtable_crash_safe_recover", true},
+                                        {"memtable_as_log_index", log_index}}}}},
+            {"http", {{"auto_start_http", false}}}};
+        ASSERT_OK(WriteStringToFile(env_, conf.dump(), config));
+        ASSERT_EQ(RunCrashChild(dbname_, "EasyMigrateKindPrep", mode), 0);
+        ASSERT_OK(env_->DeleteFile(config));
+        options.memtable_as_log_index = log_index;
+        ASSERT_OK(TryReopen(options));
+        ASSERT_EQ(Get("k"), "v");
+        ASSERT_EQ(Get("after"), "switch");
+      }
+    }
+  }
+}
+
+TEST_F(CrashChild, DISABLED_KindPrepKeepsUnpublishedWalTail) {
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::WriteImpl:AfterWriteToWALBeforePublish",
+      [](void*) { ::_exit(1); });
+  SyncPoint::GetInstance()->EnableProcessing();
+  DB* child_db = nullptr;
+  ASSERT_OK(DB::Open(options, dbname_, &child_db));
+  ASSERT_OK(child_db->Put(WriteOptions(), "b", "2"));
+  ::_exit(0);
+}
+
+TEST_F(DBCsppCrashSafeTest, KindPrepKeepsUnpublishedWalTail) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  {
+    ASSERT_OK(TryReopen(options));
+    ASSERT_OK(Put("a", "1"));
+    Close();
+  }
+  ASSERT_EQ(RunCrashChild(dbname_, "KindPrepKeepsUnpublishedWalTail"), 1);
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  log_index.avoid_flush_during_shutdown = true;
+  ASSERT_OK(TryReopen(log_index));
+  ASSERT_EQ(Get("a"), "1");
+  ASSERT_EQ(Get("b"), "2");
+}
+
+TEST_F(DBCsppCrashSafeTest, KindPrepAfterFlushBeforeClose) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  ASSERT_OK(TryReopen(options));
+  ASSERT_OK(Put("k", "v"));
+  Close();
+  ASSERT_EQ(RunCrashChild(
+                dbname_, "KindPrep", "DBImpl::Open::KindPrep:AfterFlushBeforeClose"),
+            kKindPrepChildCrashed);
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 1U);
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  log_index.avoid_flush_during_shutdown = true;
+  ASSERT_OK(TryReopen(log_index));
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 2U);
+  ASSERT_EQ(Get("k"), "v");
+}
+
+TEST_F(DBCsppCrashSafeTest, KindPrepAfterCloseBeforeDeleteSidecar) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  ASSERT_OK(TryReopen(options));
+  ASSERT_OK(Put("k", "v"));
+  Close();
+  ASSERT_EQ(RunCrashChild(
+                dbname_, "KindPrep", "DBImpl::Open::KindPrep:AfterCloseBeforeDeleteSidecar"),
+            kKindPrepChildCrashed);
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 1U);
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  log_index.avoid_flush_during_shutdown = true;
+  ASSERT_OK(TryReopen(log_index));
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 2U);
+  ASSERT_EQ(Get("k"), "v");
+}
+
+TEST_F(CrashChild, DISABLED_TransactionDBKindPrepClassicToLogIndex) {
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions());
+  ASSERT_OK(txn->Put("t", "1"));
+  ASSERT_OK(txn->Commit());
+  ::_exit(0);
+}
+
+TEST_F(DBCsppCrashSafeTest, TransactionDBKindPrepClassicToLogIndex) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_EQ(RunCrashChild(dbname_, "TransactionDBKindPrepClassicToLogIndex"), 0);
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 1U);
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  log_index.avoid_flush_during_shutdown = true;
+  int prep = 0;
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::Open::KindPrep:AfterOpenBeforeFlush",
+      [&prep](void*) { prep++; });
+  SyncPoint::GetInstance()->EnableProcessing();
+  ASSERT_OK(TransactionDB::Open(log_index, txn_opts, dbname_, &txn_db));
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+  ASSERT_EQ(prep, 1);
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 2U);
+  std::string v;
+  ASSERT_OK(txn_db->Get(ReadOptions(), "t", &v));
+  ASSERT_EQ(v, "1");
+  delete txn_db;
+}
+
+TEST_F(CrashChild, DISABLED_TransactionDBKindPrepPreparedNotSupported) {
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("xid1"));
+  ASSERT_OK(txn->Put("prep", "v"));
+  ASSERT_OK(txn->Prepare());
+  ::_exit(0);
+}
+
+TEST_F(DBCsppCrashSafeTest, TransactionDBKindPrepPreparedNotSupported) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_EQ(RunCrashChild(dbname_, "TransactionDBKindPrepPreparedNotSupported"), 0);
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  log_index.avoid_flush_during_shutdown = true;
+  ASSERT_TRUE(TransactionDB::Open(log_index, txn_opts, dbname_, &txn_db)
+                  .IsNotSupported());
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 1U);
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  std::vector<Transaction*> prepared;
+  txn_db->GetAllPreparedTransactions(&prepared);
+  ASSERT_EQ(prepared.size(), 1U);
+  ASSERT_OK(prepared[0]->Rollback());
+  delete prepared[0];
+  delete txn_db;
+}
+
+TEST_F(DBCsppCrashSafeTest, TransactionDBPreparedCloseThenSwitchKind) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  Destroy(options);
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("xid1"));
+  ASSERT_OK(txn->Put("prep", "v"));
+  ASSERT_OK(txn->Prepare());
+  delete txn;
+  delete txn_db;  // default avoid_flush_during_shutdown=false: Close converts
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  ASSERT_TRUE(TransactionDB::Open(log_index, txn_opts, dbname_, &txn_db)
+                  .IsNotSupported());
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  std::vector<Transaction*> prepared;
+  txn_db->GetAllPreparedTransactions(&prepared);
+  ASSERT_EQ(prepared.size(), 1U);
+  ASSERT_OK(prepared[0]->Rollback());
+  delete prepared[0];
+  delete txn_db;
+}
+
+TEST_F(CrashChild, DISABLED_TransactionDBRollbackCloseThenSwitchKind) {
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("xid1"));
+  ASSERT_OK(txn->Put("prep", "v"));
+  ASSERT_OK(txn->Prepare());
+  ::_exit(0);
+}
+
+TEST_F(DBCsppCrashSafeTest, TransactionDBRollbackCloseThenSwitchKind) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  Destroy(options);
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  ASSERT_OK(txn_db->Put(WriteOptions(), "k", "v"));
+  delete txn_db;
+  ASSERT_EQ(RunCrashChild(dbname_, "TransactionDBRollbackCloseThenSwitchKind"), 0);
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  std::vector<Transaction*> prepared;
+  txn_db->GetAllPreparedTransactions(&prepared);
+  ASSERT_EQ(prepared.size(), 1U);
+  ASSERT_OK(prepared[0]->Rollback());
+  delete prepared[0];
+  delete txn_db;  // default avoid_flush_during_shutdown=false: Close converts
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  ASSERT_OK(TransactionDB::Open(log_index, txn_opts, dbname_, &txn_db));
+  std::string v;
+  ASSERT_OK(txn_db->Get(ReadOptions(), "k", &v));
+  ASSERT_EQ(v, "v");
+  ASSERT_TRUE(txn_db->Get(ReadOptions(), "prep", &v).IsNotFound());
+  delete txn_db;
+}
+
+TEST_F(DBCsppCrashSafeTest, KindPrepConvertFailFallsBackToWal) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.avoid_flush_during_shutdown = true;
+  Destroy(options);
+  ASSERT_OK(TryReopen(options));
+  ASSERT_OK(Put("k", "v"));
+  Close();
+  Options log_index = BaseCrashSafeOptions(dbname_, true, true);
+  log_index.avoid_flush_during_shutdown = true;
+  ASSERT_FALSE(log_index.check_wal_format);
+  ASSERT_OK(TryReopen(log_index));
+  ASSERT_EQ(Get("k"), "v");
+  Close();
+  SyncPoint::GetInstance()->SetCallBack(
+      "CrashSafeRecover::ConvertToSST:InjectStatus", [](void* arg) {
+        *static_cast<Status*>(arg) = Status::IOError("inject convert");
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+  ASSERT_OK(TryReopen(log_index));
+  ASSERT_EQ(Get("k"), "v");
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+#endif
 
 TEST_F(DBCsppCrashSafeTest, DontConvertFallsBackToWal) {
   Close();

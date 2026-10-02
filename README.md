@@ -40,7 +40,8 @@ ToplingDB has much more key features than RocksDB:
 1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
 
 ## Crash-safe recovery
-See the [Chinese crash-safe recovery guide](https://github.com/topling/rockside/wiki/Crash-Safe-Recovery) for the recovery mechanism, configuration, and limitations.
+See the [crash-safe recovery guide](https://github.com/topling/sideplugin-wiki-en/wiki/Crash-Safe-Recovery) for the recovery mechanism, configuration, and limitations.
+For the underlying data-structure principles, see [The Isomorphism Between Wait-Free Reads and Crash Safety](https://github.com/topling/sideplugin-wiki-en/wiki/Wait-Free-Reads-and-Crash-Safe).
 `DB::Open` after an abnormal exit is timed in [crash_recover_bench.md](tools/crash_recover_bench.md).
 
 ## ToplingDB cloud native DB services

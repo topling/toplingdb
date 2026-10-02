@@ -39,6 +39,7 @@ ToplingDB 兼容 RocksDB API 的同时，增加了很多非常重要的功能与
 
 ## 进程崩溃后的恢复
 恢复机制、配置方式及适用边界见 [MemTable Crash-Safe Recovery](https://github.com/topling/rockside/wiki/Crash-Safe-Recovery)。
+底层数据结构为何同时支持读侧无等待与进程崩溃后的读取，见 [读侧无等待与 Crash-Safe 的同构性](https://github.com/topling/rockside/wiki/Wait-Free-Reads-and-Crash-Safe)。
 异常退出后 `DB::Open` 的耗时见 [crash_recover_bench.md](tools/crash_recover_bench.md)。
 
 ## ToplingDB 云原生数据库服务

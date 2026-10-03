@@ -2353,6 +2353,11 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
   int num_imm_unflushed = cfd->imm()->NumNotFlushed();
   const auto preallocate_block_size =
       GetWalPreallocateBlockSize(mutable_cf_options.write_buffer_size);
+  std::unique_ptr<std::list<uint64_t>::iterator> pending_memtable;
+  if (cfd->ioptions()->memtable_factory->SupportCrashSafe()) {
+    pending_memtable = std::make_unique<std::list<uint64_t>::iterator>(
+        CaptureCurrentFileNumberInPendingOutputs());
+  }
   mutex_.Unlock();
   if (creating_new_log) {
     // TODO: Write buffer size passed in should be max of all CF's instead
@@ -2385,6 +2390,10 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
     assert(log_recycle_files_.front() == recycle_log_number);
     log_recycle_files_.pop_front();
   }
+  if (s.ok()) {
+    s = RegisterMemTableFile(cfd, new_mem);
+  }
+  ReleaseFileNumberFromPendingOutputs(pending_memtable);
   if (s.ok() && creating_new_log) {
     InstrumentedMutexLock l(&log_write_mutex_);
     assert(new_log != nullptr);
@@ -2417,8 +2426,6 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
   }
 
   if (!s.ok()) {
-    // how do we fail if we're not creating new log?
-    assert(creating_new_log);
     delete new_mem;
     delete new_log;
     context->superversion_context.new_superversion.reset();

@@ -7646,7 +7646,7 @@ void VersionSet::ApplyMemTableFileEdit(const VersionEdit& edit) {
 
 ColumnFamilyData* VersionSet::CreateColumnFamily(
     const ColumnFamilyOptions& cf_options, const ReadOptions& read_options,
-    const VersionEdit* edit) {
+    const VersionEdit* edit, bool create_memtable) {
   assert(edit->IsColumnFamilyAdd());
 
   MutableCFOptions dummy_cf_options;
@@ -7671,8 +7671,10 @@ ColumnFamilyData* VersionSet::CreateColumnFamily(
   AppendVersion(new_cfd, v);
   // GetLatestMutableCFOptions() is safe here without mutex since the
   // cfd is not available to client
-  new_cfd->CreateNewMemtable(*new_cfd->GetLatestMutableCFOptions(),
+  if (create_memtable) {
+    new_cfd->CreateNewMemtable(*new_cfd->GetLatestMutableCFOptions(),
                              LastSequence());
+  }
   new_cfd->SetLogNumber(edit->GetLogNumber());
   return new_cfd;
 }

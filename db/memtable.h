@@ -154,7 +154,8 @@ class MemTable : public CacheAlignedNewDelete {
                     const ImmutableOptions& ioptions,
                     const MutableCFOptions& mutable_cf_options,
                     WriteBufferManager* write_buffer_manager,
-                    SequenceNumber earliest_seq, uint32_t column_family_id);
+                    SequenceNumber earliest_seq, uint32_t column_family_id,
+                    uint64_t backing_file_number = 0);
   // No copying allowed
   MemTable(const MemTable&) = delete;
   MemTable& operator=(const MemTable&) = delete;
@@ -585,6 +586,12 @@ class MemTable : public CacheAlignedNewDelete {
   void SetFlushCompleted(bool completed) { flush_completed_ = completed; }
 
   uint64_t GetFileNumber() const { return file_number_; }
+  uint64_t GetBackingFileNumber() const { return backing_file_number_; }
+  bool IsFileRegistered() const { return file_registered_; }
+  void MarkFileRegistered() {
+    table_->MarkFileRegistered();
+    file_registered_ = true;
+  }
 
   void SetFileNumber(uint64_t file_num) { file_number_ = file_num; }
 
@@ -664,7 +671,9 @@ class MemTable : public CacheAlignedNewDelete {
   bool needs_user_key_cmp_in_get_;
   bool support_convert_to_sst_;
   bool reject_memtable_as_log_index_;
+  bool file_registered_ = false;
   uint64_t file_number_;    // filled up after flush is complete
+  uint64_t backing_file_number_;  // MANIFEST identity, separate from flush output
 
   // The updates to be applied to the transaction log when this
   // memtable is flushed to storage.

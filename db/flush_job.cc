@@ -209,7 +209,12 @@ void FlushJob::PickMemTable() {
   edit_->SetColumnFamily(cfd_->GetID());
 
   // path 0 for level 0 file.
-  meta_.fd = FileDescriptor(versions_->NewFileNumber(), 0, 0);
+  const uint64_t backing_file_number =
+      mems_.size() == 1 && m->SupportConvertToSST()
+          ? m->GetBackingFileNumber() : 0;
+  meta_.fd = FileDescriptor(backing_file_number != 0
+                               ? backing_file_number : versions_->NewFileNumber(),
+                           0, 0);
   meta_.epoch_number = cfd_->NewEpochNumber();
 
   base_ = cfd_->current();
@@ -231,6 +236,13 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
 
   if (db_options_.memtable_as_log_index) {
     mempurge_threshold = 0; // not supported
+  }
+  for (const auto* mem : mems_) {
+    if (mem->IsFileRegistered()) {
+      // File-backed inputs must retire their registration with an SST edit.
+      mempurge_threshold = 0;
+      break;
+    }
   }
 
   AutoThreadOperationStageUpdater stage_run(ThreadStatus::STAGE_FLUSH_RUN);
@@ -988,8 +1000,10 @@ Status FlushJob::WriteLevel0Table() {
                           cfd_->GetName().c_str(), job_context_->job_id,
                           meta_.fd.GetNumber(), memtable->ApproximateMemoryUsage(),
                           s.ToString().c_str());
-          // Do not turn a failed close conversion into a full table rebuild.
-          if (flush_reason_ != FlushReason::kShutDown) {
+          // Rebuilding a file-backed table here would overwrite its registered
+          // source at the same path. Preserve it for crash recovery.
+          if (flush_reason_ != FlushReason::kShutDown &&
+              memtable->GetBackingFileNumber() == 0) {
             goto UseBuildTable;
           }
         } else {
@@ -1077,9 +1091,16 @@ UseBuildTable:
   }
   base_->Unref();
 
-  // Note that if file_size is zero, the file has been deleted and
-  // should not be added to the manifest.
+  // Zero-sized output does not become an SST in the manifest.
   const bool has_output = meta_.fd.GetFileSize() > 0;
+
+  if (s.ok()) {
+    for (const auto* mem : mems_) {
+      if (mem->IsFileRegistered()) {
+        edit_->DeleteMemTableFile(mem->GetBackingFileNumber());
+      }
+    }
+  }
 
   if (s.ok() && has_output) {
     TEST_SYNC_POINT("DBImpl::FlushJob:SSTFileCreated");

@@ -4075,6 +4075,11 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
 
     // LogAndApply will both write the creation in MANIFEST and create
     // ColumnFamilyData object
+    std::unique_ptr<std::list<uint64_t>::iterator> pending_memtable;
+    if (cf_options.memtable_factory->SupportCrashSafe()) {
+      pending_memtable = std::make_unique<std::list<uint64_t>::iterator>(
+          CaptureCurrentFileNumberInPendingOutputs());
+    }
     {  // write thread
       WriteThread::Writer w;
       write_thread_.EnterUnbatched(&w, &mutex_);
@@ -4091,7 +4096,20 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
       assert(cfd != nullptr);
       std::map<std::string, std::shared_ptr<FSDirectory>> dummy_created_dirs;
       s = cfd->AddDirectories(&dummy_created_dirs);
+      if (s.ok()) {
+        s = RegisterMemTableFile(cfd, cfd->mem());
+        if (!s.ok()) {
+          // CF creation is already committed. Keep its in-memory state valid,
+          // but do not return a writable handle after registration fails.
+          InstallSuperVersionAndScheduleWork(cfd, &sv_context,
+                                             *cfd->GetLatestMutableCFOptions());
+          cfd->set_initialized();
+          error_handler_.SetBGError(s, BackgroundErrorReason::kManifestWrite)
+              .PermitUncheckedError();
+        }
+      }
     }
+    ReleaseFileNumberFromPendingOutputs(pending_memtable);
     if (s.ok()) {
       auto* cfd =
           versions_->GetColumnFamilySet()->GetColumnFamily(column_family_name);

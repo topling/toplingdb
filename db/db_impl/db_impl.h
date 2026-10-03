@@ -1437,8 +1437,6 @@ class DBImpl : public DB {
     // such a file's absolute path to its parent directory.
     std::unordered_map<std::string, std::string> files_to_delete_;
     bool is_new_db_ = false;
-    // Restore the saved WAL cursor only after recovery edits are installed.
-    bool restore_published_seq_ = false;
     // WAL tail cursor for this Recover. RecoverLogFiles reads it from here.
     bool crash_safe_wal_tail_replay_ = false;
     uint8_t crash_safe_wal_offset_kind_ = 0;
@@ -1966,12 +1964,10 @@ class DBImpl : public DB {
   void StagePublishedWal(SequenceNumber seq, uint64_t wal_number,
                          uint64_t wal_offset);
   void AccountPendingMemtableWrites(size_t n);
+  Status RegisterMemTableFile(ColumnFamilyData* cfd, MemTable* mem);
   bool CanConvertLeftoverForCrashSafeRecover(
-      const std::vector<std::string>& leftover_snapshot,
-      SequenceNumber mmap_pubseq, uint64_t mmap_wal_number,
-      std::string* fail_reason);
+      SequenceNumber mmap_pubseq, std::string* fail_reason);
   Status ConvertLeftoverMemtables(
-      const std::vector<std::string>& leftover_snapshot,
       SequenceNumber max_visible_seq, RecoveryContext* recovery_ctx);
 
   // The following two methods are used to flush a memtable to

@@ -621,10 +621,16 @@ Status MemTableList::TryInstallMemtableFlushResults(
 
       const auto manifest_write_cb = [this, cfd, batch_count, log_buffer,
                                       to_delete, mu](const Status& status) {
+        if (status.ok() && !cfd->IsDropped()) {
+          cfd->PublishRegisteredMemTableCache();
+          TEST_SYNC_POINT("FlushJob::AfterManifest");
+        }
         RemoveMemTablesOrRestoreFlags(status, cfd, batch_count, log_buffer,
                                       to_delete, mu);
       };
       if (write_edits) {
+        cfd->AddPendingMemTableFileEdits(edit_list.front());
+        TEST_SYNC_POINT("FlushJob::BeforeManifest");
         // this can release and reacquire the mutex.
         s = vset->LogAndApply(cfd, mutable_cf_options, read_options, edit_list,
                               mu, db_directory, /*new_descriptor_log=*/false,
@@ -893,11 +899,13 @@ Status InstallMemtableAtomicFlushResults(
 
   autovector<autovector<VersionEdit*>> edit_lists;
   uint32_t num_entries = 0;
-  for (const auto mems : mems_list) {
+  for (size_t k = 0; k < mems_list.size(); ++k) {
+    const auto mems = mems_list[k];
     assert(mems != nullptr);
     autovector<VersionEdit*> edits;
     assert(!mems->empty());
     edits.emplace_back((*mems)[0]->GetEdits());
+    cfds[k]->AddPendingMemTableFileEdits(edits.front());
     ++num_entries;
     edit_lists.emplace_back(edits);
   }
@@ -933,11 +941,16 @@ Status InstallMemtableAtomicFlushResults(
     assert(0 == num_entries);
   }
 
+  TEST_SYNC_POINT("FlushJob::BeforeManifest");
   // this can release and reacquire the mutex.
   s = vset->LogAndApply(cfds, mutable_cf_options_list, read_options, edit_lists,
                         mu, db_directory);
 
   for (size_t k = 0; k != cfds.size(); ++k) {
+    if (s.ok() && !cfds[k]->IsDropped()) {
+      cfds[k]->PublishRegisteredMemTableCache();
+      TEST_SYNC_POINT("FlushJob::AfterManifest");
+    }
     auto* imm = (imm_lists == nullptr) ? cfds[k]->imm() : imm_lists->at(k);
     imm->InstallNewVersion();
   }

@@ -40,6 +40,56 @@ static void TestEncodeDecode(const VersionEdit& edit) {
 
 class VersionEditTest : public testing::Test {};
 
+TEST_F(VersionEditTest, MemTableFilesEncodeDecodeAndClear) {
+  VersionEdit edit;
+  edit.SetColumnFamily(7);
+  edit.SetMemTableFileTracking();
+  edit.AddMemTableFile(123);
+  edit.AddMemTableFile(kFileNumberMask);
+  edit.DeleteMemTableFile(42);
+  edit.MarkAtomicGroup(0);
+  std::string encoded;
+  ASSERT_TRUE(edit.EncodeTo(&encoded));
+  VersionEdit parsed;
+  ASSERT_OK(parsed.DecodeFrom(encoded));
+  ASSERT_EQ(parsed.GetColumnFamily(), 7U);
+  ASSERT_TRUE(parsed.HasMemTableFileTracking());
+  ASSERT_EQ(parsed.GetMemTableFileAdditions(), edit.GetMemTableFileAdditions());
+  ASSERT_EQ(parsed.GetMemTableFileDeletions(), edit.GetMemTableFileDeletions());
+  ASSERT_TRUE(parsed.IsInAtomicGroup());
+  ASSERT_EQ(parsed.GetRemainingEntries(), 0U);
+  parsed.Clear();
+  ASSERT_FALSE(parsed.HasMemTableFileTracking());
+  ASSERT_TRUE(parsed.GetMemTableFileAdditions().empty());
+  ASSERT_TRUE(parsed.GetMemTableFileDeletions().empty());
+  ASSERT_FALSE(parsed.IsInAtomicGroup());
+}
+
+TEST_F(VersionEditTest, MemTableFilesRejectInvalidNumbers) {
+  for (uint32_t tag : {uint32_t(kMemTableFileAddition),
+                       uint32_t(kMemTableFileDeletion)}) {
+    for (uint64_t number : {uint64_t(0), kFileNumberMask + 1}) {
+      std::string encoded;
+      PutVarint32Varint64(&encoded, tag, number);
+      VersionEdit parsed;
+      ASSERT_TRUE(parsed.DecodeFrom(encoded).IsCorruption());
+      VersionEdit invalid;
+      if (tag == kMemTableFileAddition) invalid.AddMemTableFile(number);
+      else invalid.DeleteMemTableFile(number);
+      encoded.clear();
+      ASSERT_FALSE(invalid.EncodeTo(&encoded));
+    }
+    std::string truncated;
+    PutVarint32(&truncated, tag);
+    truncated.push_back(char(0x80));
+    VersionEdit parsed;
+    ASSERT_TRUE(parsed.DecodeFrom(truncated).IsCorruption());
+  }
+  ASSERT_EQ(kMemTableFileAddition & kTagSafeIgnoreMask, 0U);
+  ASSERT_EQ(kMemTableFileDeletion & kTagSafeIgnoreMask, 0U);
+  ASSERT_EQ(kMemTableFileTracking & kTagSafeIgnoreMask, 0U);
+}
+
 TEST_F(VersionEditTest, EncodeDecode) {
   static const uint64_t kBig = 1ull << 50;
   static const uint32_t kBig32Bit = 1ull << 30;

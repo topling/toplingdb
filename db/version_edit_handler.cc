@@ -213,6 +213,7 @@ Status VersionEditHandler::ApplyVersionEdit(VersionEdit& edit,
   if (s.ok()) {
     assert(cfd != nullptr);
     s = ExtractInfoFromVersionEdit(*cfd, edit);
+    if (s.ok()) version_set_->ApplyMemTableFileEdit(edit);
   }
   return s;
 }
@@ -640,7 +641,18 @@ Status VersionEditHandler::ExtractInfoFromVersionEdit(ColumnFamilyData* cfd,
       version_edit_params_.SetPrevLogNumber(edit.GetPrevLogNumber());
     }
     if (edit.HasNextFile()) {
-      version_edit_params_.SetNextFile(edit.GetNextFile());
+      version_edit_params_.SetNextFile(
+          std::max(version_edit_params_.GetNextFile(), edit.GetNextFile()));
+    }
+    uint64_t next_file = version_edit_params_.GetNextFile();
+    for (uint64_t number : edit.GetMemTableFileAdditions()) {
+      next_file = std::max(next_file, number + 1);
+    }
+    for (uint64_t number : edit.GetMemTableFileDeletions()) {
+      next_file = std::max(next_file, number + 1);
+    }
+    if (next_file != version_edit_params_.GetNextFile()) {
+      version_edit_params_.SetNextFile(next_file);
     }
     if (edit.HasMaxColumnFamily()) {
       version_edit_params_.SetMaxColumnFamily(edit.GetMaxColumnFamily());

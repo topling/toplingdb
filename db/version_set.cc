@@ -5505,6 +5505,8 @@ void VersionSet::Reset() {
   obsolete_files_.clear();
   obsolete_manifests_.clear();
   wals_.Reset();
+  memtable_files_.clear();
+  has_memtable_file_tracking_ = false;
 }
 
 void VersionSet::AppendVersion(ColumnFamilyData* column_family_data,
@@ -5743,6 +5745,7 @@ Status VersionSet::ProcessManifestWrites(
   std::unordered_map<uint32_t, MutableCFState> curr_state;
   VersionEdit wal_additions;
   if (new_descriptor_log) {
+    if (has_memtable_file_tracking_) wal_additions.SetMemTableFileTracking();
     pending_manifest_file_number_ = NewFileNumber();
     batch_edits.back()->SetNextFile(next_file_number_.load());
 
@@ -5757,6 +5760,10 @@ Status VersionSet::ProcessManifestWrites(
       curr_state.emplace(
           cfd->GetID(),
           MutableCFState(cfd->GetLogNumber(), cfd->GetFullHistoryTsLow()));
+      auto memtable_iter = memtable_files_.find(cfd->GetID());
+      if (memtable_iter != memtable_files_.end()) {
+        curr_state.at(cfd->GetID()).memtable_files = memtable_iter->second;
+      }
     }
 
     for (const auto& wal : wals_.GetWals()) {
@@ -5956,6 +5963,45 @@ Status VersionSet::ProcessManifestWrites(
 
   // Install the new versions
   if (s.ok()) {
+    // Only a committed live batch can retire backing files. MANIFEST replay
+    // applies registry edits without scheduling historical deletions.
+    std::map<uint64_t, std::string> retired_memtable_files;
+    for (const auto* edit : batch_edits) {
+      auto files = memtable_files_.find(edit->GetColumnFamily());
+      if (files != memtable_files_.end()) {
+        auto* cfd = column_family_set_->GetColumnFamily(edit->GetColumnFamily());
+        assert(cfd != nullptr);
+        const auto& path = cfd->ioptions()->cf_paths[0].path;
+        if (edit->IsColumnFamilyDrop()) {
+          for (uint64_t number : files->second) {
+            retired_memtable_files.emplace(number, path);
+          }
+        } else {
+          for (uint64_t number : edit->GetMemTableFileDeletions()) {
+            if (files->second.count(number)) {
+              retired_memtable_files.emplace(number, path);
+            }
+          }
+        }
+      }
+      ApplyMemTableFileEdit(*edit);
+    }
+    if (!retired_memtable_files.empty()) {
+      // In-place conversion transfers ownership to the installed SST version.
+      for (const auto* edit : batch_edits) {
+        for (const auto& file : edit->GetNewFiles()) {
+          retired_memtable_files.erase(file.second.fd.GetNumber());
+        }
+      }
+      for (const auto& cf : memtable_files_) {
+        for (uint64_t number : cf.second) retired_memtable_files.erase(number);
+      }
+      for (const auto& file : retired_memtable_files) {
+        auto* metadata = new FileMetaData();
+        metadata->fd = FileDescriptor(file.first, 0, 0);
+        obsolete_files_.emplace_back(metadata, file.second);
+      }
+    }
     if (first_writer.edit_list.front()->IsColumnFamilyAdd()) {
       assert(batch_edits.size() == 1);
       assert(new_cf_options != nullptr);
@@ -6850,7 +6896,8 @@ Status VersionSet::WriteCurrentStateToManifest(
   }
 
   // Save WALs.
-  if (!wal_additions.GetWalAdditions().empty()) {
+  if (!wal_additions.GetWalAdditions().empty() ||
+      wal_additions.HasMemTableFileTracking()) {
     TEST_SYNC_POINT_CALLBACK("VersionSet::WriteCurrentStateToManifest:SaveWal",
                              const_cast<VersionEdit*>(&wal_additions));
     std::string record;
@@ -6915,6 +6962,10 @@ Status VersionSet::WriteCurrentStateToManifest(
       // Save files
       VersionEdit edit;
       edit.SetColumnFamily(cfd->GetID());
+
+      for (uint64_t number : curr_state.at(cfd->GetID()).memtable_files) {
+        edit.AddMemTableFile(number);
+      }
 
       const auto* current = cfd->current();
       assert(current);
@@ -7566,6 +7617,31 @@ uint64_t VersionSet::GetObsoleteSstFilesSize() const {
     }
   }
   return ret;
+}
+
+void VersionSet::ApplyMemTableFileEdit(const VersionEdit& edit) {
+  has_memtable_file_tracking_ |= edit.HasMemTableFileTracking();
+  // Live allocation can race with MANIFEST installation; never move the
+  // atomic allocator backwards when reserving recovered/persisted numbers.
+  auto reserve_number = [this](uint64_t number) {
+    uint64_t next = next_file_number_.load(std::memory_order_relaxed);
+    while (next <= number &&
+           !next_file_number_.compare_exchange_weak(
+               next, number + 1, std::memory_order_relaxed)) {}
+  };
+  for (uint64_t number : edit.GetMemTableFileAdditions()) reserve_number(number);
+  for (uint64_t number : edit.GetMemTableFileDeletions()) reserve_number(number);
+  if (edit.IsColumnFamilyDrop()) {
+    memtable_files_.erase(edit.GetColumnFamily());
+    return;
+  }
+  for (uint64_t number : edit.GetMemTableFileDeletions()) {
+    auto iter = memtable_files_.find(edit.GetColumnFamily());
+    if (iter != memtable_files_.end()) iter->second.erase(number);
+  }
+  for (uint64_t number : edit.GetMemTableFileAdditions()) {
+    memtable_files_[edit.GetColumnFamily()].insert(number);
+  }
 }
 
 ColumnFamilyData* VersionSet::CreateColumnFamily(

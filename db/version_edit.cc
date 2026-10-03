@@ -86,6 +86,9 @@ void VersionEdit::Clear() {
   wal_additions_.clear();
   wal_deletion_.Reset();
   column_family_ = 0;
+  memtable_file_additions_.clear();
+  memtable_file_deletions_.clear();
+  has_memtable_file_tracking_ = false;
   is_column_family_add_ = false;
   is_column_family_drop_ = false;
   column_family_name_.clear();
@@ -288,6 +291,17 @@ bool VersionEdit::EncodeTo(std::string* dst,
   }
 
   // 0 is default and does not need to be explicitly written
+  if (has_memtable_file_tracking_) {
+    PutVarint32(dst, kMemTableFileTracking);
+  }
+  for (uint64_t number : memtable_file_additions_) {
+    if (number == 0 || number > kFileNumberMask) return false;
+    PutVarint32Varint64(dst, kMemTableFileAddition, number);
+  }
+  for (uint64_t number : memtable_file_deletions_) {
+    if (number == 0 || number > kFileNumberMask) return false;
+    PutVarint32Varint64(dst, kMemTableFileDeletion, number);
+  }
   if (column_family_ != 0) {
     PutVarint32Varint32(dst, kColumnFamily, column_family_);
   }
@@ -768,6 +782,24 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         is_column_family_drop_ = true;
         break;
 
+      case kMemTableFileTracking:
+        has_memtable_file_tracking_ = true;
+        break;
+
+      case kMemTableFileAddition:
+      case kMemTableFileDeletion: {
+        uint64_t number;
+        if (!GetVarint64(&input, &number) || number == 0 ||
+            number > kFileNumberMask) {
+          msg = "invalid MemTable file number";
+        } else if (tag == kMemTableFileAddition) {
+          memtable_file_additions_.insert(number);
+        } else {
+          memtable_file_deletions_.insert(number);
+        }
+        break;
+      }
+
       case kInAtomicGroup:
         is_in_atomic_group_ = true;
         if (!GetVarint32(&input, &remaining_entries_)) {
@@ -948,6 +980,15 @@ std::string VersionEdit::DebugString(bool hex_key) const {
 
   r.append("\n  ColumnFamily: ");
   AppendNumberTo(&r, column_family_);
+  if (has_memtable_file_tracking_) r.append("\n  MemTableFileTracking: true");
+  for (uint64_t number : memtable_file_additions_) {
+    r.append("\n  AddMemTableFile: ");
+    AppendNumberTo(&r, number);
+  }
+  for (uint64_t number : memtable_file_deletions_) {
+    r.append("\n  DeleteMemTableFile: ");
+    AppendNumberTo(&r, number);
+  }
   if (is_column_family_add_) {
     r.append("\n  ColumnFamilyAdd: ");
     r.append(column_family_name_);
@@ -1098,6 +1139,19 @@ std::string VersionEdit::DebugJSON(int edit_num, bool hex_key) const {
   }
 
   jw << "ColumnFamily" << column_family_;
+  if (has_memtable_file_tracking_) jw << "MemTableFileTracking" << true;
+  if (!memtable_file_additions_.empty()) {
+    jw << "MemTableFileAdditions";
+    jw.StartArray();
+    for (uint64_t number : memtable_file_additions_) jw << number;
+    jw.EndArray();
+  }
+  if (!memtable_file_deletions_.empty()) {
+    jw << "MemTableFileDeletions";
+    jw.StartArray();
+    for (uint64_t number : memtable_file_deletions_) jw << number;
+    jw.EndArray();
+  }
 
   if (is_column_family_add_) {
     jw << "ColumnFamilyAdd" << column_family_name_;

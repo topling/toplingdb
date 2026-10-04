@@ -496,8 +496,7 @@ ColumnFamilyData* VersionEditHandler::CreateCfAndInit(
     const ColumnFamilyOptions& cf_options, const VersionEdit& edit) {
   uint32_t cf_id = edit.GetColumnFamily();
   ColumnFamilyData* cfd =
-      version_set_->CreateColumnFamily(cf_options, read_options_, &edit,
-          /*create_memtable=*/!cf_options.memtable_factory->SupportCrashSafe());
+      version_set_->CreateColumnFamily(cf_options, read_options_, &edit);
   assert(cfd != nullptr);
   cfd->set_initialized();
   assert(builders_.find(cf_id) == builders_.end());

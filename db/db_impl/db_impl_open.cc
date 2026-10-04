@@ -543,6 +543,20 @@ bool PeekPublishedWalKind(const std::string& dbname, uint64_t* kind) {
   return ok;
 }
 
+uint32_t ParseLeftoverCfId(const std::string& path) {
+  const auto pos = path.rfind(".memtab-");
+  if (pos == std::string::npos) {
+    return std::numeric_limits<uint32_t>::max();
+  }
+  const char* p = path.c_str() + pos + 8;
+  char* end = nullptr;
+  const unsigned long id = std::strtoul(p, &end, 10);
+  if (end == p) {
+    return std::numeric_limits<uint32_t>::max();
+  }
+  return static_cast<uint32_t>(id);
+}
+
 void DestroyKindPrepDb(DB* db, std::vector<ColumnFamilyHandle*>* handles) {
   for (auto* h : *handles) {
     delete h;
@@ -731,13 +745,13 @@ void DBImpl::PersistPublishedSequence(SequenceNumber seq, uint64_t wal_number,
     }
     TEST_SYNC_POINT("DBImpl::PersistPublishedSequence:SameSeq");
   }
-  // A failed publication may leave an odd generation.
+  // Recovery may leave an odd generation until the first new publication.
   const uint64_t g = pubseq_mmap_->generation | 1;
 #if defined(__AVX__)
   // One aligned 32-byte store. A process crash falls between instructions,
   // so the record is all old or all new. Publish an even generation only
-  // after this store, including when a prior publication left it odd. A host
-  // without it uses the odd/even bracket below after the file is moved.
+  // after this store, including when recovery left it odd. A host without it
+  // uses the odd/even bracket below after the file is moved.
   // PublishedSeqRecord next;
   // next.pubseq = seq;
   // next.wal_number = wal_number;
@@ -806,44 +820,15 @@ void DBImpl::AccountPendingMemtableWrites(size_t n) {
   }
 }
 
-Status DBImpl::RegisterMemTableFile(ColumnFamilyData* cfd, MemTable* mem) {
-  mutex_.AssertHeld();
-  if (mem->GetBackingFileNumber() == 0 || mem->IsFileRegistered()) {
-    return Status::OK();
-  }
-  VersionEdit edit;
-  edit.SetColumnFamily(cfd->GetID());
-  edit.SetMemTableFileTracking();
-  edit.AddMemTableFile(mem->GetBackingFileNumber());
-  Status s;
-  TEST_SYNC_POINT_CALLBACK("DBImpl::RegisterMemTableFile:BeforeLogAndApply", &s);
-  if (s.ok()) {
-    s = versions_->LogAndApply(cfd, *cfd->GetLatestMutableCFOptions(),
-                              ReadOptions(), &edit, &mutex_,
-                              directories_.GetDbDir());
-  }
-  // A dropped CF's edit can be discarded with OK status.
-  if (s.ok() && cfd->IsDropped()) {
-    s = Status::ColumnFamilyDropped();
-  }
-  TEST_SYNC_POINT_CALLBACK("DBImpl::RegisterMemTableFile:AfterLogAndApply", &s);
-  if (s.ok()) {
-    mem->MarkFileRegistered();
-    TEST_SYNC_POINT("DBImpl::RegisterMemTableFile:BeforeInstall");
-  }
-  return s;
-}
-
 bool DBImpl::CanConvertLeftoverForCrashSafeRecover(
-    SequenceNumber mmap_pubseq, std::string* fail_reason) {
+    const std::vector<std::string>& leftover_snapshot,
+    SequenceNumber mmap_pubseq, uint64_t mmap_wal_number,
+    std::string* fail_reason) {
   mutex_.AssertHeld();
   auto fail = [&](const std::string& reason) {
     *fail_reason = reason;
     return false;
   };
-  if (!versions_->HasMemTableFileTracking()) {
-    return fail("MANIFEST predates MemTable file tracking");
-  }
   if (immutable_db_options_.wal_filter != nullptr) {
     return fail("wal_filter requires full WAL replay");
   }
@@ -853,9 +838,6 @@ bool DBImpl::CanConvertLeftoverForCrashSafeRecover(
   if (immutable_db_options_.best_efforts_recovery) {
     return fail("best_efforts_recovery");
   }
-  if (mmap_pubseq == 0 && !versions_->GetMemTableFiles().empty()) {
-    return fail("CSPUBSEQ pubseq 0 with leftover present");
-  }
   for (auto* cfd : *versions_->GetColumnFamilySet()) {
     if (cfd->IsDropped()) {
       continue;
@@ -864,14 +846,90 @@ bool DBImpl::CanConvertLeftoverForCrashSafeRecover(
     if (fac == nullptr || !fac->SupportCrashSafe()) {
       return fail("CF " + cfd->GetName() + " factory !SupportCrashSafe");
     }
+    if (cfd->mem() != nullptr && !cfd->mem()->SupportConvertToSST()) {
+      return fail("CF " + cfd->GetName() + " mem !SupportConvertToSST");
+    }
+    if (!cfd->imm()->UnflushedMemtablesSupportConvertToSST()) {
+      return fail("CF " + cfd->GetName() + " imm !SupportConvertToSST");
+    }
+  }
+
+  // Other tiers may be slow and contain many files; memtables use cf_paths[0].
+  std::vector<std::string> paths;
+  for (const auto* cfd : *versions_->GetColumnFamilySet()) {
+    if (!cfd->IsDropped()) {
+      paths.push_back(
+          NormalizePath(cfd->ioptions()->cf_paths[0].path +
+                        std::string(1, kFilePathSeparator)));
+    }
+  }
+  std::sort(paths.begin(), paths.end());
+  paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+  const uint64_t next_file_number = versions_->current_next_file_number();
+  for (const auto& path : paths) {
+    std::vector<std::string> files;
+    const Status ls = env_->GetChildren(path, &files);
+    if (!ls.ok()) {
+      continue;
+    }
+    for (const auto& fname : files) {
+      uint64_t number = 0;
+      FileType type;
+      if (!ParseFileName(fname, &number, &type)) {
+        continue;
+      }
+      // Only numbers still ahead of MANIFEST next_file (crash mid-Open
+      // before LogAndApply). A Convert that failed after this Open already
+      // advanced next_file is invisible here; ConvertLeftover deletes those.
+      if (type == kTableFile && number >= next_file_number) {
+        return fail("orphan SST " + path + fname);
+      }
+    }
+  }
+
+  std::unordered_set<uint32_t> leftover_cfs;
+  for (const auto& leftover_path : leftover_snapshot) {
+    const uint32_t cf_id = ParseLeftoverCfId(leftover_path);
+    ColumnFamilyData* cfd =
+        versions_->GetColumnFamilySet()->GetColumnFamily(cf_id);
+    if (cfd == nullptr) {
+      ROCKS_LOG_WARN(immutable_db_options_.info_log,
+                     "Crash-safe leftover %s belongs to dropped CF %u, skip",
+                     leftover_path.c_str(), cf_id);
+      continue;
+    }
+    auto* fac = cfd->ioptions()->memtable_factory.get();
+    const Status ps =
+        fac->ProbeCrashSafeLeftover(leftover_path,
+                                    immutable_db_options_.GetWalDir());
+    if (!ps.ok()) {
+      return fail("probe " + leftover_path + ": " + ps.ToString());
+    }
+    leftover_cfs.insert(cf_id);
+  }
+  if (mmap_pubseq > versions_->LastSequence() && leftover_cfs.empty()) {
+    return fail("CSPUBSEQ > MANIFEST LastSequence and no leftover");
+  }
+  if (!leftover_cfs.empty() && mmap_pubseq == 0) {
+    return fail("CSPUBSEQ pubseq 0 with leftover present");
+  }
+  if (mmap_wal_number != 0) {
+    for (const auto* cfd : *versions_->GetColumnFamilySet()) {
+      // Only CFs persisted past this WAL can omit their leftover safely.
+      if (!cfd->IsDropped() && cfd->GetLogNumber() <= mmap_wal_number &&
+          leftover_cfs.count(cfd->GetID()) == 0) {
+        return fail("CF " + cfd->GetName() + " has no leftover before WAL cursor");
+      }
+    }
   }
   return true;
 }
 
 Status DBImpl::ConvertLeftoverMemtables(
+    const std::vector<std::string>& leftover_snapshot,
     SequenceNumber max_visible_seq, RecoveryContext* recovery_ctx) {
   mutex_.AssertHeld();
-  if (versions_->GetMemTableFiles().empty()) {
+  if (leftover_snapshot.empty()) {
     return Status::OK();
   }
 
@@ -881,23 +939,19 @@ Status DBImpl::ConvertLeftoverMemtables(
     std::vector<BlobFileAddition> blobs;
   };
   std::vector<ConvertedLeftover> converted;
-  // MANIFEST is the complete inventory, including empty, precreated tables.
-  // A directory scan cannot detect one missing file among several in a CF.
-  for (const auto& cf : versions_->GetMemTableFiles()) {
-    auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(cf.first);
-    assert(cfd != nullptr && !cfd->IsDropped());
-    for (uint64_t file_num : cf.second) {
-      auto& one = converted.emplace_back();
-      one.cfd = cfd;
-      one.meta.fd = FileDescriptor(file_num, 0, 0);
-    }
-  }
   Status s;
   mutex_.Unlock();
-  for (auto& one : converted) {
-    auto* cfd = one.cfd;
-    const uint64_t file_num = one.meta.fd.GetNumber();
-    const auto leftover_path = TableFileName(cfd->ioptions()->cf_paths, file_num, 0);
+  for (const auto& leftover_path : leftover_snapshot) {
+    const uint32_t cf_id = ParseLeftoverCfId(leftover_path);
+    ColumnFamilyData* cfd =
+        versions_->GetColumnFamilySet()->GetColumnFamily(cf_id);
+    if (cfd == nullptr) {
+      continue;
+    }
+    ConvertedLeftover one;
+    one.cfd = cfd;
+    const uint64_t file_num = versions_->NewFileNumber();
+    one.meta.fd = FileDescriptor(file_num, 0, 0);
     one.meta.fd.smallest_seqno = 0;
     one.meta.fd.largest_seqno = max_visible_seq;
     one.meta.epoch_number = cfd->NewEpochNumber();
@@ -914,16 +968,31 @@ Status DBImpl::ConvertLeftoverMemtables(
     tboptions.add_blob_file = [&one](BlobFileAddition b) {
       one.blobs.push_back(std::move(b));
     };
-    s = cfd->ioptions()->memtable_factory->RecoverCrashSafeMemTableToSST(
-        leftover_path, &one.meta, tboptions);
-    if (!s.ok()) {
+    Status one_s =
+        cfd->ioptions()->memtable_factory->RecoverCrashSafeMemTableToSST(
+            leftover_path, &one.meta, tboptions);
+    if (!one_s.ok()) {
+      s = one_s;
+      // Inject / rename-then-fail still leaves an SST. Include it so the
+      // cleanup below can unlink it; leftover is already gone.
+      converted.push_back(std::move(one));
       break;
     }
+    converted.push_back(std::move(one));
   }
   mutex_.Lock();
   if (!s.ok()) {
-    // Do not retire registered sources until full WAL recovery commits.
+    // NewFileNumber already ran. After this Open finishes, next_file is
+    // past these numbers, so DeleteUnreferencedSstFiles (only >= next_file,
+    // and it runs before Convert) will not collect them.
     for (auto& one : converted) {
+      if (one.meta.fd.GetNumber() == 0) {
+        continue;
+      }
+      env_->DeleteFile(TableFileName(one.cfd->ioptions()->cf_paths,
+                                     one.meta.fd.GetNumber(),
+                                     one.meta.fd.GetPathId()))
+          .PermitUncheckedError();
       for (const auto& blob : one.blobs) {
         env_->DeleteFile(BlobFileName(one.cfd->ioptions()->cf_paths.front().path,
                                       blob.GetBlobFileNumber()))
@@ -933,13 +1002,13 @@ Status DBImpl::ConvertLeftoverMemtables(
     return s;
   }
   for (auto& one : converted) {
+    if (one.meta.fd.GetFileSize() == 0) {
+      continue;
+    }
     VersionEdit edit;
     edit.SetColumnFamily(one.cfd->GetID());
-    edit.DeleteMemTableFile(one.meta.fd.GetNumber());
-    if (one.meta.fd.GetFileSize() != 0) {
-      one.meta.marked_for_compaction = true;
-      edit.AddFile(0, one.meta);
-    }
+    one.meta.marked_for_compaction = true;
+    edit.AddFile(0, one.meta);
     for (const auto& blob : one.blobs) {
       edit.AddBlobFile(blob);
     }
@@ -953,12 +1022,24 @@ Status DBImpl::Recover(
     bool error_if_wal_file_exists, bool error_if_data_exists_in_wals,
     uint64_t* recovered_seq, RecoveryContext* recovery_ctx) {
   mutex_.AssertHeld();
-  if (read_only) {
-    for (const auto& cf : column_families) {
-      if (cf.options.memtable_factory->SupportCrashSafe()) {
-        return Status::InvalidArgument(
-            "FileMmap memtable is not supported in read-only mode", cf.name);
+
+  std::vector<std::string> leftover_snapshot;
+  if (immutable_db_options_.memtable_crash_safe_recover && !read_only) {
+    for (const auto& desc : column_families) {
+      if (!desc.options.memtable_factory) {
+        continue;
       }
+      const auto& paths = desc.options.cf_paths.empty()
+                              ? immutable_db_options_.db_paths
+                              : desc.options.cf_paths;
+      desc.options.memtable_factory->ListCrashSafeLeftovers(
+          paths[0].path, &leftover_snapshot);
+    }
+    if (!leftover_snapshot.empty()) {
+      std::sort(leftover_snapshot.begin(), leftover_snapshot.end());
+      leftover_snapshot.erase(
+          std::unique(leftover_snapshot.begin(), leftover_snapshot.end()),
+          leftover_snapshot.end());
     }
   }
 
@@ -1208,6 +1289,7 @@ Status DBImpl::Recover(
   s = SetupDBId(read_only, recovery_ctx);
   ROCKS_LOG_INFO(immutable_db_options_.info_log, "DB ID: %s\n", db_id_.c_str());
   bool crash_safe_convert = false;
+  bool recovered_wals_ok = false;
   PublishedSeqRecord mmap_rec;
   bool mmap_valid = false;
   if (s.ok() && !read_only &&
@@ -1216,7 +1298,7 @@ Status DBImpl::Recover(
     std::string fail_reason;
     if (mmap_valid) {
       crash_safe_convert = CanConvertLeftoverForCrashSafeRecover(
-          mmap_rec.pubseq, &fail_reason);
+          leftover_snapshot, mmap_rec.pubseq, mmap_rec.wal_number, &fail_reason);
     } else {
       fail_reason = "invalid CSPUBSEQ generation";
     }
@@ -1225,23 +1307,26 @@ Status DBImpl::Recover(
                      "Crash-safe recover check failed (%s), fallback to full "
                      "WAL RecoverLogFiles",
                      fail_reason.c_str());
-    }
-  }
-  if (s.ok() && !read_only) {
-    s = DeleteUnreferencedSstFiles(recovery_ctx);
-  }
-  if (s.ok()) {
-    // MANIFEST recovery restores the allocator; orphan discovery then advances
-    // it past files created before a previous Open could commit.
-    for (auto* cfd : *versions_->GetColumnFamilySet()) {
-      if (cfd->mem() == nullptr) {
-        cfd->CreateNewMemtable(*cfd->GetLatestMutableCFOptions(),
-                              versions_->LastSequence(), !read_only);
+      for (const auto& leftover_path : leftover_snapshot) {
+        ROCKS_LOG_WARN(immutable_db_options_.info_log,
+                       "Crash-safe leftover not converted: %s",
+                       leftover_path.c_str());
       }
     }
   }
+  if (s.ok() && !read_only) {
+    if (pubseq_mmap_ != nullptr) {
+      // Recovery can consume only part of the leftover set before failing.
+      // Keep the cursor invalid across a second crash, including one after
+      // orphan/failed-conversion cleanup has removed the failure evidence.
+      pubseq_mmap_->generation |= 1;
+      recovery_ctx->restore_published_seq_ = mmap_valid;
+    }
+    s = DeleteUnreferencedSstFiles(recovery_ctx);
+  }
   if (s.ok() && crash_safe_convert) {
-    const Status cs = ConvertLeftoverMemtables(mmap_rec.pubseq, recovery_ctx);
+    const Status cs = ConvertLeftoverMemtables(leftover_snapshot, mmap_rec.pubseq,
+                                               recovery_ctx);
     if (!cs.ok()) {
       ROCKS_LOG_WARN(immutable_db_options_.info_log,
                      "Crash-safe leftover Convert failed (%s), fallback to "
@@ -1383,6 +1468,7 @@ Status DBImpl::Recover(
       bool corrupted_wal_found = false;
       s = RecoverLogFiles(wals, &next_sequence, read_only, &corrupted_wal_found,
                           recovery_ctx);
+      recovered_wals_ok = s.ok();
       if (corrupted_wal_found && recovered_seq != nullptr) {
         *recovered_seq = next_sequence;
       }
@@ -1396,17 +1482,13 @@ Status DBImpl::Recover(
     }
   }
 
-  if (s.ok() && !read_only && !crash_safe_convert) {
-    // Retire the old inventory only together with the successful WAL recovery.
-    // Missing files are allowed here: their absence is what forced the replay.
-    for (const auto& cf : versions_->GetMemTableFiles()) {
-      auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(cf.first);
-      VersionEdit edit;
-      edit.SetColumnFamily(cf.first);
-      for (uint64_t number : cf.second) {
-        edit.DeleteMemTableFile(number);
-      }
-      recovery_ctx->UpdateVersionEdits(cfd, edit);
+  if (s.ok() && recovered_wals_ok && !crash_safe_convert &&
+      !leftover_snapshot.empty()) {
+    for (const auto& leftover_path : leftover_snapshot) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "Crash-safe leftover deleted after WAL fallback: %s",
+                     leftover_path.c_str());
+      env_->DeleteFile(leftover_path).PermitUncheckedError();
     }
   }
 
@@ -1572,41 +1654,9 @@ Status DBImpl::LogAndApplyForRecovery(const RecoveryContext& recovery_ctx) {
   mutex_.AssertHeld();
   assert(versions_->descriptor_log_ == nullptr);
   const ReadOptions read_options(Env::IOActivity::kDBOpen);
-  // Recovery retires the old inventory and installs all recovered CFs at once.
-  // A truncated MANIFEST tail must not install just part of that transition.
-  uint32_t remaining = 0;
-  bool tracks_memtable_files = false;
-  for (const auto& edits : recovery_ctx.edit_lists_) {
-    remaining += static_cast<uint32_t>(edits.size());
-    for (const auto* edit : edits) {
-      tracks_memtable_files |= edit->HasMemTableFileTracking() ||
-          !edit->GetMemTableFileAdditions().empty() ||
-          !edit->GetMemTableFileDeletions().empty();
-    }
-  }
-  if (tracks_memtable_files && remaining > 1) {
-    for (const auto& edits : recovery_ctx.edit_lists_) {
-      for (auto* edit : edits) {
-        edit->MarkAtomicGroup(--remaining);
-      }
-    }
-  }
-  Status s;
-  TEST_SYNC_POINT_CALLBACK("DBImpl::RegisterMemTableFile:BeforeLogAndApply", &s);
-  if (s.ok()) {
-    s = versions_->LogAndApply(
-        recovery_ctx.cfds_, recovery_ctx.mutable_cf_opts_, read_options,
-        recovery_ctx.edit_lists_, &mutex_, directories_.GetDbDir());
-  }
-  TEST_SYNC_POINT_CALLBACK("DBImpl::RegisterMemTableFile:AfterLogAndApply", &s);
-  if (s.ok()) {
-    for (auto* cfd : *versions_->GetColumnFamilySet()) {
-      if (cfd->mem()->GetBackingFileNumber() != 0) {
-        cfd->mem()->MarkFileRegistered();
-      }
-    }
-    TEST_SYNC_POINT("DBImpl::RegisterMemTableFile:BeforeInstall");
-  }
+  Status s = versions_->LogAndApply(
+      recovery_ctx.cfds_, recovery_ctx.mutable_cf_opts_, read_options,
+      recovery_ctx.edit_lists_, &mutex_, directories_.GetDbDir());
   if (s.ok() && !(recovery_ctx.files_to_delete_.empty())) {
     mutex_.Unlock();
     for (const auto& stale_sst_file : recovery_ctx.files_to_delete_) {
@@ -1619,6 +1669,9 @@ Status DBImpl::LogAndApplyForRecovery(const RecoveryContext& recovery_ctx) {
       }
     }
     mutex_.Lock();
+  }
+  if (s.ok() && recovery_ctx.restore_published_seq_) {
+    pubseq_mmap_->generation += 1;
   }
   return s;
 }
@@ -2863,18 +2916,6 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     impl->pubseq_mmap_->kind_since_wal = impl->logfile_number_;
   }
   if (s.ok()) {
-    for (auto* cfd : *impl->versions_->GetColumnFamilySet()) {
-      const uint64_t number = cfd->mem()->GetBackingFileNumber();
-      if (number != 0 || impl->immutable_db_options_.memtable_crash_safe_recover) {
-        VersionEdit edit;
-        edit.SetColumnFamily(cfd->GetID());
-        edit.SetMemTableFileTracking();
-        if (number != 0) {
-          edit.AddMemTableFile(number);
-        }
-        recovery_ctx.UpdateVersionEdits(cfd, edit);
-      }
-    }
     s = impl->LogAndApplyForRecovery(recovery_ctx);
   }
 

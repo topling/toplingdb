@@ -37,7 +37,6 @@
 #include "rocksdb/convenience.h"
 #include "rocksdb/table.h"
 #include "table/merging_iterator.h"
-#include "test_util/sync_point.h"
 #include "util/autovector.h"
 #include "util/cast_util.h"
 #include "util/compression.h"
@@ -1165,14 +1164,7 @@ uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
 
 void ColumnFamilyData::PrepareNewMemtableInBackground(
     const MutableCFOptions& mutable_cf_options) {
-#if defined(ROCKSDB_UNIT_TEST)
-  bool cache_enabled = false;
-#else
-  bool cache_enabled = true;
-#endif
-  TEST_SYNC_POINT_CALLBACK("ColumnFamilyData::MemTableCache:Enabled",
-                           &cache_enabled);
-  if (!cache_enabled) return;
+ #if !defined(ROCKSDB_UNIT_TEST)
   {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
     if (precreated_memtable_list_.full()) {
@@ -1181,11 +1173,8 @@ void ColumnFamilyData::PrepareNewMemtableInBackground(
     }
   }
   auto beg = ioptions_.clock->NowNanos();
-  // dummy_versions_ remains alive for the lifetime of this CF, unlike current_.
-  uint64_t number = ioptions_.memtable_factory->SupportCrashSafe()
-                        ? dummy_versions_->version_set()->NewFileNumber() : 0;
   auto tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
-                          write_buffer_manager_, 0/*earliest_seq*/, id_, number);
+                          write_buffer_manager_, 0/*earliest_seq*/, id_);
   auto end = ioptions_.clock->NowNanos();
   RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
   {
@@ -1202,67 +1191,21 @@ void ColumnFamilyData::PrepareNewMemtableInBackground(
       "precreated_memtable_list_ is full, discard the newly created memtab");
     delete tab;
   }
-}
-
-void ColumnFamilyData::AddPendingMemTableFileEdits(VersionEdit* edit) {
-  std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
-  for (size_t i = 0; i < precreated_memtable_list_.size(); ++i) {
-    const auto& mem = *(precreated_memtable_list_.begin() + ptrdiff_t(i));
-    if (mem->GetBackingFileNumber() != 0 && !mem->IsFileRegistered()) {
-      edit->AddMemTableFile(mem->GetBackingFileNumber());
-      edit->SetMemTableFileTracking();
-    }
-  }
-}
-
-void ColumnFamilyData::PublishRegisteredMemTableCache() {
-  TEST_SYNC_POINT("FlushJob::MemTableCache:BeforePublish");
-  {
-    std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
-    const auto& files = dummy_versions_->version_set()->GetMemTableFiles();
-    auto iter = files.find(id_);
-    if (iter != files.end()) {
-      for (size_t i = 0; i < precreated_memtable_list_.size(); ++i) {
-        const auto& mem = *(precreated_memtable_list_.begin() + ptrdiff_t(i));
-        if (iter->second.count(mem->GetBackingFileNumber())) {
-          mem->MarkFileRegistered();
-        }
-      }
-    }
-  }
-  TEST_SYNC_POINT("FlushJob::MemTableCache:AfterPublish");
-}
-
-void ColumnFamilyData::AddMemTableCacheFileNumbers(std::vector<uint64_t>* live) {
-  std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
-  for (size_t i = 0; i < precreated_memtable_list_.size(); ++i) {
-    const auto& mem = *(precreated_memtable_list_.begin() + ptrdiff_t(i));
-    if (mem->GetBackingFileNumber() != 0) {
-      live->push_back(mem->GetBackingFileNumber());
-    }
-  }
+ #endif
 }
 
 MemTable* ColumnFamilyData::ConstructNewMemtable(
-    const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq,
-    bool create_file) {
+    const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
   MemTable* tab = nullptr;
-#if defined(ROCKSDB_UNIT_TEST)
-  bool cache_enabled = false;
-#else
-  bool cache_enabled = true;
-#endif
-  TEST_SYNC_POINT_CALLBACK("ColumnFamilyData::MemTableCache:Enabled",
-                           &cache_enabled);
-  if (cache_enabled && create_file) {
+ #if !defined(ROCKSDB_UNIT_TEST)
+  {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
-    if (!precreated_memtable_list_.empty() &&
-        (precreated_memtable_list_.front()->GetBackingFileNumber() == 0 ||
-         precreated_memtable_list_.front()->IsFileRegistered())) {
+    if (!precreated_memtable_list_.empty()) {
       tab = precreated_memtable_list_.front().release();
       precreated_memtable_list_.pop_front();
     }
   }
+ #endif
   if (tab) {
     tab->SetCreationSeq(earliest_seq);
     tab->SetEarliestSequenceNumber(earliest_seq);
@@ -1270,10 +1213,8 @@ MemTable* ColumnFamilyData::ConstructNewMemtable(
   #if !defined(ROCKSDB_UNIT_TEST)
     auto beg = ioptions_.clock->NowNanos();
   #endif
-    uint64_t number = create_file && ioptions_.memtable_factory->SupportCrashSafe()
-                          ? dummy_versions_->version_set()->NewFileNumber() : 0;
     tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
-                      write_buffer_manager_, earliest_seq, id_, number);
+                      write_buffer_manager_, earliest_seq, id_);
   #if !defined(ROCKSDB_UNIT_TEST)
     auto end = ioptions_.clock->NowNanos();
     RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
@@ -1283,12 +1224,11 @@ MemTable* ColumnFamilyData::ConstructNewMemtable(
 }
 
 void ColumnFamilyData::CreateNewMemtable(
-    const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq,
-    bool create_file) {
+    const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
   if (mem_ != nullptr) {
     delete mem_->Unref();
   }
-  SetMemtable(ConstructNewMemtable(mutable_cf_options, earliest_seq, create_file));
+  SetMemtable(ConstructNewMemtable(mutable_cf_options, earliest_seq));
   mem_->Ref();
 }
 

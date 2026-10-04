@@ -22,7 +22,6 @@
 #include "db/range_tombstone_fragmenter.h"
 #include "db/read_callback.h"
 #include "db/wide/wide_column_serialization.h"
-#include "file/filename.h"
 #include "logging/logging.h"
 #include "memory/arena.h"
 #include "memory/memory_usage.h"
@@ -73,8 +72,7 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
                    const ImmutableOptions& ioptions,
                    const MutableCFOptions& mutable_cf_options,
                    WriteBufferManager* write_buffer_manager,
-                   SequenceNumber latest_seq, uint32_t column_family_id,
-                   uint64_t backing_file_number)
+                   SequenceNumber latest_seq, uint32_t column_family_id)
     : comparator_(cmp),
       moptions_(ioptions, mutable_cf_options),
       refs_(0),
@@ -88,9 +86,7 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
                  : nullptr,
              mutable_cf_options.memtable_huge_page_size),
       table_(ioptions.memtable_factory->CreateMemTableRep(
-          backing_file_number == 0
-              ? std::string()
-              : TableFileName(ioptions.cf_paths, backing_file_number, 0),
+          ioptions.cf_paths[0].path, // level0_dir
           mutable_cf_options,
           comparator_, &arena_, mutable_cf_options.prefix_extractor.get(),
           ioptions.logger, column_family_id)),
@@ -110,7 +106,6 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       flush_in_progress_(false),
       flush_completed_(false),
       file_number_(0),
-      backing_file_number_(table_->IsFileMmap() ? backing_file_number : 0),
       first_seqno_(0),
       earliest_seqno_(latest_seq),
       creation_seq_(latest_seq),

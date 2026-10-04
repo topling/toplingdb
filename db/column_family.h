@@ -37,7 +37,6 @@ namespace ROCKSDB_NAMESPACE {
 
 class Version;
 class VersionSet;
-class VersionEdit;
 class VersionStorageInfo;
 class MemTable;
 class MemTableListVersion;
@@ -374,18 +373,12 @@ class ColumnFamilyData {
   uint64_t OldestLogToKeep();
 
   void PrepareNewMemtableInBackground(const MutableCFOptions&);
-  // DB mutex must be held when registering or publishing cached files.
-  void AddPendingMemTableFileEdits(VersionEdit* edit);
-  void AddMemTableCacheFileNumbers(std::vector<uint64_t>* live);
-  void PublishRegisteredMemTableCache();
 
   // See Memtable constructor for explanation of earliest_seq param.
   MemTable* ConstructNewMemtable(const MutableCFOptions& mutable_cf_options,
-                                 SequenceNumber earliest_seq,
-                                 bool create_file = true);
+                                 SequenceNumber earliest_seq);
   void CreateNewMemtable(const MutableCFOptions& mutable_cf_options,
-                         SequenceNumber earliest_seq,
-                         bool create_file = true);
+                         SequenceNumber earliest_seq);
 
   TableCache* table_cache() const { return table_cache_.get(); }
   BlobSource* blob_source() const { return blob_source_.get(); }
@@ -619,9 +612,11 @@ class ColumnFamilyData {
 
   WriteBufferManager* write_buffer_manager_;
 
+ #if !defined(ROCKSDB_UNIT_TEST)
   // precreated_memtable_list_.size() is normally 1
   terark::fixed_circular_queue<std::unique_ptr<MemTable>, 4> precreated_memtable_list_;
   std::mutex precreated_memtable_mutex_;
+ #endif
 
   MemTable* mem_;
   MemTableList imm_;

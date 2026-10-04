@@ -36,12 +36,6 @@ Status DBImplSecondary::Recover(
     bool /*error_if_data_exists_in_wals*/, uint64_t*,
     RecoveryContext* /*recovery_ctx*/) {
   mutex_.AssertHeld();
-  for (const auto& cf : column_families) {
-    if (cf.options.memtable_factory->SupportCrashSafe()) {
-      return Status::InvalidArgument(
-          "FileMmap memtable is not supported in secondary mode", cf.name);
-    }
-  }
 
   JobContext job_context(0);
   Status s;
@@ -61,10 +55,6 @@ Status DBImplSecondary::Recover(
   max_total_in_memory_state_ = 0;
   for (auto cfd : *versions_->GetColumnFamilySet()) {
     auto* mutable_cf_options = cfd->GetLatestMutableCFOptions();
-    if (cfd->mem() == nullptr) {
-      cfd->CreateNewMemtable(*mutable_cf_options, versions_->LastSequence(),
-                            /*create_file=*/false);
-    }
     max_total_in_memory_state_ += mutable_cf_options->write_buffer_size *
                                   mutable_cf_options->max_write_buffer_number;
   }
@@ -312,8 +302,7 @@ Status DBImplSecondary::RecoverLogFiles(
             const MutableCFOptions mutable_cf_options =
                 *cfd->GetLatestMutableCFOptions();
             MemTable* new_mem =
-                cfd->ConstructNewMemtable(mutable_cf_options, seq_of_batch,
-                                          /*create_file=*/false);
+                cfd->ConstructNewMemtable(mutable_cf_options, seq_of_batch);
             cfd->mem()->SetNextLogNumber(log_number);
             cfd->mem()->ConstructFragmentedRangeTombstones();
             cfd->imm()->Add(cfd->mem(), &job_context->memtables_to_free);

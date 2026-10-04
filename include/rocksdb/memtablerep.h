@@ -212,10 +212,6 @@ class MemTableRep : public CacheAlignedNewDelete {
   // of time. Otherwise, RocksDB may be blocked.
   virtual void MarkFlushed() {}
 
-  // Registered backing files are retained for the DB's MANIFEST lifecycle.
-  virtual void MarkFileRegistered() {}
-  virtual bool IsFileMmap() const { return false; }
-
   struct KeyValuePair {
     Slice ukey;
     uint64_t tag;
@@ -364,10 +360,8 @@ class MemTableRepFactory : public Customizable {
       uint32_t /* column_family_id */) {
     return CreateMemTableRep(key_cmp, allocator, slice_transform, logger);
   }
-  // The DB supplies the final SST path for a file-backed memtable. An empty
-  // path requests an anonymous in-memory representation.
   virtual MemTableRep* CreateMemTableRep(
-      const std::string& /*memtable_file_path*/,
+      const std::string& /*level0_dir*/,
       const MutableCFOptions&,
       const MemTableRep::KeyComparator& key_cmp, Allocator* allocator,
       const SliceTransform* slice_transform, Logger* logger,
@@ -392,6 +386,19 @@ class MemTableRepFactory : public Customizable {
   // RO-loaded after a crash and ConvertToSST during Recover.
   // Default: false
   virtual bool SupportCrashSafe() const { return false; }
+
+  // Append leftover crash-safe mmap paths under cf_dir (plus factory chroot).
+  // Default: no leftovers.
+  virtual void ListCrashSafeLeftovers(const std::string& /*cf_dir*/,
+                                      std::vector<std::string>* /*leftovers*/) {
+  }
+
+  // Read-only leftover probe for Recover check. Must not truncate/rename.
+  // wal_dir is used to verify each WAL fileno can still be opened.
+  virtual Status ProbeCrashSafeLeftover(const std::string& /*path*/,
+                                        const std::string& /*wal_dir*/) const {
+    return Status::OK();
+  }
 
   // Load leftover, cap visible entries, truncate, ConvertToSST. The caller
   // supplies the visibility bound in meta->fd.largest_seqno; preserve it for

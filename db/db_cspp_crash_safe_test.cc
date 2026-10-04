@@ -243,11 +243,11 @@ TEST_F(DBCsppCrashSafeTest, CrashSafeRequiresFileMmap) {
   }
 }
 
-TEST_F(DBCsppCrashSafeTest, DangerousFactoryUpdate) {
+TEST_F(DBCsppCrashSafeTest, ImmutableFactoryConvertMode) {
   Close();
   const SidePluginRepo repo;
   const json query = {{"html", false}};
-  auto check = [&](const auto& factory, const auto* manip, bool allowed) {
+  auto check = [&](const auto& factory, const auto* manip, const char* mode) {
     auto state = [&] {
       return json::parse(manip->ToString(*factory, query, repo));
     };
@@ -259,83 +259,36 @@ TEST_F(DBCsppCrashSafeTest, DangerousFactoryUpdate) {
         return s;
       }
     };
-    ASSERT_EQ(state()["convert_to_sst"], "kFileMmap");
-    ASSERT_EQ(state()["allow_dangerous_update"], allowed);
+    ASSERT_EQ(state()["convert_to_sst"], mode);
     ASSERT_OK(update({{"token_use_idle", false}}));
     ASSERT_EQ(state()["token_use_idle"], false);
-    ASSERT_OK(update({{"convert_to_sst", "kFileMmap"}}));
-
+    ASSERT_OK(update({{"convert_to_sst", mode}}));
     const json before = state();
-    Status s = update({{"allow_dangerous_update", !allowed},
-                       {"token_use_idle", true}, {"populate_read", false}});
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_NE(s.ToString().find("cannot be changed online"), std::string::npos);
-    ASSERT_EQ(state(), before);
-    s = update({{"allow_dangerous_update", !allowed},
-                {"convert_to_sst", "kDontConvert"}});
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_EQ(state(), before);
-    s = update({{"convert_to_sst", "invalid"}, {"token_use_idle", true}});
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_EQ(state(), before);
-    ASSERT_OK(update({{"allow_dangerous_update", allowed},
-                      {"convert_to_sst", "kFileMmap"}}));
-    if (!allowed) {
-      s = update({{"convert_to_sst", "kDontConvert"},
-                  {"token_use_idle", true}, {"populate_read", false}});
+    for (const char* other : {"kDontConvert", "kDumpMem", "kFileMmap", "invalid"}) {
+      if (std::string(other) == mode) continue;
+      SCOPED_TRACE(other);
+      Status s = update({{"convert_to_sst", other},
+                         {"token_use_idle", true}, {"populate_read", false}});
       ASSERT_TRUE(s.IsInvalidArgument());
-      ASSERT_NE(s.ToString().find("allow_dangerous_update=true"), std::string::npos);
       ASSERT_EQ(state(), before);
-      return;
     }
-    ASSERT_OK(update({{"convert_to_sst", "kDumpMem"}}));
-    ASSERT_EQ(state()["convert_to_sst"], "kDumpMem");
-    ASSERT_OK(update({{"allow_dangerous_update", true},
-                      {"convert_to_sst", "kDontConvert"}}));
-    ASSERT_EQ(state()["convert_to_sst"], "kDontConvert");
-    ASSERT_OK(update({{"convert_to_sst", "kFileMmap"}}));
-    ASSERT_EQ(state()["convert_to_sst"], "kFileMmap");
-    ASSERT_EQ(state()["allow_dangerous_update"], true);
   };
-  for (bool allowed : {false, true}) {
-    SCOPED_TRACE(allowed);
-    json params = {{"mem_cap", 16777216}, {"convert_to_sst", "kFileMmap"}};
-    if (allowed) params["allow_dangerous_update"] = true;
+  for (const char* mode : {"kDontConvert", "kDumpMem", "kFileMmap"}) {
+    SCOPED_TRACE(mode);
+    const json params = {{"mem_cap", 16777216}, {"convert_to_sst", mode}};
     for (const char* cls : {"CSPPMemTab", "OffsetSkipList"}) {
       SCOPED_TRACE(cls);
       auto factory = PluginFactorySP<MemTableRepFactory>::AcquirePlugin(
           cls, params, repo);
       auto* manip = PluginManip<MemTableRepFactory>::AcquirePlugin(cls, {}, repo);
-      check(factory, manip, allowed);
+      check(factory, manip, mode);
     }
     for (const char* cls : {"CSPPMemTabTable", "OffsetSkipListTable"}) {
       SCOPED_TRACE(cls);
       auto factory = PluginFactorySP<TableFactory>::AcquirePlugin(cls, params, repo);
       auto* manip = PluginManip<TableFactory>::AcquirePlugin(cls, {}, repo);
-      check(factory, manip, allowed);
+      check(factory, manip, mode);
     }
-  }
-}
-
-TEST_F(DBCsppCrashSafeTest, DangerousUpdateAffectsOnlyNewMemtables) {
-  Close();
-  const SidePluginRepo repo;
-  InternalKeyComparator icmp(BytewiseComparator());
-  MemTable::KeyComparator cmp(icmp);
-  for (const char* cls : {"CSPPMemTab", "OffsetSkipList"}) {
-    SCOPED_TRACE(cls);
-    Arena arena;
-    auto factory = PluginFactorySP<MemTableRepFactory>::AcquirePlugin(
-        cls, {{"mem_cap", 16777216}, {"allow_dangerous_update", true}}, repo);
-    auto* manip = PluginManip<MemTableRepFactory>::AcquirePlugin(cls, {}, repo);
-    std::unique_ptr<MemTableRep> before(
-        factory->CreateMemTableRep(cmp, &arena, nullptr, nullptr));
-    ASSERT_FALSE(before->SupportConvertToSST());
-    manip->Update(factory.get(), {}, {{"convert_to_sst", "kDumpMem"}}, repo);
-    std::unique_ptr<MemTableRep> after(
-        factory->CreateMemTableRep(cmp, &arena, nullptr, nullptr));
-    ASSERT_FALSE(before->SupportConvertToSST());
-    ASSERT_TRUE(after->SupportConvertToSST());
   }
 }
 

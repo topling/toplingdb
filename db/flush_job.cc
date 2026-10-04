@@ -988,10 +988,6 @@ Status FlushJob::WriteLevel0Table() {
                           cfd_->GetName().c_str(), job_context_->job_id,
                           meta_.fd.GetNumber(), memtable->ApproximateMemoryUsage(),
                           s.ToString().c_str());
-          // Do not turn a failed close conversion into a full table rebuild.
-          if (flush_reason_ != FlushReason::kShutDown) {
-            goto UseBuildTable;
-          }
         } else {
           meta_.fd.smallest_seqno = std::min(memtable->GetEarliestSequenceNumber(),
                                              memtable->GetFirstSequenceNumber());
@@ -1004,7 +1000,6 @@ Status FlushJob::WriteLevel0Table() {
         memtables.clear();
     }
     else { // call BuildTable
-UseBuildTable:
       uint64_t num_input_entries = 0;
       uint64_t memtable_payload_bytes = 0;
       uint64_t memtable_garbage_bytes = 0;

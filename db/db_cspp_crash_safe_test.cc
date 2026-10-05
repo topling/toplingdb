@@ -46,12 +46,16 @@
 #include "rocksdb/io_status.h"
 #include "rocksdb/convenience.h"
 #include "rocksdb/statistics.h"
+#include "rocksdb/sst_file_reader.h"
 #include "rocksdb/utilities/checkpoint.h"
 #include "rocksdb/utilities/transaction_db.h"
 #include "rocksdb/wal_filter.h"
+#include "table/format.h"
 #include "table/get_context.h"
+#include "table/sst_file_dumper.h"
 #include "table/table_builder.h"
 #include "table/table_reader.h"
+#include "table/top_table_reader.h"
 #include "utilities/merge_operators.h"
 #include "utilities/fault_injection_fs.h"
 #include "test_util/sync_point.h"
@@ -1727,7 +1731,7 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableUsesFileSequenceBound) {
 
     const std::string fname = TableFileName(options.cf_paths, 2, 0);
     for (SequenceNumber limit : {meta.fd.largest_seqno, SequenceNumber(4),
-                                 SequenceNumber(0)}) {
+                                 SequenceNumber(0), kMaxSequenceNumber}) {
       SCOPED_TRACE(limit);
       std::unique_ptr<FSRandomAccessFile> file;
       ASSERT_OK(env_->GetFileSystem()->NewRandomAccessFile(
@@ -1737,14 +1741,29 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableUsesFileSequenceBound) {
       EnvOptions env_options;
       TableReaderOptions tro(ioptions, options.prefix_extractor, env_options,
                              icmp, 0);
-      // Reopen the same bytes with a different FileDescriptor visibility bound.
+      // The file header owns visibility, independently of the caller's bound.
       FileDescriptor fd = meta.fd;
       fd.largest_seqno = limit;
       tro.largest_seqno = fd.largest_seqno;
+      if (osl) {
+        const auto block = ReadMetaBlockE(
+            reader.get(), fd.GetFileSize(), 0x62546d654d4c534fULL, ioptions,
+            "OffsetSkipList");
+        ASSERT_EQ(block.data.size(), 48U);
+        // Packed metadata has a 40-byte prefix followed by uint64_t pubseq.
+        uint64_t pubseq;
+        memcpy(&pubseq, block.data.data() + 40, sizeof(pubseq));
+        ASSERT_EQ(pubseq, 2U);
+      }
       std::unique_ptr<TableReader> table;
       ASSERT_OK(options.table_factory->NewTableReader(
           ReadOptions(), tro, std::move(reader), fd.GetFileSize(), &table,
           true));
+      const auto& compression = table->GetTableProperties()->compression_options;
+      ASSERT_EQ(compression.substr(0, compression.find(';', 1)), ";pubseq:2");
+      const auto* view = dynamic_cast<const TopTableReaderBase*>(table.get());
+      ASSERT_NE(view, nullptr);
+      ASSERT_EQ(json::parse(view->ToWebViewString({{"html", false}}))["pubseq"], 2);
       for (const char* key : {"key", "ghost"}) {
         PinnableSlice value;
         GetContext get_context(
@@ -1753,15 +1772,29 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableUsesFileSequenceBound) {
         InternalKey ikey(key, kMaxSequenceNumber, kTypeValue);
         ASSERT_OK(table->Get(ReadOptions(), ikey.Encode(), &get_context,
                              nullptr));
-        const bool visible = limit == 4 || (limit == 2 && key[0] == 'k');
+        const bool visible = key[0] == 'k';
         ASSERT_EQ(get_context.State(),
                   visible ? GetContext::kFound : GetContext::kNotFound);
         if (visible) {
-          ASSERT_EQ(value.ToString(), key[0] == 'g' ? "unpublished"
-                                     : limit == 2 ? "old" : "new");
+          ASSERT_EQ(value.ToString(), "old");
         }
       }
     }
+    SstFileReader standalone(options);
+    ASSERT_OK(standalone.Open(fname));
+    std::unique_ptr<Iterator> standalone_it(standalone.NewIterator(ReadOptions()));
+    standalone_it->SeekToFirst();
+    ASSERT_TRUE(standalone_it->Valid());
+    ASSERT_EQ(standalone_it->key().ToString(), "key");
+    ASSERT_EQ(standalone_it->value().ToString(), "old");
+    standalone_it->Next();
+    ASSERT_FALSE(standalone_it->Valid());
+    ASSERT_OK(standalone_it->status());
+    SstFileDumper dumper(options, fname, Temperature::kUnknown, 0,
+                         true, false, false, EnvOptions(), true);
+    ASSERT_OK(dumper.getStatus());
+    ASSERT_OK(dumper.ReadSequential(false, 0, false, "", false, ""));
+    ASSERT_EQ(dumper.GetReadNumber(), 1U);
   }
 }
 
@@ -1822,13 +1855,27 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableIteratorUsesFileSequenceBound) {
         TableReaderOptions tro(ioptions, options.prefix_extractor, env_options,
                                icmp, 0);
         tro.largest_seqno = limit;
+        if (osl) {
+          const auto block = ReadMetaBlockE(
+              reader.get(), meta.fd.GetFileSize(), 0x62546d654d4c534fULL,
+              ioptions, "OffsetSkipList");
+          ASSERT_EQ(block.data.size(), 48U);
+          uint64_t pubseq;
+          memcpy(&pubseq, block.data.data() + 40, sizeof(pubseq));
+          ASSERT_EQ(pubseq, 4U);
+        }
         std::unique_ptr<TableReader> table;
         ASSERT_OK(options.table_factory->NewTableReader(
             ReadOptions(), tro, std::move(reader), meta.fd.GetFileSize(),
             &table, true));
+        const auto& compression = table->GetTableProperties()->compression_options;
+        ASSERT_EQ(compression.substr(0, compression.find(';', 1)), ";pubseq:4");
+        const auto* view = dynamic_cast<const TopTableReaderBase*>(table.get());
+        ASSERT_NE(view, nullptr);
+        ASSERT_EQ(json::parse(view->ToWebViewString({{"html", false}}))["pubseq"], 4);
         std::vector<std::string> expected;
         for (const auto& key : physical) {
-          if (GetInternalKeySeqno(key) <= limit) expected.push_back(key);
+          if (GetInternalKeySeqno(key) <= 4) expected.push_back(key);
         }
         for (bool use_arena : {false, true}) {
           SCOPED_TRACE(use_arena);
@@ -1912,7 +1959,7 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableIteratorUsesFileSequenceBound) {
             for (int i = 0; i < 20; ++i) {
               mem_it->RandomSeek();
               if (it->Valid()) {
-                ASSERT_LE(GetInternalKeySeqno(it->key()), limit);
+                ASSERT_LE(GetInternalKeySeqno(it->key()), 4U);
               }
             }
           }
@@ -1922,111 +1969,114 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableIteratorUsesFileSequenceBound) {
   }
 }
 
-TEST_F(DBCsppCrashSafeTest, ConvertedTableVisibilityFilter) {
+TEST_F(DBCsppCrashSafeTest, ConvertedTableUsesUnboundedHeaderSequence) {
   Close();
   for (bool osl : {false, true}) {
     for (bool file_mmap : {false, true}) {
-      for (const auto& marker : {
-               std::make_pair("", false), {"VisFilter:0", false},
-               {"VisFilter:10", false}, {"XVisFilter:1", false},
-               {"Other:VisFilter:1", false}, {"VisFilter:1x", false},
-               {"VisFilter:1", true}, {"Other:0;VisFilter:1", true},
-               {"Other:0;VisFilter:1;Tail:0", true}}) {
-        SCOPED_TRACE(osl ? "OSL" : "CSPP");
-        SCOPED_TRACE(file_mmap);
-        SCOPED_TRACE(marker.first);
-        Options options = BaseCrashSafeOptions(dbname_, true, false);
-        const char* js = file_mmap
-            ? R"({"mem_cap":16777216,"convert_to_sst":"kFileMmap"})"
-            : R"({"mem_cap":16777216,"convert_to_sst":"kDumpMem"})";
-        if (osl) {
-          options.memtable_factory = EasyNewMemTableRep("OffsetSkipList", js);
-        } else {
-          options.memtable_factory.reset(NewCSPPMemTabForPlain(js));
-        }
-        const SidePluginRepo repo;
-        options.table_factory = PluginFactorySP<TableFactory>::AcquirePlugin(
-            osl ? "OffsetSkipListTable" : "CSPPMemTabTable", json::parse(js), repo);
-        Destroy(options);
-        ASSERT_OK(env_->CreateDirIfMissing(dbname_));
-        options.cf_paths = {{dbname_, 0}};
-        InternalKeyComparator icmp(options.comparator);
-        ImmutableOptions ioptions(options);
-        MutableCFOptions moptions(options);
-        WriteBufferManager wb(options.db_write_buffer_size);
-        auto mem = std::make_unique<MemTable>(
-            icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0, 1);
-        ASSERT_OK(mem->Add(1, kTypeValue, "a", "1", nullptr));
-        ASSERT_OK(mem->Add(2, kTypeValue, "b", "2", nullptr));
-        ASSERT_OK(mem->Add(3, kTypeValue, "b", "3", nullptr));
-        mem->MarkImmutable();
-        IntTblPropCollectorFactories collectors;
-        TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
-                                options.compression, options.compression_opts, 0,
-                                kDefaultColumnFamilyName, 0);
-        FileMetaData meta;
-        meta.fd = FileDescriptor(1, 0, 0);
-        meta.fd.smallest_seqno = 1;
-        meta.fd.largest_seqno = 3;
-        SyncPoint::GetInstance()->SetCallBack(
-            "PropertyBlockBuilder::AddTableProperty:Start", [marker](void* p) {
-              auto& opts = static_cast<TableProperties*>(p)->compression_options;
-              ASSERT_EQ(opts.find("VisFilter:"), std::string::npos);
-              opts += marker.first;
-            });
-        SyncPoint::GetInstance()->EnableProcessing();
-        const Status converted = mem->ConvertToSST(&meta, tbo);
-        SyncPoint::GetInstance()->DisableProcessing();
-        SyncPoint::GetInstance()->ClearAllCallBacks();
-        ASSERT_OK(converted);
-        ASSERT_GT(meta.fd.GetFileSize(), 0U);
-        mem.reset();
+      SCOPED_TRACE(osl ? "OSL" : "CSPP");
+      SCOPED_TRACE(file_mmap);
+      Options options = BaseCrashSafeOptions(dbname_, true, false);
+      const char* js = file_mmap
+          ? R"({"mem_cap":16777216,"convert_to_sst":"kFileMmap"})"
+          : R"({"mem_cap":16777216,"convert_to_sst":"kDumpMem"})";
+      if (osl) {
+        options.memtable_factory = EasyNewMemTableRep("OffsetSkipList", js);
+      } else {
+        options.memtable_factory.reset(NewCSPPMemTabForPlain(js));
+      }
+      const SidePluginRepo repo;
+      options.table_factory = PluginFactorySP<TableFactory>::AcquirePlugin(
+          osl ? "OffsetSkipListTable" : "CSPPMemTabTable", json::parse(js), repo);
+      Destroy(options);
+      ASSERT_OK(env_->CreateDirIfMissing(dbname_));
+      options.cf_paths = {{dbname_, 0}};
+      InternalKeyComparator icmp(options.comparator);
+      ImmutableOptions ioptions(options);
+      MutableCFOptions moptions(options);
+      WriteBufferManager wb(options.db_write_buffer_size);
+      auto mem = std::make_unique<MemTable>(
+          icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0, 1);
+      ASSERT_OK(mem->Add(1, kTypeValue, "a", "1", nullptr));
+      ASSERT_OK(mem->Add(2, kTypeValue, "b", "2", nullptr));
+      ASSERT_OK(mem->Add(3, kTypeValue, "b", "3", nullptr));
+      mem->MarkImmutable();
+      IntTblPropCollectorFactories collectors;
+      TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
+                              options.compression, options.compression_opts, 0,
+                              kDefaultColumnFamilyName, 0);
+      FileMetaData meta;
+      meta.fd = FileDescriptor(1, 0, 0);
+      meta.fd.smallest_seqno = 1;
+      meta.fd.largest_seqno = 3;
+      ASSERT_OK(mem->ConvertToSST(&meta, tbo));
+      ASSERT_GT(meta.fd.GetFileSize(), 0U);
+      mem.reset();
 
-        const std::string fname = TableFileName(options.cf_paths, 1, 0);
-        if (!osl && !file_mmap) {
-          const int fd = ::open(fname.c_str(), O_RDONLY);
-          ASSERT_GE(fd, 0);
-          terark::DFA_MmapHeader header{};
-          const ssize_t read = ::pread(fd, &header, sizeof(header), 0);
-          ::close(fd);
-          ASSERT_EQ(read, static_cast<ssize_t>(sizeof(header)));
-          uint32_t prefix[3];
-          memcpy(prefix, header.reserved, sizeof(prefix));
-          ASSERT_EQ(prefix[0], 0x50505343U);  // CSPP crash-safe magic.
-          ASSERT_EQ(prefix[1], 0U);  // No WAL references in this conversion.
-          ASSERT_EQ(prefix[2], 0U);
-          ASSERT_GE(header.crc32cLevel, 1U);
-          ASSERT_EQ(header.header_crc32,
-                    terark::Crc32c_update(0, &header, sizeof(header) - 4));
+      const std::string fname = TableFileName(options.cf_paths, 1, 0);
+      if (!osl && !file_mmap) {
+        const int fd = ::open(fname.c_str(), O_RDONLY);
+        ASSERT_GE(fd, 0);
+        terark::DFA_MmapHeader header{};
+        const ssize_t read = ::pread(fd, &header, sizeof(header), 0);
+        ::close(fd);
+        ASSERT_EQ(read, static_cast<ssize_t>(sizeof(header)));
+        uint32_t prefix[3];
+        memcpy(prefix, header.reserved, sizeof(prefix));
+        ASSERT_EQ(prefix[0], 0x50505343U);  // CSPP crash-safe magic.
+        ASSERT_EQ(prefix[1], 0U);  // No WAL references in this conversion.
+        ASSERT_EQ(prefix[2], 0U);
+        // pubseq follows the 16-byte prefix and sixteen 24-byte WAL slots.
+        uint64_t pubseq;
+        memcpy(&pubseq, header.reserved + 400, sizeof(pubseq));
+        ASSERT_EQ(pubseq, 0U);  // Unbounded ordinary conversion.
+        ASSERT_GE(header.crc32cLevel, 1U);
+        ASSERT_EQ(header.header_crc32,
+                  terark::Crc32c_update(0, &header, sizeof(header) - 4));
+      }
+      const std::type_info* unfiltered_type = nullptr;
+      for (SequenceNumber limit : {kMaxSequenceNumber, SequenceNumber(0),
+                                   SequenceNumber(2), meta.fd.largest_seqno}) {
+        std::unique_ptr<FSRandomAccessFile> file;
+        ASSERT_OK(env_->GetFileSystem()->NewRandomAccessFile(
+            fname, FileOptions(), &file, nullptr));
+        auto reader = std::make_unique<RandomAccessFileReader>(std::move(file), fname);
+        EnvOptions env_options;
+        TableReaderOptions tro(ioptions, options.prefix_extractor, env_options,
+                               icmp, 0);
+        tro.largest_seqno = limit;
+        if (osl) {
+          const auto block = ReadMetaBlockE(
+              reader.get(), meta.fd.GetFileSize(), 0x62546d654d4c534fULL,
+              ioptions, "OffsetSkipList");
+          ASSERT_EQ(block.data.size(), 48U);
+          uint64_t pubseq;
+          memcpy(&pubseq, block.data.data() + 40, sizeof(pubseq));
+          ASSERT_EQ(pubseq, 0U);
         }
-        const std::type_info* unfiltered_type = nullptr;
-        for (SequenceNumber limit : {kMaxSequenceNumber, meta.fd.largest_seqno}) {
-          std::unique_ptr<FSRandomAccessFile> file;
-          ASSERT_OK(env_->GetFileSystem()->NewRandomAccessFile(
-              fname, FileOptions(), &file, nullptr));
-          auto reader = std::make_unique<RandomAccessFileReader>(std::move(file), fname);
-          EnvOptions env_options;
-          TableReaderOptions tro(ioptions, options.prefix_extractor, env_options,
-                                 icmp, 0);
-          tro.largest_seqno = limit;
-          std::unique_ptr<TableReader> table;
-          ASSERT_OK(options.table_factory->NewTableReader(
-              ReadOptions(), tro, std::move(reader), meta.fd.GetFileSize(),
-              &table, true));
-          std::unique_ptr<InternalIterator> it(table->NewIterator(
-              ReadOptions(), nullptr, nullptr, false,
-              TableReaderCaller::kUserIterator));
-          if (limit == kMaxSequenceNumber) {
-            unfiltered_type = &typeid(*it);
-          } else {
-            ASSERT_NE(unfiltered_type, nullptr);
-            // A finite file maximum alone must not select VisibleIter.
-            ASSERT_EQ(typeid(*it) == *unfiltered_type, !marker.second);
-          }
-          size_t count = 0;
-          for (it->SeekToFirst(); it->Valid(); it->Next()) ++count;
-          ASSERT_EQ(count, 3U);
+        std::unique_ptr<TableReader> table;
+        ASSERT_OK(options.table_factory->NewTableReader(
+            ReadOptions(), tro, std::move(reader), meta.fd.GetFileSize(),
+            &table, true));
+        const auto& compression = table->GetTableProperties()->compression_options;
+        ASSERT_EQ(compression.find("pubseq:"), std::string::npos);
+        ASSERT_EQ(compression.find("VisFilter:"), std::string::npos);
+        const auto* view = dynamic_cast<const TopTableReaderBase*>(table.get());
+        ASSERT_NE(view, nullptr);
+        ASSERT_EQ(json::parse(view->ToWebViewString({{"html", false}}))["pubseq"],
+                  "kMaxSequenceNumber");
+        std::unique_ptr<InternalIterator> it(table->NewIterator(
+            ReadOptions(), nullptr, nullptr, false,
+            TableReaderCaller::kUserIterator));
+        if (limit == kMaxSequenceNumber) {
+          unfiltered_type = &typeid(*it);
+        } else {
+          ASSERT_NE(unfiltered_type, nullptr);
+          // A caller's finite maximum must not select VisibleIter.
+          ASSERT_EQ(typeid(*it), *unfiltered_type);
         }
+        size_t count = 0;
+        for (it->SeekToFirst(); it->Valid(); it->Next()) ++count;
+        ASSERT_EQ(count, 3U);
       }
     }
   }

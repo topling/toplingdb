@@ -900,9 +900,487 @@ TEST_F(DBCsppCrashSafeTest, OpenAndCreateColumnFamilyRegisterNextMemTable) {
   }
 }
 
+TEST_F(DBCsppCrashSafeTest, SwitchWaitsForPendingCacheRegistration) {
+  Close();
+  for (bool osl : {false, true}) {
+    for (bool atomic : {false, true}) {
+      for (int mode : {0, 1, 2, 3}) {  // Success, failure, shutdown, already committed.
+        const bool fail = mode == 1;
+        const bool shutdown = mode == 2;
+        SCOPED_TRACE(osl);
+        SCOPED_TRACE(atomic);
+        SCOPED_TRACE(mode);
+        Options options = BaseCrashSafeOptions(dbname_, true, false);
+        options.atomic_flush = atomic;
+        options.max_bgerror_resume_count = 0;
+        options.avoid_flush_during_shutdown = true;
+        if (osl) SetupOsl(&options, true);
+        Destroy(options);
+        SyncPoint::GetInstance()->EnableProcessing();
+        ASSERT_OK(TryReopen(options));
+        auto* cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                        ->GetColumnFamily(0);
+        ASSERT_OK(Put("first", "1"));
 
+        std::mutex mu;
+        std::condition_variable cv;
+        bool paused = false, release = false, waiting = false;
+        bool flush_done = false, switch_done = false, pause_timeout = false;
+        std::atomic<int> frontend_registrations{0};
+        const auto caller = std::this_thread::get_id();
+        std::atomic<bool> arm{false}, inject{false};
+        SyncPoint::GetInstance()->SetCallBack(
+            "FlushJob::BeforeManifest", [&](void*) { arm.store(true); });
+        SyncPoint::GetInstance()->SetCallBack(
+            "VersionSet::LogAndApply:WriteManifestStart", [&](void*) {
+              if (!arm.exchange(false)) return;
+              std::unique_lock<std::mutex> lk(mu);
+              paused = true;
+              inject.store(fail);
+              cv.notify_all();
+              // Do not strand the flush thread if an assertion misses the hook.
+              pause_timeout = !cv.wait_for(lk, std::chrono::seconds(30),
+                                          [&] { return release; });
+            });
+        SyncPoint::GetInstance()->SetCallBack(
+            "DBImpl::SwitchMemtable:BeforeInstallMemTable", [&](void*) {
+              if (mode != 3) return;
+              std::unique_lock<std::mutex> lk(mu);
+              if (!paused) return;
+              waiting = true;
+              cv.notify_all();
+              if (!cv.wait_for(lk, std::chrono::seconds(30),
+                               [&] { return release && flush_done; }))
+                std::abort();
+            });
+        SyncPoint::GetInstance()->SetCallBack(
+            "DBImpl::SwitchMemtable:MemTableCacheMiss", [&](void* p) {
+              EXPECT_NE(static_cast<MemTable*>(p)->GetFileNumber(), 0U);
+              if (mode == 3) return;
+              std::lock_guard<std::mutex> lk(mu);
+              waiting = true;
+              cv.notify_all();
+            });
+        SyncPoint::GetInstance()->SetCallBack(
+            "DBImpl::RegisterMemTableFile:BeforeLogAndApply", [&](void*) {
+              EXPECT_NE(std::this_thread::get_id(), caller);
+              ++frontend_registrations;
+            });
+        SyncPoint::GetInstance()->SetCallBack(
+            "VersionSet::ProcessManifestWrites:AfterSyncManifest", [&](void* p) {
+              if (inject.exchange(false)) {
+                *static_cast<IOStatus*>(p) = IOStatus::IOError("cache wait injection");
+              }
+            });
+        Status flush_status, switch_status;
+        std::thread flush_thread([&] {
+          flush_status = Flush();
+          std::lock_guard<std::mutex> lk(mu);
+          flush_done = true;
+          cv.notify_all();
+        });
+        bool reached_pause;
+        {
+          std::unique_lock<std::mutex> lk(mu);
+          reached_pause = cv.wait_for(lk, std::chrono::seconds(10),
+                                      [&] { return paused || flush_done; }) && paused;
+        }
+        std::vector<uint64_t> cache_files;
+        std::vector<std::string> before_switch, after_switch;
+        uint64_t active_file = 0;
+        if (reached_pause) {
+          dbfull()->TEST_LockMutex();
+          if (auto* head = cfd->PeekPrecreatedMemtable()) {
+            cache_files.push_back(head->GetFileNumber());
+          }
+          active_file = cfd->mem()->GetFileNumber();
+          dbfull()->TEST_UnlockMutex();
+          EXPECT_OK(env_->GetChildren(dbname_, &before_switch));
+          EXPECT_OK(Put("active", "2"));
+        }
+        std::thread switch_thread([&] {
+          switch_status = dbfull()->TEST_SwitchMemtable();
+          std::lock_guard<std::mutex> lk(mu);
+          switch_done = true;
+          cv.notify_all();
+        });
+        bool reached_wait;
+        {
+          std::unique_lock<std::mutex> lk(mu);
+          reached_wait = cv.wait_for(lk, std::chrono::seconds(10),
+                                     [&] { return waiting || switch_done; }) && waiting;
+        }
+        if (reached_pause && reached_wait) {
+          // The popped head remains protected by the switch's pending output.
+          std::vector<uint64_t> still_cached;
+          dbfull()->TEST_LockMutex();
+          if (auto* head = cfd->PeekPrecreatedMemtable()) {
+            still_cached.push_back(head->GetFileNumber());
+          }
+          dbfull()->TEST_UnlockMutex();
+          EXPECT_TRUE(still_cached.empty());
+          EXPECT_OK(db_->DisableFileDeletions());
+          EXPECT_OK(db_->EnableFileDeletions(true));
+          for (uint64_t number : cache_files) {
+            EXPECT_OK(env_->FileExists(MakeTableFileName(dbname_, number)));
+          }
+          EXPECT_OK(env_->GetChildren(dbname_, &after_switch));
+          auto only_ssts = [](const std::vector<std::string>& children) {
+            std::set<std::string> files;
+            for (const auto& child : children) {
+              if (child.size() >= 4 && child.compare(child.size() - 4, 4, ".sst") == 0)
+                files.insert(child);
+            }
+            return files;
+          };
+          EXPECT_EQ(only_ssts(before_switch), only_ssts(after_switch));
+          std::lock_guard<std::mutex> lk(mu);
+          EXPECT_FALSE(switch_done);
+        }
+        if (shutdown && reached_wait) {
+          CancelAllBackgroundWork(db_, false);
+        }
+        {
+          std::unique_lock<std::mutex> lk(mu);
+          release = true;
+          cv.notify_all();
+          if (!cv.wait_for(lk, std::chrono::seconds(30),
+                           [&] { return flush_done && switch_done; })) {
+            // A missed wakeup must fail this test instead of hanging in join.
+            std::abort();
+          }
+        }
+        flush_thread.join();
+        switch_thread.join();
+        SyncPoint::GetInstance()->DisableProcessing();
+        SyncPoint::GetInstance()->ClearAllCallBacks();
+        ASSERT_TRUE(reached_pause);
+        ASSERT_TRUE(reached_wait);
+        ASSERT_FALSE(pause_timeout);
+        ASSERT_EQ(cache_files.size(), 1U);
+        ASSERT_EQ(frontend_registrations.load(), mode == 3 ? 0 : 1);
+        if (shutdown) {
+          ASSERT_TRUE(switch_status.IsShutdownInProgress());
+          ASSERT_TRUE(flush_status.ok() || flush_status.IsShutdownInProgress());
+          ASSERT_EQ(cfd->mem()->GetFileNumber(), active_file);
+        } else if (fail) {
+          ASSERT_TRUE(flush_status.IsIOError());
+          ASSERT_TRUE(switch_status.IsIOError());
+          ASSERT_TRUE(dbfull()->TEST_GetBGError().IsIOError());
+          ASSERT_EQ(cfd->mem()->GetFileNumber(), active_file);
+          ASSERT_OK(db_->DisableFileDeletions());
+          ASSERT_OK(db_->EnableFileDeletions(true));
+          ASSERT_OK(env_->FileExists(MakeTableFileName(dbname_, active_file)));
+        } else {
+          ASSERT_OK(flush_status);
+          ASSERT_OK(switch_status);
+          ASSERT_EQ(cfd->mem()->GetFileNumber(), cache_files.front());
+          ASSERT_TRUE(cfd->mem()->IsFileRegistered());
+          ASSERT_OK(Put("switched", "3"));
+        }
+        Close();
+        ASSERT_OK(TryReopen(options));
+        ASSERT_EQ(Get("first"), "1");
+        ASSERT_EQ(Get("active"), "2");
+        if (!fail && !shutdown) {
+          ASSERT_EQ(Get("switched"), "3");
+        }
+        Close();
+      }
+    }
+  }
+}
 
+TEST_F(DBCsppCrashSafeTest, CacheMissRegistersWhileFlushIsPaused) {
+  Close();
+  for (bool osl : {false, true}) {
+    for (bool atomic : {false, true}) {
+      for (bool fail : {false, true}) {
+        SCOPED_TRACE(osl);
+        SCOPED_TRACE(atomic);
+        SCOPED_TRACE(fail);
+        Options options = BaseCrashSafeOptions(dbname_, true, false);
+        options.atomic_flush = atomic;
+        options.paranoid_checks = !fail;
+        options.avoid_flush_during_shutdown = true;
+        if (osl) SetupOsl(&options, true);
+        Destroy(options);
+        SyncPoint::GetInstance()->EnableProcessing();
+        ASSERT_OK(TryReopen(options));
+        auto* cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                        ->GetColumnFamily(0);
+        ASSERT_OK(Put("first", "1"));
+        if (atomic) {
+          CreateColumnFamilies({"aux"}, options);
+          ASSERT_EQ(handles_.size(), 1U);
+        }
+        auto* aux = atomic ? handles_.back() : nullptr;
+        if (atomic) {
+          ASSERT_OK(db_->Put(WriteOptions(), aux, "aux-first", "3"));
+        }
+        std::mutex mu;
+        std::condition_variable cv;
+        bool paused = false, release = false, done = false, waiting = false;
+        bool pause_timeout = false;
+        std::atomic<bool> first_convert{true};
+        std::atomic<int> conversions{0};
+        const auto caller = std::this_thread::get_id();
+        std::thread::id switch_id;
+        std::atomic<int> registrations{0};
+        std::atomic<int> foreground_registrations{0};
+        SyncPoint::GetInstance()->SetCallBack(
+            "DBImpl::SwitchMemtable:MemTableCacheMiss", [&](void*) {
+              std::lock_guard<std::mutex> lk(mu);
+              waiting = true;
+              cv.notify_all();
+            });
+        SyncPoint::GetInstance()->SetCallBack(
+            "MemTableRep::ConvertToSST:Before", [&](void*) {
+              if (!first_convert.exchange(false)) return;
+              std::unique_lock<std::mutex> lk(mu);
+              paused = true;
+              cv.notify_all();
+              pause_timeout = !cv.wait_for(lk, std::chrono::seconds(30),
+                                          [&] { return release; });
+            });
+        SyncPoint::GetInstance()->SetCallBack(
+            "FlushJob::ConvertToSST:Status", [&](void* p) {
+              EXPECT_TRUE(static_cast<Status*>(p)->ok());
+              // Atomic flush runs aux first, then default; fail only the last.
+              if (++conversions == (atomic ? 2 : 1) && fail)
+                *static_cast<Status*>(p) = Status::IOError("ignored table flush injection");
+            });
+        SyncPoint::GetInstance()->SetCallBack(
+            "DBImpl::RegisterMemTableFile:BeforeLogAndApply", [&](void*) {
+              std::lock_guard<std::mutex> lk(mu);
+              EXPECT_NE(std::this_thread::get_id(), caller);
+              if (std::this_thread::get_id() == switch_id)
+                ++foreground_registrations;
+              else
+                ++registrations;
+            });
+        FlushOptions flush_options;
+        flush_options.wait = false;
+        const Status flush_status = atomic
+            ? db_->Flush(flush_options, {db_->DefaultColumnFamily(), aux})
+            : db_->Flush(flush_options);
+        bool reached_pause;
+        {
+          std::unique_lock<std::mutex> lk(mu);
+          reached_pause = cv.wait_for(lk, std::chrono::seconds(10),
+                                      [&] { return paused; });
+        }
+        dbfull()->TEST_LockMutex();
+        const bool cache_empty = cfd->PeekPrecreatedMemtable() == nullptr;
+        dbfull()->TEST_UnlockMutex();
+        EXPECT_TRUE(cache_empty);
+        EXPECT_OK(Put("second", "2"));
+        Status switch_status;
+        std::thread switch_thread([&] {
+          {
+            std::lock_guard<std::mutex> lk(mu);
+            switch_id = std::this_thread::get_id();
+          }
+          switch_status = dbfull()->TEST_SwitchMemtable();
+          std::lock_guard<std::mutex> lk(mu);
+          done = true;
+          cv.notify_all();
+        });
+        bool reached_wait;
+        bool completed_before_release;
+        {
+          std::unique_lock<std::mutex> lk(mu);
+          reached_wait = cv.wait_for(
+              lk, std::chrono::seconds(10), [&] { return waiting || done; }) &&
+                         waiting;
+        }
+        {
+          std::unique_lock<std::mutex> lk(mu);
+          completed_before_release = cv.wait_for(
+              lk, std::chrono::seconds(10), [&] { return done; });
+          release = true;
+          cv.notify_all();
+          if (!cv.wait_for(lk, std::chrono::seconds(30), [&] { return done; }))
+            std::abort();
+        }
+        switch_thread.join();
+        ASSERT_OK(dbfull()->TEST_WaitForBackgroundWork());
+        SyncPoint::GetInstance()->DisableProcessing();
+        SyncPoint::GetInstance()->ClearAllCallBacks();
+        ASSERT_TRUE(reached_pause);
+        ASSERT_TRUE(reached_wait);
+        ASSERT_TRUE(completed_before_release);
+        ASSERT_FALSE(pause_timeout);
+        ASSERT_OK(flush_status);
+        ASSERT_OK(switch_status);
+        ASSERT_OK(dbfull()->TEST_GetBGError());
+        ASSERT_TRUE(cfd->mem()->IsFileRegistered());
+        ASSERT_EQ(foreground_registrations.load(), 1);
+        ASSERT_EQ(conversions.load(), atomic ? 2 : 1);
+        ASSERT_EQ(registrations.load(), 0);
+        if (atomic) {
+          auto* aux_cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                              ->GetColumnFamily(aux->GetID());
+          dbfull()->TEST_LockMutex();
+          auto* aux_head = aux_cfd->PeekPrecreatedMemtable();
+          const uint64_t aux_cache_number = aux_head ? aux_head->GetFileNumber() : 0;
+          dbfull()->TEST_UnlockMutex();
+          ASSERT_NE(aux_cache_number, 0U);
+          ASSERT_EQ(dbfull()->GetVersionSet()->GetColumnFamilySet()
+                        ->GetColumnFamily(aux->GetID())->GetMemTableFiles()
+                        .count(aux_cache_number), fail ? 0U : 1U);
+          if (fail) {
+            ASSERT_OK(dbfull()->TEST_SwitchMemtable(aux_cfd));
+            ASSERT_EQ(aux_cfd->mem()->GetFileNumber(), aux_cache_number);
+            ASSERT_TRUE(aux_cfd->mem()->IsFileRegistered());
+            ASSERT_EQ(aux_cfd->GetMemTableFiles().count(aux_cache_number), 1U);
+          }
+        }
+        Close();
+        if (atomic) {
+          ASSERT_OK(TryReopenWithColumnFamilies({"default", "aux"}, options));
+          ASSERT_EQ(Get(0, "first"), "1");
+          ASSERT_EQ(Get(0, "second"), "2");
+          ASSERT_EQ(Get(1, "aux-first"), "3");
+        } else {
+          ASSERT_OK(TryReopen(options));
+          ASSERT_EQ(Get("first"), "1");
+          ASSERT_EQ(Get("second"), "2");
+        }
+        Close();
+      }
+    }
+  }
+}
 
+TEST_F(DBCsppCrashSafeTest, FrontendCacheMissRegistrationFailure) {
+  Close();
+  for (bool osl : {false, true}) {
+    for (bool after_sync : {false, true}) {
+      SCOPED_TRACE(osl);
+      SCOPED_TRACE(after_sync);
+      Options options = BaseCrashSafeOptions(dbname_, true, false);
+      options.max_bgerror_resume_count = 0;
+      options.avoid_flush_during_shutdown = true;
+      if (osl) SetupOsl(&options, true);
+      Destroy(options);
+      ASSERT_OK(TryReopen(options));
+      ASSERT_OK(Put("first", "1"));
+      ASSERT_OK(dbfull()->TEST_SwitchMemtable());
+      ASSERT_OK(Put("active", "2"));
+      auto* cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()->GetDefault();
+      const uint64_t active = cfd->mem()->GetFileNumber();
+      ASSERT_EQ(cfd->PeekPrecreatedMemtable(), nullptr);
+      const auto caller = std::this_thread::get_id();
+      int injected = 0;
+      uint64_t candidate = 0;
+      SyncPoint::GetInstance()->SetCallBack(
+          "DBImpl::SwitchMemtable:MemTableCacheMiss", [&](void* p) {
+            candidate = static_cast<MemTable*>(p)->GetFileNumber();
+            EXPECT_NE(candidate, active);
+            EXPECT_EQ(cfd->PeekPrecreatedMemtable(), nullptr);
+          });
+      SyncPoint::GetInstance()->SetCallBack(
+          after_sync ? "VersionSet::ProcessManifestWrites:AfterSyncManifest"
+                     : "DBImpl::RegisterMemTableFile:AfterLogAndApply",
+          [&](void* p) {
+            EXPECT_EQ(std::this_thread::get_id(), caller);
+            ++injected;
+            if (after_sync) {
+              *static_cast<IOStatus*>(p) = IOStatus::IOError("frontend register injection");
+            } else {
+              *static_cast<Status*>(p) = Status::IOError("frontend register injection");
+            }
+          });
+      SyncPoint::GetInstance()->EnableProcessing();
+      ASSERT_TRUE(dbfull()->TEST_SwitchMemtable().IsIOError());
+      ASSERT_EQ(injected, 1);
+      ASSERT_TRUE(dbfull()->TEST_GetBGError().IsIOError());
+      ASSERT_EQ(cfd->mem()->GetFileNumber(), active);
+      ASSERT_NE(candidate, 0U);
+      ASSERT_EQ(cfd->GetMemTableFiles().count(candidate), after_sync ? 0U : 1U);
+      ASSERT_EQ(cfd->PeekPrecreatedMemtable(), nullptr);
+      ASSERT_OK(env_->FileExists(MakeTableFileName(dbname_, candidate)));
+      ASSERT_NOK(Put("rejected", "3"));
+      SyncPoint::GetInstance()->DisableProcessing();
+      SyncPoint::GetInstance()->ClearAllCallBacks();
+      ASSERT_OK(db_->DisableFileDeletions());
+      ASSERT_OK(db_->EnableFileDeletions(true));
+      ASSERT_OK(env_->FileExists(MakeTableFileName(dbname_, active)));
+      ASSERT_EQ(Get("first"), "1");
+      ASSERT_EQ(Get("active"), "2");
+      Close();
+      ASSERT_OK(TryReopen(options));
+      ASSERT_EQ(Get("first"), "1");
+      ASSERT_EQ(Get("active"), "2");
+      ASSERT_EQ(Get("rejected"), "NOT_FOUND");
+      Close();
+    }
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, FailedCacheRegistrationSurvivesGcAndReopen) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    options.max_bgerror_resume_count = 0;
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    SyncPoint::GetInstance()->EnableProcessing();
+    ASSERT_OK(TryReopen(options));
+    ASSERT_OK(Put("retry", "preserved"));
+    std::vector<std::string> pending;
+    std::atomic<bool> pending_commit{false};
+    SyncPoint::GetInstance()->SetCallBack("FlushJob::BeforeManifest", [&](void*) {
+      std::vector<std::string> children;
+      ASSERT_OK(env_->GetChildren(dbname_, &children));
+      for (const auto& child : children) {
+        if (child.size() >= 4 && child.compare(child.size() - 4, 4, ".sst") == 0)
+          pending.push_back(dbname_ + "/" + child);
+      }
+      pending_commit.store(true);
+    });
+    std::atomic<bool> injected{false};
+    std::atomic<int> published{0};
+    SyncPoint::GetInstance()->SetCallBack(
+        "VersionSet::ProcessManifestWrites:AfterSyncManifest", [&](void* p) {
+          if (pending_commit.load() && !injected.exchange(true))
+            *static_cast<IOStatus*>(p) = IOStatus::IOError("cache register injection");
+        });
+    SyncPoint::GetInstance()->SetCallBack(
+        "FlushJob::MemTableCache:AfterPublish", [&](void*) { ++published; });
+    ASSERT_NOK(Flush());
+    ASSERT_TRUE(injected.load());
+    ASSERT_EQ(published.load(), 0);
+    ASSERT_GE(pending.size(), 3U);  // converting input, active, pending cache
+    ASSERT_OK(db_->DisableFileDeletions());
+    ASSERT_OK(db_->EnableFileDeletions(true));
+    for (const auto& path : pending) ASSERT_OK(env_->FileExists(path));
+    SyncPoint::GetInstance()->ClearCallBack("FlushJob::BeforeManifest");
+    // Plain MANIFEST IOError is fatal under the existing error policy.
+    // Resume preserves that error; reopening is the supported recovery path.
+    const Status resumed = db_->Resume();
+    ASSERT_TRUE(resumed.IsIOError());
+    ASSERT_EQ(Get("retry"), "preserved");
+    Close();
+    SyncPoint::GetInstance()->ClearCallBack(
+        "VersionSet::ProcessManifestWrites:AfterSyncManifest");
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("retry"), "preserved");
+    published.store(0);
+    ASSERT_OK(Put("after-reopen", "committed"));
+    ASSERT_OK(Flush());
+    ASSERT_GT(published.load(), 0);
+    ASSERT_EQ(Get("retry"), "preserved");
+    Close();
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("retry"), "preserved");
+    ASSERT_EQ(Get("after-reopen"), "committed");
+    Close();
+  }
+}
 #endif
 
 TEST_F(DBCsppCrashSafeTest, CrashSafeRequiresFileMmapFactories) {

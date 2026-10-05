@@ -1273,6 +1273,9 @@ TEST_F(DBCsppCrashSafeTest, OddGenerationPublishesEvenAfterWalRecovery) {
     ASSERT_TRUE(SetPublishedSeqGeneration(dbname_, rec.generation | 1));
     ASSERT_OK(TryReopen(options));
     ASSERT_EQ(Get("before"), "recovery");
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+    ASSERT_EQ(rec.generation % 2, 0U);
+    ASSERT_EQ(rec.pubseq, 0U);
 #if !defined(__AVX__)
     int odd = 0;
     SyncPoint::GetInstance()->SetCallBack(

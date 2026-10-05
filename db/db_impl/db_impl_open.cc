@@ -745,13 +745,9 @@ void DBImpl::PersistPublishedSequence(SequenceNumber seq, uint64_t wal_number,
     }
     TEST_SYNC_POINT("DBImpl::PersistPublishedSequence:SameSeq");
   }
-  // Recovery may leave an odd generation until the first new publication.
-  const uint64_t g = pubseq_mmap_->generation | 1;
 #if defined(__AVX__)
   // One aligned 32-byte store. A process crash falls between instructions,
-  // so the record is all old or all new. Publish an even generation only
-  // after this store, including when recovery left it odd. A host without it
-  // uses the odd/even bracket below after the file is moved.
+  // so the record is all old or all new.
   // PublishedSeqRecord next;
   // next.pubseq = seq;
   // next.wal_number = wal_number;
@@ -764,7 +760,11 @@ void DBImpl::PersistPublishedSequence(SequenceNumber seq, uint64_t wal_number,
   // volatile loads/stores. This keeps the AVX store a single 32-byte instruction.
   // https://llvm.org/docs/LangRef.html#volatile-memory-accesses
   *(volatile __m256i*)rec = packed;
+  pubseq_mmap_->generation += 2;
 #else
+  // Use the odd/even bracket also for files moved from an AVX host.
+  // A failed publication may leave an odd generation.
+  const uint64_t g = pubseq_mmap_->generation | 1;
   // Keep generation odd throughout the field stores, even if already odd.
   // Acquire keeps the field stores after this exchange; the release below
   // keeps them before publication of the next even generation.
@@ -774,9 +774,9 @@ void DBImpl::PersistPublishedSequence(SequenceNumber seq, uint64_t wal_number,
   rec->wal_number = wal_number;
   rec->wal_offset = wal_offset;
   rec->pubseq = seq;
-#endif
   terark::as_atomic(pubseq_mmap_->generation)
          .store(g + 1, std::memory_order_release);
+#endif
   TEST_SYNC_POINT("DBImpl::PersistPublishedSequence:AfterCommit");
 }
 
@@ -1672,6 +1672,12 @@ Status DBImpl::LogAndApplyForRecovery(const RecoveryContext& recovery_ctx) {
   }
   if (s.ok() && recovery_ctx.restore_published_seq_) {
     pubseq_mmap_->generation += 1;
+  }
+  if (s.ok() && pubseq_mmap_ != nullptr && (pubseq_mmap_->generation & 1)) {
+    // Discard a torn cursor before enabling publication.
+    pubseq_mmap_->rec = PublishedSeqRecord{};
+    terark::as_atomic(pubseq_mmap_->generation)
+           .store(0, std::memory_order_release);
   }
   return s;
 }

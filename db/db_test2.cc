@@ -324,6 +324,9 @@ TEST_P(DBTestSharedWriteBufferAcrossCFs, SharedWriteBufferAcrossCFs) {
             static_cast<std::pair<size_t*, size_t*>*>(arg);
         *std::get<0>(*pair) = *std::get<1>(*pair);
       });
+  SyncPoint::GetInstance()->SetCallBack(
+      "ColumnFamilyData::PrepareNewMemtableInBackground:UseCache",
+      [](void* arg) { *static_cast<bool*>(arg) = false; });
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
 
   // The total soft write buffer size is about 105000
@@ -5770,6 +5773,10 @@ TEST_F(DBTest2, SeekFileRangeDeleteTail) {
 }
 
 TEST_F(DBTest2, BackgroundPurgeTest) {
+  SyncPoint::GetInstance()->SetCallBack(
+      "ColumnFamilyData::PrepareNewMemtableInBackground:UseCache",
+      [](void* arg) { *static_cast<bool*>(arg) = false; });
+  SyncPoint::GetInstance()->EnableProcessing();
   Options options = CurrentOptions();
   options.write_buffer_manager =
       std::make_shared<ROCKSDB_NAMESPACE::WriteBufferManager>(1 << 20);

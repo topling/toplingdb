@@ -4497,6 +4497,10 @@ TEST_F(DBTest, ManualFlushWalAndWriteRace) {
 }
 
 TEST_F(DBTest, DynamicMemtableOptions) {
+  SyncPoint::GetInstance()->SetCallBack(
+      "ColumnFamilyData::ConstructNewMemtable:UseCache",
+      [](void* arg) { *static_cast<bool*>(arg) = false; });
+  SyncPoint::GetInstance()->EnableProcessing();
   const uint64_t k64KB = 1 << 16;
   const uint64_t k128KB = 1 << 17;
   const uint64_t k5KB = 5 * 1024;

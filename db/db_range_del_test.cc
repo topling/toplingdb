@@ -3484,6 +3484,10 @@ TEST_F(DBRangeDelTest, NonBottommostCompactionDropRangetombstone) {
 }
 
 TEST_F(DBRangeDelTest, MemtableMaxRangeDeletions) {
+  SyncPoint::GetInstance()->SetCallBack(
+      "ColumnFamilyData::ConstructNewMemtable:UseCache",
+      [](void* arg) { *static_cast<bool*>(arg) = false; });
+  SyncPoint::GetInstance()->EnableProcessing();
   // Tests option `memtable_max_range_deletions`.
   Options options = CurrentOptions();
   options.level_compaction_dynamic_file_size = false;

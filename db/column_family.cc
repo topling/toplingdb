@@ -40,6 +40,7 @@
 #include "util/autovector.h"
 #include "util/cast_util.h"
 #include "util/compression.h"
+#include <terark/util/profiling.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -1164,7 +1165,12 @@ uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
 
 void ColumnFamilyData::PrepareNewMemtableInBackground(
     const MutableCFOptions& mutable_cf_options) {
- #if !defined(ROCKSDB_UNIT_TEST)
+  bool use_cache = true;
+  TEST_SYNC_POINT_CALLBACK(
+      "ColumnFamilyData::PrepareNewMemtableInBackground:UseCache", &use_cache);
+  if (!use_cache) {
+    return;
+  }
   {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
     if (precreated_memtable_list_.full()) {
@@ -1172,11 +1178,11 @@ void ColumnFamilyData::PrepareNewMemtableInBackground(
       return;
     }
   }
-  auto beg = ioptions_.clock->NowNanos();
+  auto beg = terark::qtime::now();
   auto tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
                           write_buffer_manager_, 0/*earliest_seq*/, id_);
-  auto end = ioptions_.clock->NowNanos();
-  RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
+  auto end = terark::qtime::now();
+  RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, (end - beg).ns());
   {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
     if (LIKELY(!precreated_memtable_list_.full())) {
@@ -1191,34 +1197,30 @@ void ColumnFamilyData::PrepareNewMemtableInBackground(
       "precreated_memtable_list_ is full, discard the newly created memtab");
     delete tab;
   }
- #endif
 }
 
 MemTable* ColumnFamilyData::ConstructNewMemtable(
     const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
   MemTable* tab = nullptr;
- #if !defined(ROCKSDB_UNIT_TEST)
-  {
+  bool use_cache = true;
+  TEST_SYNC_POINT_CALLBACK("ColumnFamilyData::ConstructNewMemtable:UseCache",
+                           &use_cache);
+  if (use_cache) {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
     if (!precreated_memtable_list_.empty()) {
       tab = precreated_memtable_list_.front().release();
       precreated_memtable_list_.pop_front();
     }
   }
- #endif
   if (tab) {
     tab->SetCreationSeq(earliest_seq);
     tab->SetEarliestSequenceNumber(earliest_seq);
   } else {
-  #if !defined(ROCKSDB_UNIT_TEST)
-    auto beg = ioptions_.clock->NowNanos();
-  #endif
+    auto beg = terark::qtime::now();
     tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
                       write_buffer_manager_, earliest_seq, id_);
-  #if !defined(ROCKSDB_UNIT_TEST)
-    auto end = ioptions_.clock->NowNanos();
-    RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
-  #endif
+    auto end = terark::qtime::now();
+    RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, (end - beg).ns());
   }
   return tab;
 }

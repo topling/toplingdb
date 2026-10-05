@@ -112,6 +112,48 @@ TEST_P(DBMemtableConvertTest, ManualFlushConverts) {
   Close();
 }
 
+TEST_P(DBMemtableConvertTest, ConversionSanitizesMergeThreshold) {
+  // Avoid the existing atomic-flush sanitizer masking the conversion rule.
+  if (std::get<2>(GetParam())) return;
+  Options options = ConvertOptions();
+  ASSERT_GT(options.min_write_buffer_number_to_merge, 1);
+  DestroyAndReopen(options);
+  ASSERT_EQ(db_->GetOptions().min_write_buffer_number_to_merge, 1);
+  ColumnFamilyHandle* cf = nullptr;
+  ASSERT_OK(db_->CreateColumnFamily(options, "converted", &cf));
+  ASSERT_EQ(db_->GetOptions(cf).min_write_buffer_number_to_merge, 1);
+  ASSERT_OK(db_->DestroyColumnFamilyHandle(cf));
+  Close();
+}
+
+TEST_P(DBMemtableConvertTest, NonConversionKeepsMergeThreshold) {
+  // One run per plugin suffices for the disabled conversion and default
+  // factory controls; the converting modes are covered independently above.
+  if (std::get<2>(GetParam()) ||
+      std::string(std::get<1>(GetParam())) != "kDumpMem") return;
+  for (bool skip_list : {false, true}) {
+    SCOPED_TRACE(skip_list);
+    Options options = CurrentOptions();
+    options.max_write_buffer_number = 8;
+    options.min_write_buffer_number_to_merge = 2;
+    options.atomic_flush = false;
+    if (skip_list) {
+      options.memtable_factory = std::make_shared<SkipListFactory>();
+    } else {
+      options.memtable_factory = PluginFactorySP<MemTableRepFactory>::AcquirePlugin(
+          std::get<0>(GetParam()) ? "OffsetSkipList" : "CSPPMemTab",
+          {{"mem_cap", 16777216}, {"convert_to_sst", "kDontConvert"}}, repo_);
+    }
+    DestroyAndReopen(options);
+    ASSERT_EQ(db_->GetOptions().min_write_buffer_number_to_merge, 2);
+    ColumnFamilyHandle* cf = nullptr;
+    ASSERT_OK(db_->CreateColumnFamily(options, "plain", &cf));
+    ASSERT_EQ(db_->GetOptions(cf).min_write_buffer_number_to_merge, 2);
+    ASSERT_OK(db_->DestroyColumnFamilyHandle(cf));
+    Close();
+  }
+}
+
 TEST_P(DBMemtableConvertTest, CloseConvertsAllMemtables) {
   CheckClose(false);
 }

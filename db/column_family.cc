@@ -469,6 +469,15 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
   }
 #endif
 
+  if (result.min_write_buffer_number_to_merge > 1 &&
+      result.memtable_factory->SupportConvertToSST()) {
+    ROCKS_LOG_WARN(db_options.logger,
+                  "ConvertToSST converts each memtable separately; "
+                  "min_write_buffer_number_to_merge > 1 is incompatible "
+                  "and is sanitized to 1");
+    result.min_write_buffer_number_to_merge = 1;
+  }
+
   return result;
 }
 

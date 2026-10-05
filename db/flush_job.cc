@@ -963,7 +963,8 @@ Status FlushJob::WriteLevel0Table() {
           TableFileCreationReason::kFlush, oldest_key_time, current_time,
           db_id_, db_session_id_, 0 /* target_file_size */,
           meta_.fd.GetNumber());
-    if (mems_.size() == 1 && mems_.front()->SupportConvertToSST()) {
+    if (mems_.front()->SupportConvertToSST()) {
+        ROCKSDB_ASSERT_EQ(mems_.size(), 1);
         // convert MemTable to sst
         MemTable* memtable = mems_.front();
         // pass these fields to ConvertToSST, to fill TableProperties

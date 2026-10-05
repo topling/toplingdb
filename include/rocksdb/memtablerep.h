@@ -42,6 +42,7 @@
 #include <unordered_set>
 
 #include "rocksdb/customizable.h"
+#include "rocksdb/enum_reflection.h"
 #include "rocksdb/slice.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -63,6 +64,8 @@ extern const char* EncodeKey(std::string* scratch, const Slice& target);
 
 class MemTableRep : public CacheAlignedNewDelete {
  public:
+  ROCKSDB_ENUM_CLASS_INCLASS(ConvertKind, uint8_t,
+                             kDontConvert, kDumpMem, kFileMmap);
   // KeyComparator provides a means to compare keys, which are internal keys
   // concatenated with values.
   class KeyComparator {
@@ -308,7 +311,13 @@ class MemTableRep : public CacheAlignedNewDelete {
   virtual void FinishHint(void*);
   virtual void InitSetMemTableAsLogIndex(bool) {}
   virtual bool SupportMemTableAsLogIndex() const { return false; }
-  virtual bool SupportConvertToSST() const { return false; }
+  ConvertKind GetConvertKind() const { return m_convert_to_sst; }
+  bool SupportConvertToSST() const {
+    return m_convert_to_sst != ConvertKind::kDontConvert;
+  }
+  bool SupportCrashSafe() const {
+    return m_convert_to_sst == ConvertKind::kFileMmap;
+  }
   virtual Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
 
  protected:
@@ -335,12 +344,15 @@ class MemTableRep : public CacheAlignedNewDelete {
   virtual Slice UserKey(const char* key) const;
 
   Allocator* allocator_;
+  ConvertKind m_convert_to_sst = ConvertKind::kDontConvert;
 };
 
 // This is the base class for all factories that are used by RocksDB to create
 // new MemTableRep objects
 class MemTableRepFactory : public Customizable {
  public:
+  using ConvertKind = MemTableRep::ConvertKind;
+
   ~MemTableRepFactory() override {}
 
   static const char* Type() { return "MemTableRepFactory"; }
@@ -382,10 +394,16 @@ class MemTableRepFactory : public Customizable {
   // Default: false
   virtual bool CanHandleDuplicatedKey() const { return false; }
 
+  bool SupportConvertToSST() const {
+    return convert_to_sst != ConvertKind::kDontConvert;
+  }
+
   // Return true if leftover mmap memtables created by this factory can be
   // RO-loaded after a crash and ConvertToSST during Recover.
   // Default: false
-  virtual bool SupportCrashSafe() const { return false; }
+  bool SupportCrashSafe() const {
+    return convert_to_sst == ConvertKind::kFileMmap;
+  }
 
   // Append leftover crash-safe mmap paths under cf_dir (plus factory chroot).
   // Default: no leftovers.
@@ -409,6 +427,9 @@ class MemTableRepFactory : public Customizable {
       const struct TableBuilderOptions&) {
     return Status::NotSupported("RecoverCrashSafeMemTableToSST");
   }
+
+ protected:
+  ConvertKind convert_to_sst = ConvertKind::kDontConvert;
 };
 
 // This uses a skip list to store keys. It is the default.

@@ -1022,6 +1022,14 @@ Status DBImpl::Recover(
     bool error_if_wal_file_exists, bool error_if_data_exists_in_wals,
     uint64_t* recovered_seq, RecoveryContext* recovery_ctx) {
   mutex_.AssertHeld();
+  if (read_only) {
+    for (const auto& cf : column_families) {
+      if (cf.options.memtable_factory->SupportCrashSafe()) {
+        return Status::InvalidArgument(
+            "FileMmap memtable is not supported in read-only mode", cf.name);
+      }
+    }
+  }
 
   std::vector<std::string> leftover_snapshot;
   if (immutable_db_options_.memtable_crash_safe_recover && !read_only) {

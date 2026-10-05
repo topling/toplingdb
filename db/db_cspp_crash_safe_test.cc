@@ -230,6 +230,35 @@ class DBCsppCrashSafeTest : public DBTestBase {
       : DBTestBase("db_cspp_crash_safe_test", /*env_do_fsync=*/false) {}
 };
 
+TEST_F(DBCsppCrashSafeTest, FileMmapRejectsReadOnlyAndSecondary) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "WalFilterFallsBackToWal",
+                            osl ? "10" : "00"), 0);
+    std::vector<std::string> before;
+    ASSERT_OK(env_->GetChildren(dbname_, &before));
+    std::sort(before.begin(), before.end());
+    for (bool secondary : {false, true}) {
+      SCOPED_TRACE(osl);
+      SCOPED_TRACE(secondary);
+      DB* rejected = nullptr;
+      const Status s = secondary
+          ? DB::OpenAsSecondary(options, dbname_, dbname_ + "_secondary",
+                                &rejected)
+          : DB::OpenForReadOnly(options, dbname_, &rejected);
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_EQ(rejected, nullptr);
+      std::vector<std::string> after;
+      ASSERT_OK(env_->GetChildren(dbname_, &after));
+      std::sort(after.begin(), after.end());
+      ASSERT_EQ(after, before);
+    }
+  }
+}
+
 TEST_F(DBCsppCrashSafeTest, CrashSafeRequiresFileMmap) {
   for (const char* cls : {"CSPPMemTab", "OffsetSkipList"}) {
     for (const char* mode : {"kDontConvert", "kDumpMem", "kFileMmap"}) {
@@ -790,12 +819,17 @@ TEST_F(DBCsppCrashSafeTest, RecoverOnCreatesPublishedSeqAndFlushWalBuffer) {
   ASSERT_OK(env_->FileExists(CrashSafePubSeqFileName(dbname_)));
 }
 
-TEST_F(DBCsppCrashSafeTest, SkipListPlusRecoverOpensAndUsesFullWal) {
+TEST_F(DBCsppCrashSafeTest, SkipListRejectsRecoverAndUsesWalWhenDisabled) {
   Close();
   Options options = CurrentOptions();
+  options.memtable_factory = std::make_shared<SkipListFactory>();
   options.memtable_crash_safe_recover = true;
   options.create_if_missing = true;
   Destroy(options);
+  ASSERT_TRUE(TryReopen(options).IsInvalidArgument());
+  ASSERT_EQ(db_, nullptr);
+  options.memtable_crash_safe_recover = false;
+  options.avoid_flush_during_shutdown = true;
   ASSERT_OK(TryReopen(options));
   ASSERT_OK(Put("a", "1"));
   Close();
@@ -962,7 +996,7 @@ TEST_F(DBCsppCrashSafeTest, OslLeftoverWithWriterLock) {
 }
 
 TEST_F(CrashChild, DISABLED_MixedDumpMemUsesFullWal) {
-  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  Options options = BaseCrashSafeOptions(dbname_, false, false);
   const bool osl = arg_ == "OSL";
   if (osl) SetupOsl(&options, true);
   DB* child_db = nullptr;
@@ -982,7 +1016,7 @@ TEST_F(DBCsppCrashSafeTest, MixedDumpMemUsesFullWal) {
   for (bool osl : {false, true}) {
     SCOPED_TRACE(osl);
     Close();
-    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    Options options = BaseCrashSafeOptions(dbname_, false, false);
     if (osl) SetupOsl(&options, true);
     Destroy(options);
     ASSERT_EQ(RunCrashChild(dbname_, "MixedDumpMemUsesFullWal",
@@ -2519,9 +2553,9 @@ TEST_F(DBCsppCrashSafeTest, KindPrepConvertFailFallsBackToWal) {
 }
 #endif
 
-TEST_F(DBCsppCrashSafeTest, DontConvertFallsBackToWal) {
+TEST_F(DBCsppCrashSafeTest, DontConvertUsesWal) {
   Close();
-  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  Options options = BaseCrashSafeOptions(dbname_, false, false);
   SetupCspp(&options, false);
   Destroy(options);
   ASSERT_OK(TryReopen(options));

@@ -36,6 +36,12 @@ Status DBImplSecondary::Recover(
     bool /*error_if_data_exists_in_wals*/, uint64_t*,
     RecoveryContext* /*recovery_ctx*/) {
   mutex_.AssertHeld();
+  for (const auto& cf : column_families) {
+    if (cf.options.memtable_factory->SupportCrashSafe()) {
+      return Status::InvalidArgument(
+          "FileMmap memtable is not supported in secondary mode", cf.name);
+    }
+  }
 
   JobContext job_context(0);
   Status s;

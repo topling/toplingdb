@@ -1484,6 +1484,12 @@ void ColumnFamilyData::ResetThreadLocalSuperVersions() {
 
 Status ColumnFamilyData::ValidateOptions(
     const DBOptions& db_options, const ColumnFamilyOptions& cf_options) {
+  if (db_options.memtable_crash_safe_recover &&
+      !cf_options.memtable_factory->SupportCrashSafe()) {
+    return Status::InvalidArgument(
+        "memtable_crash_safe_recover requires a FileMmap memtable factory",
+        cf_options.memtable_factory->Name());
+  }
   Status s;
   s = CheckCompressionSupported(cf_options);
   if (s.ok() && db_options.allow_concurrent_memtable_write) {

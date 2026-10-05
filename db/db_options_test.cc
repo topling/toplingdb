@@ -28,6 +28,10 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+#ifdef HAS_TOPLING_CSPP_MEMTABLE
+std::shared_ptr<MemTableRepFactory> EasyNewMemTableRep(Slice cls, Slice js);
+#endif
+
 class DBOptionsTest : public DBTestBase {
  public:
   DBOptionsTest() : DBTestBase("db_options_test", /*env_do_fsync=*/true) {}
@@ -159,11 +163,12 @@ TEST_F(DBOptionsTest, ReadOnlyDisablesCrashSafeAndWarns) {
 
 TEST_F(DBOptionsTest, ReadOnlyReplaysWalWithCrashSafeDisabled) {
   Options options = CurrentOptions();
-  options.memtable_crash_safe_recover = true;
+  options.memtable_crash_safe_recover = false;
   options.avoid_flush_during_shutdown = true;
   DestroyAndReopen(options);
   ASSERT_OK(Put("k", "v"));
   Close();
+  options.memtable_crash_safe_recover = true;
   DB* ro = nullptr;
   ASSERT_OK(DB::OpenForReadOnly(options, dbname_, &ro));
   std::unique_ptr<DB> read_only_db(ro);
@@ -177,6 +182,15 @@ TEST_F(DBOptionsTest, CrashSafeForcesWal) {
   for (bool crash_safe : {false, true}) {
     SCOPED_TRACE(crash_safe);
     Options options = CurrentOptions();
+    if (crash_safe) {
+#ifdef HAS_TOPLING_CSPP_MEMTABLE
+      options.memtable_factory = EasyNewMemTableRep(
+          "CSPPMemTab", R"({"mem_cap":16777216,"convert_to_sst":"kFileMmap"})");
+      options.avoid_flush_during_shutdown = true;
+#else
+      continue;
+#endif
+    }
     options.memtable_as_log_index = false;
     options.memtable_crash_safe_recover = crash_safe;
     options.statistics = CreateDBStatistics();

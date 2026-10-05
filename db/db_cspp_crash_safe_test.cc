@@ -432,7 +432,60 @@ TEST_F(DBCsppCrashSafeTest, FailedInitialRegistrationClearsDbPointer) {
   }
 }
 
+TEST_F(CrashChild, DISABLED_RegistrationCommitWindow) {
+  ASSERT_EQ(arg_.size(), 3U);
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  if (arg_[0] == '1') SetupOsl(&options, true);
+  const char* point = arg_[2] == '0'
+      ? (arg_[1] == '0' ? "DBImpl::RegisterMemTableFile:AfterLogAndApply"
+                        : "DBImpl::RegisterMemTableFile:BeforeInstall")
+      : (arg_[1] == '0' ? "FlushJob::MemTableCache:BeforePublish"
+                        : "FlushJob::MemTableCache:AfterPublish");
+  const auto arm = [&] {
+    SyncPoint::GetInstance()->SetCallBack(point, [](void*) { ::_exit(42); });
+    SyncPoint::GetInstance()->EnableProcessing();
+  };
+  if (arg_[2] == '0') arm();
+  DB* child_db = nullptr;
+  ASSERT_OK(DB::Open(options, dbname_, &child_db));
+  ASSERT_OK(child_db->Put(WriteOptions(), "before-switch", "preserved"));
+  if (arg_[2] == '1') arm();
+  ASSERT_OK(child_db->Flush(FlushOptions()));
+  ::_exit(1);
+}
 
+TEST_F(DBCsppCrashSafeTest, RegistrationCommitCrashKeepsManifestInventory) {
+  Close();
+  for (bool osl : {false, true}) {
+    for (bool marked : {false, true}) {
+      for (bool switching : {false, true}) {
+        SCOPED_TRACE(osl);
+        SCOPED_TRACE(marked);
+        SCOPED_TRACE(switching);
+        Options options = BaseCrashSafeOptions(dbname_, true, false);
+        if (osl) SetupOsl(&options, true);
+        Destroy(options);
+        const std::string arg = std::to_string(osl) + std::to_string(marked) +
+                                std::to_string(switching);
+        ASSERT_EQ(RunCrashChild(dbname_, "RegistrationCommitWindow", arg), 42);
+        const auto registered = ListLeftovers(options, dbname_);
+        ASSERT_EQ(registered.size(), 2U);
+        for (const auto& path : registered) ASSERT_OK(env_->FileExists(path));
+        ASSERT_OK(TryReopen(options));
+        ASSERT_TRUE(dbfull()->GetVersionSet()->HasMemTableFileTracking());
+        ASSERT_EQ(Get("before-switch"), switching ? "preserved" : "NOT_FOUND");
+        ASSERT_OK(Put("after-crash", "committed"));
+        Close();
+        for (const auto& path : ListLeftovers(options, dbname_))
+          ASSERT_OK(env_->FileExists(path));
+        ASSERT_OK(TryReopen(options));
+        ASSERT_EQ(Get("before-switch"), switching ? "preserved" : "NOT_FOUND");
+        ASSERT_EQ(Get("after-crash"), "committed");
+        Close();
+      }
+    }
+  }
+}
 
 TEST_F(DBCsppCrashSafeTest, FailedNewColumnFamilyRegistrationRemainsReopenable) {
   Close();
@@ -666,7 +719,64 @@ TEST_F(DBCsppCrashSafeTest, LegacyManifestWithoutTrackingUsesFullWal) {
   }
 }
 
+TEST_F(CrashChild, DISABLED_FlushManifestWindow) {
+  ASSERT_EQ(arg_.size(), 2U);
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  if (arg_[0] == '1') SetupOsl(&options, true);
+  DB* child_db = nullptr;
+  ASSERT_OK(DB::Open(options, dbname_, &child_db));
+  ASSERT_OK(child_db->Put(WriteOptions(), "converted", "durable"));
+  SyncPoint::GetInstance()->SetCallBack(
+      arg_[1] == '0' ? "FlushJob::BeforeManifest"
+                     : "FlushJob::AfterManifest",
+      [](void*) { ::_exit(42); });
+  SyncPoint::GetInstance()->EnableProcessing();
+  ASSERT_OK(child_db->Flush(FlushOptions()));
+  ::_exit(1);
+}
 
+TEST_F(DBCsppCrashSafeTest, ConversionCrashAcrossManifestCommit) {
+  Close();
+  for (bool osl : {false, true}) {
+    for (bool committed : {false, true}) {
+      SCOPED_TRACE(osl);
+      SCOPED_TRACE(committed);
+      Options options = BaseCrashSafeOptions(dbname_, true, false);
+      if (osl) SetupOsl(&options, true);
+      Destroy(options);
+      const std::string arg = std::string(osl ? "1" : "0") +
+                              (committed ? "1" : "0");
+      ASSERT_EQ(RunCrashChild(dbname_, "FlushManifestWindow", arg), 42);
+      const auto registered = ListLeftovers(options, dbname_);
+      ASSERT_FALSE(registered.empty());
+      for (const auto& path : registered) ASSERT_OK(env_->FileExists(path));
+      std::atomic<int> converts{0};
+      SyncPoint::GetInstance()->SetCallBack(
+          "MemTableRep::ConvertToSST:After",
+          [&](void*) { ++converts; });
+      SyncPoint::GetInstance()->EnableProcessing();
+      ASSERT_OK(TryReopen(options));
+      SyncPoint::GetInstance()->DisableProcessing();
+      SyncPoint::GetInstance()->ClearAllCallBacks();
+      ASSERT_EQ(converts.load(), committed ? 0 : 1);
+      ASSERT_EQ(Get("converted"), "durable");
+      ASSERT_EQ(CountL0(db_), 1);
+      std::vector<LiveFileMetaData> files;
+      db_->GetLiveFilesMetaData(&files);
+      ASSERT_EQ(files.size(), 1U);
+      if (!committed) {
+        const std::string path = MakeTableFileName(dbname_, files[0].file_number);
+        ASSERT_EQ(std::count(registered.begin(), registered.end(), path), 1);
+        ASSERT_OK(env_->FileExists(path));
+      }
+      Close();
+      ASSERT_OK(TryReopen(options));
+      ASSERT_EQ(Get("converted"), "durable");
+      ASSERT_EQ(CountL0(db_), 1);
+      Close();
+    }
+  }
+}
 
 TEST_F(DBCsppCrashSafeTest, GarbageCollectionKeepsActiveAndCachedMemTables) {
   Close();
@@ -4351,8 +4461,131 @@ TEST_F(DBCsppCrashSafeTest, TruncateInjectFailureFallsBackToWal) {
   SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
+TEST_F(CrashChild, DISABLED_AfterConvertBeforeAddFileKeepsRegisteredFile) {
+  ASSERT_EQ(arg_.size(), 3U);
+  Options options = BaseCrashSafeOptions(dbname_, true, arg_[1] == '1');
+  if (arg_[0] == '1') SetupOsl(&options, true);
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::PersistPublishedSequence:AfterCommit",
+      [](void*) { ::_exit(1); });
+  SyncPoint::GetInstance()->EnableProcessing();
+  DB* child_db = nullptr;
+  ASSERT_OK(DB::Open(options, dbname_, &child_db));
+  auto* cfd = static_cast<DBImpl*>(child_db)->GetVersionSet()
+                  ->GetColumnFamilySet()->GetDefault();
+  ASSERT_OK(WriteStringToFile(
+      options.env, MakeTableFileName(dbname_, cfd->mem()->GetFileNumber()),
+      dbname_ + "/active-file"));
+  ASSERT_OK(child_db->Put(WriteOptions(), "or", std::string(128, 'v')));
+  ::_exit(0);
+}
 
+TEST_F(CrashChild, DISABLED_AfterConvertBeforeAddFileKeepsRegisteredFileRecover) {
+  ASSERT_EQ(arg_.size(), 3U);
+  Options options = BaseCrashSafeOptions(dbname_, true, arg_[1] == '1');
+  if (arg_[0] == '1') SetupOsl(&options, true);
+  const char* points[] = {
+      "MemTableRep::ConvertToSST:Truncate",
+      "CrashSafeRecover::AfterConvertBeforeAddFile",
+      "CrashSafeRecover::AfterConvertBeforeAddFile",
+      "DBImpl::RegisterMemTableFile:AfterLogAndApply"};
+  ASSERT_LT(arg_[2] - '0', 4);
+  SyncPoint::GetInstance()->SetCallBack(
+      points[arg_[2] - '0'],
+      [&](void*) {
+        if (arg_[2] == '1') {
+          // Model an incomplete SST tail, without claiming this callback runs
+          // in the middle of a write. The persisted trie remains intact.
+          const auto files = ListLeftovers(options, dbname_);
+          ASSERT_EQ(files.size(), 2U);
+          std::string active;
+          ASSERT_OK(ReadFileToString(options.env, dbname_ + "/active-file", &active));
+          ASSERT_EQ(std::count(files.begin(), files.end(), active), 1);
+          const int fd = ::open(active.c_str(), O_RDWR);
+          ASSERT_GE(fd, 0);
+          uint64_t structure_size = 0;
+          if (arg_[0] == '1') {
+            terark::OSL_MmapHeader hdr{};
+            ASSERT_EQ(::pread(fd, &hdr, sizeof(hdr), 0),
+                      static_cast<ssize_t>(sizeof(hdr)));
+            structure_size = hdr.mem_used;
+          } else {
+            terark::DFA_MmapHeader hdr{};
+            ASSERT_EQ(::pread(fd, &hdr, sizeof(hdr), 0),
+                      static_cast<ssize_t>(sizeof(hdr)));
+            structure_size = hdr.file_size;
+          }
+          uint64_t size = 0;
+          ASSERT_OK(options.env->GetFileSize(active, &size));
+          ASSERT_GT(size, structure_size);
+          ASSERT_EQ(::ftruncate(fd, size - 1), 0);
+          ::close(fd);
+        }
+        ::_exit(1);
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+  DB* recover_db = nullptr;
+  DB::Open(options, dbname_, &recover_db);
+  ::_exit(0);
+}
 
+TEST_F(DBCsppCrashSafeTest, AfterConvertBeforeAddFileKeepsRegisteredFile) {
+  Close();
+  for (bool osl : {false, true}) {
+    for (bool log_index : {false, true}) {
+      for (int window = 0; window < 4; ++window) {
+        const std::string config = std::to_string(osl) +
+            std::to_string(log_index) + std::to_string(window);
+        SCOPED_TRACE(config);
+        Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+        if (osl) SetupOsl(&options, true);
+        Destroy(options);
+        ASSERT_EQ(RunCrashChild(dbname_,
+            "AfterConvertBeforeAddFileKeepsRegisteredFile", config), 1);
+        const auto before = ListLeftovers(options, dbname_);
+        ASSERT_EQ(before.size(), 2U);
+        std::string active;
+        ASSERT_OK(ReadFileToString(env_, dbname_ + "/active-file", &active));
+        ASSERT_EQ(std::count(before.begin(), before.end(), active), 1);
+        for (const auto& path : before) ASSERT_OK(env_->FileExists(path));
+        // Before commit, interrupt the same file twice to exercise footer
+        // replacement, not just a one-time conversion of the original source.
+        for (int crash = 0; crash < (window == 3 ? 1 : 2); ++crash) {
+          ASSERT_EQ(RunCrashChild(dbname_,
+              "AfterConvertBeforeAddFileKeepsRegisteredFileRecover", config), 1);
+          ASSERT_OK(env_->FileExists(active));
+          if (window != 3) {
+            ASSERT_EQ(ListLeftovers(options, dbname_), before);
+            for (const auto& path : before) ASSERT_OK(env_->FileExists(path));
+          }
+          PublishedSeqOnDisk rec;
+          ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+          ASSERT_EQ(rec.generation & 1, 0U);
+        }
+        int converted = 0;
+        SyncPoint::GetInstance()->SetCallBack(
+            "MemTableRep::ConvertToSST:After", [&](void*) { ++converted; });
+        SyncPoint::GetInstance()->EnableProcessing();
+        ASSERT_OK(TryReopen(options));
+        SyncPoint::GetInstance()->DisableProcessing();
+        SyncPoint::GetInstance()->ClearAllCallBacks();
+        ASSERT_EQ(converted, window == 3 ? 0 : 1);
+        ASSERT_EQ(Get("or"), std::string(128, 'v'));
+        std::vector<LiveFileMetaData> files;
+        db_->GetLiveFilesMetaData(&files);
+        ASSERT_EQ(files.size(), 1U);
+        ASSERT_EQ(files.front().level, 0);
+        ASSERT_EQ(MakeTableFileName(dbname_, files.front().file_number),
+                  active);
+        Close();
+        ASSERT_OK(TryReopen(options));
+        ASSERT_EQ(Get("or"), std::string(128, 'v'));
+        ASSERT_EQ(CountL0(db_), 1);
+        Close();
+      }
+    }
+  }
+}
 
 TEST_F(DBCsppCrashSafeTest, CrashSafeOrLogIndexDisablesWalCompression) {
   for (bool crash_safe : {false, true}) {
@@ -4720,7 +4953,79 @@ TEST_F(DBCsppCrashSafeTest, AtomicFlushDualCfLeftoverConvertsBoth) {
   ASSERT_GE(CountL0(db_, "one"), 1);
 }
 
+TEST_F(CrashChild, DISABLED_AtomicFlushManifestWindow) {
+  ASSERT_EQ(arg_.size(), 2U);
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.atomic_flush = true;
+  if (arg_[0] == '1') SetupOsl(&options, true);
+  DB* child_db = nullptr;
+  std::vector<ColumnFamilyHandle*> handles;
+  const std::vector<ColumnFamilyDescriptor> cfs = {
+      {kDefaultColumnFamilyName, options}, {"one", options}};
+  ASSERT_OK(DB::Open(options, dbname_, cfs, &handles, &child_db));
+  ASSERT_OK(child_db->Put(WriteOptions(), handles[0], "default-key", "one"));
+  ASSERT_OK(child_db->Put(WriteOptions(), handles[1], "other-key", "two"));
+  SyncPoint::GetInstance()->SetCallBack(
+      arg_[1] == '0' ? "FlushJob::BeforeManifest" : "FlushJob::AfterManifest",
+      [](void*) { ::_exit(42); });
+  SyncPoint::GetInstance()->EnableProcessing();
+  ASSERT_OK(child_db->Flush(FlushOptions(), handles));
+  ::_exit(1);
+}
 
+TEST_F(DBCsppCrashSafeTest, AtomicFlushCrashAcrossManifestCommit) {
+  Close();
+  for (bool osl : {false, true}) {
+    for (bool committed : {false, true}) {
+      SCOPED_TRACE(osl);
+      SCOPED_TRACE(committed);
+      Options options = BaseCrashSafeOptions(dbname_, true, false);
+      options.atomic_flush = true;
+      if (osl) SetupOsl(&options, true);
+      Destroy(options);
+      ASSERT_OK(TryReopen(options));
+      CreateAndReopenWithCF({"one"}, options);
+      Close();
+      const std::string arg = std::string(osl ? "1" : "0") +
+                              (committed ? "1" : "0");
+      ASSERT_EQ(RunCrashChild(dbname_, "AtomicFlushManifestWindow", arg), 42);
+      const auto registered = ListLeftovers(options, dbname_);
+      ASSERT_GE(registered.size(), 2U);
+      for (const auto& path : registered) ASSERT_OK(env_->FileExists(path));
+      std::atomic<int> converted{0};
+      SyncPoint::GetInstance()->SetCallBack(
+          "MemTableRep::ConvertToSST:After",
+          [&](void*) { ++converted; });
+      SyncPoint::GetInstance()->EnableProcessing();
+      ASSERT_OK(TryReopenWithColumnFamilies(
+          {kDefaultColumnFamilyName, "one"}, options));
+      SyncPoint::GetInstance()->DisableProcessing();
+      SyncPoint::GetInstance()->ClearAllCallBacks();
+      ASSERT_EQ(converted.load(), committed ? 0 : 2);
+      ASSERT_EQ(Get(0, "default-key"), "one");
+      ASSERT_EQ(Get(1, "other-key"), "two");
+      ASSERT_EQ(CountL0(db_, kDefaultColumnFamilyName), 1);
+      ASSERT_EQ(CountL0(db_, "one"), 1);
+      std::vector<LiveFileMetaData> files;
+      db_->GetLiveFilesMetaData(&files);
+      ASSERT_EQ(files.size(), 2U);
+      for (const auto& file : files) {
+        const std::string path = MakeTableFileName(dbname_, file.file_number);
+        ASSERT_OK(env_->FileExists(path));
+        ASSERT_EQ(std::count(registered.begin(), registered.end(), path),
+                  committed ? 0 : 1);
+      }
+      Close();
+      ASSERT_OK(TryReopenWithColumnFamilies(
+          {kDefaultColumnFamilyName, "one"}, options));
+      ASSERT_EQ(Get(0, "default-key"), "one");
+      ASSERT_EQ(Get(1, "other-key"), "two");
+      ASSERT_EQ(CountL0(db_, kDefaultColumnFamilyName), 1);
+      ASSERT_EQ(CountL0(db_, "one"), 1);
+      Close();
+    }
+  }
+}
 
 TEST_F(CrashChild, DISABLED_DroppedCfLeftoverSkipped) {
   Options options = BaseCrashSafeOptions(dbname_, true, false);

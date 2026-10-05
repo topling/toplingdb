@@ -213,6 +213,7 @@ Status VersionEditHandler::ApplyVersionEdit(VersionEdit& edit,
   if (s.ok()) {
     assert(cfd != nullptr);
     s = ExtractInfoFromVersionEdit(*cfd, edit);
+    if (s.ok()) version_set_->ApplyMemTableFileEdit(edit);
   }
   return s;
 }
@@ -528,6 +529,7 @@ ColumnFamilyData* VersionEditHandler::DestroyCfAndCleanup(
   ColumnFamilyData* ret =
       version_set_->GetColumnFamilySet()->GetColumnFamily(cf_id);
   assert(ret != nullptr);
+  ret->ApplyMemTableFileEdit(edit);
   ret->SetDropped();
   ret->UnrefAndTryDelete();
   ret = nullptr;

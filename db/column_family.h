@@ -373,6 +373,9 @@ class ColumnFamilyData {
   uint64_t OldestLogToKeep();
 
   void PrepareNewMemtableInBackground(const MutableCFOptions&);
+  // DB mutex must be held for registration and live-file collection.
+  const std::set<uint64_t>& GetMemTableFiles() const { return memtable_files_; }
+  void ApplyMemTableFileEdit(const VersionEdit& edit);
 
   // See Memtable constructor for explanation of earliest_seq param.
   MemTable* ConstructNewMemtable(const MutableCFOptions& mutable_cf_options,
@@ -618,6 +621,7 @@ class ColumnFamilyData {
 
   MemTable* mem_;
   MemTableList imm_;
+  std::set<uint64_t> memtable_files_;  // Protected by DB mutex.
   SuperVersion* super_version_;
 
   // An ordinal representing the current SuperVersion. Updated by

@@ -5505,6 +5505,7 @@ void VersionSet::Reset() {
   obsolete_files_.clear();
   obsolete_manifests_.clear();
   wals_.Reset();
+  has_memtable_file_tracking_ = false;
 }
 
 void VersionSet::AppendVersion(ColumnFamilyData* column_family_data,
@@ -5743,6 +5744,7 @@ Status VersionSet::ProcessManifestWrites(
   std::unordered_map<uint32_t, MutableCFState> curr_state;
   VersionEdit wal_additions;
   if (new_descriptor_log) {
+    if (has_memtable_file_tracking_) wal_additions.SetMemTableFileTracking();
     pending_manifest_file_number_ = NewFileNumber();
     batch_edits.back()->SetNextFile(next_file_number_.load());
 
@@ -5956,6 +5958,40 @@ Status VersionSet::ProcessManifestWrites(
 
   // Install the new versions
   if (s.ok()) {
+    // Only a committed live batch can retire backing files. MANIFEST replay
+    // applies registry edits without scheduling historical deletions.
+    std::map<uint64_t, std::string> retired_memtable_files;
+    for (const auto* edit : batch_edits) {
+      auto* cfd = column_family_set_->GetColumnFamily(edit->GetColumnFamily());
+      if (cfd != nullptr) {
+        const auto& files = cfd->GetMemTableFiles();
+        const auto& path = cfd->ioptions()->cf_paths[0].path;
+        if (edit->IsColumnFamilyDrop()) {
+          for (uint64_t number : files) {
+            retired_memtable_files.emplace(number, path);
+          }
+        } else {
+          for (uint64_t number : edit->GetMemTableFileDeletions()) {
+            assert(files.count(number));
+            retired_memtable_files.emplace(number, path);
+          }
+        }
+      }
+      ApplyMemTableFileEdit(*edit);
+    }
+    if (!retired_memtable_files.empty()) {
+      // In-place conversion transfers ownership to the installed SST version.
+      for (const auto* edit : batch_edits) {
+        for (const auto& file : edit->GetNewFiles()) {
+          retired_memtable_files.erase(file.second.fd.GetNumber());
+        }
+      }
+      for (const auto& file : retired_memtable_files) {
+        auto* metadata = new FileMetaData();
+        metadata->fd = FileDescriptor(file.first, 0, 0);
+        obsolete_files_.emplace_back(metadata, file.second);
+      }
+    }
     if (first_writer.edit_list.front()->IsColumnFamilyAdd()) {
       assert(batch_edits.size() == 1);
       assert(new_cf_options != nullptr);
@@ -6850,7 +6886,8 @@ Status VersionSet::WriteCurrentStateToManifest(
   }
 
   // Save WALs.
-  if (!wal_additions.GetWalAdditions().empty()) {
+  if (!wal_additions.GetWalAdditions().empty() ||
+      wal_additions.HasMemTableFileTracking()) {
     TEST_SYNC_POINT_CALLBACK("VersionSet::WriteCurrentStateToManifest:SaveWal",
                              const_cast<VersionEdit*>(&wal_additions));
     std::string record;
@@ -6915,6 +6952,11 @@ Status VersionSet::WriteCurrentStateToManifest(
       // Save files
       VersionEdit edit;
       edit.SetColumnFamily(cfd->GetID());
+
+      // Only the serialized MANIFEST writer changes this registry.
+      for (uint64_t number : cfd->GetMemTableFiles()) {
+        edit.AddMemTableFile(number);
+      }
 
       const auto* current = cfd->current();
       assert(current);
@@ -7566,6 +7608,14 @@ uint64_t VersionSet::GetObsoleteSstFilesSize() const {
     }
   }
   return ret;
+}
+
+void VersionSet::ApplyMemTableFileEdit(const VersionEdit& edit) {
+  has_memtable_file_tracking_ |= edit.HasMemTableFileTracking();
+  // Recovery may skip CFs that were not requested.
+  if (auto* cfd = column_family_set_->GetColumnFamily(edit.GetColumnFamily())) {
+    cfd->ApplyMemTableFileEdit(edit);
+  }
 }
 
 ColumnFamilyData* VersionSet::CreateColumnFamily(

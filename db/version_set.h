@@ -1370,6 +1370,10 @@ class VersionSet {
   // Allocate and return a new file number
   uint64_t NewFileNumber() { return next_file_number_.fetch_add(1); }
 
+  // Access requires the DB mutex, like other MANIFEST state.
+  bool HasMemTableFileTracking() const { return has_memtable_file_tracking_; }
+  void ApplyMemTableFileEdit(const VersionEdit& edit);
+
   // Fetch And Add n new file number
   uint64_t FetchAddFileNumber(uint64_t n) {
     return next_file_number_.fetch_add(n);
@@ -1678,6 +1682,7 @@ class VersionSet {
 
   // Protected by DB mutex.
   WalSet wals_;
+  bool has_memtable_file_tracking_ = false;
 
   std::unique_ptr<ColumnFamilySet> column_family_set_;
   Cache* table_cache_;

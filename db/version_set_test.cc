@@ -1505,6 +1505,156 @@ TEST_F(VersionSetTest, SameColumnFamilyGroupCommit) {
   EXPECT_EQ(kGroupSize - 1, count);
 }
 
+TEST_F(VersionSetTest, MemTableRegistryManifestRollover) {
+  NewDB();
+  const uint64_t first = versions_->NewFileNumber();
+  const uint64_t second = versions_->NewFileNumber();
+  ASSERT_FALSE(versions_->HasMemTableFileTracking());
+  VersionEdit addition;
+  addition.SetMemTableFileTracking();
+  addition.AddMemTableFile(first);
+  addition.AddMemTableFile(second);
+  ASSERT_OK(LogAndApplyToDefaultCF(addition));
+  ASSERT_EQ(versions_->GetColumnFamilySet()->GetDefault()->GetMemTableFiles(),
+            std::set<uint64_t>({first, second}));
+  CreateNewManifest();
+  ReopenDB();
+  ASSERT_TRUE(versions_->HasMemTableFileTracking());
+  ASSERT_EQ(versions_->GetColumnFamilySet()->GetDefault()->GetMemTableFiles(),
+            std::set<uint64_t>({first, second}));
+  ASSERT_GT(versions_->current_next_file_number(), second);
+  VersionEdit deletion;
+  deletion.DeleteMemTableFile(first);
+  deletion.DeleteMemTableFile(second);
+  ASSERT_OK(LogAndApplyToDefaultCF(deletion));
+  CreateNewManifest();
+  ReopenDB();
+  ASSERT_TRUE(versions_->HasMemTableFileTracking());
+  for (auto* cfd : *versions_->GetColumnFamilySet()) {
+    ASSERT_TRUE(cfd->GetMemTableFiles().empty());
+  }
+}
+
+TEST_F(VersionSetTest, MemTableRegistryFailedCommitDoesNotEnableTracking) {
+  NewDB();
+  VersionEdit invalid;
+  invalid.SetMemTableFileTracking();
+  invalid.AddMemTableFile(0);
+  ASSERT_TRUE(LogAndApplyToDefaultCF(invalid).IsCorruption());
+  ASSERT_FALSE(versions_->HasMemTableFileTracking());
+  for (auto* cfd : *versions_->GetColumnFamilySet()) {
+    ASSERT_TRUE(cfd->GetMemTableFiles().empty());
+  }
+}
+
+TEST_F(VersionSetTest, MemTableRegistryReadOnlySkipsUnopenedCf) {
+  NewDB();
+  const uint64_t first = versions_->NewFileNumber();
+  const uint64_t second = versions_->NewFileNumber();
+  VersionEdit addition;
+  addition.SetMemTableFileTracking();
+  addition.AddMemTableFile(first);
+  ASSERT_OK(LogAndApplyToDefaultCF(addition));
+  auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(1);
+  addition.Clear();
+  addition.SetColumnFamily(1);
+  addition.AddMemTableFile(second);
+  mutex_.Lock();
+  Status s = versions_->LogAndApply(cfd, mutable_cf_options_, read_options_,
+                                    &addition, &mutex_, nullptr);
+  mutex_.Unlock();
+  ASSERT_OK(s);
+  ASSERT_EQ(cfd->GetMemTableFiles(), std::set<uint64_t>({second}));
+  ASSERT_EQ(versions_->GetColumnFamilySet()->GetDefault()->GetMemTableFiles(),
+            std::set<uint64_t>({first}));
+  VersionSet read_only(dbname_, &db_options_, env_options_, table_cache_.get(),
+                       &write_buffer_manager_, &write_controller_, nullptr,
+                       nullptr, "", "", "", nullptr);
+  ASSERT_OK(read_only.Recover({column_families_.front()}, true));
+  ASSERT_EQ(read_only.GetColumnFamilySet()->GetColumnFamily(1), nullptr);
+  ASSERT_EQ(read_only.GetColumnFamilySet()->GetDefault()->GetMemTableFiles(),
+            std::set<uint64_t>({first}));
+  ASSERT_TRUE(read_only.HasMemTableFileTracking());
+  ASSERT_GT(read_only.current_next_file_number(), second);
+}
+
+TEST_F(VersionSetTest, MemTableRegistryRetirementQueuesObsoleteFile) {
+  NewDB();
+  const uint64_t first = versions_->NewFileNumber();
+  VersionEdit addition;
+  addition.SetMemTableFileTracking();
+  addition.AddMemTableFile(first);
+  ASSERT_OK(LogAndApplyToDefaultCF(addition));
+  VersionEdit deletion;
+  deletion.DeleteMemTableFile(first);
+  ASSERT_OK(LogAndApplyToDefaultCF(deletion));
+  std::vector<ObsoleteFileInfo> tables;
+  std::vector<ObsoleteBlobFileInfo> blobs;
+  std::vector<std::string> manifests;
+  versions_->GetObsoleteFiles(&tables, &blobs, &manifests, first);
+  ASSERT_TRUE(tables.empty());
+  manifests.clear();
+  versions_->GetObsoleteFiles(&tables, &blobs, &manifests, first + 1);
+  ASSERT_EQ(tables.size(), 1U);
+  ASSERT_EQ(tables[0].metadata->fd.GetNumber(), first);
+  ASSERT_EQ(tables[0].path,
+            versions_->GetColumnFamilySet()->GetDefault()->ioptions()->cf_paths[0].path);
+  ASSERT_EQ(tables[0].metadata->table_reader_handle, nullptr);
+  tables[0].DeleteMetadata();
+}
+
+TEST_F(VersionSetTest, MemTableRegistryDropAndDiscardedEdit) {
+  NewDB();
+  const uint64_t first = versions_->NewFileNumber();
+  auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(1);
+  ASSERT_NE(cfd, nullptr);
+  cfd->Ref();
+  VersionEdit addition;
+  addition.SetColumnFamily(1);
+  addition.SetMemTableFileTracking();
+  addition.AddMemTableFile(first);
+  mutex_.Lock();
+  Status status = versions_->LogAndApply(
+      cfd, mutable_cf_options_, read_options_, &addition, &mutex_, nullptr);
+  mutex_.Unlock();
+  ASSERT_OK(status);
+  ASSERT_EQ(cfd->GetMemTableFiles(), std::set<uint64_t>({first}));
+  VersionEdit drop;
+  drop.SetColumnFamily(1);
+  drop.DropColumnFamily();
+  mutex_.Lock();
+  status = versions_->LogAndApply(
+      cfd, mutable_cf_options_, read_options_, &drop, &mutex_, nullptr);
+  mutex_.Unlock();
+  ASSERT_OK(status);
+  ASSERT_TRUE(cfd->GetMemTableFiles().empty());
+  std::vector<ObsoleteFileInfo> retired_tables;
+  std::vector<ObsoleteBlobFileInfo> retired_blobs;
+  std::vector<std::string> retired_manifests;
+  versions_->GetObsoleteFiles(&retired_tables, &retired_blobs,
+                             &retired_manifests, first + 1);
+  ASSERT_EQ(retired_tables.size(), 1U);
+  ASSERT_EQ(retired_tables[0].metadata->fd.GetNumber(), first);
+  ASSERT_EQ(retired_tables[0].path, cfd->ioptions()->cf_paths[0].path);
+  retired_tables[0].DeleteMetadata();
+  VersionEdit discarded;
+  discarded.SetColumnFamily(1);
+  discarded.AddMemTableFile(versions_->NewFileNumber());
+  mutex_.Lock();
+  status = versions_->LogAndApply(
+      cfd, mutable_cf_options_, read_options_, &discarded, &mutex_, nullptr);
+  EXPECT_TRUE(cfd->GetMemTableFiles().empty());
+  cfd->UnrefAndTryDelete();
+  mutex_.Unlock();
+  ASSERT_TRUE(status.IsColumnFamilyDropped());
+  ASSERT_EQ(versions_->GetColumnFamilySet()->GetColumnFamily(1), nullptr);
+  ASSERT_TRUE(versions_->HasMemTableFileTracking());
+  CreateNewManifest();
+  ReopenDB();
+  ASSERT_TRUE(versions_->HasMemTableFileTracking());
+  ASSERT_EQ(versions_->GetColumnFamilySet()->GetColumnFamily(1), nullptr);
+}
+
 TEST_F(VersionSetTest, PersistBlobFileStateInNewManifest) {
   // Initialize the database and add a couple of blob files, one with some
   // garbage in it, and one without any garbage.
@@ -2624,6 +2774,64 @@ TEST_F(VersionSetAtomicGroupTest,
   EXPECT_EQ(num_initial_edits_ + kAtomicGroupSize, num_recovered_edits_);
 }
 
+TEST_F(VersionSetAtomicGroupTest, MemTableRegistryAtomicTransition) {
+  SetupValidAtomicGroup(3);
+  const uint64_t first = versions_->NewFileNumber();
+  const uint64_t second = versions_->NewFileNumber();
+  edits_[0].SetMemTableFileTracking();
+  edits_[0].AddMemTableFile(first);
+  edits_[1].DeleteMemTableFile(first);
+  edits_[1].AddMemTableFile(second);
+  edits_[2].SetNextFile(versions_->current_next_file_number());
+  AddNewEditsToLog(3);
+  ASSERT_OK(versions_->Recover(column_families_, false));
+  ASSERT_TRUE(versions_->HasMemTableFileTracking());
+  ASSERT_EQ(versions_->GetColumnFamilySet()->GetDefault()->GetMemTableFiles(),
+            std::set<uint64_t>({second}));
+  ASSERT_GT(versions_->current_next_file_number(), second);
+  auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(0);
+  for (int level = 0; level < cfd->NumberLevels(); ++level) {
+    ASSERT_TRUE(cfd->current()->storage_info()->LevelFiles(level).empty());
+  }
+  std::vector<ObsoleteFileInfo> tables;
+  std::vector<ObsoleteBlobFileInfo> blobs;
+  std::vector<std::string> manifests;
+  versions_->GetObsoleteFiles(&tables, &blobs, &manifests, second + 1);
+  ASSERT_TRUE(tables.empty());  // Historical replay must never schedule GC.
+}
+
+TEST_F(VersionSetAtomicGroupTest, MemTableRegistryIncompleteAtomicGroup) {
+  SetupIncompleteTrailingAtomicGroup(3);
+  const uint64_t first = versions_->NewFileNumber();
+  const uint64_t second = versions_->NewFileNumber();
+  edits_[0].SetMemTableFileTracking();
+  edits_[0].AddMemTableFile(first);
+  edits_[1].DeleteMemTableFile(first);
+  edits_[1].AddMemTableFile(second);
+  edits_[1].SetNextFile(versions_->current_next_file_number());
+  AddNewEditsToLog(2);
+  ASSERT_OK(versions_->Recover(column_families_, false));
+  ASSERT_FALSE(versions_->HasMemTableFileTracking());
+  for (auto* cfd : *versions_->GetColumnFamilySet()) {
+    ASSERT_TRUE(cfd->GetMemTableFiles().empty());
+  }
+}
+
+TEST_F(VersionSetAtomicGroupTest, MemTableRegistryTrackingSurvivesEmptyList) {
+  SetupValidAtomicGroup(3);
+  const uint64_t first = versions_->NewFileNumber();
+  edits_[0].SetMemTableFileTracking();
+  edits_[0].AddMemTableFile(first);
+  edits_[1].DeleteMemTableFile(first);
+  edits_[2].SetNextFile(versions_->current_next_file_number());
+  AddNewEditsToLog(3);
+  ASSERT_OK(versions_->Recover(column_families_, false));
+  ASSERT_TRUE(versions_->HasMemTableFileTracking());
+  ASSERT_TRUE(versions_->GetColumnFamilySet()->GetDefault()
+                  ->GetMemTableFiles().empty());
+  ASSERT_GT(versions_->current_next_file_number(), first);
+}
+
 TEST_F(VersionSetAtomicGroupTest,
        HandleValidAtomicGroupWithReactiveVersionSetReadAndApply) {
   const int kAtomicGroupSize = 3;
@@ -3679,6 +3887,31 @@ TEST_F(VersionSetTestMissingFiles, NoFileMissing) {
       ASSERT_TRUE(files.empty());
     }
   }
+}
+
+TEST_F(VersionSetTestMissingFiles, MemTableRegistryConversionKeepsSameNumberSst) {
+  NewDB();
+  const uint64_t first = versions_->NewFileNumber();
+  VersionEdit addition;
+  addition.SetMemTableFileTracking();
+  addition.AddMemTableFile(first);
+  ASSERT_OK(LogAndApplyToDefaultCF(addition));
+  SstInfo sst(first, kDefaultColumnFamilyName, "a", 0, 100);
+  std::vector<FileMetaData> file_metas;
+  CreateDummyTableFiles({sst}, &file_metas);
+  VersionEdit conversion;
+  conversion.DeleteMemTableFile(first);
+  conversion.AddFile(0, file_metas[0]);
+  ASSERT_OK(LogAndApplyToDefaultCF(conversion));
+  ASSERT_TRUE(versions_->GetColumnFamilySet()->GetDefault()
+                  ->GetMemTableFiles().empty());
+  std::vector<ObsoleteFileInfo> tables;
+  std::vector<ObsoleteBlobFileInfo> blobs;
+  std::vector<std::string> manifests;
+  versions_->GetObsoleteFiles(&tables, &blobs, &manifests, first + 1);
+  ASSERT_TRUE(tables.empty());
+  ASSERT_EQ(versions_->GetColumnFamilySet()->GetDefault()->current()
+                ->storage_info()->LevelFiles(0).size(), 1U);
 }
 
 TEST_F(VersionSetTestMissingFiles, MinLogNumberToKeep2PC) {

@@ -1234,6 +1234,20 @@ MemTable* ColumnFamilyData::ConstructNewMemtable(
   return tab;
 }
 
+void ColumnFamilyData::ApplyMemTableFileEdit(const VersionEdit& edit) {
+  ROCKSDB_ASSERT_EQ(edit.GetColumnFamily(), id_);
+  if (edit.IsColumnFamilyDrop()) {
+    memtable_files_.clear();
+    return;
+  }
+  for (uint64_t number : edit.GetMemTableFileDeletions()) {
+    memtable_files_.erase(number);
+  }
+  for (uint64_t number : edit.GetMemTableFileAdditions()) {
+    memtable_files_.insert(number);
+  }
+}
+
 void ColumnFamilyData::CreateNewMemtable(
     const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
   if (mem_ != nullptr) {

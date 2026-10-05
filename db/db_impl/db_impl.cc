@@ -4075,6 +4075,10 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
 
     // LogAndApply will both write the creation in MANIFEST and create
     // ColumnFamilyData object
+    auto pending_memtable = pending_outputs_.end();
+    if (cf_options.memtable_factory->SupportCrashSafe()) {
+      pending_memtable = CaptureCurrentFileNumberInPendingOutputs();
+    }
     {  // write thread
       WriteThread::Writer w;
       write_thread_.EnterUnbatched(&w, &mutex_);
@@ -4091,6 +4095,22 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
       assert(cfd != nullptr);
       std::map<std::string, std::shared_ptr<FSDirectory>> dummy_created_dirs;
       s = cfd->AddDirectories(&dummy_created_dirs);
+      if (s.ok() && immutable_db_options_.memtable_crash_safe_recover) {
+        cfd->PrepareNewMemtableInBackground(*cfd->GetLatestMutableCFOptions());
+        s = RegisterMemTableFiles(cfd);
+        if (!s.ok()) {
+          // CF creation is already committed. Keep its in-memory state valid,
+          // but do not return a writable handle after registration fails.
+          InstallSuperVersionAndScheduleWork(cfd, &sv_context,
+                                             *cfd->GetLatestMutableCFOptions());
+          cfd->set_initialized();
+          error_handler_.SetBGError(s, BackgroundErrorReason::kManifestWrite)
+              .PermitUncheckedError();
+        }
+      }
+    }
+    if (pending_memtable != pending_outputs_.end()) {
+      pending_outputs_.erase(pending_memtable);
     }
     if (s.ok()) {
       auto* cfd =

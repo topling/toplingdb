@@ -2322,6 +2322,22 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
     return s;
   }
 
+  auto pending_memtable = pending_outputs_.end();
+  if (cfd->ioptions()->memtable_factory->SupportCrashSafe()) {
+    auto* cached = cfd->PeekPrecreatedMemtable();
+    uint64_t number = cached ? cached->GetFileNumber()
+                            : versions_->current_next_file_number();
+    // A background-created file may enter the cache while the DB mutex is free.
+    if (!pending_outputs_.empty()) {
+      terark::minimize(number, pending_outputs_.front());
+    }
+    pending_memtable = pending_outputs_.insert(pending_outputs_.begin(), number);
+  }
+  ROCKSDB_SCOPE_EXIT(if (pending_memtable != pending_outputs_.end()) {
+    mutex_.AssertHeld();
+    pending_outputs_.erase(pending_memtable);
+  });
+
   // Attempt to switch to a new memtable and trigger flush of old.
   // Do this without holding the dbmutex lock.
   assert(versions_->prev_log_number() == 0);
@@ -2368,6 +2384,7 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
     new_mem = cfd->ConstructNewMemtable(mutable_cf_options, seq);
     context->superversion_context.NewSuperVersion();
   }
+  TEST_SYNC_POINT("DBImpl::SwitchMemtable:BeforeInstallMemTable");
   ROCKS_LOG_INFO(immutable_db_options_.info_log,
                  "[%s] New memtable created with log file: #%" PRIu64
                  ". Immutable memtables: %d.\n",
@@ -2384,6 +2401,39 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
     // after it has been renamed.
     assert(log_recycle_files_.front() == recycle_log_number);
     log_recycle_files_.pop_front();
+  }
+  if (s.ok() && immutable_db_options_.memtable_crash_safe_recover &&
+      !new_mem->IsFileRegistered()) {
+    TEST_SYNC_POINT_CALLBACK("DBImpl::SwitchMemtable:MemTableCacheMiss", new_mem);
+    s = error_handler_.GetBGError();
+    // A flush may have registered this file after it left the cache.
+    if (s.ok() && !cfd->GetMemTableFiles().count(new_mem->GetFileNumber())) {
+      VersionEdit edit;
+      edit.SetColumnFamily(cfd->GetID());
+      edit.AddMemTableFile(new_mem->GetFileNumber());
+      edit.SetMemTableFileTracking();
+      TEST_SYNC_POINT("DBImpl::RegisterMemTableFile:BeforeLogAndApply");
+      s = versions_->LogAndApply(cfd, mutable_cf_options, ReadOptions(), &edit,
+                                &mutex_, directories_.GetDbDir());
+      TEST_SYNC_POINT_CALLBACK("DBImpl::RegisterMemTableFile:AfterLogAndApply", &s);
+      if (!s.ok()) {
+        error_handler_.SetBGError(s, BackgroundErrorReason::kManifestWrite)
+            .PermitUncheckedError();
+      } else {
+        s = error_handler_.GetBGError();
+      }
+    }
+    if (s.ok() && shutting_down_.load(std::memory_order_acquire)) {
+      s = Status::ShutdownInProgress();
+    }
+    if (!s.ok()) {
+      delete new_mem;
+      delete new_log;
+      context->superversion_context.new_superversion.reset();
+      return s;
+    }
+    new_mem->MarkFileRegistered();
+    TEST_SYNC_POINT("DBImpl::RegisterMemTableFile:BeforeInstall");
   }
   if (s.ok() && creating_new_log) {
     InstrumentedMutexLock l(&log_write_mutex_);

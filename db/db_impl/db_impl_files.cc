@@ -175,6 +175,14 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
 
   if (doing_the_full_scan) {
     versions_->AddLiveFiles(&job_context->sst_live, &job_context->blob_live);
+    // These share the SST namespace, but are still mutable. Protect them from
+    // GC without exposing them as immutable SSTs to checkpoints and backups.
+    for (auto* cfd : *versions_->GetColumnFamilySet()) {
+      const auto& files = cfd->GetMemTableFiles();
+      job_context->sst_live.insert(job_context->sst_live.end(),
+                                   files.begin(), files.end());
+      cfd->AddMemTableFileNumbers(&job_context->sst_live);
+    }
     InfoLogPrefix info_log_prefix(!immutable_db_options_.db_log_dir.empty(),
                                   dbname_);
     std::set<std::string> paths;

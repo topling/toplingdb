@@ -1683,6 +1683,7 @@ class VersionSet {
   // Protected by DB mutex.
   WalSet wals_;
   bool has_memtable_file_tracking_ = false;
+  bool replaying_manifest_ = true;
 
   std::unique_ptr<ColumnFamilySet> column_family_set_;
   Cache* table_cache_;

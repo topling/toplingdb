@@ -5506,6 +5506,7 @@ void VersionSet::Reset() {
   obsolete_manifests_.clear();
   wals_.Reset();
   has_memtable_file_tracking_ = false;
+  replaying_manifest_ = true;
 }
 
 void VersionSet::AppendVersion(ColumnFamilyData* column_family_data,
@@ -6382,6 +6383,7 @@ Status VersionSet::Recover(
 
   if (s.ok()) {
     manifest_file_size_ = current_manifest_file_size;
+    replaying_manifest_ = false;
     ROCKS_LOG_INFO(
         db_options_->info_log,
         "Recovered from manifest file:%s succeeded,"
@@ -6551,6 +6553,7 @@ Status VersionSet::TryRecoverFromOneManifest(
   s = handler_pit.status();
   if (s.ok()) {
     RecoverEpochNumbers();
+    replaying_manifest_ = false;
   }
   return s;
 }
@@ -7643,10 +7646,12 @@ ColumnFamilyData* VersionSet::CreateColumnFamily(
                    update_stats);
 
   AppendVersion(new_cfd, v);
-  // GetLatestMutableCFOptions() is safe here without mutex since the
-  // cfd is not available to client
-  new_cfd->CreateNewMemtable(*new_cfd->GetLatestMutableCFOptions(),
-                             LastSequence());
+  if (!cf_options.memtable_factory->SupportCrashSafe() || !replaying_manifest_) {
+    // GetLatestMutableCFOptions() is safe here without mutex since the
+    // cfd is not available to client
+    new_cfd->CreateNewMemtable(*new_cfd->GetLatestMutableCFOptions(),
+                               LastSequence());
+  }
   new_cfd->SetLogNumber(edit->GetLogNumber());
   return new_cfd;
 }

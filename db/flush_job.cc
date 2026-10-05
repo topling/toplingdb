@@ -209,7 +209,15 @@ void FlushJob::PickMemTable() {
   edit_->SetColumnFamily(cfd_->GetID());
 
   // path 0 for level 0 file.
-  meta_.fd = FileDescriptor(versions_->NewFileNumber(), 0, 0);
+  const uint64_t file_number = [&]() {
+    if (m->SupportCrashSafe()) {
+      ROCKSDB_ASSERT_EQ(mems_.size(), 1);
+      return m->GetFileNumber();
+    } else {
+      return versions_->NewFileNumber();
+    }
+  }();
+  meta_.fd = FileDescriptor(file_number, 0, 0);
   meta_.epoch_number = cfd_->NewEpochNumber();
 
   base_ = cfd_->current();
@@ -1077,6 +1085,11 @@ Status FlushJob::WriteLevel0Table() {
   // Note that if file_size is zero, the file has been deleted and
   // should not be added to the manifest.
   const bool has_output = meta_.fd.GetFileSize() > 0;
+
+  if (s.ok() && mems_.front()->IsFileRegistered()) {
+    ROCKSDB_ASSERT_EQ(mems_.size(), 1);
+    edit_->DeleteMemTableFile(mems_.front()->GetFileNumber());
+  }
 
   if (s.ok() && has_output) {
     TEST_SYNC_POINT("DBImpl::FlushJob:SSTFileCreated");

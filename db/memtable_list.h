@@ -333,6 +333,7 @@ class MemTableList {
   size_t ApproximateUnflushedMemTablesMemoryUsage();
 
   bool UnflushedMemtablesSupportConvertToSST() const;
+  void AddMemTableFileNumbers(std::vector<uint64_t>* live) const;
 
   // Returns an estimate of the timestamp of the earliest key.
   uint64_t ApproximateOldestKeyTime() const;

@@ -373,9 +373,13 @@ class ColumnFamilyData {
   uint64_t OldestLogToKeep();
 
   void PrepareNewMemtableInBackground(const MutableCFOptions&);
+  MemTable* PeekPrecreatedMemtable();
   // DB mutex must be held for registration and live-file collection.
   const std::set<uint64_t>& GetMemTableFiles() const { return memtable_files_; }
   void ApplyMemTableFileEdit(const VersionEdit& edit);
+  void AddMemTableFileEdits(VersionEdit* edit);
+  void AddMemTableFileNumbers(std::vector<uint64_t>* live);
+  void PublishRegisteredMemTables();
 
   // See Memtable constructor for explanation of earliest_seq param.
   MemTable* ConstructNewMemtable(const MutableCFOptions& mutable_cf_options,

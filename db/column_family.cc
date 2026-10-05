@@ -1188,8 +1188,10 @@ void ColumnFamilyData::PrepareNewMemtableInBackground(
     }
   }
   auto beg = terark::qtime::now();
+  uint64_t number = ioptions_.memtable_factory->SupportCrashSafe()
+                  ? dummy_versions_->version_set()->NewFileNumber() : 0;
   auto tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
-                          write_buffer_manager_, 0/*earliest_seq*/, id_);
+                          write_buffer_manager_, 0/*earliest_seq*/, id_, number);
   auto end = terark::qtime::now();
   RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, (end - beg).ns());
   {
@@ -1226,12 +1228,21 @@ MemTable* ColumnFamilyData::ConstructNewMemtable(
     tab->SetEarliestSequenceNumber(earliest_seq);
   } else {
     auto beg = terark::qtime::now();
+    // dummy_versions_ remains alive for the lifetime of this CF, unlike current_.
+    uint64_t number = ioptions_.memtable_factory->SupportCrashSafe()
+                    ? dummy_versions_->version_set()->NewFileNumber() : 0;
     tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
-                      write_buffer_manager_, earliest_seq, id_);
+                      write_buffer_manager_, earliest_seq, id_, number);
     auto end = terark::qtime::now();
     RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, (end - beg).ns());
   }
   return tab;
+}
+
+MemTable* ColumnFamilyData::PeekPrecreatedMemtable() {
+  std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+  return precreated_memtable_list_.empty()
+             ? nullptr : precreated_memtable_list_.front().get();
 }
 
 void ColumnFamilyData::ApplyMemTableFileEdit(const VersionEdit& edit) {
@@ -1245,6 +1256,49 @@ void ColumnFamilyData::ApplyMemTableFileEdit(const VersionEdit& edit) {
   }
   for (uint64_t number : edit.GetMemTableFileAdditions()) {
     memtable_files_.insert(number);
+  }
+}
+
+void ColumnFamilyData::AddMemTableFileEdits(VersionEdit* edit) {
+  if (!ioptions_.memtable_crash_safe_recover) return;
+  std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+  auto add = [&](MemTable* mem) {
+    if (!mem->IsFileRegistered()) {
+      edit->AddMemTableFile(mem->GetFileNumber());
+      edit->SetMemTableFileTracking();
+    }
+  };
+  add(mem_);
+  for (size_t i = 0; i < precreated_memtable_list_.size(); ++i) {
+    add(precreated_memtable_list_[i].get());
+  }
+}
+
+void ColumnFamilyData::PublishRegisteredMemTables() {
+  if (!ioptions_.memtable_crash_safe_recover) return;
+  TEST_SYNC_POINT("FlushJob::MemTableCache:BeforePublish");
+  {
+    std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+    auto publish = [&](MemTable* mem) {
+      if (memtable_files_.count(mem->GetFileNumber())) {
+        mem->MarkFileRegistered();
+      }
+    };
+    publish(mem_);
+    for (size_t i = 0; i < precreated_memtable_list_.size(); ++i) {
+      publish(precreated_memtable_list_[i].get());
+    }
+  }
+  TEST_SYNC_POINT("FlushJob::MemTableCache:AfterPublish");
+}
+
+void ColumnFamilyData::AddMemTableFileNumbers(std::vector<uint64_t>* live) {
+  if (!ioptions_.memtable_factory->SupportCrashSafe()) return;
+  if (mem_ != nullptr) live->push_back(mem_->GetFileNumber());
+  imm_.AddMemTableFileNumbers(live);
+  std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+  for (size_t i = 0; i < precreated_memtable_list_.size(); ++i) {
+    live->push_back(precreated_memtable_list_[i]->GetFileNumber());
   }
 }
 

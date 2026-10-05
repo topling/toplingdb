@@ -453,7 +453,7 @@ void MemTableList::RollbackMemtableFlush(const autovector<MemTable*>& mems,
 #ifndef NDEBUG
   for (MemTable* m : mems) {
     assert(m->flush_in_progress_);
-    assert(m->file_number_ == 0);
+    assert(m->file_number_ == 0 || m->SupportCrashSafe());
   }
 #endif
 
@@ -475,7 +475,9 @@ void MemTableList::RollbackMemtableFlush(const autovector<MemTable*>& mems,
         m->flush_in_progress_ = false;
         m->flush_completed_ = false;
         m->edit_.Clear();
-        m->file_number_ = 0;
+        if (!m->SupportCrashSafe()) {
+          m->file_number_ = 0;
+        }
         num_flush_not_started_++;
         ++it;
       } else {
@@ -486,8 +488,7 @@ void MemTableList::RollbackMemtableFlush(const autovector<MemTable*>& mems,
 
   for (MemTable* m : mems) {
     if (m->flush_in_progress_) {
-      assert(m->file_number_ == 0);
-      m->file_number_ = 0;
+      assert(m->file_number_ == 0 || m->SupportCrashSafe());
       m->flush_in_progress_ = false;
       m->flush_completed_ = false;
       m->edit_.Clear();
@@ -621,10 +622,16 @@ Status MemTableList::TryInstallMemtableFlushResults(
 
       const auto manifest_write_cb = [this, cfd, batch_count, log_buffer,
                                       to_delete, mu](const Status& status) {
+        if (status.ok() && !cfd->IsDropped()) {
+          cfd->PublishRegisteredMemTables();
+          TEST_SYNC_POINT("FlushJob::AfterManifest");
+        }
         RemoveMemTablesOrRestoreFlags(status, cfd, batch_count, log_buffer,
                                       to_delete, mu);
       };
       if (write_edits) {
+        cfd->AddMemTableFileEdits(edit_list.front());
+        TEST_SYNC_POINT("FlushJob::BeforeManifest");
         // this can release and reacquire the mutex.
         s = vset->LogAndApply(cfd, mutable_cf_options, read_options, edit_list,
                               mu, db_directory, /*new_descriptor_log=*/false,
@@ -695,6 +702,12 @@ bool MemTableList::UnflushedMemtablesSupportConvertToSST() const {
     }
   }
   return true;
+}
+
+void MemTableList::AddMemTableFileNumbers(std::vector<uint64_t>* live) const {
+  for (MemTable* mem : current_->memlist_) {
+    live->push_back(mem->GetFileNumber());
+  }
 }
 
 size_t MemTableList::ApproximateMemoryUsage() { return current_memory_usage_; }
@@ -813,7 +826,9 @@ void MemTableList::RemoveMemTablesOrRestoreFlags(
       m->flush_in_progress_ = false;
       m->edit_.Clear();
       num_flush_not_started_++;
-      m->file_number_ = 0;
+      if (!m->SupportCrashSafe()) {
+        m->file_number_ = 0;
+      }
       imm_flush_needed.store(true, std::memory_order_release);
       ++mem_id;
     }
@@ -887,6 +902,7 @@ Status InstallMemtableAtomicFlushResults(
           (*mems_list[k])[0]->ReleaseFlushJobInfo();
       committed_flush_jobs_info[k]->push_back(std::move(flush_job_info));
     }
+    cfds[k]->AddMemTableFileEdits((*mems_list[k])[0]->GetEdits());
   }
 
   Status s;
@@ -933,11 +949,16 @@ Status InstallMemtableAtomicFlushResults(
     assert(0 == num_entries);
   }
 
+  TEST_SYNC_POINT("FlushJob::BeforeManifest");
   // this can release and reacquire the mutex.
   s = vset->LogAndApply(cfds, mutable_cf_options_list, read_options, edit_lists,
                         mu, db_directory);
 
   for (size_t k = 0; k != cfds.size(); ++k) {
+    if (s.ok() && !cfds[k]->IsDropped()) {
+      cfds[k]->PublishRegisteredMemTables();
+      TEST_SYNC_POINT("FlushJob::AfterManifest");
+    }
     auto* imm = (imm_lists == nullptr) ? cfds[k]->imm() : imm_lists->at(k);
     imm->InstallNewVersion();
   }
@@ -1002,7 +1023,9 @@ Status InstallMemtableAtomicFlushResults(
         m->SetFlushCompleted(false);
         m->SetFlushInProgress(false);
         m->GetEdits()->Clear();
-        m->SetFileNumber(0);
+        if (!m->SupportCrashSafe()) {
+          m->SetFileNumber(0);
+        }
         imm->num_flush_not_started_++;
       }
       imm->imm_flush_needed.store(true, std::memory_order_release);

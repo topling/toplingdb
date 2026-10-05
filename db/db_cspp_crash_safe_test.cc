@@ -8,8 +8,15 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <chrono>
+#include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <map>
+#include <mutex>
+#include <set>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <typeinfo>
@@ -26,7 +33,9 @@
 #include "db/db_test_util.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"
+#include "db/memtable.h"
 #include "db/pre_release_callback.h"
+#include "db/version_set.h"
 #include "file/filename.h"
 #include "file/file_util.h"
 #include "file/sequence_file_reader.h"
@@ -34,7 +43,9 @@
 #include "port/port.h"
 #include "port/stack_trace.h"
 #include "rocksdb/io_status.h"
+#include "rocksdb/convenience.h"
 #include "rocksdb/statistics.h"
+#include "rocksdb/utilities/checkpoint.h"
 #include "rocksdb/utilities/transaction_db.h"
 #include "rocksdb/wal_filter.h"
 #include "table/get_context.h"
@@ -107,8 +118,74 @@ Options BaseCrashSafeOptions(const std::string& dbname, bool recover,
 std::vector<std::string> ListLeftovers(const Options& options,
                                        const std::string& dir) {
   std::vector<std::string> leftovers;
-  if (options.memtable_factory) {
-    options.memtable_factory->ListCrashSafeLeftovers(dir, &leftovers);
+  Env* env = options.env ? options.env : Env::Default();
+  std::string current;
+  Status s = env->FileExists(CurrentFileName(dir));
+  if (s.IsNotFound()) return leftovers;
+  EXPECT_OK(s);
+  if (!s.ok()) return leftovers;
+  s = ReadFileToString(env, CurrentFileName(dir), &current);
+  if (!s.ok()) {
+    ADD_FAILURE() << s.ToString();
+    return leftovers;
+  }
+  EXPECT_FALSE(current.empty());
+  if (current.empty()) return leftovers;
+  if (current.back() == '\n') current.pop_back();
+  const std::string manifest = dir + "/" + current;
+  std::unique_ptr<FSSequentialFile> file;
+  s = env->GetFileSystem()->NewSequentialFile(manifest, FileOptions(), &file,
+                                             nullptr);
+  EXPECT_OK(s);
+  if (!s.ok()) return leftovers;
+  struct Reporter : log::Reader::Reporter {
+    void Corruption(size_t, const Status& status) override {
+      ADD_FAILURE() << status.ToString();
+    }
+  } reporter;
+  auto input = std::make_unique<SequentialFileReader>(std::move(file), manifest);
+  log::Reader reader(nullptr, std::move(input), &reporter, true, 0);
+  std::map<uint32_t, std::set<uint64_t>> registered;
+  auto apply = [&](const VersionEdit& edit) {
+    const uint32_t cf = edit.GetColumnFamily();
+    if (edit.IsColumnFamilyDrop()) {
+      registered.erase(cf);
+      return;
+    }
+    for (uint64_t number : edit.GetMemTableFileDeletions()) {
+      registered[cf].erase(number);
+    }
+    for (uint64_t number : edit.GetMemTableFileAdditions()) {
+      registered[cf].insert(number);
+    }
+  };
+  AtomicGroupReadBuffer group;
+  Slice record;
+  std::string scratch;
+  while (reader.ReadRecord(&record, &scratch)) {
+    VersionEdit edit;
+    s = edit.DecodeFrom(record);
+    EXPECT_OK(s);
+    if (!s.ok()) break;
+    s = group.AddEdit(&edit);
+    EXPECT_OK(s);
+    if (!s.ok()) break;
+    if (!edit.IsInAtomicGroup()) {
+      apply(edit);
+    } else if (group.IsFull()) {
+      for (const auto& member : group.replay_buffer()) apply(member);
+      group.Clear();
+    }
+  }
+  const std::string path = !options.cf_paths.empty()
+                               ? options.cf_paths[0].path
+                               : !options.db_paths.empty()
+                                     ? options.db_paths[0].path
+                                     : dir;
+  for (const auto& cf : registered) {
+    for (uint64_t number : cf.second) {
+      leftovers.push_back(MakeTableFileName(path, number));
+    }
   }
   return leftovers;
 }
@@ -230,6 +307,171 @@ class DBCsppCrashSafeTest : public DBTestBase {
       : DBTestBase("db_cspp_crash_safe_test", /*env_do_fsync=*/false) {}
 };
 
+#if !defined(OS_WIN)
+TEST_F(CrashChild, DISABLED_RegisteredMemTables) {
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  if (arg_ == "osl") SetupOsl(&options, true);
+  DB* child_db = nullptr;
+  ASSERT_OK(DB::Open(options, dbname_, &child_db));
+  ASSERT_OK(child_db->Put(WriteOptions(), "first", "1"));
+  ASSERT_OK(static_cast<DBImpl*>(child_db)->TEST_SwitchMemtable());
+  ASSERT_OK(child_db->Put(WriteOptions(), "second", "2"));
+  ASSERT_OK(static_cast<DBImpl*>(child_db)->TEST_SwitchMemtable());
+  // The registered empty active file must also exist for prefix recovery.
+  ::_exit(42);
+}
+
+TEST_F(DBCsppCrashSafeTest, MissingRegisteredMemTableUsesFullWal) {
+  Close();
+  for (bool osl : {false, true}) {
+    for (int missing : {0, 1, 2, 3}) {
+      SCOPED_TRACE(osl);
+      SCOPED_TRACE(missing);
+      Options options = BaseCrashSafeOptions(dbname_, true, false);
+      if (osl) SetupOsl(&options, true);
+      Destroy(options);
+      ASSERT_EQ(RunCrashChild(dbname_, "RegisteredMemTables",
+                              osl ? "osl" : "cspp"), 42);
+      const auto registered = ListLeftovers(options, dbname_);
+      ASSERT_EQ(registered.size(), 3U);
+      if (missing == 3) {
+        for (const auto& path : registered) ASSERT_OK(env_->DeleteFile(path));
+      } else {
+        ASSERT_OK(env_->DeleteFile(registered[missing]));
+      }
+      std::atomic<int> converted{0};
+      SyncPoint::GetInstance()->SetCallBack(
+          "MemTableRep::ConvertToSST:After",
+          [&](void*) { ++converted; });
+      SyncPoint::GetInstance()->EnableProcessing();
+      ASSERT_OK(TryReopen(options));
+      SyncPoint::GetInstance()->DisableProcessing();
+      SyncPoint::GetInstance()->ClearAllCallBacks();
+      // Recovery may convert an intact prefix before discovering the missing
+      // registered file, but must discard that prefix and replay the full WAL.
+      ASSERT_EQ(converted.load(), missing == 3 ? 0 : missing);
+      ASSERT_EQ(Get("first"), "1");
+      ASSERT_EQ(Get("second"), "2");
+      ASSERT_EQ(NumTableFilesAtLevel(0), 0);
+      ASSERT_OK(Flush());
+      ASSERT_EQ(NumTableFilesAtLevel(0), 1);
+      Close();
+      ASSERT_OK(TryReopen(options));
+      ASSERT_EQ(Get("first"), "1");
+      ASSERT_EQ(Get("second"), "2");
+      ASSERT_EQ(NumTableFilesAtLevel(0), 1);
+      Close();
+    }
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, FailedRegistrationCannotAcceptWrites) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    ASSERT_OK(TryReopen(options));
+    ASSERT_OK(Put("before", "safe"));
+    ASSERT_OK(dbfull()->TEST_SwitchMemtable());
+    const auto caller = std::this_thread::get_id();
+    std::atomic<int> failed{0};
+    std::atomic<bool> registering_cache{false};
+    SyncPoint::GetInstance()->SetCallBack(
+        "FlushJob::BeforeManifest", [&](void*) { registering_cache.store(true); });
+    SyncPoint::GetInstance()->SetCallBack(
+        "VersionSet::ProcessManifestWrites:AfterSyncManifest", [&](void* p) {
+          if (!registering_cache.load()) return;
+          EXPECT_NE(std::this_thread::get_id(), caller);
+          ++failed;
+          *static_cast<IOStatus*>(p) = IOStatus::IOError("register injection");
+        });
+    SyncPoint::GetInstance()->EnableProcessing();
+    ASSERT_NOK(Flush());
+    ASSERT_GT(failed.load(), 0);
+    auto* pending = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                        ->GetDefault()->PeekPrecreatedMemtable();
+    ASSERT_NE(pending, nullptr);
+    ASSERT_FALSE(pending->IsFileRegistered());
+    ASSERT_NOK(dbfull()->TEST_SwitchMemtable());
+    ASSERT_NOK(Put("unregistered", "must-not-commit"));
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_EQ(Get("before"), "safe");
+    Close();
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("before"), "safe");
+    ASSERT_EQ(Get("unregistered"), "NOT_FOUND");
+    Close();
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, FailedInitialRegistrationClearsDbPointer) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    std::atomic<int> failed{0};
+    SyncPoint::GetInstance()->SetCallBack(
+        "DBImpl::RegisterMemTableFile:AfterLogAndApply", [&](void* p) {
+          ++failed;
+          *static_cast<Status*>(p) = Status::IOError("initial register injection");
+        });
+    SyncPoint::GetInstance()->EnableProcessing();
+    DB* opened = nullptr;
+    const Status status = DB::Open(options, dbname_, &opened);
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_NOK(status);
+    ASSERT_GT(failed.load(), 0);
+    ASSERT_EQ(opened, nullptr);
+    ASSERT_OK(TryReopen(options));
+    ASSERT_OK(Put("after-failure", "safe"));
+    Close();
+  }
+}
+
+
+
+TEST_F(DBCsppCrashSafeTest, FailedNewColumnFamilyRegistrationRemainsReopenable) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    ASSERT_OK(TryReopen(options));
+    ASSERT_OK(Put("existing", "preserved"));
+    std::atomic<int> failed{0};
+    SyncPoint::GetInstance()->SetCallBack(
+        "DBImpl::RegisterMemTableFile:AfterLogAndApply", [&](void* p) {
+          ++failed;
+          *static_cast<Status*>(p) = Status::IOError("new CF register injection");
+        });
+    SyncPoint::GetInstance()->EnableProcessing();
+    ColumnFamilyHandle* handle = nullptr;
+    const Status created = db_->CreateColumnFamily(options, "failed", &handle);
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_NOK(created);
+    ASSERT_GT(failed.load(), 0);
+    ASSERT_EQ(handle, nullptr);
+    ASSERT_EQ(Get("existing"), "preserved");
+    // Closing and reopening also exercises manifest snapshots over this CF.
+    Close();
+    ASSERT_OK(TryReopenWithColumnFamilies({kDefaultColumnFamilyName, "failed"},
+                                        options));
+    ASSERT_EQ(Get(0, "existing"), "preserved");
+    ASSERT_EQ(Get(1, "existing"), "NOT_FOUND");
+    std::unique_ptr<Iterator> iterator(db_->NewIterator(ReadOptions(), handles_[1]));
+    iterator->SeekToFirst();
+    ASSERT_FALSE(iterator->Valid());
+    ASSERT_OK(iterator->status());
+    iterator.reset();
+    Close();
+  }
+}
+
 TEST_F(DBCsppCrashSafeTest, FileMmapRejectsReadOnlyAndSecondary) {
   Close();
   for (bool osl : {false, true}) {
@@ -259,16 +501,530 @@ TEST_F(DBCsppCrashSafeTest, FileMmapRejectsReadOnlyAndSecondary) {
   }
 }
 
-TEST_F(DBCsppCrashSafeTest, CrashSafeRequiresFileMmap) {
-  for (const char* cls : {"CSPPMemTab", "OffsetSkipList"}) {
-    for (const char* mode : {"kDontConvert", "kDumpMem", "kFileMmap"}) {
-      SCOPED_TRACE(cls);
-      SCOPED_TRACE(mode);
-      const SidePluginRepo repo;
-      auto factory = PluginFactorySP<MemTableRepFactory>::AcquirePlugin(
-          cls, {{"convert_to_sst", mode}}, repo);
-      ASSERT_EQ(factory->SupportCrashSafe(), std::string(mode) == "kFileMmap");
+TEST_F(DBCsppCrashSafeTest, ReadWriteWalRecoveryFailureDoesNotAbort) {
+  class CorruptSecondRecord final : public WalFilter {
+   public:
+    int calls = 0;
+    const char* Name() const override { return "CorruptSecondRecord"; }
+    WalProcessingOption LogRecordFound(unsigned long long, const std::string&,
+                                       const WriteBatch&, WriteBatch*,
+                                       bool*) override {
+      return ++calls == 1 ? WalProcessingOption::kContinueProcessing
+                          : WalProcessingOption::kCorruptedRecord;
     }
+  };
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "WalFilterFallsBackToWal",
+                            osl ? "10" : "00"), 0);
+    auto list_sst = [&] {
+      std::vector<std::string> children;
+      EXPECT_OK(env_->GetChildren(dbname_, &children));
+      std::vector<std::string> files;
+      for (const auto& child : children) {
+        if (child.size() >= 4 && child.compare(child.size() - 4, 4, ".sst") == 0)
+          files.push_back(child);
+      }
+      std::sort(files.begin(), files.end());
+      return files;
+    };
+    const auto before = list_sst();
+    ASSERT_FALSE(before.empty());
+    std::map<std::string, std::string> original_files;
+    for (const auto& name : before) {
+      ASSERT_OK(ReadFileToString(env_, dbname_ + "/" + name, &original_files[name]));
+    }
+    CorruptSecondRecord filter;
+    options.memtable_crash_safe_recover = false;
+    options.wal_filter = &filter;
+    options.wal_recovery_mode = WALRecoveryMode::kAbsoluteConsistency;
+    DB* failed = nullptr;
+    const Status status = DB::Open(options, dbname_, &failed);
+    ASSERT_TRUE(status.IsCorruption()) << status.ToString();
+    ASSERT_EQ(failed, nullptr);
+    ASSERT_EQ(filter.calls, 2);
+    for (const auto& file : original_files) {
+      std::string after;
+      ASSERT_OK(ReadFileToString(env_, dbname_ + "/" + file.first, &after));
+      ASSERT_EQ(after, file.second);
+    }
+    options.wal_filter = nullptr;
+    options.memtable_crash_safe_recover = true;
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("a"), std::string(128, 'a'));
+    ASSERT_EQ(Get("b"), std::string(128, 'b'));
+    Close();
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, ManifestRolloverPreservesMemTableRegistry) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    options.max_manifest_file_size = 1;
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    ASSERT_OK(TryReopen(options));
+    ASSERT_OK(Put("first", "1"));
+    std::string before;
+    ASSERT_OK(ReadFileToString(env_, CurrentFileName(dbname_), &before));
+    ASSERT_OK(Flush());
+    ASSERT_OK(Put("second", "2"));
+    std::string after;
+    ASSERT_OK(ReadFileToString(env_, CurrentFileName(dbname_), &after));
+    ASSERT_NE(before, after);
+    const auto registered = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                                ->GetDefault()->GetMemTableFiles();
+    ASSERT_EQ(registered.size(), 2U);
+    const auto disk = ListLeftovers(options, dbname_);
+    ASSERT_EQ(disk.size(), 2U);
+    for (uint64_t number : registered) {
+      const auto path = MakeTableFileName(dbname_, number);
+      ASSERT_EQ(std::count(disk.begin(), disk.end(), path), 1);
+      ASSERT_OK(env_->FileExists(path));
+    }
+    Close();
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("first"), "1");
+    ASSERT_EQ(Get("second"), "2");
+    Close();
+  }
+}
+
+TEST_F(CrashChild, DISABLED_LegacyManifestWal) {
+  Options options = BaseCrashSafeOptions(dbname_, false, false);
+  options.memtable_factory = std::make_shared<SkipListFactory>();
+  options.table_factory = Options().table_factory;
+  DB* child_db = nullptr;
+  ASSERT_OK(DB::Open(options, dbname_, &child_db));
+  WriteOptions write;
+  write.sync = true;
+  ASSERT_OK(child_db->Put(write, "legacy-first", "one"));
+  ASSERT_OK(child_db->Put(write, "legacy-second", "two"));
+  ::_exit(42);
+}
+
+TEST_F(DBCsppCrashSafeTest, LegacyManifestWithoutTrackingUsesFullWal) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "LegacyManifestWal"), 42);
+    ASSERT_TRUE(ListLeftovers(options, dbname_).empty());
+    std::vector<std::string> children;
+    ASSERT_OK(env_->GetChildren(dbname_, &children));
+    uint64_t wal_number = 0;
+    for (const auto& child : children) {
+      uint64_t number;
+      FileType type;
+      if (ParseFileName(child, &number, &type) && type == kWalFile)
+        wal_number = std::max(wal_number, number);
+    }
+    ASSERT_NE(wal_number, 0U);
+    uint64_t wal_size = 0;
+    ASSERT_OK(env_->GetFileSize(LogFileName(dbname_, wal_number), &wal_size));
+    ASSERT_GT(wal_size, 0U);
+    // Valid classic sidecar deliberately points past both keys. An inventory
+    // without tracking cannot justify skipping this WAL prefix.
+    PublishedSeqOnDisk record;
+    record.magic = 0x5145534255505343ULL;
+    record.version = 1;
+    record.header_size = sizeof(record);
+    record.wal_offset_kind = 1;
+    record.kind_since_wal = static_cast<uint32_t>(wal_number);
+    record.generation = 2;
+    record.pubseq = 2;
+    record.wal_number = wal_number;
+    record.wal_offset = wal_size;
+    std::string sidecar(4096, '\0');
+    std::memcpy(&sidecar[0], &record, sizeof(record));
+    ASSERT_OK(WriteStringToFile(env_, sidecar, CrashSafePubSeqFileName(dbname_)));
+    std::atomic<int> converted{0};
+    std::atomic<int> reads{0};
+    SyncPoint::GetInstance()->SetCallBack(
+        "MemTableRep::ConvertToSST:After", [&](void*) { ++converted; });
+    SyncPoint::GetInstance()->SetCallBack(
+        "DBImpl::RecoverLogFiles:BeforeReadWal", [&](void*) { ++reads; });
+    SyncPoint::GetInstance()->EnableProcessing();
+    ASSERT_OK(TryReopen(options));
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_EQ(converted.load(), 0);
+    ASSERT_GT(reads.load(), 0);
+    ASSERT_EQ(Get("legacy-first"), "one");
+    ASSERT_EQ(Get("legacy-second"), "two");
+    ASSERT_TRUE(dbfull()->GetVersionSet()->HasMemTableFileTracking());
+    Close();
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("legacy-first"), "one");
+    ASSERT_EQ(Get("legacy-second"), "two");
+    Close();
+  }
+}
+
+
+
+TEST_F(DBCsppCrashSafeTest, GarbageCollectionKeepsActiveAndCachedMemTables) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    SyncPoint::GetInstance()->EnableProcessing();
+    ASSERT_OK(TryReopen(options));
+    std::atomic<int> published{0};
+    SyncPoint::GetInstance()->SetCallBack(
+        "FlushJob::MemTableCache:BeforePublish", [&](void*) {
+          std::vector<std::string> expected;
+          for (auto* cfd : *dbfull()->GetVersionSet()->GetColumnFamilySet()) {
+            for (uint64_t number : cfd->GetMemTableFiles()) {
+              expected.push_back(MakeTableFileName(dbname_, number));
+            }
+          }
+          ASSERT_EQ(ListLeftovers(options, dbname_), expected);
+          for (const auto& path : expected) ASSERT_OK(env_->FileExists(path));
+        });
+    SyncPoint::GetInstance()->SetCallBack(
+        "FlushJob::MemTableCache:AfterPublish", [&](void*) { ++published; });
+    ASSERT_OK(Put("first", "1"));
+    ASSERT_OK(Flush());
+    ASSERT_GT(published.load(), 0);
+    ASSERT_OK(Put("active", "2"));
+    const auto registered = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                                ->GetDefault()->GetMemTableFiles();
+    ASSERT_GE(registered.size(), 2U);
+    ASSERT_OK(db_->DisableFileDeletions());
+    ASSERT_OK(db_->EnableFileDeletions(true));
+    for (uint64_t number : registered) {
+      ASSERT_OK(env_->FileExists(MakeTableFileName(dbname_, number)));
+    }
+    ASSERT_EQ(Get("first"), "1");
+    ASSERT_EQ(Get("active"), "2");
+    Close();
+    const auto kept = ListLeftovers(options, dbname_);
+    ASSERT_FALSE(kept.empty());
+    for (const auto& path : kept) ASSERT_OK(env_->FileExists(path));
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("first"), "1");
+    ASSERT_EQ(Get("active"), "2");
+    Close();
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, EmptyFlushRetiresSourceFileWithoutFullScan) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    options.delete_obsolete_files_period_micros = UINT64_MAX;
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    ASSERT_OK(TryReopen(options));
+    auto* cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()->GetDefault();
+    const std::string source =
+        MakeTableFileName(dbname_, cfd->mem()->GetFileNumber());
+    ASSERT_OK(env_->FileExists(source));
+    ASSERT_OK(dbfull()->TEST_SwitchMemtable());
+    ASSERT_OK(Flush());
+    ASSERT_OK(dbfull()->TEST_WaitForBackgroundWork());
+    ASSERT_OK(dbfull()->TEST_WaitForPurge());
+    std::vector<LiveFileMetaData> files;
+    db_->GetLiveFilesMetaData(&files);
+    ASSERT_TRUE(files.empty());
+    ASSERT_TRUE(env_->FileExists(source).IsNotFound());
+    const auto active = ListLeftovers(options, dbname_);
+    ASSERT_EQ(active.size(), 2U);
+    for (const auto& path : active) ASSERT_OK(env_->FileExists(path));
+    const auto converted = MakeTableFileName(dbname_, cfd->mem()->GetFileNumber());
+    ASSERT_OK(Put("converted", "preserved"));
+    ASSERT_OK(Flush());
+    ASSERT_OK(dbfull()->TEST_WaitForBackgroundWork());
+    ASSERT_OK(dbfull()->TEST_WaitForPurge());
+    db_->GetLiveFilesMetaData(&files);
+    ASSERT_EQ(files.size(), 1U);
+    ASSERT_EQ(MakeTableFileName(dbname_, files[0].file_number), converted);
+    ASSERT_OK(env_->FileExists(converted));
+    for (const auto& path : ListLeftovers(options, dbname_))
+      ASSERT_OK(env_->FileExists(path));
+    ASSERT_EQ(Get("converted"), "preserved");
+    Close();
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("converted"), "preserved");
+    Close();
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, DroppedCfRetiresSourceFilesWithoutFullScan) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    options.delete_obsolete_files_period_micros = UINT64_MAX;
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    ASSERT_OK(TryReopen(options));
+    CreateAndReopenWithCF({"retire"}, options);
+    ASSERT_OK(Put(0, "keep", "one"));
+    ASSERT_OK(Put(1, "drop", "two"));
+    const auto registered = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                                ->GetColumnFamily(1)->GetMemTableFiles();
+    ASSERT_EQ(registered.size(), 2U);
+    for (uint64_t number : registered)
+      ASSERT_OK(env_->FileExists(MakeTableFileName(dbname_, number)));
+    ASSERT_OK(db_->DropColumnFamily(handles_[1]));
+    ASSERT_OK(db_->DestroyColumnFamilyHandle(handles_[1]));
+    handles_.pop_back();
+    // An ordinary flush provides normal obsolete-file GC, without a scan.
+    ASSERT_OK(Flush(0));
+    ASSERT_OK(dbfull()->TEST_WaitForBackgroundWork());
+    ASSERT_OK(dbfull()->TEST_WaitForPurge());
+    for (uint64_t number : registered)
+      ASSERT_TRUE(env_->FileExists(MakeTableFileName(dbname_, number)).IsNotFound());
+    ASSERT_EQ(dbfull()->GetVersionSet()->GetColumnFamilySet()
+                  ->GetColumnFamily(1), nullptr);
+    for (const auto& path : ListLeftovers(options, dbname_))
+      ASSERT_OK(env_->FileExists(path));
+    std::vector<LiveFileMetaData> files;
+    db_->GetLiveFilesMetaData(&files);
+    ASSERT_EQ(files.size(), 1U);
+    ASSERT_OK(env_->FileExists(MakeTableFileName(dbname_, files[0].file_number)));
+    ASSERT_EQ(Get(0, "keep"), "one");
+    Close();
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("keep"), "one");
+    Close();
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, CheckpointDoesNotHardLinkWritableMemTable) {
+  Close();
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    ASSERT_OK(TryReopen(options));
+    ASSERT_OK(Put("checkpoint", "original"));
+    const auto registered = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                                ->GetDefault()->GetMemTableFiles();
+    ASSERT_EQ(registered.size(), 2U);
+    const uint64_t number = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                                ->GetDefault()->mem()->GetFileNumber();
+    ASSERT_EQ(registered.count(number), 1U);
+    const std::string checkpoint_dir = dbname_ + ".checkpoint";
+    Options copy_options = options;
+    copy_options.wal_dir = checkpoint_dir;
+    ASSERT_OK(DestroyDB(checkpoint_dir, copy_options));
+    Checkpoint* raw = nullptr;
+    ASSERT_OK(Checkpoint::Create(db_, &raw));
+    std::unique_ptr<Checkpoint> checkpoint(raw);
+    ASSERT_OK(checkpoint->CreateCheckpoint(checkpoint_dir, UINT64_MAX));
+    // This memtable is still mutable, and hence must not be a live SST.
+    const auto& after = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                            ->GetDefault()->GetMemTableFiles();
+    if (after.count(number)) {
+      ASSERT_TRUE(env_->FileExists(MakeTableFileName(checkpoint_dir, number))
+                      .IsNotFound());
+    }
+    ASSERT_OK(Put("checkpoint", "source-changed"));
+    DB* copy_raw = nullptr;
+    ASSERT_OK(DB::Open(copy_options, checkpoint_dir, &copy_raw));
+    std::unique_ptr<DB> copy(copy_raw);
+    std::string value;
+    ASSERT_OK(copy->Get(ReadOptions(), "checkpoint", &value));
+    ASSERT_EQ(value, "original");
+    copy.reset();
+    checkpoint.reset();
+    ASSERT_OK(DestroyDB(checkpoint_dir, copy_options));
+    Close();
+  }
+}
+
+
+
+TEST_F(DBCsppCrashSafeTest, OpenAndCreateColumnFamilyRegisterNextMemTable) {
+  Close();
+  for (bool osl : {false, true}) {
+    for (bool atomic : {false, true}) {
+      SCOPED_TRACE(osl);
+      SCOPED_TRACE(atomic);
+      Options options = BaseCrashSafeOptions(dbname_, true, false);
+      options.atomic_flush = atomic;
+      options.avoid_flush_during_shutdown = true;
+      if (osl) SetupOsl(&options, true);
+      Destroy(options);
+      SyncPoint::GetInstance()->EnableProcessing();
+      ASSERT_OK(TryReopen(options));
+      auto* default_cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                              ->GetColumnFamily(0);
+      dbfull()->TEST_LockMutex();
+      auto* default_head = default_cfd->PeekPrecreatedMemtable();
+      const uint64_t default_cache = default_head ? default_head->GetFileNumber() : 0;
+      dbfull()->TEST_UnlockMutex();
+      ASSERT_NE(default_cache, 0U);
+      ASSERT_EQ(default_cfd->GetMemTableFiles()
+                    .count(default_cache), 1U);
+
+      ColumnFamilyHandle* handle = nullptr;
+      ASSERT_OK(db_->CreateColumnFamily(options, "bootstrap", &handle));
+      auto* created_cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                              ->GetColumnFamily(handle->GetID());
+      dbfull()->TEST_LockMutex();
+      auto* created_head = created_cfd->PeekPrecreatedMemtable();
+      const uint64_t created_cache = created_head ? created_head->GetFileNumber() : 0;
+      dbfull()->TEST_UnlockMutex();
+      ASSERT_NE(created_cache, 0U);
+      ASSERT_EQ(created_cfd->GetMemTableFiles()
+                    .count(created_cache), 1U);
+      std::atomic<int> front_registrations{0};
+      SyncPoint::GetInstance()->SetCallBack(
+          "DBImpl::RegisterMemTableFile:BeforeLogAndApply",
+          [&](void*) { ++front_registrations; });
+      ASSERT_OK(Put("default", "1"));
+      ASSERT_OK(Flush());
+      ASSERT_EQ(default_cfd->mem()->GetFileNumber(), default_cache);
+      ASSERT_TRUE(default_cfd->mem()->IsFileRegistered());
+      ASSERT_OK(db_->Put(WriteOptions(), handle, "created", "2"));
+      ASSERT_OK(db_->Flush(FlushOptions(), handle));
+      ASSERT_EQ(created_cfd->mem()->GetFileNumber(), created_cache);
+      ASSERT_TRUE(created_cfd->mem()->IsFileRegistered());
+      ASSERT_EQ(front_registrations.load(), 0);
+      ASSERT_OK(db_->DestroyColumnFamilyHandle(handle));
+      Close();
+      SyncPoint::GetInstance()->DisableProcessing();
+      SyncPoint::GetInstance()->ClearAllCallBacks();
+    }
+  }
+}
+
+
+
+
+#endif
+
+TEST_F(DBCsppCrashSafeTest, CrashSafeRequiresFileMmapFactories) {
+  Close();
+  for (bool osl : {false, true}) {
+    for (const char* mode : {"kDontConvert", "kDumpMem", "SkipList"}) {
+      SCOPED_TRACE(osl);
+      SCOPED_TRACE(mode);
+      Options options = BaseCrashSafeOptions(dbname_, true, false);
+      if (osl) SetupOsl(&options, true);
+      Options unsupported = options;
+      unsupported.memtable_factory = std::string(mode) == "SkipList"
+          ? std::shared_ptr<MemTableRepFactory>(new SkipListFactory)
+          : EasyNewMemTableRep(osl ? "OffsetSkipList" : "CSPPMemTab",
+                json({{"mem_cap", 16777216}, {"convert_to_sst", mode}}).dump());
+      Destroy(options);
+      DB* rejected = nullptr;
+      ASSERT_TRUE(DB::Open(unsupported, dbname_, &rejected).IsInvalidArgument());
+      ASSERT_EQ(rejected, nullptr);
+      ASSERT_OK(TryReopen(options));
+      ColumnFamilyHandle* handle = nullptr;
+      ASSERT_TRUE(db_->CreateColumnFamily(unsupported, "mixed", &handle)
+                      .IsInvalidArgument());
+      ASSERT_EQ(handle, nullptr);
+      Close();
+      options.memtable_crash_safe_recover = false;
+      options.avoid_flush_during_shutdown = true;
+      unsupported.memtable_crash_safe_recover = false;
+      ASSERT_OK(TryReopen(options));
+      ASSERT_OK(db_->CreateColumnFamily(unsupported, "mixed", &handle));
+      handles_.push_back(handle);
+      ASSERT_OK(Put("file", "value"));
+      ASSERT_OK(db_->Put(WriteOptions(), handle, "mixed", "value"));
+      if (unsupported.memtable_factory->SupportConvertToSST()) {
+        ASSERT_OK(db_->Flush(FlushOptions(), handle));
+      }
+      for (auto* cfd : *dbfull()->GetVersionSet()->GetColumnFamilySet()) {
+        ASSERT_TRUE(cfd->GetMemTableFiles().empty());
+      }
+      Close();
+      ASSERT_OK(TryReopenWithColumnFamilies(
+          {"default", "mixed"}, std::vector<Options>{options, unsupported}));
+      ASSERT_EQ(Get(0, "file"), "value");
+      ASSERT_EQ(Get(1, "mixed"), "value");
+      Close();
+    }
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, RecoverOffKeepsUnregisteredMemTableFiles) {
+  Close();
+  for (bool osl : {false, true}) {
+    SCOPED_TRACE(osl);
+    Options options = BaseCrashSafeOptions(dbname_, false, false);
+    options.experimental_mempurge_threshold = 2.0;
+    if (osl) SetupOsl(&options, true);
+    Destroy(options);
+    int registrations = 0, waits = 0, inspected = 0;
+    std::atomic<int> converts{0}, purges{0};
+    SyncPoint::GetInstance()->SetCallBack(
+        "MemTableRep::ConvertToSST:After", [&](void*) { ++converts; });
+    for (const char* point : {"DBImpl::FlushJob:MemPurgeSuccessful",
+                              "DBImpl::FlushJob:MemPurgeUnsuccessful"}) {
+      SyncPoint::GetInstance()->SetCallBack(point, [&](void*) { ++purges; });
+    }
+    SyncPoint::GetInstance()->SetCallBack(
+        "DBImpl::RegisterMemTableFile:BeforeLogAndApply",
+        [&](void*) { ++registrations; });
+    SyncPoint::GetInstance()->SetCallBack(
+        "DBImpl::SwitchMemtable:MemTableCacheMiss",
+        [&](void*) { ++waits; });
+    SyncPoint::GetInstance()->EnableProcessing();
+    ASSERT_OK(TryReopen(options));
+    // Open reuses this hook for ordinary recovery MANIFEST writes.
+    registrations = 0;
+    ASSERT_OK(Put("sst", "1"));
+    ASSERT_OK(Flush());
+    ASSERT_GT(converts.load(), 0);
+    ASSERT_EQ(purges.load(), 0);
+    auto* cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()->GetDefault();
+    ASSERT_NE(cfd->PeekPrecreatedMemtable(), nullptr);
+    const uint64_t cached = cfd->PeekPrecreatedMemtable()->GetFileNumber();
+    ASSERT_OK(Put("imm", "2"));
+    const uint64_t immutable = cfd->mem()->GetFileNumber();
+    SyncPoint::GetInstance()->SetCallBack(
+        "DBImpl::SwitchMemtable:BeforeInstallMemTable", [&](void*) {
+          ASSERT_OK(db_->DisableFileDeletions());
+          ASSERT_OK(db_->EnableFileDeletions(true));
+          ASSERT_OK(env_->FileExists(MakeTableFileName(dbname_, cached)));
+          ++inspected;
+        });
+    ASSERT_OK(dbfull()->TEST_SwitchMemtable());
+    SyncPoint::GetInstance()->ClearCallBack(
+        "DBImpl::SwitchMemtable:BeforeInstallMemTable");
+    ASSERT_EQ(inspected, 1);
+    ASSERT_EQ(cfd->mem()->GetFileNumber(), cached);
+    ASSERT_OK(Put("active", "3"));
+    // Refill through the ordinary cache producer to check all three live roles.
+    cfd->PrepareNewMemtableInBackground(*cfd->GetLatestMutableCFOptions());
+    auto* precreated = cfd->PeekPrecreatedMemtable();
+    ASSERT_NE(precreated, nullptr);
+    const uint64_t next = precreated->GetFileNumber();
+    for (auto* cfd : *dbfull()->GetVersionSet()->GetColumnFamilySet()) {
+      ASSERT_TRUE(cfd->GetMemTableFiles().empty());
+    }
+    ASSERT_OK(db_->DisableFileDeletions());
+    ASSERT_OK(db_->EnableFileDeletions(true));
+    for (uint64_t number : {immutable, cached, next}) {
+      ASSERT_OK(env_->FileExists(MakeTableFileName(dbname_, number)));
+    }
+    ASSERT_EQ(registrations, 0);
+    ASSERT_EQ(waits, 0);
+    ASSERT_EQ(Get("imm"), "2");
+    ASSERT_EQ(Get("active"), "3");
+    Close();
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("sst"), "1");
+    ASSERT_EQ(Get("imm"), "2");
+    ASSERT_EQ(Get("active"), "3");
+    Close();
   }
 }
 
@@ -309,8 +1065,27 @@ TEST_F(DBCsppCrashSafeTest, ImmutableFactoryConvertMode) {
       SCOPED_TRACE(cls);
       auto factory = PluginFactorySP<MemTableRepFactory>::AcquirePlugin(
           cls, params, repo);
+      ASSERT_EQ(factory->SupportCrashSafe(), std::string(mode) == "kFileMmap");
       auto* manip = PluginManip<MemTableRepFactory>::AcquirePlugin(cls, {}, repo);
       check(factory, manip, mode);
+      InternalKeyComparator icmp(BytewiseComparator());
+      MemTable::KeyComparator cmp(icmp);
+      Arena arena;
+      MutableCFOptions moptions(Options{});
+      const std::string path = MakeTableFileName(dbname_, 900000);
+      if (std::string(mode) == "kFileMmap") {
+        ASSERT_DEATH(factory->CreateMemTableRep(
+            "", moptions, cmp, &arena, nullptr, nullptr, 0), "memtable_file_path");
+      }
+      std::unique_ptr<MemTableRep> rep(factory->CreateMemTableRep(
+          path, moptions, cmp, &arena, nullptr, nullptr, 0));
+      ASSERT_EQ(enum_stdstr(rep->GetConvertKind()), mode);
+      ASSERT_EQ(rep->SupportConvertToSST(), std::string(mode) != "kDontConvert");
+      ASSERT_EQ(rep->SupportCrashSafe(), std::string(mode) == "kFileMmap");
+      rep.reset();
+      if (std::string(mode) == "kFileMmap") {
+        ASSERT_OK(env_->DeleteFile(path));
+      }
     }
     for (const char* cls : {"CSPPMemTabTable", "OffsetSkipListTable"}) {
       SCOPED_TRACE(cls);
@@ -337,23 +1112,21 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableUsesFileSequenceBound) {
     MutableCFOptions moptions(options);
     WriteBufferManager wb(options.db_write_buffer_size);
     std::unique_ptr<MemTable> mem(new MemTable(
-        icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0));
+        icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0, 1));
     ASSERT_OK(mem->Add(1, kTypeValue, "key", "old", nullptr));
     ASSERT_OK(mem->Add(3, kTypeValue, "key", "new", nullptr));
     ASSERT_OK(mem->Add(4, kTypeValue, "ghost", "unpublished", nullptr));
     mem->MarkImmutable();
-    const auto leftovers = ListLeftovers(options, dbname_);
-    ASSERT_EQ(leftovers.size(), 1U);
-    const std::string leftover = leftovers[0] + ".recovery";
-    CopyFile(leftovers[0], leftover);
+    const std::string leftover = MakeTableFileName(dbname_, 2);
+    CopyFile(MakeTableFileName(dbname_, 1), leftover);
     mem.reset();
 
     IntTblPropCollectorFactories collectors;
     TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
                             options.compression, options.compression_opts, 0,
-                            "default", 0);
+                            kDefaultColumnFamilyName, 0);
     FileMetaData meta;
-    meta.fd = FileDescriptor(1, 0, 0);
+    meta.fd = FileDescriptor(2, 0, 0);
     meta.fd.smallest_seqno = 0;
     // The published bound need not be the sequence of any physical entry.
     meta.fd.largest_seqno = 2;
@@ -363,7 +1136,7 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableUsesFileSequenceBound) {
     ASSERT_EQ(meta.fd.smallest_seqno, 0U);
     ASSERT_EQ(meta.fd.largest_seqno, 2U);
 
-    const std::string fname = TableFileName(options.cf_paths, 1, 0);
+    const std::string fname = TableFileName(options.cf_paths, 2, 0);
     for (SequenceNumber limit : {meta.fd.largest_seqno, SequenceNumber(4),
                                  SequenceNumber(0)}) {
       SCOPED_TRACE(limit);
@@ -420,7 +1193,7 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableIteratorUsesFileSequenceBound) {
       MutableCFOptions moptions(options);
       WriteBufferManager wb(options.db_write_buffer_size);
       auto mem = std::make_unique<MemTable>(
-          icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0);
+          icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0, 1);
       std::vector<std::string> physical;
       for (const auto& entry : {std::make_pair("b", 1), {"d", 2}, {"b", 3},
                                 {"d", 5}, {"c", 6}, {"b", 7}, {"a", 8},
@@ -435,22 +1208,20 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableIteratorUsesFileSequenceBound) {
       };
       std::sort(physical.begin(), physical.end(), less);
       mem->MarkImmutable();
-      const auto leftovers = ListLeftovers(options, dbname_);
-      ASSERT_EQ(leftovers.size(), 1U);
-      const std::string leftover = leftovers[0] + ".iterator";
-      CopyFile(leftovers[0], leftover);
+      const std::string leftover = MakeTableFileName(dbname_, 2);
+      CopyFile(MakeTableFileName(dbname_, 1), leftover);
       mem.reset();
       IntTblPropCollectorFactories collectors;
       TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
                               options.compression, options.compression_opts, 0,
-                              "default", 0);
+                              kDefaultColumnFamilyName, 0);
       FileMetaData meta;
-      meta.fd = FileDescriptor(1, 0, 0);
+      meta.fd = FileDescriptor(2, 0, 0);
       meta.fd.smallest_seqno = 0;
       meta.fd.largest_seqno = 4;
       ASSERT_OK(options.memtable_factory->RecoverCrashSafeMemTableToSST(
           leftover, &meta, tbo));
-      const std::string fname = TableFileName(options.cf_paths, 1, 0);
+      const std::string fname = TableFileName(options.cf_paths, 2, 0);
       for (SequenceNumber limit : {SequenceNumber(0), SequenceNumber(4),
                                    SequenceNumber(9), kMaxSequenceNumber}) {
         SCOPED_TRACE(limit);
@@ -595,7 +1366,7 @@ TEST_F(DBCsppCrashSafeTest, ConvertedTableVisibilityFilter) {
         MutableCFOptions moptions(options);
         WriteBufferManager wb(options.db_write_buffer_size);
         auto mem = std::make_unique<MemTable>(
-            icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0);
+            icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0, 1);
         ASSERT_OK(mem->Add(1, kTypeValue, "a", "1", nullptr));
         ASSERT_OK(mem->Add(2, kTypeValue, "b", "2", nullptr));
         ASSERT_OK(mem->Add(3, kTypeValue, "b", "3", nullptr));
@@ -603,7 +1374,7 @@ TEST_F(DBCsppCrashSafeTest, ConvertedTableVisibilityFilter) {
         IntTblPropCollectorFactories collectors;
         TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
                                 options.compression, options.compression_opts, 0,
-                                "default", 0);
+                                kDefaultColumnFamilyName, 0);
         FileMetaData meta;
         meta.fd = FileDescriptor(1, 0, 0);
         meta.fd.smallest_seqno = 1;
@@ -656,6 +1427,133 @@ TEST_F(DBCsppCrashSafeTest, ConvertedTableVisibilityFilter) {
   }
 }
 
+TEST_F(DBCsppCrashSafeTest, CsppSelfMmapUnmapsWholeFile) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  Destroy(options);
+  ASSERT_OK(env_->CreateDirIfMissing(dbname_));
+  options.cf_paths = {{dbname_, 0}};
+  InternalKeyComparator icmp(options.comparator);
+  ImmutableOptions ioptions(options);
+  MutableCFOptions moptions(options);
+  WriteBufferManager wb(options.db_write_buffer_size);
+  std::unique_ptr<MemTable> mem(new MemTable(
+      icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0, 1));
+  ASSERT_OK(mem->Add(1, kTypeValue, "key", "value", nullptr));
+  const std::string path = MakeTableFileName(dbname_, 2);
+  CopyFile(MakeTableFileName(dbname_, 1), path);
+  mem.reset();
+  const int fd = ::open(path.c_str(), O_RDWR);
+  ASSERT_GE(fd, 0);
+  terark::DFA_MmapHeader hdr{};
+  ASSERT_EQ(::pread(fd, &hdr, sizeof(hdr), 0),
+            static_cast<ssize_t>(sizeof(hdr)));
+  ASSERT_EQ(::ftruncate(fd, hdr.file_size + 2 * ::sysconf(_SC_PAGESIZE)), 0);
+  const size_t physical_size = hdr.file_size + 2 * ::sysconf(_SC_PAGESIZE);
+  const auto original = hdr;
+  std::vector<uint64_t> buffer((physical_size + 7) / 8);
+  ASSERT_EQ(::pread(fd, buffer.data(), physical_size, 0),
+            static_cast<ssize_t>(physical_size));
+  auto check_unmapped = [&] {
+    std::ifstream maps("/proc/self/maps");
+    ASSERT_TRUE(maps.good());
+    for (std::string line; std::getline(maps, line);) {
+      EXPECT_EQ(line.find(path), std::string::npos) << "leaked mapping: " << line;
+    }
+  };
+  for (int entry = 0; entry < 4; ++entry) {
+    // self(path), self(fd), load(path), load(fd).
+    for (int damage = 0; damage < 7; ++damage) {
+      SCOPED_TRACE(entry);
+      SCOPED_TRACE(damage);
+      if (damage == 6 && entry < 2) continue;  // load-only format check.
+      hdr = original;
+      size_t length = physical_size;
+      if (damage == 1) hdr.num_blocks = 0;  // finish_load_mmap failure.
+      if (damage == 2) length = 0;
+      if (damage == 3) length = sizeof(hdr) - 1;
+      if (damage == 4) hdr.file_size = sizeof(hdr) - 1;
+      if (damage == 5) hdr.file_size = physical_size + 1;
+      if (damage == 6) hdr.magic[0] = '!';
+      ASSERT_EQ(::ftruncate(fd, physical_size), 0);
+      ASSERT_EQ(::pwrite(fd, buffer.data(), physical_size, 0),
+                static_cast<ssize_t>(physical_size));
+      ASSERT_EQ(::pwrite(fd, &hdr, sizeof(hdr), 0),
+                static_cast<ssize_t>(sizeof(hdr)));
+      ASSERT_EQ(::ftruncate(fd, length), 0);
+      auto open = [&] {
+        if (entry < 2) {
+          terark::MainPatricia trie(0, 16 << 20,
+                                    terark::Patricia::NoWriteReadOnly);
+          if (entry == 0) trie.self_mmap(path);
+          else trie.self_mmap(fd, false);
+          EXPECT_EQ(trie.get_mmap().size(), original.file_size);
+        } else {
+          std::unique_ptr<terark::BaseDFA> trie(entry == 2
+              ? terark::BaseDFA::load_mmap(path, false)
+              : terark::BaseDFA::load_mmap(fd));
+          EXPECT_EQ(trie->get_mmap().size(), original.file_size);
+        }
+      };
+      if (damage == 0) {
+        ASSERT_NO_THROW(open());
+      } else {
+        try {
+          open();
+          FAIL() << "expected invalid_argument";
+        } catch (const std::invalid_argument& ex) {
+          if ((entry == 0 || entry == 2) && damage >= 2 && damage <= 5) {
+            EXPECT_NE(std::string(ex.what()).find(path), std::string::npos);
+          }
+        }
+      }
+      ASSERT_NE(::fcntl(fd, F_GETFD), -1);  // Caller retains its descriptor.
+      check_unmapped();
+    }
+  }
+  for (bool load : {false, true}) {
+    for (int damage = 0; damage < 5; ++damage) {
+      SCOPED_TRACE(load);
+      SCOPED_TRACE(damage);
+      auto* header = reinterpret_cast<terark::DFA_MmapHeader*>(buffer.data());
+      *header = original;
+      const void* data = buffer.data();
+      size_t length = physical_size;
+      if (damage == 1) { data = nullptr; length = 0; }
+      if (damage == 2) length = sizeof(original) - 1;
+      if (damage == 3) header->file_size = sizeof(original) - 1;
+      if (damage == 4) header->file_size = physical_size + 1;
+      buffer.back() = 0x87654321;
+      auto borrow = [&] {
+        if (load) {
+          std::unique_ptr<terark::BaseDFA> trie(
+              terark::BaseDFA::load_mmap_user_mem(data, length));
+          ASSERT_NE(trie, nullptr);
+          EXPECT_EQ(trie->get_mmap().size(), original.file_size);
+        } else {
+          terark::MainPatricia trie(0, 16 << 20,
+                                    terark::Patricia::NoWriteReadOnly);
+          trie.self_mmap_user_mem(data, length);
+          EXPECT_EQ(trie.get_mmap().size(), original.file_size);
+        }
+      };
+      if (damage == 0) {
+        ASSERT_NO_THROW(borrow());
+      } else {
+        ASSERT_THROW(borrow(), std::invalid_argument);
+      }
+      // Borrowers neither free the buffer nor alter its logical or extra tail.
+      ASSERT_EQ(header->file_size, damage == 3 ? sizeof(original) - 1
+                                  : damage == 4 ? physical_size + 1
+                                                : original.file_size);
+      ASSERT_EQ(buffer.back(), 0x87654321U);
+      buffer.back() = 0x12345678;
+      ASSERT_EQ(buffer.back(), 0x12345678U);
+    }
+  }
+  ::close(fd);
+}
+
 TEST_F(DBCsppCrashSafeTest, OslRecoveryUnmapsWholeFile) {
   Close();
   Options options = BaseCrashSafeOptions(dbname_, true, false);
@@ -668,26 +1566,24 @@ TEST_F(DBCsppCrashSafeTest, OslRecoveryUnmapsWholeFile) {
   MutableCFOptions moptions(options);
   WriteBufferManager wb(options.db_write_buffer_size);
   std::unique_ptr<MemTable> mem(new MemTable(
-      icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0));
+      icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0, 1));
   ASSERT_OK(mem->Add(1, kTypeValue, "key", "value", nullptr));
-  const auto leftovers = ListLeftovers(options, dbname_);
-  ASSERT_EQ(leftovers.size(), 1U);
-  const std::string leftover = leftovers[0] + ".review-leak";
-  CopyFile(leftovers[0], leftover);
+  const std::string leftover = MakeTableFileName(dbname_, 2);
+  CopyFile(MakeTableFileName(dbname_, 1), leftover);
   mem.reset();
   IntTblPropCollectorFactories collectors;
   TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
                           options.compression, options.compression_opts, 0,
-                          "default", 0);
+                          kDefaultColumnFamilyName, 0);
   FileMetaData meta;
-  meta.fd = FileDescriptor(1, 0, 0);
+  meta.fd = FileDescriptor(2, 0, 0);
   meta.fd.smallest_seqno = 0;
   meta.fd.largest_seqno = 1;
   ASSERT_OK(options.memtable_factory->RecoverCrashSafeMemTableToSST(
       leftover, &meta, tbo));
   std::ifstream maps("/proc/self/maps");
   ASSERT_TRUE(maps.good());
-  const auto fname = TableFileName(options.cf_paths, 1, 0);
+  const auto fname = TableFileName(options.cf_paths, 2, 0);
   for (std::string line; std::getline(maps, line);) {
     EXPECT_EQ(line.find(fname), std::string::npos) << "leaked mapping: " << line;
   }
@@ -746,7 +1642,9 @@ TEST_F(DBCsppCrashSafeTest, SecondCrashAfterConvertFailure) {
         ASSERT_EQ(RunCrashChild(dbname_, "SecondCrashRecover", child_options), 43);
         PublishedSeqOnDisk rec;
         ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
-        ASSERT_EQ(rec.generation & 1, after_open ? 0U : 1U);
+        // Recovery does not invalidate a valid published cursor: registered
+        // source files survive conversion failure and can be retried.
+        ASSERT_EQ(rec.generation & 1, 0U);
         ASSERT_OK(TryReopen(options));
         EXPECT_EQ(Get("a"), "1");
         EXPECT_EQ(Get("b"), "2");
@@ -863,6 +1761,11 @@ TEST_F(CrashChild, DISABLED_LogRefRecoveryIgnoresCounters) {
                             std::string(128, 'v')));
   }
   ASSERT_OK(child_db->Put(WriteOptions(), "inline", "v"));
+  auto* cfd = static_cast<DBImpl*>(child_db)->GetVersionSet()
+                  ->GetColumnFamilySet()->GetDefault();
+  ASSERT_OK(WriteStringToFile(
+      options.env, MakeTableFileName(dbname_, cfd->mem()->GetFileNumber()),
+      dbname_ + "/active-file"));
   ::_exit(42);
 }
 
@@ -875,8 +1778,11 @@ TEST_F(DBCsppCrashSafeTest, LogRefRecoveryIgnoresCounters) {
     Destroy(options);
     ASSERT_EQ(RunCrashChild(dbname_, "LogRefRecoveryIgnoresCounters", config), 42);
     const auto leftovers = ListLeftovers(options, dbname_);
-    ASSERT_EQ(leftovers.size(), 1U);
-    const int fd = ::open(leftovers[0].c_str(), O_RDONLY);
+    ASSERT_EQ(leftovers.size(), 2U);
+    std::string active;
+    ASSERT_OK(ReadFileToString(env_, dbname_ + "/active-file", &active));
+    ASSERT_EQ(std::count(leftovers.begin(), leftovers.end(), active), 1);
+    const int fd = ::open(active.c_str(), O_RDWR);
     ASSERT_GE(fd, 0);
     // Header statistics are not a source of truth for WAL references.
     const size_t offset = config[0] == 'O'
@@ -884,24 +1790,98 @@ TEST_F(DBCsppCrashSafeTest, LogRefRecoveryIgnoresCounters) {
         : offsetof(terark::DFA_MmapHeader, reserved) + 4 * sizeof(uint32_t);
     uint64_t wal[3];  // fileno, cnt, bytes
     const ssize_t n = ::pread(fd, wal, sizeof(wal), offset);
-    ::close(fd);
     ASSERT_EQ(n, static_cast<ssize_t>(sizeof(wal)));
+    if (config[2] == 'S') {
+      // Simulate a crash before TLS statistics were flushed to the mapped header.
+      // A zero approximate count must not discard the real WAL references.
+      wal[1] = 0;
+      wal[2] = 0;
+      ASSERT_EQ(::pwrite(fd, wal, sizeof(wal), offset),
+                static_cast<ssize_t>(sizeof(wal)));
+    }
+    ::close(fd);
     ASSERT_NE(wal[0], 0U);
-    ASSERT_EQ(wal[1], 0U);
-    ASSERT_EQ(wal[2], 0U);
-    uint64_t wal_size = 0;
-    ASSERT_OK(env_->GetFileSize(LogFileName(options.wal_dir, wal[0]), &wal_size));
     for (int reopen = 0; reopen < 2; ++reopen) {
       ASSERT_OK(TryReopen(options));
       ASSERT_GT(CountL0(db_), 0);
       ColumnFamilyMetaData cf_meta;
       db_->GetColumnFamilyMetaData(&cf_meta);
       ASSERT_EQ(cf_meta.blob_files.size(), 1U);
-      ASSERT_EQ(cf_meta.blob_files[0].total_blob_count, 1U);
-      ASSERT_EQ(cf_meta.blob_files[0].total_blob_bytes, wal_size);
+      ASSERT_EQ(cf_meta.blob_files[0].total_blob_count,
+                std::max<uint64_t>(wal[1], 1));
+      ASSERT_EQ(cf_meta.blob_files[0].total_blob_bytes,
+                std::max<uint64_t>(wal[2], 1));
       ASSERT_EQ(Get("0"), std::string(128, 'v'));
       ASSERT_EQ(Get("1"), std::string(128, 'v'));
       ASSERT_EQ(Get("inline"), "v");
+      Close();
+    }
+  }
+}
+
+TEST_F(CrashChild, DISABLED_LogRefRecoveryMultipleWals) {
+  Options options = LogRefCrashOptions(dbname_, arg_);
+  DB* child_db = nullptr;
+  ASSERT_OK(DB::Open(options, dbname_, &child_db));
+  Options auxiliary = options;
+  ColumnFamilyHandle* handle = nullptr;
+  ASSERT_OK(child_db->CreateColumnFamily(auxiliary, "rotate", &handle));
+  auto* impl = static_cast<DBImpl*>(child_db);
+  auto* cfd = impl->GetVersionSet()->GetColumnFamilySet()->GetColumnFamily(
+      handle->GetID());
+  for (int i = 0; i < 3; ++i) {
+    ASSERT_OK(child_db->Put(WriteOptions(), std::to_string(i),
+                            std::string(128, 'a' + i)));
+    if (i != 2) {
+      ASSERT_OK(impl->TEST_SwitchMemtable(cfd));
+    }
+  }
+  // Only the auxiliary CF switches: all three WAL slots belong to one primary
+  // memtable, exercising the parallel mapping array rather than three memtables.
+  ::_exit(42);
+}
+
+TEST_F(DBCsppCrashSafeTest, LogRefRecoveryMultipleWals) {
+  for (const char* config : {"CPS", "CSS", "OPS", "OSS"}) {
+    SCOPED_TRACE(config);
+    Close();
+    Options options = LogRefCrashOptions(dbname_, config);
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "LogRefRecoveryMultipleWals", config), 42);
+    const auto leftovers = ListLeftovers(options, dbname_);
+    // The empty rotating CF is now FileMmap too; its registered sources follow
+    // the primary CF's earlier file number in the complete inventory.
+    ASSERT_GE(leftovers.size(), 2U);
+    const int fd = ::open(leftovers.front().c_str(), O_RDONLY);
+    ASSERT_GE(fd, 0);
+    uint32_t num_wals = 0;
+    const size_t num_wals_offset = config[0] == 'O'
+        ? offsetof(terark::OSL_MmapHeader, reserved) + sizeof(uint32_t)
+        : offsetof(terark::DFA_MmapHeader, reserved) + 2 * sizeof(uint32_t);
+    ASSERT_EQ(::pread(fd, &num_wals, sizeof(num_wals),
+                      num_wals_offset),
+              static_cast<ssize_t>(sizeof(num_wals)));
+    ::close(fd);
+    ASSERT_EQ(num_wals, 3U);
+    for (int reopen = 0; reopen < 2; ++reopen) {
+      ASSERT_OK(TryReopenWithColumnFamilies({"default", "rotate"}, options));
+      ASSERT_EQ(CountL0(db_), 1);
+      ColumnFamilyMetaData meta;
+      db_->GetColumnFamilyMetaData(&meta);
+      ASSERT_EQ(meta.blob_files.size(), 3U);
+      std::unique_ptr<Iterator> it(db_->NewIterator(ReadOptions()));
+      it->SeekToFirst();
+      for (int i = 0; i < 3; ++i) {
+        const std::string value(128, 'a' + i);
+        ASSERT_EQ(Get(0, std::to_string(i)), value);
+        ASSERT_TRUE(it->Valid());
+        ASSERT_EQ(it->key().ToString(), std::to_string(i));
+        ASSERT_EQ(it->value().ToString(), value);
+        it->Next();
+      }
+      ASSERT_FALSE(it->Valid());
+      ASSERT_OK(it->status());
+      it.reset();
       Close();
     }
   }
@@ -947,9 +1927,10 @@ TEST_F(CrashChild, DISABLED_OslLeftoverWithWriterLock) {
   ASSERT_OK(DB::Open(options, dbname_, &child_db));
   const std::string key = "locked-osl-key";
   ASSERT_OK(child_db->Put(WriteOptions(), key, "value"));
-  const auto leftovers = ListLeftovers(options, dbname_);
-  ASSERT_EQ(leftovers.size(), 1U);
-  int fd = ::open(leftovers[0].c_str(), O_RDWR);
+  auto* cfd = static_cast<DBImpl*>(child_db)->GetVersionSet()
+                  ->GetColumnFamilySet()->GetDefault();
+  const auto active = MakeTableFileName(dbname_, cfd->mem()->GetFileNumber());
+  int fd = ::open(active.c_str(), O_RDWR);
   ASSERT_GE(fd, 0);
   char data[4096];
   const ssize_t n = ::pread(fd, data, sizeof(data), 0);
@@ -1070,32 +2051,60 @@ TEST_F(DBCsppCrashSafeTest, CloseConvertsLeftovers) {
       Destroy(options);
       ASSERT_EQ(RunCrashChild(dbname_, "CloseConvertsLeftovers",
                               std::to_string(osl) + std::to_string(atomic)), 0);
-      ASSERT_TRUE(ListLeftovers(options, dbname_).empty());
+      ASSERT_EQ(ListLeftovers(options, dbname_).size(), 3U);
+      for (const auto& path : ListLeftovers(options, dbname_))
+        ASSERT_OK(env_->FileExists(path));
       ASSERT_OK(env_->FileExists(CrashSafePubSeqFileName(dbname_)));
       ASSERT_OK(TryReopen(options));
       ASSERT_EQ(Get("k1"), "v1");
       ASSERT_EQ(Get("k2"), "v2");
       ASSERT_GE(CountL0(db_), 1);
       Close();
-      ASSERT_TRUE(ListLeftovers(options, dbname_).empty());
+      ASSERT_EQ(ListLeftovers(options, dbname_).size(), 2U);
+      for (const auto& path : ListLeftovers(options, dbname_))
+        ASSERT_OK(env_->FileExists(path));
     }
   }
 }
 #endif
 
-TEST_F(DBCsppCrashSafeTest, AvoidFlushDuringShutdownLeavesNoLeftoverThenWal) {
+TEST_F(DBCsppCrashSafeTest, AvoidFlushDuringShutdownKeepsRegisteredMemTable) {
   Close();
-  Options options = BaseCrashSafeOptions(dbname_, true, false);
-  options.avoid_flush_during_shutdown = true;
-  Destroy(options);
-  ASSERT_OK(TryReopen(options));
-  ASSERT_OK(Put("k", "v"));
-  Close();
-  ASSERT_TRUE(ListLeftovers(options, dbname_).empty());
-  ASSERT_OK(env_->FileExists(CrashSafePubSeqFileName(dbname_)));
-  options.avoid_flush_during_shutdown = false;
-  ASSERT_OK(TryReopen(options));
-  ASSERT_EQ(Get("k"), "v");
+  for (bool osl : {false, true}) {
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    if (osl) SetupOsl(&options, true);
+    options.avoid_flush_during_shutdown = true;
+    Destroy(options);
+    ASSERT_OK(TryReopen(options));
+    ASSERT_OK(Put("k", "v"));
+    const auto registered = ListLeftovers(options, dbname_);
+    ASSERT_EQ(registered.size(), 2U);
+    auto* cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()->GetDefault();
+    for (auto* mem : {cfd->mem(), cfd->PeekPrecreatedMemtable()}) {
+      ASSERT_NE(mem, nullptr);
+      ASSERT_TRUE(mem->IsFileRegistered());
+      const auto path = MakeTableFileName(dbname_, mem->GetFileNumber());
+      ASSERT_EQ(std::count(registered.begin(), registered.end(), path), 1);
+    }
+    Close();
+    ASSERT_EQ(ListLeftovers(options, dbname_), registered);
+    for (const auto& path : registered) ASSERT_OK(env_->FileExists(path));
+    ASSERT_OK(env_->FileExists(CrashSafePubSeqFileName(dbname_)));
+    options.avoid_flush_during_shutdown = false;
+    std::atomic<int> converted{0};
+    SyncPoint::GetInstance()->SetCallBack(
+        "MemTableRep::ConvertToSST:After", [&](void*) { ++converted; });
+    SyncPoint::GetInstance()->EnableProcessing();
+    ASSERT_OK(TryReopen(options));
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_EQ(converted.load(), 1);
+    ASSERT_EQ(Get("k"), "v");
+    ASSERT_EQ(CountL0(db_), 1);
+    Close();
+    for (const auto& path : ListLeftovers(options, dbname_))
+      ASSERT_OK(env_->FileExists(path));
+  }
 }
 
 TEST_F(DBCsppCrashSafeTest, AvoidFlushCloseReopenDoesNotProbeWal) {
@@ -1138,6 +2147,12 @@ TEST_F(DBCsppCrashSafeTest, FreshSidecarProbesOnlyOlderWal) {
   ASSERT_EQ(probed.size(), 1U);
   ASSERT_OK(Put("b", "2"));
   Close();
+  // A normal close retains registered sources, enabling prefix conversion.
+  // Force full WAL replay here to exercise mixed old/new WAL format probing:
+  // only WALs older than the fresh sidecar's kind boundary need inspection.
+  const auto registered = ListLeftovers(on, dbname_);
+  ASSERT_FALSE(registered.empty());
+  ASSERT_OK(env_->DeleteFile(registered.front()));
   probed.clear();
   ASSERT_OK(TryReopen(on));
   SyncPoint::GetInstance()->DisableProcessing();
@@ -1181,7 +2196,7 @@ TEST_F(DBCsppCrashSafeTest, ClassicWalToLogIndexWithoutSidecarIsNotSupported) {
         ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
         ASSERT_EQ(rec.wal_offset_kind, 2U);
         ASSERT_EQ(rec.kind_since_wal, 0U);
-        ASSERT_EQ(rec.generation & 1, 1U);
+        ASSERT_EQ(rec.generation & 1, 0U);
       }
 
       // Failed Open must not force KindPrep with the unestablished log-index
@@ -1227,17 +2242,34 @@ TEST_F(DBCsppCrashSafeTest, LogIndexWalWithoutSidecarRecoversAsClassic) {
 
 TEST_F(DBCsppCrashSafeTest, RecoverOffDeletesStaleSidecar) {
   Close();
-  Options on = BaseCrashSafeOptions(dbname_, true, false);
-  on.avoid_flush_during_shutdown = true;
-  Destroy(on);
-  ASSERT_OK(TryReopen(on));
-  ASSERT_OK(Put("k", "v"));
-  Close();
-  ASSERT_OK(env_->FileExists(CrashSafePubSeqFileName(dbname_)));
-  Options off = BaseCrashSafeOptions(dbname_, false, false);
-  ASSERT_OK(TryReopen(off));
-  ASSERT_TRUE(env_->FileExists(CrashSafePubSeqFileName(dbname_)).IsNotFound());
-  ASSERT_EQ(Get("k"), "v");
+  for (bool osl : {false, true}) {
+    SCOPED_TRACE(osl);
+    Options on = BaseCrashSafeOptions(dbname_, true, false);
+    if (osl) SetupOsl(&on, true);
+    on.avoid_flush_during_shutdown = true;
+    Destroy(on);
+    ASSERT_OK(TryReopen(on));
+    ASSERT_OK(Put("k", "v"));
+    Close();
+    ASSERT_OK(env_->FileExists(CrashSafePubSeqFileName(dbname_)));
+    ASSERT_FALSE(ListLeftovers(on, dbname_).empty());
+    Options off = on;
+    off.memtable_crash_safe_recover = false;
+    ASSERT_OK(TryReopen(off));
+    ASSERT_TRUE(env_->FileExists(CrashSafePubSeqFileName(dbname_)).IsNotFound());
+    for (auto* cfd : *dbfull()->GetVersionSet()->GetColumnFamilySet()) {
+      ASSERT_TRUE(cfd->GetMemTableFiles().empty());
+    }
+    ASSERT_TRUE(ListLeftovers(off, dbname_).empty());
+    ASSERT_EQ(Get("k"), "v");
+    Close();
+    ASSERT_OK(TryReopen(off));
+    for (auto* cfd : *dbfull()->GetVersionSet()->GetColumnFamilySet()) {
+      ASSERT_TRUE(cfd->GetMemTableFiles().empty());
+    }
+    ASSERT_EQ(Get("k"), "v");
+    Close();
+  }
 }
 
 TEST_F(DBCsppCrashSafeTest, OddGenerationKindSwitchUsesKindPrep) {
@@ -1359,7 +2391,9 @@ TEST_F(DBCsppCrashSafeTest, AtomicFlushCloseConverts) {
   ASSERT_OK(TryReopen(options));
   ASSERT_OK(Put("k", "v"));
   Close();
-  ASSERT_TRUE(ListLeftovers(options, dbname_).empty());
+  ASSERT_EQ(ListLeftovers(options, dbname_).size(), 2U);
+  for (const auto& path : ListLeftovers(options, dbname_))
+    ASSERT_OK(env_->FileExists(path));
   ASSERT_OK(env_->FileExists(CrashSafePubSeqFileName(dbname_)));
   ASSERT_OK(TryReopen(options));
   ASSERT_EQ(Get("k"), "v");
@@ -1784,9 +2818,10 @@ TEST_F(DBCsppCrashSafeTest, LogIndexHeaderHasWalRefWithoutRecover) {
   Destroy(options);
   ASSERT_OK(TryReopen(options));
   ASSERT_OK(Put("k", std::string(64, 'v')));
-  auto leftovers = ListLeftovers(options, dbname_);
-  ASSERT_FALSE(leftovers.empty());
-  const int fd = ::open(leftovers[0].c_str(), O_RDONLY);
+  ASSERT_TRUE(ListLeftovers(options, dbname_).empty());
+  const uint64_t number = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                              ->GetDefault()->mem()->GetFileNumber();
+  const int fd = ::open(MakeTableFileName(dbname_, number).c_str(), O_RDONLY);
   ASSERT_GE(fd, 0);
   terark::DFA_MmapHeader hdr{};
   ASSERT_EQ(::pread(fd, &hdr, sizeof(hdr), 0),
@@ -2080,6 +3115,12 @@ TEST_F(CrashChild, DISABLED_LeftoverOnDbPathNotCfPaths0) {
   ASSERT_OK(DB::Open(options, dbname_, &child_db));
   ASSERT_OK(child_db->Put(WriteOptions(), "pad", "p"));
   ASSERT_OK(child_db->Put(WriteOptions(), "x", "1"));
+  auto* cfd = static_cast<DBImpl*>(child_db)->GetVersionSet()
+                  ->GetColumnFamilySet()->GetDefault();
+  ASSERT_OK(WriteStringToFile(
+      options.env, TableFileName(cfd->ioptions()->cf_paths,
+                                cfd->mem()->GetFileNumber(), 0),
+      dbname_ + "/active-file"));
   ::_exit(1);
 }
 #endif
@@ -2095,18 +3136,27 @@ TEST_F(DBCsppCrashSafeTest, LeftoverOnDbPathNotCfPaths0) {
   ASSERT_OK(TryReopen(options));
   ASSERT_OK(Put("k", "0"));
   Close();
-  ASSERT_TRUE(ListLeftovers(options, dbname_).empty());
+  ASSERT_EQ(ListLeftovers(options, dbname_).size(), 2U);
+  for (const auto& path : ListLeftovers(options, dbname_))
+    ASSERT_OK(env_->FileExists(path));
 #if !defined(OS_WIN)
   ASSERT_EQ(RunCrashChild(dbname_, "LeftoverOnDbPathNotCfPaths0"), 1);
-  auto leftovers_l0 = ListLeftovers(options, l0);
-  ASSERT_FALSE(leftovers_l0.empty());
+  auto leftovers_l0 = ListLeftovers(options, dbname_);
+  ASSERT_EQ(leftovers_l0.size(), 2U);
+  std::string active;
+  ASSERT_OK(ReadFileToString(env_, dbname_ + "/active-file", &active));
+  ASSERT_EQ(std::count(leftovers_l0.begin(), leftovers_l0.end(), active), 1);
   ASSERT_OK(TryReopen(options));
   ASSERT_EQ(Get("k"), "0");
   ASSERT_EQ(Get("pad"), "p");
   ASSERT_EQ(Get("x"), "1");
-  for (const auto& leftover_path : leftovers_l0) {
-    ASSERT_TRUE(env_->FileExists(leftover_path).IsNotFound());
-  }
+  ASSERT_OK(env_->FileExists(active));
+  std::vector<LiveFileMetaData> files;
+  db_->GetLiveFilesMetaData(&files);
+  const auto matching = std::count_if(files.begin(), files.end(), [&](const auto& file) {
+    return MakeTableFileName(file.db_path, file.file_number) == active;
+  });
+  ASSERT_EQ(matching, 1);
 #endif
 }
 
@@ -2589,37 +3639,38 @@ TEST_F(DBCsppCrashSafeTest, LogIndexOnRecoverOffUsesWal) {
   ASSERT_EQ(Get("k"), "v");
 }
 
-TEST_F(DBCsppCrashSafeTest, ListLeftoversAdvancesFileNumber) {
+TEST_F(DBCsppCrashSafeTest, ManifestRegistryIgnoresUnregisteredFiles) {
   for (bool osl : {false, true}) {
     SCOPED_TRACE(osl ? "OSL" : "CSPP");
     Close();
-    Options options = BaseCrashSafeOptions(dbname_, false, false);
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
     if (osl) {
       SetupOsl(&options, true);
     }
     Destroy(options);
     ASSERT_OK(env_->CreateDirIfMissing(dbname_));
-    const std::string prefix = dbname_ + (osl ? "/OffsetSkipList-" : "/cspp-");
-    const std::string high = prefix + "000100.memtab-0";
-    const std::string low = prefix + "000010.memtab-0";
+    const std::string high = MakeTableFileName(dbname_, 100);
+    const std::string low = MakeTableFileName(dbname_, 10);
     ASSERT_OK(WriteStringToFile(env_, "", high));
     ASSERT_OK(WriteStringToFile(env_, "", low));
-    ASSERT_EQ(ListLeftovers(options, dbname_).size(), 2U);
+    ASSERT_TRUE(ListLeftovers(options, dbname_).empty());
     // Remove both so collision checks cannot hide a stale counter.
     ASSERT_OK(env_->DeleteFile(high));
     ASSERT_OK(env_->DeleteFile(low));
     ASSERT_OK(TryReopen(options));
-    ASSERT_EQ(ListLeftovers(options, dbname_),
-              std::vector<std::string>{prefix + "000101.memtab-0"});
+    ASSERT_EQ(ListLeftovers(options, dbname_).size(), 2U);
+    for (const auto& path : ListLeftovers(options, dbname_))
+      ASSERT_OK(env_->FileExists(path));
     Close();
-    ASSERT_TRUE(ListLeftovers(options, dbname_).empty());
-    // Empty and lower-number scans must not move the counter backwards.
+    const auto before = ListLeftovers(options, dbname_);
+    // The manifest remains authoritative when unrelated files appear.
     ASSERT_OK(WriteStringToFile(env_, "", low));
-    ASSERT_EQ(ListLeftovers(options, dbname_).size(), 1U);
+    ASSERT_EQ(ListLeftovers(options, dbname_), before);
     ASSERT_OK(env_->DeleteFile(low));
     ASSERT_OK(TryReopen(options));
-    ASSERT_EQ(ListLeftovers(options, dbname_),
-              std::vector<std::string>{prefix + "000102.memtab-0"});
+    ASSERT_EQ(ListLeftovers(options, dbname_).size(), 2U);
+    for (const auto& path : ListLeftovers(options, dbname_))
+      ASSERT_OK(env_->FileExists(path));
     Close();
     Destroy(options);
   }
@@ -2632,15 +3683,19 @@ TEST_F(DBCsppCrashSafeTest, CreateMemTableRepDoesNotOverwriteLeftover) {
   ASSERT_OK(TryReopen(options));
   ASSERT_OK(Put("keep", "me"));
   auto first = ListLeftovers(options, dbname_);
-  ASSERT_EQ(first.size(), 1U);
+  ASSERT_EQ(first.size(), 2U);
+  auto* cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()->GetDefault();
+  const auto active = MakeTableFileName(dbname_, cfd->mem()->GetFileNumber());
+  ASSERT_EQ(std::count(first.begin(), first.end(), active), 1);
   std::string before;
-  ASSERT_OK(ReadFileToString(env_, first[0], &before));
+  ASSERT_OK(ReadFileToString(env_, active, &before));
   ASSERT_OK(dbfull()->TEST_SwitchMemtable());
   ASSERT_OK(Put("other", "x"));
   auto after_list = ListLeftovers(options, dbname_);
-  ASSERT_GE(after_list.size(), 2U);
+  ASSERT_EQ(after_list, first);
+  ASSERT_NE(MakeTableFileName(dbname_, cfd->mem()->GetFileNumber()), active);
   std::string after;
-  ASSERT_OK(ReadFileToString(env_, first[0], &after));
+  ASSERT_OK(ReadFileToString(env_, active, &after));
   ASSERT_EQ(before, after);
 }
 
@@ -2653,7 +3708,9 @@ TEST_F(DBCsppCrashSafeTest, Allow2pcAloneStillConverts) {
   ASSERT_OK(Put("k", "v"));
   ASSERT_OK(dbfull()->TEST_SwitchMemtable());
   Close();
-  ASSERT_TRUE(ListLeftovers(options, dbname_).empty());
+  ASSERT_EQ(ListLeftovers(options, dbname_).size(), 2U);
+  for (const auto& path : ListLeftovers(options, dbname_))
+    ASSERT_OK(env_->FileExists(path));
   ASSERT_OK(TryReopen(options));
   ASSERT_EQ(Get("k"), "v");
 }
@@ -2720,21 +3777,29 @@ TEST_F(CrashChild, DISABLED_LeftoverNoMagicFallsBackToWal) {
 TEST_F(DBCsppCrashSafeTest, LeftoverNoMagicFallsBackToWal) {
   Close();
   Options options = BaseCrashSafeOptions(dbname_, true, false);
-  Destroy(options);
-  ASSERT_EQ(RunCrashChild(dbname_, "LeftoverNoMagicFallsBackToWal"), 1);
-  auto leftovers = ListLeftovers(options, dbname_);
-  ASSERT_FALSE(leftovers.empty());
-  const int fd = ::open(leftovers[0].c_str(), O_RDWR);
-  ASSERT_GE(fd, 0);
-  terark::DFA_MmapHeader hdr{};
-  ASSERT_EQ(::pread(fd, &hdr, sizeof(hdr), 0),
-            static_cast<ssize_t>(sizeof(hdr)));
-  std::memset(hdr.reserved, 0, sizeof(hdr.reserved));
-  ASSERT_EQ(::pwrite(fd, &hdr, sizeof(hdr), 0),
-            static_cast<ssize_t>(sizeof(hdr)));
-  ::close(fd);
-  ASSERT_OK(TryReopen(options));
-  ASSERT_EQ(Get("bad"), "hdr");
+  for (const std::string damage : {"empty", "short-header", "missing-magic"}) {
+    SCOPED_TRACE(damage);
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "LeftoverNoMagicFallsBackToWal"), 1);
+    auto leftovers = ListLeftovers(options, dbname_);
+    ASSERT_FALSE(leftovers.empty());
+    const int fd = ::open(leftovers[0].c_str(), O_RDWR);
+    ASSERT_GE(fd, 0);
+    terark::DFA_MmapHeader hdr{};
+    if (damage == "missing-magic") {
+      ASSERT_EQ(::pread(fd, &hdr, sizeof(hdr), 0),
+                static_cast<ssize_t>(sizeof(hdr)));
+      std::memset(hdr.reserved, 0, sizeof(hdr.reserved));
+      ASSERT_EQ(::pwrite(fd, &hdr, sizeof(hdr), 0),
+                static_cast<ssize_t>(sizeof(hdr)));
+    } else {
+      ASSERT_EQ(::ftruncate(fd, damage == "empty" ? 0 : sizeof(hdr) - 1), 0);
+    }
+    ::close(fd);
+    ASSERT_OK(TryReopen(options));
+    ASSERT_EQ(Get("bad"), "hdr");
+    Close();
+  }
 }
 
 TEST_F(CrashChild, DISABLED_DualLeftoverSecondConvertFails) {
@@ -2795,79 +3860,21 @@ TEST_F(DBCsppCrashSafeTest, TruncateInjectFailureFallsBackToWal) {
   ASSERT_EQ(RunCrashChild(dbname_, "TruncateInjectFailureFallsBackToWal"), 1);
   SyncPoint::GetInstance()->EnableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
+  bool truncate_called = false;
   SyncPoint::GetInstance()->SetCallBack(
-      "CrashSafeRecover::Truncate:InjectStatus", [](void* arg) {
-        *static_cast<Status*>(arg) = Status::IOError("inject truncate");
+      "MemTableRep::ConvertToSST:Truncate", [&truncate_called](void* arg) {
+        truncate_called = true;
+        *static_cast<IOStatus*>(arg) = IOStatus::IOError("inject truncate");
       });
   ASSERT_OK(TryReopen(options));
+  ASSERT_TRUE(truncate_called);
   ASSERT_EQ(Get("tr"), "ok");
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
-TEST_F(CrashChild, DISABLED_LinkFileInjectFailureFallsBackToWal) {
-  Options options = BaseCrashSafeOptions(dbname_, true, true);
-  SyncPoint::GetInstance()->SetCallBack(
-      "DBImpl::PersistPublishedSequence:AfterCommit",
-      [](void*) { ::_exit(1); });
-  SyncPoint::GetInstance()->EnableProcessing();
-  DB* child_db = nullptr;
-  ASSERT_OK(DB::Open(options, dbname_, &child_db));
-  ASSERT_OK(child_db->Put(WriteOptions(), "lk", "ok"));
-  ::_exit(0);
-}
 
-TEST_F(DBCsppCrashSafeTest, LinkFileInjectFailureFallsBackToWal) {
-  Close();
-  Options options = BaseCrashSafeOptions(dbname_, true, true);
-  Destroy(options);
-  ASSERT_EQ(RunCrashChild(dbname_, "LinkFileInjectFailureFallsBackToWal"), 1);
-  SyncPoint::GetInstance()->EnableProcessing();
-  SyncPoint::GetInstance()->ClearAllCallBacks();
-  SyncPoint::GetInstance()->SetCallBack(
-      "CrashSafeRecover::LinkFile:InjectStatus", [](void* arg) {
-        *static_cast<Status*>(arg) = Status::IOError("inject link");
-      });
-  ASSERT_OK(TryReopen(options));
-  ASSERT_EQ(Get("lk"), "ok");
-  SyncPoint::GetInstance()->DisableProcessing();
-  SyncPoint::GetInstance()->ClearAllCallBacks();
-}
 
-TEST_F(CrashChild, DISABLED_AfterRenameBeforeAddFileFallsBackToWal) {
-  Options options = BaseCrashSafeOptions(dbname_, true, false);
-  SyncPoint::GetInstance()->SetCallBack(
-      "DBImpl::PersistPublishedSequence:AfterCommit",
-      [](void*) { ::_exit(1); });
-  SyncPoint::GetInstance()->EnableProcessing();
-  DB* child_db = nullptr;
-  ASSERT_OK(DB::Open(options, dbname_, &child_db));
-  ASSERT_OK(child_db->Put(WriteOptions(), "or", "phan"));
-  ::_exit(0);
-}
-
-TEST_F(CrashChild, DISABLED_AfterRenameBeforeAddFileFallsBackToWalRecover) {
-  Options options = BaseCrashSafeOptions(dbname_, true, false);
-  SyncPoint::GetInstance()->SetCallBack(
-      "CrashSafeRecover::AfterRenameBeforeAddFile",
-      [](void*) { ::_exit(1); });
-  SyncPoint::GetInstance()->EnableProcessing();
-  DB* recover_db = nullptr;
-  DB::Open(options, dbname_, &recover_db);
-  ::_exit(0);
-}
-
-TEST_F(DBCsppCrashSafeTest, AfterRenameBeforeAddFileFallsBackToWal) {
-  Close();
-  Options options = BaseCrashSafeOptions(dbname_, true, false);
-  Destroy(options);
-  ASSERT_EQ(RunCrashChild(dbname_, "AfterRenameBeforeAddFileFallsBackToWal"), 1);
-  SyncPoint::GetInstance()->EnableProcessing();
-  SyncPoint::GetInstance()->ClearAllCallBacks();
-  ASSERT_EQ(RunCrashChild(dbname_, "AfterRenameBeforeAddFileFallsBackToWalRecover"), 1);
-  ASSERT_OK(TryReopen(options));
-  ASSERT_EQ(Get("or"), "phan");
-}
 
 TEST_F(DBCsppCrashSafeTest, CrashSafeOrLogIndexDisablesWalCompression) {
   for (bool crash_safe : {false, true}) {
@@ -3133,7 +4140,7 @@ TEST_F(DBCsppCrashSafeTest, WritePreparedFallsBackToWal) {
   delete txn_db;
 }
 
-TEST_F(DBCsppCrashSafeTest, AfterRenameCloseSecondFlushInject) {
+TEST_F(DBCsppCrashSafeTest, AfterConvertCloseSecondFlushInject) {
   Close();
   Options options = BaseCrashSafeOptions(dbname_, true, false);
   Destroy(options);
@@ -3235,6 +4242,8 @@ TEST_F(DBCsppCrashSafeTest, AtomicFlushDualCfLeftoverConvertsBoth) {
   ASSERT_GE(CountL0(db_, "one"), 1);
 }
 
+
+
 TEST_F(CrashChild, DISABLED_DroppedCfLeftoverSkipped) {
   Options options = BaseCrashSafeOptions(dbname_, true, false);
   std::atomic<int> pubs{0};
@@ -3268,13 +4277,10 @@ TEST_F(DBCsppCrashSafeTest, DroppedCfLeftoverSkipped) {
   ASSERT_EQ(Get(0, "keep"), "1");
   ASSERT_EQ(Get(1, "drop"), "2");
   ASSERT_OK(Flush(0));
-  std::string left1;
-  for (const auto& p : ListLeftovers(options, dbname_)) {
-    if (p.find(".memtab-1") != std::string::npos) {
-      left1 = p;
-      break;
-    }
-  }
+  const auto registered = dbfull()->GetVersionSet()->GetColumnFamilySet()
+                              ->GetColumnFamily(1)->GetMemTableFiles();
+  ASSERT_FALSE(registered.empty());
+  const std::string left1 = MakeTableFileName(dbname_, *registered.begin());
   ASSERT_FALSE(left1.empty());
   const std::string bak = left1 + ".bak";
   CopyFile(left1, bak);
@@ -3287,13 +4293,10 @@ TEST_F(DBCsppCrashSafeTest, DroppedCfLeftoverSkipped) {
   }
   ASSERT_OK(TryReopen(options));
   ASSERT_EQ(Get("keep"), "1");
-  bool dropped_left = false;
-  for (const auto& p : ListLeftovers(options, dbname_)) {
-    if (p.find(".memtab-1") != std::string::npos) {
-      dropped_left = true;
-    }
-  }
-  ASSERT_TRUE(dropped_left);
+  ASSERT_EQ(dbfull()->GetVersionSet()->GetColumnFamilySet()
+                ->GetColumnFamily(1), nullptr);
+  const auto leftovers = ListLeftovers(options, dbname_);
+  ASSERT_EQ(std::count(leftovers.begin(), leftovers.end(), left1), 0);
 }
 
 TEST_F(CrashChild, DISABLED_MultiChunkAfterCommitStillReadable) {
@@ -3493,16 +4496,19 @@ TEST_F(DBCsppCrashSafeTest, InFlightFlushThenClose) {
   ASSERT_OK(dbfull()->TEST_SwitchMemtable());
   ASSERT_OK(Put("tail", "2"));
   test::SleepingBackgroundTask sleeping_task;
-  env_->Schedule(&test::SleepingBackgroundTask::DoSleepTask, &sleeping_task,
-                 Env::Priority::HIGH);
-  sleeping_task.WaitUntilSleeping();
+  SyncPoint::GetInstance()->SetCallBack(
+      "FlushJob::WriteLevel0Table", [&](void*) { sleeping_task.DoSleep(); });
+  SyncPoint::GetInstance()->EnableProcessing();
   FlushOptions fo;
   fo.wait = false;
-  ASSERT_OK(db_->Flush(fo));
+  const Status flush_status = db_->Flush(fo);
+  const bool paused = !sleeping_task.TimedWaitUntilSleeping(10 * 1000000);
+  if (!flush_status.ok() || !paused) sleeping_task.WakeUp();
+  ASSERT_OK(flush_status);
+  ASSERT_TRUE(paused);
   SyncPoint::GetInstance()->SetCallBack(
       "DBImpl::FlushMemTable:AfterScheduleFlush",
       [&](void*) { sleeping_task.WakeUp(); });
-  SyncPoint::GetInstance()->EnableProcessing();
   std::thread closer([&] { Close(); });
   sleeping_task.WaitUntilDone();
   closer.join();

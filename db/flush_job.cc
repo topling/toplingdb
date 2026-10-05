@@ -229,7 +229,8 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
   double mempurge_threshold =
       mutable_cf_options_.experimental_mempurge_threshold;
 
-  if (db_options_.memtable_as_log_index) {
+  if (db_options_.memtable_as_log_index ||
+      cfd_->ioptions()->memtable_factory->SupportCrashSafe()) {
     mempurge_threshold = 0; // not supported
   }
 

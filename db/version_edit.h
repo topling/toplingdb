@@ -63,6 +63,11 @@ enum Tag : uint32_t {
   kBlobFileAddition = 400,
   kBlobFileGarbage,
 
+  // Required recovery metadata: older readers must reject these tags.
+  kMemTableFileAddition = 500,
+  kMemTableFileDeletion = 501,
+  kMemTableFileTracking = 502,
+
   // Mask for an unidentified tag from the future which can be safely ignored.
   kTagSafeIgnoreMask = 1 << 13,
 
@@ -652,6 +657,7 @@ class VersionEdit {
   size_t NumEntries() const {
     return new_files_.size() + deleted_files_.size() +
            blob_file_additions_.size() + blob_file_garbages_.size() +
+           memtable_file_additions_.size() + memtable_file_deletions_.size() +
            wal_additions_.size() + !wal_deletion_.IsEmpty();
   }
 
@@ -659,6 +665,17 @@ class VersionEdit {
     column_family_ = column_family_id;
   }
   uint32_t GetColumnFamily() const { return column_family_; }
+
+  void AddMemTableFile(uint64_t number) { memtable_file_additions_.insert(number); }
+  void DeleteMemTableFile(uint64_t number) { memtable_file_deletions_.insert(number); }
+  const std::set<uint64_t>& GetMemTableFileAdditions() const {
+    return memtable_file_additions_;
+  }
+  const std::set<uint64_t>& GetMemTableFileDeletions() const {
+    return memtable_file_deletions_;
+  }
+  void SetMemTableFileTracking() { has_memtable_file_tracking_ = true; }
+  bool HasMemTableFileTracking() const { return has_memtable_file_tracking_; }
 
   const std::string& GetColumnFamilyName() const { return column_family_name_; }
 
@@ -774,6 +791,9 @@ class VersionEdit {
   // Each version edit record should have column_family_ set
   // If it's not set, it is default (0)
   uint32_t column_family_ = 0;
+  std::set<uint64_t> memtable_file_additions_;
+  std::set<uint64_t> memtable_file_deletions_;
+  bool has_memtable_file_tracking_ = false;
   // a version edit can be either column_family add or
   // column_family drop. If it's column family add,
   // it also includes column family name.

@@ -1981,7 +1981,9 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
         } else {
           const uint64_t record_start = PublishedWalRecordStart(
               crash_safe_wal_offset, crash_safe_wal_offset_kind);
-          const IOStatus seek_s = reader.SeekToFileOffset(record_start);
+          IOStatus seek_s = reader.SeekToFileOffset(record_start);
+          TEST_SYNC_POINT_CALLBACK(
+              "CrashSafeRecover::SeekToFileOffset:InjectStatus", &seek_s);
           if (!seek_s.ok()) {
             ROCKS_LOG_WARN(immutable_db_options_.info_log,
                            "Crash-safe SeekToFileOffset(%" PRIu64

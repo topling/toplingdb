@@ -1575,7 +1575,7 @@ TEST_F(DBCsppCrashSafeTest, SeekIOFailureReopensWal) {
     options.env = fault_env.get();
     options.log_readahead_size = 0;
     SyncPoint::GetInstance()->SetCallBack(
-        "CrashSafeRecover::SeekToFileOffset:InjectStatus",
+        "CrashSafeRecover::SeekToFileOffset:Before",
         [&](void*) { fs->armed = true; });
     SyncPoint::GetInstance()->EnableProcessing();
     const Status s = TryReopen(options);

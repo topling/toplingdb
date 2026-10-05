@@ -309,7 +309,7 @@ PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
 terark_forceinline
 size_t LockMap::GetStripe(const LockString& key, size_t hash) const {
   assert(num_stripes_ > 0);
-  auto col = hash % num_stripes_;
+  auto col = FastRange64(hash, num_stripes_);
   if (1 == super_stripes_) {
     return col;
   } else {
@@ -317,7 +317,7 @@ size_t LockMap::GetStripe(const LockString& key, size_t hash) const {
     size_t   plen = std::min(size_t(key_prefix_len_), key.size());
     ROCKSDB_ASSUME(plen <= sizeof(pref));
     memcpy(&pref, key.data(), plen);
-    size_t row = pref % super_stripes_;
+    size_t row = FastRange64(pref, super_stripes_);
     return row * num_stripes_ + col;
   }
 }

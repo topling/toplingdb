@@ -27,6 +27,7 @@
 #include <terark/fsa/cspptrie.inl>
 #include <terark/fsa/dfa_mmap_header.hpp>
 #include <terark/offset_skiplist.hpp>
+#include <terark/util/crc.hpp>
 
 #include "db/column_family.h"
 #include "db/db_impl/db_impl.h"
@@ -1982,6 +1983,22 @@ TEST_F(DBCsppCrashSafeTest, ConvertedTableVisibilityFilter) {
         mem.reset();
 
         const std::string fname = TableFileName(options.cf_paths, 1, 0);
+        if (!osl && !file_mmap) {
+          const int fd = ::open(fname.c_str(), O_RDONLY);
+          ASSERT_GE(fd, 0);
+          terark::DFA_MmapHeader header{};
+          const ssize_t read = ::pread(fd, &header, sizeof(header), 0);
+          ::close(fd);
+          ASSERT_EQ(read, static_cast<ssize_t>(sizeof(header)));
+          uint32_t prefix[3];
+          memcpy(prefix, header.reserved, sizeof(prefix));
+          ASSERT_EQ(prefix[0], 0x50505343U);  // CSPP crash-safe magic.
+          ASSERT_EQ(prefix[1], 0U);  // No WAL references in this conversion.
+          ASSERT_EQ(prefix[2], 0U);
+          ASSERT_GE(header.crc32cLevel, 1U);
+          ASSERT_EQ(header.header_crc32,
+                    terark::Crc32c_update(0, &header, sizeof(header) - 4));
+        }
         const std::type_info* unfiltered_type = nullptr;
         for (SequenceNumber limit : {kMaxSequenceNumber, meta.fd.largest_seqno}) {
           std::unique_ptr<FSRandomAccessFile> file;

@@ -2523,6 +2523,36 @@ TEST_F(DBCsppCrashSafeTest, PersistentWalStatsNormalConversion) {
   }
 }
 
+TEST_F(CrashChild, DISABLED_InterruptedWalStatsRecovery) {
+  Options options = PersistentStatsOptions(dbname_, arg_);
+  std::string active;
+  ASSERT_OK(ReadFileToString(options.env, dbname_ + "/stats-active", &active));
+  uint64_t file_number;
+  FileType file_type;
+  ASSERT_TRUE(ParseFileName(active.substr(active.find_last_of('/') + 1), &file_number, &file_type));
+  InternalKeyComparator icmp(options.comparator);
+  ImmutableOptions ioptions(options);
+  MutableCFOptions moptions(options);
+  IntTblPropCollectorFactories collectors;
+  TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
+                          options.compression, options.compression_opts, 0,
+                          kDefaultColumnFamilyName, 0);
+  uint64_t next_blob = 800000;
+  tbo.generate_file_no = [&] { return next_blob++; };
+  tbo.add_blob_file = [](BlobFileAddition) {};
+  const char* hooks[] = {"MemTableStats::RecoverWals:AfterReset",
+                         "MemTableStats::RecoverWals:AfterCount",
+                         "MemTableStats::RecoverWals:AfterBytes",
+                         "MemTableStats::RecoverWals:AfterNode"};
+  SyncPoint::GetInstance()->SetCallBack(hooks[arg_[3] - '0'], [](void*) { ::_exit(42); });
+  SyncPoint::GetInstance()->EnableProcessing();
+  FileMetaData meta;
+  meta.fd = FileDescriptor(file_number, 0, 0);
+  meta.fd.largest_seqno = kMaxSequenceNumber;
+  ASSERT_OK(options.memtable_factory->RecoverCrashSafeMemTableToSST(active, &meta, tbo));
+  ::_exit(1);  // Each selected hook must interrupt actual WAL aggregation.
+}
+
 TEST_F(DBCsppCrashSafeTest, PersistentMemTableStatsSurviveWriterLifetime) {
   Close();
   for (const char* config : {"CNL", "CNE", "CPL", "CPE", "CSL", "CSE",
@@ -2534,6 +2564,13 @@ TEST_F(DBCsppCrashSafeTest, PersistentMemTableStatsSurviveWriterLifetime) {
     ASSERT_EQ(RunCrashChild(dbname_, "PersistentMemTableStats", config), 42);
     std::string active;
     ASSERT_OK(ReadFileToString(env_, dbname_ + "/stats-active", &active));
+    if (config[1] == 'P' && (config[2] == 'T' || config[2] == 'E')) {
+      // Two writers: live after threshold reporting, or already exited.
+      for (char boundary : {'0', '1', '2', '3'}) {
+        ASSERT_EQ(RunCrashChild(dbname_, "InterruptedWalStatsRecovery",
+                                std::string(config) + boundary), 42);
+      }
+    }
     const uint64_t batches = config[2] == 'B' || config[2] == 'A' ? 1 : 2;
     const uint64_t value_size = config[2] == 'T' ? 600 * 1024 : 128;
     uint64_t file_number;
@@ -2788,6 +2825,11 @@ TEST_F(DBCsppCrashSafeTest, LogRefRecoveryMultipleWals) {
     // The empty rotating CF is now FileMmap too; its registered sources follow
     // the primary CF's earlier file number in the complete inventory.
     ASSERT_GE(leftovers.size(), 2U);
+    ASSERT_OK(WriteStringToFile(env_, leftovers.front(), dbname_ + "/stats-active"));
+    for (char boundary : {'0', '1', '2', '3'}) {
+      ASSERT_EQ(RunCrashChild(dbname_, "InterruptedWalStatsRecovery",
+                              std::string(config) + boundary), 42);
+    }
     const int fd = ::open(leftovers.front().c_str(), O_RDONLY);
     ASSERT_GE(fd, 0);
     uint32_t num_wals = 0;

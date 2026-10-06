@@ -1,0 +1,6 @@
+os_pretty_name=Ubuntu 24.04.5 LTS
+kernel=6.17.0-1022-azure
+cpu_model=Intel(R) Xeon(R) 6973P-C
+cpu_count=4
+mem_total_bytes=16765374464
+shm_size_bytes=12574031872

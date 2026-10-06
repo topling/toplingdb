@@ -2613,6 +2613,81 @@ TEST_F(DBCsppCrashSafeTest, PersistentMemTableStatsSurviveWriterLifetime) {
   }
 }
 
+TEST_F(DBCsppCrashSafeTest, PersistentMemTableStatsConcurrentAndDuplicateAdds) {
+  Close();
+  for (const char* config : {"CNE", "ONE"}) {
+    SCOPED_TRACE(config);
+    Options options = PersistentStatsOptions(dbname_, config);
+    Destroy(options);
+    ASSERT_OK(env_->CreateDirIfMissing(dbname_));
+    InternalKeyComparator icmp(options.comparator);
+    ImmutableOptions ioptions(options);
+    MutableCFOptions moptions(options);
+    WriteBufferManager wb(options.db_write_buffer_size);
+    auto mem = std::make_unique<MemTable>(icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0, 1);
+    constexpr size_t writers = 4, per_writer = 16;
+    std::atomic<size_t> ready{0};
+    std::atomic<bool> go{false};
+    MemTablePostProcessInfo counters[writers];
+    std::vector<std::thread> threads;
+    for (size_t id = 0; id < writers; id++) {
+      threads.emplace_back([&, id] {
+        ready++;
+        while (!go.load()) std::this_thread::yield();
+        void* hint = nullptr;
+        for (size_t i = 0; i < per_writer; i++) {
+          std::string key(3, 'a');
+          key[0] = char('a' + id);
+          key[1] = char('A' + i);
+          ASSERT_OK(mem->Add(id * per_writer + i + 1, kTypeValue, key,
+                             std::string(128, 'v'), nullptr, true,
+                             &counters[id], id % 2 ? &hint : nullptr));
+        }
+        mem->FinishHint(hint);
+      });
+    }
+    while (ready.load() != writers) std::this_thread::yield();
+    go.store(true);
+    for (auto& thread : threads) thread.join();
+    for (const auto& counter : counters) mem->BatchPostProcess(counter);
+    ASSERT_OK(mem->Add(1000, kTypeValue, "dup", "v", nullptr));
+    ASSERT_TRUE(mem->Add(1000, kTypeValue, "dup", "v", nullptr).IsTryAgain());
+    // Four writers add distinct three-byte keys; the rejected duplicate adds
+    // neither a record nor bytes to either the wrapper or persistent counters.
+    constexpr uint64_t entries = writers * per_writer + 1;
+    constexpr uint64_t key_bytes = entries * (3 + 8);
+    constexpr uint64_t value_bytes = writers * per_writer * 128 + 1;
+    ASSERT_EQ(mem->num_entries(), entries);
+    ASSERT_EQ(mem->raw_key_size(), key_bytes);
+    ASSERT_EQ(mem->raw_value_size(), value_bytes);
+    mem->MarkImmutable();
+    const std::string leftover = MakeTableFileName(dbname_, 2);
+    CopyFile(MakeTableFileName(dbname_, 1), leftover);
+    mem.reset();
+    IntTblPropCollectorFactories collectors;
+    TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
+                            options.compression, options.compression_opts, 0,
+                            kDefaultColumnFamilyName, 0);
+    FileMetaData meta;
+    meta.fd = FileDescriptor(2, 0, 0);
+    meta.fd.largest_seqno = 1000;
+    ASSERT_OK(options.memtable_factory->RecoverCrashSafeMemTableToSST(leftover, &meta, tbo));
+    ASSERT_EQ(meta.num_entries, entries);
+    ASSERT_EQ(meta.num_deletions, 0U);
+    ASSERT_EQ(meta.num_merges, 0U);
+    ASSERT_EQ(meta.raw_key_size, key_bytes);
+    ASSERT_EQ(meta.raw_value_size, value_bytes);
+    SstFileReader reader(options);
+    ASSERT_OK(reader.Open(leftover));
+    const auto properties = reader.GetTableProperties();
+    ASSERT_EQ(properties->num_entries, entries);
+    ASSERT_EQ(properties->num_deletions, 0U);
+    ASSERT_EQ(properties->num_merge_operands, 0U);
+    ASSERT_EQ(properties->raw_key_size, key_bytes);
+    ASSERT_EQ(properties->raw_value_size, value_bytes);
+  }
+}
+
 TEST_F(CrashChild, DISABLED_LogRefRecoveryIgnoresCounters) {
   Options options = LogRefCrashOptions(dbname_, arg_);
   DB* child_db = nullptr;

@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <topling/side_plugin_factory.h>
+#include <topling/builtin_table_factory.h>
 
 #include <terark/fsa/cspptrie.inl>
 #include <terark/fsa/dfa_mmap_header.hpp>
@@ -1795,6 +1796,124 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableUsesFileSequenceBound) {
     ASSERT_OK(dumper.getStatus());
     ASSERT_OK(dumper.ReadSequential(false, 0, false, "", false, ""));
     ASSERT_EQ(dumper.GetReadNumber(), 1U);
+  }
+}
+
+TEST_F(CrashChild, DISABLED_RecoveredHiddenRecordsCompact) {
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  if (arg_ == "OSL") {
+    SetupOsl(&options, true);
+  }
+  DB* child_db = nullptr;
+  ASSERT_OK(DB::Open(options, dbname_, &child_db));
+  ASSERT_OK(child_db->Put(WriteOptions(), "keep", "old"));
+  auto* cfd = static_cast<DBImpl*>(child_db)->GetVersionSet()->GetColumnFamilySet()->GetDefault();
+  // These physical entries are beyond the published sequence and absent in WAL.
+  ASSERT_OK(cfd->mem()->Add(2, kTypeValue, "keep", "ghost", nullptr));
+  ASSERT_OK(cfd->mem()->Add(3, kTypeValue, "ghost", "unpublished", nullptr));
+  ::_exit(42);
+}
+
+TEST_F(DBCsppCrashSafeTest, RecoveredHiddenRecordsCompact) {
+  Close();
+  for (const auto& config :
+       {std::make_pair(false, -1), {false, 12}, {true, -1}, {true, 12},
+        {false, 0}}) {
+    const bool osl = config.first;
+    const bool fail_lookup = config.second == 0;
+    SCOPED_TRACE(osl);
+    SCOPED_TRACE(config.second);
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    // Capacity is max_open_files - 10; capacity / 4 must be zero to avoid pinning.
+    options.max_open_files = fail_lookup ? 12 : config.second;
+    if (osl) {
+      SetupOsl(&options, true);
+    }
+    ASSERT_TRUE(options.compaction_verify_record_count);
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "RecoveredHiddenRecordsCompact", osl ? "OSL" : "CSPP"), 42);
+    // Compaction writes ordinary tables while dispatch reads the recovered format.
+    SidePluginRepo repo;
+    repo.Put("default", Options().table_factory);
+    repo.Put("converted", options.table_factory);
+    options.table_factory = PluginFactorySP<TableFactory>::AcquirePlugin(
+        "Dispatch", {{"default", "$default"}}, repo);
+    DispatcherTableBackPatch(options.table_factory.get(), repo);
+    ASSERT_OK(TryReopen(options));
+    TablePropertiesCollection properties;
+    ASSERT_OK(db_->GetPropertiesOfAllTables(&properties));
+    uint64_t physical_entries = 0;
+    for (const auto& property : properties) {
+      physical_entries += property.second->num_entries;
+    }
+    ASSERT_EQ(physical_entries, 3U);
+    auto check_visible = [&] {
+      std::unique_ptr<Iterator> it(db_->NewIterator(ReadOptions()));
+      it->SeekToFirst();
+      ASSERT_TRUE(it->Valid());
+      ASSERT_EQ(it->key().ToString(), "keep");
+      ASSERT_EQ(it->value().ToString(), "old");
+      it->Next();
+      ASSERT_FALSE(it->Valid());
+      ASSERT_OK(it->status());
+      ASSERT_EQ(Get("ghost"), "NOT_FOUND");
+    };
+    check_visible();
+    // Overlap prevents a trivial move, forcing the record-count verification path.
+    ASSERT_OK(Put("keep", "old"));
+    ASSERT_OK(Flush());
+    ASSERT_EQ(CountL0(db_), 2);
+    auto* cfd = dbfull()->GetVersionSet()->GetColumnFamilySet()->GetDefault();
+    for (const auto* file : cfd->current()->storage_info()->LevelFiles(0)) {
+      ASSERT_EQ(file->fd.table_reader != nullptr, config.second == -1);
+      if (config.second != -1) {
+        TableCache::Evict(dbfull()->TEST_table_cache(), file->fd.GetNumber());
+      }
+    }
+    std::atomic<int> unsupported{0}, find_table{0}, pinned_reader{0}, mismatch{0};
+    auto* sync = SyncPoint::GetInstance();
+    sync->SetCallBack("CompactionJob::VerifyRecordCount:Unsupported",
+                      [&](void*) { unsupported++; });
+    sync->SetCallBack("CompactionJob::VerifyRecordCount:FindTable",
+                      [&](void*) { find_table++; });
+    sync->SetCallBack("CompactionJob::VerifyRecordCount:PinnedReader",
+                      [&](void*) { pinned_reader++; });
+    sync->SetCallBack("CompactionJob::VerifyRecordCount:Mismatch", [&](void*) { mismatch++; });
+    if (fail_lookup) {
+      sync->SetCallBack("CompactionJob::VerifyRecordCount:FindTableStatus",
+                       [](void* arg) {
+        *static_cast<Status*>(arg) = Status::IOError("injected reader lookup failure");
+      });
+    }
+    sync->EnableProcessing();
+    Status compact = db_->CompactRange(CompactRangeOptions(), nullptr, nullptr);
+    sync->DisableProcessing();
+    sync->ClearCallBack("CompactionJob::VerifyRecordCount:Unsupported");
+    sync->ClearCallBack("CompactionJob::VerifyRecordCount:FindTable");
+    sync->ClearCallBack("CompactionJob::VerifyRecordCount:PinnedReader");
+    sync->ClearCallBack("CompactionJob::VerifyRecordCount:FindTableStatus");
+    sync->ClearCallBack("CompactionJob::VerifyRecordCount:Mismatch");
+    if (fail_lookup) {
+      ASSERT_TRUE(compact.IsCorruption());
+      ASSERT_NE(std::strstr(compact.getState(), "Compaction number of input keys"), nullptr);
+      ASSERT_EQ(unsupported.load(), 0);
+      ASSERT_GT(mismatch.load(), 0);
+      ASSERT_GT(find_table.load(), 0);
+      Close();
+      continue;
+    }
+    ASSERT_OK(compact);
+    ASSERT_GT(unsupported.load(), 0);
+    ASSERT_EQ(mismatch.load(), 0);
+    if (config.second == -1) {
+      ASSERT_EQ(find_table.load(), 0);
+      ASSERT_GT(pinned_reader.load(), 0);
+    } else {
+      ASSERT_GT(find_table.load(), 0);
+    }
+    ASSERT_EQ(CountL0(db_), 0);
+    check_visible();
+    Close();
   }
 }
 

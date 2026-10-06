@@ -10131,9 +10131,16 @@ TEST_F(DBCompactionTest, VerifyRecordCount) {
           *(bool*)stop_ptr = true;
         }
       });
+  int supported = 0, mismatches = 0;
+  SyncPoint::GetInstance()->SetCallBack(
+      "CompactionJob::VerifyRecordCount:Supported", [&](void*) { supported++; });
+  SyncPoint::GetInstance()->SetCallBack(
+      "CompactionJob::VerifyRecordCount:Mismatch", [&](void*) { mismatches++; });
   SyncPoint::GetInstance()->EnableProcessing();
 
   Status s = db_->CompactRange(CompactRangeOptions(), nullptr, nullptr);
+  ASSERT_GT(supported, 0);
+  ASSERT_GT(mismatches, 0);
   ASSERT_TRUE(s.IsCorruption());
   const char* expect =
       "Compaction number of input keys does not match number of keys "

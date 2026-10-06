@@ -111,6 +111,9 @@ class TableReader : public CacheAlignedNewDelete {
 
   virtual std::shared_ptr<const TableProperties> GetTableProperties() const = 0;
 
+  // Whether num_entries is exact for the table's visible contents.
+  virtual bool IsNumEntriesExact() const { return true; }
+
   // Prepare work that can be done before the real Get()
   virtual void Prepare(const Slice& /*target*/) {}
   virtual void PreparePIK(const ParsedInternalKey& pik) {

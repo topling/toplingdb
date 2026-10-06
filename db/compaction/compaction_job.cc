@@ -932,7 +932,46 @@ if (stats_) {
       uint64_t expected =
           compaction_stats_.stats.num_input_records - num_input_range_del;
       uint64_t actual = compaction_job_stats_->num_input_records;
-      if (expected != actual) {
+      auto can_verify_record_count = [&] {
+        auto* c = compact_->compaction;
+        auto* cfd = c->column_family_data();
+        auto* tc = cfd->table_cache();
+        const auto* cf_options = c->mutable_cf_options();
+        const ReadOptions ro(Env::IOActivity::kCompaction);
+        for (const auto& input : *c->inputs()) {
+          for (const auto* file : input.files) {
+            bool supported;
+            if (auto* reader = file->fd.table_reader) {
+              TEST_SYNC_POINT("CompactionJob::VerifyRecordCount:PinnedReader");
+              supported = reader->IsNumEntriesExact();
+            } else {
+              TEST_SYNC_POINT("CompactionJob::VerifyRecordCount:FindTable");
+              TableCache::TypedHandle* handle = nullptr;
+              Status s = tc->FindTable(
+                  ro, file_options_, cfd->internal_comparator(), *file,
+                  &handle, cf_options->block_protection_bytes_per_key,
+                  cf_options->prefix_extractor);
+              supported = true;
+              if (s.ok()) {
+                supported = tc->GetTableReaderFromHandle(handle)->IsNumEntriesExact();
+                tc->ReleaseHandle(handle);
+              }
+              TEST_SYNC_POINT_CALLBACK("CompactionJob::VerifyRecordCount:FindTableStatus", &s);
+              if (!s.ok()) {
+                return true;  // Keep the original mismatch error.
+              }
+            }
+            if (!supported) {
+              TEST_SYNC_POINT("CompactionJob::VerifyRecordCount:Unsupported");
+              return false;
+            }
+          }
+        }
+        TEST_SYNC_POINT("CompactionJob::VerifyRecordCount:Supported");
+        return true;
+      };
+      if (expected != actual && can_verify_record_count()) {
+        TEST_SYNC_POINT("CompactionJob::VerifyRecordCount:Mismatch");
         std::string msg =
             "Total number of input records: " + std::to_string(expected) +
             ", but processed " + std::to_string(actual) + " records.";

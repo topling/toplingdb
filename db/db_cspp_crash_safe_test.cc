@@ -2406,6 +2406,213 @@ static Options LogRefCrashOptions(const std::string& dbname,
   return options;
 }
 
+static Options PersistentStatsOptions(const std::string& dbname, const std::string& config) {
+  Options options = BaseCrashSafeOptions(dbname, true, config[1] != 'N');
+  options.cf_paths = {{dbname, 0}};
+  const bool osl = config[0] == 'O';
+  const json params = {
+      {"mem_cap", 16777216}, {"convert_to_sst", "kFileMmap"},
+      {"enable_gc", config[2] == 'E'},
+      {"log_ref_format", config[1] == 'S' ? "kShortLogRef" : "kPlainLogRef"}};
+  options.memtable_factory = EasyNewMemTableRep(
+      osl ? "OffsetSkipList" : "CSPPMemTab", params.dump());
+  const SidePluginRepo repo;
+  options.table_factory = PluginFactorySP<TableFactory>::AcquirePlugin(
+      osl ? "OffsetSkipListTable" : "CSPPMemTabTable", params, repo);
+  options.merge_operator = MergeOperators::CreateStringAppendOperator();
+  return options;
+}
+
+TEST_F(CrashChild, DISABLED_PersistentMemTableStats) {
+  Options options = PersistentStatsOptions(dbname_, arg_);
+  DB* child_db = nullptr;
+  ASSERT_OK(DB::Open(options, dbname_, &child_db));
+  std::mutex gate;
+  std::condition_variable ready_cv;
+  size_t ready = 0;
+  const bool exited = arg_[2] == 'E';
+  const bool window = arg_[2] == 'B' || arg_[2] == 'A';
+  const size_t value_size = arg_[2] == 'T' || arg_[2] == 'F' ? 600 * 1024 : 128;
+  auto* cfd = static_cast<DBImpl*>(child_db)->GetVersionSet()->GetColumnFamilySet()->GetDefault();
+  auto write = [&](int id) {
+    WriteOptions wo;
+    wo.memtable_insert_hint_per_batch = id == 1;
+    const std::string prefix = std::to_string(id);
+    const bool check_memory = arg_[2] == 'T' || arg_[2] == 'F';
+    size_t memory_before = 0;
+    if (check_memory) {
+      // Warm this writer's TLS allocation before measuring WAL-cache growth.
+      ASSERT_OK(child_db->Put(wo, prefix + "dup", ""));
+      memory_before = cfd->mem()->ApproximateMemoryUsage();
+    }
+    WriteBatch batch;
+    if (!check_memory) {
+      ASSERT_OK(batch.Put(prefix + "dup", ""));
+    }
+    ASSERT_OK(batch.Put(prefix + "dup", std::string(value_size, 'v')));
+    ASSERT_OK(batch.Delete(prefix + "del"));
+    ASSERT_OK(batch.SingleDelete(prefix + "one"));
+    ASSERT_OK(batch.Put(prefix + "last", "v"));
+    ASSERT_OK(child_db->Write(wo, &batch));
+    ASSERT_OK(child_db->Merge(wo, prefix + "mer", "m"));
+    if (check_memory) {
+      const size_t memory_after = cfd->mem()->ApproximateMemoryUsage();
+      ASSERT_GE(memory_after, memory_before + value_size);
+      ASSERT_LT(memory_after, memory_before + value_size + 64 * 1024);
+    }
+    std::unique_lock<std::mutex> lock(gate);
+    ready++;
+    ready_cv.notify_all();
+    if (!exited) {
+      ready_cv.wait(lock, [] { return false; });  // TLS remains live at _exit.
+    }
+  };
+  std::thread first(write, 0);
+  {
+    std::unique_lock<std::mutex> lock(gate);
+    ready_cv.wait(lock, [&] { return ready == 1; });
+  }
+  if (exited) first.join();
+  const std::string active = MakeTableFileName(dbname_, cfd->mem()->GetFileNumber());
+  ASSERT_OK(WriteStringToFile(options.env, active, dbname_ + "/stats-active"));
+  if (window) {
+    SyncPoint::GetInstance()->SetCallBack(
+        arg_[2] == 'B' ? "MemTableStats::BeforePublish"
+                       : "MemTableStats::AfterPublish",
+        [](void*) { ::_exit(42); });
+    SyncPoint::GetInstance()->EnableProcessing();
+    std::thread next([&] {
+      ASSERT_OK(child_db->Put(WriteOptions(), "never-counted", "v"));
+    });
+    next.join();
+    ::_exit(1);  // The first insertion must reach the publication hook.
+  }
+  std::thread second(write, 1);
+  {
+    std::unique_lock<std::mutex> lock(gate);
+    ready_cv.wait(lock, [&] { return ready == 2; });
+  }
+  if (exited) second.join();
+  // Independent oracle: each writer has six entries, two deletions, one merge,
+  // 25 user-key bytes plus six tags, and value_size + 2 real value bytes.
+  ASSERT_EQ(cfd->mem()->num_entries(), 12U);
+  ASSERT_EQ(cfd->mem()->num_deletes(), 4U);
+  ASSERT_EQ(cfd->mem()->num_merges(), 2U);
+  ASSERT_EQ(cfd->mem()->raw_key_size(), 146U);
+  ASSERT_EQ(cfd->mem()->raw_value_size(), 2 * (value_size + 2));
+  if (arg_[2] == 'F') {
+    FlushOptions flush;
+    flush.wait = true;
+    ASSERT_OK(child_db->Flush(flush));
+    ColumnFamilyMetaData meta;
+    child_db->GetColumnFamilyMetaData(&meta);
+    ASSERT_EQ(meta.blob_files.size(), 1U);
+    ASSERT_EQ(meta.blob_files[0].total_blob_count, 2U);
+    ASSERT_EQ(meta.blob_files[0].total_blob_bytes, 2 * value_size);
+  }
+  ::_exit(42);
+}
+
+TEST_F(DBCsppCrashSafeTest, PersistentWalStatsNormalConversion) {
+  Close();
+  for (const char* config : {"CPF", "OPF"}) {
+    SCOPED_TRACE(config);
+    Options options = PersistentStatsOptions(dbname_, config);
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "PersistentMemTableStats", config), 42);
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, PersistentMemTableStatsSurviveWriterLifetime) {
+  Close();
+  for (const char* config : {"CNL", "CNE", "CPL", "CPE", "CSL", "CSE",
+                             "ONL", "ONE", "OPL", "OPE", "OSL", "OSE",
+                             "CNB", "CNA", "ONB", "ONA", "CPT", "OPT"}) {
+    SCOPED_TRACE(config);
+    Options options = PersistentStatsOptions(dbname_, config);
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "PersistentMemTableStats", config), 42);
+    std::string active;
+    ASSERT_OK(ReadFileToString(env_, dbname_ + "/stats-active", &active));
+    const uint64_t batches = config[2] == 'B' || config[2] == 'A' ? 1 : 2;
+    const uint64_t value_size = config[2] == 'T' ? 600 * 1024 : 128;
+    uint64_t file_number;
+    FileType file_type;
+    ASSERT_TRUE(ParseFileName(active.substr(active.find_last_of('/') + 1),
+                              &file_number, &file_type));
+    ASSERT_EQ(file_type, kTableFile);
+    FileMetaData meta;
+    meta.fd = FileDescriptor(file_number, 0, 0);
+    meta.fd.largest_seqno = batches * 6;
+    InternalKeyComparator icmp(options.comparator);
+    ImmutableOptions ioptions(options);
+    MutableCFOptions moptions(options);
+    IntTblPropCollectorFactories collectors;
+    TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
+                            options.compression, options.compression_opts, 0,
+                            kDefaultColumnFamilyName, 0);
+    uint64_t next_blob = 900000;
+    tbo.generate_file_no = [&] { return next_blob++; };
+    std::vector<BlobFileAddition> blobs;
+    tbo.add_blob_file = [&](BlobFileAddition blob) { blobs.push_back(blob); };
+    // Every conversion rebuilds header totals from durable writer counters.
+    for (int attempt = 0; attempt < 2; attempt++) {
+      SCOPED_TRACE(attempt);
+      blobs.clear();
+      int recoveries = 0;
+      SyncPoint::GetInstance()->SetCallBack(
+          "MemTableStats::RecoverWals:AfterReset",
+          [&](void*) { recoveries++; });
+      SyncPoint::GetInstance()->EnableProcessing();
+      Status s = options.memtable_factory->RecoverCrashSafeMemTableToSST(active, &meta, tbo);
+      SyncPoint::GetInstance()->DisableProcessing();
+      SyncPoint::GetInstance()->ClearCallBack("MemTableStats::RecoverWals:AfterReset");
+      ASSERT_OK(s);
+      ASSERT_EQ(recoveries, 1);
+      ASSERT_EQ(meta.num_entries, batches * 6);
+      ASSERT_EQ(meta.num_deletions, batches * 2);
+      ASSERT_EQ(meta.num_merges, batches);
+      ASSERT_EQ(meta.raw_key_size, batches * 73);
+      ASSERT_EQ(meta.raw_value_size, batches * (value_size + 2));
+      ASSERT_EQ(blobs.size(), config[1] == 'N' ? 0U : 1U);
+      for (const auto& blob : blobs) {
+        ASSERT_EQ(blob.GetTotalBlobCount(), batches);
+        ASSERT_EQ(blob.GetTotalBlobBytes(), batches * value_size);
+      }
+      if (config[1] != 'N') {
+        const int fd = ::open(active.c_str(), O_RDONLY);
+        ASSERT_GE(fd, 0);
+        const size_t offset = config[0] == 'O'
+            ? offsetof(terark::OSL_MmapHeader, reserved) + 2 * sizeof(uint32_t)
+            : offsetof(terark::DFA_MmapHeader, reserved) + 4 * sizeof(uint32_t);
+        uint64_t wal[3];  // fileno, cnt, bytes
+        const ssize_t n = ::pread(fd, wal, sizeof(wal), offset);
+        const int close_result = ::close(fd);
+        ASSERT_EQ(n, static_cast<ssize_t>(sizeof(wal)));
+        ASSERT_EQ(close_result, 0);
+        ASSERT_EQ(wal[1], batches);
+        ASSERT_EQ(wal[2], batches * value_size);
+      }
+      SstFileReader reader(options);
+      ASSERT_OK(reader.Open(active));
+      const auto properties = reader.GetTableProperties();
+      ASSERT_EQ(properties->num_entries, batches * 6);
+      ASSERT_EQ(properties->num_deletions, batches * 2);
+      ASSERT_EQ(properties->num_merge_operands, batches);
+      ASSERT_EQ(properties->raw_key_size, batches * 73);
+      ASSERT_EQ(properties->raw_value_size, batches * (value_size + 2));
+      if (config[1] != 'N') {
+        const auto& compression = properties->compression_options;
+        unsigned long long cnt, bytes;
+        ASSERT_EQ(sscanf(compression.c_str() + compression.find(';') + 1,
+                         "%*u:%*u:%llu:%llu", &cnt, &bytes), 2);
+        ASSERT_EQ(cnt, batches);
+        ASSERT_EQ(bytes, batches * value_size);
+      }
+    }  // Destroy the reader before recovering the same file again.
+  }
+}
+
 TEST_F(CrashChild, DISABLED_LogRefRecoveryIgnoresCounters) {
   Options options = LogRefCrashOptions(dbname_, arg_);
   DB* child_db = nullptr;
@@ -2439,7 +2646,7 @@ TEST_F(DBCsppCrashSafeTest, LogRefRecoveryIgnoresCounters) {
     ASSERT_EQ(std::count(leftovers.begin(), leftovers.end(), active), 1);
     const int fd = ::open(active.c_str(), O_RDWR);
     ASSERT_GE(fd, 0);
-    // Header statistics are not a source of truth for WAL references.
+    // Recovery rebuilds header totals from durable writer counters.
     const size_t offset = config[0] == 'O'
         ? offsetof(terark::OSL_MmapHeader, reserved) + 2 * sizeof(uint32_t)
         : offsetof(terark::DFA_MmapHeader, reserved) + 4 * sizeof(uint32_t);
@@ -2447,8 +2654,8 @@ TEST_F(DBCsppCrashSafeTest, LogRefRecoveryIgnoresCounters) {
     const ssize_t n = ::pread(fd, wal, sizeof(wal), offset);
     ASSERT_EQ(n, static_cast<ssize_t>(sizeof(wal)));
     if (config[2] == 'S') {
-      // Simulate a crash before TLS statistics were flushed to the mapped header.
-      // A zero approximate count must not discard the real WAL references.
+      // Deliberately clear header counters. Recovery must retain the real WAL
+      // references and reconstruct totals from durable writer statistics.
       wal[1] = 0;
       wal[2] = 0;
       ASSERT_EQ(::pwrite(fd, wal, sizeof(wal), offset),
@@ -2462,10 +2669,9 @@ TEST_F(DBCsppCrashSafeTest, LogRefRecoveryIgnoresCounters) {
       ColumnFamilyMetaData cf_meta;
       db_->GetColumnFamilyMetaData(&cf_meta);
       ASSERT_EQ(cf_meta.blob_files.size(), 1U);
-      ASSERT_EQ(cf_meta.blob_files[0].total_blob_count,
-                std::max<uint64_t>(wal[1], 1));
-      ASSERT_EQ(cf_meta.blob_files[0].total_blob_bytes,
-                std::max<uint64_t>(wal[2], 1));
+      const uint64_t count = config[2] == 'L' ? 5000 : 3;
+      ASSERT_EQ(cf_meta.blob_files[0].total_blob_count, count);
+      ASSERT_EQ(cf_meta.blob_files[0].total_blob_bytes, count * 128);
       ASSERT_EQ(Get("0"), std::string(128, 'v'));
       ASSERT_EQ(Get("1"), std::string(128, 'v'));
       ASSERT_EQ(Get("inline"), "v");
@@ -2524,6 +2730,10 @@ TEST_F(DBCsppCrashSafeTest, LogRefRecoveryMultipleWals) {
       ColumnFamilyMetaData meta;
       db_->GetColumnFamilyMetaData(&meta);
       ASSERT_EQ(meta.blob_files.size(), 3U);
+      for (const auto& blob : meta.blob_files) {
+        ASSERT_EQ(blob.total_blob_count, 1U);
+        ASSERT_EQ(blob.total_blob_bytes, 128U);
+      }
       std::unique_ptr<Iterator> it(db_->NewIterator(ReadOptions()));
       it->SeekToFirst();
       for (int i = 0; i < 3; ++i) {

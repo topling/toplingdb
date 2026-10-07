@@ -3205,6 +3205,39 @@ TEST_F(DBCsppCrashSafeTest, AvoidFlushDuringShutdownKeepsRegisteredMemTable) {
     Close();
     for (const auto& path : ListLeftovers(options, dbname_))
       ASSERT_OK(env_->FileExists(path));
+
+    // Second cycle: the reopen above converted the leftovers into L0 and
+    // retired their inventory entries. Closing again with
+    // avoid_flush_during_shutdown must leave a freshly registered MemTable
+    // behind, so that this open converts it too. Were the retired inventory or
+    // the post-recovery MemTable left unregistered, the cycle would silently
+    // degrade to a full WAL replay: no error, no data loss, just the end of
+    // crash-safe recovery for this DB.
+    options.avoid_flush_during_shutdown = true;
+    ASSERT_OK(TryReopen(options));
+    ASSERT_OK(Put("k2", "v2"));
+    auto* cfd2 = dbfull()->GetVersionSet()->GetColumnFamilySet()->GetDefault();
+    ASSERT_NE(cfd2->mem(), nullptr);
+    ASSERT_TRUE(cfd2->mem()->IsFileRegistered());
+    const auto before_second_close = ListLeftovers(options, dbname_);
+    ASSERT_EQ(before_second_close.size(), registered.size());
+    Close();
+    ASSERT_EQ(ListLeftovers(options, dbname_), before_second_close);
+    for (const auto& path : before_second_close)
+      ASSERT_OK(env_->FileExists(path));
+    ASSERT_OK(env_->FileExists(CrashSafePubSeqFileName(dbname_)));
+    converted.store(0);
+    SyncPoint::GetInstance()->SetCallBack(
+        "MemTableRep::ConvertToSST:After", [&](void*) { ++converted; });
+    SyncPoint::GetInstance()->EnableProcessing();
+    ASSERT_OK(TryReopen(options));
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_EQ(converted.load(), 1);
+    ASSERT_EQ(Get("k"), "v");
+    ASSERT_EQ(Get("k2"), "v2");
+    ASSERT_EQ(CountL0(db_), 2);
+    Close();
   }
 }
 

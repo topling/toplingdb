@@ -50,6 +50,7 @@ DEFINE_string(benchmarks, "fillrandom",
               "\treadrandom             -- read N values in random order\n"
               "\treaduniqrand           -- read all keys in pre-shuffled order\n"
               "\treadseq                -- scan the DB\n"
+              "\treadreverse            -- scan the DB in reverse order\n"
               "\treadwrite              -- 1 thread writes while N - 1 threads "
               "do random\n"
               "\t                          reads\n"
@@ -819,7 +820,8 @@ int main(int argc, char** argv) {
           &rng, ROCKSDB_NAMESPACE::UNIQUE_RANDOM, FLAGS_num_operations));
       benchmark.reset(new ROCKSDB_NAMESPACE::ReadBenchmark(
           memtablerep.get(), key_gen.get(), &sequence));
-    } else if (name == ROCKSDB_NAMESPACE::Slice("readseq")) {
+    } else if (name == ROCKSDB_NAMESPACE::Slice("readseq") ||
+               name == ROCKSDB_NAMESPACE::Slice("readreverse")) {
       key_gen.reset(new ROCKSDB_NAMESPACE::KeyGenerator(
           &rng, ROCKSDB_NAMESPACE::SEQUENTIAL, FLAGS_num_operations));
       benchmark.reset(new ROCKSDB_NAMESPACE::SeqReadBenchmark(memtablerep.get(),
@@ -855,7 +857,10 @@ int main(int argc, char** argv) {
       std::cout << "Random generation time: " << benchmark->random_time << " us" << std::endl;
       std::cout << "Random generation sink: " << sink << std::endl;
     }
+    const bool saved_reverse = FLAGS_reverse;
+    FLAGS_reverse = saved_reverse || name == ROCKSDB_NAMESPACE::Slice("readreverse");
     benchmark->Run();
+    FLAGS_reverse = saved_reverse;
     // approximate memory of the rep itself (arena/mmap), i.e. the working
     // set the benchmark just walked
     size_t usage = memtablerep->ApproximateMemoryUsage();

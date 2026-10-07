@@ -68,6 +68,15 @@ DEFINE_string(memtablerep, "skiplist",
               "\t                      cspp:{\"mem_cap\":\"16G\"} or\n"
               "\t                      OffsetSkipList:{\"mem_cap\":\"16G\"}");
 
+// A file-backed memtable (cspp with convert_to_sst=kFileMmap in the json
+// above) is created through the overload that takes the memtable file path,
+// which is chroot_dir prefixed by the factory, so the json must set
+// chroot_dir to an existing directory. LogRef modes are not supported: this
+// bench has no WAL, so m_ref_to_wal stays kNoLogRef.
+DEFINE_string(memtable_file_path, "",
+              "If non-empty, create the memtable rep through the file-backed "
+              "form, the path is relative to the json's chroot_dir");
+
 DEFINE_int64(bucket_count, 1000000,
              "bucket_count parameter to pass into NewHashSkiplistRepFactory or "
              "NewHashLinkListRepFactory");
@@ -720,6 +729,13 @@ int main(int argc, char** argv) {
   uint64_t sequence;
   auto createMemtableRep = [&] {
     sequence = 0;
+    if (!FLAGS_memtable_file_path.empty()) {
+      ROCKSDB_NAMESPACE::MutableCFOptions mcfopt(options);
+      return factory->CreateMemTableRep(FLAGS_memtable_file_path, mcfopt,
+                                        key_comp, &arena,
+                                        options.prefix_extractor.get(),
+                                        options.info_log.get(), 0);
+    }
     return factory->CreateMemTableRep(key_comp, &arena,
                                       options.prefix_extractor.get(),
                                       options.info_log.get());
@@ -784,6 +800,14 @@ int main(int argc, char** argv) {
     }
     std::cout << "Running " << name.ToString() << std::endl;
     benchmark->Run();
+    // approximate memory of the rep itself (arena/mmap), i.e. the working
+    // set the benchmark just walked
+    size_t usage = memtablerep->ApproximateMemoryUsage();
+    std::cout << "ApproximateMemoryUsage: " << usage << " bytes ("
+              << usage / 1048576.0 << " MiB)"
+              << ", arena: " << arena.ApproximateMemoryUsage() << " bytes ("
+              << arena.ApproximateMemoryUsage() / 1048576.0 << " MiB)"
+              << std::endl;
   }
 
   return 0;

@@ -48,6 +48,7 @@ DEFINE_string(benchmarks, "fillrandom",
               "\tfillrandom             -- write N random values\n"
               "\tfillseq                -- write N values in sequential order\n"
               "\treadrandom             -- read N values in random order\n"
+              "\treaduniqrand           -- read all keys in pre-shuffled order\n"
               "\treadseq                -- scan the DB\n"
               "\treadwrite              -- 1 thread writes while N - 1 threads "
               "do random\n"
@@ -148,6 +149,10 @@ bool g_is_topling_memtab = false;
 namespace ROCKSDB_NAMESPACE {
 
 namespace {
+inline void EncodeBigEndian64(char* dst, uint64_t value) {
+  unaligned_save(dst, NativeOfBigEndian64(value));
+}
+
 struct CallbackVerifyArgs {
   bool found;
   bool needs_user_key_cmp;
@@ -213,6 +218,9 @@ class KeyGenerator {
     return std::numeric_limits<uint64_t>::max();
   }
 
+  uint64_t NextUniqRand(uint64_t& next) { return values_[next++]; }
+  bool IsUniqRand() const { return mode_ == UNIQUE_RANDOM; }
+
  private:
   Random64* rand_;
   WriteMode mode_;
@@ -262,7 +270,7 @@ class FillBenchmarkThread : public BenchmarkThread {
       auto internal_key_size = 16;
       uint64_t key = key_gen_->Next();
       char key_buf[8]; // user key
-      EncodeFixed64(key_buf, key);
+      EncodeBigEndian64(key_buf, key);
       uint64_t tag = ++(*sequence_);
       Slice ukey(key_buf, sizeof(key_buf));
       Slice value = generator_.Generate(FLAGS_item_size);
@@ -292,7 +300,7 @@ class FillBenchmarkThread : public BenchmarkThread {
     assert(buf != nullptr);
     char* p = EncodeVarint32(buf, internal_key_size);
     auto key = key_gen_->Next();
-    EncodeFixed64(p, key);
+    EncodeBigEndian64(p, key);
     p += 8;
     EncodeFixed64(p, ++(*sequence_));
     p += 8;
@@ -358,13 +366,18 @@ class ConcurrentFillBenchmarkThread : public FillBenchmarkThread {
 
 class ReadBenchmarkThread : public BenchmarkThread {
   ReadOptions read_opt_;
+  uint64_t uniq_idx_;
+  bool is_uniqrand_;
   bool needs_user_key_cmp_;
  public:
   ReadBenchmarkThread(MemTableRep* table, KeyGenerator* key_gen,
                       uint64_t* bytes_written, uint64_t* bytes_read,
+                      uint64_t uniq_idx,
                       uint64_t* sequence, uint64_t num_ops, uint64_t* read_hits)
       : BenchmarkThread(table, key_gen, bytes_written, bytes_read, sequence,
                         num_ops, read_hits) {
+    uniq_idx_ = uniq_idx;
+    is_uniqrand_ = key_gen->IsUniqRand();
     if (FLAGS_enable_zero_copy) {
       read_opt_.StartPin();
     }
@@ -394,8 +407,8 @@ class ReadBenchmarkThread : public BenchmarkThread {
 
   void ReadOne() {
     char user_key[sizeof(uint64_t)];
-    auto key = key_gen_->Next();
-    EncodeFixed64(user_key, key);
+    auto key = is_uniqrand_ ? key_gen_->NextUniqRand(uniq_idx_) : key_gen_->Next();
+    EncodeBigEndian64(user_key, key);
     LookupKey lookup_key(Slice(user_key, sizeof(user_key)), *sequence_);
     InternalKeyComparator internal_key_comp(BytewiseComparator());
     CallbackVerifyArgs verify_args;
@@ -461,7 +474,7 @@ class ConcurrentReadBenchmarkThread : public ReadBenchmarkThread {
                                 uint64_t* sequence, uint64_t num_ops,
                                 uint64_t* read_hits,
                                 std::atomic_int* threads_done)
-      : ReadBenchmarkThread(table, key_gen, bytes_written, bytes_read, sequence,
+      : ReadBenchmarkThread(table, key_gen, bytes_written, bytes_read, 0, sequence,
                             num_ops, read_hits) {
     threads_done_ = threads_done;
   }
@@ -502,6 +515,8 @@ class SeqConcurrentReadBenchmarkThread : public SeqReadBenchmarkThread {
 
 class Benchmark {
  public:
+  double random_time = 0;
+
   explicit Benchmark(MemTableRep* table, KeyGenerator* key_gen,
                      uint64_t* sequence, uint32_t num_threads)
       : table_(table),
@@ -519,6 +534,7 @@ class Benchmark {
     StopWatchNano timer(SystemClock::Default().get(), true);
     RunThreads(&threads, &bytes_written, &bytes_read, true, &read_hits);
     auto elapsed_time = static_cast<double>(timer.ElapsedNanos() / 1000);
+    elapsed_time -= random_time;
     std::cout << "Elapsed time: " << static_cast<int>(elapsed_time) << " us"
               << std::endl;
 
@@ -584,9 +600,15 @@ class ReadBenchmark : public Benchmark {
                   uint64_t* bytes_read, bool /*write*/,
                   uint64_t* read_hits) override {
     for (int i = 0; i < FLAGS_num_threads; ++i) {
+      uint64_t uniq_idx = i * num_read_ops_per_thread_;
+      uint64_t num_ops = num_read_ops_per_thread_;
+      if (i + 1 == FLAGS_num_threads) {
+        num_ops = FLAGS_num_operations - uniq_idx;
+      }
       threads->emplace_back(
           ReadBenchmarkThread(table_, key_gen_, bytes_written, bytes_read,
-                              sequence_, num_read_ops_per_thread_, read_hits));
+                              uniq_idx,
+                              sequence_, num_ops, read_hits));
     }
     for (auto& thread : *threads) {
       thread.join();
@@ -774,6 +796,12 @@ int main(int argc, char** argv) {
           &rng, ROCKSDB_NAMESPACE::RANDOM, FLAGS_num_operations));
       benchmark.reset(new ROCKSDB_NAMESPACE::ReadBenchmark(
           memtablerep.get(), key_gen.get(), &sequence));
+    } else if (name == ROCKSDB_NAMESPACE::Slice("readuniqrand")) {
+      FLAGS_seed++;
+      key_gen.reset(new ROCKSDB_NAMESPACE::KeyGenerator(
+          &rng, ROCKSDB_NAMESPACE::UNIQUE_RANDOM, FLAGS_num_operations));
+      benchmark.reset(new ROCKSDB_NAMESPACE::ReadBenchmark(
+          memtablerep.get(), key_gen.get(), &sequence));
     } else if (name == ROCKSDB_NAMESPACE::Slice("readseq")) {
       key_gen.reset(new ROCKSDB_NAMESPACE::KeyGenerator(
           &rng, ROCKSDB_NAMESPACE::SEQUENTIAL, FLAGS_num_operations));
@@ -799,6 +827,17 @@ int main(int argc, char** argv) {
       continue;
     }
     std::cout << "Running " << name.ToString() << std::endl;
+    if (name == ROCKSDB_NAMESPACE::Slice("readrandom")) {
+      auto num_ops = FLAGS_num_operations / FLAGS_num_threads;
+      volatile uint64_t sink = 0;
+      ROCKSDB_NAMESPACE::StopWatchNano timer(ROCKSDB_NAMESPACE::SystemClock::Default().get(), true);
+      for (int i = 0; i < num_ops; i++) {
+        sink = key_gen->Next();
+      }
+      benchmark->random_time = static_cast<double>(timer.ElapsedNanos() / 1000);
+      std::cout << "Random generation time: " << benchmark->random_time << " us" << std::endl;
+      std::cout << "Random generation sink: " << sink << std::endl;
+    }
     benchmark->Run();
     // approximate memory of the rep itself (arena/mmap), i.e. the working
     // set the benchmark just walked

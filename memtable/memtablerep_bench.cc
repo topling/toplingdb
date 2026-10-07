@@ -405,7 +405,24 @@ class ReadBenchmarkThread : public BenchmarkThread {
     return false;
   }
 
+  static bool callbackPIK(void* arg, const MemTableRep::KeyValuePair&) {
+    auto self = static_cast<ReadBenchmarkThread*>(arg);
+    (*self->bytes_read_) += VarintLength(16) + 16 + FLAGS_item_size;
+    (*self->read_hits_)++;
+    return false;
+  }
+  void ReadOnePIK() {
+    char user_key[sizeof(uint64_t)];
+    auto key = is_uniqrand_ ? key_gen_->NextUniqRand(uniq_idx_) : key_gen_->Next();
+    EncodeBigEndian64(user_key, key);
+    ParsedInternalKey pik(Slice(user_key, sizeof(user_key)), *sequence_, kValueTypeForSeek);
+    table_->GetPIK(read_opt_, pik, this, callbackPIK);
+  }
+
   void ReadOne() {
+    if (!needs_user_key_cmp_) {
+      return ReadOnePIK();
+    }
     char user_key[sizeof(uint64_t)];
     auto key = is_uniqrand_ ? key_gen_->NextUniqRand(uniq_idx_) : key_gen_->Next();
     EncodeBigEndian64(user_key, key);

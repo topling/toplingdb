@@ -31,6 +31,7 @@
 #include "db/internal_stats.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"
+#include "db/lookup_key.h"
 #include "db/memtable.h"
 #include "db/merge_context.h"
 #include "db/merge_helper.h"
@@ -2490,6 +2491,23 @@ void Version::GetInst(const ReadOptions& read_options, const ParsedInternalKey& 
                   bool* is_blob, bool do_merge) {
   const Slice& user_key = ikey.user_key;
 
+#if defined(TOPLINGDB_BENCH_LOOKUP_KEY)
+  // Benchmark only: reproduce the key round trip that TOPLINGDB_OMIT_LOOKUP_KEY
+  // removed -- assemble user_key + tag into one contiguous buffer, then parse
+  // it back into a ParsedInternalKey at the table boundary. Nothing else
+  // changes, so the difference between the two arms is exactly this step.
+  // Runtime switch so one binary serves both arms: TOPLINGDB_BENCH_LOOKUP_KEY=1
+  static const bool g_bench_lookup_key =
+      getenv("TOPLINGDB_BENCH_LOOKUP_KEY") != nullptr;
+  ParsedInternalKey gc_ikey = ikey;
+  if (g_bench_lookup_key) {
+    LookupKey bench_lk(ikey.user_key, ikey.sequence);
+    gc_ikey = ParsedInternalKey(bench_lk.internal_key());
+  }
+#else
+  const ParsedInternalKey& gc_ikey = ikey;
+#endif
+
   assert(status->ok() || status->IsMergeInProgress());
 
   if (key_exists != nullptr) {
@@ -2674,7 +2692,7 @@ for (int curr_level = 0; curr_level < storage_info_.num_non_empty_levels_; curr_
         get_perf_context()->per_level_perf_context_enabled;
     StopWatchNano timer(clock_, timer_enabled /* auto_start */);
     Status s2 = table_cache_->Get(
-        read_options, *internal_comparator(), *f->file_metadata, ikey,
+        read_options, *internal_comparator(), *f->file_metadata, gc_ikey,
         &get_context, mutable_cf_options_.block_protection_bytes_per_key,
         mutable_cf_options_.prefix_extractor,
       #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)

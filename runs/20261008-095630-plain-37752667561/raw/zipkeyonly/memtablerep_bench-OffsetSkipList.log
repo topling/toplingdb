@@ -1,0 +1,17 @@
+Running fillrandom
+Number of threads: 1
+Elapsed time: 243443593 us
+Total bytes written: 1621.25 MiB
+Write throughput: 6.65964 MiB/s
+write us/op: 2.43444
+ApproximateMemoryUsage: 3735027712 bytes (3562 MiB), arena: 0 bytes (0 MiB)
+Running readrandom
+Random generation time: 310539 us
+Random generation sink: 24228630
+Number of threads: 1
+read hit%: 100
+Elapsed time: 263408026 us
+Total bytes read: 1621.25 MiB
+Read throughput: 6.15489 MiB/s
+read us/op: 2.63408
+ApproximateMemoryUsage: 3735027712 bytes (3562 MiB), arena: 0 bytes (0 MiB)

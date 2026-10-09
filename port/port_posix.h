@@ -24,6 +24,33 @@
 
 #define __declspec(S)
 
+// Force-inline a function whose body lives in another translation unit, and
+// hide it, so that LTO may inline it into its callers. Both halves are needed
+// and both have to be gated:
+//
+//   * `visibility("hidden")` clears the semantic-interposition rule. Without
+//     it GCC refuses an inlining mandate outright -- "error: inlining failed
+//     in call to 'always_inline': function body can be overwritten at link
+//     time". Hidden on its own is only permission, not an order: measured to
+//     leave the call out of line, worth ~1 instruction.
+//   * `always_inline` is the order. It must be absent when the body is not
+//     reachable, so this macro is empty outside LTO -- without -flto GCC fails
+//     the build with "function body not available" rather than quietly not
+//     inlining. TOPLINGDB_HAVE_LTO is set by the Makefile under USE_LTO=1.
+//   * Unit-test builds are excluded. They construct such objects directly and
+//     link the shared library, so the symbol has to stay exported;
+//     MAKE_UNIT_TEST=1 defines ROCKSDB_UNIT_TEST for the whole test build,
+//     library objects included.
+//
+// `flatten` is not an alternative: it only flattens calls whose body is
+// visible in the calling TU.
+#if defined(TOPLINGDB_HAVE_LTO) && !defined(ROCKSDB_UNIT_TEST)
+#define TOPLING_LTO_HIDDEN_INLINE \
+    __attribute__((visibility("hidden"))) __attribute__((always_inline))
+#else
+#define TOPLING_LTO_HIDDEN_INLINE
+#endif
+
 #undef PLATFORM_IS_LITTLE_ENDIAN
 #if defined(OS_MACOSX)
 #include <machine/endian.h>

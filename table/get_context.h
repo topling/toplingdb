@@ -101,6 +101,10 @@ class GetContext {
   // and false if all the merge operands associated with user_key has to be
   // returned. Id do_merge=false then all the merge operands are stored in
   // merge_context and they are never merged. The value pointer is untouched.
+  // Constructing this is a fixed per-Get cost. See TOPLING_LTO_HIDDEN_INLINE
+  // (port/port.h): the inlining mandate needs hiding to be legal, and both
+  // are absent outside LTO and in unit-test builds.
+  TOPLING_LTO_HIDDEN_INLINE
   GetContext(const Comparator* ucmp, const MergeOperator* merge_operator,
              Logger* logger, Statistics* statistics, GetState init_state,
              const Slice& user_key, PinnableSlice* value,
@@ -111,6 +115,10 @@ class GetContext {
              PinnedIteratorsManager* _pinned_iters_mgr = nullptr,
              ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
              uint64_t tracing_get_id = 0, BlobFetcher* blob_fetcher = nullptr);
+  // Constructing this is a fixed per-Get cost. See TOPLING_LTO_HIDDEN_INLINE
+  // (port/port.h): the inlining mandate needs hiding to be legal, and both
+  // are absent outside LTO and in unit-test builds.
+  TOPLING_LTO_HIDDEN_INLINE
   GetContext(const Comparator* ucmp, const MergeOperator* merge_operator,
              Logger* logger, Statistics* statistics, GetState init_state,
              const Slice& user_key, PinnableSlice* value,

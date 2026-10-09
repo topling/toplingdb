@@ -244,6 +244,11 @@ OPTION_lto := lto-0
 ifeq ($(USE_LTO), 1)
 	ifeq (${DEBUG_LEVEL},0)
 		CXXFLAGS += -flto
+		# Lets headers hand the LTO inliner an explicit mandate where it is
+		# wanted (see table/get_context.h): GCC defines no macro of its own
+		# for -flto, and `always_inline` on a cross-TU body is a hard error
+		# without it.
+		CXXFLAGS += -DTOPLINGDB_HAVE_LTO
 		LDFLAGS += -flto=auto -fuse-linker-plugin
 		OPTION_lto := lto-$(if $(filter 1,${USE_LTO}),1,0)
 	endif

@@ -129,6 +129,7 @@ inline uint64_t HostPrefixCache(const ParsedInternalKey& ikey) {
 }
 
 template<class Cmp>
+__attribute__((always_inline))
 size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
                            const ParsedInternalKey& key, size_t lo, size_t hi) {
   const uint64_t* pxcache = brief.prefix_cache;

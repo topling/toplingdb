@@ -100,6 +100,13 @@ FindFileInRangeUdfa(const LevelFilesBrief&, const Slice& key);
 
 namespace {
 
+#if defined(TOPLINGDB_BENCH_LOOKUP_KEY)
+// Benchmark only. Read once at process start so one binary can serve both arms
+// of the A/B: a per-call getenv in the point lookup path would itself be an
+// expense of the size this switch exists to measure.
+const bool g_bench_lookup_key = getenv("TOPLINGDB_BENCH_LOOKUP_KEY") != nullptr;
+#endif
+
 #if defined(_MSC_VER) /* Visual Studio */
 #define __attribute_noinline__
 #define __builtin_prefetch(ptr) _mm_prefetch((const char*)(ptr), _MM_HINT_T0)
@@ -2495,9 +2502,6 @@ void Version::GetInst(const ReadOptions& read_options, const ParsedInternalKey& 
   // removed -- assemble user_key + tag into one contiguous buffer, then parse
   // it back into a ParsedInternalKey at the table boundary. Nothing else
   // changes, so the difference between the two arms is exactly this step.
-  // Runtime switch so one binary serves both arms: TOPLINGDB_BENCH_LOOKUP_KEY=1
-  static const bool g_bench_lookup_key =
-      getenv("TOPLINGDB_BENCH_LOOKUP_KEY") != nullptr;
   ParsedInternalKey gc_ikey = ikey;
   if (g_bench_lookup_key) {
     LookupKey bench_lk(ikey.user_key, ikey.sequence);

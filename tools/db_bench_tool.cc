@@ -5191,8 +5191,29 @@ class Benchmark {
   DB* SelectDB(ThreadState* thread) { return SelectDBWithCfh(thread)->db; }
 
   DBWithColumnFamilies* SelectDBWithCfh(ThreadState* thread) {
+    // A single-DB run always resolves to db_, so the draw below would only
+    // advance the per-thread RNG stream (and add an mt19937_64 step plus a
+    // modulo to every read) for nothing. The key generator draws from the same
+    // stream, so this does change which keys a run reads -- that is the point:
+    // the benchmark exists to measure the DB, not its own bookkeeping.
+    if (LIKELY(db_.db != nullptr)) {
+      return &db_;
+    }
     return SelectDBWithCfh(thread->rand.Next());
   }
+
+  // The default column family handle never changes for a given DB, but asking
+  // for it is a virtual call (and, in the shared library, goes through the
+  // PLT). Per-operation loops should not pay for that on every key.
+  ColumnFamilyHandle* DefaultCfh(DBWithColumnFamilies* d) {
+    if (UNLIKELY(d != cfh_cache_db_)) {
+      cfh_cache_db_ = d;
+      cfh_cache_ = d->db->DefaultColumnFamily();
+    }
+    return cfh_cache_;
+  }
+  DBWithColumnFamilies* cfh_cache_db_ = nullptr;
+  ColumnFamilyHandle* cfh_cache_ = nullptr;
 
   DBWithColumnFamilies* SelectDBWithCfh(uint64_t rand_int) {
     if (db_.db != nullptr) {
@@ -6308,7 +6329,7 @@ class Benchmark {
       if (FLAGS_num_column_families > 1) {
         cfh = db_with_cfh->GetCfh(key_rand);
       } else {
-        cfh = db_with_cfh->db->DefaultColumnFamily();
+        cfh = DefaultCfh(db_with_cfh);
       }
       if (read_operands_) {
         for (size_t i = 0; i < pinnable_vals.size(); ++i) {

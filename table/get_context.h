@@ -101,6 +101,17 @@ class GetContext {
   // and false if all the merge operands associated with user_key has to be
   // returned. Id do_merge=false then all the merge operands are stored in
   // merge_context and they are never merged. The value pointer is untouched.
+#if defined(TOPLINGDB_HAVE_LTO) && !defined(ROCKSDB_UNIT_TEST)
+  // Constructing this is a fixed per-Get cost. `hidden` is what makes an
+  // inlining mandate legal -- without it GCC refuses with "function body can
+  // be overwritten at link time" -- and it needs the mandate, because hidden
+  // alone was measured to leave the call out of line. Both are only under
+  // LTO: a non-LTO build has no body in this TU and `always_inline` would be
+  // an error rather than a no-op, and a unit-test build constructs GetContext
+  // itself through the shared library, so it must keep the symbol exported.
+  __attribute__((always_inline))
+  __attribute__((visibility("hidden")))
+#endif
   GetContext(const Comparator* ucmp, const MergeOperator* merge_operator,
              Logger* logger, Statistics* statistics, GetState init_state,
              const Slice& user_key, PinnableSlice* value,
@@ -111,6 +122,17 @@ class GetContext {
              PinnedIteratorsManager* _pinned_iters_mgr = nullptr,
              ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
              uint64_t tracing_get_id = 0, BlobFetcher* blob_fetcher = nullptr);
+#if defined(TOPLINGDB_HAVE_LTO) && !defined(ROCKSDB_UNIT_TEST)
+  // Constructing this is a fixed per-Get cost. `hidden` is what makes an
+  // inlining mandate legal -- without it GCC refuses with "function body can
+  // be overwritten at link time" -- and it needs the mandate, because hidden
+  // alone was measured to leave the call out of line. Both are only under
+  // LTO: a non-LTO build has no body in this TU and `always_inline` would be
+  // an error rather than a no-op, and a unit-test build constructs GetContext
+  // itself through the shared library, so it must keep the symbol exported.
+  __attribute__((always_inline))
+  __attribute__((visibility("hidden")))
+#endif
   GetContext(const Comparator* ucmp, const MergeOperator* merge_operator,
              Logger* logger, Statistics* statistics, GetState init_state,
              const Slice& user_key, PinnableSlice* value,

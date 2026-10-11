@@ -42,7 +42,9 @@ struct TableReaderOptions {
       int _level = -1, BlockCacheTracer* const _block_cache_tracer = nullptr,
       size_t _max_file_size_for_l0_meta_pin = 0,
       const std::string& _cur_db_session_id = "", uint64_t _cur_file_num = 0,
-      UniqueId64x2 _unique_id = {}, SequenceNumber _largest_seqno = 0,
+      UniqueId64x2 _unique_id = {},
+      SequenceNumber _smallest_seqno = kMaxSequenceNumber,
+      SequenceNumber _largest_seqno = 0,
       uint64_t _tail_size = 0, bool _user_defined_timestamps_persisted = true)
       : ioptions(_ioptions),
         prefix_extractor(_prefix_extractor),
@@ -52,6 +54,7 @@ struct TableReaderOptions {
         immortal(_immortal),
         force_direct_prefetch(_force_direct_prefetch),
         level(_level),
+        smallest_seqno(_smallest_seqno),
         largest_seqno(_largest_seqno),
         block_cache_tracer(_block_cache_tracer),
         max_file_size_for_l0_meta_pin(_max_file_size_for_l0_meta_pin),
@@ -77,6 +80,11 @@ struct TableReaderOptions {
   // What level this table/file is on, -1 for "not set, don't know." Used
   // for level-specific statistics.
   int level;
+  // Smallest seqno in the table, from the manifest. Equal to largest_seqno means
+  // every key in the file carries that same seqno, which is what a file written
+  // outside the DB looks like (all its keys at seqno 0) and what the manifest
+  // records for an ingested file. kMaxSequenceNumber means unknown.
+  SequenceNumber smallest_seqno;
   // largest seqno in the table (or 0 means unknown???)
   SequenceNumber largest_seqno;
   BlockCacheTracer* const block_cache_tracer;

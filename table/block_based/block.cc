@@ -686,7 +686,7 @@ bool BlockIter<TValue>::ParseNextKey(bool* is_shared) {
 
 bool DataBlockIter::ParseNextDataKey(bool* is_shared) {
   if (ParseNextKey<DecodeEntry>(is_shared)) {
-#ifndef NDEBUG
+#if 0 // #ifndef NDEBUG
     if (global_seqno_ != kDisableGlobalSequenceNumber) {
       // If we are reading a file with a global sequence number we should
       // expect that all encoded sequence numbers are zeros and any value

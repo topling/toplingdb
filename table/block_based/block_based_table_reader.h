@@ -105,6 +105,7 @@ class BlockBasedTable : public TableReader {
       const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
       bool prefetch_index_and_filter_in_cache = true, bool skip_filters = false,
       int level = -1, const bool immortal_table = false,
+      const SequenceNumber smallest_seqno = kMaxSequenceNumber,
       const SequenceNumber largest_seqno = 0,
       bool force_direct_prefetch = false,
       TailPrefetchStats* tail_prefetch_stats = nullptr,
@@ -489,6 +490,7 @@ class BlockBasedTable : public TableReader {
   Status ReadPropertiesBlock(const ReadOptions& ro,
                              FilePrefetchBuffer* prefetch_buffer,
                              InternalIterator* meta_iter,
+                             const SequenceNumber smallest_seqno,
                              const SequenceNumber largest_seqno);
   Status ReadRangeDelBlock(const ReadOptions& ro,
                            FilePrefetchBuffer* prefetch_buffer,
@@ -675,7 +677,11 @@ struct BlockBasedTable::Rep {
       table_reader_cache_res_handle = nullptr;
 
   SequenceNumber get_global_seqno(BlockType block_type) const {
+    // A range deletion block is written with the tombstones' own sequence
+    // numbers (the fragmenter reads them expecting no global sequence number),
+    // so unlike the other blocks it never takes the file's.
     return (block_type == BlockType::kFilterPartitionIndex ||
+            block_type == BlockType::kRangeDeletion ||
             block_type == BlockType::kCompressionDictionary)
                ? kDisableGlobalSequenceNumber
                : global_seqno;

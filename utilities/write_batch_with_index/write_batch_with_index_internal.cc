@@ -293,7 +293,6 @@ void BaseDeltaIterator::AssertInvariants() {
 #endif
 }
 
-ROCKSDB_FLATTEN
 void BaseDeltaIterator::Advance(bool const_forward) {
   if (UNLIKELY(equal_keys_)) {
     assert(BaseValid() && DeltaValid());
@@ -498,7 +497,6 @@ struct BDI_VirtualCmpNoTS {
   const Comparator* cmp;
 };
 
-ROCKSDB_FLATTEN
 void BaseDeltaIterator::UpdateCurrent(bool const_forward) {
   if (0 == opt_cmp_type_)
     UpdateCurrentTpl(const_forward, BDI_BytewiseCmpNoTS());

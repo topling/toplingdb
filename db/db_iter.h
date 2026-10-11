@@ -19,6 +19,7 @@
 #include "rocksdb/iterator.h"
 #include "rocksdb/wide_columns.h"
 #include "table/iterator_wrapper.h"
+#include "test_util/sync_point.h"
 #include "util/autovector.h"
 
 #include <terark/sso.hpp>
@@ -164,8 +165,18 @@ class DBIter final : public Iterator {
 
   Slice value() const override {
     assert(valid_);
-  #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
-    assert(is_value_prepared_);
+  #if defined(TOPLINGDB_WITH_WIDE_COLUMNS) && !defined(NDEBUG)
+    // A build without TOPLINGDB_WITH_WIDE_COLUMNS leaves the value for a reader
+    // to fetch, and a test can ask for that shape here by clearing the flag
+    // while the iterator is positioned. Such a test says so through this
+    // callback, so that it is not stopped by the assertion below; nothing is
+    // installed in a build that does not ask for it.
+    bool value_may_be_unprepared = false;
+    TEST_SYNC_POINT_CALLBACK("DBIter::ValueMayBeUnprepared",
+                             &value_may_be_unprepared);
+    if (!value_may_be_unprepared) {
+      assert(is_value_prepared_);
+    }
   #endif
     if (!is_value_prepared_) {
       auto mut = const_cast<DBIter*>(this);

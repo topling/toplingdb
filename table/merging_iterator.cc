@@ -10,6 +10,7 @@
 #include "table/merging_iterator.h"
 
 #include "db/arena_wrapped_db_iter.h"
+#include "test_util/sync_point.h"
 
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
   #include <immintrin.h>
@@ -953,7 +954,9 @@ public:
     // Only the wrapper we copied from can have gone stale: the binding of any
     // other child is not used. Cold path: current_ rebinds on every file
     // switch.
+    TEST_SYNC_POINT_CALLBACK("MergingIterator::UpdateWrapper", child);
     if (child == current_) {
+      TEST_SYNC_POINT("MergingIterator::UpdateWrapper:RefreshCurrent");
       UpdateScanFunc(my_wrapper_);
     }
   }

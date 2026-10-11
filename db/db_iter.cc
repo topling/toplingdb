@@ -883,6 +883,13 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
             } else {
               assert(ikey_.type == kTypeValue);
               SetValueAndColumnsFromPlain(iter_.value());
+              // A build without TOPLINGDB_WITH_WIDE_COLUMNS leaves the value
+              // for a reader to fetch instead, through the funcs the internal
+              // iterators copied, and that read is the one that aborted. A test
+              // asks for the same shape by clearing the flag here, and says so
+              // through the callback DBIter::value() consults before its
+              // assertion.
+              TEST_SYNC_POINT_CALLBACK("DBIter::ValuePrepared", &is_value_prepared_);
             }
 
             valid_ = true;

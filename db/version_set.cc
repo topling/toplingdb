@@ -1040,6 +1040,10 @@ class LevelIterator final : public InternalIterator {
       // file.
       parent_->UpdateWrapper(iw);
     }
+    // iw is now bound to the file this iterator sits on (or to this iterator
+    // itself when it has none). Tests use this to see the binding a parent that
+    // was given iw has to follow.
+    TEST_SYNC_POINT_CALLBACK("LevelIterator::UpdateScanFunc:Rebound", iw);
   }
   IteratorWrapper* my_wrapper_ = nullptr;
   // Owns this iterator, so it outlives every file switch below; never dangles.
@@ -1220,6 +1224,9 @@ void LevelIterator::TrySetDeleteRangeSentinel(const Slice& boundary_key) {
       file_iter_.status().ok()) {
     to_return_sentinel_ = true;
     sentinel_ = boundary_key;
+    // Tests use this to see that a file boundary was reported as a sentinel key
+    // rather than only by rebinding the wrapper the parent was given.
+    TEST_SYNC_POINT("LevelIterator::TrySetDeleteRangeSentinel");
   }
 }
 

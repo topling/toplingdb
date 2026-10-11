@@ -30,9 +30,15 @@ static auto g_how_sampling = enum_value(
 
 // Constructing this is a fixed per-Get cost. The mandate sits here, on the
 // definition, rather than on the declaration in table/get_context.h, so the
-// callers' TUs never see the attribute (and so print no -Wattributes); it
-// still reaches LTRANS because it rides in the IL. See TOPLING_LTO_HIDDEN_INLINE
-// in port/port.h for why both halves are needed and why both are gated.
+// callers' TUs never see the attribute; it still reaches LTRANS because it
+// rides in the IL. See TOPLING_LTO_HIDDEN_INLINE in port/port.h for why both
+// halves are needed and why both are gated.
+//
+// GCC nonetheless warns here -- "'always_inline' function might not be
+// inlinable" -- because this TU cannot see the callers; the decision is made
+// at LTRANS. Expected, so silence it rather than let it drown the build log.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wattributes"
 TOPLING_LTO_HIDDEN_INLINE
 GetContext::GetContext(
     const Comparator* ucmp, const MergeOperator* merge_operator, Logger* logger,
@@ -96,6 +102,7 @@ GetContext::GetContext(const Comparator* ucmp,
                  merge_context, do_merge, _max_covering_tombstone_seq, clock,
                  seq, _pinned_iters_mgr, callback, is_blob_index,
                  tracing_get_id, blob_fetcher) {}
+#pragma GCC diagnostic pop
 
 void GetContext::appendToReplayLog(ValueType type, Slice value, Slice ts) {
   if (replay_log_) {

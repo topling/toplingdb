@@ -148,6 +148,13 @@ endif
 include make_config.mk
 PLATFORM_CCFLAGS  := $(filter-out -fno-builtin-memcmp, ${PLATFORM_CCFLAGS})
 PLATFORM_CXXFLAGS := $(filter-out -fno-builtin-memcmp, ${PLATFORM_CXXFLAGS})
+# Nothing in this library is meant to be interposed -- it is the implementation,
+# not a layer someone else overrides. Under default interposition semantics a
+# call to a same-DSO definition still has to go through the PLT anyway, and
+# under -flto it also keeps the inliner from using the whole-program view. The
+# flag has to be on the compile line; adding it to LDFLAGS alone does nothing
+# (measured).
+PLATFORM_CXXFLAGS += -fno-semantic-interposition
 
 # defined in make_config.mk
 ROCKSDB_FULL_VERSION := ${ROCKSDB_MAJOR}.${ROCKSDB_MINOR}.${ROCKSDB_PATCH}

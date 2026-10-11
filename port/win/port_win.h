@@ -57,6 +57,11 @@ using ssize_t = SSIZE_T;
 #define ROCKSDB_PRIszt "Iu"
 #endif
 
+// No LTO force-inlining here: the build never sets TOPLINGDB_HAVE_LTO on this
+// platform, and `visibility("hidden")` has no meaning in PE/COFF. See
+// port/port_posix.h for the POSIX definition and the reasoning.
+#define TOPLING_LTO_HIDDEN_INLINE
+
 #ifdef _MSC_VER
 #define __attribute__(A)
 

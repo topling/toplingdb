@@ -24,6 +24,43 @@
 
 #define __declspec(S)
 
+// Force-inline a function whose body lives in another translation unit, and
+// hide it, so that LTO may inline it into its callers. Both halves are needed
+// and both have to be gated:
+//
+//   * `visibility("hidden")` clears the semantic-interposition rule. Without
+//     it GCC refuses an inlining mandate outright -- "error: inlining failed
+//     in call to 'always_inline': function body can be overwritten at link
+//     time". Hidden on its own is only permission, not an order: measured to
+//     leave the call out of line, worth ~1 instruction.
+//   * `always_inline` is the order. It has to sit on the definition (see
+//     table/get_context.cc), not on the declaration, so that the callers' TUs
+//     never see it; it still reaches LTRANS because it rides in the IL.
+//   * `inline` is deliberately absent, though it is what would silence GCC's
+//     "'always_inline' function might not be inlinable [-Wattributes]" (it
+//     prints that for an always_inline function not declared inline). Adding
+//     it makes GCC drop the out-of-line body from the defining TU while the
+//     call sites LTRANS chooses not to inline still reference it: the link
+//     succeeds (shared libraries may carry undefined symbols) but the library
+//     is broken -- measured, it carried undefined GetContextC1/C2 and db_bench
+//     died at load with "symbol lookup error". Two warnings are better.
+//   * all of it is gated on TOPLINGDB_HAVE_LTO (the Makefile sets it under
+//     USE_LTO=1): outside LTO the callers' TUs have no body to inline, and
+//     `hidden` would strip a symbol the unit tests link against.
+//   * Unit-test builds are excluded. They construct such objects directly and
+//     link the shared library, so the symbol has to stay exported;
+//     MAKE_UNIT_TEST=1 defines ROCKSDB_UNIT_TEST for the whole test build,
+//     library objects included.
+//
+// `flatten` is not an alternative: it only flattens calls whose body is
+// visible in the calling TU.
+#if defined(TOPLINGDB_HAVE_LTO) && !defined(ROCKSDB_UNIT_TEST)
+#define TOPLING_LTO_HIDDEN_INLINE \
+    __attribute__((visibility("hidden"))) __attribute__((always_inline))
+#else
+#define TOPLING_LTO_HIDDEN_INLINE
+#endif
+
 #undef PLATFORM_IS_LITTLE_ENDIAN
 #if defined(OS_MACOSX)
 #include <machine/endian.h>

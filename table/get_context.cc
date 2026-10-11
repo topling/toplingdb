@@ -28,6 +28,12 @@ ROCKSDB_ENUM_CLASS(GetContextSampleRead, unsigned char,
 static auto g_how_sampling = enum_value(
   terark::getEnvStr("TOPLINGDB_GetContext_sampling", ""), GetContextSampleRead::kRandom);
 
+// Constructing this is a fixed per-Get cost. The mandate sits here, on the
+// definition, rather than on the declaration in table/get_context.h, so the
+// callers' TUs never see the attribute (and so print no -Wattributes); it
+// still reaches LTRANS because it rides in the IL. See TOPLING_LTO_HIDDEN_INLINE
+// in port/port.h for why both halves are needed and why both are gated.
+TOPLING_LTO_HIDDEN_INLINE
 GetContext::GetContext(
     const Comparator* ucmp, const MergeOperator* merge_operator, Logger* logger,
     Statistics* statistics, GetState init_state, const Slice& user_key,
@@ -73,6 +79,7 @@ GetContext::GetContext(
   }
 }
 
+TOPLING_LTO_HIDDEN_INLINE  // see the comment above the other overload
 GetContext::GetContext(const Comparator* ucmp,
                        const MergeOperator* merge_operator, Logger* logger,
                        Statistics* statistics, GetState init_state,

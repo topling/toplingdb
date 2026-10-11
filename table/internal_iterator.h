@@ -274,6 +274,23 @@ class InternalIteratorBase : public Cleanable {
   // MergingIterator will override this method
   virtual bool AddDeltaIter(InternalIteratorBase*) { return false; }
 
+  // The two methods below are declared last on purpose: they are only called by
+  // the iterators that declare them, and appending them keeps the vtable slot
+  // number of every virtual declared above unchanged for already built users of
+  // this library.
+
+  // Called on each child by the iterator that owns it and binds its wrapper
+  // with PrepareScan(), so that a child which binds that wrapper to another
+  // iterator (see LevelIterator::UpdateScanFunc()) knows who to tell when it
+  // rebinds it.
+  virtual void SetParent(InternalIteratorBase<TValue>* /* parent */) {}
+
+  // Called by a child (see SetParent()) right after it has rebound the wrapper
+  // its parent asked for with PrepareScan(), so that the parent can re-sync the
+  // binding it copied for itself. Only ever called from a cold path: a child
+  // rebinds its wrapper when it moves on to another file (or data block).
+  virtual void UpdateWrapper(IteratorWrapperBase<TValue>* /* child */) {}
+
  protected:
   void SeekForPrevImpl(const Slice& target, const CompareInterface* cmp) {
     Seek(target);

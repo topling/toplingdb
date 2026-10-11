@@ -1015,6 +1015,7 @@ class LevelIterator final : public InternalIterator {
     my_wrapper_ = iw;
     UpdateScanFunc(iw);
   }
+  void SetParent(InternalIterator* parent) override { parent_ = parent; }
   void UpdateScanFunc(IteratorWrapper* iw) {
     if (to_return_sentinel_ || file_iter_.iter() == nullptr) {
       iw->work_iter_ = this;
@@ -1031,8 +1032,18 @@ class LevelIterator final : public InternalIterator {
       iw->prepare_and_get_value_ = ForgeFuncPtr(fi, &InternalIterator::PrepareAndGetValue);
     }
     retry_already_goes_invalid_ = false;
+    if (UNLIKELY(parent_ != nullptr)) {
+      // iw may now be bound to file_iter_.iter(), which SetFileIterator()
+      // deletes on the next file switch. The parent (merging iterator) copies
+      // this binding into its own wrapper rather than calling us, so it cannot
+      // see the switch by itself and has to be told. Cold path: one call per
+      // file.
+      parent_->UpdateWrapper(iw);
+    }
   }
   IteratorWrapper* my_wrapper_ = nullptr;
+  // Owns this iterator, so it outlives every file switch below; never dangles.
+  InternalIterator* parent_ = nullptr;
 
   const Slice& file_smallest_key(size_t file_index) const {
     assert(file_index < flevel_->num_files);

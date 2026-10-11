@@ -1269,7 +1269,6 @@ void CompactionIterator::DecideOutputLevel() {
   }
 }
 
-ROCKSDB_FLATTEN
 void CompactionIterator::PrepareOutput() {
   if (Valid()) {
     if (LIKELY(!is_range_del_)) {

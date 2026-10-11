@@ -2302,7 +2302,6 @@ bool DBImpl::ShouldReferenceSuperVersion(const MergeContext& merge_context) {
              merge_context.GetOperands().size();
 }
 
-ROCKSDB_FLATTEN
 Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
                        GetImplOptions& get_impl_options) {
 #if defined(ROCKSDB_UNIT_TEST)

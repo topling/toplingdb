@@ -307,7 +307,6 @@ Slice DBIter::NextWithKey() {
   return Slice(nullptr, 0);
 }
 
-ROCKSDB_FLATTEN
 Slice DBIter::PrevWithKey() { return IterPrevWithKeyImpl(this); }
 
 bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
@@ -1166,6 +1165,7 @@ void DBIter::Prev() {
   }
 }
 
+terark_no_inline
 bool DBIter::ReverseToForward() {
   assert(iter_.status().ok());
 
@@ -1208,6 +1208,7 @@ bool DBIter::ReverseToForward() {
 }
 
 // Move iter_ to the key before saved_key_.
+terark_no_inline
 bool DBIter::ReverseToBackward() {
   assert(iter_.status().ok());
 
@@ -1939,7 +1940,6 @@ void DBIter::SetSavedKeyToSeekForPrevTarget(const Slice& target) {
   }
 }
 
-ROCKSDB_FLATTEN
 void DBIter::Seek(const Slice& target) {
   PERF_COUNTER_ADD(iter_seek_count, 1);
   PERF_CPU_TIMER_GUARD(iter_seek_cpu_nanos, clock_);

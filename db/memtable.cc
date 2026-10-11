@@ -610,6 +610,7 @@ FragmentedRangeTombstoneIterator* MemTable::NewRangeTombstoneIterator(
                                            immutable_memtable);
 }
 
+terark_no_inline
 FragmentedRangeTombstoneIterator* MemTable::NewRangeTombstoneIteratorInternal(
     const ReadOptions& read_options, SequenceNumber read_seq,
     bool immutable_memtable) {

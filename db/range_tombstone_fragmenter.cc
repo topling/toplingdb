@@ -467,6 +467,7 @@ bool FragmentedRangeTombstoneIterator::Valid() const {
   return tombstones_ != nullptr && pos_ != tombstones_->end();
 }
 
+terark_no_inline
 SequenceNumber FragmentedRangeTombstoneIterator::MaxCoveringTombstoneSeqnum(
     const Slice& target_user_key) {
   SeekToCoveringTombstone(target_user_key);

@@ -3115,6 +3115,13 @@ class MemTableInserter : public WriteBatch::Handler {
     }
   }
 
+  void LogData(const Slice& blob) override {
+    if (rebuilding_trx_ != nullptr) {
+      // Preserve offsets into the original WAL in the rebuilt batch.
+      ROCKSDB_VERIFY(rebuilding_trx_->PutLogData(blob).ok());
+    }
+  }
+
   // The write batch handler calls MarkBeginPrepare with unprepare set to true
   // if it encounters the kTypeBeginUnprepareXID marker.
   Status MarkBeginPrepare(bool unprepare) override {

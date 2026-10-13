@@ -2088,6 +2088,9 @@ db_dynamic_level_test: $(OBJ_DIR)/db/db_dynamic_level_test.o $(TEST_LIBRARY) $(L
 db_flush_test: $(OBJ_DIR)/db/db_flush_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
+db_memtable_as_log_index_test: $(OBJ_DIR)/db/db_memtable_as_log_index_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
 db_memtable_convert_test: $(OBJ_DIR)/db/db_memtable_convert_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 

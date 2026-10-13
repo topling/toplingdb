@@ -3917,6 +3917,95 @@ TEST_F(DBCsppCrashSafeTest, TwoWriteQueuesWalTail) {
   ASSERT_EQ(Get("q"), "1");
 }
 
+// Prepare consumes no sequence, but may advance the WAL cursor: 2PC recovery
+// still rebuilds prepared transactions before that cursor.
+TEST_F(DBCsppCrashSafeTest, TwoWriteQueuesPrepareKeepsSequence) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.two_write_queues = true;
+  Destroy(options);
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  ASSERT_OK(txn_db->Put(WriteOptions(), "k", "v"));
+  PublishedSeqOnDisk before;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &before));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("xid1"));
+  ASSERT_OK(txn->Put("prep", "v"));
+  ASSERT_OK(txn->Prepare());
+  PublishedSeqOnDisk after;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &after));
+  // EXPECT, not ASSERT: the transaction and the DB must still be cleaned up.
+  EXPECT_EQ(after.pubseq, before.pubseq);
+  EXPECT_EQ(after.wal_number, before.wal_number);
+  EXPECT_GT(after.wal_offset, before.wal_offset);
+  ASSERT_OK(txn->Rollback());
+  delete txn;
+  delete txn_db;
+}
+
+TEST_F(DBCsppCrashSafeTest, TwoWriteQueuesPrepareDoesNotRepublishStaleSequence) {
+  Close();
+  for (bool log_index : {false, true}) {
+    for (bool pending : {false, true}) {
+      SCOPED_TRACE(log_index);
+      SCOPED_TRACE(pending);
+      Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+      options.two_write_queues = true;
+      options.avoid_flush_during_shutdown = true;
+      Destroy(options);
+      TransactionDBOptions txn_opts;
+      txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+      TransactionDB* txn_db = nullptr;
+      ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+      ASSERT_OK(txn_db->Put(WriteOptions(), "k", "v"));
+      TransactionOptions to;
+      to.skip_prepare = false;
+      Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+      ASSERT_OK(txn->SetName("xid1"));
+      ASSERT_OK(txn->Put("prep1", "v"));
+      if (pending) {
+        bool prepared = false;
+        SyncPoint::GetInstance()->SetCallBack("MemTable::Add:Encoded", [&](void*) {
+          ASSERT_OK(txn->Prepare());
+          prepared = true;
+        });
+        SyncPoint::GetInstance()->EnableProcessing();
+        WriteOptions wo;
+        wo.protection_bytes_per_key = 8;  // Enables MemTable::Add:Encoded.
+        ASSERT_OK(txn_db->Put(wo, "pending", "v"));
+        SyncPoint::GetInstance()->DisableProcessing();
+        SyncPoint::GetInstance()->ClearAllCallBacks();
+        ASSERT_TRUE(prepared);
+      } else {
+        ASSERT_OK(txn->Prepare());
+      }
+      ASSERT_OK(txn->Commit());
+      delete txn;
+      // Commit has advanced pubseq beyond the previous Prepare's stage.
+      txn = txn_db->BeginTransaction(WriteOptions(), to);
+      ASSERT_OK(txn->SetName("xid2"));
+      ASSERT_OK(txn->Put("prep2", "v"));
+      ASSERT_OK(txn->Prepare());
+      ASSERT_OK(txn->Commit());
+      delete txn;
+      std::string value;
+      ASSERT_OK(txn_db->Get(ReadOptions(), "prep1", &value));
+      ASSERT_EQ(value, "v");
+      ASSERT_OK(txn_db->Get(ReadOptions(), "prep2", &value));
+      ASSERT_EQ(value, "v");
+      delete txn_db;
+      std::string log;
+      ASSERT_OK(ReadFileToString(env_, dbname_ + "/LOG", &log));
+      EXPECT_EQ(log.find("PersistPublishedSequence seq "), std::string::npos);
+    }
+  }
+}
+
 TEST_F(DBCsppCrashSafeTest, WriteCommittedSkipPrepare) {
   Close();
   Options options = BaseCrashSafeOptions(dbname_, true, false);
@@ -4667,6 +4756,271 @@ TEST_F(DBCsppCrashSafeTest, TransactionDBPreparedCloseThenSwitchKind) {
   ASSERT_OK(prepared[0]->Rollback());
   delete prepared[0];
   delete txn_db;
+}
+
+TEST_F(CrashChild, DISABLED_TransactionDBPreparedTwoWriteQueues) {
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.two_write_queues = true;
+  options.avoid_flush_during_shutdown = true;
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  ASSERT_OK(txn_db->Put(WriteOptions(), "k", "v"));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("xid1"));
+  ASSERT_OK(txn->Put("prep", "v"));
+  if (arg_ == "pending") {
+    PublishedSeqOnDisk before;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &before));
+    // The normal write has reached WAL, but has not entered the MemTable.
+    SyncPoint::GetInstance()->SetCallBack("MemTable::Add:Encoded", [&](void*) {
+      ASSERT_OK(txn->Prepare());
+      PublishedSeqOnDisk after;
+      ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &after));
+      ASSERT_EQ(after.pubseq, before.pubseq);
+      ASSERT_EQ(after.wal_number, before.wal_number);
+      ASSERT_EQ(after.wal_offset, before.wal_offset);
+      ::_exit(0);
+    });
+    SyncPoint::GetInstance()->EnableProcessing();
+    WriteOptions wo;
+    wo.protection_bytes_per_key = 8;  // Enables MemTable::Add:Encoded.
+    ASSERT_OK(txn_db->Put(wo, "pending", "v"));
+    FAIL() << "MemTable::Add:Encoded did not exit";
+  }
+  ASSERT_OK(txn->Prepare());
+  ::_exit(0);
+}
+
+// Recover Prepare both before the published cursor and behind a pending
+// normal write. Only covered MemTable data may be skipped, not the transaction.
+TEST_F(DBCsppCrashSafeTest, TransactionDBPreparedTwoWriteQueues) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  options.two_write_queues = true;
+  options.avoid_flush_during_shutdown = true;
+  // 2PC recovery flushes the WAL tail, which needs an ordinary table builder.
+  SidePluginRepo repo;
+  repo.Put("default", Options().table_factory);
+  repo.Put("converted", options.table_factory);
+  options.table_factory = PluginFactorySP<TableFactory>::AcquirePlugin(
+      "Dispatch", {{"default", "$default"}}, repo);
+  DispatcherTableBackPatch(options.table_factory.get(), repo);
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  for (const char* arg : {"", "pending"}) {
+    SCOPED_TRACE(arg);
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "TransactionDBPreparedTwoWriteQueues", arg), 0);
+    TransactionDB* txn_db = nullptr;
+    bool converted = false;
+    SyncPoint::GetInstance()->SetCallBack(
+        "CrashSafeRecover::AfterConvertBeforeAddFile",
+        [&](void*) { converted = true; });
+    SyncPoint::GetInstance()->EnableProcessing();
+    ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_TRUE(converted);
+    ASSERT_EQ(CountL0(txn_db), *arg ? 2 : 1);  // Converted seed, plus WAL tail if pending.
+    std::string v;
+    ASSERT_OK(txn_db->Get(ReadOptions(), "k", &v));
+    ASSERT_EQ(v, "v");
+    if (*arg) {
+      ASSERT_OK(txn_db->Get(ReadOptions(), "pending", &v));
+      ASSERT_EQ(v, "v");
+    }
+    ASSERT_TRUE(txn_db->Get(ReadOptions(), "prep", &v).IsNotFound());
+    std::vector<Transaction*> prepared;
+    txn_db->GetAllPreparedTransactions(&prepared);
+    ASSERT_EQ(prepared.size(), 1U);
+    ASSERT_EQ(prepared[0]->GetName(), "xid1");
+    ASSERT_OK(prepared[0]->Commit());
+    ASSERT_OK(txn_db->Get(ReadOptions(), "prep", &v));
+    ASSERT_EQ(v, "v");
+    delete prepared[0];
+    delete txn_db;
+  }
+}
+
+TEST_F(CrashChild, DISABLED_TwoWriteQueuesConcurrentPreparedRecovery) {
+  constexpr int kWriters = 4;
+  constexpr int kGroups = 3;
+  constexpr int kPreparedPerGroup = 3;
+  Options options = BaseCrashSafeOptions(dbname_, true, arg_ == "log-index");
+  options.two_write_queues = true;
+  options.allow_concurrent_memtable_write = true;
+  options.avoid_flush_during_shutdown = true;
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  const std::string value(128, 'v');
+  ASSERT_OK(txn_db->Put(WriteOptions(), "seed", value));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  auto prepare = [&](int id) {
+    Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+    EXPECT_OK(txn->SetName("xid" + std::to_string(id)));
+    EXPECT_OK(txn->Put("prep" + std::to_string(id), value));
+    EXPECT_OK(txn->Prepare());
+  };
+  for (int id = 0; id < kPreparedPerGroup; id++) prepare(id);
+  for (int group = 0; group < kGroups; group++) {
+    PublishedSeqOnDisk before;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &before));
+    std::mutex mutex;
+    std::condition_variable cv;
+    int queued = 0;
+    int encoded = 0;
+    bool resume = false;
+    SyncPoint::GetInstance()->SetCallBack("WriteThread::JoinBatchGroup:Wait", [&](void* p) {
+      auto* writer = static_cast<WriteThread::Writer*>(p);
+      if (writer->disable_memtable) return;
+      std::unique_lock<std::mutex> lock(mutex);
+      queued++;
+      cv.notify_all();
+      if (writer->state == WriteThread::STATE_GROUP_LEADER) {
+        cv.wait(lock, [&] { return queued == kWriters; });
+      }
+    });
+    SyncPoint::GetInstance()->SetCallBack(
+        "WriteThread::EnterAsBatchGroupLeader:End", [&](void* p) {
+          auto* writer = static_cast<WriteThread::Writer*>(p);
+          if (!writer->disable_memtable) {
+            EXPECT_EQ(writer->write_group->size, kWriters);
+          }
+        });
+    SyncPoint::GetInstance()->SetCallBack("MemTable::Add:Encoded", [&](void*) {
+      std::unique_lock<std::mutex> lock(mutex);
+      encoded++;
+      cv.notify_all();
+      cv.wait(lock, [&] { return resume; });
+    });
+    SyncPoint::GetInstance()->EnableProcessing();
+    std::vector<std::thread> writers;
+    for (int writer = 0; writer < kWriters; writer++) {
+      const int id = group * kWriters + writer;
+      writers.emplace_back([&, id] {
+        WriteOptions wo;
+        wo.protection_bytes_per_key = 8;
+        EXPECT_OK(txn_db->Put(wo, "normal" + std::to_string(id), value));
+      });
+    }
+    {
+      std::unique_lock<std::mutex> lock(mutex);
+      cv.wait(lock, [&] { return encoded == kWriters; });
+    }
+    for (int txn = 0; txn < kPreparedPerGroup; txn++) {
+      prepare((group + 1) * kPreparedPerGroup + txn);
+    }
+    PublishedSeqOnDisk paused;
+    EXPECT_TRUE(ReadPublishedSeqFile(dbname_, &paused));
+    EXPECT_EQ(paused.pubseq, before.pubseq);
+    EXPECT_EQ(paused.wal_number, before.wal_number);
+    EXPECT_EQ(paused.wal_offset, before.wal_offset);
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      resume = true;
+      cv.notify_all();
+    }
+    for (auto& writer : writers) writer.join();
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    PublishedSeqOnDisk after;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &after));
+    EXPECT_EQ(after.pubseq, before.pubseq + kWriters);
+  }
+  // Advance pubseq beyond the last deferred Prepare before consuming its stage.
+  EXPECT_OK(txn_db->Put(WriteOptions(), "normal" + std::to_string(kGroups * kWriters), value));
+  prepare((kGroups + 1) * kPreparedPerGroup);
+  LogFlush(txn_db->GetDBOptions().info_log);
+  std::string log;
+  ASSERT_OK(ReadFileToString(Env::Default(), dbname_ + "/LOG", &log));
+  EXPECT_EQ(log.find("PersistPublishedSequence seq "), std::string::npos);
+  ::_exit(HasFailure() ? 1 : 0);
+}
+
+TEST_F(DBCsppCrashSafeTest, TwoWriteQueuesConcurrentPreparedRecovery) {
+  Close();
+  constexpr int kNormalWrites = 13;
+  constexpr int kPrepared = 13;
+  const std::string value(128, 'v');
+  for (bool log_index : {false, true}) {
+    SCOPED_TRACE(log_index);
+    Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+    options.two_write_queues = true;
+    options.avoid_flush_during_shutdown = true;
+    SidePluginRepo repo;
+    repo.Put("default", Options().table_factory);
+    repo.Put("converted", options.table_factory);
+    options.table_factory = PluginFactorySP<TableFactory>::AcquirePlugin(
+        "Dispatch", {{"default", "$default"}}, repo);
+    DispatcherTableBackPatch(options.table_factory.get(), repo);
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "TwoWriteQueuesConcurrentPreparedRecovery",
+                           log_index ? "log-index" : "physical"), 0);
+    TransactionDBOptions txn_opts;
+    txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+    TransactionDB* txn_db = nullptr;
+    bool converted = false;
+    SyncPoint::GetInstance()->SetCallBack(
+        "CrashSafeRecover::AfterConvertBeforeAddFile",
+        [&](void*) { converted = true; });
+    SyncPoint::GetInstance()->EnableProcessing();
+    const Status opened = TransactionDB::Open(options, txn_opts, dbname_, &txn_db);
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_OK(opened);
+    ASSERT_TRUE(converted);
+    std::string actual;
+    ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &actual));
+    ASSERT_EQ(actual, value);
+    for (int id = 0; id < kNormalWrites; id++) {
+      ASSERT_OK(txn_db->Get(ReadOptions(), "normal" + std::to_string(id), &actual));
+      ASSERT_EQ(actual, value);
+    }
+    for (int id = 0; id < kPrepared; id++) {
+      ASSERT_TRUE(txn_db->Get(ReadOptions(), "prep" + std::to_string(id), &actual).IsNotFound());
+    }
+    std::vector<Transaction*> prepared;
+    txn_db->GetAllPreparedTransactions(&prepared);
+    ASSERT_EQ(prepared.size(), kPrepared);
+    std::set<std::string> names;
+    for (auto* txn : prepared) names.insert(txn->GetName());
+    for (int id = 0; id < kPrepared; id++) {
+      ASSERT_EQ(names.count("xid" + std::to_string(id)), 1U);
+    }
+    for (auto* txn : prepared) {
+      const int id = std::stoi(txn->GetName().substr(3));
+      ASSERT_OK(id % 2 == 0 ? txn->Commit() : txn->Rollback());
+      delete txn;
+    }
+    delete txn_db;
+    ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+    prepared.clear();
+    txn_db->GetAllPreparedTransactions(&prepared);
+    ASSERT_TRUE(prepared.empty());
+    ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &actual));
+    ASSERT_EQ(actual, value);
+    for (int id = 0; id < kNormalWrites; id++) {
+      ASSERT_OK(txn_db->Get(ReadOptions(), "normal" + std::to_string(id), &actual));
+      ASSERT_EQ(actual, value);
+    }
+    for (int id = 0; id < kPrepared; id++) {
+      const Status status = txn_db->Get(ReadOptions(), "prep" + std::to_string(id), &actual);
+      if (id % 2 == 0) {
+        ASSERT_OK(status);
+        ASSERT_EQ(actual, value);
+      } else {
+        ASSERT_TRUE(status.IsNotFound());
+      }
+    }
+    delete txn_db;
+  }
 }
 
 TEST_F(CrashChild, DISABLED_TransactionDBRollbackCloseThenSwitchKind) {

@@ -782,8 +782,12 @@ void DBImpl::PersistStagedPublishedWal() {
   if (pending_memtable_writes_.load(std::memory_order_acquire) != 0) {
     return;
   }
-  PersistPublishedSequence(staged_pub_seq_, staged_pub_wal_number_,
-                           staged_pub_wal_offset_);
+  // A normal two-queue write may have already published a newer sequence.
+  if (staged_pub_seq_ >= pubseq_mmap_->rec.pubseq) {
+    PersistPublishedSequence(staged_pub_seq_, staged_pub_wal_number_,
+                             staged_pub_wal_offset_);
+  }
+  staged_pub_valid_ = false;
 }
 
 void DBImpl::StagePublishedWal(SequenceNumber seq, uint64_t wal_number,

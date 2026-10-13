@@ -396,6 +396,7 @@ class MemTableRepFactory : public Customizable {
   // Default: false
   virtual bool CanHandleDuplicatedKey() const { return false; }
 
+  ConvertKind GetConvertKind() const { return convert_to_sst; }
   bool SupportConvertToSST() const {
     return convert_to_sst != ConvertKind::kDontConvert;
   }

@@ -311,6 +311,7 @@ class DBCsppCrashSafeTest : public DBTestBase {
  public:
   DBCsppCrashSafeTest()
       : DBTestBase("db_cspp_crash_safe_test", /*env_do_fsync=*/false) {}
+  void CheckWritePreparedCrashRecovery(const char* child_test);
 };
 
 #if !defined(OS_WIN)
@@ -5730,25 +5731,162 @@ TEST_F(DBCsppCrashSafeTest, WriteCommittedPrepareTwoQueuesAndCommit) {
 }
 #endif
 
-TEST_F(DBCsppCrashSafeTest, WritePreparedFallsBackToWal) {
-  Close();
-  Options options = BaseCrashSafeOptions(dbname_, true, false);
-  options.two_write_queues = true;
-  Destroy(options);
+TEST_F(CrashChild, DISABLED_WritePreparedCrashRecovery) {
+  Options options = BaseCrashSafeOptions(dbname_, true, arg_.find("log_index") != std::string::npos);
+  options.two_write_queues = arg_.find("two_queues") != std::string::npos;
   TransactionDBOptions txn_opts;
   txn_opts.write_policy = TxnDBWritePolicy::WRITE_PREPARED;
   TransactionDB* txn_db = nullptr;
   ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
-  Transaction* txn = txn_db->BeginTransaction(WriteOptions());
-  ASSERT_OK(txn->Put("wp", "1"));
+  const std::string value(128, 'v');
+  ASSERT_OK(txn_db->Put(WriteOptions(), "seed", value));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("committed"));
+  ASSERT_OK(txn->Put("committed", value));
+  ASSERT_OK(txn->Prepare());
   ASSERT_OK(txn->Commit());
   delete txn;
-  delete txn_db;
+  txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("in_doubt"));
+  ASSERT_OK(txn->Put("prepared", value));
+  ASSERT_OK(txn->Prepare());
+  ::_exit(0);
+}
+
+TEST_F(CrashChild, DISABLED_WritePreparedOldPrepareSurvivesNewCommit) {
+  Options options = BaseCrashSafeOptions(dbname_, true, arg_.find("log_index") != std::string::npos);
+  options.two_write_queues = arg_.find("two_queues") != std::string::npos;
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_PREPARED;
+  TransactionDB* txn_db = nullptr;
   ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  const std::string value(128, 'v');
+  ASSERT_OK(txn_db->Put(WriteOptions(), "seed", value));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  Transaction* old_txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(old_txn->SetName("in_doubt"));
+  ASSERT_OK(old_txn->Put("prepared", value));
+  ASSERT_OK(old_txn->Prepare());
+  Transaction* new_txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(new_txn->SetName("committed"));
+  ASSERT_OK(new_txn->Put("committed", value));
+  ASSERT_OK(new_txn->Prepare());
+  ASSERT_OK(new_txn->Commit());
+  delete new_txn;
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_GT(rec.pubseq, old_txn->GetId());
   std::string v;
-  ASSERT_OK(txn_db->Get(ReadOptions(), "wp", &v));
-  ASSERT_EQ(v, "1");
-  delete txn_db;
+  ASSERT_TRUE(txn_db->Get(ReadOptions(), "prepared", &v).IsNotFound());
+  ::_exit(0);
+}
+
+void DBCsppCrashSafeTest::CheckWritePreparedCrashRecovery(const char* child_test) {
+  Close();
+  const std::string value(128, 'v');
+  for (bool two_queues : {false, true}) {
+    for (bool log_index : {false, true}) {
+      for (bool commit : {false, true}) {
+        SCOPED_TRACE(two_queues);
+        SCOPED_TRACE(log_index);
+        SCOPED_TRACE(commit);
+        Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+        options.two_write_queues = two_queues;
+        SidePluginRepo repo;
+        repo.Put("default", Options().table_factory);
+        repo.Put("converted", options.table_factory);
+        options.table_factory = PluginFactorySP<TableFactory>::AcquirePlugin(
+            "Dispatch", {{"default", "$default"}}, repo);
+        DispatcherTableBackPatch(options.table_factory.get(), repo);
+        Destroy(options);
+        std::string arg = two_queues ? "two_queues" : "one_queue";
+        if (log_index) {
+          arg += "_log_index";
+        }
+        ASSERT_EQ(RunCrashChild(dbname_, child_test, arg), 0);
+        PublishedSeqOnDisk rec;
+        ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+        ASSERT_GT(rec.pubseq, 0U);
+        bool converted = false;
+        SyncPoint::GetInstance()->SetCallBack(
+            "CrashSafeRecover::AfterConvertBeforeAddFile",
+            [&](void*) { converted = true; });
+        SyncPoint::GetInstance()->EnableProcessing();
+        TransactionDBOptions txn_opts;
+        txn_opts.write_policy = TxnDBWritePolicy::WRITE_PREPARED;
+        TransactionDB* txn_db = nullptr;
+        ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+        SyncPoint::GetInstance()->DisableProcessing();
+        SyncPoint::GetInstance()->ClearAllCallBacks();
+        ASSERT_EQ(converted, !two_queues);
+        LogFlush(txn_db->GetDBOptions().info_log);
+        std::string log;
+        ASSERT_OK(ReadFileToString(env_, dbname_ + "/LOG", &log));
+        if (two_queues) {
+          ASSERT_NE(log.find("seq_per_batch && two_write_queues"), std::string::npos);
+        } else {
+          ASSERT_NE(log.find("Crash-safe recover Convert leftover, WAL tail"), std::string::npos);
+        }
+        std::string v;
+        ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &v));
+        ASSERT_EQ(v, value);
+        ASSERT_OK(txn_db->Get(ReadOptions(), "committed", &v));
+        ASSERT_EQ(v, value);
+        ASSERT_TRUE(txn_db->Get(ReadOptions(), "prepared", &v).IsNotFound());
+        std::vector<Transaction*> prepared;
+        txn_db->GetAllPreparedTransactions(&prepared);
+        ASSERT_EQ(prepared.size(), 1U);
+        ASSERT_EQ(prepared[0]->GetName(), "in_doubt");
+        {
+          std::unique_ptr<Iterator> it(txn_db->NewIterator(ReadOptions()));
+          it->Seek("prepared");
+          ASSERT_OK(it->status());
+          ASSERT_TRUE(!it->Valid() || it->key() != "prepared");
+        }
+        if (commit) {
+          ASSERT_OK(prepared[0]->Commit());
+          ASSERT_OK(txn_db->Get(ReadOptions(), "prepared", &v));
+          ASSERT_EQ(v, value);
+        } else {
+          ASSERT_OK(prepared[0]->Rollback());
+          ASSERT_TRUE(txn_db->Get(ReadOptions(), "prepared", &v).IsNotFound());
+        }
+        delete prepared[0];
+        {
+          std::unique_ptr<Iterator> it(txn_db->NewIterator(ReadOptions()));
+          it->Seek("prepared");
+          ASSERT_OK(it->status());
+          ASSERT_EQ(it->Valid() && it->key() == "prepared", commit);
+          if (commit) {
+            ASSERT_EQ(it->value(), value);
+          }
+        }
+        delete txn_db;
+        ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+        prepared.clear();
+        txn_db->GetAllPreparedTransactions(&prepared);
+        ASSERT_TRUE(prepared.empty());
+        if (commit) {
+          ASSERT_OK(txn_db->Get(ReadOptions(), "prepared", &v));
+          ASSERT_EQ(v, value);
+        } else {
+          ASSERT_TRUE(txn_db->Get(ReadOptions(), "prepared", &v).IsNotFound());
+        }
+        delete txn_db;
+      }
+    }
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, WritePreparedCrashRecovery) {
+  CheckWritePreparedCrashRecovery("WritePreparedCrashRecovery");
+}
+
+TEST_F(DBCsppCrashSafeTest, WritePreparedOldPrepareSurvivesNewCommit) {
+  CheckWritePreparedCrashRecovery("WritePreparedOldPrepareSurvivesNewCommit");
 }
 
 TEST_F(DBCsppCrashSafeTest, AfterConvertCloseSecondFlushInject) {

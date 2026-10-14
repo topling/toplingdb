@@ -19,6 +19,8 @@
 #include <utility>
 #include <vector>
 
+#include <terark/util/function.hpp>
+
 #include "block_cache.h"
 #include "cache/cache_entry_roles.h"
 #include "cache/cache_key.h"
@@ -156,7 +158,7 @@ Status ReadAndParseBlockFromFile(
   assert(result);
 
   BlockContents contents;
-  BlockFetcher block_fetcher(
+  TOPLING_PTR_WITH_REF(block_fetcher) = std::make_unique<BlockFetcher>(
       file, prefetch_buffer, footer, options, handle, &contents, ioptions,
       /*do_uncompress*/ maybe_compressed, maybe_compressed,
       TBlocklike::kBlockType, uncompression_dict, cache_options,
@@ -1633,7 +1635,7 @@ BlockBasedTable::MaybeReadBlockAndLoadToCache(
         //
         // It would also cause a memory allocation to be used rather than
         // stack if the compressed block size is < 5KB
-        BlockFetcher block_fetcher(
+        TOPLING_PTR_WITH_REF(block_fetcher) = std::make_unique<BlockFetcher>(
             rep_->file.get(), prefetch_buffer, rep_->footer, ro, handle,
             &tmp_contents, rep_->ioptions, do_uncompress, maybe_compressed,
             TBlocklike::kBlockType, uncompression_dict,

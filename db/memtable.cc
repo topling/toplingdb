@@ -801,10 +801,12 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
       if (UNLIKELY(!res)) {
         return Status::TryAgain("key+seq exists");
       }
-    } else if (hint && !needs_user_key_cmp_in_get_) {
+    } else if (hint && !needs_user_key_cmp_in_get_ && table == table_) {
       // Borrow NeedsUserKeyCompareInGet: false on Topling (hint pins the
       // writer token; pair with FinishHint), true on upstream RocksDB
       // (ignore caller hint except the prefix-extractor path above).
+      // FinishHint() hands the hint back to table_ only, so range_del_table_
+      // must not receive it
       bool res = table->InsertKeyValueWithHint(tag, key, value, hint);
       if (UNLIKELY(!res)) {
         return Status::TryAgain("key+seq exists");
@@ -876,8 +878,9 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
       UpdateFlushState();
     }
   } else {
+    // As above, the hint belongs to table_ only
     bool res =
-        (hint == nullptr)
+        (hint == nullptr || table != table_)
             ? table->InsertKeyValueConcurrently(tag, key, value)
             : table->InsertKeyValueWithHintConcurrently(tag, key, value, hint);
     if (UNLIKELY(!res)) {

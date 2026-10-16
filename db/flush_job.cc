@@ -978,9 +978,11 @@ Status FlushJob::WriteLevel0Table() {
         MemTable* memtable = mems_.front();
         // pass these fields to ConvertToSST, to fill TableProperties
         meta_.num_entries = memtable->num_entries();
-        meta_.num_deletions = memtable->num_deletes();
+        // NOTE: MemTable's num_deletes() and TableProperties' num_deletions
+        // disagree: the former excludes range deletions, the latter includes
+        meta_.num_deletions = memtable->num_deletes() + memtable->num_range_deletes();
         meta_.num_merges = memtable->num_merges();
-        meta_.num_range_deletions = 0;
+        meta_.num_range_deletions = memtable->num_range_deletes();
         meta_.raw_key_size = memtable->raw_key_size();
         meta_.raw_value_size = memtable->raw_value_size();
         tboptions.generate_file_no = [this]() {

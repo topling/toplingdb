@@ -311,6 +311,7 @@ class MemTableRep : public CacheAlignedNewDelete {
   virtual void FinishHint(void*);
   virtual void InitSetMemTableAsLogIndex(bool) {}
   virtual bool SupportMemTableAsLogIndex() const { return false; }
+  virtual MemTableRep* CreateRangeDelMemTableRep() { return nullptr; }
   ConvertKind GetConvertKind() const { return m_convert_to_sst; }
   bool SupportConvertToSST() const {
     return m_convert_to_sst != ConvertKind::kDontConvert;

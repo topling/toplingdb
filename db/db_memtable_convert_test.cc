@@ -120,6 +120,97 @@ TEST_P(DBMemtableConvertTest, ManualFlushConverts) {
   Close();
 }
 
+TEST_P(DBMemtableConvertTest, ConvertToSSTCarriesRangeDels) {
+  const bool osl = std::get<0>(GetParam());
+  const bool file_mmap = std::string(std::get<1>(GetParam())) == "kFileMmap";
+  if (osl && file_mmap) {
+    // Pre-existing crash, the same one the CSPP range-del proxy fixes: with
+    // range deletions present, SupportConvertToSST() is false for
+    // OffsetSkipList, so the flush goes to BuildTable, whose output file is the
+    // memtable's own mmap'ed pool file (SupportCrashSafe() == kFileMmap keeps
+    // the file number), so NewWritableFile() truncates it while the iterator
+    // still reads it, and the reader gets SIGBUS. Fixing this needs the OSL
+    // range-del proxy.
+    return; // OffsetSkipList has no range-del proxy yet
+  }
+  Options options = ConvertOptions();
+  DestroyAndReopen(options);
+  ASSERT_OK(Put("a", "1"));
+  ASSERT_OK(Put("d", "4")); // inside the range, must be gone after the flush
+  ASSERT_OK(Put("e", "5")); // the range end key is exclusive, must survive
+  ASSERT_OK(Put("z", "9"));
+  ASSERT_OK(db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), "c", "e"));
+  ObserveConversion();
+  ASSERT_OK(db_->Flush(FlushOptions()));
+  // OffsetSkipList has no range-del proxy: its range deletions live in a skip
+  // list apart, so it still flushes through BuildTable
+  ASSERT_EQ(converts_.load(), osl ? 0 : 1);
+  ASSERT_EQ(builds_.load(), osl ? 1 : 0);
+  if (!osl) {
+    TablePropertiesCollection props;
+    ASSERT_OK(db_->GetPropertiesOfAllTables(&props));
+    ASSERT_EQ(props.size(), 1U);
+    const TableProperties& tp = *props.begin()->second;
+    ASSERT_EQ(tp.num_range_deletions, 1U);
+    // as BlockBasedTableBuilder does, num_deletions includes range deletions
+    ASSERT_EQ(tp.num_deletions, 1U);
+  }
+  // the range deletion is in the flushed file now: without the tombstone list
+  // built from the range-del tree, "d" would come back from the file
+  ASSERT_EQ(Get("c"), "NOT_FOUND"); // inside [c, e)
+  ASSERT_EQ(Get("d"), "NOT_FOUND");
+  ASSERT_EQ(Get("a"), "1");
+  ASSERT_EQ(Get("e"), "5");
+  ASSERT_EQ(Get("z"), "9");
+  Close();
+  ASSERT_OK(TryReopen(options));
+  ASSERT_EQ(Get("d"), "NOT_FOUND");
+  ASSERT_EQ(Get("e"), "5");
+  Close();
+}
+
+TEST_P(DBMemtableConvertTest, ConvertToSSTCarriesOverlappingRangeDels) {
+  // OffsetSkipList has no range-del proxy yet, the same reason the test above
+  // skips its converting modes
+  if (std::get<0>(GetParam())) return;
+  Options options = ConvertOptions();
+  DestroyAndReopen(options);
+  ASSERT_OK(Put("a", "1"));
+  ASSERT_OK(Put("d", "4")); // the only key of [c, e)
+  ASSERT_OK(Put("f", "6")); // of [c, z) only
+  ASSERT_OK(Put("y", "7")); // of [c, z) only
+  ASSERT_OK(Put("z", "9")); // both end keys are exclusive
+  ASSERT_OK(db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), "c", "e"));
+  // the same start key again: a second entry of the same range-del user key,
+  // with a sequence of its own
+  ASSERT_OK(db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), "c", "e"));
+  ASSERT_OK(db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), "c", "z"));
+  ObserveConversion();
+  ASSERT_OK(db_->Flush(FlushOptions()));
+  ASSERT_EQ(converts_.load(), 1);
+  ASSERT_EQ(builds_.load(), 0);
+  TablePropertiesCollection props;
+  ASSERT_OK(db_->GetPropertiesOfAllTables(&props));
+  ASSERT_EQ(props.size(), 1U);
+  const TableProperties& tp = *props.begin()->second;
+  ASSERT_EQ(tp.num_range_deletions, 3U);
+  // as BlockBasedTableBuilder does, num_deletions includes range deletions
+  ASSERT_EQ(tp.num_deletions, 3U);
+  ASSERT_EQ(Get("a"), "1");
+  ASSERT_EQ(Get("d"), "NOT_FOUND"); // both tombstones of [c, e)
+  ASSERT_EQ(Get("f"), "NOT_FOUND"); // only the widest tombstone covers it
+  ASSERT_EQ(Get("y"), "NOT_FOUND");
+  ASSERT_EQ(Get("z"), "9");
+  Close();
+  ASSERT_OK(TryReopen(options));
+  ASSERT_EQ(Get("a"), "1");
+  ASSERT_EQ(Get("d"), "NOT_FOUND");
+  ASSERT_EQ(Get("f"), "NOT_FOUND");
+  ASSERT_EQ(Get("y"), "NOT_FOUND");
+  ASSERT_EQ(Get("z"), "9");
+  Close();
+}
+
 TEST_P(DBMemtableConvertTest, ConversionSanitizesMergeThreshold) {
   // Avoid the existing atomic-flush sanitizer masking the conversion rule.
   if (std::get<2>(GetParam())) return;

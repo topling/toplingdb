@@ -1800,6 +1800,260 @@ TEST_F(DBCsppCrashSafeTest, RecoveredTableUsesFileSequenceBound) {
   }
 }
 
+TEST_F(DBCsppCrashSafeTest, RecoveredTableCarriesRangeDels) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  Destroy(options);
+  ASSERT_OK(env_->CreateDirIfMissing(dbname_));
+  options.cf_paths = {{dbname_, 0}};
+  InternalKeyComparator icmp(options.comparator);
+  ImmutableOptions ioptions(options);
+  MutableCFOptions moptions(options);
+  WriteBufferManager wb(options.db_write_buffer_size);
+  std::unique_ptr<MemTable> mem(
+      new MemTable(icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0, 1));
+  ASSERT_OK(mem->Add(1, kTypeValue, "a", "1", nullptr));
+  ASSERT_OK(mem->Add(2, kTypeValue, "d", "4", nullptr));
+  // the range deletion is what covers "h", and its end key is exclusive
+  ASSERT_OK(mem->Add(3, kTypeRangeDeletion, "c", "h", nullptr));
+  mem->MarkImmutable();
+  // the flush thread reached ConvertToReadOnly() before the crash, which is
+  // what persists the range deletion tree into the memtable's own file
+  mem->MarkFlushed();
+  const std::string published = MakeTableFileName(dbname_, 2);
+  const std::string unpublished = MakeTableFileName(dbname_, 3);
+  CopyFile(MakeTableFileName(dbname_, 1), published);
+  CopyFile(MakeTableFileName(dbname_, 1), unpublished);
+  mem.reset();
+
+  IntTblPropCollectorFactories collectors;
+  TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
+                          options.compression, options.compression_opts, 0,
+                          kDefaultColumnFamilyName, 0);
+  auto open_table = [&](uint64_t number, SequenceNumber largest_seqno) {
+    const std::string path = TableFileName(options.cf_paths, number, 0);
+    uint64_t file_size = 0;
+    EXPECT_OK(env_->GetFileSize(path, &file_size));
+    std::unique_ptr<FSRandomAccessFile> file;
+    EXPECT_OK(env_->GetFileSystem()->NewRandomAccessFile(
+        path, FileOptions(), &file, nullptr));
+    auto reader = std::make_unique<RandomAccessFileReader>(std::move(file), path);
+    EnvOptions env_options;
+    TableReaderOptions tro(ioptions, options.prefix_extractor, env_options, icmp, 0);
+    tro.largest_seqno = largest_seqno;
+    std::unique_ptr<TableReader> table;
+    EXPECT_OK(options.table_factory->NewTableReader(
+        ReadOptions(), tro, std::move(reader), file_size, &table, true));
+    return table;
+  };
+  auto table_rows = [](TableReader* table) {
+    std::unique_ptr<InternalIterator> it(table->NewIterator(
+        ReadOptions(), nullptr, nullptr, false, TableReaderCaller::kUserIterator));
+    std::vector<std::string> keys;
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      keys.push_back(ExtractUserKey(it->key()).ToString());
+    }
+    EXPECT_OK(it->status());
+    return keys;
+  };
+
+  FileMetaData meta;
+  meta.fd = FileDescriptor(2, 0, 0);
+  meta.fd.smallest_seqno = 0;
+  meta.fd.largest_seqno = 3;
+  ASSERT_OK(options.memtable_factory->RecoverCrashSafeMemTableToSST(
+      published, &meta, tbo));
+  ASSERT_GT(meta.fd.GetFileSize(), 0U);
+  ASSERT_EQ(meta.num_range_deletions, 1U);
+  // as BlockBasedTableBuilder does, num_deletions includes range deletions
+  ASSERT_EQ(meta.num_deletions, 1U);
+  ASSERT_EQ(meta.smallest.user_key().ToString(), "a");
+  // the end key "h" is beyond every row, and carries kMaxSequenceNumber as
+  // RangeTombstone::SerializeEndKey() writes it
+  ASSERT_EQ(meta.largest.user_key().ToString(), "h");
+  ASSERT_EQ(GetInternalKeySeqno(meta.largest.Encode()), kMaxSequenceNumber);
+
+  std::unique_ptr<TableReader> table = open_table(2, 3);
+  std::unique_ptr<FragmentedRangeTombstoneIterator> rd(
+      table->NewRangeTombstoneIterator(ReadOptions()));
+  ASSERT_NE(rd, nullptr);
+  rd->SeekToFirst();
+  ASSERT_TRUE(rd->Valid());
+  // key() is the internal key of the start key, start_key() the user key
+  ASSERT_EQ(rd->key().ToString(),
+            InternalKey("c", 3, kTypeRangeDeletion).Encode().ToString());
+  ASSERT_EQ(rd->start_key().ToString(), "c");
+  ASSERT_EQ(rd->end_key().ToString(), "h");
+  ASSERT_EQ(rd->value().ToString(), "h");
+  ASSERT_EQ(rd->seq(), 3U);
+  rd->Next();
+  ASSERT_FALSE(rd->Valid());
+  // the rows are in the file too, the tombstone hides them above this level
+  ASSERT_EQ(table_rows(table.get()), std::vector<std::string>({"a", "d"}));
+
+  // a range deletion beyond the published sequence is hidden, exactly as the
+  // unpublished user keys are
+  FileMetaData hidden;
+  hidden.fd = FileDescriptor(3, 0, 0);
+  hidden.fd.smallest_seqno = 0;
+  hidden.fd.largest_seqno = 2;
+  ASSERT_OK(options.memtable_factory->RecoverCrashSafeMemTableToSST(
+      unpublished, &hidden, tbo));
+  ASSERT_GT(hidden.fd.GetFileSize(), 0U);
+  // the counters above are counted over the pubseq-filtered view, so a hidden
+  // tombstone is not counted; num_entries alone stays the unfiltered memtable
+  // statistics count
+  ASSERT_EQ(hidden.num_range_deletions, 0U);
+  ASSERT_EQ(hidden.num_deletions, 0U);
+  ASSERT_EQ(hidden.largest.user_key().ToString(), "d");
+  std::unique_ptr<TableReader> hidden_table = open_table(3, 2);
+  ASSERT_EQ(hidden_table->NewRangeTombstoneIterator(ReadOptions()), nullptr);
+  ASSERT_EQ(table_rows(hidden_table.get()), std::vector<std::string>({"a", "d"}));
+}
+
+TEST_F(DBCsppCrashSafeTest, RecoveredTableRangeDelCountsAndBounds) {
+  Close();
+  struct Row {
+    SequenceNumber seq;
+    const char* key;
+  };
+  struct RangeDel {
+    SequenceNumber seq;
+    const char* start;
+    const char* end;
+  };
+  struct Case {
+    const char* name;
+    std::vector<Row> rows;
+    std::vector<RangeDel> rds;
+    SequenceNumber pubseq;
+    const char* smallest;
+    const char* largest;
+  };
+  const std::vector<Case> cases = {
+      {"all visible, rows between and after",
+       {{1, "a"}, {2, "d"}},
+       {{3, "c", "e"}, {4, "g", "i"}},
+       4,
+       "a",
+       "i"},
+      {"one tombstone beyond the published sequence",
+       {{1, "a"}, {2, "d"}},
+       {{3, "c", "h"}, {5, "m", "p"}},
+       4,
+       "a",
+       "h"},
+      {"range deletions and no rows at all",
+       {},
+       {{1, "c", "h"}},
+       1,
+       "c",
+       "h"},
+  };
+  for (const Case& c : cases) {
+    SCOPED_TRACE(c.name);
+    // the expected view of the recovered file: the published sequence filters
+    // the rows and the tombstones alike
+    std::vector<std::string> rows, tombstones;
+    for (const Row& row : c.rows) {
+      if (row.seq <= c.pubseq) rows.push_back(row.key);
+    }
+    for (const RangeDel& rd : c.rds) {
+      if (rd.seq > c.pubseq) continue;
+      tombstones.push_back(std::string(rd.start) + "->" + rd.end + "@" +
+                           std::to_string(rd.seq));
+    }
+    Options options = BaseCrashSafeOptions(dbname_, true, false);
+    Destroy(options);
+    ASSERT_OK(env_->CreateDirIfMissing(dbname_));
+    options.cf_paths = {{dbname_, 0}};
+    InternalKeyComparator icmp(options.comparator);
+    ImmutableOptions ioptions(options);
+    MutableCFOptions moptions(options);
+    WriteBufferManager wb(options.db_write_buffer_size);
+    std::unique_ptr<MemTable> mem(
+        new MemTable(icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0, 1));
+    for (const Row& row : c.rows) {
+      ASSERT_OK(mem->Add(row.seq, kTypeValue, row.key, "v", nullptr));
+    }
+    for (const RangeDel& rd : c.rds) {
+      ASSERT_OK(mem->Add(rd.seq, kTypeRangeDeletion, rd.start, rd.end, nullptr));
+    }
+    mem->MarkImmutable();
+    // the flush thread reached ConvertToReadOnly() before the crash, which is
+    // what persists the range deletion tree into the memtable's own file
+    mem->MarkFlushed();
+    const std::string leftover = MakeTableFileName(dbname_, 2);
+    CopyFile(MakeTableFileName(dbname_, 1), leftover);
+    mem.reset();
+
+    IntTblPropCollectorFactories collectors;
+    TableBuilderOptions tbo(ioptions, moptions, icmp, &collectors,
+                            options.compression, options.compression_opts, 0,
+                            kDefaultColumnFamilyName, 0);
+    FileMetaData meta;
+    meta.fd = FileDescriptor(2, 0, 0);
+    meta.fd.smallest_seqno = 0;
+    meta.fd.largest_seqno = c.pubseq;
+    ASSERT_OK(options.memtable_factory->RecoverCrashSafeMemTableToSST(
+        leftover, &meta, tbo));
+    ASSERT_GT(meta.fd.GetFileSize(), 0U);
+    ASSERT_EQ(meta.num_range_deletions, tombstones.size());
+    // as BlockBasedTableBuilder does, num_deletions includes range deletions
+    ASSERT_EQ(meta.num_deletions, tombstones.size());
+    ASSERT_EQ(meta.smallest.user_key().ToString(), c.smallest);
+    ASSERT_EQ(meta.largest.user_key().ToString(), c.largest);
+    for (const RangeDel& rd : c.rds) {
+      if (rd.seq > c.pubseq) continue; // must not bound the file either
+      if (c.smallest == std::string(rd.start)) {
+        ASSERT_EQ(GetInternalKeySeqno(meta.smallest.Encode()), rd.seq);
+      }
+      // a range deletion ends the file's range with its exclusive end key, as
+      // RangeTombstone::SerializeEndKey() writes it
+      if (c.largest == std::string(rd.end)) {
+        ASSERT_EQ(GetInternalKeySeqno(meta.largest.Encode()), kMaxSequenceNumber);
+      }
+    }
+
+    uint64_t file_size = 0;
+    ASSERT_OK(env_->GetFileSize(leftover, &file_size));
+    std::unique_ptr<FSRandomAccessFile> file;
+    ASSERT_OK(env_->GetFileSystem()->NewRandomAccessFile(
+        leftover, FileOptions(), &file, nullptr));
+    auto reader =
+        std::make_unique<RandomAccessFileReader>(std::move(file), leftover);
+    EnvOptions env_options;
+    TableReaderOptions tro(ioptions, options.prefix_extractor, env_options, icmp,
+                           0);
+    tro.largest_seqno = c.pubseq;
+    std::unique_ptr<TableReader> table;
+    ASSERT_OK(options.table_factory->NewTableReader(
+        ReadOptions(), tro, std::move(reader), file_size, &table, true));
+    std::unique_ptr<InternalIterator> it(table->NewIterator(
+        ReadOptions(), nullptr, nullptr, false, TableReaderCaller::kUserIterator));
+    std::vector<std::string> keys;
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      keys.push_back(ExtractUserKey(it->key()).ToString());
+    }
+    ASSERT_OK(it->status());
+    ASSERT_EQ(keys, rows);
+    // the reader has no insert to count: its count is the file's property, and
+    // its tombstone list is built from the range deletion tree
+    ASSERT_EQ(table->GetTableProperties()->num_range_deletions, tombstones.size());
+    std::unique_ptr<FragmentedRangeTombstoneIterator> listed(
+        table->NewRangeTombstoneIterator(ReadOptions()));
+    std::vector<std::string> found;
+    if (listed) {
+      for (listed->SeekToFirst(); listed->Valid(); listed->Next()) {
+        found.push_back(listed->start_key().ToString() + "->" +
+                        listed->end_key().ToString() + "@" +
+                        std::to_string(listed->seq()));
+      }
+    }
+    ASSERT_EQ(found, tombstones);
+  }
+}
+
 TEST_F(CrashChild, DISABLED_RecoveredHiddenRecordsCompact) {
   Options options = BaseCrashSafeOptions(dbname_, true, false);
   if (arg_ == "OSL") {

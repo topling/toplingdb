@@ -94,9 +94,7 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
           mutable_cf_options,
           comparator_, &arena_, mutable_cf_options.prefix_extractor.get(),
           ioptions.logger, column_family_id)),
-      range_del_table_(SkipListFactory().CreateMemTableRep(
-          comparator_, &arena_, nullptr /* transform */, ioptions.logger,
-          column_family_id)),
+      range_del_table_(table_->CreateRangeDelMemTableRep()),
       is_range_del_table_empty_(true),
       data_size_(0),
       num_entries_(0),
@@ -129,6 +127,11 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       approximate_memory_usage_(0),
       memtable_max_range_deletions_(
           mutable_cf_options.memtable_max_range_deletions) {
+  if (nullptr == range_del_table_) {
+    range_del_table_.reset(SkipListFactory().CreateMemTableRep(
+        comparator_, &arena_, nullptr /* transform */, ioptions.logger,
+        column_family_id));
+  }
   needs_user_key_cmp_in_get_ = table_->NeedsUserKeyCompareInGet();
   table_->InitSetMemTableAsLogIndex(moptions_.memtable_as_log_index);
   support_convert_to_sst_ = table_->SupportConvertToSST();
@@ -775,9 +778,6 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
   }
   std::unique_ptr<MemTableRep>& table =
       type == kTypeRangeDeletion ? range_del_table_ : table_;
-  if (type == kTypeRangeDeletion) {
-    value = real_value; // range_del_table_ not support memtable_as_log_index
-  }
   const uint64_t tag = PackSequenceAndType(s, type);
   if (kv_prot_info != nullptr) {
     Slice key_slice((char*)memcpy(alloca(key.size_ + 8), key.data_, key.size_),

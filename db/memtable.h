@@ -551,7 +551,8 @@ class MemTable : public CacheAlignedNewDelete {
 
   void FinishHint(void* hint) const { table_->FinishHint(hint); }
   bool SupportConvertToSST() const {
-    return support_convert_to_sst_ && is_range_del_table_empty_;
+    // cspp & osl support range del with crash-safe
+    return support_convert_to_sst_;
   }
   Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
 

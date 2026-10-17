@@ -121,18 +121,13 @@ TEST_P(DBMemtableConvertTest, ManualFlushConverts) {
 }
 
 TEST_P(DBMemtableConvertTest, ConvertToSSTCarriesRangeDels) {
-  const bool osl = std::get<0>(GetParam());
-  const bool file_mmap = std::string(std::get<1>(GetParam())) == "kFileMmap";
-  if (osl && file_mmap) {
-    // Pre-existing crash, the same one the CSPP range-del proxy fixes: with
-    // range deletions present, SupportConvertToSST() is false for
-    // OffsetSkipList, so the flush goes to BuildTable, whose output file is the
-    // memtable's own mmap'ed pool file (SupportCrashSafe() == kFileMmap keeps
-    // the file number), so NewWritableFile() truncates it while the iterator
-    // still reads it, and the reader gets SIGBUS. Fixing this needs the OSL
-    // range-del proxy.
-    return; // OffsetSkipList has no range-del proxy yet
-  }
+  // Both memtables keep their range deletions in their own pool, so a flush
+  // with one converts instead of building a table. kFileMmap is the
+  // interesting mode: the range deletion used to send the flush to BuildTable,
+  // whose output file is the memtable's own mmap'ed pool file
+  // (SupportCrashSafe() == kFileMmap keeps the file number), so
+  // NewWritableFile() truncated it while the iterator still read it, and the
+  // reader got SIGBUS.
   Options options = ConvertOptions();
   DestroyAndReopen(options);
   ASSERT_OK(Put("a", "1"));
@@ -142,18 +137,34 @@ TEST_P(DBMemtableConvertTest, ConvertToSSTCarriesRangeDels) {
   ASSERT_OK(db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), "c", "e"));
   ObserveConversion();
   ASSERT_OK(db_->Flush(FlushOptions()));
-  // OffsetSkipList has no range-del proxy: its range deletions live in a skip
-  // list apart, so it still flushes through BuildTable
-  ASSERT_EQ(converts_.load(), osl ? 0 : 1);
-  ASSERT_EQ(builds_.load(), osl ? 1 : 0);
-  if (!osl) {
-    TablePropertiesCollection props;
-    ASSERT_OK(db_->GetPropertiesOfAllTables(&props));
-    ASSERT_EQ(props.size(), 1U);
-    const TableProperties& tp = *props.begin()->second;
-    ASSERT_EQ(tp.num_range_deletions, 1U);
-    // as BlockBasedTableBuilder does, num_deletions includes range deletions
-    ASSERT_EQ(tp.num_deletions, 1U);
+  ASSERT_EQ(converts_.load(), 1);
+  ASSERT_EQ(builds_.load(), 0);
+  TablePropertiesCollection props;
+  ASSERT_OK(db_->GetPropertiesOfAllTables(&props));
+  ASSERT_EQ(props.size(), 1U);
+  const TableProperties& tp = *props.begin()->second;
+  ASSERT_EQ(tp.num_range_deletions, 1U);
+  // as BlockBasedTableBuilder does, num_deletions includes range deletions
+  ASSERT_EQ(tp.num_deletions, 1U);
+  // The range deletion head is persisted in the mempool's own header, which is
+  // the pool's first bytes, so a converted file starts with that header in both
+  // convert kinds: kFileMmap converts the memtable's own pool file, and kDumpMem
+  // writes the pool with the header it carries. (A cspp file has no header for a
+  // dumped pool.)
+  if (std::get<0>(GetParam())) {
+    std::vector<LiveFileMetaData> files;
+    db_->GetLiveFilesMetaData(&files);
+    ASSERT_EQ(files.size(), 1U);
+    const std::string path = MakeTableFileName(dbname_, files[0].file_number);
+    std::string head;
+    ASSERT_OK(ReadFileToString(env_, path, &head));
+    // The header starts with its magic's length, then the magic itself, and the
+    // pool then follows it: a header written in front of the pool instead of the
+    // pool's own would show up as a second magic behind the first header, and
+    // would make the file a header longer than the pool it holds.
+    ASSERT_GE(head.size(), 1024U + 9U);
+    ASSERT_EQ(head.compare(1, 8, "OSLMemTb", 8), 0);
+    ASSERT_NE(head.compare(1024 + 1, 8, "OSLMemTb", 8), 0);
   }
   // the range deletion is in the flushed file now: without the tombstone list
   // built from the range-del tree, "d" would come back from the file
@@ -170,9 +181,6 @@ TEST_P(DBMemtableConvertTest, ConvertToSSTCarriesRangeDels) {
 }
 
 TEST_P(DBMemtableConvertTest, ConvertToSSTCarriesOverlappingRangeDels) {
-  // OffsetSkipList has no range-del proxy yet, the same reason the test above
-  // skips its converting modes
-  if (std::get<0>(GetParam())) return;
   Options options = ConvertOptions();
   DestroyAndReopen(options);
   ASSERT_OK(Put("a", "1"));

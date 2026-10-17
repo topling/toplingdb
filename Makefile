@@ -2094,6 +2094,9 @@ db_memtable_as_log_index_test: $(OBJ_DIR)/db/db_memtable_as_log_index_test.o $(T
 db_memtable_convert_test: $(OBJ_DIR)/db/db_memtable_convert_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
+db_memtable_wal_credit_test: $(OBJ_DIR)/db/db_memtable_wal_credit_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
 db_inplace_update_test: $(OBJ_DIR)/db/db_inplace_update_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 

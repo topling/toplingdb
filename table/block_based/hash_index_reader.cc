@@ -8,6 +8,8 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 #include "table/block_based/hash_index_reader.h"
 
+#include <terark/util/function.hpp>
+
 #include "table/block_fetcher.h"
 #include "table/meta_blocks.h"
 
@@ -73,7 +75,7 @@ Status HashIndexReader::Create(const BlockBasedTable* table,
 
   // Read contents for the blocks
   BlockContents prefixes_contents;
-  BlockFetcher prefixes_block_fetcher(
+  TOPLING_PTR_WITH_REF(prefixes_block_fetcher) = std::make_unique<BlockFetcher>(
       file, prefetch_buffer, footer, ro, prefixes_handle, &prefixes_contents,
       ioptions, true /*decompress*/, true /*maybe_compressed*/,
       BlockType::kHashIndexPrefixes, UncompressionDict::GetEmptyDict(),
@@ -83,7 +85,7 @@ Status HashIndexReader::Create(const BlockBasedTable* table,
     return s;
   }
   BlockContents prefixes_meta_contents;
-  BlockFetcher prefixes_meta_block_fetcher(
+  TOPLING_PTR_WITH_REF(prefixes_meta_block_fetcher) = std::make_unique<BlockFetcher>(
       file, prefetch_buffer, footer, ro, prefixes_meta_handle,
       &prefixes_meta_contents, ioptions, true /*decompress*/,
       true /*maybe_compressed*/, BlockType::kHashIndexMetadata,

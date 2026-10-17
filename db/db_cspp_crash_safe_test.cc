@@ -2780,6 +2780,68 @@ static Options LogRefCrashOptions(const std::string& dbname,
   return options;
 }
 
+TEST_F(CrashChild, DISABLED_LogRefRangeDelsWithLongEndpoints) {
+  Options options = LogRefCrashOptions(dbname_, arg_);
+  DB* child_db = nullptr;
+  ASSERT_OK(DB::Open(options, dbname_, &child_db));
+  const std::string begin = "c-" + std::string(64, 'c');
+  const std::string end = "m-" + std::string(64, 'm');
+  ASSERT_OK(child_db->Put(WriteOptions(), "a", std::string(128, 'a')));
+  ASSERT_OK(child_db->Put(WriteOptions(), "d", std::string(128, 'd')));
+  ASSERT_OK(child_db->Put(WriteOptions(), end, "exclusive end"));
+  ASSERT_OK(child_db->Put(WriteOptions(), "z", "after range"));
+  ASSERT_OK(child_db->DeleteRange(WriteOptions(), child_db->DefaultColumnFamily(), begin, end));
+  // Exit without flushing or closing: recovery must convert the persisted
+  // memtable, whose long range endpoint is a WAL reference in both formats.
+  ::_exit(42);
+}
+
+class DBRangeDeletionRecoveryTest
+    : public DBCsppCrashSafeTest,
+      public testing::WithParamInterface<std::string> {};
+
+INSTANTIATE_TEST_CASE_P(
+    LogRefFormats, DBRangeDeletionRecoveryTest,
+    ::testing::Values("CS", "CP", "OS", "OP"),
+    [](const testing::TestParamInfo<std::string>& info) { return info.param; });
+
+TEST_P(DBRangeDeletionRecoveryTest, RecoveredLogRefRangeDelsWithLongEndpoints) {
+  Close();
+  const std::string& config = GetParam();
+  Options options = LogRefCrashOptions(dbname_, config);
+  Destroy(options);
+  ASSERT_EQ(RunCrashChild(dbname_, "LogRefRangeDelsWithLongEndpoints", config), 42);
+  ASSERT_FALSE(ListLeftovers(options, dbname_).empty());
+  size_t converted = 0;
+  SyncPoint::GetInstance()->SetCallBack(
+      "CrashSafeRecover::AfterConvertBeforeAddFile", [&](void*) { ++converted; });
+  SyncPoint::GetInstance()->EnableProcessing();
+  const Status opened = TryReopen(options);
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+  ASSERT_OK(opened);
+  // A WAL-replay fallback could hide the missing recovery mapping bug.
+  ASSERT_GT(converted, 0U);
+  const std::string end = "m-" + std::string(64, 'm');
+  ASSERT_EQ(Get("a"), std::string(128, 'a'));
+  ASSERT_EQ(Get("d"), "NOT_FOUND");
+  ASSERT_EQ(Get(end), "exclusive end");
+  ASSERT_EQ(Get("z"), "after range");
+  TablePropertiesCollection properties;
+  ASSERT_OK(db_->GetPropertiesOfAllTables(&properties));
+  uint64_t range_deletions = 0;
+  for (const auto& entry : properties) {
+    range_deletions += entry.second->num_range_deletions;
+  }
+  ASSERT_EQ(range_deletions, 1U);
+  Close();
+  ASSERT_OK(TryReopen(options));
+  ASSERT_EQ(Get("d"), "NOT_FOUND");
+  ASSERT_EQ(Get(end), "exclusive end");
+  ASSERT_EQ(Get("z"), "after range");
+  Close();
+}
+
 static Options PersistentStatsOptions(const std::string& dbname, const std::string& config) {
   Options options = BaseCrashSafeOptions(dbname, true, config[1] != 'N');
   options.cf_paths = {{dbname, 0}};

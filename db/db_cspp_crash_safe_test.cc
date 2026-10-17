@@ -2766,11 +2766,12 @@ TEST_F(DBCsppCrashSafeTest, SkipListRejectsRecoverAndUsesWalWhenDisabled) {
 
 #if !defined(OS_WIN)
 static Options LogRefCrashOptions(const std::string& dbname,
-                                  const std::string& config) {
+                                  const std::string& config, bool idle = true) {
   Options options = BaseCrashSafeOptions(dbname, true, true);
   const bool osl = config[0] == 'O';
   const json params = {
       {"mem_cap", 16777216}, {"convert_to_sst", "kFileMmap"},
+      {"token_use_idle", idle},
       {"log_ref_format", config[1] == 'P' ? "kPlainLogRef" : "kShortLogRef"}};
   options.memtable_factory = EasyNewMemTableRep(
       osl ? "OffsetSkipList" : "CSPPMemTab", params.dump());
@@ -2839,6 +2840,72 @@ TEST_P(DBRangeDeletionRecoveryTest, RecoveredLogRefRangeDelsWithLongEndpoints) {
   ASSERT_EQ(Get("d"), "NOT_FOUND");
   ASSERT_EQ(Get(end), "exclusive end");
   ASSERT_EQ(Get("z"), "after range");
+  Close();
+}
+
+struct RangeDeletionHintCase {
+  std::string config;
+  bool idle;
+  bool concurrent;
+};
+
+class DBRangeDeletionHintTest
+    : public DBCsppCrashSafeTest,
+      public testing::WithParamInterface<RangeDeletionHintCase> {};
+
+static std::vector<RangeDeletionHintCase> RangeDeletionHintCases() {
+  std::vector<RangeDeletionHintCase> cases;
+  for (const std::string config : {"CN", "CS", "CP", "ON", "OS", "OP"}) {
+    for (bool idle : {false, true}) {
+      for (bool concurrent : {false, true}) {
+        cases.push_back({config, idle, concurrent});
+      }
+    }
+  }
+  return cases;
+}
+
+INSTANTIATE_TEST_CASE_P(
+    HintModes, DBRangeDeletionHintTest,
+    ::testing::ValuesIn(RangeDeletionHintCases()),
+    [](const testing::TestParamInfo<RangeDeletionHintCase>& info) {
+      return info.param.config + "_Idle" + (info.param.idle ? "1" : "0") +
+             "_Concurrent" + (info.param.concurrent ? "1" : "0");
+    });
+
+TEST_P(DBRangeDeletionHintTest, MixedRangeDeletionBatchPreservesHintToken) {
+  Close();
+  const auto& param = GetParam();
+  Options options = LogRefCrashOptions(dbname_, param.config, param.idle);
+  options.memtable_as_log_index = param.config[1] != 'N';
+  options.allow_concurrent_memtable_write = param.concurrent;
+  Destroy(options);
+  ASSERT_OK(TryReopen(options));
+  ASSERT_OK(Put("d", "before range"));
+  ASSERT_OK(Put("e", "exclusive end"));
+  ASSERT_OK(Put("g", "deleted"));
+  WriteOptions wo;
+  wo.memtable_insert_hint_per_batch = true;
+  WriteBatch batch;
+  ASSERT_OK(batch.Put("a", "first point"));
+  ASSERT_OK(batch.DeleteRange("c", "e"));
+  ASSERT_OK(batch.Put("d", "after range"));
+  ASSERT_OK(batch.DeleteRange("f", "h"));
+  ASSERT_OK(batch.Put("z", "last point"));
+  ASSERT_OK(db_->Write(wo, &batch));
+  ASSERT_EQ(Get("a"), "first point");
+  ASSERT_EQ(Get("d"), "after range");
+  ASSERT_EQ(Get("e"), "exclusive end");
+  ASSERT_EQ(Get("g"), "NOT_FOUND");
+  ASSERT_EQ(Get("z"), "last point");
+  ASSERT_OK(Flush());
+  Close();
+  ASSERT_OK(TryReopen(options));
+  ASSERT_EQ(Get("a"), "first point");
+  ASSERT_EQ(Get("d"), "after range");
+  ASSERT_EQ(Get("e"), "exclusive end");
+  ASSERT_EQ(Get("g"), "NOT_FOUND");
+  ASSERT_EQ(Get("z"), "last point");
   Close();
 }
 

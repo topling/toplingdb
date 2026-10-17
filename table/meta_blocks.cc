@@ -7,6 +7,8 @@
 #include <map>
 #include <string>
 
+#include <terark/util/function.hpp>
+
 #include "block_fetcher.h"
 #include "db/table_properties_collector.h"
 #include "file/random_access_file_reader.h"
@@ -264,7 +266,8 @@ Status ReadTablePropertiesHelper(
   ROCKSDB_SCOPE_EXIT(modified_ro.verify_checksums = old_verify_checksums);
   modified_ro.verify_checksums = false;
   BlockContents block_contents;
-  BlockFetcher block_fetcher(file, prefetch_buffer, footer, modified_ro, handle,
+  TOPLING_PTR_WITH_REF(block_fetcher) = std::make_unique<BlockFetcher>(
+                             file, prefetch_buffer, footer, modified_ro, handle,
                              &block_contents, ioptions, false /* decompress */,
                              false /*maybe_compressed*/, BlockType::kProperties,
                              UncompressionDict::GetEmptyDict(),

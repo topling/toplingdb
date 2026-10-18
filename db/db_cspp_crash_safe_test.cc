@@ -6724,6 +6724,57 @@ TEST_F(DBCsppCrashSafeTest, InFlightFlushThenClose) {
 }
 #endif  // !OS_WIN
 
+// A queried prefix range must return an exact count, in particular when the
+// prefix ends with 0xff so that its successor carries. Under a reverse
+// comparator the same byte interval (end, beg] also holds the key `beg`.
+TEST_F(DBCsppCrashSafeTest, PrefixCountExactForPrefixRange) {
+  Close();
+  for (bool reverse : {false, true}) {
+    SCOPED_TRACE(reverse ? "reverse" : "forward");
+    Options options = BaseCrashSafeOptions(dbname_, false, false);
+    if (reverse) options.comparator = ReverseBytewiseComparator();
+    options.memtable_factory.reset(NewCSPPMemTabForPlain(
+        R"({"mem_cap":16777216,"convert_to_sst":"kDontConvert",)"
+        R"("enableApproximateNumEntries":true,"prefix_cnt_len":2})"));
+    InternalKeyComparator icmp(options.comparator);
+    ImmutableOptions ioptions(options);
+    MutableCFOptions moptions(options);
+    WriteBufferManager wb(options.db_write_buffer_size);
+    auto mem = std::make_unique<MemTable>(
+        icmp, ioptions, moptions, &wb, kMaxSequenceNumber, 0);
+    uint64_t seq = 1;
+    auto add = [&](const std::string& ukey) {
+      ASSERT_OK(mem->Add(seq++, kTypeValue, ukey, "v", nullptr));
+    };
+    for (int i = 0; i < 4; ++i) add(std::string("\x01\xff", 2) + char('a' + i));
+    for (int i = 0; i < 5; ++i) add(std::string("\x02\x00", 2) + char('a' + i));
+    for (int i = 0; i < 2; ++i) add(std::string("\x01\xfe", 2) + char('a' + i));
+    add(std::string("\x01\xff", 2));  // the exact key, not counted by `beg`+1
+    add(std::string("\x01\xfe", 2));  // the exact key, counted under `beg`
+    auto ikey = [](const std::string& ukey) {
+      return InternalKey(ukey, kMaxSequenceNumber, kValueTypeForSeek)
+          .Encode()
+          .ToString();
+    };
+    const std::string p01fd("\x01\xfd", 2);
+    const std::string p01fe("\x01\xfe", 2);
+    const std::string p01ff("\x01\xff", 2);
+    const std::string p0200("\x02\x00", 2);
+    if (!reverse) {
+      // [0x01ff, 0x0200) holds the keys with prefix 0x01ff and nothing else,
+      // even though the prefix ends with 0xff.
+      ASSERT_EQ(mem->ApproximateStats(ikey(p01ff), ikey(p0200)).count, 5U);
+      ASSERT_EQ(mem->ApproximateStats(ikey(p01fe), ikey(p01ff)).count, 3U);
+    } else {
+      // [0x0200, 0x01ff) is the byte interval (0x01ff, 0x0200]: the keys of
+      // prefix 0x01ff above the exact key 0x01ff, and no key 0x0200.
+      ASSERT_EQ(mem->ApproximateStats(ikey(p0200), ikey(p01ff)).count, 4U);
+      // (0x01fd, 0x01fe] holds only the exact key 0x01fe.
+      ASSERT_EQ(mem->ApproximateStats(ikey(p01fe), ikey(p01fd)).count, 1U);
+    }
+  }
+}
+
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {

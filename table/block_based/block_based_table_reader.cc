@@ -463,7 +463,12 @@ Status GetGlobalSequenceNumber(const TableProperties& table_properties,
     // table formats do the same (TopTableReaderBase::LoadCommonPart); doing it
     // here as well makes an ingested file read correctly whether or not it
     // carries the external sst file properties.
-    if (smallest_seqno == largest_seqno && largest_seqno < kMaxSequenceNumber) {
+    //
+    // The number must be nonzero: for user-defined timestamps a compaction can
+    // zero a DB-written file's manifest bounds without rewriting its keys
+    // (CompactionIterator::PrepareOutput), so (0, 0) does not mean seqno 0.
+    if (smallest_seqno == largest_seqno && largest_seqno != 0 &&
+                          largest_seqno < kMaxSequenceNumber) {
       *seqno = largest_seqno;
     }
     return Status::OK();

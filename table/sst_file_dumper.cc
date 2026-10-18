@@ -186,7 +186,8 @@ Status SstFileDumper::NewTableReader(
       false /* immortal */, true /* force_direct_prefetch */, -1 /* level */,
       nullptr /* block_cache_tracer */, 0 /* max_file_size_for_l0_meta_pin */,
       "" /* cur_db_session_id */, 0 /* cur_file_num */, {} /* unique_id */,
-      0 /* largest_seqno */, 0 /* tail_size */,
+      kMaxSequenceNumber /* _smallest_seqno */, 0 /* largest_seqno */,
+      0 /* tail_size */,
       table_properties_ == nullptr
           ? true
           : static_cast<bool>(

@@ -686,13 +686,14 @@ bool BlockIter<TValue>::ParseNextKey(bool* is_shared) {
 
 bool DataBlockIter::ParseNextDataKey(bool* is_shared) {
   if (ParseNextKey<DecodeEntry>(is_shared)) {
-#if 0 // #ifndef NDEBUG
+#ifndef NDEBUG
     if (global_seqno_ != kDisableGlobalSequenceNumber) {
       // If we are reading a file with a global sequence number we should
       // expect that all encoded sequence numbers are zeros and any value
       // type is kTypeValue, kTypeMerge, kTypeDeletion,
       // kTypeDeletionWithTimestamp, kTypeRangeDeletion, or
       // kTypeWideColumnEntity.
+      // 2026-10-18 aslo allow seqno == global_seqno_
       uint64_t packed = ExtractInternalKeyFooter(raw_key_.GetKey());
       SequenceNumber seqno;
       ValueType value_type;
@@ -702,8 +703,10 @@ bool DataBlockIter::ParseNextDataKey(bool* is_shared) {
              value_type == ValueType::kTypeDeletion ||
              value_type == ValueType::kTypeDeletionWithTimestamp ||
              value_type == ValueType::kTypeRangeDeletion ||
+             value_type == ValueType::kTypeSingleDeletion ||
+             value_type == ValueType::kTypeBlobIndex ||
              value_type == ValueType::kTypeWideColumnEntity);
-      assert(seqno == 0);
+      assert(seqno == 0 || seqno == global_seqno_);
     }
 #endif  // NDEBUG
     return true;
@@ -752,13 +755,21 @@ void IndexBlockIter::DecodeCurrentValue(bool is_shared) {
     first_internal_key.SetInternalKey(decoded_value_.first_internal_key,
                                       /* copy */ true);
 
-    assert(GetInternalKeySeqno(first_internal_key.GetInternalKey()) == 0);
+    // The file's keys are either all at sequence number 0 (written outside the
+    // DB) or all at the file's own sequence number (a file whose manifest seqno
+    // range is a single value); in both cases the encoded seqno is the one to
+    // put on the key.
+    const SequenceNumber seqno =
+        GetInternalKeySeqno(first_internal_key.GetInternalKey());
+    assert(seqno == 0 || seqno == global_seqno_state_->global_seqno);
 
     ValueType value_type = ExtractValueType(first_internal_key.GetKey());
     assert(value_type == ValueType::kTypeValue ||
            value_type == ValueType::kTypeMerge ||
            value_type == ValueType::kTypeDeletion ||
            value_type == ValueType::kTypeRangeDeletion ||
+           value_type == ValueType::kTypeSingleDeletion ||
+           value_type == ValueType::kTypeBlobIndex ||
            value_type == ValueType::kTypeWideColumnEntity);
 
     first_internal_key.UpdateInternalKey(global_seqno_state_->global_seqno,

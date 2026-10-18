@@ -677,11 +677,7 @@ struct BlockBasedTable::Rep {
       table_reader_cache_res_handle = nullptr;
 
   SequenceNumber get_global_seqno(BlockType block_type) const {
-    // A range deletion block is written with the tombstones' own sequence
-    // numbers (the fragmenter reads them expecting no global sequence number),
-    // so unlike the other blocks it never takes the file's.
     return (block_type == BlockType::kFilterPartitionIndex ||
-            block_type == BlockType::kRangeDeletion ||
             block_type == BlockType::kCompressionDictionary)
                ? kDisableGlobalSequenceNumber
                : global_seqno;

@@ -450,7 +450,9 @@ class TableConstructor : public Constructor {
                            /*skip_filters*/ false,
                            /*immortal*/ false, false, level_,
                            &block_cache_tracer_, moptions.write_buffer_size, "",
-                           file_num_, kNullUniqueId64x2, largest_seqno_),
+                           file_num_, kNullUniqueId64x2,
+                           kMaxSequenceNumber /* _smallest_seqno */,
+                           largest_seqno_),
         std::move(file_reader_), TEST_GetSink()->contents().size(),
         &table_reader_);
   }

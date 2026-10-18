@@ -3133,6 +3133,30 @@ TEST_F(DBCsppCrashSafeTest, PersistentMemTableStatsSurviveWriterLifetime) {
         ASSERT_EQ(wal[1], batches);
         ASSERT_EQ(wal[2], batches * value_size);
       }
+      {
+        // The recovered count covers every user key, with or without log refs:
+        // a kFileMmap rep always has writer tokens.
+        const int fd = ::open(active.c_str(), O_RDONLY);
+        ASSERT_GE(fd, 0);
+        // OSLRepHeader puts it behind log_ref, num_wals, 16 WAL slots and the
+        // two list heads; CSPPCrashSafeHeader, behind the packed byte fields.
+        const size_t offset = config[0] == 'O'
+            ? offsetof(terark::OSL_MmapHeader, reserved) +
+                  sizeof(uint32_t) * 2 +       // log_ref, num_wals
+                  16 * 3 * sizeof(uint64_t) +  // WalSlot[16]
+                  sizeof(uint32_t) * 2         // stats_head, range_del_head
+            : offsetof(terark::DFA_MmapHeader, reserved) + 2 * sizeof(uint32_t);
+        // OSL stores a 64-bit count, CSPP a 32-bit one.
+        const size_t size =
+            config[0] == 'O' ? sizeof(uint64_t) : sizeof(uint32_t);
+        uint64_t num_user_keys = 0;
+        const ssize_t n = ::pread(fd, &num_user_keys, size, offset);
+        const int close_result = ::close(fd);
+        ASSERT_EQ(n, static_cast<ssize_t>(size));
+        ASSERT_EQ(close_result, 0);
+        // dup, del, one, last and mer per writer; the second dup is a version.
+        ASSERT_EQ(num_user_keys, batches * 5);
+      }
       SstFileReader reader(options);
       ASSERT_OK(reader.Open(active));
       const auto properties = reader.GetTableProperties();

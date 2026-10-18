@@ -2,11 +2,14 @@
 // Flush/Close conversion, independently of crash-safe recovery.
 
 #include <atomic>
+#include <cstring>
 #include <set>
 #include <stdexcept>
 #include <thread>
 #include <tuple>
 
+#include <terark/fsa/dfa_mmap_header.hpp>
+#include <terark/offset_skiplist.hpp>
 #include <topling/side_plugin_factory.h>
 #include <topling/builtin_table_factory.h>
 
@@ -35,7 +38,7 @@ class DBMemtableConvertTest
   }
 
  protected:
-  Options ConvertOptions() {
+  Options ConvertOptions(bool enable_gc = true) {
     Options options = CurrentOptions();
     options.disable_auto_compactions = true;
     options.avoid_flush_during_recovery = true;
@@ -46,9 +49,11 @@ class DBMemtableConvertTest
     const bool osl = std::get<0>(GetParam());
     const json params = {{"mem_cap", 16777216},
                          {"convert_to_sst", std::get<1>(GetParam())}};
+    json memtab_params = params;
+    if (osl) memtab_params["enable_gc"] = enable_gc;
     auto& repo = repo_;
     options.memtable_factory = PluginFactorySP<MemTableRepFactory>::AcquirePlugin(
-        osl ? "OffsetSkipList" : "CSPPMemTab", params, repo);
+        osl ? "OffsetSkipList" : "CSPPMemTab", memtab_params, repo);
     repo.Put("default", options.table_factory);
     repo.Put("converted", PluginFactorySP<TableFactory>::AcquirePlugin(
         osl ? "OffsetSkipListTable" : "CSPPMemTabTable", params, repo));
@@ -177,6 +182,49 @@ TEST_P(DBMemtableConvertTest, ConvertToSSTCarriesRangeDels) {
   ASSERT_OK(TryReopen(options));
   ASSERT_EQ(Get("d"), "NOT_FOUND");
   ASSERT_EQ(Get("e"), "5");
+  Close();
+}
+
+TEST_P(DBMemtableConvertTest, ConvertToSSTCarriesExactUserKeyCount) {
+  const bool osl = std::get<0>(GetParam());
+  // No log refs and no GC: the token the count lives on cannot come from
+  // either, yet every convert kind must still have it.
+  Options options = ConvertOptions(/*enable_gc=*/false);
+  options.memtable_as_log_index = false;
+  DestroyAndReopen(options);
+  ASSERT_OK(Put("a", "1"));
+  ASSERT_OK(Put("b", "2"));
+  ASSERT_OK(Put("a", "3"));  // a second version of the same user key
+  ASSERT_OK(Put("c", "4"));
+  ASSERT_OK(Delete("c"));    // a tombstone of an existing user key
+  ASSERT_OK(db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), "x", "z"));
+  ObserveConversion();
+  ASSERT_OK(db_->Flush(FlushOptions()));
+  ASSERT_EQ(converts_.load(), 1);
+  ASSERT_EQ(builds_.load(), 0);
+  std::vector<LiveFileMetaData> files;
+  db_->GetLiveFilesMetaData(&files);
+  ASSERT_EQ(files.size(), 1U);
+  const std::string path = MakeTableFileName(dbname_, files[0].file_number);
+  std::string head;
+  ASSERT_OK(ReadFileToString(env_, path, &head));
+  // OSLRepHeader in OSL_MmapHeader::reserved: log_ref, num_wals, 16 WAL slots
+  // of {fileno, cnt, bytes}, stats_head, range_del_head, then the count.
+  // CSPPCrashSafeHeader keeps it behind the magic and the two packed bytes.
+  const size_t offset = osl
+      ? offsetof(terark::OSL_MmapHeader, reserved) +
+            sizeof(uint32_t) * 2 +       // log_ref, num_wals
+            16 * 3 * sizeof(uint64_t) +  // WalSlot[16]
+            sizeof(uint32_t) * 2         // stats_head, range_del_head
+      : offsetof(terark::DFA_MmapHeader, reserved) + 2 * sizeof(uint32_t);
+  // OSL stores a 64-bit count, CSPP a 32-bit one.
+  const size_t size = osl ? sizeof(uint64_t) : sizeof(uint32_t);
+  ASSERT_GE(head.size(), offset + size);
+  uint64_t num_user_keys = 0;
+  std::memcpy(&num_user_keys, head.data() + offset, size);
+  // a, b and c; the second version, the tombstone and the range deletion are
+  // not user keys of their own.
+  ASSERT_EQ(num_user_keys, 3U);
   Close();
 }
 

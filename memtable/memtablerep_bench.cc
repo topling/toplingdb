@@ -769,16 +769,20 @@ int main(int argc, char** argv) {
   uint64_t sequence;
   auto createMemtableRep = [&] {
     sequence = 0;
+    ROCKSDB_NAMESPACE::MemTableRep* rep;
     if (!FLAGS_memtable_file_path.empty()) {
       ROCKSDB_NAMESPACE::MutableCFOptions mcfopt(options);
-      return factory->CreateMemTableRep(FLAGS_memtable_file_path, mcfopt,
-                                        key_comp, &arena,
-                                        options.prefix_extractor.get(),
-                                        options.info_log.get(), 0);
+      rep = factory->CreateMemTableRep(FLAGS_memtable_file_path, mcfopt,
+                                       key_comp, &arena,
+                                       options.prefix_extractor.get(),
+                                       options.info_log.get(), 0);
+    } else {
+      rep = factory->CreateMemTableRep(key_comp, &arena,
+                                       options.prefix_extractor.get(),
+                                       options.info_log.get());
     }
-    return factory->CreateMemTableRep(key_comp, &arena,
-                                      options.prefix_extractor.get(),
-                                      options.info_log.get());
+    rep->InitSetMemTableAsLogIndex(false);
+    return rep;
   };
   std::unique_ptr<ROCKSDB_NAMESPACE::MemTableRep> memtablerep;
   ROCKSDB_NAMESPACE::Random64 rng(FLAGS_seed);

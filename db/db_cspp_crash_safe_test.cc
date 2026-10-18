@@ -2398,7 +2398,7 @@ TEST_F(DBCsppCrashSafeTest, ConvertedTableUsesUnboundedHeaderSequence) {
         memcpy(prefix, header.reserved, sizeof(prefix));
         ASSERT_EQ(prefix[0], 0x50505343U);  // CSPP crash-safe magic.
         ASSERT_EQ(prefix[1], 0U);  // No WAL references in this conversion.
-        ASSERT_EQ(prefix[2], 0U);
+        ASSERT_EQ(prefix[2], 2U);  // num_user_keys: 'b' has two versions.
         // pubseq follows the 16-byte prefix and sixteen 24-byte WAL slots.
         uint64_t pubseq;
         memcpy(&pubseq, header.reserved + 400, sizeof(pubseq));
@@ -3336,12 +3336,16 @@ TEST_F(DBCsppCrashSafeTest, LogRefRecoveryMultipleWals) {
     const int fd = ::open(leftovers.front().c_str(), O_RDONLY);
     ASSERT_GE(fd, 0);
     uint32_t num_wals = 0;
-    const size_t num_wals_offset = config[0] == 'O'
+    const bool is_osl = config[0] == 'O';
+    // OSL keeps a 32-bit num_wals after the magic; CSPP packs it into a byte
+    // at reserved + 5, right behind log_ref_format.
+    const size_t num_wals_offset = is_osl
         ? offsetof(terark::OSL_MmapHeader, reserved) + sizeof(uint32_t)
-        : offsetof(terark::DFA_MmapHeader, reserved) + 2 * sizeof(uint32_t);
-    ASSERT_EQ(::pread(fd, &num_wals, sizeof(num_wals),
-                      num_wals_offset),
-              static_cast<ssize_t>(sizeof(num_wals)));
+        : offsetof(terark::DFA_MmapHeader, reserved) + 5;
+    const size_t num_wals_size =
+        is_osl ? sizeof(uint32_t) : sizeof(unsigned char);
+    ASSERT_EQ(::pread(fd, &num_wals, num_wals_size, num_wals_offset),
+              static_cast<ssize_t>(num_wals_size));
     ::close(fd);
     ASSERT_EQ(num_wals, 3U);
     for (int reopen = 0; reopen < 2; ++reopen) {
@@ -4434,11 +4438,10 @@ TEST_F(DBCsppCrashSafeTest, LogIndexHeaderHasWalRefWithoutRecover) {
   ASSERT_EQ(::pread(fd, &hdr, sizeof(hdr), 0),
             static_cast<ssize_t>(sizeof(hdr)));
   ::close(fd);
-  const auto* cs =
-      reinterpret_cast<const uint32_t*>(hdr.reserved);
-  ASSERT_EQ(cs[0], 0x50505343U);
-  ASSERT_NE(cs[1], 0U);
-  ASSERT_GT(cs[2], 0U);
+  const auto cs = reinterpret_cast<const unsigned char*>(hdr.reserved);
+  ASSERT_EQ(reinterpret_cast<const uint32_t*>(cs)[0], 0x50505343U);
+  ASSERT_NE(cs[4], 0);  // log_ref_format: the put carries a WAL reference.
+  ASSERT_GT(cs[5], 0);  // num_wals
 }
 
 #if !defined(OS_WIN)

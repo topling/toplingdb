@@ -2368,7 +2368,13 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
   std::unique_ptr<std::list<uint64_t>::iterator> pending_outputs_inserted_elem(
       new std::list<uint64_t>::iterator(
           CaptureCurrentFileNumberInPendingOutputs()));
-  meta.fd = FileDescriptor(versions_->NewFileNumber(), 0, 0);
+  const bool convert_to_sst = mem->SupportConvertToSST();
+  // ConvertToSST turns the memtable's backing file into the SST in place, so it
+  // must keep the number reserved when the memtable was constructed.
+  const uint64_t file_number = mem->SupportCrashSafe()
+                                   ? mem->GetFileNumber()
+                                   : versions_->NewFileNumber();
+  meta.fd = FileDescriptor(file_number, 0, 0);
   ReadOptions ro;
   ro.total_order_seek = true;
   ro.io_activity = Env::IOActivity::kDBOpen;
@@ -2432,17 +2438,44 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
       version->Ref();
       const ReadOptions read_option(Env::IOActivity::kDBOpen);
       uint64_t num_input_entries = 0;
-      s = BuildTable(
-          dbname_, versions_.get(), immutable_db_options_, tboptions,
-          file_options_for_compaction_, read_option, cfd->table_cache(),
-          iter.get(), std::move(range_del_iters), &meta, &blob_file_additions,
-          snapshot_seqs, earliest_write_conflict_snapshot, kMaxSequenceNumber,
-          snapshot_checker, paranoid_file_checks, cfd->internal_stats(), &io_s,
-          io_tracer_, BlobFileCreationReason::kRecovery,
-          empty_seqno_to_time_mapping, &event_logger_, job_id, Env::IO_HIGH,
-          nullptr /* table_properties */, write_hint,
-          nullptr /*full_history_ts_low*/, &blob_callback_, version,
-          &num_input_entries);
+      if (convert_to_sst) {
+        // The cspp/osl memtable builds its own SST and their table factories
+        // have no NewTableBuilder; this is the same substitution FlushJob
+        // makes for a regular flush.
+        tboptions.generate_file_no = [this]() {
+          return versions_->NewFileNumber();
+        };
+        tboptions.add_blob_file = [&blob_file_additions](BlobFileAddition b) {
+          blob_file_additions.push_back(std::move(b));
+        };
+        num_input_entries = mem->num_entries();
+        meta.num_entries = num_input_entries;
+        // FileMetaData counts range deletions, the memtable does not.
+        meta.num_deletions = mem->num_deletes() + mem->num_range_deletes();
+        meta.num_merges = mem->num_merges();
+        meta.num_range_deletions = mem->num_range_deletes();
+        meta.raw_key_size = mem->raw_key_size();
+        meta.raw_value_size = mem->raw_value_size();
+        s = mem->ConvertToSST(&meta, tboptions);
+        if (s.ok()) {
+          meta.fd.smallest_seqno = std::min(mem->GetEarliestSequenceNumber(),
+                                            mem->GetFirstSequenceNumber());
+          meta.fd.largest_seqno = mem->largest_seqno();
+          meta.marked_for_compaction = true;
+        }
+      } else {
+        s = BuildTable(
+            dbname_, versions_.get(), immutable_db_options_, tboptions,
+            file_options_for_compaction_, read_option, cfd->table_cache(),
+            iter.get(), std::move(range_del_iters), &meta, &blob_file_additions,
+            snapshot_seqs, earliest_write_conflict_snapshot, kMaxSequenceNumber,
+            snapshot_checker, paranoid_file_checks, cfd->internal_stats(), &io_s,
+            io_tracer_, BlobFileCreationReason::kRecovery,
+            empty_seqno_to_time_mapping, &event_logger_, job_id, Env::IO_HIGH,
+            nullptr /* table_properties */, write_hint,
+            nullptr /*full_history_ts_low*/, &blob_callback_, version,
+            &num_input_entries);
+      }
       version->Unref();
       LogFlush(immutable_db_options_.info_log);
       ROCKS_LOG_DEBUG(immutable_db_options_.info_log,

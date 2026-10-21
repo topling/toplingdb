@@ -6141,6 +6141,84 @@ TEST_F(DBCsppCrashSafeTest, WriteCommittedPrepareTwoQueuesAndCommit) {
 }
 #endif
 
+#if !defined(OS_WIN)
+TEST_F(CrashChild, DISABLED_WriteCommittedPendingPrepare) {
+  Options options = BaseCrashSafeOptions(dbname_, true, arg_ == "log-index");
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  ASSERT_OK(txn_db->Put(WriteOptions(), "seed", "1"));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("pending"));
+  ASSERT_OK(txn->Put("prep", "v"));
+  ASSERT_OK(txn->Prepare());
+  ASSERT_OK(txn_db->Put(WriteOptions(), "after", "2"));
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  // The write after the prepare is published, but the cursor stays at the
+  // prepare record.
+  ASSERT_GT(rec.wal_offset, 0U);
+  ::_exit(0);
+}
+
+#endif
+
+TEST_F(DBCsppCrashSafeTest, WriteCommittedDeletedSidecarReplaysWholeWal) {
+  Close();
+  Options options = BaseCrashSafeOptions(dbname_, true, false);
+  Destroy(options);
+  ASSERT_EQ(RunCrashChild(dbname_, "WriteCommittedPendingPrepare"), 0);
+  ASSERT_FALSE(ListLeftovers(options, dbname_).empty());
+  ASSERT_OK(env_->DeleteFile(CrashSafePubSeqFileName(dbname_)));
+
+  std::atomic<int> seeks{0};
+  std::atomic<int> replayed{0};
+  SyncPoint::GetInstance()->SetCallBack(
+      "CrashSafeRecover::SeekToFileOffset:Before", [&](void*) { ++seeks; });
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::RecoverLogFiles:BeforeUpdateProtectionInfo:batch",
+      [&](void*) { ++replayed; });
+  SyncPoint::GetInstance()->EnableProcessing();
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+  ASSERT_EQ(seeks.load(), 0);
+  ASSERT_GT(replayed.load(), 1);
+  std::string v;
+  ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &v));
+  ASSERT_EQ(v, "1");
+  ASSERT_OK(txn_db->Get(ReadOptions(), "after", &v));
+  ASSERT_EQ(v, "2");
+  // The prepare is rebuilt by the replay, not by a leftover.
+  std::vector<Transaction*> prepared;
+  txn_db->GetAllPreparedTransactions(&prepared);
+  ASSERT_EQ(prepared.size(), 1U);
+  ASSERT_OK(prepared[0]->Commit());
+  delete prepared[0];
+  ASSERT_OK(txn_db->Get(ReadOptions(), "prep", &v));
+  ASSERT_EQ(v, "v");
+  delete txn_db;
+  // The next incarnation gets a cursor and the format back.
+  PublishedSeqOnDisk rec;
+  ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+  ASSERT_EQ(rec.wal_offset_kind, 1U);
+  ASSERT_GT(rec.pubseq, 0U);
+}
+
+// The sidecar kind and the format of the WAL the cursor points into can
+// disagree. Deleting the sidecar after a log-index crash makes the next
+// incarnation replay and keep the pending prepare under a classic option, so
+// its new sidecar says classic while the cursor is pinned to the prepare in the
+// old log-index WAL. Recovery must translate the offset with the format of that
+// file rather than with the sidecar's kind. The reverse direction cannot be
+// constructed: a classic WAL replayed under a log-index option is refused by
+// design, see ClassicWalToLogIndexWithoutSidecarIsNotSupported.
 TEST_F(CrashChild, DISABLED_WritePreparedCrashRecovery) {
   Options options = BaseCrashSafeOptions(dbname_, true, arg_.find("log_index") != std::string::npos);
   options.two_write_queues = arg_.find("two_queues") != std::string::npos;

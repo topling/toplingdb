@@ -6530,8 +6530,10 @@ TEST_F(CrashChild, DISABLED_WriteCommittedMergeAfterPrepare) {
   ::_exit(0);
 }
 
-TEST_F(CrashChild, DISABLED_WritePreparedDoesNotSeek) {
-  Options options = BaseCrashSafeOptions(dbname_, true, false);
+// An unresolved WritePrepared transaction pins the published cursor to its
+// prepare record; the Put after it is published but cannot move the cursor.
+TEST_F(CrashChild, DISABLED_WritePreparedPendingPrepare) {
+  Options options = BaseCrashSafeOptions(dbname_, true, arg_ == "log-index");
   TransactionDBOptions txn_opts;
   txn_opts.write_policy = TxnDBWritePolicy::WRITE_PREPARED;
   TransactionDB* txn_db = nullptr;
@@ -6544,6 +6546,103 @@ TEST_F(CrashChild, DISABLED_WritePreparedDoesNotSeek) {
   ASSERT_OK(txn->Put("prep", "v"));
   ASSERT_OK(txn->Prepare());
   ASSERT_OK(txn_db->Put(WriteOptions(), "after", "2"));
+  ::_exit(0);
+}
+
+// The pending prepare lands in the second WAL: every log before the cursor
+// log is skipped as a whole, and replay starts inside the cursor log.
+TEST_F(CrashChild, DISABLED_WritePreparedPendingPrepareInNewWal) {
+  Options options = BaseCrashSafeOptions(dbname_, true, arg_ == "log-index");
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_PREPARED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  ASSERT_OK(txn_db->Put(WriteOptions(), "seed", "1"));
+  auto* impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+  ASSERT_OK(impl->TEST_SwitchWAL());
+  TransactionOptions to;
+  to.skip_prepare = false;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("pending"));
+  ASSERT_OK(txn->Put("prep", "v"));
+  ASSERT_OK(txn->Prepare());
+  ASSERT_OK(txn_db->Put(WriteOptions(), "after", "2"));
+  ::_exit(0);
+}
+
+// The threshold is checked before appending, so each Put flushes the batch of
+// the previous one: two unprepared batches, then the prepare marker carrying
+// the last one. Replay of the unresolved transaction must start at the first
+// unprepared batch.
+TEST_F(CrashChild, DISABLED_WriteUnpreparedPendingPrepare) {
+  Options options = BaseCrashSafeOptions(
+      dbname_, true, arg_.find("log_index") != std::string::npos);
+  options.two_write_queues = arg_.find("two_queues") != std::string::npos;
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_UNPREPARED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  ASSERT_OK(txn_db->Put(WriteOptions(), "seed", "1"));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  to.write_batch_flush_threshold = 1;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("wup"));
+  ASSERT_OK(txn->Put("k1", "v1"));
+  ASSERT_OK(txn->Put("k2", "v2"));
+  ASSERT_OK(txn->Put("k3", "v3"));
+  ASSERT_OK(txn->Prepare());
+  ::_exit(0);
+}
+
+// The same batching, but the WAL is switched in the middle: k1 is flushed
+// before the switch, k2 and the prepare marker after it. The transaction
+// therefore has batches in two WALs.
+TEST_F(CrashChild, DISABLED_WriteUnpreparedPendingPrepareAcrossWals) {
+  Options options = BaseCrashSafeOptions(
+      dbname_, true, arg_.find("log_index") != std::string::npos);
+  options.two_write_queues = arg_.find("two_queues") != std::string::npos;
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_UNPREPARED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  ASSERT_OK(txn_db->Put(WriteOptions(), "seed", "1"));
+  auto* impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+  TransactionOptions to;
+  to.skip_prepare = false;
+  to.write_batch_flush_threshold = 1;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("wup"));
+  ASSERT_OK(txn->Put("k1", "v1"));
+  // This Put flushes k1 to the WAL that is current now.
+  ASSERT_OK(txn->Put("k2", "v2"));
+  ASSERT_OK(impl->TEST_SwitchWAL());
+  // This one flushes k2 to the new WAL; Prepare flushes k3 with the markers.
+  ASSERT_OK(txn->Put("k3", "v3"));
+  ASSERT_OK(txn->Prepare());
+  ::_exit(0);
+}
+
+// Same batching, but the transaction never reaches Prepare: recovery must
+// roll back every replayed batch. The last Put is still buffered and never
+// reaches the WAL.
+TEST_F(CrashChild, DISABLED_WriteUnpreparedUnpreparedOnly) {
+  Options options = BaseCrashSafeOptions(
+      dbname_, true, arg_.find("log_index") != std::string::npos);
+  options.two_write_queues = arg_.find("two_queues") != std::string::npos;
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_UNPREPARED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  ASSERT_OK(txn_db->Put(WriteOptions(), "seed", "1"));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  to.write_batch_flush_threshold = 1;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("wup"));
+  ASSERT_OK(txn->Put("k1", "v1"));
+  ASSERT_OK(txn->Put("k2", "v2"));
+  ASSERT_OK(txn->Put("k3", "v3"));
   ::_exit(0);
 }
 
@@ -6896,40 +6995,461 @@ TEST_F(DBCsppCrashSafeTest, WriteCommittedMergeAfterPrepareNotReapplied) {
   delete txn_db;
 }
 
-TEST_F(DBCsppCrashSafeTest, WritePreparedRecoveryDoesNotSeek) {
+// WritePrepared registers the prepare record position, so the published
+// cursor is clamped to it until the transaction is resolved. Unlike
+// WriteCommitted, resolution happens after the commit write, so the cursor
+// moves on the next write rather than within the commit itself.
+TEST_F(DBCsppCrashSafeTest, WritePreparedPrepareRegistersPendingPosition) {
   Close();
-  Options options = BaseCrashSafeOptions(dbname_, true, false);
-  Destroy(options);
-  TransactionDBOptions txn_opts;
-  txn_opts.write_policy = TxnDBWritePolicy::WRITE_PREPARED;
-  ASSERT_EQ(RunCrashChild(dbname_, "WritePreparedDoesNotSeek"), 0);
-  std::atomic<int> seeks{0};
-  std::atomic<int> replayed{0};
-  SyncPoint::GetInstance()->SetCallBack(
-      "CrashSafeRecover::SeekToFileOffset:Before", [&](void*) { ++seeks; });
-  SyncPoint::GetInstance()->SetCallBack(
-      "DBImpl::RecoverLogFiles:BeforeUpdateProtectionInfo:batch",
-      [&](void*) { ++replayed; });
-  SyncPoint::GetInstance()->EnableProcessing();
-  TransactionDB* txn_db = nullptr;
-  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
-  SyncPoint::GetInstance()->DisableProcessing();
-  SyncPoint::GetInstance()->ClearAllCallBacks();
-  // WritePrepared keeps the tracker positions coarse, so recovery replays from
-  // the start of the file and compares positions instead of seeking.
-  ASSERT_EQ(seeks.load(), 0);
-  ASSERT_GT(replayed.load(), 0);
-  std::string v;
-  ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &v));
-  ASSERT_EQ(v, "1");
-  ASSERT_OK(txn_db->Get(ReadOptions(), "after", &v));
-  ASSERT_EQ(v, "2");
-  std::vector<Transaction*> prepared;
-  txn_db->GetAllPreparedTransactions(&prepared);
-  ASSERT_EQ(prepared.size(), 1U);
-  ASSERT_OK(prepared[0]->Rollback());
-  delete prepared[0];
-  delete txn_db;
+  for (bool log_index : {false, true}) {
+    SCOPED_TRACE(log_index);
+    Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+    Destroy(options);
+    TransactionDBOptions txn_opts;
+    txn_opts.write_policy = TxnDBWritePolicy::WRITE_PREPARED;
+    TransactionDB* txn_db = nullptr;
+    ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+    auto* impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+    ASSERT_OK(txn_db->Put(WriteOptions(), "seed", "1"));
+
+    TransactionOptions to;
+    to.skip_prepare = false;
+    Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+    ASSERT_OK(txn->SetName("pending"));
+    ASSERT_OK(txn->Put("prep", "v"));
+    ASSERT_OK(txn->Prepare());
+
+    // The published cursor stops at the prepare record, which is exactly the
+    // position reported by the tracker.
+    PublishedSeqOnDisk rec;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+    uint64_t pending_off = 0;
+    ASSERT_EQ(impl->TEST_FindMinPendingPos(&pending_off), rec.wal_number);
+    ASSERT_EQ(pending_off, rec.wal_offset);
+    ASSERT_GT(pending_off, 0U);
+    ASSERT_EQ(impl->TEST_OutstandingPrep(rec.wal_number), 1U);
+
+    // A later write is published, but the cursor cannot pass the prepare.
+    ASSERT_OK(txn_db->Put(WriteOptions(), "after", "2"));
+    PublishedSeqOnDisk pinned;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &pinned));
+    ASSERT_EQ(pinned.wal_number, rec.wal_number);
+    ASSERT_EQ(pinned.wal_offset, rec.wal_offset);
+    ASSERT_GT(pinned.pubseq, rec.pubseq);
+
+    ASSERT_OK(txn->Commit());
+    ASSERT_EQ(impl->TEST_FindMinPendingPos(nullptr), 0U);
+    ASSERT_EQ(impl->TEST_OutstandingPrep(rec.wal_number), 0U);
+
+    // The registration is gone, so the next write publishes its own end.
+    ASSERT_OK(txn_db->Put(WriteOptions(), "later", "3"));
+    PublishedSeqOnDisk tail;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &tail));
+    ASSERT_EQ(tail.wal_number, rec.wal_number);
+    ASSERT_GT(tail.wal_offset, rec.wal_offset);
+    delete txn;
+    delete txn_db;
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, WritePreparedRollbackResolvesCursor) {
+  Close();
+  for (bool log_index : {false, true}) {
+    SCOPED_TRACE(log_index);
+    Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+    Destroy(options);
+    TransactionDBOptions txn_opts;
+    txn_opts.write_policy = TxnDBWritePolicy::WRITE_PREPARED;
+    TransactionDB* txn_db = nullptr;
+    ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+    auto* impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+    ASSERT_OK(txn_db->Put(WriteOptions(), "seed", "1"));
+    TransactionOptions to;
+    to.skip_prepare = false;
+    Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+    ASSERT_OK(txn->SetName("pending"));
+    ASSERT_OK(txn->Put("prep", "v"));
+    ASSERT_OK(txn->Prepare());
+    PublishedSeqOnDisk pinned;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &pinned));
+    uint64_t off = 0;
+    ASSERT_EQ(impl->TEST_FindMinPendingPos(&off), pinned.wal_number);
+    ASSERT_EQ(off, pinned.wal_offset);
+
+    ASSERT_OK(txn->Rollback());
+    ASSERT_EQ(impl->TEST_FindMinPendingPos(nullptr), 0U);
+    ASSERT_EQ(impl->TEST_OutstandingPrep(pinned.wal_number), 0U);
+    ASSERT_OK(txn_db->Put(WriteOptions(), "after", "2"));
+    PublishedSeqOnDisk tail;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &tail));
+    ASSERT_EQ(tail.wal_number, pinned.wal_number);
+    ASSERT_GT(tail.wal_offset, pinned.wal_offset);
+    std::string v;
+    ASSERT_TRUE(txn_db->Get(ReadOptions(), "prep", &v).IsNotFound());
+    delete txn;
+    delete txn_db;
+  }
+}
+
+// WriteUnprepared registers only the first unprepared batch: it is the
+// earliest record that replay of the unresolved transaction needs. Later
+// batches and the prepare marker cannot move the pin.
+TEST_F(DBCsppCrashSafeTest, WriteUnpreparedRegistersFirstUnpreparedBatch) {
+  Close();
+  for (bool log_index : {false, true}) {
+    SCOPED_TRACE(log_index);
+    Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+    Destroy(options);
+    TransactionDBOptions txn_opts;
+    txn_opts.write_policy = TxnDBWritePolicy::WRITE_UNPREPARED;
+    TransactionDB* txn_db = nullptr;
+    ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+    auto* impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+    ASSERT_OK(txn_db->Put(WriteOptions(), "seed", "1"));
+    TransactionOptions to;
+    to.skip_prepare = false;
+    to.write_batch_flush_threshold = 1;
+    Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+    ASSERT_OK(txn->SetName("wup"));
+    ASSERT_OK(txn->Put("k1", "v1"));
+    // The threshold is checked before appending, so the k1 batch is flushed
+    // by the next write.
+    ASSERT_OK(txn->Put("k2", "v2"));
+    PublishedSeqOnDisk rec;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+    uint64_t pending_off = 0;
+    ASSERT_EQ(impl->TEST_FindMinPendingPos(&pending_off), rec.wal_number);
+    ASSERT_EQ(pending_off, rec.wal_offset);
+    ASSERT_GT(pending_off, 0U);
+    ASSERT_EQ(impl->TEST_OutstandingPrep(rec.wal_number), 1U);
+
+    // The prepare batch is not a new registration and cannot move the pin.
+    ASSERT_OK(txn->Prepare());
+    ASSERT_EQ(impl->TEST_OutstandingPrep(rec.wal_number), 1U);
+    PublishedSeqOnDisk pinned;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &pinned));
+    ASSERT_EQ(pinned.wal_number, rec.wal_number);
+    ASSERT_EQ(pinned.wal_offset, rec.wal_offset);
+    ASSERT_GT(pinned.pubseq, rec.pubseq);
+
+    ASSERT_OK(txn->Commit());
+    ASSERT_EQ(impl->TEST_FindMinPendingPos(nullptr), 0U);
+    ASSERT_EQ(impl->TEST_OutstandingPrep(rec.wal_number), 0U);
+    std::string v;
+    ASSERT_OK(txn_db->Get(ReadOptions(), "k1", &v));
+    ASSERT_EQ(v, "v1");
+    ASSERT_OK(txn_db->Get(ReadOptions(), "k2", &v));
+    ASSERT_EQ(v, "v2");
+    delete txn;
+    delete txn_db;
+  }
+}
+
+// The WritePrepared prepare record is the seek target of recovery, so only
+// the prepare marker and the Put after it are replayed. The prepare's data is
+// skipped by sequence but still rebuilt into the recovered transaction.
+TEST_F(DBCsppCrashSafeTest, WritePreparedRecoverySeeksToPendingPrepare) {
+  Close();
+  for (bool log_index : {false, true}) {
+    SCOPED_TRACE(log_index);
+    Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+    Destroy(options);
+    TransactionDBOptions txn_opts;
+    txn_opts.write_policy = TxnDBWritePolicy::WRITE_PREPARED;
+    ASSERT_EQ(RunCrashChild(dbname_, "WritePreparedPendingPrepare",
+                            log_index ? "log-index" : ""),
+              0);
+    PublishedSeqOnDisk rec;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+    ASSERT_GT(rec.wal_offset, 0U);
+    ASSERT_EQ(rec.wal_offset_kind, log_index ? 2U : 1U);
+    std::atomic<uint64_t> seek_off{0};
+    std::atomic<int> seeks{0};
+    std::atomic<int> replayed{0};
+    SyncPoint::GetInstance()->SetCallBack(
+        "CrashSafeRecover::SeekToFileOffset:Before", [&](void* p) {
+          seek_off.store(*static_cast<uint64_t*>(p));
+          ++seeks;
+        });
+    SyncPoint::GetInstance()->SetCallBack(
+        "DBImpl::RecoverLogFiles:BeforeUpdateProtectionInfo:batch",
+        [&](void*) { ++replayed; });
+    SyncPoint::GetInstance()->EnableProcessing();
+    TransactionDB* txn_db = nullptr;
+    ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    // The seek starts at the prepare record, in the coordinate of the WAL
+    // format that was actually written.
+    ASSERT_EQ(seeks.load(), 1);
+    ASSERT_EQ(seek_off.load(),
+              PublishedRecordStart(rec.wal_offset, rec.wal_offset_kind));
+    // The prepare marker and the published Put after it; the seed Put is
+    // behind the seek.
+    ASSERT_EQ(replayed.load(), 2);
+    auto* impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+    uint64_t off = 0;
+    ASSERT_EQ(impl->TEST_FindMinPendingPos(&off), rec.wal_number);
+    ASSERT_EQ(off, rec.wal_offset);
+    std::string v;
+    ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &v));
+    ASSERT_EQ(v, "1");
+    ASSERT_OK(txn_db->Get(ReadOptions(), "after", &v));
+    ASSERT_EQ(v, "2");
+    ASSERT_TRUE(txn_db->Get(ReadOptions(), "prep", &v).IsNotFound());
+    std::vector<Transaction*> prepared;
+    txn_db->GetAllPreparedTransactions(&prepared);
+    ASSERT_EQ(prepared.size(), 1U);
+    ASSERT_EQ(prepared[0]->GetName(), "pending");
+    // The skipped prepare data still made it into the recovered transaction.
+    ASSERT_OK(prepared[0]->Commit());
+    delete prepared[0];
+    ASSERT_OK(txn_db->Get(ReadOptions(), "prep", &v));
+    ASSERT_EQ(v, "v");
+    delete txn_db;
+  }
+}
+
+// A pending prepare in the second WAL makes recovery skip the logs before the
+// cursor log as a whole and seek inside the cursor log.
+TEST_F(DBCsppCrashSafeTest, WritePreparedSkipsLogsBeforePendingPrepare) {
+  Close();
+  for (bool log_index : {false, true}) {
+    SCOPED_TRACE(log_index);
+    Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+    Destroy(options);
+    TransactionDBOptions txn_opts;
+    txn_opts.write_policy = TxnDBWritePolicy::WRITE_PREPARED;
+    ASSERT_EQ(RunCrashChild(dbname_, "WritePreparedPendingPrepareInNewWal",
+                            log_index ? "log-index" : ""),
+              0);
+    PublishedSeqOnDisk rec;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+    // The prepare is the first record of the new WAL, so the cursor sits at
+    // the very beginning of that log.
+    ASSERT_EQ(PublishedRecordStart(rec.wal_offset, rec.wal_offset_kind), 0U);
+    std::atomic<int> seeks{0};
+    std::atomic<int> replayed{0};
+    SyncPoint::GetInstance()->SetCallBack(
+        "CrashSafeRecover::SeekToFileOffset:Before",
+        [&](void*) { ++seeks; });
+    SyncPoint::GetInstance()->SetCallBack(
+        "DBImpl::RecoverLogFiles:BeforeUpdateProtectionInfo:batch",
+        [&](void*) { ++replayed; });
+    SyncPoint::GetInstance()->EnableProcessing();
+    TransactionDB* txn_db = nullptr;
+    ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    // The seed's log is skipped without reading any of its records: only the
+    // prepare and the Put after it in the cursor log are replayed.
+    ASSERT_EQ(seeks.load(), 1);
+    ASSERT_EQ(replayed.load(), 2);
+    std::string v;
+    ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &v));
+    ASSERT_EQ(v, "1");
+    ASSERT_OK(txn_db->Get(ReadOptions(), "after", &v));
+    ASSERT_EQ(v, "2");
+    std::vector<Transaction*> prepared;
+    txn_db->GetAllPreparedTransactions(&prepared);
+    ASSERT_EQ(prepared.size(), 1U);
+    ASSERT_OK(prepared[0]->Commit());
+    delete prepared[0];
+    ASSERT_OK(txn_db->Get(ReadOptions(), "prep", &v));
+    ASSERT_EQ(v, "v");
+    delete txn_db;
+  }
+}
+
+// WriteUnprepared recovery must start at the first unprepared batch: the
+// recovered transaction then holds every batch, so committing it after
+// recovery makes k1 visible too. A replay that started at the second batch or
+// at the prepare marker could not do that.
+TEST_F(DBCsppCrashSafeTest, WriteUnpreparedCrashRecovery) {
+  Close();
+  for (bool two_queues : {false, true}) {
+    for (bool log_index : {false, true}) {
+      SCOPED_TRACE(two_queues);
+      SCOPED_TRACE(log_index);
+      Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+      options.two_write_queues = two_queues;
+      Destroy(options);
+      TransactionDBOptions txn_opts;
+      txn_opts.write_policy = TxnDBWritePolicy::WRITE_UNPREPARED;
+      std::string arg = two_queues ? "two_queues" : "one_queue";
+      if (log_index) {
+        arg += "_log_index";
+      }
+      ASSERT_EQ(RunCrashChild(dbname_, "WriteUnpreparedPendingPrepare", arg),
+                0);
+      PublishedSeqOnDisk rec;
+      ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+      ASSERT_GT(rec.wal_offset, 0U);
+      std::atomic<uint64_t> seek_off{0};
+      std::atomic<int> seeks{0};
+      SyncPoint::GetInstance()->SetCallBack(
+          "CrashSafeRecover::SeekToFileOffset:Before", [&](void* p) {
+            seek_off.store(*static_cast<uint64_t*>(p));
+            ++seeks;
+          });
+      SyncPoint::GetInstance()->EnableProcessing();
+      TransactionDB* txn_db = nullptr;
+      ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+      SyncPoint::GetInstance()->DisableProcessing();
+      SyncPoint::GetInstance()->ClearAllCallBacks();
+      if (two_queues) {
+        // The leftover Convert is refused for seq_per_batch with two write
+        // queues, so the whole WAL is replayed from the start.
+        ASSERT_EQ(seeks.load(), 0);
+      } else {
+        ASSERT_EQ(seeks.load(), 1);
+        ASSERT_EQ(seek_off.load(),
+                  PublishedRecordStart(rec.wal_offset, rec.wal_offset_kind));
+      }
+      std::string v;
+      ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &v));
+      ASSERT_EQ(v, "1");
+      ASSERT_TRUE(txn_db->Get(ReadOptions(), "k1", &v).IsNotFound());
+      ASSERT_TRUE(txn_db->Get(ReadOptions(), "k2", &v).IsNotFound());
+      std::vector<Transaction*> prepared;
+      txn_db->GetAllPreparedTransactions(&prepared);
+      ASSERT_EQ(prepared.size(), 1U);
+      ASSERT_EQ(prepared[0]->GetName(), "wup");
+      ASSERT_OK(prepared[0]->Commit());
+      delete prepared[0];
+      ASSERT_OK(txn_db->Get(ReadOptions(), "k1", &v));
+      ASSERT_EQ(v, "v1");
+      ASSERT_OK(txn_db->Get(ReadOptions(), "k2", &v));
+      ASSERT_EQ(v, "v2");
+      ASSERT_OK(txn_db->Get(ReadOptions(), "k3", &v));
+      ASSERT_EQ(v, "v3");
+      delete txn_db;
+
+      // The commit is durable across a clean reopen.
+      ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+      prepared.clear();
+      txn_db->GetAllPreparedTransactions(&prepared);
+      ASSERT_TRUE(prepared.empty());
+      ASSERT_OK(txn_db->Get(ReadOptions(), "k1", &v));
+      ASSERT_EQ(v, "v1");
+      ASSERT_OK(txn_db->Get(ReadOptions(), "k2", &v));
+      ASSERT_EQ(v, "v2");
+      ASSERT_OK(txn_db->Get(ReadOptions(), "k3", &v));
+      ASSERT_EQ(v, "v3");
+      delete txn_db;
+    }
+  }
+}
+
+// A recovered WriteUnprepared transaction whose batches span two WALs is
+// registered once, on its first batch's log, and its commit resolves that
+// same log. Registering per batch would leave the later WAL pinned after the
+// commit: the replay would never fast-forward past it again.
+TEST_F(DBCsppCrashSafeTest, WriteUnpreparedAcrossWalsResolvesRegistration) {
+  Close();
+  for (bool two_queues : {false, true}) {
+    for (bool log_index : {false, true}) {
+      SCOPED_TRACE(two_queues);
+      SCOPED_TRACE(log_index);
+      Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+      options.two_write_queues = two_queues;
+      Destroy(options);
+      TransactionDBOptions txn_opts;
+      txn_opts.write_policy = TxnDBWritePolicy::WRITE_UNPREPARED;
+      std::string arg = two_queues ? "two_queues" : "one_queue";
+      if (log_index) {
+        arg += "_log_index";
+      }
+      ASSERT_EQ(RunCrashChild(dbname_,
+                              "WriteUnpreparedPendingPrepareAcrossWals", arg),
+                0);
+      TransactionDB* txn_db = nullptr;
+      ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+      auto* impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+      uint64_t off = 0;
+      ASSERT_NE(impl->TEST_FindMinPendingPos(&off), 0U);
+      std::vector<Transaction*> prepared;
+      txn_db->GetAllPreparedTransactions(&prepared);
+      ASSERT_EQ(prepared.size(), 1U);
+      ASSERT_EQ(prepared[0]->GetName(), "wup");
+      ASSERT_OK(prepared[0]->Commit());
+      delete prepared[0];
+      // One registration, one resolution: no log stays pinned, so the WALs
+      // are reclaimable and the next recovery can skip past them.
+      ASSERT_EQ(impl->TEST_FindMinPendingPos(&off), 0U);
+      std::string v;
+      ASSERT_OK(txn_db->Get(ReadOptions(), "k1", &v));
+      ASSERT_EQ(v, "v1");
+      ASSERT_OK(txn_db->Get(ReadOptions(), "k2", &v));
+      ASSERT_EQ(v, "v2");
+      ASSERT_OK(txn_db->Get(ReadOptions(), "k3", &v));
+      ASSERT_EQ(v, "v3");
+      delete txn_db;
+    }
+  }
+}
+
+// A WriteUnprepared transaction that never reached Prepare is rolled back on
+// recovery, over every replayed batch.
+TEST_F(DBCsppCrashSafeTest, WriteUnpreparedUnpreparedRolledBackOnRecovery) {
+  Close();
+  for (bool two_queues : {false, true}) {
+    for (bool log_index : {false, true}) {
+      SCOPED_TRACE(two_queues);
+      SCOPED_TRACE(log_index);
+      Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+      options.two_write_queues = two_queues;
+      Destroy(options);
+      TransactionDBOptions txn_opts;
+      txn_opts.write_policy = TxnDBWritePolicy::WRITE_UNPREPARED;
+      std::string arg = two_queues ? "two_queues" : "one_queue";
+      if (log_index) {
+        arg += "_log_index";
+      }
+      ASSERT_EQ(RunCrashChild(dbname_, "WriteUnpreparedUnpreparedOnly", arg),
+                0);
+      TransactionDB* txn_db = nullptr;
+      ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+      std::vector<Transaction*> prepared;
+      txn_db->GetAllPreparedTransactions(&prepared);
+      ASSERT_TRUE(prepared.empty());
+      // The rolled-back transaction never becomes a real one, so recovery
+      // must resolve its registration: nothing may stay pinned, or every
+      // later recovery would replay from its first batch.
+      auto* impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+      auto* tracker = impl->logs_with_prep_tracker();
+      uint64_t off = 0;
+      ASSERT_EQ(impl->TEST_FindMinPendingPos(&off), 0U);
+      ASSERT_EQ(tracker->FindMinLogContainingOutstandingPrep(), 0U);
+      ASSERT_EQ(tracker->TEST_LogsWithPrepSize(), 0U);
+      // With nothing pending, the next write publishes past the rolled-back
+      // transaction instead of stopping at its first batch.
+      PublishedSeqOnDisk pinned, advanced;
+      ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &pinned));
+      ASSERT_OK(txn_db->Put(WriteOptions(), "after", "1"));
+      ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &advanced));
+      ASSERT_TRUE(advanced.wal_number > pinned.wal_number ||
+                  (advanced.wal_number == pinned.wal_number &&
+                   advanced.wal_offset > pinned.wal_offset));
+      std::string v;
+      ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &v));
+      ASSERT_EQ(v, "1");
+      ASSERT_TRUE(txn_db->Get(ReadOptions(), "k1", &v).IsNotFound());
+      ASSERT_TRUE(txn_db->Get(ReadOptions(), "k2", &v).IsNotFound());
+      ASSERT_TRUE(txn_db->Get(ReadOptions(), "k3", &v).IsNotFound());
+      delete txn_db;
+
+      ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+      ASSERT_TRUE(txn_db->Get(ReadOptions(), "k1", &v).IsNotFound());
+      ASSERT_TRUE(txn_db->Get(ReadOptions(), "k2", &v).IsNotFound());
+      ASSERT_TRUE(txn_db->Get(ReadOptions(), "k3", &v).IsNotFound());
+      // Same on the next incarnation: the registration is resolved again and
+      // nothing accumulates.
+      impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+      ASSERT_EQ(impl->TEST_FindMinPendingPos(&off), 0U);
+      delete txn_db;
+    }
+  }
 }
 
 // Plain DB::Open: allow_2pc() is false, so this is the legacy non-2PC fast
@@ -7444,6 +7964,12 @@ TEST_F(CrashChild, DISABLED_WritePreparedOldPrepareSurvivesNewCommit) {
   PublishedSeqOnDisk rec;
   ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
   ASSERT_GT(rec.pubseq, old_txn->GetId());
+  // The newer transaction's commit and this sequence are published, but the
+  // cursor stays at the older prepare record.
+  auto* impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+  uint64_t off = 0;
+  ASSERT_EQ(impl->TEST_FindMinPendingPos(&off), rec.wal_number);
+  ASSERT_EQ(off, rec.wal_offset);
   std::string v;
   ASSERT_TRUE(txn_db->Get(ReadOptions(), "prepared", &v).IsNotFound());
   ::_exit(0);

@@ -339,6 +339,11 @@ Status WriteUnpreparedTxnDB::Initialize(
       if (!s.ok()) {
         return s;
       }
+      // No real transaction is built for an unprepared one: after this
+      // rollback nothing would resolve the prep tracker registration that
+      // recovery made for it, and its WAL would stay pinned. Delete it here,
+      // which resolves that registration.
+      dbimpl->DeleteRecoveredTransaction(recovered_trx->name_);
       continue;
     }
   }

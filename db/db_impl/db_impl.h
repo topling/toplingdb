@@ -1022,10 +1022,14 @@ class DBImpl : public DB {
     if (rtxn == recovered_transactions_.end()) {
       recovered_transactions_[name] = new RecoveredTransaction(
           log, name, batch, seq, batch_cnt, unprepared_batch);
+      // One registration per transaction, at its first batch: that is the
+      // record a replay of the still unresolved transaction must start at,
+      // and it is the log the recovered transaction resolves on commit or
+      // rollback, which always uses its first batch's log.
+      logs_with_prep_tracker_.MarkLogAsContainingPrepSection(log, log_offset);
     } else {
       rtxn->second->AddBatch(seq, log, batch, batch_cnt, unprepared_batch);
     }
-    logs_with_prep_tracker_.MarkLogAsContainingPrepSection(log, log_offset);
   }
 
   void DeleteRecoveredTransaction(const std::string& name) {
@@ -1033,10 +1037,9 @@ class DBImpl : public DB {
     assert(it != recovered_transactions_.end());
     auto* trx = it->second;
     recovered_transactions_.erase(it);
-    for (const auto& info : trx->batches_) {
-      logs_with_prep_tracker_.MarkLogAsHavingPrepSectionFlushed(
-          info.second.log_number_);
-    }
+    // Matches the single registration made by InsertRecoveredTransaction.
+    logs_with_prep_tracker_.MarkLogAsHavingPrepSectionFlushed(
+        trx->batches_.begin()->second.log_number_);
     delete trx;
   }
 

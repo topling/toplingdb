@@ -1799,8 +1799,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     // records after allocating this log number.  So we manually
     // update the file number allocation counter in VersionSet.
     versions_->MarkFileNumberUsed(wal_number);
-    if (crash_safe_wal_tail_replay && !seq_per_batch_ &&
-        wal_number < crash_safe_wal_number) {
+    if (crash_safe_wal_tail_replay && wal_number < crash_safe_wal_number) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
                      "Skipping InsertInto for log #%" PRIu64
                      " before crash-safe WAL cursor #%" PRIu64,
@@ -1903,12 +1902,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
           break;
         }
       }
-      if (allow_2pc() && seq_per_batch_) {
-        // WritePrepared/WriteUnprepared: the tracker positions are not
-        // maintained per record, so compare positions while replaying from
-        // the beginning of the file.
-        prefix_compare = true;
-      } else if (wal_number == cursor_wal) {
+      if (wal_number == cursor_wal) {
         if (has_udt) {
           ROCKS_LOG_WARN(immutable_db_options_.info_log,
                          "Crash-safe WAL Seek skipped (UDT), "
@@ -2042,10 +2036,10 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       column_family_memtables_->recovery_log_offset_ =
           reader.LastRecordOffset();
       if (crash_safe_wal_tail_replay) {
-        if (allow_2pc() && !seq_per_batch_) {
-          // WriteCommitted: the data boundary is the published sequence
-          // alone, independent of the position. Markers are still processed
-          // while the data is skipped.
+        if (allow_2pc()) {
+          // The data boundary is the published sequence alone, independent of
+          // the position. Markers are still processed while the data is
+          // skipped.
           column_family_memtables_->skip_memtable_data_ =
               WriteBatchInternal::Sequence(batch_to_use) <=
               crash_safe_pubseq;

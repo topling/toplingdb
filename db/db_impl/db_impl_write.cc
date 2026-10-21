@@ -1538,12 +1538,26 @@ IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
                                                              rec_pos);
     }
   }
+  // WritePrepared/WriteUnprepared: replay of an unresolved transaction must
+  // start at its first WAL record, so register that position too. The
+  // pre-release callback runs only after this, too late to clamp the very
+  // group that carries the record.
+  if (io_s.ok() && log_size_sum > 0 && allow_2pc() && seq_per_batch_) {
+    for (auto writer : write_group) {
+      if (writer->CallbackFailed() || !writer->pre_release_callback ||
+          !writer->pre_release_callback->FirstPreparedBatch()) {
+        continue;
+      }
+      logs_with_prep_tracker_.MarkLogAsContainingPrepSection(logfile_number_,
+                                                             rec_pos);
+    }
+  }
   if (io_s.ok() && pubseq_mmap_ != nullptr) {
     write_group.wal_number = logfile_number_;
     write_group.wal_offset = immutable_db_options_.memtable_as_log_index
                                  ? log_writer->get_log_offset()
                                  : log_writer->file()->GetFileSize();
-    if (allow_2pc() && !seq_per_batch_) {
+    if (allow_2pc()) {
       // Logs whose outstanding prepares are all resolved by this write group,
       // so that a commit/rollback publishes its own end position. Empty in the
       // common case.

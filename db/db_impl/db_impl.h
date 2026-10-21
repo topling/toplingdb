@@ -1011,7 +1011,8 @@ class DBImpl : public DB {
 
   void InsertRecoveredTransaction(const uint64_t log, const std::string& name,
                                   WriteBatch* batch, SequenceNumber seq,
-                                  size_t batch_cnt, bool unprepared_batch) {
+                                  size_t batch_cnt, bool unprepared_batch,
+                                  uint64_t log_offset) {
     // For WriteUnpreparedTxn, InsertRecoveredTransaction is called multiple
     // times for every unprepared batch encountered during recovery.
     //
@@ -1024,7 +1025,7 @@ class DBImpl : public DB {
     } else {
       rtxn->second->AddBatch(seq, log, batch, batch_cnt, unprepared_batch);
     }
-    logs_with_prep_tracker_.MarkLogAsContainingPrepSection(log);
+    logs_with_prep_tracker_.MarkLogAsContainingPrepSection(log, log_offset);
   }
 
   void DeleteRecoveredTransaction(const std::string& name) {

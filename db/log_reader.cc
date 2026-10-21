@@ -70,7 +70,8 @@ void Reader::InitSetMemTableAsLogIndex(FileSystem& fs) {
 }
 
 IOStatus Reader::SeekToFileOffset(uint64_t file_offset) {
-  TEST_SYNC_POINT("CrashSafeRecover::SeekToFileOffset:Before");
+  TEST_SYNC_POINT_CALLBACK("CrashSafeRecover::SeekToFileOffset:Before",
+                           &file_offset);
   IOStatus io_s;
   buffer_ = Slice();
   eof_ = false;

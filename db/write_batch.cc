@@ -3228,7 +3228,13 @@ class MemTableInserter : public WriteBatch::Handler {
           // all inserts must reference this trx log number
           log_number_ref_ = batch_info.log_number_;
           ResetProtectionInfo();
+          // The nested Iterate switches src_batch_ to the recovered batch and
+          // leaves it dangling once the transaction is deleted below. Restore
+          // it: the rest of the current log record may still hold a prepare
+          // section (a record can contain a commit followed by a prepare).
+          const WriteBatch* saved_src = src_batch_;
           s = batch_info.batch_->Iterate(this);
+          src_batch_ = saved_src;
           log_number_ref_ = 0;
         }
         // else the values are already inserted before the commit
@@ -3298,7 +3304,11 @@ class MemTableInserter : public WriteBatch::Handler {
               });
           if (s.ok()) {
             ResetProtectionInfo();
+            // See MarkCommit: the nested Iterate switches src_batch_ and the
+            // recovered batch is deleted right after it.
+            const WriteBatch* saved_src = src_batch_;
             s = batch_info.batch_->Iterate(this);
+            src_batch_ = saved_src;
             log_number_ref_ = 0;
           }
         }

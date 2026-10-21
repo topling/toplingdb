@@ -6474,6 +6474,113 @@ TEST_F(CrashChild, DISABLED_WriteCommittedPendingPrepare) {
   ::_exit(0);
 }
 
+// A WAL record holding transaction A's commit followed by B's prepare is what
+// makes MarkCommit's nested Iterate replace src_batch_ before MarkBeginPrepare
+// reads it: the rebuilt prepare takes its WAL reference from src_batch_, which
+// the commit left pointing at a batch that DeleteRecoveredTransaction has
+// already freed. Group commit is what produces such a record: all of the
+// group's batches go into one log record. C is prepared first and left
+// pending, so the published cursor stays before A's prepare record and
+// recovery replays that record.
+TEST_F(CrashChild, DISABLED_WriteCommittedCommitBeforePrepareInOneRecord) {
+  const bool with_ts = arg_ == "timestamp";
+  Options options =
+      BaseCrashSafeOptions(dbname_, !with_ts, arg_ == "log-index");
+  if (with_ts) {
+    // The CSpp memtable refuses a non-bytewise comparator. This case only
+    // needs the merged [commit][prepare] record to be written and replayed,
+    // which any factory does.
+    options.memtable_factory = std::make_shared<SkipListFactory>();
+    options.table_factory = Options().table_factory;
+  }
+  options.create_missing_column_families = with_ts;
+  std::vector<ColumnFamilyDescriptor> cfs = {
+      ColumnFamilyDescriptor(kDefaultColumnFamilyName, options)};
+  if (with_ts) {
+    ColumnFamilyOptions ts_opts(options);
+    ts_opts.comparator = test::BytewiseComparatorWithU64TsWrapper();
+    cfs.emplace_back("tscf", ts_opts);
+  }
+  std::vector<ColumnFamilyHandle*> handles;
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, cfs, &handles,
+                                &txn_db));
+  ColumnFamilyHandle* ts_cf = with_ts ? handles[1] : handles[0];
+  ASSERT_OK(txn_db->Put(WriteOptions(), "seed", "1"));
+  TransactionOptions to;
+  to.skip_prepare = false;
+  auto begin = [&](const char* name) {
+    Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+    EXPECT_OK(txn->SetName(name));
+    return txn;
+  };
+
+  Transaction* c = begin("C");
+  ASSERT_OK(c->Put("prepC", "v"));
+  ASSERT_OK(c->Prepare());
+  Transaction* a = begin("A");
+  ASSERT_OK(a->Put(ts_cf, "a", "1"));
+  ASSERT_OK(a->Prepare());
+  Transaction* b = begin("B");
+  ASSERT_OK(b->Put("b", "1"));
+
+  std::mutex mutex;
+  std::condition_variable cv;
+  int queued = 0;
+  bool commit_was_leader = false;
+  SyncPoint::GetInstance()->SetCallBack(
+      "WriteThread::JoinBatchGroup:Wait", [&](void* p) {
+        auto* writer = static_cast<WriteThread::Writer*>(p);
+        std::unique_lock<std::mutex> lock(mutex);
+        if (writer->state == WriteThread::STATE_GROUP_LEADER && queued == 0) {
+          commit_was_leader = true;
+        }
+        queued++;
+        cv.notify_all();
+        if (writer->state == WriteThread::STATE_GROUP_LEADER) {
+          cv.wait(lock, [&] { return queued == 2; });
+        }
+      });
+  SyncPoint::GetInstance()->SetCallBack(
+      "WriteThread::EnterAsBatchGroupLeader:End", [&](void* p) {
+        auto* writer = static_cast<WriteThread::Writer*>(p);
+        EXPECT_EQ(writer->write_group->size, 2U);
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+  if (with_ts) {
+    ASSERT_OK(a->SetCommitTimestamp(100));
+  }
+  Status commit_status;
+  std::thread committer([&] { commit_status = a->Commit(); });
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    cv.wait(lock, [&] { return queued >= 1; });
+  }
+  Status prepare_status;
+  std::thread preparer([&] { prepare_status = b->Prepare(); });
+  committer.join();
+  preparer.join();
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+  EXPECT_OK(commit_status);
+  EXPECT_OK(prepare_status);
+  EXPECT_TRUE(commit_was_leader);
+  // C and B are still pending; the cursor cannot pass C's prepare record.
+  auto* impl = static_cast<DBImpl*>(txn_db->GetRootDB());
+  uint64_t off = 0;
+  EXPECT_NE(impl->TEST_FindMinPendingPos(&off), 0U);
+  EXPECT_GT(off, 0U);
+  if (!with_ts) {
+    PublishedSeqOnDisk rec;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+    EXPECT_EQ(impl->TEST_FindMinPendingPos(&off), rec.wal_number);
+    EXPECT_EQ(off, rec.wal_offset);
+  }
+  ::_exit(HasFailure() ? 1 : 0);
+}
+
 #endif
 
 TEST_F(DBCsppCrashSafeTest, WriteCommittedDeletedSidecarReplaysWholeWal) {
@@ -6529,6 +6636,84 @@ TEST_F(DBCsppCrashSafeTest, WriteCommittedDeletedSidecarReplaysWholeWal) {
 // file rather than with the sidecar's kind. The reverse direction cannot be
 // constructed: a classic WAL replayed under a log-index option is refused by
 // design, see ClassicWalToLogIndexWithoutSidecarIsNotSupported.
+// A commit flushed into the same WAL record as a following prepare is what
+// makes MarkCommit's nested Iterate replace src_batch_ before MarkBeginPrepare
+// reads it: the commit's own prepare section is replayed first, then B's. The
+// memtable_as_log_index run is the one that fails without the restore: B's
+// rebuilt prepare is left without the mmap WAL it reads its data from. The
+// timestamp run uses a classic WAL and covers MarkCommitWithTimestamp. C is
+// prepared first and left pending, so the published cursor stays before A's
+// prepare record and recovery actually replays the merged record.
+TEST_F(DBCsppCrashSafeTest, WriteCommittedCommitThenPrepareInOneWalRecord) {
+  for (const char* mode : {"log-index", "timestamp"}) {
+    const bool with_ts = std::strcmp(mode, "timestamp") == 0;
+    const bool log_index = !with_ts;
+    SCOPED_TRACE(mode);
+    Close();
+    Options options = BaseCrashSafeOptions(dbname_, !with_ts, log_index);
+    if (with_ts) {
+      // Matches the child: CSpp refuses the timestamp comparator. This run
+      // uses a classic WAL and covers the MarkCommitWithTimestamp path only.
+      options.memtable_factory = std::make_shared<SkipListFactory>();
+      options.table_factory = Options().table_factory;
+    }
+    options.create_missing_column_families = with_ts;
+    Destroy(options);
+    ASSERT_EQ(RunCrashChild(dbname_, "WriteCommittedCommitBeforePrepareInOneRecord", mode), 0);
+
+    std::vector<ColumnFamilyDescriptor> cfs = {
+        ColumnFamilyDescriptor(kDefaultColumnFamilyName, options)};
+    ColumnFamilyOptions ts_opts(options);
+    if (with_ts) {
+      ts_opts.comparator = test::BytewiseComparatorWithU64TsWrapper();
+      cfs.emplace_back("tscf", ts_opts);
+    }
+    std::vector<ColumnFamilyHandle*> handles;
+    TransactionDBOptions txn_opts;
+    txn_opts.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+    TransactionDB* txn_db = nullptr;
+    ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, cfs, &handles,
+                                  &txn_db));
+    ColumnFamilyHandle* ts_cf = with_ts ? handles[1] : handles[0];
+
+    std::string v;
+    ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &v));
+    ASSERT_EQ(v, "1");
+    // A was committed before the crash; its data comes from the leftover.
+    if (with_ts) {
+      uint64_t read_ts_int = 200;
+      std::string read_ts;
+      PutFixed64(&read_ts, read_ts_int);
+      Slice read_ts_slice = read_ts;
+      ReadOptions ro;
+      ro.timestamp = &read_ts_slice;
+      ASSERT_OK(txn_db->Get(ro, ts_cf, "a", &v));
+    } else {
+      ASSERT_OK(txn_db->Get(ReadOptions(), "a", &v));
+    }
+    ASSERT_EQ(v, "1");
+    ASSERT_TRUE(txn_db->Get(ReadOptions(), "b", &v).IsNotFound());
+    ASSERT_TRUE(txn_db->Get(ReadOptions(), "prepC", &v).IsNotFound());
+    // B's prepare shared the WAL record with A's commit; a clobbered
+    // src_batch_ would either corrupt or lose it.
+    std::vector<Transaction*> prepared;
+    txn_db->GetAllPreparedTransactions(&prepared);
+    ASSERT_EQ(prepared.size(), 2U);
+    for (Transaction* txn : prepared) {
+      ASSERT_OK(txn->Commit());
+      delete txn;
+    }
+    ASSERT_OK(txn_db->Get(ReadOptions(), "b", &v));
+    ASSERT_EQ(v, "1");
+    ASSERT_OK(txn_db->Get(ReadOptions(), "prepC", &v));
+    ASSERT_EQ(v, "v");
+    for (auto* h : handles) {
+      delete h;
+    }
+    delete txn_db;
+  }
+}
+
 TEST_F(CrashChild, DISABLED_WritePreparedCrashRecovery) {
   Options options = BaseCrashSafeOptions(dbname_, true, arg_.find("log_index") != std::string::npos);
   options.two_write_queues = arg_.find("two_queues") != std::string::npos;

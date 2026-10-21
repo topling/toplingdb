@@ -554,29 +554,9 @@ Status WriteCommittedTxn::PrepareInternal() {
   auto s = WriteBatchInternal::MarkEndPrepare(GetWriteBatch()->GetWriteBatch(),
                                               name_);
   assert(s.ok());
-  class MarkLogCallback : public PreReleaseCallback {
-   public:
-    MarkLogCallback(DBImpl* db, bool two_write_queues)
-        : db_(db), two_write_queues_(two_write_queues) {
-      (void)two_write_queues_;  // to silence unused private field warning
-    }
-    virtual Status Callback(SequenceNumber, bool is_mem_disabled,
-                            uint64_t log_number, size_t /*index*/,
-                            size_t /*total*/) override {
-#ifdef NDEBUG
-      (void)is_mem_disabled;
-#endif
-      assert(log_number != 0);
-      assert(!two_write_queues_ || is_mem_disabled);  // implies the 2nd queue
-      db_->logs_with_prep_tracker()->MarkLogAsContainingPrepSection(log_number);
-      return Status::OK();
-    }
-
-   private:
-    DBImpl* db_;
-    bool two_write_queues_;
-  } mark_log_callback(db_impl_,
-                      db_impl_->immutable_db_options().two_write_queues);
+  // Registering the prepare in LogsWithPrepTracker is done by DoWriteWAL,
+  // which knows the position of the prepare record (a PreReleaseCallback runs
+  // after the cursor has been staged, so it is too late to clamp there).
 
   WriteCallback* const kNoWriteCallback = nullptr;
   const uint64_t kRefNoLog = 0;
@@ -585,8 +565,7 @@ Status WriteCommittedTxn::PrepareInternal() {
   const size_t kNoBatchCount = 0;
   s = db_impl_->WriteImpl(write_options, GetWriteBatch()->GetWriteBatch(),
                           kNoWriteCallback, &log_number_, kRefNoLog,
-                          kDisableMemtable, KIgnoreSeqUsed, kNoBatchCount,
-                          &mark_log_callback);
+                          kDisableMemtable, KIgnoreSeqUsed, kNoBatchCount);
   return s;
 }
 
@@ -655,6 +634,10 @@ Status PessimisticTransaction::Commit() {
     // FindObsoleteFiles must now look to the memtables
     // to determine what prep logs must be kept around,
     // not the prep section heap.
+    //
+    // This consumes the registration made by Prepare, which forces WAL on.
+    // The commit's own write may still have disableWAL; its durability is
+    // governed by its WriteOptions, not by this pin.
     assert(log_number_ > 0);
     dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
         log_number_);
@@ -867,7 +850,12 @@ Status WriteCommittedTxn::RollbackInternal() {
   WriteBatch rollback_marker;
   auto s = WriteBatchInternal::MarkRollback(&rollback_marker, name_);
   assert(s.ok());
-  s = db_impl_->WriteImpl(write_options_, &rollback_marker);
+  // log_ref tells DoWriteWAL that this write resolves the prepare registered
+  // in log_number_, so the published WAL cursor is not clamped by it. The
+  // marker has no data, so referencing the log has no other effect.
+  s = db_impl_->WriteImpl(write_options_, &rollback_marker,
+                          /*callback*/ nullptr, /*log_used*/ nullptr,
+                          /*log_ref*/ log_number_);
   return s;
 }
 

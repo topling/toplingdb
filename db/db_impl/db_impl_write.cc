@@ -1456,9 +1456,13 @@ IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
 #endif
   IOStatus io_s;
   size_t log_size_sum = 0;
+  // Position (the "P" coordinate) of the WAL record being written here; the
+  // position stored by LogsWithPrepTracker and by reader.LastRecordOffset().
+  uint64_t rec_pos = 0;
   if (immutable_db_options_.memtable_as_log_index) {
     auto offset = log_writer->get_log_offset();
     auto logno = log_writer->get_log_number();
+    rec_pos = offset;
     auto iovec = (Slice*)alloca(sizeof(Slice) * (1 + write_group.size));
     auto crc32c_checksums = (uint32_t*)alloca(sizeof(uint32_t) * (1 + write_group.size));
     // iovec[0] is reserved for AddRecordv to add the header
@@ -1503,6 +1507,7 @@ IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
     }
   }
   else {
+    rec_pos = log_writer->file()->GetFileSize();
     io_s = log_writer->AddRecord(log_entry, rate_limiter_priority);
     log_size_sum = log_entry.size();
   }
@@ -1517,11 +1522,57 @@ IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
   total_log_size_.fetch_add(log_size_sum, std::memory_order_relaxed);
   log_file_number_size.AddSize(log_size_sum);
   log_empty_ = false;
+  // WriteCommitted 2PC: register the WAL record position of every prepare so
+  // that the published WAL cursor can be clamped to the earliest one still
+  // pending. Must come before the clamp below, otherwise a prepare would be
+  // published past itself. Independent of pubseq_mmap_ : the tracker also
+  // drives WAL retention.
+  if (io_s.ok() && log_size_sum > 0 && allow_2pc() && !seq_per_batch_) {
+    for (auto writer : write_group) {
+      if (writer->CallbackFailed() || !writer->disable_memtable ||
+          !writer->batch->HasEndPrepare()) {
+        continue;
+      }
+      // Prepares merged into the same WAL record share one record position.
+      logs_with_prep_tracker_.MarkLogAsContainingPrepSection(logfile_number_,
+                                                             rec_pos);
+    }
+  }
   if (io_s.ok() && pubseq_mmap_ != nullptr) {
     write_group.wal_number = logfile_number_;
     write_group.wal_offset = immutable_db_options_.memtable_as_log_index
                                  ? log_writer->get_log_offset()
                                  : log_writer->file()->GetFileSize();
+    if (allow_2pc() && !seq_per_batch_) {
+      // Logs whose outstanding prepares are all resolved by this write group,
+      // so that a commit/rollback publishes its own end position. Empty in the
+      // common case.
+      std::vector<std::pair<uint64_t, uint64_t>> resolved;
+      for (auto writer : write_group) {
+        if (writer->CallbackFailed() || writer->log_ref == 0) {
+          continue;
+        }
+        auto it = resolved.begin();
+        for (; it != resolved.end(); ++it) {
+          if (it->first == writer->log_ref) {
+            ++it->second;
+            break;
+          }
+        }
+        if (it == resolved.end()) {
+          resolved.emplace_back(writer->log_ref, 1);
+        }
+      }
+      uint64_t min_off = 0;
+      uint64_t min_log = logs_with_prep_tracker_.FindMinPendingPos(
+          &min_off, resolved.empty() ? nullptr : &resolved);
+      if (min_log != 0 && (min_log < write_group.wal_number ||
+                           (min_log == write_group.wal_number &&
+                            min_off < write_group.wal_offset))) {
+        write_group.wal_number = min_log;
+        write_group.wal_offset = min_off;
+      }
+    }
   }
   return io_s;
 }

@@ -314,6 +314,102 @@ class DBCsppCrashSafeTest : public DBTestBase {
   void CheckWritePreparedCrashRecovery(const char* child_test);
 };
 
+// Position bookkeeping behind the published WAL cursor. No DB involved.
+TEST(LogsWithPrepTrackerTest, PendingPositionIsTheEarliestRecordOffset) {
+  LogsWithPrepTracker tracker;
+  uint64_t offset = 12345;
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset), 0U);
+  // No outstanding prepare: the fast path does not even touch the output.
+  ASSERT_EQ(offset, 12345U);
+  ASSERT_EQ(tracker.FindMinPendingPos(nullptr), 0U);
+
+  tracker.MarkLogAsContainingPrepSection(10, 200);
+  tracker.MarkLogAsContainingPrepSection(10, 100);
+  tracker.MarkLogAsContainingPrepSection(20, 300);
+  ASSERT_EQ(tracker.TEST_OutstandingPrep(10), 2U);
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset), 10U);
+  ASSERT_EQ(offset, 100U);
+
+  // One of the two prepares in log 10 is resolved. The log still pins the
+  // cursor, at the earliest registered position.
+  tracker.MarkLogAsHavingPrepSectionFlushed(10);
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset), 10U);
+  ASSERT_EQ(offset, 100U);
+
+  // A write group resolving the remaining prepare of log 10 skips that log,
+  // but does not erase it: it still pins WAL retention.
+  std::vector<std::pair<uint64_t, uint64_t>> resolves{{10, 1}};
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset, &resolves), 20U);
+  ASSERT_EQ(offset, 300U);
+  ASSERT_EQ(tracker.TEST_OutstandingPrep(10), 1U);
+  ASSERT_EQ(tracker.TEST_LogsWithPrepSize(), 2U);
+}
+
+TEST(LogsWithPrepTrackerTest, OneGroupResolvingTwoLogsStopsAtTheThird) {
+  LogsWithPrepTracker tracker;
+  tracker.MarkLogAsContainingPrepSection(10, 100);
+  tracker.MarkLogAsContainingPrepSection(20, 300);
+  tracker.MarkLogAsContainingPrepSection(30, 500);
+  uint64_t offset = 0;
+  // One write group commits the transactions prepared in logs 10 and 20; the
+  // prepare in log 30 is still pending.
+  std::vector<std::pair<uint64_t, uint64_t>> resolves{{10, 1}, {20, 1}};
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset, &resolves), 30U);
+  ASSERT_EQ(offset, 500U);
+  // Skipping is a hint for this group only: the skipped logs are not erased,
+  // they still pin WAL retention.
+  ASSERT_EQ(tracker.TEST_LogsWithPrepSize(), 3U);
+  ASSERT_EQ(tracker.TEST_OutstandingPrep(10), 1U);
+  ASSERT_EQ(tracker.TEST_OutstandingPrep(20), 1U);
+  // The same group also resolves log 30: nothing is left to pin.
+  resolves.emplace_back(30, 1);
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset, &resolves), 0U);
+}
+
+TEST(LogsWithPrepTrackerTest, ResolvingLaterLogKeepsEarlierLogPinned) {
+  LogsWithPrepTracker tracker;
+  tracker.MarkLogAsContainingPrepSection(10, 100);
+  tracker.MarkLogAsContainingPrepSection(20, 300);
+  uint64_t offset = 0;
+  // This write group commits only the transaction prepared in log 20. The
+  // earlier log is still pending and must keep pinning the cursor.
+  std::vector<std::pair<uint64_t, uint64_t>> resolves{{20, 1}};
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset, &resolves), 10U);
+  ASSERT_EQ(offset, 100U);
+  // The mark lands after the write completed; log 10 alone remains.
+  tracker.MarkLogAsHavingPrepSectionFlushed(20);
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset), 10U);
+  ASSERT_EQ(offset, 100U);
+  // A later group resolves log 10 and needs no pin.
+  std::vector<std::pair<uint64_t, uint64_t>> resolves_10{{10, 1}};
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset, &resolves_10), 0U);
+}
+
+TEST(LogsWithPrepTrackerTest, UnknownOffsetPinsAtFileStartAndCleanupIsLazy) {
+  LogsWithPrepTracker tracker;
+  // The default offset 0 means "position unknown" and wins over a known one.
+  tracker.MarkLogAsContainingPrepSection(7);
+  tracker.MarkLogAsContainingPrepSection(7, 64);
+  uint64_t offset = 99;
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset), 7U);
+  ASSERT_EQ(offset, 0U);
+
+  std::vector<std::pair<uint64_t, uint64_t>> resolves{{7, 2}};
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset, &resolves), 0U);
+  ASSERT_EQ(tracker.TEST_LogsWithPrepSize(), 1U);
+
+  tracker.MarkLogAsHavingPrepSectionFlushed(7);
+  tracker.MarkLogAsHavingPrepSectionFlushed(7);
+  ASSERT_EQ(tracker.TEST_OutstandingPrep(7), 0U);
+  // outstanding_ == 0 takes the fast path: no locking, no lazy cleanup.
+  ASSERT_EQ(tracker.FindMinPendingPos(&offset), 0U);
+  ASSERT_EQ(tracker.TEST_LogsWithPrepSize(), 1U);
+  // The WAL retention query is the cleanup point.
+  ASSERT_EQ(tracker.FindMinLogContainingOutstandingPrep(), 0U);
+  ASSERT_EQ(tracker.TEST_LogsWithPrepSize(), 0U);
+  ASSERT_EQ(tracker.TEST_PreparedSectionCompletedSize(), 0U);
+}
+
 #if !defined(OS_WIN)
 TEST_F(CrashChild, DISABLED_RegisteredMemTables) {
   Options options = BaseCrashSafeOptions(dbname_, true, false);

@@ -5,11 +5,13 @@
 //
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <mutex>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "rocksdb/rocksdb_namespace.h"
@@ -21,16 +23,34 @@ class LogsWithPrepTracker {
  public:
   // Called when a transaction prepared in `log` has been committed or aborted.
   void MarkLogAsHavingPrepSectionFlushed(uint64_t log);
-  // Called when a transaction is prepared in `log`.
-  void MarkLogAsContainingPrepSection(uint64_t log);
+  // Called when a transaction is prepared in `log`. `offset` is the position
+  // of the prepare record inside `log`, in the same coordinate as
+  // log::Reader::LastRecordOffset(). The default 0 means "position unknown"
+  // and pins the log at its beginning, which is always safe.
+  void MarkLogAsContainingPrepSection(uint64_t log, uint64_t offset = 0);
   // Return the earliest log file with outstanding prepare entries.
   uint64_t FindMinLogContainingOutstandingPrep();
+  // Return the earliest log file with outstanding prepare entries, and set
+  // `*offset` to the earliest prepare record position inside that log.
+  // Logs whose outstanding prepares are all resolved by this write group
+  // (`resolves`: log -> count) are skipped, but never erased: WAL retention
+  // still needs them. Returns 0 without locking when no prepare is pending.
+  uint64_t FindMinPendingPos(
+      uint64_t* offset,
+      const std::vector<std::pair<uint64_t, uint64_t>>* resolves = nullptr);
   size_t TEST_PreparedSectionCompletedSize() {
     return prepared_section_completed_.size();
   }
   size_t TEST_LogsWithPrepSize() { return logs_with_prep_.size(); }
+  uint64_t TEST_OutstandingPrep(uint64_t log);
 
  private:
+  // Return the earliest log file with outstanding prepare entries. The
+  // lazy cleanup of fully resolved logs happens here and only here.
+  uint64_t FindMinPrep(
+      uint64_t* offset,
+      const std::vector<std::pair<uint64_t, uint64_t>>* resolves);
+
   // REQUIRES: logs_with_prep_mutex_ held
   //
   // sorted list of log numbers still containing prepared data.
@@ -40,9 +60,18 @@ class LogsWithPrepTracker {
   struct LogCnt {
     uint64_t log;  // the log number
     uint64_t cnt;  // number of prepared sections in the log
+    // Record position of the earliest prepare record in this log, intra-log
+    // only (the log number is `log` above). Same coordinate as
+    // log::Reader::LastRecordOffset().
+    uint64_t offset;
   };
   std::vector<LogCnt> logs_with_prep_;
   std::mutex logs_with_prep_mutex_;
+
+  // Number of registered prepare sections not yet marked as flushed. Exact,
+  // maintained together with `logs_with_prep_`/`prepared_section_completed_`;
+  // only used to skip the locks in FindMinPendingPos() when it is 0.
+  std::atomic<uint64_t> outstanding_{0};
 
   // REQUIRES: prepared_section_completed_mutex_ held
   //

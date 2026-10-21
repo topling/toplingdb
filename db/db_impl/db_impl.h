@@ -1442,7 +1442,6 @@ class DBImpl : public DB {
     bool is_new_db_ = false;
     // WAL tail cursor for this Recover. RecoverLogFiles reads it from here.
     bool crash_safe_wal_tail_replay_ = false;
-    uint8_t crash_safe_wal_offset_kind_ = 0;
     uint64_t crash_safe_wal_number_ = 0;
     uint64_t crash_safe_wal_offset_ = 0;
     // Published sequence persisted together with the cursor: records whose

@@ -1236,8 +1236,6 @@ Status DBImpl::Recover(
       recovery_ctx->crash_safe_wal_number_ = mmap_rec.wal_number;
       recovery_ctx->crash_safe_wal_offset_ = mmap_rec.wal_offset;
       recovery_ctx->crash_safe_pubseq_ = mmap_rec.pubseq;
-      recovery_ctx->crash_safe_wal_offset_kind_ =
-          static_cast<uint8_t>(pubseq_mmap_->wal_offset_kind);
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
                      "Crash-safe recover Convert leftover, WAL tail from "
                      "#%" PRIu64 " offset %" PRIu64 " kind %u seq %" PRIu64,

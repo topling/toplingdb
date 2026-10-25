@@ -1442,9 +1442,12 @@ class DBImpl : public DB {
     bool is_new_db_ = false;
     // WAL tail cursor for this Recover. RecoverLogFiles reads it from here.
     bool crash_safe_wal_tail_replay_ = false;
-    uint8_t crash_safe_wal_offset_kind_ = 0;
     uint64_t crash_safe_wal_number_ = 0;
     uint64_t crash_safe_wal_offset_ = 0;
+    // Published sequence persisted together with the cursor: records whose
+    // first sequence is <= it are already reflected in the recovered
+    // memtables, so their data can be skipped.
+    SequenceNumber crash_safe_pubseq_ = 0;
     // WALs numbered below this predate CSPUBSEQ: probe their format.
     uint64_t crash_safe_probe_wal_below_ = 0;
   };

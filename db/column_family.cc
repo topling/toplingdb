@@ -1555,7 +1555,8 @@ Status ColumnFamilyData::ValidateOptions(
   if (db_options.memtable_crash_safe_recover &&
       !cf_options.memtable_factory->SupportCrashSafe()) {
     return Status::InvalidArgument(
-        "memtable_crash_safe_recover requires a FileMmap memtable factory",
+        "memtable_crash_safe_recover=true requires a CSPPMemTab or "
+        "OffsetSkipList memtable factory with convert_to_sst=kFileMmap, got",
         cf_options.memtable_factory->Name());
   }
   Status s;

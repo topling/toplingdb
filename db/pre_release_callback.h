@@ -32,6 +32,13 @@ class PreReleaseCallback {
   // operations among the callbacks.
   virtual Status Callback(SequenceNumber seq, bool is_mem_disabled,
                           uint64_t log_number, size_t index, size_t total) = 0;
+
+  // True if this write carries the first WAL record of a prepared
+  // transaction: the prepare batch in WritePrepared, the first unprepared
+  // batch in WriteUnprepared. The WAL layer registers that record position
+  // with the prep tracker so that the published WAL cursor never moves past
+  // an unresolved prepare.
+  virtual bool FirstPreparedBatch() const { return false; }
 };
 
 }  // namespace ROCKSDB_NAMESPACE

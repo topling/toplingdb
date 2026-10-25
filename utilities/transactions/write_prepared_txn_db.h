@@ -906,13 +906,13 @@ class AddPreparedCallback : public PreReleaseCallback {
       db_->prepared_txns_.push_pop_mutex()->Unlock();
     }
     TEST_SYNC_POINT("AddPreparedCallback::AddPrepared::end");
-    if (first_prepare_batch_) {
-      assert(log_number != 0);
-      db_impl_->logs_with_prep_tracker()->MarkLogAsContainingPrepSection(
-          log_number);
-    }
+    // The WAL layer registers this position before the cursor clamp, which
+    // has already run by the time this callback is invoked.
+    (void)log_number;
     return Status::OK();
   }
+
+  bool FirstPreparedBatch() const override { return first_prepare_batch_; }
 
  private:
   WritePreparedTxnDB* db_;

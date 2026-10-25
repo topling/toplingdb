@@ -1520,9 +1520,14 @@ endif
 # instead of the hand-maintained TESTS list.  The find is expensive, so the list
 # is computed once here and exported to the recursive invocations.
 ifeq ($(filter auto_all_tests,$(MAKECMDGOALS)),auto_all_tests)
-  AUTO_ALL_TESTS_SRC := $(shell find -L * -name '*_test.cc' -not -path 'java/*' -not -path '*/3rdparty/*') ${EXTRA_TESTS_SRC}
+  AUTO_ALL_TESTS_SRC := $(shell find -L * '(' -name java -o -name 3rdparty -o -name topling-zip ')' \
+                                     -prune -o -name '*_test.cc' -print) \
+						db/db_test2.cc \
+                        db/c_test.c \
+                        ${EXTRA_TESTS_SRC}
   AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC})
   AUTO_ALL_TESTS_OBJ := $(addprefix $(OBJ_DIR)/,$(AUTO_ALL_TESTS_SRC:%.cc=%.o))
+  AUTO_ALL_TESTS_OBJ := $(AUTO_ALL_TESTS_OBJ:%.c=%.o)
   AUTO_ALL_TESTS_EXE := $(AUTO_ALL_TESTS_OBJ:%.o=%)
   export AUTO_ALL_TESTS_EXE
   export CHECK_AUTO_ALL_TESTS := 1

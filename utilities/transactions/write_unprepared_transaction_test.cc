@@ -517,6 +517,46 @@ TEST_P(WriteUnpreparedTransactionTest, MarkLogWithPrepSection) {
   }
 }
 
+TEST_P(WriteUnpreparedTransactionTest,
+       MarkLogWithPrepSectionOnRollbackFailure) {
+  WriteOptions write_options;
+  TransactionOptions txn_options;
+  txn_options.write_batch_flush_threshold = 1;
+  auto* db_impl = static_cast<DBImpl*>(db->GetRootDB());
+
+  for (bool fail_rollback : {false, true}) {
+    SCOPED_TRACE(fail_rollback);
+    Transaction* txn = db->BeginTransaction(write_options, txn_options);
+    ASSERT_OK(txn->SetName(fail_rollback ? "fail" : "ok"));
+    ASSERT_OK(txn->Put("k1", "v1"));
+    ASSERT_OK(txn->Put("k2", "v2"));
+    const uint64_t log_number = txn->GetLogNumber();
+    ASSERT_GT(log_number, 0);
+    ASSERT_EQ(db_impl->TEST_FindMinLogContainingOutstandingPrep(), log_number);
+
+    std::atomic<int> rollbacks(0);
+    SyncPoint::GetInstance()->SetCallBack(
+        "WriteUnpreparedTxn:Rollback", [&](void* arg) {
+          ++rollbacks;
+          if (fail_rollback) {
+            *static_cast<Status*>(arg) = Status::IOError("Injected failure");
+          }
+        });
+    SyncPoint::GetInstance()->EnableProcessing();
+    delete txn;
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_EQ(rollbacks.load(), 1);
+
+    if (fail_rollback) {
+      ASSERT_EQ(db_impl->TEST_FindMinLogContainingOutstandingPrep(),
+                log_number);
+    } else {
+      ASSERT_EQ(db_impl->TEST_FindMinLogContainingOutstandingPrep(), 0);
+    }
+  }
+}
+
 TEST_P(WriteUnpreparedTransactionTest, NoSnapshotWrite) {
   WriteOptions woptions;
   TransactionOptions txn_options;

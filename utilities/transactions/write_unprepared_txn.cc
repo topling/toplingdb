@@ -7,6 +7,7 @@
 #include "utilities/transactions/write_unprepared_txn.h"
 
 #include "db/db_impl/db_impl.h"
+#include "test_util/sync_point.h"
 #include "util/cast_util.h"
 #include "utilities/transactions/write_unprepared_txn_db.h"
 #include "utilities/write_batch_with_index/write_batch_with_index_internal.h"
@@ -61,15 +62,16 @@ WriteUnpreparedTxn::~WriteUnpreparedTxn() {
     // happen, so that rollback during recovery can be exercised.
     if (GetState() == STARTED || GetState() == LOCKS_STOLEN) {
       auto s = RollbackInternal();
-      assert(s.ok());
+      TEST_SYNC_POINT_CALLBACK("WriteUnpreparedTxn:Rollback", &s);
       if (!s.ok()) {
         ROCKS_LOG_FATAL(
             wupt_db_->info_log_,
             "Rollback of WriteUnprepared transaction failed in destructor: %s",
             s.ToString().c_str());
+      } else {
+        dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
+            log_number_);
       }
-      dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
-          log_number_);
     }
   }
 

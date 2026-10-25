@@ -607,12 +607,14 @@ Status PessimisticTransaction::Commit() {
           "Commit-time batch contains values that will not be committed.");
     } else {
       txn_state_.store(AWAITING_COMMIT);
-      if (log_number_ > 0) {
-        dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
-            log_number_);
-      }
       s = CommitWithoutPrepareInternal();
       if (s.ok()) {
+        // CommitWithoutPrepareInternal() writes a prepared batch without
+        // registering it, so the pin must outlive that write.
+        if (log_number_ > 0) {
+          dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
+              log_number_);
+        }
         if (!name_.empty()) {
           txn_db_impl_->UnregisterTransaction(this);
         }

@@ -6663,6 +6663,41 @@ TEST_F(CrashChild, DISABLED_WriteUnpreparedUnpreparedOnly) {
   ::_exit(0);
 }
 
+TEST_F(CrashChild, DISABLED_WriteUnpreparedSkipPrepareCommit) {
+  Options options = BaseCrashSafeOptions(
+      dbname_, true, arg_.find("log_index") != std::string::npos);
+  TransactionDBOptions txn_opts;
+  txn_opts.write_policy = TxnDBWritePolicy::WRITE_UNPREPARED;
+  TransactionDB* txn_db = nullptr;
+  ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+  ASSERT_OK(txn_db->Put(WriteOptions(), "seed", "1"));
+  TransactionOptions to;
+  to.write_batch_flush_threshold = 1;
+  Transaction* txn = txn_db->BeginTransaction(WriteOptions(), to);
+  ASSERT_OK(txn->SetName("wup"));
+  ASSERT_OK(txn->Put("k1", "v1"));
+  ASSERT_OK(txn->Put("k2", "v2"));
+  const std::thread::id main_thread = std::this_thread::get_id();
+  std::atomic<int> writes{0};
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::WriteImpl:BeforeLeaderEnters", [&](void*) {
+        if (std::this_thread::get_id() != main_thread) {
+          return;
+        }
+        if (++writes == 2) {
+          // The prepared batch is in the WAL; the commit marker is not.
+          ::_exit(0);
+        }
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+  Status s = txn->Commit();
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+  fprintf(stderr, "Commit returned without a crash: %s\n",
+          s.ToString().c_str());
+  ::_exit(1);
+}
+
 TEST_F(CrashChild, DISABLED_FastRecoveryWithoutPrepare) {
   Options options = BaseCrashSafeOptions(dbname_, true, false);
   DB* child_db = nullptr;
@@ -7317,6 +7352,56 @@ TEST_F(DBCsppCrashSafeTest, WriteUnpreparedUnpreparedRolledBackOnRecovery) {
       ASSERT_EQ(impl->TEST_FindMinPendingPos(&off), 0U);
       delete txn_db;
     }
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, WriteUnpreparedSkipPrepareCommitKeepsPin) {
+  Close();
+  // Two write queues make the leftover Convert get refused and the WAL get
+  // replayed from its start, which hides the bug.
+  for (bool log_index : {false, true}) {
+    SCOPED_TRACE(log_index);
+    Options options = BaseCrashSafeOptions(dbname_, true, log_index);
+    Destroy(options);
+    TransactionDBOptions txn_opts;
+    txn_opts.write_policy = TxnDBWritePolicy::WRITE_UNPREPARED;
+    std::string arg = log_index ? "one_queue_log_index" : "one_queue";
+    ASSERT_EQ(RunCrashChild(dbname_, "WriteUnpreparedSkipPrepareCommit", arg),
+              0);
+    PublishedSeqOnDisk rec;
+    ASSERT_TRUE(ReadPublishedSeqFile(dbname_, &rec));
+    ASSERT_GT(rec.wal_offset, 0U);
+    std::atomic<uint64_t> seek_off{0};
+    std::atomic<int> seeks{0};
+    SyncPoint::GetInstance()->SetCallBack(
+        "CrashSafeRecover::SeekToFileOffset:Before", [&](void* p) {
+          seek_off.store(*static_cast<uint64_t*>(p));
+          ++seeks;
+        });
+    SyncPoint::GetInstance()->EnableProcessing();
+    TransactionDB* txn_db = nullptr;
+    ASSERT_OK(TransactionDB::Open(options, txn_opts, dbname_, &txn_db));
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_EQ(seeks.load(), 1);
+    ASSERT_EQ(seek_off.load(),
+              PublishedRecordStart(rec.wal_offset, rec.wal_offset_kind));
+    std::string v;
+    ASSERT_OK(txn_db->Get(ReadOptions(), "seed", &v));
+    ASSERT_EQ(v, "1");
+    ASSERT_TRUE(txn_db->Get(ReadOptions(), "k1", &v).IsNotFound());
+    ASSERT_TRUE(txn_db->Get(ReadOptions(), "k2", &v).IsNotFound());
+    std::vector<Transaction*> prepared;
+    txn_db->GetAllPreparedTransactions(&prepared);
+    ASSERT_EQ(prepared.size(), 1U);
+    ASSERT_EQ(prepared[0]->GetName(), "wup");
+    ASSERT_OK(prepared[0]->Commit());
+    delete prepared[0];
+    ASSERT_OK(txn_db->Get(ReadOptions(), "k1", &v));
+    ASSERT_EQ(v, "v1");
+    ASSERT_OK(txn_db->Get(ReadOptions(), "k2", &v));
+    ASSERT_EQ(v, "v2");
+    delete txn_db;
   }
 }
 

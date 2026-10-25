@@ -2276,6 +2276,13 @@ rocksdb_writebatch_wi_t* rocksdb_writebatch_wi_create(
   return b;
 }
 
+rocksdb_writebatch_wi_t* rocksdb_writebatch_wi_create_from_db(
+    rocksdb_t* db, unsigned char overwrite_key) {
+  rocksdb_writebatch_wi_t* b = new rocksdb_writebatch_wi_t;
+  b->rep = WriteBatchWithIndex::NewInstance(db->rep, overwrite_key);
+  return b;
+}
+
 void rocksdb_writebatch_wi_destroy(rocksdb_writebatch_wi_t* b) {
   if (b->rep) {
     delete b->rep;

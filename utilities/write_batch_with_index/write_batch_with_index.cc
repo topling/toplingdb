@@ -881,4 +881,16 @@ std::shared_ptr<WBWIFactory> SingleSkipListWBWIFactory() {
   return fac;
 }
 
+WriteBatchWithIndex*
+WriteBatchWithIndex::NewInstance(const DB* db, bool overwrite_key) {
+  db = const_cast<DB*>(db)->GetRootDB();
+  auto dbi = dynamic_cast<const DBImpl*>(db);
+  ROCKSDB_VERIFY(nullptr != dbi);
+  const Comparator* cmp = db->DefaultColumnFamily()->GetComparator();
+  if (auto* fac = dbi->mutable_db_options_.wbwi_factory.get()) {
+    return fac->NewWriteBatchWithIndex(cmp, overwrite_key);
+  }
+  return new WriteBatchWithIndex(cmp, 0, overwrite_key);
+}
+
 }  // namespace ROCKSDB_NAMESPACE

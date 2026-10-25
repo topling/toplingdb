@@ -886,6 +886,9 @@ rocksdb_writebatch_wi_create(size_t reserved_bytes,
                              unsigned char overwrite_keys);
 extern ROCKSDB_LIBRARY_API rocksdb_writebatch_wi_t*
 rocksdb_writebatch_wi_create_from(const char* rep, size_t size);
+extern ROCKSDB_LIBRARY_API_WEAK rocksdb_writebatch_wi_t*
+rocksdb_writebatch_wi_create_from_db(rocksdb_t* db,
+                                     unsigned char overwrite_keys);
 extern ROCKSDB_LIBRARY_API void rocksdb_writebatch_wi_destroy(
     rocksdb_writebatch_wi_t*);
 extern ROCKSDB_LIBRARY_API void rocksdb_writebatch_wi_clear(

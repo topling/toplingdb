@@ -91,6 +91,8 @@ class WriteBatchWithIndex : public WriteBatchBase {
   WriteBatchWithIndex(const WriteBatchWithIndex&) = delete;
   WriteBatchWithIndex& operator=(const WriteBatchWithIndex&) = delete;
 
+  static WriteBatchWithIndex* NewInstance(const DB* db, bool overwrite_key);
+
   virtual const Comparator* GetUserComparator(uint32_t cf_id) const;
 
   using WriteBatchBase::Put;

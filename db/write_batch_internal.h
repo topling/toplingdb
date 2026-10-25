@@ -42,6 +42,9 @@ class ColumnFamilyMemTables {
   virtual ColumnFamilyData* current() { return nullptr; }
   virtual const ImmutableDBOptions* GetImmutableDBOptions() = 0;
   bool skip_memtable_data_ = false;
+  // Position of the log record currently being replayed, in the same
+  // coordinate as log::Reader::LastRecordOffset().
+  uint64_t recovery_log_offset_ = 0;
 };
 
 class ColumnFamilyMemTablesDefault : public ColumnFamilyMemTables {

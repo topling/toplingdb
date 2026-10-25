@@ -2027,6 +2027,11 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
         batch_to_use->SetWAL({fmap, wal_number, reader.LastRecordOffset()});
       }
       column_family_memtables_->skip_memtable_data_ = false;
+      // Position of the record being replayed: MarkEndPrepare seeds it into
+      // the recovered prepared transaction, so that the next incarnation can
+      // clamp the published WAL cursor to it.
+      column_family_memtables_->recovery_log_offset_ =
+          reader.LastRecordOffset();
       if (crash_safe_wal_tail_replay && prefix_compare) {
         if (wal_number < crash_safe_wal_number) {
           column_family_memtables_->skip_memtable_data_ = true;

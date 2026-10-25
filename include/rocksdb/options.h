@@ -936,7 +936,8 @@ struct DBOptions {
   // Enable crash-safe recovery using file mmap MemTables (CSPP / OffsetSkipList)
   // and ConvertToSST to reduce WAL replay on the next open.
   // Only process crashes (kill -9 / _exit) are covered, not power loss.
-  // DeleteRange is not covered.
+  // DeleteRange is covered: the tombstones live in the rep's own pool, so
+  // ConvertToSST writes them along with the keys.
   // Reuse leftover MemTable files up to the published sequence, then replay
   // the WAL tail. All CFs must support crash-safe file mmap MemTables.
   // Unusable leftovers or cursor metadata, wal_filter, best_efforts_recovery,

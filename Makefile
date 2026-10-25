@@ -16,7 +16,7 @@ CXXFLAGS += ${EXTRA_CXXFLAGS}
 LDFLAGS += $(EXTRA_LDFLAGS)
 MACHINE ?= $(shell uname -m)
 ARFLAGS = ${EXTRA_ARFLAGS} rs
-STRIPFLAGS = -S -x
+STRIPFLAGS = -S
 
 STRIP_CMD ?= strip
 
@@ -2656,6 +2656,36 @@ PREFIX ?= /usr/local
 LIBDIR ?= $(PREFIX)/lib
 INSTALL_LIBDIR = $(DESTDIR)$(LIBDIR)
 
+ifeq ($(STRIP_DEBUG_INFO),1)
+ifneq ($(filter $(DESTDIR)$(PREFIX)/%,$(INSTALL_LIBDIR)),$(INSTALL_LIBDIR))
+$(error STRIP_DEBUG_INFO=1: LIBDIR=$(LIBDIR) must be under PREFIX=$(PREFIX))
+endif
+endif
+
+OBJCOPY_CMD ?= objcopy
+
+# $(call split_debug_info,<install dir>,<mode>,<build artifacts...>)
+# Installs each binary with its debug sections stripped, keeping .symtab so
+# perf can name frames, and writes the debug sections to
+# $(PREFIX)-debug-info/<install dir under PREFIX>; the binary gets a
+# .gnu_debuglink naming it.
+define split_debug_info
+	for f in $(3); do \
+	  b=$${f##*/}; \
+	  i="$(1)/$$b"; \
+	  d="$(DESTDIR)$(PREFIX)-debug-info/$${i#$(DESTDIR)$(PREFIX)/}.debug"; \
+	  if grep -q '\.debug_info' "$$f"; then \
+	    install -d "$${d%/*}"; \
+	    $(OBJCOPY_CMD) --only-keep-debug "$$f" "$$d"; \
+	    chmod 644 "$$d"; \
+	    $(OBJCOPY_CMD) --strip-debug --add-gnu-debuglink="$$d" "$$f" "$$i"; \
+	  else \
+	    $(OBJCOPY_CMD) --strip-debug "$$f" "$$i"; \
+	  fi; \
+	  chmod $(2) "$$i"; \
+	done
+endef
+
 uninstall:
 	rm -rf $(DESTDIR)$(PREFIX)/include/rocksdb \
 	  $(INSTALL_LIBDIR)/$(LIBRARY) \
@@ -2715,9 +2745,10 @@ install-static: $(LIBRARY) static_lib
 
 install-shared: $(SHARED4) shared_lib
 	install -d $(INSTALL_LIBDIR)
-	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 ifeq ($(STRIP_DEBUG_INFO),1)
-	$(STRIP_CMD) $(INSTALL_LIBDIR)/$(SHARED4)
+	$(call split_debug_info,$(INSTALL_LIBDIR),755,$(SHARED4))
+else
+	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 endif
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED2)
@@ -2740,16 +2771,23 @@ upload-trial: \
 
 install-dcompact: install dcompact_worker
 	install -d $(DESTDIR)$(PREFIX)/bin
-	install -C -m 755 sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/dcompact_worker.exe $(DESTDIR)$(PREFIX)/bin
 ifeq ($(STRIP_DEBUG_INFO),1)
-	$(STRIP_CMD) $(DESTDIR)$(PREFIX)/bin/dcompact_worker.exe
+	$(call split_debug_info,$(DESTDIR)$(PREFIX)/bin,755,sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/dcompact_worker.exe)
+else
+	install -C -m 755 sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/dcompact_worker.exe $(DESTDIR)$(PREFIX)/bin
 endif
 
 install-tools: install tools
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
+ifeq ($(STRIP_DEBUG_INFO),1)
+	$(call split_debug_info,$(INSTALL_LIBDIR),644,${SHARED_TOOLS_LIBRARY})
+	$(call split_debug_info,$(DESTDIR)$(PREFIX)/bin,755,${TOOLS})
+	$(call split_debug_info,$(DESTDIR)$(PREFIX)/bin,755,sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/*.exe)
+else
 	install -C -m 644 ${SHARED_TOOLS_LIBRARY} $(INSTALL_LIBDIR)
 	install -C -m 755 ${TOOLS} $(DESTDIR)$(PREFIX)/bin
 	install -C -m 755 sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
+endif
 
 # Generate the pkg-config file
 gen-pc:
@@ -3156,7 +3194,7 @@ endif
 			  $(LDFLAGS)
 	$(AM_V_at)cp -a sideplugin/rockside/src/topling/web/{style.css,index.html}      java/target
 ifeq ($(STRIP_DEBUG_INFO),1)
-	$(AM_V_at)${STRIP_CMD} java/target/*.so
+	$(AM_V_at)${STRIP_CMD} $(STRIPFLAGS) java/target/*.so
 endif
 
 rocksdbjava: java/target/$(ROCKSDBJNILIB)

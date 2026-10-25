@@ -1505,6 +1505,39 @@ coverage: clean
 #   MultiThreaded/MultiThreadedDBTest.MultiThreaded/1
 #
 
+#--------------------------------------------------
+ifndef ROCKSDB_USE_LIBRADOS
+  AUTO_ALL_EXCLUDE_SRC += utilities/env_librados_test.cc
+  AUTO_ALL_EXCLUDE_SRC += utilities/env_mirror_test.cc
+endif
+ifeq ($(filter check,$(MAKECMDGOALS)),check)
+  AUTO_ALL_EXCLUDE_SRC += sideplugin/topling-rocks/src/table/tests/chaos_test.cc
+  AUTO_ALL_EXCLUDE_SRC += tools/db_sanity_test.cc
+  AUTO_ALL_EXCLUDE_SRC += tools/db_bench_tool_test.cc
+endif
+
+# `make check auto_all_tests` tests with the targets auto_all_tests builds
+# instead of the hand-maintained TESTS list.  The find is expensive, so the list
+# is computed once here and exported to the recursive invocations.
+ifeq ($(filter auto_all_tests,$(MAKECMDGOALS)),auto_all_tests)
+  AUTO_ALL_TESTS_SRC := $(shell find -L * -name '*_test.cc' -not -path 'java/*' -not -path '*/3rdparty/*') ${EXTRA_TESTS_SRC}
+  AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC})
+  AUTO_ALL_TESTS_OBJ := $(addprefix $(OBJ_DIR)/,$(AUTO_ALL_TESTS_SRC:%.cc=%.o))
+  AUTO_ALL_TESTS_EXE := $(AUTO_ALL_TESTS_OBJ:%.o=%)
+  export AUTO_ALL_TESTS_EXE
+  export CHECK_AUTO_ALL_TESTS := 1
+endif
+# The recursive gen_parallel_tests and check_0 invocations do not have
+# auto_all_tests in MAKECMDGOALS, they see the exported list and flag instead.
+ifeq ($(CHECK_AUTO_ALL_TESTS),1)
+  TESTS := $(AUTO_ALL_TESTS_EXE)
+  NON_PARALLEL_TEST := $(filter $(addprefix %/,$(NON_PARALLEL_TEST)),$(TESTS))
+  PARALLEL_TEST := $(filter-out $(NON_PARALLEL_TEST),$(TESTS))
+  check: auto_all_tests
+  # these binaries live under $(OBJ_DIR), not next to the shared libraries
+  export LD_LIBRARY_PATH := $(CURDIR):$(LD_LIBRARY_PATH)
+endif
+
 parallel_tests = $(patsubst %,parallel_%,$(PARALLEL_TEST))
 .PHONY: gen_parallel_tests $(parallel_tests)
 $(parallel_tests):
@@ -1514,7 +1547,7 @@ $(parallel_tests):
     | awk '/^[^ ]/ { prefix = $$1 } /^[ ]/ { print prefix $$1 }'`; \
 	echo "  Generating parallel test scripts for $$TEST_BINARY"; \
 	for TEST_NAME in $$TEST_NAMES; do \
-		TEST_SCRIPT=t/run-$$TEST_BINARY-$${TEST_NAME//\//-}; \
+		TEST_SCRIPT=t/run-$${TEST_BINARY##*/}-$${TEST_NAME//\//-}; \
     printf '%s\n' \
       '#!/bin/sh' \
       "d=\$(TEST_TMPDIR)$$TEST_SCRIPT" \
@@ -2573,17 +2606,6 @@ io_tracer_parser_test: $(OBJ_DIR)/tools/io_tracer_parser_test.o $(OBJ_DIR)/tools
 
 io_tracer_parser: $(OBJ_DIR)/tools/io_tracer_parser.o $(TOOLS_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
-#--------------------------------------------------
-ifndef ROCKSDB_USE_LIBRADOS
-  AUTO_ALL_EXCLUDE_SRC += utilities/env_librados_test.cc
-  AUTO_ALL_EXCLUDE_SRC += utilities/env_mirror_test.cc
-endif
-
-AUTO_ALL_TESTS_SRC := $(shell find * -name '*_test.cc' -not -path 'java/*' -not -path '*/3rdparty/*') ${EXTRA_TESTS_SRC}
-AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC})
-AUTO_ALL_TESTS_OBJ := $(addprefix $(OBJ_DIR)/,$(AUTO_ALL_TESTS_SRC:%.cc=%.o))
-AUTO_ALL_TESTS_EXE := $(AUTO_ALL_TESTS_OBJ:%.o=%)
-
 define LN_TEST_TARGET
 t${DEBUG_LEVEL}/${1}: ${2}
 	mkdir -p $(dir $$@) && ln -sf `realpath ${2}` $$@

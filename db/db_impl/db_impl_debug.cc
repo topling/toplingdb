@@ -250,6 +250,21 @@ uint64_t DBImpl::TEST_FindMinLogContainingOutstandingPrep() {
   return logs_with_prep_tracker_.FindMinLogContainingOutstandingPrep();
 }
 
+uint64_t DBImpl::TEST_FindMinPendingPos(uint64_t* offset) {
+  std::pair<uint64_t, uint64_t> pos;
+  if (!logs_with_prep_tracker_.FindMinPendingPos(&pos)) {
+    return 0;
+  }
+  if (offset != nullptr) {
+    *offset = pos.second;
+  }
+  return pos.first;
+}
+
+uint64_t DBImpl::TEST_OutstandingPrep(uint64_t log) {
+  return logs_with_prep_tracker_.TEST_OutstandingPrep(log);
+}
+
 size_t DBImpl::TEST_PreparedSectionCompletedSize() {
   return logs_with_prep_tracker_.TEST_PreparedSectionCompletedSize();
 }

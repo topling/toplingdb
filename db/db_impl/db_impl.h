@@ -1212,6 +1212,8 @@ class DBImpl : public DB {
   WriteController& TEST_write_controler() { return write_controller_; }
 
   uint64_t TEST_FindMinLogContainingOutstandingPrep();
+  uint64_t TEST_FindMinPendingPos(uint64_t* offset);
+  uint64_t TEST_OutstandingPrep(uint64_t log);
   uint64_t TEST_FindMinPrepLogReferencedByMemTable();
   size_t TEST_PreparedSectionCompletedSize();
   size_t TEST_LogsWithPrepSize();

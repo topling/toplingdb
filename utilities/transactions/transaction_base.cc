@@ -816,6 +816,15 @@ Status TransactionBaseImpl::RebuildFromWriteBatch(WriteBatch* src_batch) {
       return txn_->Merge(db_->GetColumnFamilyHandle(cf), key, val);
     }
 
+    // The transaction API has no DeleteRange(), so a prepared batch that holds
+    // one cannot be replayed through txn_. CommitInternal() feeds the memtable
+    // from this batch, so the range has to be there all the same.
+    Status DeleteRangeCF(uint32_t cf, const Slice& begin_key,
+                         const Slice& end_key) override {
+      return WriteBatchInternal::DeleteRange(
+          txn_->GetWriteBatch()->GetWriteBatch(), cf, begin_key, end_key);
+    }
+
     void LogData(const Slice& blob) override {
       txn_->PutLogData(blob);
     }

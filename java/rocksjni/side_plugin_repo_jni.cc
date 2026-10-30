@@ -83,13 +83,20 @@ JNIEXPORT void JNICALL Java_org_rocksdb_SidePluginRepo_importJson
   }
 }
 
+// Java closes every handle it is given (ownedColumnFamilyHandles), while these
+// belong to the repo or the DB: hand it clones.
 static jobject CreateJDB
-(JNIEnv* env, DB* db, ColumnFamilyHandle** cfh_a, size_t cfh_n)
+(JNIEnv* env, DB* db, const std::vector<ColumnFamilyHandle*>& cf_handles)
 {
   jlongArray jcfh_a = nullptr;
-  if (cfh_n) {
-    jcfh_a = env->NewLongArray(cfh_n);
-    env->SetLongArrayRegion(jcfh_a, 0, jsize(cfh_n), (jlong*)cfh_a);
+  if (!cf_handles.empty()) {
+    std::vector<jlong> clones(cf_handles.size());
+    for (size_t i = 0; i < cf_handles.size(); i++) {
+      ColumnFamilyHandle* clone = cf_handles[i]->CloneHandle();
+      clones[i] = (jlong)clone;
+    }
+    jcfh_a = env->NewLongArray(jsize(clones.size()));
+    env->SetLongArrayRegion(jcfh_a, 0, jsize(clones.size()), clones.data());
   }
   jclass clazz = env->FindClass("org/rocksdb/RocksDB");
   jmethodID methodID = env->GetStaticMethodID(clazz, "fromNativeHandles", "(J[J)Lorg/rocksdb/RocksDB;");
@@ -116,7 +123,7 @@ jobject Java_org_rocksdb_SidePluginRepo_nativeOpenDB
     status = repo->OpenDB(&db);
   }
   if (status.ok()) {
-    return CreateJDB(env, db, nullptr, 0);
+    return CreateJDB(env, db, {});
   } else {
     RocksDBExceptionJni::ThrowNew(env, status);
     return 0;
@@ -143,7 +150,7 @@ jobject Java_org_rocksdb_SidePluginRepo_nativeOpenDBMultiCF
     status = repo->OpenDB(&dbm);
   }
   if (status.ok()) {
-    return CreateJDB(env, dbm->db, dbm->cf_handles.data(), dbm->cf_handles.size());
+    return CreateJDB(env, dbm->db, dbm->cf_handles);
   } else {
     RocksDBExceptionJni::ThrowNew(env, status);
     return nullptr;
@@ -190,7 +197,7 @@ void Java_org_rocksdb_SidePluginRepo_nativeCloseAllDB
 (JNIEnv* env, jobject jrepo, jlong nativeHandle)
 {
   auto repo = (SidePluginRepo*)nativeHandle;
-  repo->CloseAllDB(false); // dont close DB and cf
+  repo->CloseAllDB(false); // dont close DB, the CF handles are the repo's
 }
 
 /*
@@ -203,7 +210,7 @@ JNIEXPORT void JNICALL Java_org_rocksdb_SidePluginRepo_nativeCloseOneDB
 {
   auto repo = (SidePluginRepo*)jhrepo;
   auto db = (DB*)jhdb;
-  Status s = repo->CloseOneDB(db, false); // dont close DB and cf
+  Status s = repo->CloseOneDB(db, false); // dont close DB, the CF handles are the repo's
   if (!s.ok()) {
     RocksDBExceptionJni::ThrowNew(env, s);
   }
@@ -339,6 +346,7 @@ JNIEXPORT jlong JNICALL Java_org_rocksdb_SidePluginRepo_nativeCreateCF
     RocksDBExceptionJni::ThrowNew(env, status);
     return 0;
   }
+  // this handle is the caller's, Java closes it as is
   return (jlong)cfh;
 }
 

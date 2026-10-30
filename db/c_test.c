@@ -3914,9 +3914,7 @@ int main(int argc, char** argv) {
     CheckCondition(vlen == 2);
     CheckCondition(memcmp(val, "bb", 2) == 0);
     side_plugin_repo_close_http(repo);
-    for (size_t i = 0; i < cfnum; i++) {
-      rocksdb_column_family_handle_destroy(cfhs[i]);
-    }
+    // the repo owns these cf handles, side_plugin_repo_close_all() destroys them
     rocksdb_create_column_families_destroy(cfhs);
     side_plugin_repo_close_all(repo);
     rocksdb_close(db);

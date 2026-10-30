@@ -539,7 +539,9 @@ void LDBCommand::OpenDB() {
 
 void LDBCommand::CloseDB() {
   if (g_dbm) {
-    g_repo.CloseAllDB(false);
+    g_repo.CloseAllDB(false); // deletes the repo's cf handles, not the db
+    cf_handles_.clear();      // those pointers are gone, do not delete them below
+    g_dbm = nullptr;          // CloseAllDB() deletes it
   }
   if (db_ != nullptr) {
     for (auto& pair : cf_handles_) {

@@ -3344,6 +3344,9 @@ class Benchmark {
 
   void DeleteDBs() {
     repo_.CloseAllDB(false);
+    if (!FLAGS_json.empty()) {
+      db_.cfh.clear();  // the repo's handles, deleted by CloseAllDB() above
+    }
     db_.DeleteDBs();
     for (const DBWithColumnFamilies& dbwcf : multi_dbs_) {
       delete dbwcf.db;
@@ -3833,6 +3836,11 @@ class Benchmark {
           method = nullptr;
         } else {
           if (db_.db != nullptr) {
+            if (!FLAGS_json.empty()) {
+              // the repo's handles must go before the db does
+              repo_.CloseAllDB(false);
+              db_.cfh.clear();
+            }
             db_.DeleteDBs();
             DestroyDB(FLAGS_db, open_options_);
           }

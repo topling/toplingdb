@@ -7044,7 +7044,9 @@ rocksdb_t* side_plugin_repo_open(side_plugin_repo_t* r,
     *p_cfhs = nullptr;
     if (s.ok()) {
       size_t num = *num_cf = dbm->cf_handles.size();
-      auto cfhs = *p_cfhs = new rocksdb_column_family_handle_t*[num];
+      // rocksdb_create_column_families_destroy() frees it with free()
+      auto cfhs = *p_cfhs = static_cast<rocksdb_column_family_handle_t**>(
+          malloc(sizeof(rocksdb_column_family_handle_t*) * num));
       for (size_t i = 0; i < num; i++) {
         cfhs[i] = (rocksdb_column_family_handle_t*)(dbm->cf_handles[i]);
       }

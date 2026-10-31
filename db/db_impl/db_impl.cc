@@ -2066,7 +2066,9 @@ InternalIterator* DBImpl::NewInternalIterator(
     TruncatedRangeDelIterator* mem_tombstone_iter = nullptr;
     auto range_del_iter = super_version->mem->NewRangeTombstoneIterator(
         read_options, sequence, false /* immutable_memtable */);
-    if (range_del_iter == nullptr || range_del_iter->empty()) {
+    if (LIKELY(range_del_iter == nullptr)) {
+      // do nothing
+    } else if (range_del_iter->empty()) {
       delete range_del_iter;
     } else {
       mem_tombstone_iter = new TruncatedRangeDelIterator(

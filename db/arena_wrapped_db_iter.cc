@@ -227,10 +227,12 @@ Status ArenaWrappedDBIter::Refresh(const Snapshot* snap, bool keep_iter_pos) {
             assert(!*memtable_range_tombstone_iter_ ||
                    sv_number_ != cfd_->GetSuperVersionNumber());
           }
-          delete t;
+          if (UNLIKELY(t != nullptr))
+            delete t;
         } else {  // current mutable memtable has range tombstones
           if (!memtable_range_tombstone_iter_) {
-            delete t;
+            if (UNLIKELY(t != nullptr))
+              delete t;
             db_impl_->ReturnAndCleanupSuperVersion(cfd_, sv);
             // The memtable under DBIter did not have range tombstone before
             // refresh.

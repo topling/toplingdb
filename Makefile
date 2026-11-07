@@ -2611,12 +2611,6 @@ io_tracer_parser_test: $(OBJ_DIR)/tools/io_tracer_parser_test.o $(OBJ_DIR)/tools
 
 io_tracer_parser: $(OBJ_DIR)/tools/io_tracer_parser.o $(TOOLS_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
-define LN_TEST_TARGET
-t${DEBUG_LEVEL}/${1}: ${2}
-	mkdir -p $(dir $$@) && ln -sf `realpath ${2}` $$@
-
-endef
-#intentional one blank line above
 
 .PHONY: auto_all_tests
 auto_all_tests: ${AUTO_ALL_TESTS_EXE}
@@ -2627,8 +2621,6 @@ $(OBJ_DIR)/tools/%_test: $(OBJ_DIR)/tools/%_test.o \
 
 $(OBJ_DIR)/%_test: $(OBJ_DIR)/%_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
-
-$(eval $(foreach test,${AUTO_ALL_TESTS_EXE},$(call LN_TEST_TARGET,$(notdir ${test}),${test})))
 
 $(OBJ_DIR)/tools/db_bench_tool_test : \
 $(OBJ_DIR)/tools/db_bench_tool_test.o \

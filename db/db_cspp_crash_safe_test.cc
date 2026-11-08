@@ -50,6 +50,7 @@
 #include "rocksdb/sst_file_reader.h"
 #include "rocksdb/utilities/checkpoint.h"
 #include "rocksdb/utilities/transaction_db.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 #include "rocksdb/wal_filter.h"
 #include "table/format.h"
 #include "table/get_context.h"
@@ -7866,6 +7867,268 @@ TEST_F(DBCsppCrashSafeTest, WriteCommittedCommitThenPrepareInOneWalRecord) {
       delete h;
     }
     delete txn_db;
+  }
+}
+
+namespace {
+
+// Contract for MemTableRep::CreateRangeDelMemTableRep(), which the factories
+// exercised here implement:
+// Create a range-tombstone rep; nullptr selects MemTable's SkipList fallback.
+// MemTable owns the returned object and destroys it before this main rep.
+// It may borrow the main rep's storage. Only the main rep receives
+// MarkReadOnly/MarkFlushed notifications.
+// Implement the InsertKeyValue* variants selected by the write options,
+// GetIterator, ApproximateNumEntries and ApproximateMemoryUsage. Point Get
+// is not used on this rep.
+// Iteration must use the main rep's internal-key ordering and preserve
+// sequence versions: keys are kTypeRangeDeletion start keys, values are
+// exclusive end user keys. Honor the main rep's recovery visibility cutoff.
+// Accept the main rep's insertion value format, including WAL-backed values,
+// and return decoded end keys from the iterator.
+// Do not count shared memory already reported by the main rep in
+// ApproximateMemoryUsage.
+// If the main rep supports ConvertToSST or crash recovery, it must also
+// persist/restore these tombstones and their counts, key and sequence bounds.
+
+// Reuse the same state checks for prepared recovery and full WAL replay.
+struct RangeDelRecoveryDB {
+  Options options;
+  TransactionDB* db = nullptr;
+  std::vector<ColumnFamilyHandle*> handles;
+  const int cf;
+  const bool mixed;
+
+  RangeDelRecoveryDB(const std::string& path, const json& config)
+      : cf(config.at("cf")), mixed(config.value("mixed", false)) {
+    const std::string factory = config.at("factory");
+    const bool full_replay = config.value("full_replay", false);
+    options = BaseCrashSafeOptions(path, factory != "SkipList" && !full_replay,
+                                  config.at("log_index"));
+    options.create_missing_column_families = true;
+    options.avoid_flush_during_recovery = !full_replay;
+    if (factory == "SkipList") {
+      options.memtable_factory = Options().memtable_factory;
+      options.table_factory = Options().table_factory;
+    } else if (factory == "OffsetSkipList") {
+      SetupOsl(&options, true);
+    }
+  }
+
+  ~RangeDelRecoveryDB() { Close(); }
+
+  Status Open(const std::string& path) {
+    const std::vector<ColumnFamilyDescriptor> cfs = {{"default", options}, {"other", options}};
+    TransactionDBOptions txn_options;
+    txn_options.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
+    return TransactionDB::Open(options, txn_options, path, cfs, &handles, &db);
+  }
+
+  void Close() {
+    if (db == nullptr) {
+      handles.clear();
+      return;
+    }
+    for (auto* handle : handles) {
+      EXPECT_OK(db->DestroyColumnFamilyHandle(handle));
+    }
+    handles.clear();
+    delete db;
+    db = nullptr;
+  }
+
+  void Check(bool applied) {
+    for (auto* handle : handles) {
+      std::map<std::string, std::string> expected = {
+          {"a", "old"}, {"b", "old"}, {"c", "old"}, {"d", "old"}, {"e", "old"}};
+      if (applied && handle == handles[cf]) {
+        expected.erase("b");
+        if (mixed) {
+          expected["c"] = "after";
+        } else {
+          expected.erase("c");
+        }
+      }
+      for (const char* key : {"a", "b", "c", "d", "e"}) {
+        std::string value;
+        const Status s = db->Get(ReadOptions(), handle, key, &value);
+        const auto found = expected.find(key);
+        if (found == expected.end()) {
+          ASSERT_TRUE(s.IsNotFound()) << key << ": " << s.ToString();
+        } else {
+          ASSERT_OK(s);
+          ASSERT_EQ(value, found->second) << key;
+        }
+      }
+      std::unique_ptr<Iterator> it(db->NewIterator(ReadOptions(), handle));
+      it->SeekToFirst();
+      for (const auto& row : expected) {
+        ASSERT_TRUE(it->Valid());
+        ASSERT_EQ(it->key().ToString(), row.first);
+        ASSERT_EQ(it->value().ToString(), row.second);
+        it->Next();
+      }
+      ASSERT_FALSE(it->Valid());
+      ASSERT_OK(it->status());
+      it->SeekToLast();
+      for (auto row = expected.rbegin(); row != expected.rend(); ++row) {
+        ASSERT_TRUE(it->Valid());
+        ASSERT_EQ(it->key().ToString(), row->first);
+        ASSERT_EQ(it->value().ToString(), row->second);
+        it->Prev();
+      }
+      ASSERT_FALSE(it->Valid());
+      ASSERT_OK(it->status());
+    }
+  }
+};
+
+void CheckRangeDelPreparedRecovery(const std::string& path, const json& config) {
+  SCOPED_TRACE(config.dump());
+  RangeDelRecoveryDB state(path, config);
+  ASSERT_OK(DestroyDB(path, state.options));
+  ASSERT_EQ(RunCrashChild(path, "RangeDelPrepare", config.dump()), 0);
+  if (config.at("second_crash")) {
+    ASSERT_EQ(RunCrashChild(path, "RangeDelPreparedReopen", config.dump()), 0);
+  }
+  ASSERT_OK(state.Open(path));
+  std::vector<Transaction*> prepared;
+  state.db->GetAllPreparedTransactions(&prepared);
+  ASSERT_EQ(prepared.size(), 1U);
+  std::unique_ptr<Transaction> txn(prepared[0]);
+  ASSERT_EQ(txn->GetName(), "range_prepared");
+  ASSERT_TRUE(txn->GetWriteBatch()->GetWriteBatch()->HasDeleteRange());
+  ASSERT_EQ(txn->GetWriteBatch()->GetWriteBatch()->Count(), state.mixed ? 3 : 1);
+  ASSERT_NO_FATAL_FAILURE(state.Check(false));
+  const bool commit = config.at("commit");
+  ASSERT_OK(commit ? txn->Commit() : txn->Rollback());
+  txn.reset();
+  ASSERT_NO_FATAL_FAILURE(state.Check(commit));
+  for (auto* handle : state.handles) {
+    ASSERT_OK(state.db->Flush(FlushOptions(), handle));
+  }
+  ASSERT_NO_FATAL_FAILURE(state.Check(commit));
+  state.Close();
+  ASSERT_OK(state.Open(path));
+  prepared.clear();
+  state.db->GetAllPreparedTransactions(&prepared);
+  ASSERT_TRUE(prepared.empty());
+  ASSERT_NO_FATAL_FAILURE(state.Check(commit));
+}
+
+}  // namespace
+
+TEST_F(CrashChild, DISABLED_RangeDelPrepare) {
+  const json config = json::parse(arg_);
+  RangeDelRecoveryDB state(dbname_, config);
+  ASSERT_OK(state.Open(dbname_));
+  WriteOptions wo;
+  wo.sync = true;
+  for (auto* handle : state.handles) {
+    for (const char* key : {"a", "b", "c", "d", "e"}) {
+      ASSERT_OK(state.db->Put(wo, handle, key, "old"));
+    }
+    ASSERT_OK(state.db->Flush(FlushOptions(), handle));
+  }
+  auto* handle = state.handles[state.cf];
+  if (config.value("full_replay", false)) {
+    // Leave only a range deletion in the WAL, covering keys already in SSTs.
+    WriteBatch batch;
+    ASSERT_OK(batch.DeleteRange(handle, "b", "d"));
+    ASSERT_OK(state.db->GetRootDB()->Write(wo, &batch));
+    ASSERT_NO_FATAL_FAILURE(state.Check(true));
+  } else {
+    Transaction* txn = state.db->BeginTransaction(wo);
+    ASSERT_OK(txn->SetName("range_prepared"));
+    if (state.mixed) {
+      ASSERT_OK(txn->Put(handle, "b", "before"));
+    }
+    // Transaction has no DeleteRange API; exercise the raw prepared batch
+    // accepted by the recovery path, without claiming range-lock support.
+    ASSERT_OK(txn->GetWriteBatch()->GetWriteBatch()->DeleteRange(handle, "b", "d"));
+    if (state.mixed) {
+      ASSERT_OK(txn->Put(handle, "c", "after"));
+    }
+    ASSERT_OK(txn->Prepare());
+    ASSERT_NO_FATAL_FAILURE(state.Check(false));
+  }
+  ::_exit(0);
+}
+
+TEST_F(CrashChild, DISABLED_RangeDelPreparedReopen) {
+  RangeDelRecoveryDB state(dbname_, json::parse(arg_));
+  ASSERT_OK(state.Open(dbname_));
+  std::vector<Transaction*> prepared;
+  state.db->GetAllPreparedTransactions(&prepared);
+  ASSERT_EQ(prepared.size(), 1U);
+  ASSERT_TRUE(prepared[0]->GetWriteBatch()->GetWriteBatch()->HasDeleteRange());
+  ASSERT_EQ(prepared[0]->GetWriteBatch()->GetWriteBatch()->Count(), state.mixed ? 3 : 1);
+  ASSERT_NO_FATAL_FAILURE(state.Check(false));
+  ::_exit(0);
+}
+
+TEST_F(DBCsppCrashSafeTest, RangeDelPreparedRecovery) {
+  Close();
+  // 80 combinations, including the ordinary SkipList/WAL recovery baseline.
+  for (const char* factory : {"SkipList", "CSPPMemTab", "OffsetSkipList"}) {
+    for (bool log_index : {false, true}) {
+      if (std::strcmp(factory, "SkipList") == 0 && log_index) {
+        continue;
+      }
+      for (int cf : {0, 1}) {
+        for (bool mixed : {false, true}) {
+          for (bool commit : {false, true}) {
+            for (bool second_crash : {false, true}) {
+              const json config = {
+                  {"factory", factory}, {"log_index", log_index},
+                  {"cf", cf}, {"mixed", mixed}, {"commit", commit},
+                  {"second_crash", second_crash}};
+              ASSERT_NO_FATAL_FAILURE(CheckRangeDelPreparedRecovery(dbname_, config));
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_F(DBCsppCrashSafeTest, RangeDelFullWalReplay) {
+  Close();
+  for (const char* factory : {"CSPPMemTab", "OffsetSkipList"}) {
+    for (bool log_index : {false, true}) {
+      for (int cf : {0, 1}) {
+        const json config = {{"factory", factory}, {"log_index", log_index},
+                             {"cf", cf}, {"full_replay", true}};
+        SCOPED_TRACE(config.dump());
+        RangeDelRecoveryDB state(dbname_, config);
+        ASSERT_OK(DestroyDB(dbname_, state.options));
+        ASSERT_EQ(RunCrashChild(dbname_, "RangeDelPrepare", config.dump()), 0);
+        for (int reopen = 0; reopen != 2; ++reopen) {
+          std::atomic<int> converted{0};
+          SyncPoint::GetInstance()->SetCallBack(
+              "MemTableRep::ConvertToSST:Before", [&](void*) { ++converted; });
+          SyncPoint::GetInstance()->EnableProcessing();
+          const Status s = state.Open(dbname_);
+          SyncPoint::GetInstance()->DisableProcessing();
+          SyncPoint::GetInstance()->ClearAllCallBacks();
+          ASSERT_OK(s);
+          // Full replay converts the pure RangeDel memtable; the second Open
+          // reads the persisted result without converting again.
+          ASSERT_EQ(converted.load(), reopen == 0 ? 1 : 0);
+          ASSERT_NO_FATAL_FAILURE(state.Check(true));
+          for (auto* handle : state.handles) {
+            uint64_t count = 0;
+            ASSERT_TRUE(state.db->GetIntProperty(
+                handle, "rocksdb.num-entries-active-mem-table", &count));
+            ASSERT_EQ(count, 0U);
+            ASSERT_TRUE(state.db->GetIntProperty(
+                handle, "rocksdb.num-immutable-mem-table", &count));
+            ASSERT_EQ(count, 0U);
+          }
+          state.Close();
+        }
+      }
+    }
   }
 }
 

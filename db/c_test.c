@@ -1471,6 +1471,11 @@ int main(int argc, char** argv) {
     db = rocksdb_open(db_options, dbname, &err);
     rocksdb_column_family_handle_t* cfh;
     cfh = rocksdb_create_column_family(db, db_options, "cf1", &err);
+    rocksdb_column_family_handle_t* cfh_clone =
+        rocksdb_column_family_handle_clone(cfh);
+    CheckCondition(rocksdb_column_family_handle_get_id(cfh_clone) ==
+                   rocksdb_column_family_handle_get_id(cfh));
+    rocksdb_column_family_handle_destroy(cfh_clone);
     rocksdb_column_family_handle_destroy(cfh);
     CheckNoError(err);
     rocksdb_close(db);

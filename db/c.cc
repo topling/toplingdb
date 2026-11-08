@@ -1144,6 +1144,11 @@ char* rocksdb_column_family_handle_get_name(
   return CopyString(name);
 }
 
+rocksdb_column_family_handle_t* rocksdb_column_family_handle_clone(
+    rocksdb_column_family_handle_t* handle) {
+  return (rocksdb_column_family_handle_t*)handle->rep->CloneHandle();
+}
+
 void rocksdb_column_family_handle_destroy(
     rocksdb_column_family_handle_t* handle) {
   delete handle->rep.TargetObjectPtr();

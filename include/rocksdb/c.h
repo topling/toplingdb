@@ -462,6 +462,9 @@ rocksdb_column_family_handle_get_id(rocksdb_column_family_handle_t* handle);
 extern ROCKSDB_LIBRARY_API char* rocksdb_column_family_handle_get_name(
     rocksdb_column_family_handle_t* handle, size_t* name_len);
 
+extern ROCKSDB_LIBRARY_API_WEAK rocksdb_column_family_handle_t*
+rocksdb_column_family_handle_clone(rocksdb_column_family_handle_t* handle);
+
 extern ROCKSDB_LIBRARY_API void rocksdb_close(rocksdb_t* db);
 
 extern ROCKSDB_LIBRARY_API void rocksdb_put(
